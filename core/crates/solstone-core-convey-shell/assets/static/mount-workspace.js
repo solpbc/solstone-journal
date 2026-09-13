@@ -7,9 +7,9 @@
     return document.getElementById('main-content');
   }
 
-  function renderFailure(target, retry) {
+  function renderFailure(target, retry, detail) {
     if (window.SurfaceState) {
-      target.innerHTML = window.SurfaceState.error({ retry: true });
+      target.innerHTML = window.SurfaceState.error({ retry: true, detail });
     } else {
       target.innerHTML =
         '<div class="surface-state surface-state--error" role="alert">' +
@@ -119,7 +119,12 @@
             return;
           }
         }
-        throw new Error(`Request failed (HTTP ${response.status})`);
+        const error = new Error(`Request failed (HTTP ${response.status})`);
+        error.status = response.status;
+        error.statusText = response.statusText || '';
+        error.url = url;
+        error.timestamp = Date.now();
+        throw error;
       }
       const html = await response.text();
       target.innerHTML = html;
@@ -130,7 +135,7 @@
         })
       );
     } catch (error) {
-      renderFailure(target, retry);
+      renderFailure(target, retry, error);
       if (typeof options.onRetry === 'function') {
         options.onRetry(error);
       }

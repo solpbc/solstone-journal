@@ -239,6 +239,10 @@ class Element {
     return child;
   }
 
+  append(...children) {
+    children.forEach((child) => this.appendChild(child));
+  }
+
   insertBefore(child, before) {
     if (!before) return this.appendChild(child);
     if (child.parentElement) child.parentElement.removeChild(child);
@@ -524,6 +528,7 @@ function createHarness(options = {}) {
     MutationObserver: MutationObserverShim,
     console,
     URL,
+    URLSearchParams,
     setTimeout,
     clearTimeout,
     requestAnimationFrame: window.requestAnimationFrame,
@@ -534,6 +539,9 @@ function createHarness(options = {}) {
   const read = (file) => fs.readFileSync(path.join(crateDir, 'assets/static', file), 'utf8');
   vm.runInContext(read('modal_layer.js'), context, { filename: 'modal_layer.js' });
   vm.runInContext(read('presentation_mode.js'), context, { filename: 'presentation_mode.js' });
+  if (options.report) {
+    vm.runInContext(read('report-error.js'), context, { filename: 'report-error.js' });
+  }
   if (options.boot) {
     vm.runInContext(read('convey_copy.js'), context, { filename: 'convey_copy.js' });
     vm.runInContext(read('mount-workspace.js'), context, { filename: 'mount-workspace.js' });
@@ -799,8 +807,52 @@ asyncCase('generic workspace failures still reach the shell error state', async 
 
   assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'empty').length, 0);
   assert.strictEqual(harness.surfaceCalls.filter((call) => call.kind === 'error').length, 2);
+  assert.deepStrictEqual(
+    harness.surfaceCalls.filter((call) => call.kind === 'error').map((call) => call.state.detail.status),
+    [500, 500]
+  );
   assert.ok(harness.document.querySelector('[data-surface-state="error"]'));
   assert.strictEqual(harness.logErrors.length, 2);
+});
+
+asyncCase('failure-time context reaches a later report without its stack', async () => {
+  const harness = createHarness({
+    report: true,
+    pathname: '/app/health/',
+    fetchResponses: {
+      '/app/support/api/context': {
+        status: 200,
+        body: JSON.stringify({ version: '2.0.3', os: 'Linux', os_version: '7.0' }),
+      },
+    },
+  });
+
+  harness.window.convey.reportError({
+    app: 'network',
+    route: '/app/network/',
+    apiError: {
+      status: 404,
+      message: 'Request failed (HTTP 404)',
+      stack: 'at http://localhost:46171/static/mount-workspace.js:122:15',
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const labels = harness.document.querySelectorAll('dt');
+  const values = harness.document.querySelectorAll('dd');
+  assert.strictEqual(labels[labels.length - 1].textContent, 'error code');
+  assert.strictEqual(values[values.length - 1].textContent, '404');
+  assert.strictEqual(values[2].textContent, 'network');
+  assert.strictEqual(values[3].textContent, '/app/network/');
+  const recent = harness.document.querySelector('#report-error-recent');
+  assert.strictEqual(recent.value, 'Request failed (HTTP 404)');
+  assert.strictEqual(recent.value.includes('localhost'), false);
+  const send = harness.document.querySelector('a');
+  const fragment = new URLSearchParams(new URL(send.href).hash.slice(1));
+  assert.strictEqual(fragment.get('app'), 'network');
+  assert.strictEqual(fragment.get('route'), '/app/network/');
+  assert.strictEqual(fragment.get('error_code'), '404');
+  assert.strictEqual(fragment.get('recent'), 'Request failed (HTTP 404)');
 });
 
 asyncCase('converted workspace mounts normally', async () => {

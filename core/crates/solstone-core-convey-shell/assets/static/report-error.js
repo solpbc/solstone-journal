@@ -24,23 +24,26 @@
     currentModal = null;
   }
 
-  function currentAppAndRoute() {
+  function currentAppAndRoute(context) {
     const path = window.solPathContext?.() || {};
     return {
-      app: path.appName || 'journal',
-      route: window.location.pathname,
+      app: String(context.app || path.appName || 'journal'),
+      route: String(context.route || window.location.pathname),
     };
   }
 
   function recentErrorLines(context) {
-    const summaries = (Array.isArray(context.consoleEntries) ? context.consoleEntries : [])
-      .map(entry => String(entry?.summary || '').trim())
+    const lines = (Array.isArray(context.consoleEntries) ? context.consoleEntries : [])
+      .map(entry => String(entry?.detail?.message || '').trim())
       .filter(Boolean)
       .slice(-RECENT_LINE_LIMIT);
-    if (summaries.length === 0 && context.heading) {
-      summaries.push(String(context.heading).trim());
+    if (lines.length === 0 && context.apiError?.message) {
+      lines.push(String(context.apiError.message).trim());
     }
-    return summaries.join('\n').slice(0, RECENT_CHARACTER_LIMIT);
+    if (lines.length === 0 && context.heading) {
+      lines.push(String(context.heading).trim());
+    }
+    return lines.join('\n').slice(0, RECENT_CHARACTER_LIMIT);
   }
 
   async function fixedContext() {
@@ -83,11 +86,11 @@
   async function openModal(context) {
     closeModal();
     const platform = await fixedContext();
-    const location = currentAppAndRoute();
+    const location = currentAppAndRoute(context);
     const fields = {
       ...platform,
       ...location,
-      errorCode: String(context.apiError?.reasonCode || ''),
+      errorCode: String(context.apiError?.reasonCode || context.apiError?.status || ''),
     };
 
     const modal = document.createElement('div');

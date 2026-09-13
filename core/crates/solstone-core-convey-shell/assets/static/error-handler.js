@@ -311,6 +311,7 @@
     }
     const safe = safeContext(context);
     const message = messageFromError(error);
+    const path = window.solPathContext?.() || {};
     const diagnosticConsole = window.convey?.diagnosticConsole;
     if (diagnosticConsole && typeof diagnosticConsole.push === 'function') {
       diagnosticConsole.push({
@@ -320,6 +321,12 @@
         detail: {
           message,
           stack: stackFromError(error),
+          apiError: {
+            reasonCode: error?.reasonCode || '',
+            status: error?.status || ''
+          },
+          app: path.appName || 'journal',
+          route: window.location.pathname,
           filename: safe.filename,
           lineno: safe.lineno,
           colno: safe.colno,

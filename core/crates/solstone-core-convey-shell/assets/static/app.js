@@ -33,16 +33,27 @@ function reportingEnabled() {
   return !(window.CONVEY_SETTINGS && window.CONVEY_SETTINGS.reportingEnabled === false);
 }
 
+function currentReportLocation() {
+  const path = window.solPathContext?.() || {};
+  return {
+    app: path.appName || 'journal',
+    route: window.location.pathname
+  };
+}
+
 function captureReportContext({ heading, apiError, customDetail }) {
   const key = `rk-${reportKeyCounter}`;
   reportKeyCounter += 1;
   if (reportContexts.size >= REPORT_KEY_CAP) {
     reportContexts.delete(reportContexts.keys().next().value);
   }
+  const location = currentReportLocation();
   reportContexts.set(key, {
     heading,
     apiError: apiError || null,
-    customDetail: customDetail || ''
+    customDetail: customDetail || '',
+    app: location.app,
+    route: location.route
   });
   return key;
 }
@@ -188,7 +199,9 @@ window.SurfaceState = (() => {
         source: 'auto',
         heading: context.heading,
         apiError: context.apiError,
-        customDetail: context.customDetail
+        customDetail: context.customDetail,
+        app: context.app,
+        route: context.route
       });
     } else if (window.logError) {
       window.logError(new Error('report-error handler unavailable'), { context: 'surface-state report failed' });

@@ -409,7 +409,9 @@
       heading: entry.summary,
       apiError: entry.detail?.apiError || null,
       consoleEntries: api.neighborhood(entry.id, 5),
-      customDetail: ''
+      customDetail: '',
+      app: entry.detail?.app || '',
+      route: entry.detail?.route || ''
     });
   }
 
@@ -418,13 +420,16 @@
       return;
     }
     const currentEntries = visibleEntries().map(cloneEntry);
+    const newestEntry = currentEntries[currentEntries.length - 1];
     const template = copyText('CONSOLE_SNAPSHOT_HEADING', 'snapshot of {count} system messages');
     window.convey.reportError({
       source: 'manual',
       heading: template.replace('{count}', String(currentEntries.length)),
-      apiError: null,
+      apiError: newestEntry?.detail?.apiError || null,
       consoleEntries: currentEntries,
-      customDetail: ''
+      customDetail: '',
+      app: newestEntry?.detail?.app || '',
+      route: newestEntry?.detail?.route || ''
     });
   }
 

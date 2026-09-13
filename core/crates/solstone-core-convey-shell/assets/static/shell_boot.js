@@ -93,10 +93,10 @@
     }
   }
 
-  function showShellError(retry) {
+  function showShellError(retry, detail) {
     const target = document.getElementById('main-content') || document.body;
     if (window.SurfaceState) {
-      target.innerHTML = window.SurfaceState.error({ retry: true });
+      target.innerHTML = window.SurfaceState.error({ retry: true, detail });
     } else {
       target.innerHTML =
         '<div class="surface-state surface-state--error" role="alert">' +
@@ -383,7 +383,7 @@
       if (window.logError) {
         window.logError(error, { context: 'shell-boot' });
       }
-      showShellError(boot);
+      showShellError(boot, error);
     }
   }
 
