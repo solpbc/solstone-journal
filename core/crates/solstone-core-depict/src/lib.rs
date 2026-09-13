@@ -44,7 +44,7 @@ use solstone_core_processing_record::{
 
 pub const ERROR_SCHEMA: &str = "solstone-depict-error-v1";
 pub const DESCRIPTION_PROMPT: &str = "Describe this image in detail. Include any visible text, people, objects, setting, and notable context. Return a concise natural-language description.";
-pub const USAGE: &str = "usage: journal depict [-h] [--redo] FILE\n";
+pub const USAGE: &str = "usage: journal depict [-h] [--redo] [-v] [-d] FILE\n";
 const MAX_VLM_DIM: u32 = 1920;
 const ENGINE_NAME: &str = "rf-detr.cpp";
 const MODEL_NAME: &str = "rfdetr-nano-f16";
@@ -152,17 +152,31 @@ pub fn parse_args(args: &[OsString]) -> Result<Arguments, DepictError> {
     {
         return Err(DepictError::Help);
     }
-    match args {
-        [image] => Ok(Arguments {
-            image_path: PathBuf::from(image),
-            redo: false,
-        }),
-        [image, redo] if redo == "--redo" => Ok(Arguments {
-            image_path: PathBuf::from(image),
-            redo: true,
-        }),
-        _ => Err(DepictError::Usage(USAGE.to_owned())),
+    let mut image_path = None;
+    let mut redo = false;
+    for argument in args {
+        if argument == "-v" || argument == "--verbose" || argument == "-d" || argument == "--debug"
+        {
+            continue;
+        }
+        if argument == "--redo" {
+            if redo {
+                return Err(DepictError::Usage(USAGE.to_owned()));
+            }
+            redo = true;
+            continue;
+        }
+        if argument
+            .to_str()
+            .is_some_and(|value| value.starts_with('-'))
+            || image_path.replace(PathBuf::from(argument)).is_some()
+        {
+            return Err(DepictError::Usage(USAGE.to_owned()));
+        }
     }
+    image_path
+        .map(|image_path| Arguments { image_path, redo })
+        .ok_or_else(|| DepictError::Usage(USAGE.to_owned()))
 }
 
 pub trait WireClient {
@@ -1206,6 +1220,44 @@ mod tests {
             vec![OsString::from("photo.png"), OsString::from("--help")],
         ] {
             assert!(matches!(parse_args(&args), Err(DepictError::Help)));
+        }
+    }
+
+    #[test]
+    fn dispatcher_verbosity_flags_are_accepted_in_any_position() {
+        for args in [
+            vec![OsString::from("photo.png"), OsString::from("-v")],
+            vec![OsString::from("--verbose"), OsString::from("photo.png")],
+            vec![OsString::from("photo.png"), OsString::from("-d")],
+            vec![OsString::from("--debug"), OsString::from("photo.png")],
+            vec![
+                OsString::from("-v"),
+                OsString::from("--redo"),
+                OsString::from("photo.png"),
+                OsString::from("-d"),
+            ],
+        ] {
+            let parsed = parse_args(&args).expect("dispatcher flags should be accepted");
+            assert_eq!(parsed.image_path, PathBuf::from("photo.png"));
+            assert_eq!(
+                parsed.redo,
+                args.iter().any(|argument| argument == "--redo")
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_or_repeated_arguments_are_rejected() {
+        for args in [
+            vec![OsString::from("photo.png"), OsString::from("--unknown")],
+            vec![OsString::from("photo.png"), OsString::from("other.png")],
+            vec![
+                OsString::from("photo.png"),
+                OsString::from("--redo"),
+                OsString::from("--redo"),
+            ],
+        ] {
+            assert!(matches!(parse_args(&args), Err(DepictError::Usage(_))));
         }
     }
 

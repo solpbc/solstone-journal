@@ -345,11 +345,12 @@ const PROBES: &[Probe] = &[
     },
     Probe {
         token: "depict",
-        argv: &[],
+        argv: &["/__solstone_native_contract_missing__/image.jpg", "-v"],
         expected_exit: 1,
-        // This schema/reason prefix proves depict reached its malformed-request path.
+        // The image error proves the dispatcher preserved `-v` and depict accepted it.
+        // A generic malformed-request assertion cannot catch that boundary regression.
         stderr_anchor: Some(
-            b"{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\"",
+            b"{\"schema\":\"solstone-depict-error-v1\",\"reason\":\"malformed-request\",\"detail\":\"Image not found: /__solstone_native_contract_missing__/image.jpg\"",
         ),
     },
     Probe {
