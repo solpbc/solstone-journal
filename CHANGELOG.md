@@ -4,6 +4,20 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [2.0.4] - 2026-09-13
+
+### Changed
+
+- encrypted backup setup now gets restic from `updates.solstone.app` instead of github.
+
+### Fixed
+
+- details your journal remembers about people could be updated without the passages behind them. those source passages now take priority, and a malformed memory entry stops the whole update before anyone's memory is partly changed.
+- support reports opened from an error now keep the page, error code, and recent error text from that failure, even if you move elsewhere before sending.
+- long or structured text sent to a local model now gets progressively shorter working copies if the model still says it is too large, instead of stopping after the first size error.
+- on apple silicon, local transcription no longer gets turned away because available-memory readings dip below a fixed threshold.
+- journal health no longer reports false long gaps or places activity in the wrong hour when your local clock differs from utc.
+
 ## [2.0.1] - 2026-09-11
 
 ### Added
