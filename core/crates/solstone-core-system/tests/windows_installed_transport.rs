@@ -395,7 +395,8 @@ fn windows_installed_transport_receipt() {
         assert_eq!(
             output.exit_code,
             0,
-            "forwarder {mode}: {}",
+            "forwarder {mode}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8(output.stdout).unwrap();

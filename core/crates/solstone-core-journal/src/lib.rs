@@ -126,6 +126,14 @@ pub fn read_config_journal(home: &Path) -> Result<Option<String>, ConfigError> {
         .map(str::to_owned))
 }
 
+/// Resolve the process HOME, using the native user profile only when HOME is absent.
+/// Setup, diagnostics and resident entry points share this configuration boundary.
+pub fn discover_current_home() -> Result<PathBuf, HomeError> {
+    let home = std::env::var_os("HOME");
+    let native = home.is_none().then(std::env::home_dir).flatten();
+    discover_home(home.as_deref(), native.as_deref())
+}
+
 pub fn discover_home(
     home_env: Option<&OsStr>,
     passwd_home: Option<&Path>,

@@ -799,7 +799,9 @@ pub fn root_token_from_path(path: &Path) -> Result<RootToken, IdentityError> {
     {
         let canonical =
             std::fs::canonicalize(path).map_err(|source| io_error("canonicalize root", source))?;
-        RootToken::from_raw_absolute(normalize_absolute_bytes(canonical.as_os_str().as_bytes())?)
+        RootToken::from_raw_absolute(normalize_unix_absolute_bytes(
+            canonical.as_os_str().as_bytes(),
+        )?)
     }
     #[cfg(windows)]
     {
@@ -813,11 +815,13 @@ pub fn root_token_from_path(path: &Path) -> Result<RootToken, IdentityError> {
 pub fn journal_token_from_path(path: &Path) -> Result<JournalToken, IdentityError> {
     #[cfg(unix)]
     {
-        JournalToken::from_raw_absolute(normalize_absolute_bytes(path.as_os_str().as_bytes())?)
+        JournalToken::from_raw_absolute(normalize_unix_absolute_bytes(path.as_os_str().as_bytes())?)
     }
     #[cfg(windows)]
     {
-        JournalToken::from_raw_absolute(normalize_absolute_bytes(&wide_bytes(path.as_os_str()))?)
+        // Rust canonicalization returns an extended path. The wire token remains
+        // the ordinary canonical spelling, just as it does for installation roots.
+        JournalToken::from_raw_absolute(normalize_windows_canonical_path(path)?)
     }
 }
 
@@ -2507,17 +2511,6 @@ fn validate_unix_absolute_token(bytes: &[u8], label: &'static str) -> Result<(),
     Ok(())
 }
 
-fn normalize_absolute_bytes(bytes: &[u8]) -> Result<Vec<u8>, IdentityError> {
-    #[cfg(unix)]
-    {
-        normalize_unix_absolute_bytes(bytes)
-    }
-    #[cfg(windows)]
-    {
-        normalize_windows_absolute_bytes(bytes)
-    }
-}
-
 #[cfg(unix)]
 fn normalize_unix_absolute_bytes(bytes: &[u8]) -> Result<Vec<u8>, IdentityError> {
     if bytes.is_empty() || bytes[0] != b'/' || bytes.contains(&0) {
@@ -2704,13 +2697,20 @@ fn wide_bytes(value: &OsStr) -> Vec<u8> {
 
 #[cfg(windows)]
 fn windows_wide_nul(path: &Path) -> Result<Vec<u16>, IdentityError> {
-    let units: Vec<u16> = path.as_os_str().encode_wide().collect();
-    if units.contains(&0) {
-        return Err(IdentityError::InvalidInput(
-            "Windows path contains an interior NUL",
-        ));
-    }
-    let mut output = units;
+    // These are fully qualified provider paths. Win32 calls need the extended
+    // form for generated record names beyond MAX_PATH, independent of machine
+    // policy or the executable's manifest. Keep that form out of wire tokens.
+    let bytes = normalize_windows_canonical_path(path)?;
+    let units = windows_units_from_bytes(&bytes)?;
+    let unc = [b'\\' as u16, b'\\' as u16];
+    let mut output: Vec<u16> = if let Some(rest) = units.strip_prefix(&unc) {
+        r"\\?\UNC\"
+            .encode_utf16()
+            .chain(rest.iter().copied())
+            .collect()
+    } else {
+        r"\\?\".encode_utf16().chain(units).collect()
+    };
     output.push(0);
     Ok(output)
 }
@@ -5755,6 +5755,53 @@ mod windows_tests {
         units.push(0xd800);
         let path = PathBuf::from(OsString::from_wide(&units));
         assert!(normalize_windows_canonical_path(&path).is_err());
+    }
+
+    #[test]
+    fn windows_journal_token_matches_canonical_and_ordinary_paths() {
+        for (ordinary, extended) in [
+            (r"C:\journal\😀", r"\\?\C:\journal\😀"),
+            (r"\\server\share\journal", r"\\?\UNC\server\share\journal"),
+        ] {
+            assert_eq!(
+                journal_token_from_path(Path::new(ordinary)).unwrap(),
+                journal_token_from_path(Path::new(extended)).unwrap()
+            );
+            assert!(JournalToken::from_raw_absolute(token_bytes(extended)).is_err());
+        }
+        assert!(journal_token_from_path(Path::new(r"\\.\C:\device")).is_err());
+        assert!(
+            journal_token_from_path(Path::new(r"\\?\GLOBALROOT\Device\HarddiskVolume1")).is_err()
+        );
+    }
+
+    #[test]
+    fn windows_provider_file_operations_support_long_generated_paths() {
+        let _serial = serial();
+        let fixture = TestRoot::new();
+        let deep = fixture
+            .root
+            .join("long-generated-component-".repeat(5))
+            .join("another-component-".repeat(5));
+        fs::create_dir_all(&deep).unwrap();
+        let path = deep.join("record-stage");
+        assert!(path.as_os_str().encode_wide().count() > 260);
+        let file = create_new_file(&path, "long record stage").unwrap();
+        drop(file);
+        let linked = deep.join("record");
+        create_hard_link_windows(&linked, &path).unwrap();
+        let opened = open_windows_file(
+            &linked,
+            GENERIC_READ,
+            OPEN_EXISTING,
+            FILE_FLAG_OPEN_REPARSE_POINT,
+            "open long record",
+        )
+        .unwrap();
+        drop(opened);
+        delete_file_windows(&path, "delete long stage").unwrap();
+        delete_file_windows(&linked, "delete long record").unwrap();
+        assert!(!path.exists() && !linked.exists());
     }
 
     #[test]

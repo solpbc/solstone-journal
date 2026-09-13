@@ -3,7 +3,9 @@
 
 use crate::vocabulary::Platform;
 use chrono::{DateTime, Utc};
-use solstone_core_journal::{discover_home, read_config_journal, resolve_journal_path};
+#[cfg(not(windows))]
+use solstone_core_journal::discover_home;
+use solstone_core_journal::{read_config_journal, resolve_journal_path};
 use std::env;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -63,6 +65,10 @@ impl CheckContext {
                 )
             })?
             .to_path_buf();
+        #[cfg(windows)]
+        let home_dir =
+            solstone_core_journal::discover_current_home().map_err(|e| format!("{e:?}"))?;
+        #[cfg(not(windows))]
         let home_dir =
             discover_home(env::var_os("HOME").as_deref(), None).map_err(|e| format!("{e:?}"))?;
         let config = read_config_journal(&home_dir).map_err(|e| format!("{e:?}"))?;

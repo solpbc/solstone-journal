@@ -350,6 +350,19 @@ fn report_identity_failure<W: Write>(
     let mut message = format!(
         "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup files, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
     );
+    if cfg!(windows) {
+        let commands = recovery
+            .iter()
+            .map(|(path, flag)| {
+                let quoted = path.to_string_lossy().replace('\'', "''");
+                let recurse = if *flag == "-rf" { " -Recurse" } else { "" };
+                format!("\n    Remove-Item -LiteralPath '{quoted}' -Force{recurse}")
+            })
+            .collect::<String>();
+        message = format!(
+            "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, first run `journal service uninstall`. if it fails, stop here and include these details in a support request. if it succeeds, run these commands in PowerShell, then run `journal setup` again:{commands}\n\nyour journal itself is untouched. none of these holds your memories."
+        );
+    }
     if let Some(location_error) = recovery_error {
         message = format!(
             "this installation couldn't be verified.\n\ndetails: {error}\n\nsetup recovery locations are unavailable: {location_error}"
@@ -893,7 +906,7 @@ pub fn run_owner_args(
     }
 }
 
-#[cfg(any(windows, test))]
+#[cfg(test)]
 fn native_windows_setup_home(
     home_env: Option<&std::ffi::OsStr>,
     profile_home: Option<&std::path::Path>,
@@ -910,9 +923,7 @@ pub fn run_owner_setup_native(args: SetupArgs) -> ExitCode {
         .unwrap_or_else(|| PathBuf::from("."));
     #[cfg(windows)]
     let home_dir = {
-        let home_env = env::var_os("HOME");
-        let profile_home = home_env.is_none().then(env::home_dir).flatten();
-        match native_windows_setup_home(home_env.as_deref(), profile_home.as_deref()) {
+        match solstone_core_journal::discover_current_home() {
             Ok(home) => home,
             Err(_) => {
                 eprintln!("setup could not determine your home directory");
@@ -1432,7 +1443,8 @@ mod tests {
     /// refuses in this exact state -- so the refusal has to carry the paths.
     #[test]
     fn a_refused_identity_admission_names_every_path_the_owner_must_clear() {
-        let home = std::path::Path::new("/home/tester");
+        let home_path = std::env::temp_dir().join("setup owner's 😀");
+        let home = home_path.as_path();
         let namespace = "a".repeat(64);
         let mut stdout: Vec<u8> = Vec::new();
         let mut stderr: Vec<u8> = Vec::new();
@@ -1448,11 +1460,14 @@ mod tests {
         for (path, flag) in
             identity_recovery_paths(home, Some(namespace.as_str())).expect("resolve recovery paths")
         {
-            assert!(
-                text.contains(&format!("rm {flag} {}", path.display())),
-                "the remedy must name `rm {flag} {}`; got:\n{text}",
-                path.display()
-            );
+            let command = if cfg!(windows) {
+                let quoted = path.to_string_lossy().replace('\'', "''");
+                let recurse = if flag == "-rf" { " -Recurse" } else { "" };
+                format!("Remove-Item -LiteralPath '{quoted}' -Force{recurse}")
+            } else {
+                format!("rm {flag} {}", path.display())
+            };
+            assert!(text.contains(&command), "missing command {command}: {text}");
         }
         assert!(
             text.contains("run `journal setup` again"),
@@ -1466,7 +1481,12 @@ mod tests {
         // Stopping the service first, so the removed unit is not left running --
         // and with this platform's own command. ⛔ A macOS owner must never be
         // handed `systemctl` next to an `rm` of a LaunchAgent plist.
-        let (expected_stop, foreign_stop) = if cfg!(target_os = "macos") {
+        let (expected_stop, foreign_stop) = if cfg!(windows) {
+            assert!(!text.contains("\n    rm "));
+            assert!(!text.contains("launchctl"));
+            assert!(text.contains("if it fails, stop here"));
+            ("journal service uninstall", "systemctl")
+        } else if cfg!(target_os = "macos") {
             ("launchctl bootout", "systemctl")
         } else {
             (

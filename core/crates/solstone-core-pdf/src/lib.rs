@@ -1070,17 +1070,23 @@ pub fn pdfium_library_path() -> Result<PathBuf, String> {
     }
     let executable =
         std::env::current_exe().map_err(|error| format!("resolve executable path: {error}"))?;
-    let filename = if cfg!(target_os = "macos") {
+    pdfium_library_path_at(&executable)
+}
+
+fn pdfium_library_path_at(executable: &Path) -> Result<PathBuf, String> {
+    let filename = if cfg!(windows) {
+        "pdfium.dll"
+    } else if cfg!(target_os = "macos") {
         "libpdfium.dylib"
     } else {
         "libpdfium.so"
     };
     executable
         .parent()
-        .ok_or_else(|| "executable path has no parent".to_owned())
+        .and_then(Path::parent)
+        .ok_or_else(|| "executable path has no installation prefix".to_owned())
         .map(|directory| {
             directory
-                .join("..")
                 .join("lib")
                 .join("solstone-core-pdf")
                 .join(filename)
@@ -1218,6 +1224,25 @@ fn open_error(error: c_ulong) -> ContractError {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn installed_library_path_has_platform_name_and_no_parent_traversal() {
+        let prefix = std::env::temp_dir().join("pdf-prefix");
+        let library = super::pdfium_library_path_at(&prefix.join("bin/pdf-helper")).unwrap();
+        let name = if cfg!(windows) {
+            "pdfium.dll"
+        } else if cfg!(target_os = "macos") {
+            "libpdfium.dylib"
+        } else {
+            "libpdfium.so"
+        };
+        assert_eq!(library, prefix.join("lib/solstone-core-pdf").join(name));
+        assert!(
+            !library
+                .components()
+                .any(|part| matches!(part, std::path::Component::ParentDir))
+        );
+    }
+
     use super::*;
 
     #[test]

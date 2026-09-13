@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::{env, io};
 
 use solstone_core_journal::{
-    ConfigError, HomeError, ResolvedJournal, Source, detect_checkout_root, discover_home,
+    ConfigError, HomeError, ResolvedJournal, Source, detect_checkout_root,
     installed_site_packages_from_executable_dir, read_config_journal,
     resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
@@ -132,12 +132,7 @@ pub(crate) fn inspect_journal_days(journal: &Path) -> Result<Option<usize>, io::
 }
 
 fn discover_current_home() -> Result<PathBuf, HomeError> {
-    let home_env = env::var_os("HOME");
-    if let Some(home) = home_env.as_deref() {
-        return discover_home(Some(home), None);
-    }
-    let fallback = env::home_dir();
-    discover_home(None, fallback.as_deref())
+    solstone_core_journal::discover_current_home()
 }
 
 fn detect_current_checkout_root() -> Option<PathBuf> {

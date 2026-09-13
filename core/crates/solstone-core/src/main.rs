@@ -111,9 +111,8 @@ use solstone_core_indexer_store::scan::{
     RescanFileStatus, rebuild_edges, rescan_file, scan_journal,
 };
 use solstone_core_journal::{
-    ConfigError, HomeError, Source, describe_package_roots_miss, discover_home,
-    ensure_journal_dir_with_label, read_config_journal,
-    resolve_installation_root_from_executable_dir, resolve_journal_path,
+    ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
+    read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
@@ -6379,12 +6378,7 @@ fn resolve_process_journal_path() -> Result<JournalPathLine, JournalPathError> {
 }
 
 fn discover_binary_home() -> Result<PathBuf, HomeError> {
-    let home_env = env::var_os("HOME");
-    if let Some(home) = home_env.as_deref() {
-        return discover_home(Some(home), None);
-    }
-    let fallback = env::home_dir();
-    discover_home(None, fallback.as_deref())
+    solstone_core_journal::discover_current_home()
 }
 
 // Packaged installs may not retain source-package roots and therefore report zero talent configs.

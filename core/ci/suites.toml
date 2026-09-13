@@ -4421,6 +4421,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-doctor::windows_home"
+package = "solstone-core-doctor"
+target = "windows_home"
+set = "component"
+areas = ["health"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-doctor::doctor_service_checks"
 package = "solstone-core-doctor"
 target = "doctor_service_checks"
