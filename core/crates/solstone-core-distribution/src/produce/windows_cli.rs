@@ -292,7 +292,11 @@ mod tests {
     // If this test is red, `core/Cargo.lock` moved and the Windows Rust notices
     // no longer describe it. The fix is to refresh them: rebuild and republish
     // the `dependency_source_companion` archive for the new lock, then
-    // regenerate the index.
+    // regenerate the index. `scripts/refresh_windows_rust_notices.py` does
+    // this -- see its module docstring -- for the common case where the
+    // external dependency population is unchanged; it refuses with a clear
+    // reason when the population or resolved graph actually moved, which
+    // needs a fresh `cargo vendor` acquisition instead.
     //
     // DO NOT edit `cargo_lock_sha256` on its own. `validate_rust_notices` above
     // checks only that digest and `notices_sha256`, so editing it turns this
