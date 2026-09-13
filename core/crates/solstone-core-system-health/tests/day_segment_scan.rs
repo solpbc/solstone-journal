@@ -220,6 +220,23 @@ fn one_exhausted_image_does_not_hide_an_unprocessed_sibling() {
 }
 
 #[test]
+fn image_claimed_by_describe_is_not_reclassified_as_depict_work() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let captured = segment(root, Some("field"), "103000_300");
+    write(&captured, "screen.png", "image");
+    write(
+        &captured,
+        "screen.jsonl",
+        "{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"describe\"}}\n{\"frame_id\":1,\"timestamp\":0}\n",
+    );
+
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
+    assert_eq!(segments[0].types, ["screen"]);
+    assert!(!segments[0].data_state.0.contains_key("image"));
+}
+
+#[test]
 fn raw_name_parse_drops_decorated_directory_but_keeps_canonical_sibling() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();

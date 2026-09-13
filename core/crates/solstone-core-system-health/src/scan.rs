@@ -10,7 +10,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde_json::Value;
 use solstone_core_format::segment::segment_start_and_end_seconds;
 use solstone_core_journal_io::SegmentIdentityError;
-use solstone_core_processing_record::{MediaKind, media_kind, vocab};
+use solstone_core_processing_record::{MediaKind, analysis_row_key, media_kind, vocab};
 
 use crate::{
     BODY_CARD_STREAMS, DataState, DataStateMap, HealthError, SegmentInput, SegmentSource,
@@ -212,7 +212,10 @@ pub(crate) fn detect_data_state(
     } else {
         files
             .iter()
-            .filter(|path| media_kind_for(path) == Some(MediaKind::Image))
+            .filter(|path| {
+                media_kind_for(path) == Some(MediaKind::Image)
+                    && !claimed_by_non_depict_handler(path)
+            })
             .cloned()
             .collect::<Vec<_>>()
     };
@@ -367,6 +370,18 @@ fn aggregate_image_state(
         return DataState::Purged;
     }
     DataState::Analyzed
+}
+
+fn claimed_by_non_depict_handler(raw: &Path) -> bool {
+    let output = raw.with_extension("jsonl");
+    let Some(record) = read_processing_record(std::slice::from_ref(&output)) else {
+        return false;
+    };
+    let Some(handler) = record.get("handler").and_then(Value::as_str) else {
+        return false;
+    };
+    handler != vocab::HANDLER_DEPICT
+        && analysis_row_key(handler).is_some_and(|key| jsonl_has_row_with_key(&output, key))
 }
 
 fn has_nonempty_text(path: &Path) -> bool {
