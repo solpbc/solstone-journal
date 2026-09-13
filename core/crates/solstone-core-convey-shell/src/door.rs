@@ -46,6 +46,11 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex as AsyncMutex, watch};
 use tokio::time::{Sleep, sleep};
 
+use solstone_core_system::direct_door::{
+    DirectDoorError, DirectDoorOutcome, DirectDoorPublishResult, peek_direct_door_generation,
+    publish_direct_door,
+};
+
 use crate::relay_admission::{RelayAdmissionClaim, RelayAdmissionRegistry, RelayNonceIdentity};
 use crate::session::{SessionState, classify_session};
 use crate::{DoorOutcome, DoorWithheldReason};
@@ -232,6 +237,24 @@ impl DoorLifecycle {
         }
     }
 
+    /// Publish the running door's outcome to `health/direct-door.json` at the record's
+    /// current generation. Boot publishes from `run_convey`; a door that opens later, after
+    /// first-run finalize, has to publish itself or the record keeps reading withheld while
+    /// the listener is live.
+    pub(super) fn publish_record(&self) -> Result<DirectDoorPublishResult, DirectDoorError> {
+        let outcome = match self.clone_outcome() {
+            Some(DoorOutcome::Bound(address)) => DirectDoorOutcome::Bound {
+                port: address.port(),
+            },
+            Some(DoorOutcome::BindFailed { port, .. }) => DirectDoorOutcome::BindFailed { port },
+            Some(DoorOutcome::Withheld(_)) | None => DirectDoorOutcome::Withheld {
+                port: self.parts.port,
+            },
+        };
+        let generation = peek_direct_door_generation(&self.parts.journal_root)?;
+        publish_direct_door(&self.parts.journal_root, generation, outcome)
+    }
+
     pub(super) fn clone_outcome(&self) -> Option<DoorOutcome> {
         let running = self.running.lock().expect("door lifecycle lock");
         running
@@ -314,6 +337,19 @@ pub(super) async fn open_after_finalize(
     if door.ensure_started().await {
         if let Some(address) = door.bound_addr() {
             eprintln!("convey: paired-device door listening on {address}");
+        }
+        // The record is the operator's signal that linked devices can reach this journal;
+        // a door that opened here must not leave boot's withheld record behind.
+        match door.publish_record() {
+            Ok(DirectDoorPublishResult::Published) => {}
+            Ok(DirectDoorPublishResult::RejectedStale) => {
+                eprintln!(
+                    "convey: direct-door record not republished after finalize: stale generation"
+                );
+            }
+            Err(error) => {
+                eprintln!("convey: failed to republish direct-door record after finalize: {error}");
+            }
         }
         return response;
     }
@@ -1268,6 +1304,51 @@ mod tests {
         }));
         assert_eq!(lifecycle.bound_addr(), None);
         assert_eq!(relay_admissions.door_availability(), None);
+    }
+
+    #[test]
+    fn door_opened_after_finalize_republishes_the_record_boot_left_withheld() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").expect("temporary journal creates");
+        let port = 47659;
+        solstone_core_system::direct_door::initialize_direct_door(journal.path(), port)
+            .expect("boot-time withheld record");
+        let (authorization_sender, _) = watch::channel(DeviceDoorAuthorization::from(
+            AuthorizedClientsRead::Missing,
+        ));
+        let lifecycle = DoorLifecycle::new(DoorStartOptions {
+            journal_root: journal.path().to_path_buf(),
+            port,
+            handshake_timeout: Duration::from_secs(1),
+            stream_stall_timeout: Duration::from_secs(1),
+            router: Router::new(),
+            carrier_loop_iterations: Arc::new(AtomicU64::new(0)),
+            handshake_authorization_read_ticks: Arc::new(AtomicU64::new(0)),
+            authorization_sender,
+            relay_admissions: Arc::new(RelayAdmissionRegistry::new()),
+        });
+        let record_path = journal.path().join("health").join("direct-door.json");
+        let read_state = || -> serde_json::Value {
+            serde_json::from_slice(&std::fs::read(&record_path).expect("record readable"))
+                .expect("record is JSON")
+        };
+        assert_eq!(read_state()["state"], "withheld");
+
+        assert!(lifecycle.install_started(DoorStart {
+            outcome: DoorOutcome::Bound(format!("127.0.0.1:{port}").parse().expect("Door address")),
+            refresh_task: None,
+            accept_task: None,
+            pairing_reaper_task: None,
+            pairing_cap_refusals: None,
+        }));
+        // Installing the running door does not touch the record; publishing does.
+        assert_eq!(read_state()["state"], "withheld");
+        assert_eq!(
+            lifecycle.publish_record().expect("record publishes"),
+            DirectDoorPublishResult::Published
+        );
+        let after = read_state();
+        assert_eq!(after["state"], "bound");
+        assert_eq!(after["port"], port);
     }
 
     #[test]
