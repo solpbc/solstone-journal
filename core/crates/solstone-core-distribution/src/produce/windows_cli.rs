@@ -289,6 +289,20 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 mod tests {
     use super::*;
 
+    // If this test is red, `core/Cargo.lock` moved and the Windows Rust notices
+    // no longer describe it. The fix is to refresh them: rebuild and republish
+    // the `dependency_source_companion` archive for the new lock, then
+    // regenerate the index.
+    //
+    // DO NOT edit `cargo_lock_sha256` on its own. `validate_rust_notices` above
+    // checks only that digest and `notices_sha256`, so editing it turns this
+    // green while `dependency_source_companion` still names an archive keyed to
+    // the OLD lock -- a passing attestation for bytes nobody produced. The
+    // shortcut is reachable, it is one line, and it is the reason this comment
+    // is here rather than in a tracker.
+    //
+    // Reached 2026-09-12 by an ordinary dependency pin bump; the bump was
+    // reverted rather than the binding weakened.
     #[test]
     fn committed_rust_notices_match_workspace_lock() {
         validate_rust_notices(
