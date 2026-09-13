@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "11.0.0";
+const BUNDLE_SEMVER: &str = "12.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -202,10 +202,10 @@ fn consumer_audit() -> Value {
         ),
         (
             "solstone-windows",
-            "19c972c4fea775176cea6421ac8b87f3bb20ab42",
+            "f276076e3554c75d75cbd3616644f46d831c0d90",
             vec![
-                "crates/observer-pl/src/lib.rs",
-                "crates/observer-pl/src/wire.rs",
+                "crates/pl-transport-win/src/client.rs",
+                "crates/pl-transport-win/src/coordinator.rs",
             ],
         ),
     ];
@@ -227,6 +227,9 @@ fn consumer_audit() -> Value {
                 "revision": revision,
                 "role": "production"
             }));
+        }
+        if consumer == "solstone-windows" {
+            continue;
         }
         for legacy_surface in legacy_surfaces {
             direct_paths.push(json!({
@@ -333,7 +336,7 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
     .collect::<Vec<_>>();
     json!({
         "audited_consumer_revisions": [
-            {"consumer_identifier": "solstone-windows", "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42"},
+            {"consumer_identifier": "solstone-windows", "revision": "f276076e3554c75d75cbd3616644f46d831c0d90"},
             {"consumer_identifier": "solstone-linux", "revision": "1c679db1ce6f9a65db70c5aae0ca2fad677416ef"},
             {"consumer_identifier": "solstone-browser", "revision": "998c1095cd8f766dd188bece5ad6527444f8dfac"}
         ],
@@ -359,8 +362,7 @@ fn manifest(authority_bytes: &[u8], openapi_spec_version: &str, artifacts: &Arti
         "supported_response_variants": [3],
         "vocabularies": [segment_file_vocabulary(), ingest_status_vocabulary()],
         "windows_linux_rollout_targets": [
-            {"consumer_identifier": "solstone-linux", "adoption_blocker_ids": ["solstone-linux-legacy-v2-unmigrated"]},
-            {"consumer_identifier": "solstone-windows", "adoption_blocker_ids": ["solstone-windows-legacy-v2-unmigrated"]}
+            {"consumer_identifier": "solstone-linux", "adoption_blocker_ids": ["solstone-linux-legacy-v2-unmigrated"]}
         ]
     })
 }
