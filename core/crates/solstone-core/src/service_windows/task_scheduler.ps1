@@ -95,6 +95,20 @@ function Get-ValidationXml([string]$RawXml, [string]$OwnerSid) {
         if ($sid.Value -cne $OwnerSid) { throw 'task-owner-identity-mismatch' }
         $nodes[0].InnerText = $OwnerSid
     }
+    # Scheduler readback can embed the registered ACL in RegistrationInfo.
+    # Validate it just like the live task ACL before removing this metadata
+    # from the profile comparison. Keep RawXml intact for mutation CAS.
+    $descriptors = $document.SelectNodes('/t:Task/t:RegistrationInfo/t:SecurityDescriptor', $namespaces)
+    if ($descriptors.Count -gt 1) { throw 'task-xml-security-duplicate' }
+    if ($descriptors.Count -eq 1) {
+        $descriptorNode = $descriptors[0]
+        if ($descriptorNode.Attributes.Count -ne 0 -or $descriptorNode.ChildNodes.Count -ne 1 -or
+            $descriptorNode.FirstChild.NodeType -ne [Xml.XmlNodeType]::Text) {
+            throw 'task-xml-security-not-simple-text'
+        }
+        Assert-PrivateDescriptor ([string]$descriptorNode.InnerText) $OwnerSid
+        $null = $descriptorNode.ParentNode.RemoveChild($descriptorNode)
+    }
     return $document.OuterXml
 }
 
