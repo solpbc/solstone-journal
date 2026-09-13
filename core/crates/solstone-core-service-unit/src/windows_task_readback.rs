@@ -242,9 +242,21 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
             return Err("unexpected registration metadata attributes");
         }
     }
+    // Task Scheduler omits settings that equal its defaults on readback.
+    // Accept their absence only where the managed profile uses that default;
+    // an explicit different value or any attributes still fail closed.
     for (path, value) in [
         ("Task/Triggers/LogonTrigger/Enabled", "true"),
         ("Task/Settings/DisallowStartOnRemoteAppSession", "false"),
+        ("Task/Principals/Principal/RunLevel", "LeastPrivilege"),
+        ("Task/Settings/AllowHardTerminate", "true"),
+        ("Task/Settings/StartWhenAvailable", "false"),
+        ("Task/Settings/RunOnlyIfNetworkAvailable", "false"),
+        ("Task/Settings/AllowStartOnDemand", "true"),
+        ("Task/Settings/Enabled", "true"),
+        ("Task/Settings/Hidden", "false"),
+        ("Task/Settings/RunOnlyIfIdle", "false"),
+        ("Task/Settings/WakeToRun", "false"),
     ] {
         if let Some(node) = nodes.remove(path)
             && (!node.attributes.is_empty() || node.text != value)
@@ -360,5 +372,73 @@ mod tests {
             .replace("version=\"1.3\"", "version=\"1.4\"")
             .replace("<LogonTrigger>", "<LogonTrigger><Enabled>true</Enabled>");
         assert!(parse_windows_task_xml(&source).is_ok());
+    }
+
+    #[test]
+    fn accepts_scheduler_omitted_profile_defaults() {
+        let source = xml();
+        // Observed together in native Task Scheduler readback. Owner-name
+        // resolution is performed separately by the COM transport.
+        let mut readback = source.clone();
+        for field in [
+            "<RunLevel>LeastPrivilege</RunLevel>",
+            "<AllowHardTerminate>true</AllowHardTerminate>",
+            "<StartWhenAvailable>false</StartWhenAvailable>",
+            "<RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>",
+            "<AllowStartOnDemand>true</AllowStartOnDemand>",
+            "<Enabled>true</Enabled>",
+            "<Hidden>false</Hidden>",
+            "<RunOnlyIfIdle>false</RunOnlyIfIdle>",
+            "<WakeToRun>false</WakeToRun>",
+        ] {
+            assert!(readback.contains(field));
+            readback = readback.replace(field, "");
+        }
+        assert_eq!(
+            parse_windows_task_xml(&readback),
+            parse_windows_task_xml(&source)
+        );
+        assert!(parse_windows_task_xml(&readback).is_ok());
+        // These settings differ from Scheduler defaults and must be retained.
+        for field in [
+            "<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>",
+            "<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>",
+            "<StopOnIdleEnd>false</StopOnIdleEnd>",
+            "<UseUnifiedSchedulingEngine>true</UseUnifiedSchedulingEngine>",
+            "<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>",
+            "<Priority>4</Priority>",
+        ] {
+            assert!(readback.contains(field));
+            assert!(parse_windows_task_xml(&readback.replace(field, "")).is_err());
+        }
+    }
+
+    #[test]
+    fn refuses_changed_or_attributed_optional_profile_defaults() {
+        let source = xml();
+        for (field, value, changed) in [
+            ("RunLevel", "LeastPrivilege", "HighestAvailable"),
+            ("AllowHardTerminate", "true", "false"),
+            ("StartWhenAvailable", "false", "true"),
+            ("RunOnlyIfNetworkAvailable", "false", "true"),
+            ("AllowStartOnDemand", "true", "false"),
+            ("Enabled", "true", "false"),
+            ("Hidden", "false", "true"),
+            ("RunOnlyIfIdle", "false", "true"),
+            ("WakeToRun", "false", "true"),
+        ] {
+            let original = format!("<{field}>{value}</{field}>");
+            assert!(source.contains(&original));
+            for replacement in [
+                format!("<{field}>{changed}</{field}>"),
+                format!("<{field} unexpected=\"true\">{value}</{field}>"),
+                format!("{original}{original}"),
+            ] {
+                assert!(
+                    parse_windows_task_xml(&source.replace(&original, &replacement)).is_err(),
+                    "accepted changed {field}: {replacement}"
+                );
+            }
+        }
     }
 }
