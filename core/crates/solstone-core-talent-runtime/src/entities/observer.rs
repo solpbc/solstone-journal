@@ -633,6 +633,27 @@ fn sense_evidence(segment_dir: &Path, matching_slugs: &BTreeSet<String>) -> Vec<
     lines
 }
 
+fn strip_modality_metadata(source: &str) -> String {
+    let mut after_heading = false;
+    let mut lines = Vec::new();
+    for line in source.lines() {
+        if line.starts_with("### ") {
+            after_heading = true;
+            lines.push(line);
+            continue;
+        }
+        if after_heading && line.starts_with("Start: ") {
+            after_heading = false;
+            continue;
+        }
+        if !line.trim().is_empty() {
+            after_heading = false;
+        }
+        lines.push(line);
+    }
+    lines.join("\n")
+}
+
 fn segment_evidence(
     journal: &Path,
     day: &str,
@@ -669,7 +690,7 @@ fn segment_evidence(
             "- Source records: {} transcript, {} percept",
             counts.transcripts, counts.percepts
         ));
-        lines.push(source);
+        lines.push(strip_modality_metadata(&source));
     }
     truncate_chars(&lines.join("\n"), MAX_SEGMENT_CONTEXT_CHARS)
 }
@@ -945,7 +966,20 @@ mod tests {
         let path = segment_path(root, origin);
         fs::write(
             path.join("audio.jsonl"),
-            json!({"start":"00:00:00","text":transcript}).to_string(),
+            format!(
+                "{}\n{}\n",
+                json!({
+                    "raw":"audio.wav", "backend":"parakeet", "model":"field-model.gguf",
+                    "device":"cpu", "compute_type":"q8_0", "duration":180.0,
+                    "noisy":false, "loud_windows":180, "speech_loud_windows":180,
+                    "loud_speech_ratio":1.0, "overlap_fraction":0.0104,
+                    "overlap_detector":"pyannote-segmentation-3.0-onnx",
+                    "speaker_evidence":"multi", "speaker_evidence_multi_fraction":0.1395,
+                    "speaker_evidence_version":"windowed-slots-v1", "stream":"field.audio",
+                    "_solstone_processing":{"schema":"solstone.processing.v1","state":"analyzed","reason_code":"ok","handler":"transcribe","attempted_at":"2026-07-25T05:24:07Z","input_size":5760078}
+                }),
+                json!({"start":"00:00:00","text":transcript})
+            ),
         )
         .unwrap();
         fs::write(
@@ -1044,6 +1078,7 @@ mod tests {
         ] {
             assert!(first_text.contains(sentinel), "missing {sentinel}");
         }
+        assert!(!first_text.contains("Speaker_evidence_version"));
         assert!(!first_text.contains("OTHER_ENTITY_CONTAMINANT"));
 
         let path = root.path().join("chronicle").join(origin);
