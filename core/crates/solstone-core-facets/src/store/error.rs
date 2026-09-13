@@ -16,9 +16,20 @@ use crate::FacetTrustLockError;
 pub enum FacetStoreError {
     Read(ReadError),
     Path(PathError),
-    DeclarationNotObject { path: PathBuf },
-    EntityLinkNotObject { path: PathBuf },
-    CorruptCompletionMarker { path: PathBuf },
+    DeclarationNotObject {
+        path: PathBuf,
+    },
+    EntityLinkNotObject {
+        path: PathBuf,
+    },
+    CorruptCompletionMarker {
+        path: PathBuf,
+    },
+    MalformedObservation {
+        path: PathBuf,
+        line: usize,
+        reason: &'static str,
+    },
 }
 
 impl fmt::Display for FacetStoreError {
@@ -45,6 +56,11 @@ impl fmt::Display for FacetStoreError {
                 "facet entity-link repair completion marker is empty or malformed: {}",
                 path.display()
             ),
+            Self::MalformedObservation { path, line, reason } => write!(
+                formatter,
+                "malformed observation at {} line {line}: {reason}",
+                path.display()
+            ),
         }
     }
 }
@@ -56,7 +72,8 @@ impl Error for FacetStoreError {
             Self::Path(error) => Some(error),
             Self::DeclarationNotObject { .. }
             | Self::EntityLinkNotObject { .. }
-            | Self::CorruptCompletionMarker { .. } => None,
+            | Self::CorruptCompletionMarker { .. }
+            | Self::MalformedObservation { .. } => None,
         }
     }
 }

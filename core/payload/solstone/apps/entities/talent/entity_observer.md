@@ -25,7 +25,7 @@ Below you'll find the pre-computed context for this observation run, including:
 - Active entities that appeared in today's content
 - Identity fields for each entity: name, type, description, and aliases
 - Full current observations, numbered from 0, which are the targets for update, drop, and keep operations
-- Fresh source evidence: sense context, transcript excerpts, related journal evidence, and knowledge-graph chunks
+- Fresh source evidence from each entity's detection-linked segments: detection summaries, matching sense context, and bounded transcript/percept excerpts with exact origin labels
 
 $observer_context
 

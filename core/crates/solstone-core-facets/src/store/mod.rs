@@ -46,7 +46,8 @@ pub use connections_horizon::{ConnectionsHorizon, refresh_connections_horizon};
 pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
-    save_detected_entity, update_detected_entity, upsert_detection_segment,
+    read_detected_entities_strict, save_detected_entity, update_detected_entity,
+    upsert_detection_segment,
 };
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) use detected_entity_activity::{cutoff_day, exclusion_tier};
@@ -84,9 +85,10 @@ pub use map::{list_declared_facet_names, list_facet_directories, list_facet_enti
 pub use news::{read_news_file, write_news_file};
 pub use observations::{
     ObservationEntityResolution, ObservationLookup, ObservationOperationCounts, add_observation,
-    count_observations, load_observations, load_observations_for_query, observation_day_counts,
-    read_facet_entity_observations, record_observation_ops, resolve_observation_entity_dir,
-    save_observations, write_facet_entity_observations,
+    count_observations, load_observations, load_observations_for_query, load_observations_strict,
+    observation_day_counts, read_facet_entity_observations, record_observation_ops,
+    record_observation_ops_strict, resolve_observation_entity_dir, save_observations,
+    write_facet_entity_observations,
 };
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) use observations::{retry_add_for_test, retry_record_for_test};

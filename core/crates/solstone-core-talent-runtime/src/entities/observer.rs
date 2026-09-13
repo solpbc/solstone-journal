@@ -3,7 +3,7 @@
 
 //! Entity-observer hook.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::Path;
 
@@ -22,6 +22,12 @@ pub struct ObserverState {
 
 type Counts = BTreeMap<&'static str, usize>;
 
+const MAX_ACTIVE_ENTITIES: usize = 6;
+const MAX_SOURCE_SEGMENTS: usize = 3;
+const MAX_SEGMENT_CONTEXT_CHARS: usize = 800;
+const MAX_ENTITY_CONTEXT_CHARS: usize = 3_800;
+const MAX_OBSERVER_CONTEXT_CHARS: usize = 24_000;
+
 fn empty_counts() -> Counts {
     BTreeMap::from([
         ("update", 0),
@@ -33,7 +39,13 @@ fn empty_counts() -> Counts {
     ])
 }
 
-fn write_outcome(journal: &Path, facet: &str, day: &str, counts: &Counts, error: Option<&str>) {
+fn write_outcome(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+    counts: &Counts,
+    error: Option<&str>,
+) -> Result<(), String> {
     let path = journal
         .join("facets")
         .join(facet)
@@ -52,11 +64,11 @@ fn write_outcome(journal: &Path, facet: &str, day: &str, counts: &Counts, error:
         "ts".to_owned(),
         Value::from(chrono::Utc::now().timestamp_millis()),
     );
-    // Preserve solstone/apps/entities/talent/entity_observer.py:55-64: stage-owned outcome sidecar.
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent).map_err(|write_error| write_error.to_string())?;
     }
-    let _ = fs::write(path, format!("{}\n", Value::Object(payload)));
+    fs::write(path, format!("{}\n", Value::Object(payload)))
+        .map_err(|write_error| write_error.to_string())
 }
 
 fn target_index(value: Option<&Value>) -> Option<i64> {
@@ -124,7 +136,7 @@ fn clean_relation(
     day: &str,
     entity_id: &str,
 ) -> Result<(Option<Value>, Option<&'static str>), String> {
-    if value.is_none() || matches!(op, "drop" | "keep") {
+    if value.is_none() || value.is_some_and(Value::is_null) || matches!(op, "drop" | "keep") {
         return Ok((None, None));
     }
     let Some(value) = value.and_then(Value::as_object) else {
@@ -283,6 +295,46 @@ fn merge_counts(counts: &mut Counts, source: &solstone_core_facets::ObservationO
     }
 }
 
+fn preflight_observation_snapshots(
+    journal: &Path,
+    facet: &str,
+    entries: &[Value],
+    attached_ids: &[String],
+) -> Result<(), String> {
+    let mut checked = BTreeSet::new();
+    for entry in entries {
+        let Some(entry) = entry.as_object() else {
+            continue;
+        };
+        let Some(entity_id) = entry.get("entity_id").and_then(Value::as_str) else {
+            continue;
+        };
+        if !attached_ids.iter().any(|attached| attached == entity_id)
+            || !entry
+                .get("operations")
+                .and_then(Value::as_array)
+                .is_some_and(|operations| !operations.is_empty())
+            || !checked.insert(entity_id.to_owned())
+        {
+            continue;
+        }
+        let relationship_dir =
+            match solstone_core_facets::resolve_observation_entity_dir(journal, facet, entity_id)
+                .map_err(|error| error.to_string())?
+            {
+                solstone_core_facets::ObservationEntityResolution::Resolved { entity_dir } => {
+                    entity_dir
+                }
+                solstone_core_facets::ObservationEntityResolution::NoSuchEntity => {
+                    entity_id.to_owned()
+                }
+            };
+        solstone_core_facets::load_observations_strict(journal, facet, &relationship_dir)
+            .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
 pub fn gate(prepared: &PreparedTalent, _: &ExecutionContext) -> Result<GateDecision, StageError> {
     let day = prepared
         .config
@@ -415,6 +467,7 @@ pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Res
             return Err("entities is not a list".to_owned());
         };
         let (ids, entities) = attached_entities(journal, facet)?;
+        preflight_observation_snapshots(journal, facet, entries, &ids)?;
         for entry in entries {
             let Some(entry) = entry.as_object() else {
                 continue;
@@ -453,7 +506,7 @@ pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Res
             if clean.is_empty() {
                 continue;
             }
-            match solstone_core_facets::record_observation_ops(
+            match solstone_core_facets::record_observation_ops_strict(
                 journal,
                 facet,
                 entity_id,
@@ -472,98 +525,376 @@ pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Res
     if let Err(detail) = result {
         error = Some(detail);
     }
-    write_outcome(journal, facet, day, &counts, error.as_deref());
-    Ok(())
+    write_outcome(journal, facet, day, &counts, error.as_deref())
 }
 
-fn assemble_observer_context(journal: &Path, facet: &str, day: &str) -> Result<String, String> {
-    let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
-        .map_err(|error| error.to_string())?;
-    let detected = solstone_core_facets::read_detected_entities(journal, facet, day)
-        .map_err(|error| error.to_string())?;
-    let mut active = Vec::new();
-    for row in detected {
-        let Some(name) = row.get("name").and_then(Value::as_str) else {
-            continue;
-        };
-        let candidates = scoped
-            .iter()
-            .map(
-                |entity| solstone_core_entity_matching::EntityNameCandidate {
-                    id: Some(entity.entity_id.clone()),
-                    name: entity
-                        .identity
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default()
-                        .to_owned(),
-                    aka: Vec::new(),
-                    emails: Vec::new(),
-                },
-            )
-            .collect::<Vec<_>>();
-        if let Some(found) =
-            solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0)
-        {
-            active.push((scoped[found.candidate_index].clone(), row));
-        }
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SegmentOrigin {
+    label: String,
+    segment: String,
+    stream: String,
+}
+
+fn valid_segment_key(value: &str) -> bool {
+    let Some((_, duration)) = value.split_once('_') else {
+        return false;
+    };
+    solstone_core_format::segment::segment_parse(value).is_some()
+        && duration.parse::<u64>().is_ok_and(|duration| duration > 0)
+}
+
+fn parse_segment_origin(label: &str, day: &str) -> Result<SegmentOrigin, &'static str> {
+    let parts = label.split('/').collect::<Vec<_>>();
+    let (origin_day, stream, segment) = match parts.as_slice() {
+        [origin_day, segment] => (
+            *origin_day,
+            solstone_core_journal_io::DEFAULT_STREAM,
+            *segment,
+        ),
+        [origin_day, stream, segment] if !stream.is_empty() => (*origin_day, *stream, *segment),
+        _ => return Err("unsupported origin shape"),
+    };
+    if origin_day != day {
+        return Err("origin belongs to another day");
     }
-    active.sort_by(|left, right| left.0.entity_id.cmp(&right.0.entity_id));
-    active.dedup_by(|left, right| left.0.entity_id == right.0.entity_id);
-    if active.is_empty() {
-        return Ok("No active entities found for this day.".to_owned());
+    if stream != solstone_core_journal_io::DEFAULT_STREAM
+        && solstone_core_journal_io::StreamName::parse(stream).is_err()
+    {
+        return Err("invalid stream name");
     }
-    let total = active.len();
-    let mut lines = vec![
-        "# Entity Observer Context".to_owned(),
-        String::new(),
-        format!("## Facet: {facet}"),
-        format!("## Day: {day}"),
-        format!("## Active Entities: {} of {total} active", total.min(6)),
-        String::new(),
-        "### Entities".to_owned(),
-        String::new(),
-    ];
-    for (index, (entity, _)) in active.into_iter().take(6).enumerate() {
-        if index > 0 {
-            lines.extend([String::new(), "---".to_owned(), String::new()]);
+    if !valid_segment_key(segment) {
+        return Err("invalid segment key");
+    }
+    Ok(SegmentOrigin {
+        label: label.to_owned(),
+        segment: segment.to_owned(),
+        stream: stream.to_owned(),
+    })
+}
+
+fn truncate_chars(value: &str, maximum: usize) -> String {
+    if value.chars().count() <= maximum {
+        return value.to_owned();
+    }
+    const MARKER: &str = "\n[truncated]";
+    let keep = maximum.saturating_sub(MARKER.chars().count());
+    value
+        .chars()
+        .take(keep)
+        .chain(MARKER.chars().take(maximum.saturating_sub(keep)))
+        .collect()
+}
+
+fn sense_evidence(segment_dir: &Path, matching_slugs: &BTreeSet<String>) -> Vec<String> {
+    let path = segment_dir.join("talents/sense.json");
+    if !path.exists() {
+        return vec!["- Sense: unavailable (missing)".to_owned()];
+    }
+    let contents = match fs::read_to_string(&path) {
+        Ok(contents) => contents,
+        Err(error) => return vec![format!("- Sense: unavailable (read error: {error})")],
+    };
+    let sense = match serde_json::from_str::<Value>(&contents) {
+        Ok(Value::Object(sense)) => sense,
+        _ => return vec!["- Sense: unavailable (malformed JSON object)".to_owned()],
+    };
+    let mut lines = Vec::new();
+    match sense.get("activity_summary").and_then(Value::as_str) {
+        Some(summary) if !summary.trim().is_empty() => {
+            lines.push(format!("- Segment activity summary: {}", summary.trim()));
         }
-        let name = entity
-            .identity
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or(&entity.entity_id);
-        lines.push(format!("#### {name} ({})", entity.entity_id));
+        _ => lines.push("- Segment activity summary: unavailable".to_owned()),
+    }
+    let contexts = sense
+        .get("entities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_object)
+        .filter(|row| {
+            row.get("name")
+                .and_then(Value::as_str)
+                .map(solstone_core_entity_matching::entity_slug)
+                .is_some_and(|slug| matching_slugs.contains(&slug))
+        })
+        .filter_map(|row| row.get("context").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|context| !context.is_empty())
+        .collect::<BTreeSet<_>>();
+    if contexts.is_empty() {
+        lines.push("- Matching sense context: unavailable".to_owned());
+    } else {
+        lines.extend(
+            contexts
+                .into_iter()
+                .map(|context| format!("- Matching sense context: {context}")),
+        );
+    }
+    lines
+}
+
+fn segment_evidence(
+    journal: &Path,
+    day: &str,
+    origin: &SegmentOrigin,
+    matching_slugs: &BTreeSet<String>,
+) -> String {
+    let mut lines = vec![format!("##### Source origin: {}", origin.label)];
+    let Some(segment_dir) = solstone_core_system_health::find_segment_dir(
+        journal,
+        day,
+        &origin.segment,
+        Some(&origin.stream),
+    ) else {
+        lines.push("- Source: unavailable (segment missing)".to_owned());
+        return truncate_chars(&lines.join("\n"), MAX_SEGMENT_CONTEXT_CHARS);
+    };
+    lines.extend(sense_evidence(&segment_dir, matching_slugs));
+    let source_config = Map::from_iter([
+        ("transcripts".to_owned(), Value::Bool(true)),
+        ("percepts".to_owned(), Value::Bool(true)),
+        ("talents".to_owned(), Value::Bool(false)),
+    ]);
+    let (source, counts) = crate::transcript::load_segment_transcript(
+        journal,
+        day,
+        &origin.segment,
+        Some(&origin.stream),
+        &source_config,
+    );
+    if counts.total() == 0 {
+        lines.push("- Transcript/percept evidence: unavailable or empty".to_owned());
+    } else {
         lines.push(format!(
+            "- Source records: {} transcript, {} percept",
+            counts.transcripts, counts.percepts
+        ));
+        lines.push(source);
+    }
+    truncate_chars(&lines.join("\n"), MAX_SEGMENT_CONTEXT_CHARS)
+}
+
+fn render_entity_packet(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+    entity: &solstone_core_facets::ScopedFacetEntity,
+    rows: &[Value],
+) -> Result<String, String> {
+    let name = entity
+        .identity
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or(&entity.entity_id);
+    let mut matching_slugs = BTreeSet::from([solstone_core_entity_matching::entity_slug(name)]);
+    let mut summaries = BTreeSet::new();
+    let mut evidence_status = Vec::new();
+    let mut origins = BTreeMap::<String, SegmentOrigin>::new();
+    for (row_index, row) in rows.iter().enumerate() {
+        let row_number = row_index + 1;
+        if let Some(row_name) = row.get("name").and_then(Value::as_str) {
+            matching_slugs.insert(solstone_core_entity_matching::entity_slug(row_name));
+        }
+        match row.get("description").and_then(Value::as_str) {
+            Some(summary) if !summary.trim().is_empty() => {
+                summaries.insert(summary.trim().to_owned());
+            }
+            _ => evidence_status.push(format!("detection row {row_number}: summary unavailable")),
+        }
+        match row.get("segments") {
+            None => evidence_status.push(format!(
+                "detection row {row_number}: no linked source origins"
+            )),
+            Some(Value::Array(segments)) => {
+                for (origin_index, value) in segments.iter().enumerate() {
+                    let Some(label) = value.as_str().filter(|label| !label.trim().is_empty())
+                    else {
+                        evidence_status.push(format!(
+                            "detection row {row_number} origin {}: rejected non-string or blank origin",
+                            origin_index + 1
+                        ));
+                        continue;
+                    };
+                    match parse_segment_origin(label, day) {
+                        Ok(origin) => {
+                            origins.entry(origin.label.clone()).or_insert(origin);
+                        }
+                        Err(reason) => evidence_status.push(format!(
+                            "detection row {row_number} origin {}: rejected ({reason})",
+                            json!(label)
+                        )),
+                    }
+                }
+            }
+            Some(_) => evidence_status.push(format!(
+                "detection row {row_number}: rejected non-array segments field"
+            )),
+        }
+    }
+    let mut selected_origins = origins.into_values().collect::<Vec<_>>();
+    selected_origins.sort_by(|left, right| {
+        right
+            .segment
+            .cmp(&left.segment)
+            .then_with(|| right.label.cmp(&left.label))
+    });
+    let origin_total = selected_origins.len();
+    selected_origins.truncate(MAX_SOURCE_SEGMENTS);
+    if origin_total > MAX_SOURCE_SEGMENTS {
+        evidence_status.push(format!(
+            "selected newest {MAX_SOURCE_SEGMENTS} of {origin_total} valid origins"
+        ));
+    }
+    if selected_origins.is_empty() {
+        evidence_status.push("no usable source origins".to_owned());
+    } else {
+        evidence_status.push(format!(
+            "{} source origin(s) selected",
+            selected_origins.len()
+        ));
+    }
+
+    let mut lines = vec![
+        format!("#### {name} ({})", entity.entity_id),
+        format!(
             "- Type: {}",
             entity
                 .identity
                 .get("type")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
-        ));
-        lines.push(format!(
+        ),
+        format!(
             "- Description: {}",
             entity
                 .identity
                 .get("description")
                 .and_then(Value::as_str)
                 .unwrap_or_default()
-        ));
-        lines.extend([String::new(), "Current observations:".to_owned()]);
-        let observations =
-            solstone_core_facets::load_observations(journal, facet, &entity.relationship_dir)
-                .unwrap_or_default();
-        if observations.is_empty() {
-            lines.push("No current observations.".to_owned());
-        }
-        for (index, observation) in observations.iter().enumerate() {
-            if let Some(rendered) = observation_context(index, observation) {
-                lines.push(rendered);
-            }
+        ),
+        format!("- Evidence status: {}", evidence_status.join("; ")),
+        String::new(),
+        "Detection summaries:".to_owned(),
+    ];
+    if summaries.is_empty() {
+        lines.push("No usable detection summaries.".to_owned());
+    } else {
+        lines.extend(summaries.into_iter().map(|summary| format!("- {summary}")));
+    }
+    lines.extend([String::new(), "Fresh source evidence:".to_owned()]);
+    if selected_origins.is_empty() {
+        lines.push("No source excerpts available.".to_owned());
+    } else {
+        for origin in selected_origins {
+            lines.push(segment_evidence(journal, day, &origin, &matching_slugs));
         }
     }
-    Ok(lines.join("\n").chars().take(24_000).collect())
+    lines.extend([String::new(), "Current observations:".to_owned()]);
+    let observations =
+        solstone_core_facets::load_observations_strict(journal, facet, &entity.relationship_dir)
+            .map_err(|error| error.to_string())?;
+    if observations.is_empty() {
+        lines.push("No current observations.".to_owned());
+    } else {
+        for (index, observation) in observations.iter().enumerate() {
+            let rendered = observation_context(index, observation).ok_or_else(|| {
+                format!(
+                    "strict observation row for {} could not be rendered",
+                    entity.entity_id
+                )
+            })?;
+            lines.push(rendered);
+        }
+    }
+    let packet = lines.join("\n");
+    let packet_chars = packet.chars().count();
+    if packet_chars > MAX_ENTITY_CONTEXT_CHARS {
+        return Err(format!(
+            "entity observer context for {} is {packet_chars} characters; maximum is {MAX_ENTITY_CONTEXT_CHARS}",
+            entity.entity_id
+        ));
+    }
+    Ok(packet)
+}
+
+fn assemble_observer_context(journal: &Path, facet: &str, day: &str) -> Result<String, String> {
+    let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
+        .map_err(|error| error.to_string())?;
+    let detected = solstone_core_facets::read_detected_entities_strict(journal, facet, day)
+        .map_err(|error| error.to_string())?;
+    let candidates = scoped
+        .iter()
+        .map(
+            |entity| solstone_core_entity_matching::EntityNameCandidate {
+                id: Some(entity.entity_id.clone()),
+                name: entity
+                    .identity
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_owned(),
+                aka: entity
+                    .identity
+                    .get("aka")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect(),
+                emails: Vec::new(),
+            },
+        )
+        .collect::<Vec<_>>();
+    let mut active =
+        BTreeMap::<String, (solstone_core_facets::ScopedFacetEntity, Vec<Value>)>::new();
+    for row in detected {
+        let name = row
+            .get("name")
+            .and_then(Value::as_str)
+            .expect("strict detected rows have names");
+        if let Some(found) =
+            solstone_core_entity_matching::find_matching_entity(name, &candidates, 90.0)
+        {
+            let entity = scoped[found.candidate_index].clone();
+            active
+                .entry(entity.entity_id.clone())
+                .or_insert_with(|| (entity, Vec::new()))
+                .1
+                .push(row);
+        }
+    }
+    if active.is_empty() {
+        return Ok("No active entities found for this day.".to_owned());
+    }
+    let total = active.len();
+    let selected = active
+        .into_values()
+        .take(MAX_ACTIVE_ENTITIES)
+        .collect::<Vec<_>>();
+    let mut sections = Vec::with_capacity(selected.len());
+    for (entity, rows) in &selected {
+        sections.push(render_entity_packet(journal, facet, day, entity, rows)?);
+    }
+    let mut context = [
+        "# Entity Observer Context".to_owned(),
+        String::new(),
+        format!("## Facet: {facet}"),
+        format!("## Day: {day}"),
+        format!("## Active Entities: {} of {total} active", sections.len()),
+        String::new(),
+        "### Entities".to_owned(),
+        String::new(),
+    ]
+    .join("\n");
+    context.push_str(&sections.join("\n\n---\n\n"));
+    let context_chars = context.chars().count();
+    if context_chars > MAX_OBSERVER_CONTEXT_CHARS {
+        return Err(format!(
+            "entity observer context is {context_chars} characters; maximum is {MAX_OBSERVER_CONTEXT_CHARS}"
+        ));
+    }
+    Ok(context)
 }
 
 // Keep the identifying quote distinct from both the full content and provenance.
@@ -589,6 +920,647 @@ fn observation_context(index: usize, observation: &Value) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const DAY: &str = "20260101";
+
+    fn attach(root: &Path, name: &str) {
+        solstone_core_facets::attach_or_reactivate_entity(root, "work", "Person", name, "")
+            .unwrap();
+    }
+
+    fn segment_path(root: &Path, origin: &str) -> std::path::PathBuf {
+        let path = root.join("chronicle").join(origin);
+        fs::create_dir_all(path.join("talents")).unwrap();
+        path
+    }
+
+    fn write_source_segment(
+        root: &Path,
+        origin: &str,
+        transcript: &str,
+        percept: &str,
+        activity: &str,
+        entity_context: &str,
+    ) {
+        let path = segment_path(root, origin);
+        fs::write(
+            path.join("audio.jsonl"),
+            json!({"start":"00:00:00","text":transcript}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            path.join("screen.jsonl"),
+            json!({"timestamp":0,"content":{"window":percept}}).to_string(),
+        )
+        .unwrap();
+        fs::write(
+            path.join("talents/sense.json"),
+            json!({
+                "activity_summary": activity,
+                "entities": [
+                    {"name":"Ada", "context":entity_context},
+                    {"name":"Grace", "context":"OTHER_ENTITY_CONTAMINANT"}
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    fn save_detection(root: &Path, name: &str, description: &str, origin: &str) {
+        solstone_core_facets::upsert_detection_segment(
+            root,
+            "work",
+            DAY,
+            origin,
+            &[solstone_core_facets::DetectedEntityInput {
+                entity_type: "Person".to_owned(),
+                name: name.to_owned(),
+                description: description.to_owned(),
+            }],
+        )
+        .unwrap();
+    }
+
+    fn observer_request(root: &Path) -> crate::GenerateRequest {
+        let mut prepared = PreparedTalent {
+            name: "entity_observer".to_owned(),
+            config: Map::from_iter([
+                ("day".to_owned(), Value::String(DAY.to_owned())),
+                ("facet".to_owned(), Value::String("work".to_owned())),
+                (
+                    "prompt".to_owned(),
+                    Value::String("$observer_context".to_owned()),
+                ),
+            ]),
+        };
+        let state = build(
+            &mut prepared,
+            &ExecutionContext {
+                journal: root.to_owned(),
+            },
+        )
+        .unwrap();
+        apply_prompt_override(&mut prepared, &state).unwrap();
+        crate::generate_request(&prepared)
+    }
+
+    fn request_text(request: &crate::GenerateRequest) -> String {
+        request
+            .contents
+            .iter()
+            .map(|part| match part {
+                crate::ContentPart::Text { text } => text.as_str(),
+                crate::ContentPart::Image { .. } => "",
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn actual_generate_request_contains_detection_linked_source_and_changes_with_it() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        let origin = "20260101/field/090000_60";
+        write_source_segment(
+            root.path(),
+            origin,
+            "TRANSCRIPT_SENTINEL durable expertise in orbital mechanics",
+            "PERCEPT_SENTINEL planning window",
+            "ACTIVITY_SENTINEL reviewed launch architecture",
+            "SENSE_SENTINEL explained the launch constraint",
+        );
+        save_detection(root.path(), "Ada", "UNCHANGED_DETECTION", origin);
+
+        let first = observer_request(root.path());
+        let first_text = request_text(&first);
+        for sentinel in [
+            "TRANSCRIPT_SENTINEL",
+            "PERCEPT_SENTINEL",
+            "ACTIVITY_SENTINEL",
+            "SENSE_SENTINEL",
+            "UNCHANGED_DETECTION",
+            origin,
+        ] {
+            assert!(first_text.contains(sentinel), "missing {sentinel}");
+        }
+        assert!(!first_text.contains("OTHER_ENTITY_CONTAMINANT"));
+
+        let path = root.path().join("chronicle").join(origin);
+        fs::write(
+            path.join("audio.jsonl"),
+            r#"{"start":"00:00:00","text":"CHANGED_SOURCE_SENTINEL durable launch preference"}"#,
+        )
+        .unwrap();
+        let second = observer_request(root.path());
+        let second_text = request_text(&second);
+        assert_ne!(first.contents, second.contents);
+        assert!(second_text.contains("CHANGED_SOURCE_SENTINEL"));
+        assert!(second_text.contains("UNCHANGED_DETECTION"));
+    }
+
+    #[test]
+    fn origin_resolution_is_exact_and_partial_failures_stay_visible() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        write_source_segment(
+            root.path(),
+            "20260101/090000_60",
+            "DIRECT_SENTINEL",
+            "direct percept",
+            "direct activity",
+            "direct context",
+        );
+        write_source_segment(
+            root.path(),
+            "20260101/field/090000_60",
+            "COLLIDING_NAMED_SENTINEL",
+            "named percept",
+            "named activity",
+            "named context",
+        );
+        write_source_segment(
+            root.path(),
+            "090000_60",
+            "TRAVERSAL_SENTINEL",
+            "traversal percept",
+            "traversal activity",
+            "traversal context",
+        );
+        let detected_path = root.path().join("facets/work/entities/20260101.jsonl");
+        fs::create_dir_all(detected_path.parent().unwrap()).unwrap();
+        fs::write(
+            detected_path,
+            format!(
+                "{}\n",
+                json!({
+                    "id":"ada", "type":"Person", "name":"Ada",
+                    "description":"summary", "segments":[42, "20251231/080000_60", "20260101/bad", "20260101/../090000_60", "20260101/090000_60"]
+                })
+            ),
+        )
+        .unwrap();
+
+        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(context.contains("DIRECT_SENTINEL"));
+        assert!(!context.contains("COLLIDING_NAMED_SENTINEL"));
+        assert!(!context.contains("TRAVERSAL_SENTINEL"));
+        assert!(context.contains("rejected non-string or blank origin"));
+        assert!(context.contains("origin belongs to another day"));
+        assert!(context.contains("invalid segment key"));
+        assert!(context.contains("invalid stream name"));
+    }
+
+    #[test]
+    fn multiple_rows_union_newest_origins_and_keep_each_summary_once() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        for (origin, sentinel) in [
+            ("20260101/field/080000_60", "OLD_EXCLUDED"),
+            ("20260101/090000_60", "NINE_INCLUDED"),
+            ("20260101/field/100000_60", "TEN_INCLUDED"),
+            ("20260101/110000_60", "ELEVEN_INCLUDED"),
+        ] {
+            write_source_segment(root.path(), origin, sentinel, "p", "a", "c");
+        }
+        let detected_path = root.path().join("facets/work/entities/20260101.jsonl");
+        fs::create_dir_all(detected_path.parent().unwrap()).unwrap();
+        let rows = [
+            json!({"id":"ada-1","type":"Person","name":"Ada","description":"SUMMARY_ONE","segments":["20260101/field/080000_60","20260101/field/100000_60"]}),
+            json!({"id":"ada-2","type":"Person","name":"Ada","description":"SUMMARY_TWO","segments":["20260101/090000_60","20260101/110000_60","20260101/110000_60"]}),
+        ];
+        fs::write(
+            detected_path,
+            rows.iter()
+                .map(|row| row.to_string() + "\n")
+                .collect::<String>(),
+        )
+        .unwrap();
+
+        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert_eq!(context.matches("SUMMARY_ONE").count(), 1);
+        assert_eq!(context.matches("SUMMARY_TWO").count(), 1);
+        for sentinel in ["NINE_INCLUDED", "TEN_INCLUDED", "ELEVEN_INCLUDED"] {
+            assert!(context.contains(sentinel), "missing {sentinel}");
+        }
+        assert!(!context.contains("OLD_EXCLUDED"));
+        assert!(context.contains("selected newest 3 of 4 valid origins"));
+    }
+
+    #[test]
+    fn supported_originless_row_survives_beside_valid_evidence() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        solstone_core_facets::save_detected_entity(
+            root.path(),
+            "work",
+            DAY,
+            "Person",
+            "Ada",
+            "originless summary",
+        )
+        .unwrap();
+        let origin = "20260101/field/090000_60";
+        write_source_segment(root.path(), origin, "GRACE_SOURCE", "p", "a", "c");
+        save_detection(root.path(), "Grace", "with source", origin);
+
+        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(context.contains("originless summary"));
+        assert!(context.contains("no linked source origins"));
+        assert!(context.contains("GRACE_SOURCE"));
+    }
+
+    #[test]
+    fn invalid_optional_detection_evidence_is_visible_without_hiding_siblings() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        let origin = "20260101/field/090000_60";
+        write_source_segment(root.path(), origin, "GRACE_VALID_SOURCE", "p", "a", "c");
+        let detected_path = root.path().join("facets/work/entities/20260101.jsonl");
+        fs::create_dir_all(detected_path.parent().unwrap()).unwrap();
+        let rows = [
+            json!({"id":"ada","type":"Person","name":"Ada","description":null,"segments":{"bad":true}}),
+            json!({"id":"grace","type":"Person","name":"Grace","description":"valid summary","segments":[origin]}),
+        ];
+        fs::write(
+            detected_path,
+            rows.iter()
+                .map(|row| row.to_string() + "\n")
+                .collect::<String>(),
+        )
+        .unwrap();
+
+        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(context.contains("summary unavailable"));
+        assert!(context.contains("rejected non-array segments field"));
+        assert!(context.contains("GRACE_VALID_SOURCE"));
+    }
+
+    #[test]
+    fn nullable_relations_persist_and_malformed_relations_do_not() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[{
+                "op":"add", "target_index":null, "content":"Original durable fact.",
+                "target_quote":null, "reasoning":"new fact", "relation":null
+            }]}], "summary":"added"})
+            .to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[{
+                "op":"update", "target_index":0, "content":"Updated durable fact.",
+                "target_quote":"Original durable fact.", "reasoning":"correction", "relation":null
+            }]}], "summary":"updated"})
+            .to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        let before = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert_eq!(before[0]["content"], "Updated durable fact.");
+
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[{
+                "op":"add", "target_index":null, "content":"Must not persist.",
+                "target_quote":null, "reasoning":"bad relation", "relation":"malformed"
+            }]}], "summary":"bad"})
+            .to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        assert_eq!(
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
+            before
+        );
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["skipped"], 1);
+    }
+
+    #[test]
+    fn invalid_duplicate_and_mismatched_targets_are_guarded() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "ada",
+            "Guarded durable fact.",
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+        let original = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[
+                {"op":"update","target_index":true,"content":"bad","target_quote":"Guarded durable fact.","reasoning":"bad index","relation":null},
+                {"op":"update","target_index":0,"content":"bad","target_quote":"mismatch","reasoning":"bad quote","relation":null}
+            ]}],"summary":"guards"}).to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        assert_eq!(
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
+            original
+        );
+        let outcome_path = root
+            .path()
+            .join("facets/work/entities/20260101_observer_outcome.json");
+        let first_outcome: Value =
+            serde_json::from_slice(&fs::read(&outcome_path).unwrap()).unwrap();
+        assert_eq!(first_outcome["skipped"], 2);
+
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[
+                {"op":"keep","target_index":0,"content":null,"target_quote":"Guarded durable fact.","reasoning":null,"relation":null},
+                {"op":"drop","target_index":0,"content":null,"target_quote":"Guarded durable fact.","reasoning":"duplicate","relation":null}
+            ]}],"summary":"duplicates"}).to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        assert_eq!(
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
+            original
+        );
+        let outcome: Value = serde_json::from_slice(&fs::read(outcome_path).unwrap()).unwrap();
+        assert_eq!(outcome["keep"], 1);
+        assert_eq!(outcome["skipped"], 1);
+    }
+
+    #[test]
+    fn shipped_schema_accepts_null_and_rejects_malformed_relation() {
+        let schema_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/apps/entities/talent/entity_observer.schema.json");
+        let schema: Value =
+            serde_json::from_str(&fs::read_to_string(schema_path).unwrap()).unwrap();
+        let validator = jsonschema::validator_for(&schema).unwrap();
+        let output = |relation| {
+            json!({
+                "entities":[{"entity_id":"ada","operations":[{
+                    "op":"add", "target_index":null, "content":"Fact", "target_quote":null,
+                    "reasoning":"new", "relation":relation
+                }]}], "summary":"result"
+            })
+        };
+        assert!(validator.is_valid(&output(Value::Null)));
+        assert!(!validator.is_valid(&output(json!("malformed"))));
+    }
+
+    #[test]
+    fn strict_snapshot_refusal_is_durable_and_never_rewrites_observations() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        let path = root
+            .path()
+            .join("facets/work/entities/ada/observations.jsonl");
+        fs::write(&path, "{\"content\":\"valid\"}\n{}\n").unwrap();
+        let before = fs::read(&path).unwrap();
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[{
+                "op":"add", "target_index":null, "content":"Must not persist",
+                "target_quote":null, "reasoning":"new", "relation":null
+            }]}], "summary":"result"})
+            .to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        assert_eq!(fs::read(&path).unwrap(), before);
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            outcome["error"]
+                .as_str()
+                .unwrap()
+                .contains("malformed observation")
+        );
+    }
+
+    #[test]
+    fn strict_preflight_prevents_partial_multi_entity_writes() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        let grace_path = root
+            .path()
+            .join("facets/work/entities/grace/observations.jsonl");
+        fs::write(&grace_path, "{}\n").unwrap();
+        apply_result(
+            root.path(),
+            &json!({"entities":[
+                {"entity_id":"ada","operations":[{
+                    "op":"add", "target_index":null, "content":"Must not partially persist",
+                    "target_quote":null, "reasoning":"new", "relation":null
+                }]},
+                {"entity_id":"grace","operations":[{
+                    "op":"add", "target_index":null, "content":"Also blocked",
+                    "target_quote":null, "reasoning":"new", "relation":null
+                }]}
+            ], "summary":"result"})
+            .to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap();
+        assert!(
+            solstone_core_facets::load_observations(root.path(), "work", "ada")
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(fs::read_to_string(grace_path).unwrap(), "{}\n");
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert!(
+            outcome["error"]
+                .as_str()
+                .unwrap()
+                .contains("malformed observation")
+        );
+    }
+
+    #[test]
+    fn strict_assembly_refuses_directory_and_json_valid_unusable_rows() {
+        let directory_case = tempfile::tempdir().unwrap();
+        attach(directory_case.path(), "Ada");
+        fs::create_dir_all(
+            directory_case
+                .path()
+                .join("facets/work/entities/20260101.jsonl"),
+        )
+        .unwrap();
+        assert!(assemble_observer_context(directory_case.path(), "work", DAY).is_err());
+
+        let detected_case = tempfile::tempdir().unwrap();
+        attach(detected_case.path(), "Ada");
+        fs::write(
+            detected_case
+                .path()
+                .join("facets/work/entities/20260101.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+        assert!(assemble_observer_context(detected_case.path(), "work", DAY).is_err());
+
+        for malformed in ["\"scalar\"\n", "[]\n", "{}\n", "{\"content\":\"  \"}\n"] {
+            let observation_case = tempfile::tempdir().unwrap();
+            attach(observation_case.path(), "Ada");
+            solstone_core_facets::save_detected_entity(
+                observation_case.path(),
+                "work",
+                DAY,
+                "Person",
+                "Ada",
+                "summary",
+            )
+            .unwrap();
+            fs::write(
+                observation_case
+                    .path()
+                    .join("facets/work/entities/ada/observations.jsonl"),
+                malformed,
+            )
+            .unwrap();
+            assert!(assemble_observer_context(observation_case.path(), "work", DAY).is_err());
+        }
+    }
+
+    #[test]
+    fn failed_outcome_publication_returns_a_caller_visible_error() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        let observations = root
+            .path()
+            .join("facets/work/entities/ada/observations.jsonl");
+        fs::write(&observations, "{}\n").unwrap();
+        fs::create_dir_all(
+            root.path()
+                .join("facets/work/entities/20260101_observer_outcome.json"),
+        )
+        .unwrap();
+        let before = fs::read(&observations).unwrap();
+        let error = apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[{
+                "op":"add", "target_index":null, "content":"Must not persist",
+                "target_quote":null, "reasoning":"new", "relation":null
+            }]}], "summary":"result"})
+            .to_string(),
+            "work",
+            DAY,
+        )
+        .unwrap_err();
+        assert!(!error.is_empty());
+        assert_eq!(fs::read(&observations).unwrap(), before);
+    }
+
+    #[test]
+    fn empty_result_is_a_successful_no_change() {
+        let root = tempfile::tempdir().unwrap();
+        apply_result(
+            root.path(),
+            r#"{"entities":[],"summary":"No durable changes."}"#,
+            "work",
+            DAY,
+        )
+        .unwrap();
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        for key in ["add", "update", "drop", "keep", "skipped"] {
+            assert_eq!(outcome[key], 0, "nonzero {key}");
+        }
+        assert!(outcome["error"].is_null());
+    }
+
+    #[test]
+    fn entity_selection_and_context_bounds_do_not_erase_the_sixth_packet() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..7 {
+            let name = format!("Person {index}");
+            attach(root.path(), &name);
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                &name,
+                &format!("SUMMARY_{index}_{}", "é😀".repeat(500)),
+            )
+            .unwrap();
+        }
+        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(context.chars().count() <= MAX_OBSERVER_CONTEXT_CHARS);
+        for index in 0..6 {
+            assert!(context.contains(&format!("#### Person {index}")));
+            assert!(context.contains("Evidence status:"));
+        }
+        assert!(!context.contains("#### Person 6"));
+        assert!(context.contains("6 of 7 active"));
+    }
+
+    #[test]
+    fn over_budget_observation_inventory_refuses_generation() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        solstone_core_facets::save_detected_entity(
+            root.path(),
+            "work",
+            DAY,
+            "Person",
+            "Ada",
+            "summary",
+        )
+        .unwrap();
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "ada",
+            &"é😀".repeat(2_000),
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+        let error = assemble_observer_context(root.path(), "work", DAY).unwrap_err();
+        assert!(error.contains("maximum is 3800"));
+    }
 
     #[test]
     fn context_quote_is_bounded_verbatim_and_separate_from_source() {

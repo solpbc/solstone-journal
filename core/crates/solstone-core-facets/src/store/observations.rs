@@ -139,18 +139,77 @@ pub fn load_observations(
     facet_dir: &str,
     entity_dir: &str,
 ) -> Result<Vec<Value>, FacetStoreError> {
+    load_observations_with_mode(
+        journal_root,
+        facet_dir,
+        entity_dir,
+        ObservationReadMode::Tolerant,
+    )
+}
+
+/// Load observations only when every nonblank row is a stable observer target.
+pub fn load_observations_strict(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+) -> Result<Vec<Value>, FacetStoreError> {
+    load_observations_with_mode(
+        journal_root,
+        facet_dir,
+        entity_dir,
+        ObservationReadMode::Strict,
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ObservationReadMode {
+    Tolerant,
+    Strict,
+}
+
+fn load_observations_with_mode(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+    mode: ObservationReadMode,
+) -> Result<Vec<Value>, FacetStoreError> {
+    let path = facet_entity_observations_path(journal_root, facet_dir, entity_dir)?;
     let Some(content) = read_facet_entity_observations(journal_root, facet_dir, entity_dir)? else {
         return Ok(Vec::new());
     };
-    Ok(content
-        .lines()
-        .filter_map(|line| {
-            let line = line.trim();
-            (!line.is_empty())
-                .then(|| serde_json::from_str::<Value>(line).ok())
-                .flatten()
-        })
-        .collect())
+    let mut observations = Vec::new();
+    for (index, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let parsed = match serde_json::from_str::<Value>(line) {
+            Ok(parsed) => parsed,
+            Err(_) if matches!(mode, ObservationReadMode::Tolerant) => continue,
+            Err(_) => {
+                return Err(FacetStoreError::MalformedObservation {
+                    path,
+                    line: index + 1,
+                    reason: "invalid JSON",
+                });
+            }
+        };
+        if matches!(mode, ObservationReadMode::Strict)
+            && !parsed
+                .as_object()
+                .and_then(|row| row.get("content"))
+                .and_then(Value::as_str)
+                .is_some_and(|content| !content.trim().is_empty())
+        {
+            return Err(FacetStoreError::MalformedObservation {
+                path,
+                line: index + 1,
+                reason: "expected an object with nonblank string content",
+            });
+        }
+        observations.push(parsed);
+    }
+    Ok(observations)
 }
 
 /// Atomically replace parsed facet-scoped observations as compact JSONL.
@@ -230,6 +289,42 @@ pub fn record_observation_ops(
     operations: &[Value],
     source_day: Option<&str>,
 ) -> Result<ObservationOperationCounts, ObservationWriteError> {
+    record_observation_ops_with_mode(
+        journal_root,
+        facet_dir,
+        entity_dir,
+        operations,
+        source_day,
+        ObservationReadMode::Tolerant,
+    )
+}
+
+/// Apply observation operations only after strictly validating the lock-held snapshot.
+pub fn record_observation_ops_strict(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+    operations: &[Value],
+    source_day: Option<&str>,
+) -> Result<ObservationOperationCounts, ObservationWriteError> {
+    record_observation_ops_with_mode(
+        journal_root,
+        facet_dir,
+        entity_dir,
+        operations,
+        source_day,
+        ObservationReadMode::Strict,
+    )
+}
+
+fn record_observation_ops_with_mode(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_dir: &str,
+    operations: &[Value],
+    source_day: Option<&str>,
+    mode: ObservationReadMode,
+) -> Result<ObservationOperationCounts, ObservationWriteError> {
     let resolved = match resolve_observation_entity_dir(journal_root, facet_dir, entity_dir) {
         Ok(ObservationEntityResolution::Resolved { entity_dir }) => entity_dir,
         Ok(ObservationEntityResolution::NoSuchEntity) => entity_dir.to_owned(),
@@ -237,7 +332,7 @@ pub fn record_observation_ops(
     };
     retry_record_operation(|| {
         let _trust = hold_facet_trust_lock(journal_root)?;
-        let snapshot = load_observations(journal_root, facet_dir, &resolved)?;
+        let snapshot = load_observations_with_mode(journal_root, facet_dir, &resolved, mode)?;
         let (observations, counts, changed) =
             apply_observation_ops(&snapshot, operations, source_day);
         if changed {

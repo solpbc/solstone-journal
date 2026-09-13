@@ -47,7 +47,7 @@ pub fn read_detected_entities(
     )
 }
 
-pub(super) fn read_detected_entities_strict(
+pub fn read_detected_entities_strict(
     journal_root: &Path,
     facet_dir: &str,
     day: &str,
@@ -72,6 +72,13 @@ fn read_detected_entities_with_mode(
         return Ok(Vec::new());
     }
     if path.is_dir() {
+        if matches!(mode, DetectedEntityReadMode::Strict) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("detected entity path is a directory: {}", path.display()),
+            )
+            .into());
+        }
         return Ok(Vec::new());
     }
     let contents = read_text(&path, String::new())
