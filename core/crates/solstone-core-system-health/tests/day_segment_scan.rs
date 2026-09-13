@@ -146,6 +146,80 @@ fn markdown_and_pdf_branches_preserve_audio_participation() {
 }
 
 #[test]
+fn local_images_are_pending_until_every_same_stem_sidecar_is_analyzed() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let captured = segment(root, Some("device_camera"), "094500_300");
+    write(&captured, "front.jpg", "image");
+    write(&captured, "rear.jpg", "image");
+    write(
+        &captured,
+        "front.jsonl",
+        "{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"depict\"}}\n{\"start\":\"00:00:00\",\"text\":\"front\"}\n",
+    );
+
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
+    assert_eq!(segments.len(), 1);
+    assert_eq!(segments[0].types, ["image"]);
+    assert_eq!(segments[0].data_state.0["image"], "pending");
+    assert!(segments[0].modality_input_mtime_ms["image"].is_some());
+    let completion = classify_segment_completion(
+        &segments
+            .iter()
+            .cloned()
+            .map(SegmentInput::from)
+            .collect::<Vec<_>>(),
+        &BTreeMap::new(),
+    );
+    assert_eq!(completion.not_sensed, 1);
+    assert_eq!(completion.not_thought, 0);
+
+    write(
+        &captured,
+        "rear.jsonl",
+        "{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"depict\"}}\n{\"start\":\"00:00:00\",\"text\":\"rear\"}\n",
+    );
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
+    assert_eq!(segments[0].data_state.0["image"], "analyzed");
+}
+
+#[test]
+fn imported_images_remain_outside_depict_health() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let imported = segment(root, Some("import.photos"), "100000_300");
+    write(&imported, "photo.jpg", "image");
+
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
+    assert!(segments.is_empty());
+}
+
+#[test]
+fn one_exhausted_image_does_not_hide_an_unprocessed_sibling() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let captured = segment(root, Some("device_camera"), "101500_300");
+    write(&captured, "front.jpg", "image");
+    write(&captured, "rear.jpg", "image");
+    write(
+        &captured,
+        "front.jsonl",
+        "{\"_solstone_processing\":{\"state\":\"failed\",\"handler\":\"depict\",\"attempts\":3}}\n",
+    );
+
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
+    assert_eq!(segments[0].data_state.0["image"], "pending");
+
+    write(
+        &captured,
+        "rear.jsonl",
+        "{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"depict\"}}\n{\"start\":\"00:00:00\",\"text\":\"rear\"}\n",
+    );
+    let (_, _, segments) = scan_day(&FilesystemSegmentSource, root, DAY, now()).unwrap();
+    assert_eq!(segments[0].data_state.0["image"], "failed_final");
+}
+
+#[test]
 fn raw_name_parse_drops_decorated_directory_but_keeps_canonical_sibling() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();

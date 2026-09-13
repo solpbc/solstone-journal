@@ -91,7 +91,7 @@ pub fn scan_day<S: SegmentSource>(
             .unwrap_or_default();
         let (data_state, modality_input_mtime_ms) =
             detect_data_state(segment.path(), parent_name, now)?;
-        let types = ["audio", "screen", "markdown", "browser"]
+        let types = ["audio", "screen", "image", "markdown", "browser"]
             .into_iter()
             .filter(|modality| data_state.0.contains_key(*modality))
             .map(str::to_owned)
@@ -203,6 +203,21 @@ pub(crate) fn detect_data_state(
         now,
     );
 
+    // Imported images have their own ingestion path and are deliberately not
+    // dispatched to depict. Local capture streams pair each raw image with a
+    // same-stem JSONL sidecar, and every image must carry an analysis row before
+    // the segment is sensed.
+    let image_raw_paths = if stream_parent_name.starts_with("import.") {
+        Vec::new()
+    } else {
+        files
+            .iter()
+            .filter(|path| media_kind_for(path) == Some(MediaKind::Image))
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+    let image = aggregate_image_state(segment_path, &image_raw_paths, now);
+
     let browser_analyzed = files
         .iter()
         .filter(|path| is_browser_jsonl(path))
@@ -230,6 +245,13 @@ pub(crate) fn detect_data_state(
             None
         };
         modality_input_mtime_ms.insert("screen".to_owned(), mtime);
+    }
+    if image != DataState::Absent {
+        states.insert("image".to_owned(), image.as_str().to_owned());
+        modality_input_mtime_ms.insert(
+            "image".to_owned(),
+            newest_input_mtime_ms(&image_raw_paths.iter().collect::<Vec<_>>()),
+        );
     }
     if browser_analyzed {
         states.insert(
@@ -301,6 +323,50 @@ fn is_screen_jsonl(path: &Path) -> bool {
 
 fn is_browser_jsonl(path: &Path) -> bool {
     file_name(path).is_some_and(|name| name.starts_with("browser_") && name.ends_with(".jsonl"))
+}
+
+fn aggregate_image_state(
+    segment_path: &Path,
+    image_raw_paths: &[PathBuf],
+    now: DateTime<Utc>,
+) -> DataState {
+    if image_raw_paths.is_empty() {
+        return DataState::Absent;
+    }
+    let states = image_raw_paths
+        .iter()
+        .map(|raw| {
+            let output = raw.with_extension("jsonl");
+            derive_modality_state(
+                segment_path,
+                "image",
+                jsonl_has_row_with_key(&output, vocab::IMAGE_ANALYSIS_ROW_KEY),
+                output.is_file(),
+                true,
+                read_processing_record(std::slice::from_ref(&output)).as_ref(),
+                now,
+            )
+        })
+        .collect::<Vec<_>>();
+    if states.contains(&DataState::Failed) {
+        return DataState::Failed;
+    }
+    if states.contains(&DataState::Analyzing) {
+        return DataState::Analyzing;
+    }
+    if states.contains(&DataState::Pending) {
+        return DataState::Pending;
+    }
+    if states.contains(&DataState::FailedFinal) {
+        return DataState::FailedFinal;
+    }
+    if states.iter().all(|state| *state == DataState::Empty) {
+        return DataState::Empty;
+    }
+    if states.iter().all(|state| *state == DataState::Purged) {
+        return DataState::Purged;
+    }
+    DataState::Analyzed
 }
 
 fn has_nonempty_text(path: &Path) -> bool {

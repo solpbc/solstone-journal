@@ -211,8 +211,11 @@ pub(crate) fn summarize_pipeline_day(
     match completion_for_day(journal_root, &day, now) {
         Ok(completion) => {
             set_exhausted(&mut summary, &completion);
+            if completion.not_sensed > 0 {
+                summary.anomalies.push(json!({"kind":"segments_not_sensed","not_sensed":completion.not_sensed,"total":completion.total}));
+            }
             if completion.not_thought > 0 {
-                summary.anomalies.push(json!({"kind":"segments_not_thought","not_thought":completion.not_thought,"not_sensed":completion.not_sensed,"total":completion.total}));
+                summary.anomalies.push(json!({"kind":"segments_not_thought","not_thought":completion.not_thought,"total":completion.total}));
             }
         }
         Err(error) => {
@@ -225,7 +228,12 @@ pub(crate) fn summarize_pipeline_day(
     let stale = summary.anomalies.iter().any(|value| {
         matches!(
             value.get("kind").and_then(Value::as_str),
-            Some("activity_agents_missing" | "daily_agents_missing" | "segments_not_thought")
+            Some(
+                "activity_agents_missing"
+                    | "daily_agents_missing"
+                    | "segments_not_sensed"
+                    | "segments_not_thought"
+            )
         )
     });
     let failure = summary
@@ -462,6 +470,23 @@ mod tests {
         fs::write(path.join("screen.jsonl"), "{}\n{\"timestamp\":0}\n").unwrap();
     }
 
+    fn image_segment(root: &Path, day: &str, segment: &str, analyzed: bool) {
+        let path = root
+            .join("chronicle")
+            .join(day)
+            .join("device_camera")
+            .join(segment);
+        fs::create_dir_all(&path).unwrap();
+        fs::write(path.join("photo.jpg"), "image").unwrap();
+        if analyzed {
+            fs::write(
+                path.join("photo.jsonl"),
+                "{\"_solstone_processing\":{\"state\":\"analyzed\",\"handler\":\"depict\"}}\n{\"start\":\"00:00:00\",\"text\":\"scene\"}\n",
+            )
+            .unwrap();
+        }
+    }
+
     fn exhausted_screen_segment(root: &Path, day: &str, segment: &str) {
         let path = root.join("chronicle").join(day).join(segment);
         fs::create_dir_all(&path).unwrap();
@@ -648,6 +673,51 @@ mod tests {
                 .iter()
                 .any(|entry| entry["kind"] == "activity_agents_missing")
         );
+    }
+
+    #[test]
+    fn image_waiting_for_depict_is_a_distinct_sensing_anomaly() {
+        let temporary = temporary();
+        let day = "20260410";
+        image_segment(temporary.path(), day, "120000_60", false);
+        write_log(
+            temporary.path(),
+            day,
+            "daily",
+            &[
+                json!({"event":"run.complete","day":day,"mode":"daily"}),
+                json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"device_camera","segment":"120000_60","density":"idle"}),
+            ],
+        );
+
+        let report =
+            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+        assert_eq!(report["status"], "stale");
+        assert_eq!(
+            report["anomalies"],
+            json!([{"kind":"segments_not_sensed","not_sensed":1,"total":1}])
+        );
+    }
+
+    #[test]
+    fn analyzed_image_with_completed_segment_progress_is_healthy() {
+        let temporary = temporary();
+        let day = "20260410";
+        image_segment(temporary.path(), day, "120000_60", true);
+        write_log(
+            temporary.path(),
+            day,
+            "daily",
+            &[
+                json!({"event":"run.complete","day":day,"mode":"daily"}),
+                json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"device_camera","segment":"120000_60","density":"idle"}),
+            ],
+        );
+
+        let report =
+            value(&summarize_pipeline_day(temporary.path(), now().date_naive(), now()).unwrap());
+        assert_eq!(report["status"], "healthy");
+        assert_eq!(report["anomalies"], json!([]));
     }
 
     #[test]
