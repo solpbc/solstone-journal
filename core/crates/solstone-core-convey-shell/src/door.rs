@@ -1066,22 +1066,6 @@ async fn serve_carrier(
             }
         }
     }
-    let refusals = connection.refusals();
-    if !refusals.is_empty() {
-        // warn, not debug: a per-stream refusal resets one stream and leaves
-        // the carrier up by design, so it reaches the client as a closed
-        // stream with no status and reached us as nothing at all until
-        // spl-rust started counting. `stream_limit` is the one a well-behaved
-        // peer provokes by holding more concurrent streams than the carrier
-        // admits, and it is otherwise invisible on both sides of the link.
-        log::warn!(
-            "paired-device carrier refused streams: stream_limit={} flow_control={} protocol={} internal={}",
-            refusals.stream_limit,
-            refusals.flow_control,
-            refusals.protocol,
-            refusals.internal
-        );
-    }
     if let Some((id, _, _)) = pairing_control {
         config.pairing_registry.release(id);
     }
