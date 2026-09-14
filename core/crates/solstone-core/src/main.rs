@@ -104,7 +104,8 @@ use solstone_core_system::lifecycle::{
 use solstone_core_system::process::ProcessInstance;
 mod thinking;
 use solstone_core_indexer_query::{
-    IndexAccessError, Order, SearchRequest, agents, coverage, search, search_counts,
+    IndexAccessError, Order, OwnerBoundary, QueryBoundary, SearchRequest, agents, coverage, search,
+    search_counts,
 };
 use solstone_core_indexer_store::db::{prune_by_paths, prune_chunks_by_stream, reset_index};
 use solstone_core_indexer_store::merge::{
@@ -6427,7 +6428,7 @@ fn run_indexer_search(options: IndexerSearchOptions) -> ExitCode {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    match search(&journal, &request, Local::now().date_naive()) {
+    match search(&journal, OwnerBoundary, &request, Local::now().date_naive()) {
         Ok(response) => {
             if json {
                 print_json(&response);
@@ -6453,7 +6454,7 @@ fn run_indexer_counts(options: IndexerCountsOptions) -> ExitCode {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    match search_counts(&journal, &request, Local::now().date_naive()) {
+    match search_counts(&journal, OwnerBoundary, &request, Local::now().date_naive()) {
         Ok(response) => {
             if json {
                 print_json(&response);
@@ -6471,7 +6472,7 @@ fn run_indexer_agents(options: IndexerReadOptions) -> ExitCode {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    match agents(&journal) {
+    match agents(&journal, QueryBoundary::Owner) {
         Ok(response) => {
             if options.json {
                 print_json(&response);
@@ -6491,7 +6492,7 @@ fn run_indexer_coverage(options: IndexerReadOptions) -> ExitCode {
         Ok(line) => line.path,
         Err(error) => return print_journal_error(error),
     };
-    match coverage(&journal) {
+    match coverage(&journal, QueryBoundary::Owner) {
         Ok(response) => {
             if options.json {
                 print_json(&response);

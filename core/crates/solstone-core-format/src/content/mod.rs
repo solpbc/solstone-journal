@@ -129,11 +129,35 @@ pub struct ScreenTalentRawScreen {
     pub tmux_chunk_indices: Vec<usize>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum AdmittedCategory {
+    Transcripts,
+    Entities,
+    Facets,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScopeBasis {
+    FacetOwned,
+    SegmentAssigned,
+    JournalWide,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexDisposition {
+    Admitted {
+        category: AdmittedCategory,
+        basis: ScopeBasis,
+    },
+    Excluded,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FamilyPattern {
     pub pattern: &'static str,
     pub family: Family,
     pub root: PatternRoot,
+    pub disposition: IndexDisposition,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -148,151 +172,220 @@ pub(crate) const INDEX_FAMILY_PATTERNS: &[FamilyPattern] = &[
         pattern: "*/talents/*.md",
         family: Family::Markdown,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::JournalWide,
+        },
     },
     FamilyPattern {
         pattern: "*/*/*/talents/sense.json",
         family: Family::Sense,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/*/*/talents/documents.json",
         family: Family::Documents,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/*/*/talents/screen.json",
         family: Family::Screen,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/talents/morning_briefing.json",
         family: Family::MorningBriefing,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/talents/*.jsonl",
         family: Family::DayAccumulator,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/*/*/talents/*.md",
         family: Family::Markdown,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
     },
     FamilyPattern {
         pattern: "*/*/*/talents/*/*.md",
         family: Family::Markdown,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "*/import.*/*/*_transcript.md",
         family: Family::Markdown,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
     },
     FamilyPattern {
         pattern: "*/import.*/*/imported.md",
         family: Family::Markdown,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::SegmentAssigned,
+        },
     },
     FamilyPattern {
         pattern: "*/*/*/browser_*.jsonl",
         family: Family::Browser,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.*/imported.jsonl",
         family: Family::StructuredImport,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.chatgpt/*/conversation_transcript.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.claude/*/conversation_transcript.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.gemini/*/conversation_transcript.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.text/*/conversation_transcript.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.chatgpt/*/imported_audio.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.claude/*/imported_audio.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "*/import.gemini/*/imported_audio.jsonl",
         family: Family::AiChat,
         root: PatternRoot::DayRooted,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "config/actions/*.jsonl",
         family: Family::ActionLog,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "facets/*/events/*.jsonl",
         family: Family::Event,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "facets/*/entities/*/observations.jsonl",
         family: Family::Observation,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Entities,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "facets/*/entities/*.jsonl",
         family: Family::FacetEntity,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Entities,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "facets/*/activities/*.jsonl",
         family: Family::Activity,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "facets/*/logs/*.jsonl",
         family: Family::ActionLog,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Excluded,
     },
     FamilyPattern {
         pattern: "facets/*/activities/*/*/*.md",
         family: Family::Markdown,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "facets/*/news/*.md",
         family: Family::Markdown,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::FacetOwned,
+        },
     },
     FamilyPattern {
         pattern: "reflections/weekly/*.md",
         family: Family::Markdown,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Facets,
+            basis: ScopeBasis::JournalWide,
+        },
     },
     FamilyPattern {
         pattern: "imports/*/summary.md",
         family: Family::Markdown,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Admitted {
+            category: AdmittedCategory::Transcripts,
+            basis: ScopeBasis::JournalWide,
+        },
     },
     FamilyPattern {
         pattern: "apps/*/talents/*.md",
         family: Family::Markdown,
         root: PatternRoot::Structural,
+        disposition: IndexDisposition::Excluded,
     },
 ];
 
@@ -370,6 +463,14 @@ pub fn classify(rel: &str) -> ContentResolution {
         Some(UnindexedReason::IndexedElsewhere) => ContentResolution::IndexedElsewhere,
         None => ContentResolution::Unrecognized,
     }
+}
+
+/// Return the matched family specification for authorization classification.
+///
+/// This deliberately ignores a sibling `shape.json`: sidecars select chunking,
+/// not who may see an already-indexed source.
+pub fn resolve_spec(rel: &str) -> Option<&'static FamilyPattern> {
+    CONTENT_RESOLVER.resolve_spec(rel)
 }
 
 pub fn patterns_for_root(root: PatternRoot) -> impl Iterator<Item = &'static FamilyPattern> {
@@ -1792,6 +1893,26 @@ not json
                 "-  (observed: 20250114)",
                 "- ",
             ]
+        );
+    }
+
+    #[test]
+    fn markdown_disposition_is_keyed_by_matched_pattern() {
+        assert_eq!(
+            resolve_spec("20260107/talents/day.md").unwrap().disposition,
+            IndexDisposition::Admitted {
+                category: AdmittedCategory::Facets,
+                basis: ScopeBasis::JournalWide,
+            }
+        );
+        assert_eq!(
+            resolve_spec("20260107/default/123456_300/talents/day.md")
+                .unwrap()
+                .disposition,
+            IndexDisposition::Admitted {
+                category: AdmittedCategory::Transcripts,
+                basis: ScopeBasis::SegmentAssigned,
+            }
         );
     }
 }

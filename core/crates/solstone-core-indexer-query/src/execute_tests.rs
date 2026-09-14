@@ -16,8 +16,11 @@ use crate::execute::{
 };
 use crate::test_support::reserve_temp_path;
 use crate::{
-    CompileOutcome, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, Order,
-    SearchRequest, compile_query, coverage, hit_at, indexed_entity_ids, search, search_counts,
+    CompileOutcome, ConnectionBoundary, ConnectionCorpusRefusal, ConnectionScope,
+    ConnectionSearchRequest, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded,
+    Order, OwnerBoundary, QueryBoundary, SearchRequest, compile_query, coverage as owner_coverage,
+    hit_at as owner_hit_at, indexed_entity_ids as owner_indexed_entity_ids, search as owner_search,
+    search_counts as owner_search_counts,
 };
 
 const REFERENCE_DATE: &str = "2026-01-07";
@@ -96,8 +99,96 @@ fn seed_complete_state(connection: &Connection) {
         .expect("seed complete state");
 }
 
+fn seed_classification(
+    connection: &Connection,
+    path: &str,
+    category: &str,
+    basis: &str,
+    facet_ids: &[&str],
+) {
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, ?2, ?3, 1, 0)",
+            params![path, category, basis],
+        )
+        .expect("seed classification");
+    for facet_id in facet_ids {
+        connection
+            .execute(
+                "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?1, ?2)",
+                params![path, facet_id],
+            )
+            .expect("seed classification facet");
+    }
+}
+
+fn finish_classification(connection: &Connection) {
+    connection
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, '', 1, 0, NULL, 0)",
+            [],
+        )
+        .expect("finish classification");
+}
+
+fn connection_boundary(categories: &[&str], scope: ConnectionScope) -> ConnectionBoundary {
+    ConnectionBoundary::from_category_tokens(categories, scope).expect("connection boundary")
+}
+
+fn connection_search(
+    root: &Path,
+    boundary: &ConnectionBoundary,
+    query: &str,
+) -> crate::ConnectionSearchResponse {
+    crate::search_connection(
+        root,
+        boundary,
+        &ConnectionSearchRequest {
+            query: query.to_string(),
+            limit: 50,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .expect("connection search")
+}
+
 fn request(query: &str) -> SearchRequest {
     SearchRequest::new(query, Order::Relevance)
+}
+
+fn search(
+    journal: &Path,
+    request: &SearchRequest,
+    reference_date: NaiveDate,
+) -> Result<crate::SearchResponse, IndexAccessError> {
+    owner_search(journal, OwnerBoundary, request, reference_date)
+}
+
+fn search_counts(
+    journal: &Path,
+    request: &SearchRequest,
+    reference_date: NaiveDate,
+) -> Result<crate::CountsResponse, IndexAccessError> {
+    owner_search_counts(journal, OwnerBoundary, request, reference_date)
+}
+
+fn hit_at(journal: &Path, path: &str, idx: i64) -> Result<bool, IndexAccessError> {
+    owner_hit_at(journal, QueryBoundary::Owner, path, idx)
+}
+
+fn agents(journal: &Path) -> Result<Vec<String>, IndexAccessError> {
+    crate::agents(journal, QueryBoundary::Owner)
+}
+
+fn coverage(journal: &Path) -> Result<crate::CoverageResponse, IndexAccessError> {
+    owner_coverage(journal, QueryBoundary::Owner)
+}
+
+fn indexed_entity_ids(
+    journal: &Path,
+) -> Result<std::collections::BTreeSet<String>, IndexAccessError> {
+    owner_indexed_entity_ids(journal, QueryBoundary::Owner)
 }
 
 fn building_degraded(files: u64, chunks: u64) -> IndexDegraded {
@@ -918,9 +1009,44 @@ fn search_excludes_authored_chat_rows_and_leaves_cleanup_to_indexing() {
     seed_chunk(&connection, TOKEN_C, PATH_C, "20260508", "chat", None);
     seed_chunk(&connection, TOKEN_D, PATH_D, "20260508", "import", None);
     seed_chunk(&connection, TOKEN_E, PATH_E, "20260508", "", None);
+    seed_chunk(
+        &connection,
+        "entity search survives owner lookup",
+        "entity_search:owner",
+        "20260508",
+        "entity",
+        Some(""),
+    );
     for path in [PATH_A, PATH_B, PATH_C, PATH_D, PATH_E] {
         seed_file_row(&connection, path);
     }
+    for (path, category, basis, eligible) in [
+        (PATH_A, None, None, 0),
+        (PATH_B, None, None, 0),
+        (PATH_C, Some("facets"), Some("journal_wide"), 1),
+        (PATH_D, Some("transcripts"), Some("segment_assigned"), 1),
+        (PATH_E, None, None, 0),
+        ("entity_search:owner", None, None, 0),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, ?2, ?3, ?4, 0)",
+                params![path, category, basis, eligible],
+            )
+            .expect("seed classification");
+    }
+    connection
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, '', 1, 0, NULL, 0)",
+            [],
+        )
+        .expect("seed classification state");
+    connection
+        .execute(
+            "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, 1, 'building', 0, 0)",
+            [],
+        )
+        .expect("seed building state");
     drop(connection);
 
     let before = chronicle_tree(&root);
@@ -982,6 +1108,39 @@ fn search_excludes_authored_chat_rows_and_leaves_cleanup_to_indexing() {
     assert!(hit_paths.contains(&PATH_D));
     assert!(hit_paths.contains(&PATH_E));
 
+    let connection_boundary = ConnectionBoundary::from_category_tokens(
+        ["Transcripts", "Entities", "Facets"],
+        ConnectionScope::WholeJournal,
+    )
+    .expect("whole journal boundary");
+    let connection_response = crate::search_connection(
+        &root,
+        &connection_boundary,
+        &ConnectionSearchRequest {
+            query: MATCH_ALL.to_string(),
+            limit: 20,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .expect("connection search");
+    assert!(
+        connection_response
+            .results
+            .iter()
+            .all(|hit| hit.metadata.path != PATH_A && hit.metadata.path != PATH_B)
+    );
+    assert_eq!(
+        indexed_entity_ids(&root).expect("owner entity ids"),
+        ["owner".to_string()].into_iter().collect()
+    );
+    assert_eq!(
+        search(&root, &request(TOKEN_C), reference_date())
+            .expect("owner building state")
+            .degraded,
+        Some(building_degraded(5, 6))
+    );
+
     let post = Connection::open(db_path(&root)).expect("open after search");
     assert_eq!(count_path(&post, "chunks", PATH_A), 1);
     assert_eq!(count_path(&post, "files", PATH_A), 1);
@@ -1023,8 +1182,620 @@ fn search_excludes_authored_chat_rows_and_leaves_cleanup_to_indexing() {
 }
 
 #[test]
+fn connection_search_uses_classification_and_never_serializes_scores() {
+    let (root, connection) = seeded_root("connection-boundary");
+    let path = "20260107/default/123456_300/talents/brief.md";
+    insert(
+        &connection,
+        "visible boundary text",
+        path,
+        "20260107",
+        "",
+        "brief",
+        "",
+        0,
+    );
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, 'transcripts', 'segment_assigned', 1, 0)",
+            [path],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, ?, 1, 0, NULL, 0)",
+            [path],
+        )
+        .unwrap();
+    drop(connection);
+
+    let boundary =
+        ConnectionBoundary::from_category_tokens(["Transcripts"], ConnectionScope::WholeJournal)
+            .unwrap();
+    let response = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "visible".to_string(),
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(response.results.len(), 1);
+    assert!(response.coverage_complete);
+    let json = serde_json::to_value(response).unwrap();
+    assert!(json["results"][0].get("score").is_none());
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn connection_scope_contracts_cover_categories_and_facet_bases() {
+    const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    let (root, connection) = seeded_root("connection-scope-contracts");
+    let rows = [
+        (
+            "scopefixture transcript-one",
+            "segment-one",
+            "20260101",
+            "work",
+            "transcripts",
+            "segment_assigned",
+            vec![A],
+        ),
+        (
+            "scopefixture entity-one",
+            "entity-one",
+            "20260102",
+            "work",
+            "entities",
+            "facet_owned",
+            vec![A],
+        ),
+        (
+            "scopefixture facet-one",
+            "facet-one",
+            "20260103",
+            "work",
+            "facets",
+            "facet_owned",
+            vec![A],
+        ),
+        (
+            "scopefixture day-wide",
+            "day-wide",
+            "20260104",
+            "",
+            "facets",
+            "journal_wide",
+            vec![],
+        ),
+        (
+            "scopefixture reflection-wide",
+            "reflection-wide",
+            "20260105",
+            "",
+            "facets",
+            "journal_wide",
+            vec![],
+        ),
+        (
+            "scopefixture import-wide",
+            "import-wide",
+            "20260106",
+            "",
+            "transcripts",
+            "journal_wide",
+            vec![],
+        ),
+        (
+            "scopefixture segment-two",
+            "segment-two",
+            "20260107",
+            "work",
+            "transcripts",
+            "segment_assigned",
+            vec![A, B],
+        ),
+        (
+            "scopefixture segment-zero",
+            "segment-zero",
+            "20260108",
+            "",
+            "transcripts",
+            "segment_assigned",
+            vec![],
+        ),
+        (
+            "scopefixture facet-two",
+            "facet-two",
+            "20260109",
+            "outside",
+            "facets",
+            "facet_owned",
+            vec![B],
+        ),
+    ];
+    for (index, (content, path, day, facet, category, basis, ids)) in rows.iter().enumerate() {
+        insert(
+            &connection,
+            content,
+            path,
+            day,
+            facet,
+            "fixture",
+            "",
+            index as i64,
+        );
+        seed_classification(&connection, path, category, basis, ids);
+    }
+    finish_classification(&connection);
+    drop(connection);
+
+    let all_categories = ["Transcripts", "Entities", "Facets"];
+    let chosen_a = connection_boundary(
+        &all_categories,
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string()].into_iter().collect(),
+        },
+    );
+    let chosen_a_paths = connection_search(&root, &chosen_a, "scopefixture")
+        .results
+        .into_iter()
+        .map(|hit| hit.metadata.path)
+        .collect::<std::collections::BTreeSet<_>>();
+    // AC8: all three categories can reach their corresponding material.
+    assert_eq!(
+        chosen_a_paths,
+        ["entity-one", "facet-one", "segment-one"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect()
+    );
+
+    // AC9: the three journal-wide patterns are whole-journal only.
+    let whole = connection_boundary(&all_categories, ConnectionScope::WholeJournal);
+    let whole_paths = connection_search(&root, &whole, "scopefixture")
+        .results
+        .into_iter()
+        .map(|hit| hit.metadata.path)
+        .collect::<std::collections::BTreeSet<_>>();
+    for path in ["day-wide", "reflection-wide", "import-wide"] {
+        assert!(whole_paths.contains(path));
+        assert!(!chosen_a_paths.contains(path));
+    }
+
+    // AC10: a partial category grant hides the other two categories.
+    for (category, expected) in [
+        ("Transcripts", "segment-one"),
+        ("Entities", "entity-one"),
+        ("Facets", "facet-one"),
+    ] {
+        let boundary = connection_boundary(
+            &[category],
+            ConnectionScope::ChosenFacets {
+                ids: [A.to_string()].into_iter().collect(),
+            },
+        );
+        let paths = connection_search(&root, &boundary, "scopefixture")
+            .results
+            .into_iter()
+            .map(|hit| hit.metadata.path)
+            .collect::<Vec<_>>();
+        assert_eq!(paths, vec![expected]);
+    }
+
+    // AC19: segment assignments require the complete chosen set; zero remains
+    // available to whole-journal transcript access.
+    let chosen_both = connection_boundary(
+        &["Transcripts"],
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string(), B.to_string()].into_iter().collect(),
+        },
+    );
+    assert_eq!(
+        connection_search(&root, &chosen_both, "segment-two")
+            .results
+            .len(),
+        1
+    );
+    let transcripts_a = connection_boundary(
+        &["Transcripts"],
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string()].into_iter().collect(),
+        },
+    );
+    assert!(
+        connection_search(&root, &transcripts_a, "segment-two")
+            .results
+            .is_empty()
+    );
+    let transcripts_whole = connection_boundary(&["Transcripts"], ConnectionScope::WholeJournal);
+    assert_eq!(
+        connection_search(&root, &transcripts_whole, "segment-zero")
+            .results
+            .len(),
+        1
+    );
+
+    // AC27: an out-of-scope path-shape facet is indistinguishable from absent.
+    let request_with_facet = |facet: &str| ConnectionSearchRequest {
+        query: "scopefixture".to_string(),
+        facet: Some(facet.to_string()),
+        limit: 50,
+        ..ConnectionSearchRequest::default()
+    };
+    let outside = crate::search_connection(
+        &root,
+        &chosen_a,
+        &request_with_facet("outside"),
+        reference_date(),
+    )
+    .expect("outside facet");
+    let missing = crate::search_connection(
+        &root,
+        &chosen_a,
+        &request_with_facet("missing"),
+        reference_date(),
+    )
+    .expect("missing facet");
+    assert_eq!(
+        serde_json::to_vec(&outside).expect("serialize outside"),
+        serde_json::to_vec(&missing).expect("serialize missing")
+    );
+    fs::remove_dir_all(root).expect("cleanup connection scope contracts");
+}
+
+#[test]
+fn connection_serialization_and_empty_contracts() {
+    const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    let (root, connection) = seeded_root("connection-serialization-contracts");
+    insert(
+        &connection,
+        "stable visible",
+        "visible",
+        "20260101",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "visible", "facets", "facet_owned", &[A]);
+    insert(
+        &connection,
+        "stable hidden",
+        "hidden",
+        "20260102",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "hidden", "facets", "facet_owned", &[B]);
+    finish_classification(&connection);
+    drop(connection);
+    let chosen_a = connection_boundary(
+        &["Facets"],
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string()].into_iter().collect(),
+        },
+    );
+
+    // AC30: adding a hidden document leaves the response byte-identical.
+    let before = serde_json::to_vec(&connection_search(&root, &chosen_a, "stable"))
+        .expect("serialize before");
+    let connection = Connection::open(db_path(&root)).expect("open writable index");
+    insert(
+        &connection,
+        "stable hidden later",
+        "hidden-later",
+        "20260103",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "hidden-later", "facets", "facet_owned", &[B]);
+    drop(connection);
+    let after_hidden = serde_json::to_vec(&connection_search(&root, &chosen_a, "stable"))
+        .expect("serialize after hidden");
+    assert_eq!(before, after_hidden);
+
+    // AC31: an admitted row does change the response.
+    let connection = Connection::open(db_path(&root)).expect("open writable index");
+    insert(
+        &connection,
+        "stable visible later",
+        "visible-later",
+        "20260104",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "visible-later", "facets", "facet_owned", &[A]);
+    connection
+        .execute(
+            "REPLACE INTO index_build_state(id, schema_version, state, files_count, chunks_count) VALUES (1, 1, 'building', 0, 0)",
+            [],
+        )
+        .expect("building state");
+    drop(connection);
+    let after_visible = connection_search(&root, &chosen_a, "stable");
+    assert_ne!(
+        before,
+        serde_json::to_vec(&after_visible).expect("serialize visible")
+    );
+
+    // AC32: connection output omits score and whole-index counts, even degraded.
+    let json = serde_json::to_value(after_visible).expect("connection json");
+    assert!(json.to_string().contains("building"));
+    assert!(!json.to_string().contains("score"));
+    assert!(!json.to_string().contains("recorded_counts"));
+    assert!(!json.to_string().contains("observed_counts"));
+
+    // AC33: recency is deterministic for a fixed index state.
+    let first = connection_search(&root, &chosen_a, "stable");
+    let second = connection_search(&root, &chosen_a, "stable");
+    assert_eq!(
+        first.results.iter().map(|hit| &hit.id).collect::<Vec<_>>(),
+        second.results.iter().map(|hit| &hit.id).collect::<Vec<_>>()
+    );
+
+    // AC34: a populated but unauthorized index remains an ordinary empty view.
+    let none = connection_boundary(&["Entities"], ConnectionScope::WholeJournal);
+    assert!(connection_search(&root, &none, "stable").results.is_empty());
+    let (empty_root, empty_connection) = seeded_root("connection-empty-contract");
+    drop(empty_connection);
+    assert!(
+        connection_search(&empty_root, &none, "stable")
+            .results
+            .is_empty()
+    );
+    fs::remove_dir_all(empty_root).expect("cleanup connection empty contract");
+    fs::remove_dir_all(root).expect("cleanup connection serialization contracts");
+}
+
+#[test]
+fn connection_refusals_and_unknown_categories_are_typed() {
+    let unknown =
+        ConnectionBoundary::from_category_tokens(["Everything"], ConnectionScope::WholeJournal);
+    assert!(matches!(
+        unknown,
+        Err(crate::ConnectionBoundaryError::UnknownCategory { .. })
+    ));
+    let boundary =
+        ConnectionBoundary::from_category_tokens(["Facets"], ConnectionScope::WholeJournal)
+            .unwrap();
+    let root = temp_root("connection-refusals");
+    let errors = [
+        (
+            crate::search_counts_connection(Path::new("unused"), &boundary).unwrap_err(),
+            ConnectionCorpusRefusal::Counts,
+        ),
+        (
+            crate::agents(&root, QueryBoundary::Connection(boundary.clone())).unwrap_err(),
+            ConnectionCorpusRefusal::Agents,
+        ),
+        (
+            crate::coverage(&root, QueryBoundary::Connection(boundary.clone())).unwrap_err(),
+            ConnectionCorpusRefusal::CoverageSpan,
+        ),
+        (
+            crate::indexed_entity_ids(&root, QueryBoundary::Connection(boundary.clone()))
+                .unwrap_err(),
+            ConnectionCorpusRefusal::IndexedEntityIds,
+        ),
+        (
+            crate::hit_at(&root, QueryBoundary::Connection(boundary), "missing", 0).unwrap_err(),
+            ConnectionCorpusRefusal::HitAt,
+        ),
+    ];
+    for (error, expected) in errors {
+        match error {
+            IndexAccessError::ConnectionCorpusRefusal(refusal) => {
+                assert_eq!(refusal, expected);
+                assert_eq!(refusal.needs_owner(), crate::NeedsOwner);
+            }
+            other => panic!("expected connection corpus refusal, got {other:?}"),
+        }
+    }
+
+    // AC29: empty known grants are empty views, never wildcards or refusals.
+    let (root, connection) = seeded_root("connection-empty-grants");
+    insert(
+        &connection,
+        "would be visible",
+        "visible.md",
+        "20260107",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "visible.md", "facets", "journal_wide", &[]);
+    finish_classification(&connection);
+    drop(connection);
+    let empty_categories = connection_boundary(&[], ConnectionScope::WholeJournal);
+    let empty_chosen = connection_boundary(
+        &["Facets"],
+        ConnectionScope::ChosenFacets {
+            ids: Default::default(),
+        },
+    );
+    assert!(
+        connection_search(&root, &empty_categories, "visible")
+            .results
+            .is_empty()
+    );
+    assert!(
+        connection_search(&root, &empty_chosen, "visible")
+            .results
+            .is_empty()
+    );
+    fs::remove_dir_all(root).expect("cleanup empty grants");
+}
+
+#[test]
+fn connection_no_tokenizable_query_probes_coverage_and_degraded_state() {
+    let (root, connection) = building_root("connection-no-tokenizable");
+    let path = "20260107/default/123456_300/talents/brief.md";
+    insert(
+        &connection,
+        "visible boundary text",
+        path,
+        "20260107",
+        "",
+        "brief",
+        "",
+        0,
+    );
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            [path],
+        )
+        .expect("classification");
+    connection
+        .execute(
+            "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, ?1, 1, 0, NULL, 0)",
+            [path],
+        )
+        .expect("backfill state");
+    drop(connection);
+
+    let boundary =
+        ConnectionBoundary::from_category_tokens(["Transcripts"], ConnectionScope::WholeJournal)
+            .expect("boundary");
+    let response = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "📅".to_string(),
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .expect("ordinary connection empty response");
+    assert!(response.results.is_empty());
+    assert!(response.coverage_complete);
+    assert!(matches!(
+        response.degraded,
+        Some(crate::ConnectionIndexDegraded::Building { .. })
+    ));
+    fs::remove_dir_all(root).expect("cleanup connection no-tokenizable");
+}
+
+#[test]
+fn connection_coverage_fails_closed_for_every_incomplete_state() {
+    let boundary = connection_boundary(&["Facets"], ConnectionScope::WholeJournal);
+
+    // AC21: absent classification tables authorize no old, unfiltered rows.
+    let (absent_root, absent) = seeded_root("connection-coverage-absent");
+    insert(
+        &absent,
+        "coverage needle",
+        "row.md",
+        "20260107",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    absent
+        .execute_batch(
+            "DROP TABLE chunk_classification_facets; DROP TABLE chunk_classification; DROP TABLE chunk_classification_backfill;",
+        )
+        .expect("drop classification tables");
+    drop(absent);
+    let absent_response = connection_search(&absent_root, &boundary, "coverage");
+    assert!(absent_response.results.is_empty());
+    assert!(!absent_response.coverage_complete);
+    fs::remove_dir_all(absent_root).expect("cleanup absent tables");
+
+    let (root, connection) = seeded_root("connection-coverage-states");
+    insert(
+        &connection,
+        "coverage needle",
+        "row.md",
+        "20260107",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "row.md", "facets", "journal_wide", &[]);
+    // Created tables with no completed backfill are incomplete.
+    assert!(!connection_search(&root, &boundary, "coverage").coverage_complete);
+    for (completed, stalled) in [(false, false), (false, true)] {
+        connection
+            .execute(
+                "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, '', ?1, ?2, CASE WHEN ?2 THEN '' ELSE NULL END, 0)",
+                params![i64::from(completed), i64::from(stalled)],
+            )
+            .expect("write incomplete state");
+        assert!(!connection_search(&root, &boundary, "coverage").coverage_complete);
+    }
+    connection
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES ('unclassified.md', NULL, NULL, 0, 1)",
+            [],
+        )
+        .expect("seed unclassified source");
+    finish_classification(&connection);
+    assert!(!connection_search(&root, &boundary, "coverage").coverage_complete);
+    drop(connection);
+    fs::remove_dir_all(root).expect("cleanup coverage states");
+}
+
+#[test]
+fn relaxed_connection_candidates_keep_the_classification_prefilter() {
+    const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    let (root, connection) = seeded_root("connection-relax-prefilter");
+    insert(
+        &connection,
+        "hidden relaxation candidate",
+        "hidden.md",
+        "20260107",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    seed_classification(&connection, "hidden.md", "facets", "facet_owned", &[B]);
+    finish_classification(&connection);
+    drop(connection);
+    let boundary = connection_boundary(
+        &["Facets"],
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string()].into_iter().collect(),
+        },
+    );
+    // AC26: a relaxation rung that could match the hidden text still returns no row.
+    let response = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            query: "hidden relaxation unrelated".to_string(),
+            relax: true,
+            ..ConnectionSearchRequest::default()
+        },
+        reference_date(),
+    )
+    .expect("relaxed connection search");
+    assert!(response.results.is_empty());
+    fs::remove_dir_all(root).expect("cleanup connection relax");
+}
+
+#[test]
 fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
-    use crate::{IndexedEntry, read_indexed_entry};
+    use crate::IndexedEntry;
+    let read_indexed_entry = |journal: &Path, path: &str, idx, row_id, max_bytes| {
+        crate::read_indexed_entry(journal, QueryBoundary::Owner, path, idx, row_id, max_bytes)
+    };
     let (root, connection) = seeded_root("entry-read");
     let path = "chronicle/20260107/talents/review.jsonl";
     let content = "é".repeat(8192);
@@ -1046,7 +1817,7 @@ fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
     let before = fs::read(db_path(&root)).unwrap();
     assert_eq!(
         read_indexed_entry(&root, path, 7, id, 16384).unwrap(),
-        IndexedEntry::Found(content)
+        IndexedEntry::Found(content.clone())
     );
     assert_eq!(
         read_indexed_entry(&root, path, 7, id, 16383).unwrap(),
@@ -1076,7 +1847,88 @@ fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
         Err(IndexAccessError::Absent { .. })
     ));
     assert!(!absent.exists());
+
+    const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    let writable = Connection::open(db_path(&root)).expect("open classification writer");
+    seed_classification(&writable, path, "facets", "facet_owned", &[A]);
+    finish_classification(&writable);
+    drop(writable);
+    let inside = connection_boundary(
+        &["Facets"],
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string()].into_iter().collect(),
+        },
+    );
+    let outside = connection_boundary(
+        &["Facets"],
+        ConnectionScope::ChosenFacets {
+            ids: [B.to_string()].into_iter().collect(),
+        },
+    );
+    // AC35: authorized bounded reads succeed; outside/too-large collapse to
+    // the indistinguishable connection not-found response.
+    assert_eq!(
+        crate::read_indexed_entry(&root, QueryBoundary::Connection(inside), path, 7, id, 16384,)
+            .expect("inside connection read"),
+        IndexedEntry::Found(content.clone())
+    );
+    assert_eq!(
+        crate::read_indexed_entry(
+            &root,
+            QueryBoundary::Connection(outside),
+            path,
+            7,
+            id,
+            16384,
+        )
+        .expect("outside connection read"),
+        IndexedEntry::NotFound
+    );
+    let inside = connection_boundary(
+        &["Facets"],
+        ConnectionScope::ChosenFacets {
+            ids: [A.to_string()].into_iter().collect(),
+        },
+    );
+    assert_eq!(
+        crate::read_indexed_entry(&root, QueryBoundary::Connection(inside), path, 7, id, 1,)
+            .expect("too large connection read"),
+        IndexedEntry::NotFound
+    );
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn owner_response_retains_score_offset_and_wire_shape() {
+    let (root, connection) = seeded_root("owner-wire-shape");
+    for (path, day) in [("first.md", "20260101"), ("second.md", "20260102")] {
+        insert(&connection, "owner stable", path, day, "", "fixture", "", 0);
+    }
+    drop(connection);
+    let mut owner_request = request("owner");
+    owner_request.limit = 1;
+    owner_request.offset = 1;
+    owner_request.counts = true;
+    let response = search(&root, &owner_request, reference_date()).expect("owner search");
+    // AC38: owner pagination, score, and its established response keys remain.
+    assert_eq!(response.results.len(), 1);
+    assert_eq!(response.total, Some(2));
+    let json = serde_json::to_value(response).expect("owner json");
+    let object = json.as_object().expect("owner response object");
+    for key in [
+        "results",
+        "order",
+        "relaxed",
+        "total",
+        "counts",
+        "cleaned_query",
+    ] {
+        assert!(object.contains_key(key), "{key}");
+    }
+    assert!(!object.contains_key("coverage_complete"));
+    assert!(json["results"][0].get("score").is_some());
+    fs::remove_dir_all(root).expect("cleanup owner wire shape");
 }
 
 #[test]
@@ -1116,7 +1968,7 @@ fn search_reads_committed_rows_while_an_index_writer_is_active() {
         1
     );
     assert!(!hit_at(&root, "20260107/chat/owner/chat.jsonl", 0).unwrap());
-    assert_eq!(crate::agents(&root).unwrap(), vec!["pulse"]);
+    assert_eq!(agents(&root).unwrap(), vec!["pulse"]);
     assert_eq!(coverage(&root).unwrap().state, CoverageState::Available);
     connection.execute_batch("ROLLBACK").unwrap();
     assert_eq!(

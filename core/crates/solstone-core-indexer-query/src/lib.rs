@@ -2,6 +2,10 @@
 // Copyright (c) 2026 sol pbc
 
 //! Compilation and read-only execution of journal full-text queries.
+//!
+//! `load_entity_network`, `load_network_overview`, `load_edge_evidence`, and
+//! `open_edges_reader` are a separate relationship-edge surface and are not
+//! bounded by this chunk-query claim.
 
 mod atomize;
 mod compile;
@@ -25,13 +29,16 @@ pub use edges::{
 };
 pub use execute::{
     IndexedEntry, agents, coverage, hit_at, indexed_entity_ids, read_indexed_entry, search,
-    search_counts,
+    search_connection, search_counts, search_counts_connection,
 };
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{
-    CountsResponse, CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts,
-    IndexDegraded, Order, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
+    AdmittedCategory, ConnectionBoundary, ConnectionBoundaryError, ConnectionCorpusRefusal,
+    ConnectionIndexDegraded, ConnectionScope, ConnectionSearchHit, ConnectionSearchRequest,
+    ConnectionSearchResponse, CountsResponse, CoverageResponse, CoverageState, IndexAccessError,
+    IndexBuildCounts, IndexDegraded, NeedsOwner, Order, OwnerBoundary, QueryBoundary, SearchHit,
+    SearchMetadata, SearchRequest, SearchResponse,
 };
 
 #[cfg(test)]

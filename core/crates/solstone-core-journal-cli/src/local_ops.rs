@@ -28,7 +28,7 @@ use solstone_core_import_sources::archive::{
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_indexer_query::{
-    CountsResponse, IndexAccessError, Order, SearchHit, SearchRequest, search,
+    CountsResponse, IndexAccessError, Order, OwnerBoundary, SearchHit, SearchRequest, search,
 };
 #[cfg(not(target_os = "ios"))]
 use solstone_core_indexer_store::db::reset_index;
@@ -382,8 +382,8 @@ fn run_one_indexer_query(
     request.agent = options.agent.clone();
     request.stream = options.stream.clone();
     request.counts = true;
-    let response =
-        search(journal, &request, Local::now().date_naive()).map_err(index_query_error)?;
+    let response = search(journal, OwnerBoundary, &request, Local::now().date_naive())
+        .map_err(index_query_error)?;
     let counts = response.counts.unwrap_or_default();
     Ok(format_indexer_query(
         &counts,

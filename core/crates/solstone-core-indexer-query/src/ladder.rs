@@ -5,8 +5,8 @@ use chrono::NaiveDate;
 
 use crate::atomize::relaxation_terms;
 use crate::compile::compile_query;
-use crate::execute::{QueryConnection, SqlPlan, plan_from_outcome};
-use crate::{IndexAccessError, QueryCompilation, SearchRequest};
+use crate::execute::{QueryConnection, SqlPlan, plan_from_outcome_with_boundary};
+use crate::{ConnectionBoundary, IndexAccessError, QueryCompilation, SearchRequest};
 
 const RELAX_STOPWORDS: &[&str] = &[
     "what", "who", "whom", "whose", "when", "where", "why", "how", "which", "did", "do", "does",
@@ -24,6 +24,7 @@ pub(super) fn relaxed_plan(
     compilation: &QueryCompilation,
     request: &SearchRequest,
     reference_date: NaiveDate,
+    boundary: Option<&ConnectionBoundary>,
 ) -> Result<Option<SqlPlan>, IndexAccessError> {
     let Some(words) = relaxation_terms(&compilation.temporal.remaining_text) else {
         return Ok(None);
@@ -35,14 +36,26 @@ pub(super) fn relaxed_plan(
         .collect();
 
     if !content.is_empty() && content != words {
-        let plan = candidate_plan(&content.join(" "), compilation, request, reference_date);
+        let plan = candidate_plan(
+            &content.join(" "),
+            compilation,
+            request,
+            reference_date,
+            boundary,
+        );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
         }
     }
 
     if content.len() > 1 {
-        let plan = candidate_plan(&content.join(" OR "), compilation, request, reference_date);
+        let plan = candidate_plan(
+            &content.join(" OR "),
+            compilation,
+            request,
+            reference_date,
+            boundary,
+        );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
         }
@@ -50,7 +63,12 @@ pub(super) fn relaxed_plan(
 
     if content.is_empty() && plan_has_date_constraint(compilation, request) {
         let candidate = compile_query("", reference_date);
-        let plan = plan_from_outcome(candidate.outcome, &compilation.temporal, request);
+        let plan = plan_from_outcome_with_boundary(
+            candidate.outcome,
+            &compilation.temporal,
+            request,
+            boundary,
+        );
         if connection.has_rows(&plan)? {
             return Ok(Some(plan));
         }
@@ -64,9 +82,10 @@ fn candidate_plan(
     original: &QueryCompilation,
     request: &SearchRequest,
     reference_date: NaiveDate,
+    boundary: Option<&ConnectionBoundary>,
 ) -> SqlPlan {
     let candidate = compile_query(candidate_text, reference_date);
-    plan_from_outcome(candidate.outcome, &original.temporal, request)
+    plan_from_outcome_with_boundary(candidate.outcome, &original.temporal, request, boundary)
 }
 
 fn plan_has_date_constraint(compilation: &QueryCompilation, request: &SearchRequest) -> bool {

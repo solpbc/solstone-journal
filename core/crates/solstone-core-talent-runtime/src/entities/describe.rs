@@ -5,7 +5,7 @@
 
 use chrono::Utc;
 use serde_json::{Map, Value};
-use solstone_core_indexer_query::{SearchRequest, search};
+use solstone_core_indexer_query::{OwnerBoundary, SearchRequest, search};
 
 use crate::contract::{GateDecision, PrePostState};
 use crate::{
@@ -141,7 +141,7 @@ fn render_evidence(entity_name: &str, facet: &str, journal: &std::path::Path) ->
     let mut request = SearchRequest::new(entity_name, Default::default());
     request.limit = 5;
     request.facet = (!facet.is_empty()).then_some(facet.to_owned());
-    match search(journal, &request, Utc::now().date_naive()) {
+    match search(journal, OwnerBoundary, &request, Utc::now().date_naive()) {
         Ok(response) if response.results.is_empty() => NO_EVIDENCE.to_owned(),
         Ok(response) => response
             .results

@@ -5,7 +5,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
-use solstone_core_indexer_query::{IndexAccessError, hit_at};
+use solstone_core_indexer_query::{IndexAccessError, QueryBoundary, hit_at};
 use solstone_core_journal_io::JournalReadError;
 use solstone_core_journal_io::bounded_read::read_text;
 
@@ -41,7 +41,14 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedFetch, ToolErr
 }
 
 pub(crate) fn execute(journal_root: &Path, request: &ValidatedFetch) -> Result<Value, ToolError> {
-    if !hit_at(journal_root, &request.path, request.idx).map_err(map_index_error)? {
+    if !hit_at(
+        journal_root,
+        QueryBoundary::Owner,
+        &request.path,
+        request.idx,
+    )
+    .map_err(map_index_error)?
+    {
         return Err(ToolError::NotIndexed);
     }
     let content = read_text(journal_root, &request.path).map_err(map_read_error)?;
@@ -54,6 +61,7 @@ fn map_index_error(error: IndexAccessError) -> ToolError {
         IndexAccessError::Unreadable { .. } => ToolError::IndexUnreadable,
         IndexAccessError::Locked { .. } => ToolError::IndexLocked,
         IndexAccessError::Empty { .. } => ToolError::EmptyIndex,
+        IndexAccessError::ConnectionCorpusRefusal(_) => ToolError::IndexUnreadable,
     }
 }
 

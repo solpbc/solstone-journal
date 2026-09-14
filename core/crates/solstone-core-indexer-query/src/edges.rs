@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+// Relationship-edge readers are outside the chunk-query boundary claim.
+
 //! Read-only derived entity-edge queries over the journal index.
 
 use std::collections::BTreeMap;

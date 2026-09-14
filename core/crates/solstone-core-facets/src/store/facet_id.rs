@@ -100,6 +100,8 @@ pub fn assign_new_facet_id_locked(
 }
 
 /// Resolve a facet identifier to its current directory name using exact byte comparison.
+/// This is display resolution, not query-boundary enforcement: boundaries carry
+/// identifiers and are never constructed by translating them to names first.
 pub fn resolve_facet_id(journal_root: &Path, id: &str) -> Result<String, FacetIdResolveError> {
     if !is_well_formed_facet_id(id) {
         return Err(FacetIdResolveError::Malformed);

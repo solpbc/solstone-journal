@@ -28,9 +28,13 @@ use solstone_core_indexer::metadata::extract_path_metadata;
 use solstone_core_indexer::stream::extract_stream;
 
 use crate::StoreError;
+use crate::classification::{FacetDeclarationSet, classify_source};
 use crate::db::{
-    EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION, mark_index_build_complete, open_index,
-    read_entity_search_watermark, read_segment_aggregate_migration, write_entity_search_watermark,
+    ChunkClassificationBackfill, EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION,
+    delete_chunk_classification, mark_index_build_complete, next_unclassified_chunk_paths,
+    open_index, read_chunk_classification_backfill, read_entity_search_watermark,
+    read_segment_aggregate_migration, replace_chunk_classification,
+    write_chunk_classification_backfill, write_entity_search_watermark,
     write_segment_aggregate_migration,
 };
 
@@ -38,6 +42,8 @@ const MERGE_STEP: i64 = 32;
 const MERGE_BUDGET: usize = 2;
 const SEGMENT_AGGREGATE_MIGRATION_STEP: i64 = 32;
 const SEGMENT_AGGREGATE_MIGRATION_BUDGET: usize = 2;
+const CHUNK_CLASSIFICATION_BACKFILL_STEP: i64 = 32;
+const CHUNK_CLASSIFICATION_BACKFILL_BUDGET: usize = 2;
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ScanReport {
@@ -165,6 +171,7 @@ fn delete_file_chunks(
     } else {
         conn.execute("DELETE FROM chunks WHERE path=?", [path])?;
     }
+    delete_chunk_classification(conn, path)?;
     Ok(())
 }
 
@@ -258,6 +265,10 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
     index_entity_search(&tx, journal, full)?;
     tx.commit()?;
 
+    report
+        .warnings
+        .extend(migrate_chunk_classifications(&mut conn, journal)?);
+
     let tx = conn.transaction()?;
     let edge_report = reconcile_edges(&tx, journal, full)?;
     tx.commit()?;
@@ -279,6 +290,74 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         report.warnings.push(warning);
     }
     Ok(report)
+}
+
+/// Incrementally classify legacy paths. State advances only with the durable
+/// replacement for that source; an unreadable named declaration is a durable
+/// unclassified result, not a stalled cursor.
+fn migrate_chunk_classifications(
+    conn: &mut Connection,
+    journal: &Path,
+) -> Result<Vec<String>, StoreError> {
+    let existing = read_chunk_classification_backfill(conn)?;
+    let mut state = existing.clone().unwrap_or(ChunkClassificationBackfill {
+        cursor: String::new(),
+        completed: false,
+        stalled: false,
+        stalled_path: None,
+        resume_count: 0,
+    });
+    if state.completed {
+        return Ok(Vec::new());
+    }
+    if existing.is_some() {
+        state.resume_count += 1;
+    }
+    let declarations = match FacetDeclarationSet::from_journal(journal) {
+        Ok(declarations) => declarations,
+        Err(error) => {
+            state.stalled = true;
+            state.stalled_path = Some(state.cursor.clone());
+            let tx = conn.transaction()?;
+            write_chunk_classification_backfill(&tx, &state)?;
+            tx.commit()?;
+            return Ok(vec![format!(
+                "chunk classification backfill stalled: {error}"
+            )]);
+        }
+    };
+    for _ in 0..CHUNK_CLASSIFICATION_BACKFILL_BUDGET {
+        let paths =
+            next_unclassified_chunk_paths(conn, &state.cursor, CHUNK_CLASSIFICATION_BACKFILL_STEP)?;
+        if paths.is_empty() {
+            state.completed = true;
+            state.stalled = false;
+            state.stalled_path = None;
+            let tx = conn.transaction()?;
+            write_chunk_classification_backfill(&tx, &state)?;
+            tx.commit()?;
+            break;
+        }
+        for path in paths {
+            let stream = conn
+                .query_row(
+                    "SELECT stream FROM chunks WHERE path=? LIMIT 1",
+                    [&path],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?;
+            let classification =
+                classify_source(journal, &path, stream.flatten().as_deref(), &declarations);
+            let tx = conn.transaction()?;
+            replace_chunk_classification(&tx, &classification)?;
+            state.cursor = path;
+            state.stalled = false;
+            state.stalled_path = None;
+            write_chunk_classification_backfill(&tx, &state)?;
+            tx.commit()?;
+        }
+    }
+    Ok(Vec::new())
 }
 
 fn run_bounded_merge(conn: &mut Connection) -> (usize, Option<String>) {
@@ -874,12 +953,25 @@ fn index_entity_search(
                     delete.execute(params![id, path])?;
                 }
             }
+            delete_chunk_classification(conn, &path)?;
             if let Some(rows) = built {
                 insert_entity_search_rows(conn, rows)?;
+                replace_chunk_classification(
+                    conn,
+                    &classify_source(journal, &path, None, &FacetDeclarationSet::default()),
+                )?;
             }
         }
         conn.execute(
             "DELETE FROM chunks WHERE path LIKE 'entities/%/entity.json'",
+            [],
+        )?;
+        conn.execute(
+            "DELETE FROM chunk_classification_facets WHERE path IN (SELECT path FROM chunk_classification WHERE path LIKE 'entities/%/entity.json')",
+            [],
+        )?;
+        conn.execute(
+            "DELETE FROM chunk_classification WHERE path LIKE 'entities/%/entity.json'",
             [],
         )?;
         write_entity_search_watermark(conn, build.watermark_mtime_secs, build.count)?;
@@ -1063,6 +1155,9 @@ fn index_file(
         .to_lowercase();
     let stream_lookup = extract_stream(journal, rel);
     let stream = stream_lookup.stream;
+    let declarations = FacetDeclarationSet::from_journal(journal)
+        .map_err(|error| format!("facet declaration scan failed for {rel}: {error}"))?;
+    let classification = classify_source(journal, rel, stream.as_deref(), &declarations);
     let bucket = time_bucket(rel);
     let mut warnings = produced.warnings;
     warnings.extend(stream_lookup.warning);
@@ -1087,6 +1182,8 @@ fn index_file(
         )
         .map_err(|error| format!("chunk insert failed for {rel}: {error}"))?;
     }
+    replace_chunk_classification(conn, &classification)
+        .map_err(|error| format!("classification insert failed for {rel}: {error}"))?;
     Ok(warnings)
 }
 
@@ -1119,9 +1216,10 @@ fn file_mtime_secs(path: &Path) -> Result<i64, StoreError> {
 mod tests {
     use super::*;
     use crate::db::{
-        EntitySearchWatermark, IndexBuildLifecycle, IndexBuildState, db_path,
-        read_entity_search_watermark, read_index_build_state, read_segment_aggregate_migration,
-        reset_index, write_entity_search_watermark, write_segment_aggregate_migration,
+        ChunkClassification, EntitySearchWatermark, IndexBuildLifecycle, IndexBuildState, db_path,
+        read_chunk_classification_backfill, read_entity_search_watermark, read_index_build_state,
+        read_segment_aggregate_migration, replace_chunk_classification, reset_index,
+        write_entity_search_watermark, write_segment_aggregate_migration,
     };
     use crate::test_support::reserve_temp_path;
     use rusqlite::{Connection, params};
@@ -1136,6 +1234,111 @@ mod tests {
         fs::create_dir_all(path.parent().expect("test path should have parent"))
             .expect("create parent");
         fs::write(path, text).expect("write test file");
+    }
+
+    #[test]
+    fn delete_file_chunks_deletes_its_classification_in_the_same_transaction() {
+        let root = temp_root("delete-file-classification");
+        let conn = open_index(&root).expect("open index");
+        conn.execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('needle', 'gone.md', '', '', '', '', 0, '')",
+            [],
+        )
+        .expect("seed chunk");
+        replace_chunk_classification(
+            &conn,
+            &ChunkClassification {
+                path: "gone.md".to_string(),
+                category: Some("transcripts"),
+                basis: Some("segment_assigned"),
+                eligible: true,
+                unclassified: false,
+                facet_ids: Vec::new(),
+            },
+        )
+        .expect("seed classification");
+        delete_file_chunks(&conn, "gone.md", None).expect("delete file chunks");
+        assert_eq!(
+            count(
+                &conn,
+                "SELECT count(*) FROM chunk_classification WHERE path='gone.md'"
+            ),
+            0
+        );
+        fs::remove_dir_all(root).expect("cleanup delete file classification");
+    }
+
+    #[test]
+    fn classification_backfill_is_bounded_resumable_and_stall_explicit() {
+        let root = temp_root("classification-backfill");
+        let mut conn = open_index(&root).expect("open index");
+        for index in 0..65 {
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('legacy', ?1, '', '', '', '', 0, '')",
+                [format!("legacy-{index:03}.md")],
+            )
+            .expect("seed legacy chunk");
+        }
+        // AC20: two 32-path pages make bounded progress and leave an
+        // assertable running cursor; the resumed invocation alone increments.
+        assert!(
+            migrate_chunk_classifications(&mut conn, &root)
+                .expect("first migration")
+                .is_empty()
+        );
+        let running = read_chunk_classification_backfill(&conn)
+            .expect("read running state")
+            .expect("running state");
+        assert!(!running.completed);
+        assert!(!running.stalled);
+        assert_eq!(running.resume_count, 0);
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunk_classification"),
+            64
+        );
+
+        migrate_chunk_classifications(&mut conn, &root).expect("resume migration");
+        let complete = read_chunk_classification_backfill(&conn)
+            .expect("read complete state")
+            .expect("complete state");
+        assert!(complete.completed);
+        assert!(!complete.stalled);
+        assert_eq!(complete.resume_count, 1);
+        assert_eq!(
+            count(&conn, "SELECT count(*) FROM chunk_classification"),
+            65
+        );
+        migrate_chunk_classifications(&mut conn, &root).expect("idempotent migration");
+        assert_eq!(
+            read_chunk_classification_backfill(&conn).expect("read idempotent state"),
+            Some(complete)
+        );
+        drop(conn);
+
+        let stalled_root = temp_root("classification-backfill-stalled");
+        let mut stalled_conn = open_index(&stalled_root).expect("open stalled index");
+        stalled_conn
+            .execute(
+                "INSERT INTO chunks(content, path) VALUES ('legacy', 'legacy.md')",
+                [],
+            )
+            .expect("seed stalled chunk");
+        fs::write(stalled_root.join("facets"), "not a directory").expect("block facets scan");
+        assert!(
+            !migrate_chunk_classifications(&mut stalled_conn, &stalled_root)
+                .expect("stalled migration is a warning")
+                .is_empty()
+        );
+        let stalled = read_chunk_classification_backfill(&stalled_conn)
+            .expect("read stalled state")
+            .expect("stalled state");
+        assert!(!stalled.completed);
+        assert!(stalled.stalled);
+        assert_eq!(stalled.cursor, "");
+        assert_eq!(stalled.resume_count, 0);
+        drop(stalled_conn);
+        fs::remove_dir_all(root).expect("cleanup bounded backfill");
+        fs::remove_dir_all(stalled_root).expect("cleanup stalled backfill");
     }
 
     #[test]

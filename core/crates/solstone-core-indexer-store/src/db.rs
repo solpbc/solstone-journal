@@ -79,6 +79,43 @@ id INTEGER PRIMARY KEY CHECK (id = 1),
 cursor TEXT NOT NULL,
 completed INTEGER NOT NULL CHECK (completed IN (0, 1))
 )";
+const CREATE_CHUNK_CLASSIFICATION: &str = "\
+CREATE TABLE IF NOT EXISTS chunk_classification(
+path TEXT PRIMARY KEY,
+category TEXT,
+basis TEXT,
+eligible INTEGER NOT NULL CHECK (eligible IN (0, 1)),
+unclassified INTEGER NOT NULL CHECK (unclassified IN (0, 1)),
+CHECK (
+    (eligible = 1 AND unclassified = 0
+     AND category IN ('transcripts', 'entities', 'facets')
+     AND basis IN ('facet_owned', 'segment_assigned', 'journal_wide'))
+    OR (eligible = 0 AND unclassified = 0 AND category IS NULL AND basis IS NULL)
+    OR (eligible = 0 AND unclassified = 1 AND category IS NULL AND basis IS NULL)
+)
+)";
+const CREATE_CHUNK_CLASSIFICATION_FACETS: &str = "\
+CREATE TABLE IF NOT EXISTS chunk_classification_facets(
+path TEXT NOT NULL,
+facet_id TEXT NOT NULL,
+PRIMARY KEY(path, facet_id),
+FOREIGN KEY(path) REFERENCES chunk_classification(path) ON DELETE CASCADE
+)";
+const CREATE_CHUNK_CLASSIFICATION_FACETS_INDEX: &str = "CREATE INDEX IF NOT EXISTS chunk_classification_facets_by_facet_path ON chunk_classification_facets(facet_id, path)";
+const CREATE_CHUNK_CLASSIFICATION_BACKFILL: &str = "\
+CREATE TABLE IF NOT EXISTS chunk_classification_backfill(
+id INTEGER PRIMARY KEY CHECK (id = 1),
+cursor TEXT NOT NULL,
+completed INTEGER NOT NULL CHECK (completed IN (0, 1)),
+stalled INTEGER NOT NULL CHECK (stalled IN (0, 1)),
+stalled_path TEXT,
+resume_count INTEGER NOT NULL CHECK (resume_count >= 0),
+CHECK (
+    (completed = 1 AND stalled = 0 AND stalled_path IS NULL)
+    OR (completed = 0 AND stalled = 0 AND stalled_path IS NULL)
+    OR (completed = 0 AND stalled = 1 AND stalled_path IS NOT NULL)
+)
+)";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IndexBuildLifecycle {
@@ -104,6 +141,25 @@ pub struct EntitySearchWatermark {
 pub struct SegmentAggregateMigration {
     pub cursor: String,
     pub completed: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChunkClassification {
+    pub path: String,
+    pub category: Option<&'static str>,
+    pub basis: Option<&'static str>,
+    pub eligible: bool,
+    pub unclassified: bool,
+    pub facet_ids: Vec<String>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChunkClassificationBackfill {
+    pub cursor: String,
+    pub completed: bool,
+    pub stalled: bool,
+    pub stalled_path: Option<String>,
+    pub resume_count: i64,
 }
 
 pub fn db_path(journal: &Path) -> PathBuf {
@@ -155,6 +211,9 @@ pub fn reset_index(journal: &Path) -> Result<(), StoreError> {
     tx.execute("DROP TABLE IF EXISTS edges", [])?;
     tx.execute("DROP TABLE IF EXISTS edge_files", [])?;
     tx.execute("DROP TABLE IF EXISTS files", [])?;
+    tx.execute("DROP TABLE IF EXISTS chunk_classification_facets", [])?;
+    tx.execute("DROP TABLE IF EXISTS chunk_classification", [])?;
+    tx.execute("DROP TABLE IF EXISTS chunk_classification_backfill", [])?;
     create_schema(&tx)?;
     tx.execute("DELETE FROM entity_search_watermark", [])?;
     tx.execute("DELETE FROM segment_aggregate_migration", [])?;
@@ -182,6 +241,7 @@ pub fn prune_chunks_by_stream(
     let chunks = tx.execute("DELETE FROM chunks WHERE stream=?", [stream])? as u64;
     let mut files = 0;
     for path in paths {
+        delete_chunk_classification(&tx, &path)?;
         files += tx.execute("DELETE FROM files WHERE path=?", [path])? as u64;
     }
     tx.commit()?;
@@ -222,6 +282,7 @@ pub fn prune_by_paths(
     let mut counts = StreamPruneCounts::default();
     for rel in rels {
         let prefix = format!("{rel}/%");
+        delete_chunk_classifications_by_path_or_prefix(&tx, rel, &prefix)?;
         counts.chunks += tx.execute(
             "DELETE FROM chunks WHERE path=?1 OR path LIKE ?2",
             rusqlite::params![rel, &prefix],
@@ -256,6 +317,16 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
         &format!("DELETE FROM chunks WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
         [],
     )? as u64;
+    tx.execute(
+        &format!(
+            "DELETE FROM chunk_classification_facets WHERE path IN (SELECT path FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE})"
+        ),
+        [],
+    )?;
+    tx.execute(
+        &format!("DELETE FROM chunk_classification WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
+        [],
+    )?;
     let files = tx.execute(
         &format!("DELETE FROM files WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
         [],
@@ -328,11 +399,123 @@ fn create_schema(conn: &Connection) -> Result<(), StoreError> {
     conn.execute(CREATE_INDEX_BUILD_STATE, [])?;
     conn.execute(CREATE_ENTITY_SEARCH_WATERMARK, [])?;
     conn.execute(CREATE_SEGMENT_AGGREGATE_MIGRATION, [])?;
+    conn.execute(CREATE_CHUNK_CLASSIFICATION, [])?;
+    conn.execute(CREATE_CHUNK_CLASSIFICATION_FACETS, [])?;
+    conn.execute(CREATE_CHUNK_CLASSIFICATION_FACETS_INDEX, [])?;
+    conn.execute(CREATE_CHUNK_CLASSIFICATION_BACKFILL, [])?;
     conn.execute(
         "REPLACE INTO edge_files(path, mtime) VALUES (?, ?)",
         params![EDGES_SCHEMA_PATH, EDGES_SCHEMA_VERSION],
     )?;
     Ok(())
+}
+
+/// Replace one source-path authorization record in the caller's chunk transaction.
+pub fn replace_chunk_classification(
+    conn: &Connection,
+    classification: &ChunkClassification,
+) -> Result<(), StoreError> {
+    delete_chunk_classification(conn, &classification.path)?;
+    conn.execute(
+        "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?, ?, ?, ?, ?)",
+        params![
+            classification.path,
+            classification.category,
+            classification.basis,
+            i64::from(classification.eligible),
+            i64::from(classification.unclassified),
+        ],
+    )?;
+    for facet_id in &classification.facet_ids {
+        conn.execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?, ?)",
+            params![classification.path, facet_id],
+        )?;
+    }
+    Ok(())
+}
+
+pub fn delete_chunk_classification(conn: &Connection, path: &str) -> Result<(), StoreError> {
+    conn.execute(
+        "DELETE FROM chunk_classification_facets WHERE path=?",
+        [path],
+    )?;
+    conn.execute("DELETE FROM chunk_classification WHERE path=?", [path])?;
+    Ok(())
+}
+
+fn delete_chunk_classifications_by_path_or_prefix(
+    conn: &Connection,
+    path: &str,
+    prefix: &str,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "DELETE FROM chunk_classification_facets WHERE path=?1 OR path LIKE ?2",
+        params![path, prefix],
+    )?;
+    conn.execute(
+        "DELETE FROM chunk_classification WHERE path=?1 OR path LIKE ?2",
+        params![path, prefix],
+    )?;
+    Ok(())
+}
+
+pub fn chunk_classification_tables_exist(conn: &Connection) -> Result<bool, StoreError> {
+    Ok(sqlite_table_exists(conn, "chunk_classification")?
+        && sqlite_table_exists(conn, "chunk_classification_facets")?
+        && sqlite_table_exists(conn, "chunk_classification_backfill")?)
+}
+
+pub fn read_chunk_classification_backfill(
+    conn: &Connection,
+) -> Result<Option<ChunkClassificationBackfill>, StoreError> {
+    if !chunk_classification_tables_exist(conn)? {
+        return Ok(None);
+    }
+    conn.query_row(
+        "SELECT cursor, completed, stalled, stalled_path, resume_count FROM chunk_classification_backfill WHERE id=1",
+        [],
+        |row| {
+            Ok(ChunkClassificationBackfill {
+                cursor: row.get(0)?,
+                completed: row.get::<_, i64>(1)? != 0,
+                stalled: row.get::<_, i64>(2)? != 0,
+                stalled_path: row.get(3)?,
+                resume_count: row.get(4)?,
+            })
+        },
+    )
+    .optional()
+    .map_err(StoreError::from)
+}
+
+pub fn write_chunk_classification_backfill(
+    conn: &Connection,
+    state: &ChunkClassificationBackfill,
+) -> Result<(), StoreError> {
+    conn.execute(
+        "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, ?, ?, ?, ?, ?)",
+        params![
+            state.cursor,
+            i64::from(state.completed),
+            i64::from(state.stalled),
+            state.stalled_path,
+            state.resume_count,
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn next_unclassified_chunk_paths(
+    conn: &Connection,
+    cursor: &str,
+    limit: i64,
+) -> Result<Vec<String>, StoreError> {
+    let mut statement =
+        conn.prepare("SELECT DISTINCT path FROM chunks WHERE path > ? ORDER BY path ASC LIMIT ?")?;
+    Ok(statement
+        .query_map(params![cursor, limit], |row| row.get(0))?
+        .collect::<Result<Vec<_>, _>>()?)
 }
 
 /// Read the cursor for the one-shot segment aggregate cleanup.
@@ -918,6 +1101,97 @@ CREATE TABLE edge_files(path TEXT PRIMARY KEY, mtime INTEGER);
         );
         assert_sqlite_integrity(&conn);
         fs::remove_dir_all(root).expect("cleanup reset root");
+    }
+
+    #[test]
+    fn classification_replaces_and_public_prunes_delete_sidecars() {
+        let root = temp_root("classification-prunes");
+        let conn = open_index(&root).expect("open index");
+        let seed = |path: &str, stream: &str| {
+            conn.execute(
+                "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) VALUES ('needle', ?1, '20260107', '', 'fixture', ?2, 0, '')",
+                params![path, stream],
+            )
+            .expect("seed chunk");
+            conn.execute("INSERT INTO files(path, mtime) VALUES (?1, 1)", [path])
+                .expect("seed file");
+            replace_chunk_classification(
+                &conn,
+                &ChunkClassification {
+                    path: path.to_string(),
+                    category: Some("transcripts"),
+                    basis: Some("segment_assigned"),
+                    eligible: true,
+                    unclassified: false,
+                    facet_ids: vec!["a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string()],
+                },
+            )
+            .expect("seed classification");
+        };
+        seed("stream.md", "remove-stream");
+        seed("prefix/child.md", "keep");
+        seed("20260107/chat/123456_60/chat.jsonl", "chat");
+
+        // AC11: re-index replacement replaces rather than accumulating ids.
+        replace_chunk_classification(
+            &conn,
+            &ChunkClassification {
+                path: "stream.md".to_string(),
+                category: Some("facets"),
+                basis: Some("facet_owned"),
+                eligible: true,
+                unclassified: false,
+                facet_ids: vec!["b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d".to_string()],
+            },
+        )
+        .expect("replace classification");
+        let ids = conn
+            .prepare("SELECT facet_id FROM chunk_classification_facets WHERE path='stream.md'")
+            .expect("prepare ids")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query ids")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect ids");
+        assert_eq!(ids, vec!["b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"]);
+        drop(conn);
+
+        prune_chunks_by_stream(&root, "remove-stream").expect("prune stream");
+        let conn = open_index(&root).expect("reopen stream");
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM chunk_classification WHERE path='stream.md'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("stream classification count"),
+            0
+        );
+        drop(conn);
+        prune_by_paths(&root, &["prefix"]).expect("prune prefix");
+        let conn = open_index(&root).expect("reopen prefix");
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM chunk_classification WHERE path='prefix/child.md'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("prefix classification count"),
+            0
+        );
+        drop(conn);
+        prune_authored_chat_paths(&root).expect("prune chat");
+        let conn = open_index(&root).expect("reopen chat");
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM chunk_classification WHERE path='20260107/chat/123456_60/chat.jsonl'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("chat classification count"),
+            0
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup classification prunes");
     }
 
     #[test]

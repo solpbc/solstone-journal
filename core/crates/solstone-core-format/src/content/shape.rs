@@ -45,7 +45,8 @@ enum WrittenLookup {
     Unusable,
 }
 
-/// Resolve a content file's shape, preferring a sibling `shape.json`.
+/// Resolve a content file's chunking shape, preferring a sibling `shape.json`.
+/// A sidecar must never change the source's index disposition or connection reach.
 ///
 /// The sidecar lives in the same directory as `content_path`. Only a proven
 /// absence (`NotFound`) or an omitted basename key falls through to the
@@ -181,6 +182,31 @@ mod tests {
         assert_eq!(
             resolve_content_shape(&path, BROWSER_REL),
             ContentResolution::Indexed(Family::Browser)
+        );
+    }
+
+    #[test]
+    fn written_shape_never_changes_the_matched_disposition() {
+        use crate::content::resolve_spec;
+
+        let temporary = TempDir::new("disposition");
+        let rel = "20260107/default/123456_300/talents/brief.md";
+        let path = content_path(&temporary.path, rel);
+        let disposition = resolve_spec(rel).expect("matched path spec").disposition;
+
+        write(
+            &path.with_file_name(SHAPE_SIDECAR_BASENAME),
+            r#"{"brief.md":"Sense"}"#,
+        );
+        assert_eq!(
+            resolve_content_shape(&path, rel),
+            ContentResolution::Indexed(Family::Sense)
+        );
+        assert_eq!(
+            resolve_spec(rel)
+                .expect("path spec after sidecar")
+                .disposition,
+            disposition
         );
     }
 

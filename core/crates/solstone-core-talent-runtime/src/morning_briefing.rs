@@ -14,7 +14,7 @@ use solstone_core_home::{
     briefing::BriefingDates,
     readers::{enabled_facet_names, read_latest},
 };
-use solstone_core_indexer_query::{SearchHit, SearchRequest, search};
+use solstone_core_indexer_query::{OwnerBoundary, SearchHit, SearchRequest, search};
 
 use crate::contract::{GateDecision, PrePostState};
 use crate::{
@@ -302,7 +302,12 @@ fn search_agent(
     request.day = Some(day.into());
     request.agent = Some(agent.into());
     request.counts = true;
-    match search(&context.journal, &request, Utc::now().date_naive()) {
+    match search(
+        &context.journal,
+        OwnerBoundary,
+        &request,
+        Utc::now().date_naive(),
+    ) {
         Ok(response) => {
             if response.results.is_empty() {
                 gaps.push(format!("no {label} found"));

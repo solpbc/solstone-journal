@@ -19,6 +19,14 @@ pub struct StreamLookup {
 pub fn extract_stream(journal: &Path, rel: &str) -> StreamLookup {
     let normalized = rel.replace('\\', "/");
     let parts: Vec<&str> = normalized.split('/').collect();
+    // mcp.agent is a stream identity, not a filename convention. Recognize it
+    // without stream.json so derived Markdown cannot enter connection scope.
+    if parts.contains(&"mcp.agent") {
+        return StreamLookup {
+            stream: Some("mcp.agent".to_string()),
+            warning: None,
+        };
+    }
     if parts.len() < 3 || segment_key(parts[2]).is_none() {
         return StreamLookup {
             stream: None,

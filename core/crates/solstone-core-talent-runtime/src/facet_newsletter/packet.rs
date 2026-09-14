@@ -9,7 +9,7 @@ use std::path::Path;
 
 use chrono::NaiveDate;
 use serde_json::{Map, Value, json};
-use solstone_core_indexer_query::{Order, SearchRequest, search};
+use solstone_core_indexer_query::{Order, OwnerBoundary, SearchRequest, search};
 
 const MAX_ACTIVITY_RECORDS: usize = 12;
 const MAX_NARRATIVES_PER_ACTIVITY: usize = 4;
@@ -287,6 +287,7 @@ fn search_day_evidence(
     let label = format!("index_result:{agent}");
     let response = match search(
         journal,
+        OwnerBoundary,
         &request,
         NaiveDate::parse_from_str(day, "%Y%m%d").expect("validated day"),
     ) {
@@ -534,6 +535,7 @@ fn search_facet_entities(
     request.agent = Some("entity".to_owned());
     match search(
         journal,
+        OwnerBoundary,
         &request,
         NaiveDate::parse_from_str(day, "%Y%m%d").expect("validated day"),
     ) {

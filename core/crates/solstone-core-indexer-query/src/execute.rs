@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use chrono::NaiveDate;
+use rusqlite::types::Value;
 use rusqlite::{
     Connection, Error, ErrorCode, OpenFlags, OptionalExtension, params, params_from_iter,
 };
@@ -15,8 +16,11 @@ use crate::ladder::relaxed_plan;
 use crate::predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 use crate::temporal::TemporalExtraction;
 use crate::types::{
+    AdmittedCategory, ConnectionBoundary, ConnectionCorpusRefusal, ConnectionIndexDegraded,
+    ConnectionScope, ConnectionSearchHit, ConnectionSearchRequest, ConnectionSearchResponse,
     CountsResponse, CoverageResponse, CoverageState, IndexAccessError, IndexBuildCounts,
-    IndexDegraded, Order, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
+    IndexDegraded, Order, OwnerBoundary, QueryBoundary, SearchHit, SearchMetadata, SearchRequest,
+    SearchResponse,
 };
 
 /// Execute one journal search.
@@ -24,6 +28,7 @@ use crate::types::{
 /// Reads committed index rows without acquiring a writer lock.
 pub fn search(
     journal: &Path,
+    _boundary: OwnerBoundary,
     request: &SearchRequest,
     reference_date: NaiveDate,
 ) -> Result<SearchResponse, IndexAccessError> {
@@ -40,13 +45,14 @@ pub fn search(
             degraded: None,
         });
     }
-    let mut connection = open_index_reader(journal)?;
+    let mut connection = open_index_reader(journal, &QueryBoundary::Owner)?;
     search_on_connection(&mut connection, request, reference_date, compilation)
 }
 
 /// Execute journal aggregation independently of a search invocation.
 pub fn search_counts(
     journal: &Path,
+    _boundary: OwnerBoundary,
     request: &SearchRequest,
     reference_date: NaiveDate,
 ) -> Result<CountsResponse, IndexAccessError> {
@@ -54,36 +60,161 @@ pub fn search_counts(
     if matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm) {
         return Ok(CountsResponse::default());
     }
-    let mut connection = open_index_reader(journal)?;
+    let mut connection = open_index_reader(journal, &QueryBoundary::Owner)?;
     let (plan, relaxed) = resolve_plan(&mut connection, request, reference_date, compilation)?;
     let mut counts = connection.aggregate_counts(&plan, relaxed)?;
     counts.degraded = connection.index_degraded()?;
     Ok(counts)
 }
 
+/// Connection aggregation is deliberately not a scoped approximation of the
+/// owner histogram: it requires the owner corpus boundary.
+pub fn search_counts_connection(
+    _journal: &Path,
+    _boundary: &ConnectionBoundary,
+) -> Result<CountsResponse, IndexAccessError> {
+    Err(IndexAccessError::ConnectionCorpusRefusal(
+        ConnectionCorpusRefusal::Counts,
+    ))
+}
+
+pub fn search_connection(
+    journal: &Path,
+    boundary: &ConnectionBoundary,
+    request: &ConnectionSearchRequest,
+    reference_date: NaiveDate,
+) -> Result<ConnectionSearchResponse, IndexAccessError> {
+    let compilation = compile_query(&request.query, reference_date);
+    let no_tokenizable_term = matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm);
+    let boundary = QueryBoundary::Connection(boundary.clone());
+    let mut connection = match open_index_reader(journal, &boundary) {
+        Ok(connection) => connection,
+        Err(IndexAccessError::Absent { .. } | IndexAccessError::Empty { .. }) => {
+            return Ok(empty_connection_response(
+                compilation.temporal.remaining_text.clone(),
+            ));
+        }
+        Err(error) => return Err(error),
+    };
+    if no_tokenizable_term {
+        return Ok(ConnectionSearchResponse {
+            coverage_complete: connection.classification_coverage_complete()?,
+            degraded: connection.connection_index_degraded()?,
+            ..empty_connection_response(compilation.temporal.remaining_text.clone())
+        });
+    }
+    let owner_request = owner_request_for_connection(request);
+    let cleaned_query = compilation.temporal.remaining_text.clone();
+    let (plan, relaxed) = resolve_plan_with_boundary(
+        &mut connection,
+        &owner_request,
+        reference_date,
+        compilation,
+        Some(boundary.connection().expect("connection boundary")),
+    )?;
+    let order = order_for_plan(plan.has_live_match_expression);
+    let results = connection
+        .fetch_hits(&plan, request.limit, 0, order)?
+        .into_iter()
+        .map(|hit| ConnectionSearchHit {
+            id: hit.id,
+            text: hit.text,
+            metadata: hit.metadata,
+        })
+        .collect();
+    Ok(ConnectionSearchResponse {
+        results,
+        order,
+        relaxed,
+        cleaned_query,
+        coverage_complete: connection.classification_coverage_complete()?,
+        degraded: connection.connection_index_degraded()?,
+    })
+}
+
+fn empty_connection_response(cleaned_query: String) -> ConnectionSearchResponse {
+    ConnectionSearchResponse {
+        results: Vec::new(),
+        order: Order::Recency,
+        relaxed: false,
+        cleaned_query,
+        coverage_complete: false,
+        degraded: None,
+    }
+}
+
+fn owner_request_for_connection(request: &ConnectionSearchRequest) -> SearchRequest {
+    SearchRequest {
+        query: request.query.clone(),
+        limit: request.limit,
+        offset: 0,
+        day: request.day.clone(),
+        day_from: request.day_from.clone(),
+        day_to: request.day_to.clone(),
+        facet: request.facet.clone(),
+        agent: request.agent.clone(),
+        stream: request.stream.clone(),
+        time_bucket: request.time_bucket.clone(),
+        relax: request.relax,
+        counts: false,
+        order: request.order,
+    }
+}
+
 /// Return whether one exact journal path and chunk index are represented in the index.
-pub fn hit_at(journal: &Path, path: &str, idx: i64) -> Result<bool, IndexAccessError> {
-    let mut connection = open_index_reader(journal)?;
+pub fn hit_at(
+    journal: &Path,
+    boundary: QueryBoundary,
+    path: &str,
+    idx: i64,
+) -> Result<bool, IndexAccessError> {
+    if matches!(boundary, QueryBoundary::Connection(_)) {
+        return Err(IndexAccessError::ConnectionCorpusRefusal(
+            ConnectionCorpusRefusal::HitAt,
+        ));
+    }
+    let mut connection = open_index_reader(journal, &boundary)?;
     connection.hit_at(path, idx)
 }
 
 /// Return the distinct nonempty indexed agents. Search never calls this query.
-pub fn agents(journal: &Path) -> Result<Vec<String>, IndexAccessError> {
-    let mut connection = open_index_reader(journal)?;
+pub fn agents(journal: &Path, boundary: QueryBoundary) -> Result<Vec<String>, IndexAccessError> {
+    if matches!(boundary, QueryBoundary::Connection(_)) {
+        return Err(IndexAccessError::ConnectionCorpusRefusal(
+            ConnectionCorpusRefusal::Agents,
+        ));
+    }
+    let mut connection = open_index_reader(journal, &boundary)?;
     connection.agents()
 }
 
 /// Return the dated span of a nonempty index.
-pub fn coverage(journal: &Path) -> Result<CoverageResponse, IndexAccessError> {
-    let mut connection = open_index_reader(journal)?;
+pub fn coverage(
+    journal: &Path,
+    boundary: QueryBoundary,
+) -> Result<CoverageResponse, IndexAccessError> {
+    if matches!(boundary, QueryBoundary::Connection(_)) {
+        return Err(IndexAccessError::ConnectionCorpusRefusal(
+            ConnectionCorpusRefusal::CoverageSpan,
+        ));
+    }
+    let mut connection = open_index_reader(journal, &boundary)?;
     let mut coverage = connection.coverage()?;
     coverage.degraded = connection.index_degraded()?;
     Ok(coverage)
 }
 
 /// Return the canonical entity IDs represented by indexed entity-search rows.
-pub fn indexed_entity_ids(journal: &Path) -> Result<BTreeSet<String>, IndexAccessError> {
-    let mut connection = open_index_reader(journal)?;
+pub fn indexed_entity_ids(
+    journal: &Path,
+    boundary: QueryBoundary,
+) -> Result<BTreeSet<String>, IndexAccessError> {
+    if matches!(boundary, QueryBoundary::Connection(_)) {
+        return Err(IndexAccessError::ConnectionCorpusRefusal(
+            ConnectionCorpusRefusal::IndexedEntityIds,
+        ));
+    }
+    let mut connection = open_index_reader(journal, &boundary)?;
     connection.indexed_entity_ids()
 }
 
@@ -119,11 +250,30 @@ fn resolve_plan(
     reference_date: NaiveDate,
     compilation: crate::QueryCompilation,
 ) -> Result<(SqlPlan, bool), IndexAccessError> {
-    let mut plan = plan_from_outcome(compilation.outcome.clone(), &compilation.temporal, request);
+    resolve_plan_with_boundary(connection, request, reference_date, compilation, None)
+}
+
+fn resolve_plan_with_boundary(
+    connection: &mut QueryConnection,
+    request: &SearchRequest,
+    reference_date: NaiveDate,
+    compilation: crate::QueryCompilation,
+    boundary: Option<&ConnectionBoundary>,
+) -> Result<(SqlPlan, bool), IndexAccessError> {
+    let mut plan = match boundary {
+        Some(boundary) => plan_from_outcome_with_boundary(
+            compilation.outcome.clone(),
+            &compilation.temporal,
+            request,
+            Some(boundary),
+        ),
+        None => plan_from_outcome(compilation.outcome.clone(), &compilation.temporal, request),
+    };
     let mut relaxed = false;
     if request.relax
         && !connection.has_rows(&plan)?
-        && let Some(candidate) = relaxed_plan(connection, &compilation, request, reference_date)?
+        && let Some(candidate) =
+            relaxed_plan(connection, &compilation, request, reference_date, boundary)?
     {
         plan = candidate;
         relaxed = true;
@@ -145,6 +295,15 @@ pub(crate) fn plan_from_outcome(
     temporal: &TemporalExtraction,
     request: &SearchRequest,
 ) -> SqlPlan {
+    plan_from_outcome_with_boundary(outcome, temporal, request, None)
+}
+
+pub(crate) fn plan_from_outcome_with_boundary(
+    outcome: CompileOutcome,
+    temporal: &TemporalExtraction,
+    request: &SearchRequest,
+    boundary: Option<&ConnectionBoundary>,
+) -> SqlPlan {
     let predicate = QueryPredicate::new(outcome, temporal, predicate_input(request));
     let mut plan = match &predicate.outcome {
         CompileOutcome::Compiled { expression } => SqlPlan {
@@ -161,6 +320,9 @@ pub(crate) fn plan_from_outcome(
         },
     };
     plan.where_clause = visible_rows(&plan.where_clause);
+    if let Some(boundary) = boundary {
+        append_connection_prefilter(&mut plan, boundary);
+    }
     append_filters(&mut plan, &predicate);
     plan
 }
@@ -178,6 +340,8 @@ fn predicate_input(request: &SearchRequest) -> PredicateInput {
 }
 
 fn append_filters(plan: &mut SqlPlan, predicate: &QueryPredicate) {
+    // `facet` is a lowercased chunks path-shape filter. It intersects the
+    // boundary; a facet outside scope is indistinguishable from no such facet.
     match &predicate.effective_date {
         EffectiveDateConstraint::None => {}
         EffectiveDateConstraint::Exact(day) => append_filter(plan, "day=?", day.clone()),
@@ -201,6 +365,55 @@ fn append_filters(plan: &mut SqlPlan, predicate: &QueryPredicate) {
     }
     if let Some(time_bucket) = &predicate.time_bucket {
         append_filter(plan, "time_bucket=?", time_bucket.clone());
+    }
+}
+
+fn append_connection_prefilter(plan: &mut SqlPlan, boundary: &ConnectionBoundary) {
+    if boundary.categories().is_empty()
+        || matches!(boundary.scope(), ConnectionScope::ChosenFacets { ids } if ids.is_empty())
+    {
+        plan.where_clause.push_str(" AND 0");
+        return;
+    }
+    let categories = category_placeholders(boundary.categories().len());
+    let mut clause = format!(
+        "EXISTS (SELECT 1 FROM chunk_classification cc WHERE cc.path=chunks.path AND cc.eligible=1 AND cc.unclassified=0 AND cc.category IN ({categories})"
+    );
+    for category in boundary.categories() {
+        plan.params.push(category_sql_name(*category).to_string());
+    }
+    match boundary.scope() {
+        ConnectionScope::WholeJournal => {}
+        ConnectionScope::ChosenFacets { ids } => {
+            let placeholders = category_placeholders(ids.len());
+            clause.push_str(" AND ((cc.basis='facet_owned' AND EXISTS (SELECT 1 FROM chunk_classification_facets cf WHERE cf.path=chunks.path AND cf.facet_id IN (");
+            clause.push_str(&placeholders);
+            clause.push_str("))) OR (cc.basis='segment_assigned' AND EXISTS (SELECT 1 FROM chunk_classification_facets cf WHERE cf.path=chunks.path) AND NOT EXISTS (SELECT 1 FROM chunk_classification_facets cf WHERE cf.path=chunks.path AND cf.facet_id NOT IN (");
+            clause.push_str(&placeholders);
+            clause.push_str("))))");
+            for _ in 0..2 {
+                for id in ids {
+                    plan.params.push(id.clone());
+                }
+            }
+        }
+    }
+    clause.push(')');
+    plan.where_clause.push_str(" AND ");
+    plan.where_clause.push_str(&clause);
+}
+
+fn category_placeholders(count: usize) -> String {
+    std::iter::repeat_n("?", count)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+fn category_sql_name(category: AdmittedCategory) -> &'static str {
+    match category {
+        AdmittedCategory::Transcripts => "transcripts",
+        AdmittedCategory::Entities => "entities",
+        AdmittedCategory::Facets => "facets",
     }
 }
 
@@ -229,7 +442,10 @@ fn visible_rows(clause: &str) -> String {
     format!("{clause} AND NOT ({AUTHORED_CHAT_PATH_PREDICATE})")
 }
 
-fn open_index_reader(journal: &Path) -> Result<QueryConnection, IndexAccessError> {
+fn open_index_reader(
+    journal: &Path,
+    boundary: &QueryBoundary,
+) -> Result<QueryConnection, IndexAccessError> {
     let path = solstone_core_indexer_store::db::db_path(journal);
     if !path.is_file() {
         return Err(IndexAccessError::Absent { path });
@@ -242,7 +458,7 @@ fn open_index_reader(journal: &Path) -> Result<QueryConnection, IndexAccessError
         .execute_batch("PRAGMA busy_timeout=5000;")
         .map_err(|error| classify_sql_error(path.clone(), error))?;
     let mut connection = QueryConnection::new(connection, path);
-    connection.require_nonempty_chunks()?;
+    connection.require_nonempty_chunks(boundary)?;
     Ok(connection)
 }
 
@@ -258,27 +474,67 @@ pub enum IndexedEntry {
 /// The path and chunk index guard against a row id reused by a later index build.
 pub fn read_indexed_entry(
     journal: &Path,
+    boundary: QueryBoundary,
     path: &str,
     idx: i64,
     row_id: i64,
     max_bytes: u64,
 ) -> Result<IndexedEntry, IndexAccessError> {
-    let reader = open_index_reader(journal)?;
+    let reader = open_index_reader(journal, &boundary)?;
+    if matches!(&boundary, QueryBoundary::Owner) {
+        let found: Option<(i64, Option<String>)> = reader
+            .connection
+            .query_row(
+                &format!(
+                    "SELECT length(CAST(content AS BLOB)),
+                    CASE WHEN length(CAST(content AS BLOB)) <= ?4 THEN content ELSE NULL END
+             FROM chunks WHERE {} LIMIT 1",
+                    visible_rows("rowid=?1 AND path=?2 AND idx=?3")
+                ),
+                params![
+                    row_id,
+                    path,
+                    idx,
+                    i64::try_from(max_bytes).unwrap_or(i64::MAX)
+                ],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|error| reader.classify(error))?;
+        return Ok(match found {
+            None => IndexedEntry::NotFound,
+            Some((_, Some(content))) => IndexedEntry::Found(content),
+            Some(_) => IndexedEntry::TooLarge,
+        });
+    }
+    let mut clause = visible_rows("rowid=? AND path=? AND idx=?");
+    let mut classification_values = Vec::new();
+    if let QueryBoundary::Connection(connection_boundary) = &boundary {
+        let mut plan = SqlPlan {
+            where_clause: clause,
+            params: Vec::new(),
+            has_live_match_expression: false,
+        };
+        append_connection_prefilter(&mut plan, connection_boundary);
+        clause = plan.where_clause;
+        classification_values = plan.params;
+    }
+    let mut values = vec![
+        Value::Integer(i64::try_from(max_bytes).unwrap_or(i64::MAX)),
+        Value::Integer(row_id),
+        Value::Text(path.to_string()),
+        Value::Integer(idx),
+    ];
+    values.extend(classification_values.into_iter().map(Value::Text));
     let found: Option<(i64, Option<String>)> = reader
         .connection
         .query_row(
             &format!(
                 "SELECT length(CAST(content AS BLOB)),
-                CASE WHEN length(CAST(content AS BLOB)) <= ?4 THEN content ELSE NULL END
-         FROM chunks WHERE {} LIMIT 1",
-                visible_rows("rowid=?1 AND path=?2 AND idx=?3")
+                CASE WHEN length(CAST(content AS BLOB)) <= ? THEN content ELSE NULL END
+         FROM chunks WHERE {clause} LIMIT 1"
             ),
-            params![
-                row_id,
-                path,
-                idx,
-                i64::try_from(max_bytes).unwrap_or(i64::MAX)
-            ],
+            params_from_iter(values.iter()),
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .optional()
@@ -286,7 +542,7 @@ pub fn read_indexed_entry(
     Ok(match found {
         None => IndexedEntry::NotFound,
         Some((_, Some(content))) => IndexedEntry::Found(content),
-        Some(_) => IndexedEntry::TooLarge,
+        Some(_) => IndexedEntry::NotFound,
     })
 }
 
@@ -302,7 +558,10 @@ impl QueryConnection {
         }
     }
 
-    fn require_nonempty_chunks(&mut self) -> Result<(), IndexAccessError> {
+    fn require_nonempty_chunks(
+        &mut self,
+        boundary: &QueryBoundary,
+    ) -> Result<(), IndexAccessError> {
         let chunks_exists: Option<i64> = self
             .connection
             .query_row(
@@ -313,6 +572,13 @@ impl QueryConnection {
             .optional()
             .map_err(|error| self.classify(error))?;
         if chunks_exists.is_none() {
+            return Err(IndexAccessError::Empty {
+                path: self.path.clone(),
+            });
+        }
+        if matches!(boundary, QueryBoundary::Connection(_))
+            && !self.classification_tables_exist()?
+        {
             return Err(IndexAccessError::Empty {
                 path: self.path.clone(),
             });
@@ -332,6 +598,60 @@ impl QueryConnection {
             });
         }
         Ok(())
+    }
+
+    fn classification_tables_exist(&self) -> Result<bool, IndexAccessError> {
+        solstone_core_indexer_store::db::chunk_classification_tables_exist(&self.connection)
+            .map_err(|error| IndexAccessError::Unreadable {
+                path: self.path.clone(),
+                detail: error.to_string(),
+            })
+    }
+
+    fn classification_coverage_complete(&self) -> Result<bool, IndexAccessError> {
+        // Coverage is unquantifiable: it deliberately exposes no withheld count.
+        if !self.classification_tables_exist()? {
+            return Ok(false);
+        }
+        let state =
+            solstone_core_indexer_store::db::read_chunk_classification_backfill(&self.connection)
+                .map_err(|error| IndexAccessError::Unreadable {
+                path: self.path.clone(),
+                detail: error.to_string(),
+            })?;
+        let Some(state) = state else {
+            return Ok(false);
+        };
+        if !state.completed || state.stalled {
+            return Ok(false);
+        }
+        let incomplete: i64 = self.connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM chunks c LEFT JOIN chunk_classification cc ON cc.path=c.path WHERE cc.path IS NULL) OR EXISTS(SELECT 1 FROM chunk_classification WHERE unclassified=1) OR (EXISTS(SELECT 1 FROM files) AND NOT EXISTS(SELECT 1 FROM chunk_classification))",
+            [], |row| row.get(0),
+        ).map_err(|error| self.classify(error))?;
+        Ok(incomplete == 0)
+    }
+
+    fn connection_index_degraded(
+        &self,
+    ) -> Result<Option<ConnectionIndexDegraded>, IndexAccessError> {
+        let state = solstone_core_indexer_store::db::read_index_build_state(&self.connection)
+            .map_err(|error| IndexAccessError::Unreadable {
+                path: self.path.clone(),
+                detail: error.to_string(),
+            })?;
+        Ok(match state {
+            None => Some(ConnectionIndexDegraded::Unknown),
+            Some(state)
+                if state.state
+                    == solstone_core_indexer_store::db::IndexBuildLifecycle::Building =>
+            {
+                Some(ConnectionIndexDegraded::Building {
+                    state_schema_version: state.schema_version,
+                })
+            }
+            Some(_) => None,
+        })
     }
 
     fn index_degraded(&self) -> Result<Option<IndexDegraded>, IndexAccessError> {

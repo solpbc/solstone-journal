@@ -28,9 +28,9 @@ use solstone_core_entity_matching::{
 use solstone_core_indexer::entity_search::json_truthy;
 use solstone_core_indexer_query::{
     EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, IndexAccessError, IndexDegraded,
-    NetworkOverviewRequest, NetworkRequest, Order, SearchHit, SearchRequest, coverage,
-    indexed_entity_ids, is_safe_entity_id_component, load_edge_evidence, load_entity_network,
-    load_network_overview, search,
+    NetworkOverviewRequest, NetworkRequest, Order, OwnerBoundary, QueryBoundary, SearchHit,
+    SearchRequest, coverage, indexed_entity_ids, is_safe_entity_id_component, load_edge_evidence,
+    load_entity_network, load_network_overview, search,
 };
 
 use crate::deferred_delete::DeferredDeleteRegistry;
@@ -4663,7 +4663,8 @@ fn entity_search_index_access_failure(error: IndexAccessError) -> EntitySearchFa
         IndexAccessError::Locked { .. } => EntitySearchFailure::IndexBusy,
         IndexAccessError::Absent { .. }
         | IndexAccessError::Unreadable { .. }
-        | IndexAccessError::Empty { .. } => EntitySearchFailure::IndexUnavailable,
+        | IndexAccessError::Empty { .. }
+        | IndexAccessError::ConnectionCorpusRefusal(_) => EntitySearchFailure::IndexUnavailable,
     }
 }
 
@@ -4888,7 +4889,8 @@ fn entity_search_work(
     root: &Path,
     params: &EntitySearchParams,
 ) -> Result<Value, EntitySearchFailure> {
-    let coverage_response = coverage(root).map_err(entity_search_index_access_failure)?;
+    let coverage_response =
+        coverage(root, QueryBoundary::Owner).map_err(entity_search_index_access_failure)?;
     entity_search_degradation_failure(coverage_response.degraded.as_ref())?;
 
     let eligible = eligible_entity_records(
@@ -4900,7 +4902,8 @@ fn entity_search_work(
         .filter_map(entity_record_id)
         .map(str::to_owned)
         .collect();
-    let indexed_ids = indexed_entity_ids(root).map_err(entity_search_index_access_failure)?;
+    let indexed_ids = indexed_entity_ids(root, QueryBoundary::Owner)
+        .map_err(entity_search_index_access_failure)?;
     if indexed_ids != eligible_ids {
         return Err(EntitySearchFailure::IndexStale);
     }
@@ -4920,8 +4923,13 @@ fn entity_search_work(
         entity_request.limit = usize::MAX;
         entity_request.agent = Some("entity".to_owned());
         entity_request.facet = params.facet.clone();
-        let entity_response = search(root, &entity_request, Local::now().date_naive())
-            .map_err(entity_search_index_access_failure)?;
+        let entity_response = search(
+            root,
+            OwnerBoundary,
+            &entity_request,
+            Local::now().date_naive(),
+        )
+        .map_err(entity_search_index_access_failure)?;
         entity_search_degradation_failure(entity_response.degraded.as_ref())?;
 
         let mut detected_request = SearchRequest::new(query, Order::Relevance);
@@ -4929,8 +4937,13 @@ fn entity_search_work(
         detected_request.agent = Some("entity:detected".to_owned());
         detected_request.facet = params.facet.clone();
         detected_request.day_from = params.since.clone();
-        let detected_response = search(root, &detected_request, Local::now().date_naive())
-            .map_err(entity_search_index_access_failure)?;
+        let detected_response = search(
+            root,
+            OwnerBoundary,
+            &detected_request,
+            Local::now().date_naive(),
+        )
+        .map_err(entity_search_index_access_failure)?;
         entity_search_degradation_failure(detected_response.degraded.as_ref())?;
         (entity_response.results, detected_response.results)
     } else {

@@ -15,7 +15,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_indexer_query::{
-    IndexAccessError, IndexedEntry, SearchRequest, read_indexed_entry, search, search_counts,
+    IndexAccessError, IndexedEntry, OwnerBoundary, QueryBoundary, SearchRequest,
+    read_indexed_entry, search, search_counts,
 };
 use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_text};
 
@@ -106,11 +107,11 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
     let mut base_request = request.clone();
     base_request.facet = None;
     base_request.agent = None;
-    let base = match search_counts(&journal_root, &base_request, reference) {
+    let base = match search_counts(&journal_root, OwnerBoundary, &base_request, reference) {
         Ok(counts) => counts,
         Err(error) => return search_failed(&error),
     };
-    let filtered = match search_counts(&journal_root, &request, reference) {
+    let filtered = match search_counts(&journal_root, OwnerBoundary, &request, reference) {
         Ok(counts) => counts,
         Err(error) => return search_failed(&error),
     };
@@ -135,7 +136,7 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
         let mut per_day = request.clone();
         per_day.day = Some(day.clone());
         per_day.limit = request.limit;
-        let response = match search(&journal_root, &per_day, reference) {
+        let response = match search(&journal_root, OwnerBoundary, &per_day, reference) {
             Ok(response) => response,
             Err(error) => return search_failed(&error),
         };
@@ -220,6 +221,7 @@ async fn entry_api(journal_root: PathBuf, Query(query): Query<EntryQuery>) -> Re
     let result = tokio::task::spawn_blocking(move || {
         read_indexed_entry(
             &journal_root,
+            QueryBoundary::Owner,
             &query.path,
             query.idx,
             query.entry_id,

@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::Value;
 use solstone_core_indexer_query::{
-    CompileOutcome, CountsResponse, IndexAccessError, Order, SearchRequest, SearchResponse,
-    compile_query, search as search_index,
+    CompileOutcome, CountsResponse, IndexAccessError, Order, OwnerBoundary, SearchRequest,
+    SearchResponse, compile_query, search as search_index,
 };
 
 use super::ToolError;
@@ -91,7 +91,12 @@ pub(crate) fn execute(
     request: &ValidatedSearch,
     now: DateTime<Utc>,
 ) -> Result<Value, ToolError> {
-    match search_index(journal_root, &request.request, now.date_naive()) {
+    match search_index(
+        journal_root,
+        OwnerBoundary,
+        &request.request,
+        now.date_naive(),
+    ) {
         Ok(response) => serialize_response(response),
         Err(IndexAccessError::Empty { .. }) => empty_index_response(request, now),
         Err(error) => Err(map_index_error(error)),
@@ -130,6 +135,7 @@ fn map_index_error(error: IndexAccessError) -> ToolError {
         IndexAccessError::Unreadable { .. } => ToolError::IndexUnreadable,
         IndexAccessError::Locked { .. } => ToolError::IndexLocked,
         IndexAccessError::Empty { .. } => ToolError::EmptyIndex,
+        IndexAccessError::ConnectionCorpusRefusal(_) => ToolError::IndexUnreadable,
     }
 }
 
