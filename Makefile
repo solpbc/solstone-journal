@@ -38,7 +38,8 @@ CI_RUSTUP_HOME := $(if $(strip $(RUSTUP_HOME)),$(abspath $(RUSTUP_HOME)),$(HOME)
 # preserving the existing debug/ paths and cross-step reuse.
 CI_CARGO_ENV_TARGETS := ci ci-contained ci-under-poison ci-prep-ffmpeg ci-full ci-full-under-poison ci-full-plan ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
 	check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint \
-	check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-onnx
+	check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-onnx \
+	check-rust-journal-mcp-endpoint
 ifneq ($(strip $(filter $(CI_CARGO_ENV_TARGETS),$(MAKECMDGOALS))),)
 export CARGO_INCREMENTAL CARGO_PROFILE_DEV_DEBUG
 endif
@@ -330,6 +331,7 @@ UV_OPTIONAL_GOALS := \
 	check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full \
 	check-rust-unit check-rust-doc check-rust-test check-rust-race \
 	check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint \
+	check-rust-journal-mcp-endpoint \
 	check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint \
 	check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-describe-cli-stubs \
 	require-win-remote-host sync-win-host win-host-ci \

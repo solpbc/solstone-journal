@@ -67,9 +67,12 @@ fn census_digest(commands: &[Value], aliases: &[Value]) -> Result<String, String
     Ok(format!("{:x}", hasher.finalize()))
 }
 
-fn production_digest() -> String {
+fn production_predecessor_digest() -> String {
     let mut hasher = Sha256::new();
-    for spec in production_processes::PROCESS_SPECS {
+    for spec in production_processes::PROCESS_SPECS
+        .iter()
+        .filter(|spec| spec.token != "backfill-facet-ids")
+    {
         hash_field(&mut hasher, spec.kind.census_kind());
         hash_field(&mut hasher, spec.token);
         hash_field(&mut hasher, spec.module);
@@ -186,16 +189,25 @@ fn process_census_is_hash_bound_and_complete() {
 }
 
 #[test]
-fn production_process_table_matches_the_hash_bound_census() {
-    assert_eq!(production_processes::PROCESS_SPECS.len(), 43);
-    assert_eq!(production_processes::process_tokens().count(), 43);
+fn production_process_table_matches_predecessor_census_plus_native_backfill() {
+    assert_eq!(production_processes::PROCESS_SPECS.len(), 44);
+    assert_eq!(production_processes::process_tokens().count(), 44);
     for spec in production_processes::PROCESS_SPECS {
         assert_eq!(
             production_processes::process_spec_for(spec.token),
             Some(spec)
         );
     }
-    assert_eq!(production_digest(), EXPECTED_CENSUS_SHA256);
+    assert_eq!(
+        production_processes::process_spec_for("backfill-facet-ids"),
+        Some(&production_processes::ProcessSpec {
+            token: "backfill-facet-ids",
+            module: "solstone.think.backfill_facet_ids",
+            preset_argv: &[],
+            kind: production_processes::ProcessKind::Service,
+        })
+    );
+    assert_eq!(production_predecessor_digest(), EXPECTED_CENSUS_SHA256);
 }
 
 #[test]
