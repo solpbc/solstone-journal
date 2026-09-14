@@ -535,6 +535,66 @@ fn browse_uses_recency_and_rowid_instead_of_bm25_ties() {
 }
 
 #[test]
+fn connection_recency_uses_day_path_idx_and_start_after_not_rowid() {
+    let (root, connection) = seeded_root("connection-recency-start-after");
+    for (path, idx) in [("z-path", 1), ("z-path", 0), ("m-path", 9)] {
+        insert(
+            &connection,
+            "connection-recency",
+            path,
+            "20260107",
+            "",
+            "fixture-stream",
+            "fixture-stream",
+            idx,
+        );
+    }
+    seed_classification(&connection, "z-path", "transcripts", "journal_wide", &[]);
+    seed_classification(&connection, "m-path", "transcripts", "journal_wide", &[]);
+    finish_classification(&connection);
+    drop(connection);
+
+    let boundary = connection_boundary(&["Transcripts"], ConnectionScope::WholeJournal);
+    let request = ConnectionSearchRequest {
+        query: "connection-recency".to_owned(),
+        limit: 2,
+        ..ConnectionSearchRequest::default()
+    };
+    let first = crate::search_connection(&root, &boundary, &request, reference_date()).unwrap();
+    let first_coordinates = first
+        .results
+        .iter()
+        .map(|hit| (hit.metadata.path.as_str(), hit.metadata.idx))
+        .collect::<Vec<_>>();
+    assert_eq!(first_coordinates, [("z-path", 1), ("z-path", 0)]);
+
+    let anchor = first.results.last().unwrap();
+    let second = crate::search_connection(
+        &root,
+        &boundary,
+        &ConnectionSearchRequest {
+            start_after: Some(crate::ConnectionStartAfter {
+                day: anchor.metadata.day.clone(),
+                path: anchor.metadata.path.clone(),
+                idx: anchor.metadata.idx,
+            }),
+            ..request
+        },
+        reference_date(),
+    )
+    .unwrap();
+    assert_eq!(
+        second
+            .results
+            .iter()
+            .map(|hit| (hit.metadata.path.as_str(), hit.metadata.idx))
+            .collect::<Vec<_>>(),
+        [("m-path", 9)]
+    );
+    fs::remove_dir_all(root).expect("cleanup connection recency index");
+}
+
+#[test]
 fn relevance_pagination_uses_rowid_without_gaps_or_repeats() {
     let (root, connection) = seeded_root("relevance-pagination");
     for idx in 0..12 {

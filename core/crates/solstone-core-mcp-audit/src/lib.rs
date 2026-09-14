@@ -35,8 +35,13 @@ pub struct InteractionRecord {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolName {
+    ListFacets,
     Search,
     Fetch,
+    ListTranscripts,
+    GetTranscript,
+    ListEntities,
+    GetEntity,
 }
 
 /// Location of one durably published interaction record.

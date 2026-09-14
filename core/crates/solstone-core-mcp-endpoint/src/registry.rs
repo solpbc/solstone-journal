@@ -1,65 +1,146 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (c) 2026 sol pbc
-
-//! Closed MCP read-only tool registry table and dispatch.
+// SPDX-License-Identifier: MIT
 
 use serde_json::{Value, json};
-use solstone_core_mcp_audit::ToolName as AuditToolName;
+use solstone_core_indexer_query::AdmittedCategory;
 
-use crate::jsonrpc::ToolName;
-use crate::permissions::PermissionDecision;
-use crate::tools::{ToolError, ValidatedTool, fetch, search};
+use crate::permissions::{ConnectionReadSnapshot, PermissionDecision};
+use crate::tools::search::MAX_QUERY_BYTES;
 
-/// One closed tool registry entry.
+/// The complete, closed MCP tool vocabulary.
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct ToolEntry {
-    pub(crate) tool_name: ToolName,
+    pub(crate) tool_name: crate::jsonrpc::ToolName,
     pub(crate) wire_name: &'static str,
-    pub(crate) audit_name: AuditToolName,
-    #[allow(dead_code)]
-    pub(crate) required_categories: &'static [&'static str],
+    pub(crate) description: &'static str,
     pub(crate) input_schema: fn() -> Value,
-    pub(crate) validate: fn(Option<&Value>) -> Result<ValidatedTool, ToolError>,
+    pub(crate) required_categories: &'static [AdmittedCategory],
+    pub(crate) audit_name: solstone_core_mcp_audit::ToolName,
 }
 
+const TRANSCRIPTS: &[AdmittedCategory] = &[AdmittedCategory::Transcripts];
+const ENTITIES: &[AdmittedCategory] = &[AdmittedCategory::Entities];
+
+/// The single registry used for advertisement, dispatch, validation, and auditing.
 pub(crate) const TOOLS: &[ToolEntry] = &[
     ToolEntry {
-        tool_name: ToolName::Search,
-        wire_name: "search",
-        audit_name: AuditToolName::Search,
-        required_categories: &["transcripts", "entities", "facets"],
-        input_schema: search_input_schema,
-        validate: |params| search::validate(params).map(ValidatedTool::Search),
+        tool_name: crate::jsonrpc::ToolName::ListFacets,
+        wire_name: "list_facets",
+        description: "List facets available to this connection.",
+        input_schema: list_facets_input_schema,
+        required_categories: &[],
+        audit_name: solstone_core_mcp_audit::ToolName::ListFacets,
     },
     ToolEntry {
-        tool_name: ToolName::Fetch,
+        tool_name: crate::jsonrpc::ToolName::Search,
+        wire_name: "search",
+        description: "Search indexed journal content available to this connection.",
+        input_schema: search_input_schema,
+        required_categories: TRANSCRIPTS,
+        audit_name: solstone_core_mcp_audit::ToolName::Search,
+    },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::Fetch,
         wire_name: "fetch",
-        audit_name: AuditToolName::Fetch,
-        required_categories: &["transcripts", "entities", "facets"],
+        description: "Fetch an indexed entry returned by search.",
         input_schema: fetch_input_schema,
-        validate: |params| fetch::validate(params).map(ValidatedTool::Fetch),
+        required_categories: TRANSCRIPTS,
+        audit_name: solstone_core_mcp_audit::ToolName::Fetch,
+    },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::ListTranscripts,
+        wire_name: "list_transcripts",
+        description: "List transcript segments available to this connection.",
+        input_schema: list_transcripts_input_schema,
+        required_categories: TRANSCRIPTS,
+        audit_name: solstone_core_mcp_audit::ToolName::ListTranscripts,
+    },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::GetTranscript,
+        wire_name: "get_transcript",
+        description: "Read approved transcript text from one segment.",
+        input_schema: transcript_input_schema,
+        required_categories: TRANSCRIPTS,
+        audit_name: solstone_core_mcp_audit::ToolName::GetTranscript,
+    },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::ListEntities,
+        wire_name: "list_entities",
+        description: "List entities available to this connection.",
+        input_schema: list_entities_input_schema,
+        required_categories: ENTITIES,
+        audit_name: solstone_core_mcp_audit::ToolName::ListEntities,
+    },
+    ToolEntry {
+        tool_name: crate::jsonrpc::ToolName::GetEntity,
+        wire_name: "get_entity",
+        description: "Read an entity returned by list_entities.",
+        input_schema: fetch_input_schema,
+        required_categories: ENTITIES,
+        audit_name: solstone_core_mcp_audit::ToolName::GetEntity,
     },
 ];
+
+pub(crate) fn tool_by_wire_name(name: &str) -> Option<&'static ToolEntry> {
+    TOOLS.iter().find(|entry| entry.wire_name == name)
+}
+
+pub(crate) fn find_tool(name: crate::jsonrpc::ToolName) -> &'static ToolEntry {
+    TOOLS
+        .iter()
+        .find(|entry| entry.tool_name == name)
+        .expect("every JSON-RPC tool is present in the closed registry")
+}
+
+pub(crate) fn snapshot_allows(snapshot: &ConnectionReadSnapshot, entry: &ToolEntry) -> bool {
+    entry
+        .required_categories
+        .iter()
+        .all(|category| snapshot.categories.contains(category))
+}
+
+pub(crate) fn advertised_tools_list(permission: &PermissionDecision) -> Value {
+    let PermissionDecision::Snapshot(snapshot) = permission else {
+        return json!({ "tools": [] });
+    };
+    let tools = TOOLS
+        .iter()
+        .filter(|entry| snapshot_allows(snapshot, entry))
+        .map(|entry| {
+            json!({
+                "name": entry.wire_name,
+                "description": entry.description,
+                "inputSchema": (entry.input_schema)(),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({ "tools": tools })
+}
+
+fn list_facets_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+        }
+    })
+}
 
 fn search_input_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
+        "required": ["query"],
         "properties": {
-            "query": { "type": "string", "minLength": 1 },
-            "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
-            "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
-            "day": { "type": "string" },
-            "day_from": { "type": "string" },
-            "day_to": { "type": "string" },
-            "facet": { "type": "string" },
-            "agent": { "type": "string" },
-            "stream": { "type": "string" },
-            "time_bucket": { "type": "string" },
-            "relax": { "type": "boolean", "default": false },
-            "counts": { "type": "boolean", "default": false },
-            "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
-        },
-        "required": ["query"]
+            "query": { "type": "string", "minLength": 1, "maxLength": MAX_QUERY_BYTES },
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "cursor": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "day": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "day_from": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "day_to": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "category": { "type": "string", "enum": ["transcripts", "entities", "facets"] },
+            "facet": { "type": "string", "minLength": 1, "maxLength": 256 },
+        }
     })
 }
 
@@ -67,78 +148,101 @@ fn fetch_input_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "properties": { "id": { "type": "string", "minLength": 3 } },
-        "required": ["id"]
+        "required": ["reference"],
+        "properties": {
+            "reference": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        }
     })
 }
 
-/// Find a tool entry by its wire name.
-#[must_use]
-pub(crate) fn find_tool_by_wire_name(wire_name: &str) -> Option<&'static ToolEntry> {
-    TOOLS.iter().find(|t| t.wire_name == wire_name)
-}
-
-/// Find a tool entry by typed ToolName.
-#[must_use]
-pub(crate) fn find_tool(tool_name: ToolName) -> &'static ToolEntry {
-    TOOLS
-        .iter()
-        .find(|t| t.tool_name == tool_name)
-        .expect("closed tool registry entry exists")
-}
-
-/// Return the advertised tools list based on the connection's permission decision.
-#[must_use]
-pub(crate) fn advertised_tools_list(decision: &PermissionDecision) -> Value {
-    match decision {
-        PermissionDecision::Allowed => {
-            let tools: Vec<Value> = TOOLS
-                .iter()
-                .map(|t| {
-                    json!({
-                        "name": t.wire_name,
-                        "inputSchema": (t.input_schema)(),
-                        "annotations": { "readOnlyHint": true }
-                    })
-                })
-                .collect();
-            json!({ "tools": tools })
+fn list_transcripts_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "day": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "facet": { "type": "string", "minLength": 1, "maxLength": 256 },
         }
-        PermissionDecision::Denied { .. } => json!({ "tools": [] }),
-    }
+    })
 }
 
-#[cfg(all(test, not(feature = "full-tests")))]
+fn list_entities_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
+            "facet": { "type": "string", "minLength": 1, "maxLength": 256 },
+        }
+    })
+}
+
+fn transcript_input_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference"],
+        "properties": {
+            "reference": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "cursor": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        }
+    })
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use crate::permissions::ConnectionReadSnapshot;
+    use solstone_core_indexer_query::ConnectionScope;
+    use std::collections::BTreeSet;
 
     #[test]
-    fn registry_contains_only_search_and_fetch() {
-        assert_eq!(TOOLS.len(), 2);
-        assert_eq!(TOOLS[0].wire_name, "search");
-        assert_eq!(TOOLS[1].wire_name, "fetch");
+    fn empty_snapshot_only_advertises_facet_listing() {
+        let snapshot = ConnectionReadSnapshot {
+            categories: BTreeSet::new(),
+            scope: ConnectionScope::WholeJournal,
+            generation: 1,
+        };
+
+        let tools = advertised_tools_list(&PermissionDecision::Snapshot(snapshot));
+        assert_eq!(tools["tools"].as_array().unwrap().len(), 1);
+        assert_eq!(tools["tools"][0]["name"], "list_facets");
     }
 
     #[test]
-    fn advertised_tools_list_filters_by_permission() {
-        let allowed = advertised_tools_list(&PermissionDecision::Allowed);
-        let allowed_tools = allowed.get("tools").unwrap().as_array().unwrap();
-        assert_eq!(allowed_tools.len(), 2);
-
-        let denied_no_perm = advertised_tools_list(&PermissionDecision::Denied {
-            reason: "no_permission",
-        });
-        let denied_tools = denied_no_perm.get("tools").unwrap().as_array().unwrap();
-        assert!(denied_tools.is_empty());
-
-        let denied_unenforceable = advertised_tools_list(&PermissionDecision::Denied {
-            reason: "unenforceable",
-        });
-        let unenforce_tools = denied_unenforceable
-            .get("tools")
-            .unwrap()
-            .as_array()
-            .unwrap();
-        assert!(unenforce_tools.is_empty());
+    fn list_schemas_only_advertise_the_arguments_their_validators_accept() {
+        for schema in [
+            list_facets_input_schema(),
+            list_transcripts_input_schema(),
+            list_entities_input_schema(),
+        ] {
+            assert_eq!(schema["additionalProperties"], false);
+            assert!(schema["properties"].get("cursor").is_none());
+        }
+        assert!(
+            list_transcripts_input_schema()["properties"]
+                .get("day")
+                .is_some()
+        );
+        assert!(
+            list_transcripts_input_schema()["properties"]
+                .get("facet")
+                .is_some()
+        );
+        assert!(
+            list_entities_input_schema()["properties"]
+                .get("facet")
+                .is_some()
+        );
+        assert_eq!(
+            search_input_schema()["properties"]["query"]["maxLength"],
+            MAX_QUERY_BYTES
+        );
+        assert!(crate::tools::facets::validate(Some(&json!({"cursor": "nope"}))).is_err());
+        assert!(
+            crate::tools::transcripts::validate_list(Some(&json!({"cursor": "nope"}))).is_err()
+        );
+        assert!(crate::tools::entities::validate_list(Some(&json!({"cursor": "nope"}))).is_err());
     }
 }

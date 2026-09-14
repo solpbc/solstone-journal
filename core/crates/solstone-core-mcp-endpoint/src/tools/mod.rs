@@ -3,21 +3,27 @@
 
 //! Closed read-only MCP tool validation and execution.
 
+pub(crate) mod entities;
+pub(crate) mod facets;
 pub(crate) mod fetch;
 pub(crate) mod search;
+pub(crate) mod transcripts;
 
-use std::path::Path;
-
-use chrono::{DateTime, Utc};
-use serde_json::Value;
-
+pub(crate) use entities::{ValidatedGetEntity, ValidatedListEntities};
+pub(crate) use facets::ValidatedListFacets;
 pub(crate) use fetch::ValidatedFetch;
 pub(crate) use search::ValidatedSearch;
+pub(crate) use transcripts::{ValidatedGetTranscript, ValidatedListTranscripts};
 
 /// One validated tool call whose schema has been admitted for audit.
 pub(crate) enum ValidatedTool {
+    ListFacets(ValidatedListFacets),
     Search(ValidatedSearch),
     Fetch(ValidatedFetch),
+    ListTranscripts(ValidatedListTranscripts),
+    GetTranscript(ValidatedGetTranscript),
+    ListEntities(ValidatedListEntities),
+    GetEntity(ValidatedGetEntity),
 }
 
 /// A public-safe reason to reject or fail one read-only tool call.
@@ -29,13 +35,9 @@ pub(crate) enum ToolError {
     IndexLocked,
     EmptyIndex,
     NotIndexed,
-    InvalidPath,
-    FileTooLarge,
-    FileNotUtf8,
-    FileNotFound,
     FileUnreadable,
-    Serialization,
     AuditUnavailable,
+    ReferenceNotFound,
 }
 
 impl ToolError {
@@ -47,34 +49,18 @@ impl ToolError {
             Self::IndexLocked => "index_locked",
             Self::EmptyIndex => "empty_index",
             Self::NotIndexed => "not_indexed",
-            Self::InvalidPath => "invalid_path",
-            Self::FileTooLarge => "file_too_large",
-            Self::FileNotUtf8 => "file_not_utf8",
-            Self::FileNotFound => "file_not_found",
             Self::FileUnreadable => "file_unreadable",
-            Self::Serialization => "tool_result_unavailable",
             Self::AuditUnavailable => "audit_unavailable",
+            Self::ReferenceNotFound => "not_found",
         }
     }
 }
 
-/// Execute a previously validated read-only tool after audit publication succeeds.
-pub(crate) fn execute(
-    journal_root: &Path,
-    tool: &ValidatedTool,
-    now: DateTime<Utc>,
-) -> Result<Value, ToolError> {
-    match tool {
-        ValidatedTool::Search(request) => search::execute(journal_root, request, now),
-        ValidatedTool::Fetch(request) => fetch::execute(journal_root, request),
-    }
-}
-
 /// Keep audit publication as a mandatory predecessor of native tool execution.
-pub(crate) fn execute_after_audit<T>(
-    audit: impl FnOnce() -> Result<(), ToolError>,
-    executor: impl FnOnce() -> Result<T, ToolError>,
-) -> Result<T, ToolError> {
+pub(crate) fn execute_after_audit<T, E>(
+    audit: impl FnOnce() -> Result<(), E>,
+    executor: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
     audit()?;
     executor()
 }

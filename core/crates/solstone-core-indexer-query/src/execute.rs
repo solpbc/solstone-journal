@@ -105,18 +105,20 @@ pub fn search_connection(
     }
     let owner_request = owner_request_for_connection(request);
     let cleaned_query = compilation.temporal.remaining_text.clone();
-    let (plan, relaxed) = resolve_plan_with_boundary(
+    let (mut plan, relaxed) = resolve_plan_with_boundary(
         &mut connection,
         &owner_request,
         reference_date,
         compilation,
         Some(boundary.connection().expect("connection boundary")),
     )?;
-    let order = order_for_plan(plan.has_live_match_expression);
+    append_connection_start_after(&mut plan, request.start_after.as_ref());
+    let order = Order::Recency;
     let results = connection
-        .fetch_hits(&plan, request.limit, 0, order)?
+        .fetch_connection_hits(&plan, request.limit)?
         .into_iter()
         .map(|hit| ConnectionSearchHit {
+            row_id: hit.row_id,
             id: hit.id,
             text: hit.text,
             metadata: hit.metadata,
@@ -157,8 +159,27 @@ fn owner_request_for_connection(request: &ConnectionSearchRequest) -> SearchRequ
         time_bucket: request.time_bucket.clone(),
         relax: request.relax,
         counts: false,
-        order: request.order,
+        order: Order::Recency,
     }
+}
+
+fn append_connection_start_after(
+    plan: &mut SqlPlan,
+    start_after: Option<&crate::types::ConnectionStartAfter>,
+) {
+    let Some(start_after) = start_after else {
+        return;
+    };
+    plan.where_clause.push_str(
+        " AND (COALESCE(day, '') < ? OR (COALESCE(day, '') = ? AND (path < ? OR (path = ? AND idx < CAST(? AS INTEGER)))))",
+    );
+    plan.params.extend([
+        start_after.day.clone(),
+        start_after.day.clone(),
+        start_after.path.clone(),
+        start_after.path.clone(),
+        start_after.idx.to_string(),
+    ]);
 }
 
 /// Return whether one exact journal path and chunk index are represented in the index.
@@ -721,9 +742,28 @@ impl QueryConnection {
             Order::Relevance => "ORDER BY bm25(chunks) ASC, rowid ASC",
             Order::Recency => "ORDER BY day DESC, rowid DESC",
         };
+        self.fetch_hits_with_ordering(plan, limit, offset, ordering)
+    }
+
+    fn fetch_connection_hits(
+        &mut self,
+        plan: &SqlPlan,
+        limit: usize,
+    ) -> Result<Vec<SearchHit>, IndexAccessError> {
+        const CONNECTION_RECENCY_ORDER: &str =
+            "ORDER BY COALESCE(day, '') DESC, path DESC, idx DESC";
+        self.fetch_hits_with_ordering(plan, limit, 0, CONNECTION_RECENCY_ORDER)
+    }
+
+    fn fetch_hits_with_ordering(
+        &mut self,
+        plan: &SqlPlan,
+        limit: usize,
+        offset: usize,
+        ordering: &str,
+    ) -> Result<Vec<SearchHit>, IndexAccessError> {
         let sql = format!(
-            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid \
-             FROM chunks WHERE {} {ordering} LIMIT ? OFFSET ?",
+            "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid FROM chunks WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
         );
         let mut values = plan.params.clone();

@@ -36,9 +36,9 @@ pub use temporal::{TemporalExtraction, extract_temporal_references};
 pub use types::{
     AdmittedCategory, ConnectionBoundary, ConnectionBoundaryError, ConnectionCorpusRefusal,
     ConnectionIndexDegraded, ConnectionScope, ConnectionSearchHit, ConnectionSearchRequest,
-    ConnectionSearchResponse, CountsResponse, CoverageResponse, CoverageState, IndexAccessError,
-    IndexBuildCounts, IndexDegraded, NeedsOwner, Order, OwnerBoundary, QueryBoundary, SearchHit,
-    SearchMetadata, SearchRequest, SearchResponse,
+    ConnectionSearchResponse, ConnectionStartAfter, CountsResponse, CoverageResponse,
+    CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded, NeedsOwner, Order,
+    OwnerBoundary, QueryBoundary, SearchHit, SearchMetadata, SearchRequest, SearchResponse,
 };
 
 #[cfg(test)]
