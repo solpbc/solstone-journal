@@ -11,11 +11,13 @@ use serde_json::Value;
 
 use crate::{analysis_row_key, is_failure_exhausted, vocab};
 
-/// Transcribe does not re-enter because it already treats an existing sidecar as
-/// done (`transcribe/src/args.rs:285-286` `already_processed`: `!redo &&
-/// jsonl.exists()`) and never consults this predicate.
+/// Branch-2 allowlist for recordless re-entry (describe | depict).
 fn reenters_on_analysis_output(handler: &str) -> bool {
     matches!(handler, vocab::HANDLER_DESCRIBE | vocab::HANDLER_DEPICT)
+}
+
+fn reenters_failed_analysis_record(handler: &str) -> bool {
+    reenters_on_analysis_output(handler) || handler == vocab::HANDLER_TRANSCRIBE
 }
 
 /// Read one bounded JSONL metadata header's processing record.
@@ -70,6 +72,10 @@ pub fn jsonl_has_row_with_key(path: &Path, row_key: &str) -> bool {
 }
 
 /// Return whether an existing analysis output should be retried by `handler`.
+///
+/// Transcribe re-enters failed, non-exhausted records via branch 1, and its
+/// handler skip guards consult this predicate (`transcribe/src/args.rs:297`
+/// `already_processed`). Branch 2 recordless re-entry remains describe and depict only.
 pub fn should_reenter_analysis_output(
     record: Option<&Value>,
     output_path: &Path,
@@ -80,7 +86,7 @@ pub fn should_reenter_analysis_output(
         && record
             .get("handler")
             .and_then(Value::as_str)
-            .is_some_and(reenters_on_analysis_output)
+            .is_some_and(reenters_failed_analysis_record)
         && !is_failure_exhausted(record)
     {
         return true;
@@ -152,7 +158,7 @@ mod tests {
             "handler": vocab::HANDLER_TRANSCRIBE,
             "attempts": 2,
         });
-        assert!(!should_reenter_analysis_output(
+        assert!(should_reenter_analysis_output(
             Some(&transcribe),
             &path,
             vocab::HANDLER_TRANSCRIBE

@@ -295,7 +295,19 @@ pub(crate) fn should_skip_process_audio_processed(audio_path: &Path, redo: bool)
 }
 
 fn already_processed(audio_path: &Path, redo: bool) -> bool {
-    !redo && audio_path.with_extension("jsonl").exists()
+    if redo {
+        return false;
+    }
+    let jsonl = audio_path.with_extension("jsonl");
+    if !jsonl.exists() {
+        return false;
+    }
+    let record = solstone_core_processing_record::read_processing_record_header(&jsonl);
+    !solstone_core_processing_record::should_reenter_analysis_output(
+        record.as_ref(),
+        &jsonl,
+        solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+    )
 }
 
 fn journal_relative_candidate(audio_path: &Path, journal_path: &Path) -> PathBuf {
@@ -510,6 +522,30 @@ mod tests {
         assert!(!should_skip_batch_processed(&audio, true));
         assert!(!should_skip_process_one_processed(&audio, true));
         assert!(!should_skip_process_audio_processed(&audio, true));
+    }
+
+    #[test]
+    fn retryable_transcribe_sidecar_is_not_skipped_by_guards() {
+        let temporary = tempfile::tempdir().unwrap();
+        let audio = temporary.path().join("120000_60.wav");
+        let jsonl = audio.with_extension("jsonl");
+        fs::write(
+            &jsonl,
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":1}}\n",
+        )
+        .unwrap();
+        assert!(!should_skip_batch_processed(&audio, false));
+        assert!(!should_skip_process_one_processed(&audio, false));
+        assert!(!should_skip_process_audio_processed(&audio, false));
+
+        fs::write(
+            &jsonl,
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":3}}\n",
+        )
+        .unwrap();
+        assert!(should_skip_batch_processed(&audio, false));
+        assert!(should_skip_process_one_processed(&audio, false));
+        assert!(should_skip_process_audio_processed(&audio, false));
     }
 
     #[test]

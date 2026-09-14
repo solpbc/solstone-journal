@@ -28,6 +28,24 @@ pub(crate) fn corrupt_input_record(input_size: u64) -> Value {
     record(vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT, input_size)
 }
 
+/// Build the terminal record for an input with no audio streams.
+pub(crate) fn no_audio_stream_record(input_size: u64) -> Value {
+    record(
+        vocab::STATE_FAILED,
+        vocab::REASON_NO_AUDIO_STREAM,
+        input_size,
+    )
+}
+
+/// Build the terminal record for a transient decode failure.
+pub(crate) fn decode_transient_record(input_size: u64) -> Value {
+    record(
+        vocab::STATE_FAILED,
+        vocab::REASON_DECODE_TRANSIENT,
+        input_size,
+    )
+}
+
 /// Build the completed record for a successfully analyzed input.
 pub(crate) fn analyzed_record(input_size: u64) -> Value {
     record(vocab::STATE_ANALYZED, vocab::REASON_OK, input_size)
@@ -49,7 +67,10 @@ mod tests {
     use chrono::DateTime;
     use solstone_core_processing_record::vocab;
 
-    use super::{EmptyReason, analyzed_record, corrupt_input_record, empty_record};
+    use super::{
+        EmptyReason, analyzed_record, corrupt_input_record, decode_transient_record, empty_record,
+        no_audio_stream_record,
+    };
 
     #[test]
     fn records_use_transcribe_vocabulary_without_attempts() {
@@ -57,12 +78,16 @@ mod tests {
             empty_record(4, EmptyReason::NoSpeech),
             empty_record(7, EmptyReason::NoTranscript),
             corrupt_input_record(5),
+            no_audio_stream_record(8),
+            decode_transient_record(9),
             analyzed_record(6),
         ];
         let expected = [
             (vocab::STATE_EMPTY, vocab::REASON_NO_SPEECH, 4),
             (vocab::STATE_EMPTY, vocab::REASON_NO_TRANSCRIPT, 7),
             (vocab::STATE_FAILED, vocab::REASON_CORRUPT_INPUT, 5),
+            (vocab::STATE_FAILED, vocab::REASON_NO_AUDIO_STREAM, 8),
+            (vocab::STATE_FAILED, vocab::REASON_DECODE_TRANSIENT, 9),
             (vocab::STATE_ANALYZED, vocab::REASON_OK, 6),
         ];
 

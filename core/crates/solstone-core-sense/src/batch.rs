@@ -1058,6 +1058,47 @@ mod tests {
     }
 
     #[test]
+    fn retryable_transcribe_failure_reenters_scan_until_exhaustion() {
+        let temp = tempfile::tempdir().expect("journal");
+        let path = segment(temp.path());
+        fs::write(path.join("audio.flac"), "audio").expect("audio");
+        let day = temp.path().join("chronicle/20260812");
+
+        // AC4: attempts=1 -> included in scan
+        fs::write(
+            path.join("audio.jsonl"),
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":1}}\n",
+        )
+        .expect("retryable sidecar");
+        assert_eq!(
+            scan_unprocessed(temp.path(), &day, None, None, None)
+                .expect("retry scan")
+                .len(),
+            1
+        );
+
+        // AC5: attempts=3 -> exhausted, not included in scan
+        fs::write(
+            path.join("audio.jsonl"),
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":3}}\n",
+        )
+        .expect("exhausted sidecar");
+        assert!(
+            scan_unprocessed(temp.path(), &day, None, None, None)
+                .expect("exhausted scan")
+                .is_empty()
+        );
+
+        // AC6: unreadable recordless sidecar (b"done") -> skipped
+        fs::write(path.join("audio.jsonl"), b"done").expect("recordless sidecar");
+        assert!(
+            scan_unprocessed(temp.path(), &day, None, None, None)
+                .expect("recordless scan")
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn depict_dispatch_survives_for_a_non_import_image() {
         assert_eq!(
             handler_for_path(std::path::Path::new("photo.png")),

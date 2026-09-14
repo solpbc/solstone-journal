@@ -332,10 +332,25 @@ fn mix_m4a_streams(streams: Vec<Vec<f32>>) -> Vec<f32> {
     mixed
 }
 
+pub(crate) fn is_transient_ffmpeg_errno(errno: i32) -> bool {
+    matches!(
+        errno,
+        ffmpeg::error::EIO | ffmpeg::error::EINTR | ffmpeg::error::ENOMEM | ffmpeg::error::EBUSY
+    )
+}
+
+fn extract_ffmpeg_errno(error: &ffmpeg::Error) -> Option<i32> {
+    match error {
+        ffmpeg::Error::Other { errno } => Some(*errno),
+        _ => None,
+    }
+}
+
 fn corrupt_input(path: &Path, error: ffmpeg::Error) -> AudioError {
     AudioError::CorruptInput {
         path: path.to_path_buf(),
         detail: error.to_string(),
+        errno: extract_ffmpeg_errno(&error),
     }
 }
 
@@ -343,5 +358,108 @@ fn ffmpeg_error(path: &Path, error: ffmpeg::Error) -> AudioError {
     AudioError::Ffmpeg {
         path: path.to_path_buf(),
         detail: error.to_string(),
+        errno: extract_ffmpeg_errno(&error),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use ffmpeg_next as ffmpeg;
+
+    use super::{corrupt_input, ffmpeg_error};
+    use crate::AudioError;
+
+    #[test]
+    fn ac1_allowlisted_errno_is_transient_and_others_are_permanent() {
+        let dummy = Path::new("test.wav");
+        let allowlisted = [
+            ffmpeg::error::EIO,
+            ffmpeg::error::EINTR,
+            ffmpeg::error::ENOMEM,
+            ffmpeg::error::EBUSY,
+        ];
+        for errno in allowlisted {
+            let error = AudioError::CorruptInput {
+                path: dummy.to_path_buf(),
+                detail: "error".to_owned(),
+                errno: Some(errno),
+            };
+            assert!(error.is_transient_decode());
+            assert_eq!(error.ffmpeg_errno(), Some(errno));
+        }
+
+        let non_allowlisted_errnos = [
+            ffmpeg::error::EINVAL,
+            ffmpeg::error::ENOENT,
+            ffmpeg::error::EPERM,
+            ffmpeg::error::EAGAIN,
+        ];
+        for errno in non_allowlisted_errnos {
+            let error = AudioError::CorruptInput {
+                path: dummy.to_path_buf(),
+                detail: "error".to_owned(),
+                errno: Some(errno),
+            };
+            assert!(!error.is_transient_decode());
+            assert_eq!(error.ffmpeg_errno(), Some(errno));
+        }
+
+        let non_other = AudioError::CorruptInput {
+            path: dummy.to_path_buf(),
+            detail: "error".to_owned(),
+            errno: None,
+        };
+        assert!(!non_other.is_transient_decode());
+        assert_eq!(non_other.ffmpeg_errno(), None);
+
+        let other_variant = AudioError::EmptyInput {
+            path: dummy.to_path_buf(),
+        };
+        assert!(!other_variant.is_transient_decode());
+        assert_eq!(other_variant.ffmpeg_errno(), None);
+    }
+
+    #[test]
+    fn ac2_detail_string_does_not_affect_transient_classification() {
+        let dummy = Path::new("test.wav");
+        let error = AudioError::CorruptInput {
+            path: dummy.to_path_buf(),
+            detail: "codec not found: permanent fatal error".to_owned(),
+            errno: Some(ffmpeg::error::EIO),
+        };
+        assert!(error.is_transient_decode());
+
+        let error_no_errno = AudioError::CorruptInput {
+            path: dummy.to_path_buf(),
+            detail: "Input/output error: transient I/O failure".to_owned(),
+            errno: None,
+        };
+        assert!(!error_no_errno.is_transient_decode());
+    }
+
+    #[test]
+    fn ac3_ffmpeg_error_and_corrupt_input_constructors_classify_typed_ffmpeg_errors() {
+        let dummy = Path::new("test.wav");
+        let transient_ff = ffmpeg::Error::Other {
+            errno: ffmpeg::error::EIO,
+        };
+        let corrupt = corrupt_input(dummy, transient_ff);
+        assert!(corrupt.is_transient_decode());
+        assert_eq!(corrupt.ffmpeg_errno(), Some(ffmpeg::error::EIO));
+
+        let ff_err = ffmpeg_error(dummy, transient_ff);
+        assert!(ff_err.is_transient_decode());
+        assert_eq!(ff_err.ffmpeg_errno(), Some(ffmpeg::error::EIO));
+
+        let permanent_ff = ffmpeg::Error::InvalidData;
+        let corrupt_perm = corrupt_input(dummy, permanent_ff);
+        assert!(!corrupt_perm.is_transient_decode());
+        assert_eq!(corrupt_perm.ffmpeg_errno(), None);
+
+        let ff_err_perm = ffmpeg_error(dummy, permanent_ff);
+        assert!(!ff_err_perm.is_transient_decode());
+        assert_eq!(ff_err_perm.ffmpeg_errno(), None);
     }
 }

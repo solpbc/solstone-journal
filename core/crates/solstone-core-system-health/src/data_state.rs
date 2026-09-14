@@ -117,4 +117,74 @@ mod tests {
             MarkerVerdict::Active
         );
     }
+
+    #[test]
+    fn modality_state_distinguishes_final_and_retryable_failures() {
+        use std::path::Path;
+
+        use serde_json::json;
+
+        use super::derive_modality_state;
+        use crate::DataState;
+
+        let dummy = Path::new("/dummy");
+        let now = Utc::now();
+
+        let no_audio_stream = json!({
+            "state": "failed",
+            "reason_code": "no_audio_stream",
+            "handler": "transcribe",
+            "attempts": 1,
+        });
+        assert_eq!(
+            derive_modality_state(
+                dummy,
+                "audio",
+                false,
+                true,
+                true,
+                Some(&no_audio_stream),
+                now
+            ),
+            DataState::FailedFinal
+        );
+
+        let decode_transient_attempt1 = json!({
+            "state": "failed",
+            "reason_code": "decode_transient",
+            "handler": "transcribe",
+            "attempts": 1,
+        });
+        assert_eq!(
+            derive_modality_state(
+                dummy,
+                "audio",
+                false,
+                true,
+                true,
+                Some(&decode_transient_attempt1),
+                now
+            ),
+            DataState::Failed
+        );
+
+        let decode_transient_attempt3 = json!({
+            "state": "failed",
+            "reason_code": "decode_transient",
+            "handler": "transcribe",
+            "attempts": 3,
+        });
+        assert_eq!(
+            derive_modality_state(
+                dummy,
+                "audio",
+                false,
+                true,
+                true,
+                Some(&decode_transient_attempt3),
+                now
+            ),
+            DataState::FailedFinal
+        );
+    }
 }

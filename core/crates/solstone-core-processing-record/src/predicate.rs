@@ -50,7 +50,16 @@ pub fn is_failure_exhausted(record: &Value) -> bool {
     if record.get("state").and_then(Value::as_str) != Some(vocab::STATE_FAILED) {
         return false;
     }
-    if record.get("reason_code").and_then(Value::as_str) == Some(vocab::REASON_CORRUPT_INPUT) {
+    if record
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .is_some_and(|code| {
+            matches!(
+                code,
+                vocab::REASON_CORRUPT_INPUT | vocab::REASON_NO_AUDIO_STREAM
+            )
+        })
+    {
         return true;
     }
     record_attempts(record) >= vocab::FAILED_ATTEMPT_BOUND

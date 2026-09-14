@@ -7,10 +7,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 use solstone_core_journal_config::JournalConfigRead;
 use solstone_core_journal_io::{LockOptions, hold_lock};
-use solstone_core_observe_audio::{SAMPLE_RATE, audio_to_wav_bytes, decode_f32_mono};
+use solstone_core_observe_audio::{AudioError, SAMPLE_RATE, audio_to_wav_bytes, decode_f32_mono};
+use solstone_core_processing_record::{read_processing_record_header, record_attempts};
 use solstone_core_speaker_id::writer::WriteResponse;
 use solstone_core_spp_ratls::AttestationStateStore;
 
@@ -29,7 +30,10 @@ use crate::event::{
     Timings, TranscribedEvent, TranscribedOutcome, build_transcribed_event, emit_transcribed_event,
 };
 use crate::processing::analyzed_record;
-use crate::processing::{EmptyReason, corrupt_input_record, empty_record};
+use crate::processing::{
+    EmptyReason, corrupt_input_record, decode_transient_record, empty_record,
+    no_audio_stream_record,
+};
 use crate::speakers::analyze_speakers;
 use crate::terminal::{TerminalWrite, TerminalWriteFailure, write_terminal, write_terminal_with};
 use crate::transcript::{
@@ -128,7 +132,7 @@ pub(crate) fn process_one(
                 detail: error.to_string(),
             };
             let write_at = Instant::now();
-            let terminal = decode_failure(&facts, redo)?;
+            let terminal = decode_failure(&facts, redo, &error)?;
             timings.add_ms("write", elapsed_ms(write_at));
             emit_event(
                 audio_path,
@@ -749,15 +753,29 @@ pub(crate) fn stt_zero_statements(
 pub(crate) fn decode_failure(
     facts: &InputFacts,
     redo: bool,
+    error: &AudioError,
 ) -> Result<TerminalOutcome, TranscribeError> {
     let (jsonl_path, npz_path) = transcript_paths(&facts.path);
+    let prior_header = read_processing_record_header(&jsonl_path);
+    let mut processing = match error {
+        AudioError::NoAudioStream { .. } => no_audio_stream_record(facts.input_size),
+        _ if error.is_transient_decode() => decode_transient_record(facts.input_size),
+        _ => corrupt_input_record(facts.input_size),
+    };
+    if let Some(errno) = error.ffmpeg_errno() {
+        processing["errno"] = json!(errno);
+    }
+    let prior_attempts = prior_header.as_ref().map(record_attempts).unwrap_or(0);
+    let base = std::cmp::max(0, prior_attempts);
+    processing["attempts"] = json!(base + 1);
+
     write_terminal(TerminalWrite {
         raw_path: &facts.path,
         jsonl_path: &jsonl_path,
         npz_path: &npz_path,
-        processing: &corrupt_input_record(facts.input_size),
+        processing: &processing,
         sound_tags: None,
-        redo,
+        redo: redo || jsonl_path.exists(),
     })?;
     Ok(TerminalOutcome::Failed)
 }
@@ -847,7 +865,7 @@ mod tests {
 
     use chrono::DateTime;
     use serde_json::{Value, json};
-    use solstone_core_observe_audio::VadResult;
+    use solstone_core_observe_audio::{AudioError, VadResult};
     use solstone_core_processing_record::vocab;
     use solstone_core_processing_record::{
         TerminalProofOutcome, evaluate_terminal_proof, is_failure_exhausted,
@@ -1148,15 +1166,121 @@ mod tests {
         let temporary = tempfile::tempdir().unwrap();
         let facts = input(temporary.path());
         let (jsonl_path, _) = transcript_paths(&facts.path);
+        let error = AudioError::EmptyInput {
+            path: facts.path.clone(),
+        };
 
         assert_eq!(
-            decode_failure(&facts, false).unwrap(),
+            decode_failure(&facts, false, &error).unwrap(),
             TerminalOutcome::Failed
         );
         assert!(facts.path.exists());
         let record = read_header(&jsonl_path)["_solstone_processing"].clone();
         assert_eq!(record["state"], vocab::STATE_FAILED);
         assert_eq!(record["reason_code"], vocab::REASON_CORRUPT_INPUT);
+        assert!(is_failure_exhausted(&record));
+    }
+
+    #[test]
+    fn ac7_decode_failure_attempts_monotonic_clamped_increment() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+        let error = AudioError::CorruptInput {
+            path: facts.path.clone(),
+            detail: "eio".to_owned(),
+            errno: Some(5),
+        };
+
+        assert_eq!(
+            decode_failure(&facts, false, &error).unwrap(),
+            TerminalOutcome::Failed
+        );
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["attempts"], 1);
+
+        fs::write(
+            &jsonl_path,
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":null}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            decode_failure(&facts, false, &error).unwrap(),
+            TerminalOutcome::Failed
+        );
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["attempts"], 1);
+
+        fs::write(
+            &jsonl_path,
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":-1}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            decode_failure(&facts, false, &error).unwrap(),
+            TerminalOutcome::Failed
+        );
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["attempts"], 1);
+
+        fs::write(
+            &jsonl_path,
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":1}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            decode_failure(&facts, false, &error).unwrap(),
+            TerminalOutcome::Failed
+        );
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["attempts"], 2);
+
+        fs::write(
+            &jsonl_path,
+            "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"handler\":\"transcribe\",\"attempts\":2}}\n",
+        )
+        .unwrap();
+        assert_eq!(
+            decode_failure(&facts, false, &error).unwrap(),
+            TerminalOutcome::Failed
+        );
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["attempts"], 3);
+    }
+
+    #[test]
+    fn ac8_decode_failure_writes_errno_for_transient_error() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+        let error = AudioError::CorruptInput {
+            path: facts.path.clone(),
+            detail: "eio".to_owned(),
+            errno: Some(5),
+        };
+
+        decode_failure(&facts, false, &error).unwrap();
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["errno"], 5);
+        assert_eq!(record["reason_code"], vocab::REASON_DECODE_TRANSIENT);
+        assert!(!is_failure_exhausted(&record));
+    }
+
+    #[test]
+    fn ac10_no_audio_stream_writes_reason_and_is_immediately_exhausted() {
+        let temporary = tempfile::tempdir().unwrap();
+        let facts = input(temporary.path());
+        let (jsonl_path, _) = transcript_paths(&facts.path);
+        let error = AudioError::NoAudioStream {
+            path: facts.path.clone(),
+        };
+
+        decode_failure(&facts, false, &error).unwrap();
+        let record = read_header(&jsonl_path)["_solstone_processing"].clone();
+        assert_eq!(record["state"], vocab::STATE_FAILED);
+        assert_eq!(record["reason_code"], vocab::REASON_NO_AUDIO_STREAM);
+        assert_eq!(record["attempts"], 1);
+        assert!(record.get("errno").is_none());
         assert!(is_failure_exhausted(&record));
     }
 

@@ -9,7 +9,7 @@
   "properties": {
     "schema": {"const": "solstone.processing.v1"},
     "state": {"enum": ["analyzed", "empty", "failed"]},
-    "reason_code": {"enum": ["ok", "no_decodable_frames", "no_decodable_audio", "no_speech", "no_transcript", "corrupt_input", "analysis_failed"]},
+    "reason_code": {"enum": ["ok", "no_decodable_frames", "no_decodable_audio", "no_speech", "no_transcript", "corrupt_input", "no_audio_stream", "decode_transient", "analysis_failed"]},
     "handler": {"enum": ["describe", "transcribe"]},
     "attempted_at": {"type": "string"},
     "input_size": {"type": "integer", "minimum": 0},
@@ -34,7 +34,7 @@
   },
   "x-known-asymmetries": [
     "Observed, not decided: backfill-stamped empty records with source backfill grant terminal proof and retention purge eligibility without a handler having run; source is not checked by current proof implementations.",
-    "Observed, not decided: should_reenter_analysis_output applies the failed-attempt bound only to describe outputs, never to audio/transcribe failures.",
+    "Observed, not decided: should_reenter_analysis_output applies branch-1 failed-attempt re-entry to describe, depict, and transcribe failures, while branch-2 recordless re-entry remains describe and depict only.",
     "Observed, not decided: transcribe non-decode failure paths write no _solstone_processing record, so those inputs are re-processed indefinitely.",
     "Observed, not decided: retention reads this record through derive_modality_state using only state, plus is_failure_exhausted for failed records; unlike terminal proof, it does not check schema, handler, or input_size."
   ]

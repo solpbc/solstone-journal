@@ -33,7 +33,11 @@ pub enum AudioError {
     #[error("audio input is empty: {path}")]
     EmptyInput { path: PathBuf },
     #[error("corrupt audio input {path}: {detail}")]
-    CorruptInput { path: PathBuf, detail: String },
+    CorruptInput {
+        path: PathBuf,
+        detail: String,
+        errno: Option<i32>,
+    },
     #[error("I/O error for {path}: {source}")]
     Io {
         path: PathBuf,
@@ -41,7 +45,11 @@ pub enum AudioError {
         source: io::Error,
     },
     #[error("FFmpeg error for {path}: {detail}")]
-    Ffmpeg { path: PathBuf, detail: String },
+    Ffmpeg {
+        path: PathBuf,
+        detail: String,
+        errno: Option<i32>,
+    },
     #[error(
         "resampler flush did not converge for {path} after {iterations} iterations \
          ({flushed_samples} samples flushed; {remaining_samples} still delayed)"
@@ -74,4 +82,18 @@ pub enum AudioError {
     WavDataTooLarge { samples: usize },
     #[error("invalid WAV sample rate: {sample_rate}")]
     InvalidWavSampleRate { sample_rate: u32 },
+}
+
+impl AudioError {
+    pub fn ffmpeg_errno(&self) -> Option<i32> {
+        match self {
+            Self::CorruptInput { errno, .. } | Self::Ffmpeg { errno, .. } => *errno,
+            _ => None,
+        }
+    }
+
+    pub fn is_transient_decode(&self) -> bool {
+        self.ffmpeg_errno()
+            .is_some_and(decode::is_transient_ffmpeg_errno)
+    }
 }

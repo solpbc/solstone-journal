@@ -236,6 +236,27 @@
       "expected_exhausted": false,
       "provenance_tag": "constructed",
       "citation": "solstone/observe/processing_record.py:48-54"
+    },
+    {
+      "name": "no_audio_stream_is_immediately_exhausted",
+      "record": {"state": "failed", "reason_code": "no_audio_stream", "handler": "transcribe", "attempts": 1},
+      "expected_exhausted": true,
+      "provenance_tag": "constructed",
+      "citation": "solstone/crates/solstone-core-processing-record/src/predicate.rs"
+    },
+    {
+      "name": "decode_transient_attempt_one",
+      "record": {"state": "failed", "reason_code": "decode_transient", "handler": "transcribe", "attempts": 1},
+      "expected_exhausted": false,
+      "provenance_tag": "constructed",
+      "citation": "solstone/crates/solstone-core-processing-record/src/predicate.rs"
+    },
+    {
+      "name": "decode_transient_attempt_three",
+      "record": {"state": "failed", "reason_code": "decode_transient", "handler": "transcribe", "attempts": 3},
+      "expected_exhausted": true,
+      "provenance_tag": "constructed",
+      "citation": "solstone/crates/solstone-core-processing-record/src/predicate.rs"
     }
   ]
 }
