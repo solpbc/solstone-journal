@@ -28,7 +28,18 @@ use task_scheduler::{Operation, Snapshot, TaskInstance};
 use crate::resolve_process_journal_path;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
-const STOP_TIMEOUT: Duration = Duration::from_secs(40);
+/// A public stop waits out the supervisor's own worst-case standard shutdown
+/// (every hosted child granted its full grace in turn), then the forwarder's
+/// Job drain and a Scheduler readback, before it may call cleanup unverified.
+/// The former fixed 40 s sat below that ceiling, so a clean shutdown that was
+/// still in progress was reported as a failed stop.
+const STOP_TIMEOUT: Duration = Duration::from_secs(
+    solstone_core_system::lifecycle::standard_shutdown_ceiling(
+        crate::supervisor::AppService::ALL.len(),
+    )
+    .as_secs()
+        + 15,
+);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 pub(crate) fn run(action: ServiceAction) -> ExitCode {
@@ -234,6 +245,11 @@ fn install_task(ctx: &ServiceContext, port: u16) -> Result<(), ExitCode> {
     }
     // Preserve the setup artifact only after actual scheduler readback succeeds.
     // It is never authorization to replace/delete the registered task.
+    // Save the natively normalized profile that was just validated, not the
+    // raw Scheduler readback: raw XML embeds the registration ACL and spells
+    // the trigger principal as an account name, and the strict profile parser
+    // that later reads this artifact (setup evidence) performs no native
+    // normalization, so a raw artifact refuses every later setup as malformed.
     let provider = ctx.owner.path();
     let directory = provider
         .ancestors()
@@ -245,7 +261,7 @@ fn install_task(ctx: &ServiceContext, port: u16) -> Result<(), ExitCode> {
         directory.join(format!("{}.xml", ctx.guard.namespace)),
         encode_windows_task_xml(
             after
-                .xml
+                .validation_xml
                 .as_deref()
                 .ok_or_else(|| task_error("task XML readback missing"))?,
         )
