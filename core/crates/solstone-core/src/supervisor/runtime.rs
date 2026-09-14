@@ -818,7 +818,12 @@ fn reconcile_schedules(schedule_config_path: &Path) -> BTreeSet<String> {
 }
 
 fn resolve_journal_binary_from(exe_dir: &Path) -> PathBuf {
-    exe_dir.join("solstone-core-journal")
+    let name = if cfg!(windows) {
+        "journal.exe"
+    } else {
+        "solstone-core-journal"
+    };
+    exe_dir.join(name)
 }
 
 fn resolve_journal_binary() -> Result<PathBuf, String> {
@@ -829,8 +834,8 @@ fn resolve_journal_binary() -> Result<PathBuf, String> {
             executable.display()
         )
     })?;
-    // The journal shim only delegates to this sibling binary, so direct execution
-    // is equivalent, removes an exec hop, and does not depend on PATH.
+    // Use the packaged Journal entry point beside this executable. Windows
+    // installs it as journal.exe; Unix installs it as solstone-core-journal.
     Ok(resolve_journal_binary_from(exe_dir))
 }
 
@@ -2040,6 +2045,16 @@ mod tests {
             resolve_journal_binary_from(Path::new("/foo/bar")),
             PathBuf::from("/foo/bar/solstone-core-journal")
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn resolves_packaged_windows_journal_entry_point() {
+        let directory = std::path::Path::new(r"C:\Program Files\solstone\bin");
+        let journal = super::resolve_journal_binary_from(directory);
+        assert_eq!(journal, directory.join("journal.exe"));
+        assert_ne!(journal, directory.join("solstone-core.exe"));
+        assert_ne!(journal, directory.join("solstone-core-journal.exe"));
     }
 
     #[test]
