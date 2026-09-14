@@ -1900,6 +1900,117 @@ fn indexed_entry_is_bounded_and_does_not_prune_or_open_source_files() {
 }
 
 #[test]
+fn connection_indexed_entry_hides_absent_empty_and_outside_states() {
+    use crate::IndexedEntry;
+
+    const A: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    const B: &str = "b1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
+    let boundary = || {
+        connection_boundary(
+            &["Facets"],
+            ConnectionScope::ChosenFacets {
+                ids: [B.to_string()].into_iter().collect(),
+            },
+        )
+    };
+
+    let absent = temp_root("connection-entry-absent");
+    assert_eq!(
+        crate::read_indexed_entry(
+            &absent,
+            QueryBoundary::Connection(boundary()),
+            "missing.md",
+            0,
+            1,
+            1,
+        )
+        .expect("connection absent index read"),
+        IndexedEntry::NotFound
+    );
+    assert!(!absent.exists());
+
+    let (empty, connection) = seeded_root("connection-entry-empty");
+    drop(connection);
+    assert_eq!(
+        crate::read_indexed_entry(
+            &empty,
+            QueryBoundary::Connection(boundary()),
+            "missing.md",
+            0,
+            1,
+            1,
+        )
+        .expect("connection empty index read"),
+        IndexedEntry::NotFound
+    );
+    fs::remove_dir_all(empty).expect("cleanup empty index");
+
+    let (tables_absent, connection) = seeded_root("connection-entry-tables-absent");
+    insert(
+        &connection,
+        "unclassified index row",
+        "unclassified.md",
+        "20260107",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    connection
+        .execute("DROP TABLE chunk_classification_facets", [])
+        .expect("drop classification facets");
+    connection
+        .execute("DROP TABLE chunk_classification", [])
+        .expect("drop classification");
+    connection
+        .execute("DROP TABLE chunk_classification_backfill", [])
+        .expect("drop classification backfill");
+    drop(connection);
+    assert_eq!(
+        crate::read_indexed_entry(
+            &tables_absent,
+            QueryBoundary::Connection(boundary()),
+            "unclassified.md",
+            0,
+            1,
+            1,
+        )
+        .expect("connection missing classification read"),
+        IndexedEntry::NotFound
+    );
+    fs::remove_dir_all(tables_absent).expect("cleanup missing classification index");
+
+    let (outside, connection) = seeded_root("connection-entry-outside");
+    insert(
+        &connection,
+        "outside boundary row",
+        "outside.md",
+        "20260107",
+        "",
+        "fixture",
+        "",
+        0,
+    );
+    let row_id = connection.last_insert_rowid();
+    seed_classification(&connection, "outside.md", "facets", "facet_owned", &[A]);
+    finish_classification(&connection);
+    drop(connection);
+    assert_eq!(
+        crate::read_indexed_entry(
+            &outside,
+            QueryBoundary::Connection(boundary()),
+            "outside.md",
+            0,
+            row_id,
+            1,
+        )
+        .expect("connection outside-boundary read"),
+        IndexedEntry::NotFound
+    );
+    fs::remove_dir_all(outside).expect("cleanup outside-boundary index");
+}
+
+#[test]
 fn owner_response_retains_score_offset_and_wire_shape() {
     let (root, connection) = seeded_root("owner-wire-shape");
     for (path, day) in [("first.md", "20260101"), ("second.md", "20260102")] {

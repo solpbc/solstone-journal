@@ -480,7 +480,15 @@ pub fn read_indexed_entry(
     row_id: i64,
     max_bytes: u64,
 ) -> Result<IndexedEntry, IndexAccessError> {
-    let reader = open_index_reader(journal, &boundary)?;
+    let reader = match open_index_reader(journal, &boundary) {
+        Ok(reader) => reader,
+        Err(IndexAccessError::Absent { .. } | IndexAccessError::Empty { .. })
+            if matches!(&boundary, QueryBoundary::Connection(_)) =>
+        {
+            return Ok(IndexedEntry::NotFound);
+        }
+        Err(error) => return Err(error),
+    };
     if matches!(&boundary, QueryBoundary::Owner) {
         let found: Option<(i64, Option<String>)> = reader
             .connection
