@@ -293,10 +293,12 @@ mod tests {
     // no longer describe it. The fix is to refresh them: rebuild and republish
     // the `dependency_source_companion` archive for the new lock, then
     // regenerate the index. `scripts/refresh_windows_rust_notices.py` does
-    // this -- see its module docstring -- for the common case where the
-    // external dependency population is unchanged; it refuses with a clear
-    // reason when the population or resolved graph actually moved, which
-    // needs a fresh `cargo vendor` acquisition instead.
+    // this -- see its module docstring -- for the cases where the vendored
+    // bytes provably cannot have moved; it refuses with a clear reason when
+    // the external population moved, or when the Windows notice closure moved,
+    // either of which needs a fresh `cargo vendor` acquisition instead. A
+    // resolved-graph change that leaves that closure untouched is admitted, on
+    // the measurement rather than on assertion.
     //
     // DO NOT edit `cargo_lock_sha256` on its own. `validate_rust_notices` above
     // checks only that digest and `notices_sha256`, so editing it turns this
