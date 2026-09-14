@@ -2603,13 +2603,8 @@ fn syntax_detector_violations(
 fn diagnostic_syntax_detector(root: &Path, path: &Path, file: &syn::File) -> Vec<&'static str> {
     let mut aliases = FilesystemModuleAliasCollector::default();
     syn::visit::Visit::visit_file(&mut aliases, file);
-    let is_test_module = path == root.join("tests.rs")
-        || path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.ends_with("_tests.rs"));
     let mut visitor = DiagnosticSyntaxVisitor::new(
-        is_test_module,
+        path == root.join("tests.rs"),
         path == root.join("account_wire.rs")
             || path == root.join("bridge_carrier.rs")
             || path == root.join("bridge_session.rs")

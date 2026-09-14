@@ -5179,7 +5179,6 @@ fn run_mcp_process(
         McpCommand::Pairing(command) => run_mcp_pairing(command),
         McpCommand::Oauth(command) => run_mcp_oauth(command),
         McpCommand::Permission(command) => run_mcp_permission(command),
-        McpCommand::Probe(command) => run_mcp_probe_command(command),
     }
 }
 
@@ -5504,25 +5503,10 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     for perm in file.permissions {
                         let read_summary = match &perm.read {
                             Some(r) => match &r.scope {
-                                solstone_core::ReadScope::WholeJournal => {
-                                    "read: whole_journal".to_owned()
-                                }
-                                solstone_core::ReadScope::Facets { ids } => {
-                                    let names = ids
-                                        .iter()
-                                        .map(|id| {
-                                            solstone_core_facets::resolve_facet_id(
-                                                &journal.path,
-                                                id,
-                                            )
-                                            .unwrap_or_else(|_| id.clone())
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join(", ");
-                                    format!("read: facets ({names})")
-                                }
+                                solstone_core::ReadScope::WholeJournal => "read: whole_journal",
+                                solstone_core::ReadScope::Facets { .. } => "read: facets",
                             },
-                            None => "no read permission".to_owned(),
+                            None => "no read permission",
                         };
                         println!(
                             "{}\tgeneration: {}\tevaluation: {}\t{}",
@@ -5553,17 +5537,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                                         "whole_journal".to_string()
                                     }
                                     solstone_core::ReadScope::Facets { ids } => {
-                                        format!(
-                                            "facets ({})",
-                                            ids.iter()
-                                                .map(|id| solstone_core_facets::resolve_facet_id(
-                                                    &journal.path,
-                                                    id
-                                                )
-                                                .unwrap_or_else(|_| id.clone()))
-                                                .collect::<Vec<_>>()
-                                                .join(", ")
-                                        )
+                                        format!("facets ({})", ids.join(", "))
                                     }
                                 };
                                 println!("Read scope: {scope_str}");
@@ -5587,43 +5561,16 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                 }
             }
         },
-        McpPermissionCommand::Set {
-            target,
-            categories,
-            facets,
-        } => {
+        McpPermissionCommand::Set { target } => {
             let key = match resolve_connection_key(&journal.path, &target) {
                 Ok(k) => k,
                 Err(code) => return code,
             };
-            if categories
-                .iter()
-                .any(|category| !matches!(category.as_str(), "transcripts" | "entities" | "facets"))
-            {
-                eprintln!(
-                    "journal mcp permission set: category must be transcripts, entities, or facets"
-                );
-                return ExitCode::from(EXIT_DATAERR);
-            }
-            let ids = match solstone_core::resolve_permission_facet_names(&journal.path, &facets) {
-                Ok(ids) => ids,
-                Err(message) => {
-                    eprintln!("journal mcp permission set: {message}");
-                    return ExitCode::from(EXIT_DATAERR);
-                }
-            };
-            let perm = solstone_core::ReadPermission {
-                categories,
-                scope: if ids.is_empty() {
-                    solstone_core::ReadScope::WholeJournal
-                } else {
-                    solstone_core::ReadScope::Facets { ids }
-                },
-            };
+            let perm = solstone_core::ReadPermission::default_whole_journal();
             match store.set_permission(&key, perm) {
                 Ok(record) => {
                     println!(
-                        "Set MCP read permission for connection {} (generation {}).",
+                        "Set whole-journal read permission for connection {} (generation {}).",
                         record.connection, record.generation
                     );
                     ExitCode::SUCCESS
@@ -5653,51 +5600,6 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
                     ExitCode::from(EXIT_TEMPFAIL)
                 }
             }
-        }
-    }
-}
-
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
-fn run_mcp_probe_command(command: solstone_core_cli::McpProbeCommand) -> ExitCode {
-    let journal = match resolve_process_journal_path() {
-        Ok(journal) => journal,
-        Err(error) => {
-            eprint_journal_path_error(error);
-            return ExitCode::from(EXIT_TEMPFAIL);
-        }
-    };
-    let key = match resolve_connection_key(&journal.path, &command.target) {
-        Ok(key) => key,
-        Err(code) => return code,
-    };
-    let arguments = match serde_json::from_str::<serde_json::Value>(&command.arguments) {
-        Ok(value) if value.is_object() => value,
-        _ => {
-            eprintln!("journal mcp probe: --arguments must be a JSON object");
-            return ExitCode::from(EXIT_DATAERR);
-        }
-    };
-    match solstone_core::run_mcp_probe(&journal.path, &key, &command.tool, &arguments) {
-        Ok(result) => match serde_json::to_string(&result) {
-            Ok(result) => {
-                println!("{result}");
-                ExitCode::SUCCESS
-            }
-            Err(_) => ExitCode::from(EXIT_UNAVAILABLE),
-        },
-        Err(
-            solstone_core::McpProbeError::InvalidTool | solstone_core::McpProbeError::InvalidInput,
-        ) => {
-            eprintln!("journal mcp probe: invalid tool or arguments");
-            ExitCode::from(EXIT_DATAERR)
-        }
-        Err(solstone_core::McpProbeError::PermissionDenied) => {
-            eprintln!("journal mcp probe: permission denied");
-            ExitCode::from(EXIT_DATAERR)
-        }
-        Err(solstone_core::McpProbeError::Unavailable) => {
-            eprintln!("journal mcp probe: unavailable");
-            ExitCode::from(EXIT_UNAVAILABLE)
         }
     }
 }
@@ -5767,12 +5669,6 @@ fn resolve_connection_key(
 #[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
 fn run_mcp_permission(_command: McpPermissionCommand) -> ExitCode {
     eprintln!("journal mcp permission management is not compiled into this build");
-    ExitCode::from(EXIT_UNAVAILABLE)
-}
-
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
-fn run_mcp_probe_command(_command: solstone_core_cli::McpProbeCommand) -> ExitCode {
-    eprintln!("journal mcp probe is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 

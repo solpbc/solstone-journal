@@ -3,7 +3,7 @@
 
 //! Durable, journal-local MCP permission storage.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -11,7 +11,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use solstone_core_indexer_query::{AdmittedCategory, ConnectionScope};
 use solstone_core_journal_io::{
     AtomicWriteError, JsonWriteOptions, LockError, LockOptions, PathError,
     create_directory_with_mode, hold_lock, write_json,
@@ -85,52 +84,8 @@ pub enum ReadScope {
 /// A typed decision for a connection read evaluation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PermissionDecision {
-    Snapshot(ConnectionReadSnapshot),
+    Allowed,
     Denied { reason: &'static str },
-}
-
-/// The current enforceable read boundary for one stored connection permission.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConnectionReadSnapshot {
-    pub categories: BTreeSet<AdmittedCategory>,
-    pub scope: ConnectionScope,
-    pub generation: u64,
-}
-
-/// Resolve owner-facing declared facet names to the stable identifiers stored
-/// in a connection permission. This is read-only: callers decide whether to
-/// persist the resulting ids.
-pub fn resolve_permission_facet_names(
-    journal_path: &Path,
-    names: &[String],
-) -> Result<Vec<String>, String> {
-    let declared = solstone_core_facets::list_declared_facet_names(journal_path)
-        .map_err(|error| format!("could not list declared facets: {error}"))?;
-    let mut ids = BTreeSet::new();
-    for name in names {
-        if !declared.iter().any(|declared_name| declared_name == name) {
-            return Err(format!("unknown facet {name:?}"));
-        }
-        let declaration = solstone_core_facets::read_facet_declaration(journal_path, name)
-            .map_err(|error| format!("could not read facet {name:?}: {error}"))?
-            .ok_or_else(|| format!("unknown facet {name:?}"))?;
-        let Some(id) = declaration
-            .value()
-            .get("id")
-            .and_then(serde_json::Value::as_str)
-        else {
-            return Err(format!(
-                "facet {name:?} has no stable id; run journal backfill-facet-ids"
-            ));
-        };
-        if !solstone_core_facets::is_well_formed_facet_id(id) {
-            return Err(format!(
-                "facet {name:?} has no stable id; run journal backfill-facet-ids"
-            ));
-        }
-        ids.insert(id.to_owned());
-    }
-    Ok(ids.into_iter().collect())
 }
 
 /// Errors occurring while operating the permissions store.
@@ -255,27 +210,22 @@ pub fn evaluate_connection_read(journal_root: &Path, connection_key: &str) -> Pe
         };
     };
 
-    let categories = read
-        .categories
-        .iter()
-        .filter_map(|category| match category.as_str() {
-            "transcripts" => Some(AdmittedCategory::Transcripts),
-            "entities" => Some(AdmittedCategory::Entities),
-            "facets" => Some(AdmittedCategory::Facets),
-            _ => None,
-        })
-        .collect();
-    let scope = match &read.scope {
-        ReadScope::WholeJournal => ConnectionScope::WholeJournal,
-        ReadScope::Facets { ids } => ConnectionScope::ChosenFacets {
-            ids: ids.iter().cloned().collect(),
+    let has_all_categories = read.categories.iter().any(|c| c == "transcripts")
+        && read.categories.iter().any(|c| c == "entities")
+        && read.categories.iter().any(|c| c == "facets");
+
+    if !has_all_categories {
+        return PermissionDecision::Denied {
+            reason: "unenforceable",
+        };
+    }
+
+    match &read.scope {
+        ReadScope::WholeJournal => PermissionDecision::Allowed,
+        ReadScope::Facets { .. } => PermissionDecision::Denied {
+            reason: "unenforceable",
         },
-    };
-    PermissionDecision::Snapshot(ConnectionReadSnapshot {
-        categories,
-        scope,
-        generation: record.generation,
-    })
+    }
 }
 
 /// A journal-root-bound permission store.
@@ -501,100 +451,6 @@ mod tests {
     }
 
     #[test]
-    fn resolve_owner_facet_names_returns_ids_and_refuses_without_writing_permissions() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
-        let facet = temp.path().join("facets/alpha");
-        fs::create_dir_all(&facet).unwrap();
-        fs::write(
-            facet.join("facet.json"),
-            r#"{"id":"123e4567-e89b-42d3-a456-426614174000","title":"Alpha"}"#,
-        )
-        .unwrap();
-        let ids = resolve_permission_facet_names(temp.path(), &["alpha".to_owned()]).unwrap();
-        let expected_ids = ids.clone();
-        let store = PermissionStore::open(temp.path());
-        store
-            .set_permission(
-                "bearer:owner",
-                ReadPermission {
-                    categories: vec!["facets".to_owned()],
-                    scope: ReadScope::Facets { ids },
-                },
-            )
-            .unwrap();
-        let stored = store
-            .get_permission("bearer:owner")
-            .unwrap()
-            .unwrap()
-            .read
-            .unwrap();
-        assert_eq!(stored.scope, ReadScope::Facets { ids: expected_ids });
-        let before = fs::read(temp.path().join(ENDPOINT_DIRECTORY).join(PERMISSIONS_FILE)).unwrap();
-        assert!(resolve_permission_facet_names(temp.path(), &["missing".to_owned()]).is_err());
-        fs::write(facet.join("facet.json"), r#"{"title":"Alpha"}"#).unwrap();
-        assert!(
-            resolve_permission_facet_names(temp.path(), &["alpha".to_owned()])
-                .unwrap_err()
-                .contains("journal backfill-facet-ids")
-        );
-        assert_eq!(
-            before,
-            fs::read(temp.path().join(ENDPOINT_DIRECTORY).join(PERMISSIONS_FILE)).unwrap()
-        );
-    }
-
-    #[test]
-    fn unknown_categories_authorize_nothing_but_remain_an_enforceable_snapshot() {
-        let temp = TempDir::new_in("/var/tmp").expect("temp dir");
-        let store = PermissionStore::open(temp.path());
-        store
-            .set_permission(
-                "bearer:opaque",
-                ReadPermission {
-                    categories: vec!["unrecognized".to_owned()],
-                    scope: ReadScope::WholeJournal,
-                },
-            )
-            .expect("stores closed token fixture");
-        assert_eq!(
-            evaluate_connection_read(temp.path(), "bearer:opaque"),
-            PermissionDecision::Snapshot(ConnectionReadSnapshot {
-                categories: std::collections::BTreeSet::new(),
-                scope: ConnectionScope::WholeJournal,
-                generation: 1,
-            })
-        );
-    }
-
-    #[test]
-    fn chosen_facet_scope_is_an_enforceable_snapshot() {
-        let temp = TempDir::new_in("/var/tmp").expect("temp dir");
-        let store = PermissionStore::open(temp.path());
-        store
-            .set_permission(
-                "bearer:scoped",
-                ReadPermission {
-                    categories: vec!["transcripts".to_owned()],
-                    scope: ReadScope::Facets {
-                        ids: vec!["facet-stable-a".to_owned()],
-                    },
-                },
-            )
-            .expect("stores scoped permission");
-
-        assert_eq!(
-            evaluate_connection_read(temp.path(), "bearer:scoped"),
-            PermissionDecision::Snapshot(ConnectionReadSnapshot {
-                categories: [AdmittedCategory::Transcripts].into_iter().collect(),
-                scope: ConnectionScope::ChosenFacets {
-                    ids: ["facet-stable-a".to_owned()].into_iter().collect(),
-                },
-                generation: 1,
-            })
-        );
-    }
-
-    #[test]
     fn serde_roundtrip_locked_schema() {
         let raw_json = r#"{
             "schema": 1,
@@ -686,17 +542,7 @@ mod tests {
         assert_eq!(record.read, Some(read.clone()));
         assert_eq!(
             evaluate_connection_read(temp.path(), "bearer:token1"),
-            PermissionDecision::Snapshot(ConnectionReadSnapshot {
-                categories: [
-                    AdmittedCategory::Transcripts,
-                    AdmittedCategory::Entities,
-                    AdmittedCategory::Facets,
-                ]
-                .into_iter()
-                .collect(),
-                scope: ConnectionScope::WholeJournal,
-                generation: 1,
-            })
+            PermissionDecision::Allowed
         );
 
         // Set second permission

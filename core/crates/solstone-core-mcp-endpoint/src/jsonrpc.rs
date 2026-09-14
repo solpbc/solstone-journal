@@ -49,13 +49,8 @@ pub(crate) enum McpMethod {
 /// The closed read-only tool registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ToolName {
-    ListFacets,
     Search,
     Fetch,
-    ListTranscripts,
-    GetTranscript,
-    ListEntities,
-    GetEntity,
 }
 
 impl JsonRpcResponse {
@@ -195,7 +190,7 @@ fn classify_tool_call(request: &JsonRpcRequest) -> Result<McpMethod, JsonRpcFail
             request.id.as_ref(),
         )));
     };
-    if let Some(entry) = crate::registry::tool_by_wire_name(name) {
+    if let Some(entry) = crate::registry::find_tool_by_wire_name(name) {
         Ok(McpMethod::ToolsCall(entry.tool_name))
     } else {
         Err(Box::new(JsonRpcResponse::tool_not_found(
@@ -229,11 +224,8 @@ mod tests {
         JsonRpcResponse, McpMethod, ToolName, classify_method, initialize_result, parse_request,
         tool_result,
     };
-    use std::collections::BTreeSet;
-
-    use crate::permissions::{ConnectionReadSnapshot, PermissionDecision};
+    use crate::permissions::PermissionDecision;
     use crate::registry::advertised_tools_list;
-    use solstone_core_indexer_query::ConnectionScope;
 
     fn error_code(response: &JsonRpcResponse) -> i32 {
         serde_json::from_slice::<Value>(&response.to_bytes().unwrap()).unwrap()["error"]["code"]
@@ -276,37 +268,49 @@ mod tests {
     }
 
     #[test]
-    fn tool_registry_is_a_closed_scoped_vocabulary() {
-        let result = advertised_tools_list(&PermissionDecision::Snapshot(ConnectionReadSnapshot {
-            categories: [
-                solstone_core_indexer_query::AdmittedCategory::Transcripts,
-                solstone_core_indexer_query::AdmittedCategory::Entities,
-                solstone_core_indexer_query::AdmittedCategory::Facets,
-            ]
-            .into_iter()
-            .collect::<BTreeSet<_>>(),
-            scope: ConnectionScope::WholeJournal,
-            generation: 1,
-        }));
-        let names = result["tools"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|tool| tool["name"].as_str().unwrap())
-            .collect::<Vec<_>>();
+    fn tool_registry_is_exactly_the_two_read_only_tools() {
+        let result = advertised_tools_list(&PermissionDecision::Allowed);
         assert_eq!(
-            names,
-            [
-                "list_facets",
-                "search",
-                "fetch",
-                "list_transcripts",
-                "get_transcript",
-                "list_entities",
-                "get_entity"
-            ]
+            result,
+            json!({
+                "tools": [
+                    {
+                        "name": "search",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                                "query": { "type": "string", "minLength": 1 },
+                                "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                                "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
+                                "day": { "type": "string" },
+                                "day_from": { "type": "string" },
+                                "day_to": { "type": "string" },
+                                "facet": { "type": "string" },
+                                "agent": { "type": "string" },
+                                "stream": { "type": "string" },
+                                "time_bucket": { "type": "string" },
+                                "relax": { "type": "boolean", "default": false },
+                                "counts": { "type": "boolean", "default": false },
+                                "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
+                            },
+                            "required": ["query"]
+                        },
+                        "annotations": { "readOnlyHint": true }
+                    },
+                    {
+                        "name": "fetch",
+                        "inputSchema": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": { "id": { "type": "string", "minLength": 3 } },
+                            "required": ["id"]
+                        },
+                        "annotations": { "readOnlyHint": true }
+                    }
+                ]
+            })
         );
-        assert!(result.to_string().contains("additionalProperties"));
         let known = parse_request(
             br#"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search"}}"#,
         )
@@ -341,24 +345,14 @@ mod tests {
     }
 
     #[test]
-    fn prepared_value_is_the_single_source_for_both_tool_result_representations() {
-        let mut prepared = json!({"kept": "value", "drop_before_release": true});
-        prepared
-            .as_object_mut()
-            .unwrap()
-            .remove("drop_before_release");
-
-        let rendered = tool_result(prepared);
-        let content =
-            serde_json::from_str::<Value>(rendered["content"][0]["text"].as_str().unwrap())
-                .unwrap();
-        assert_eq!(content, rendered["structuredContent"]);
-        assert_eq!(content["kept"], "value");
-        assert!(content.get("drop_before_release").is_none());
-        assert!(
-            rendered["structuredContent"]
-                .get("drop_before_release")
-                .is_none()
+    fn successful_tool_result_has_required_content_and_machine_readable_json() {
+        let payload = json!({"results": [], "total": 0});
+        assert_eq!(
+            tool_result(payload.clone()),
+            json!({
+                "content": [{"type": "text", "text": "{\"results\":[],\"total\":0}"}],
+                "structuredContent": payload,
+            })
         );
     }
 }

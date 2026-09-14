@@ -6,7 +6,6 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Deserializer, Serialize};
 pub use solstone_core_format::content::AdmittedCategory;
-use solstone_core_indexer_store::db::ChunkClassification;
 
 /// Explicit owner token. Owner access is not a widest connection boundary.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -79,44 +78,6 @@ impl ConnectionBoundary {
 
     pub fn scope(&self) -> &ConnectionScope {
         &self.scope
-    }
-
-    /// Decide whether a freshly classified source remains inside this connection.
-    ///
-    /// This is the in-memory equivalent of the connection classification
-    /// prefilter. Callers use it after reclassifying a source from the journal,
-    /// rather than trusting a classification row recorded by an earlier index run.
-    #[must_use]
-    pub fn allows_classification(&self, classification: &ChunkClassification) -> bool {
-        if !classification.eligible || classification.unclassified {
-            return false;
-        }
-        let Some(category) = classification.category.and_then(category_from_sql_name) else {
-            return false;
-        };
-        if !self.categories.contains(&category) {
-            return false;
-        }
-        match &self.scope {
-            ConnectionScope::WholeJournal => true,
-            ConnectionScope::ChosenFacets { ids } => match classification.basis {
-                Some("facet_owned") => classification.facet_ids.iter().any(|id| ids.contains(id)),
-                Some("segment_assigned") => {
-                    !classification.facet_ids.is_empty()
-                        && classification.facet_ids.iter().all(|id| ids.contains(id))
-                }
-                _ => false,
-            },
-        }
-    }
-}
-
-fn category_from_sql_name(value: &str) -> Option<AdmittedCategory> {
-    match value {
-        "transcripts" => Some(AdmittedCategory::Transcripts),
-        "entities" => Some(AdmittedCategory::Entities),
-        "facets" => Some(AdmittedCategory::Facets),
-        _ => None,
     }
 }
 
@@ -209,9 +170,6 @@ impl SearchRequest {
 pub struct ConnectionSearchRequest {
     pub query: String,
     pub limit: usize,
-    /// Internal stable continuation coordinate for recency paging.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub start_after: Option<ConnectionStartAfter>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub day: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -237,7 +195,6 @@ impl Default for ConnectionSearchRequest {
         Self {
             query: String::new(),
             limit: 10,
-            start_after: None,
             day: None,
             day_from: None,
             day_to: None,
@@ -249,14 +206,6 @@ impl Default for ConnectionSearchRequest {
             order: Order::Relevance,
         }
     }
-}
-
-/// A connection paging anchor. It is stable across database row-id reuse.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ConnectionStartAfter {
-    pub day: String,
-    pub path: String,
-    pub idx: i64,
 }
 
 /// One FTS row, shaped like the Python journal search result.
@@ -300,9 +249,6 @@ pub struct SearchResponse {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct ConnectionSearchHit {
-    /// Internal index coordinate used only to bind an opaque endpoint reference.
-    #[serde(skip)]
-    pub row_id: i64,
     pub id: String,
     pub text: String,
     pub metadata: SearchMetadata,

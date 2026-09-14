@@ -15,14 +15,6 @@ use solstone_core_format::content::{
 use solstone_core_format::segment::segment_parse;
 use solstone_core_journal_io::paths::{PathOrDay, StreamLocation, iter_segments};
 
-mod segment_page;
-
-pub use segment_page::{
-    MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS, SegmentTranscriptCursor,
-    SegmentTranscriptEntry, SegmentTranscriptPage, SegmentTranscriptReadError,
-    SegmentTranscriptVersion, read_segment_transcript_page,
-};
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TalentSource {
     Disabled,

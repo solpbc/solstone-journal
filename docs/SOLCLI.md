@@ -199,12 +199,11 @@ Command names are lowercase single words, or hyphenated multi-word
 
 ## Journal MCP Endpoint
 
-The journal MCP endpoint is a loopback-only, TLS-protected MCP server for seven
-read-only journal tools: `list_facets`, `search`, `fetch`, `list_transcripts`,
-`get_transcript`, `list_entities`, and `get_entity`. It is available only in
-builds compiled with the `journal-mcp-endpoint` Cargo feature and only when the
-journal runtime capability is enabled; without either condition, the endpoint
-does not start.
+The journal MCP endpoint is a loopback-only, TLS-protected MCP server for the
+journal's read-only `search` and `fetch` tools. It is available only in builds
+compiled with the `journal-mcp-endpoint` Cargo feature and only when the journal
+runtime capability is enabled; without either condition, the endpoint does not
+start.
 
 ### Enable or disable the endpoint
 
@@ -243,7 +242,6 @@ Local pairing and OAuth client registration are documented in
 [MCP OAuth](MCP_OAUTH.md) (`journal mcp pairing` and `journal mcp oauth`).
 `journal mcp permission {show,set,clear}` manages connection read permissions
 for bearer tokens (`--token --label LABEL`) and OAuth clients (`--oauth --client-id CLIENT_ID`).
-`journal mcp probe` runs one permissioned tool call locally without starting a listener.
 `journal mcp status` reports the compiled capability, the current journal
 configuration result, and token count. It is capability/configuration status,
 not a listener-liveness check.
@@ -265,8 +263,9 @@ drop-in HTTPS URL. In either connection mode, send `Authorization: Bearer
 <token>` on every request, where `<token>` is a static MCP token or an OAuth
 access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retain the returned
 `Mcp-Session-Id` response header, then call `tools/list` or `tools/call` with
-that header. Advertised tools are the closed registry intersected with the
-connection's current enforceable permission.
+that header. Advertised tools are the closed registry intersected with what
+this connection can actually use; a connection with no permission or a stored
+boundary this build cannot enforce gets an empty list.
 
 The Journal MCP endpoint is listed in the [current command inventory](#current-command-inventory).
 

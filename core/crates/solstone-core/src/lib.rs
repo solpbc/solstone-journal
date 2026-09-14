@@ -22,11 +22,10 @@ mod journal_route_record;
 
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 pub use solstone_core_mcp_endpoint::{
-    ConnectionReadSnapshot, CreatedPairingCode, McpEndpointTlsService, McpProbeError,
-    McpServiceError, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
-    PermissionDecision, PermissionStore, PermissionStoreError, PermissionsFile, ReadPermission,
-    ReadScope, TokenStore, TokenStoreError, TokenSummary, VerifiedToken, evaluate_connection_read,
-    mcp_endpoint_server_config, resolve_permission_facet_names, run_mcp_probe,
+    CreatedPairingCode, McpEndpointTlsService, McpServiceError, OAuthClientSummary,
+    OAuthGrantSummary, OAuthStore, OAuthStoreError, PermissionDecision, PermissionStore,
+    PermissionStoreError, PermissionsFile, ReadPermission, ReadScope, TokenStore, TokenStoreError,
+    TokenSummary, VerifiedToken, evaluate_connection_read, mcp_endpoint_server_config,
     run_native_service_with_hosted_parent,
 };
 
@@ -36,11 +35,9 @@ mod mcp_endpoint_public_surface_tests {
     use tempfile::TempDir;
 
     use super::{
-        ConnectionReadSnapshot, McpEndpointTlsService, PermissionDecision, PermissionStore,
-        ReadPermission, ReadScope, TokenStore, evaluate_connection_read,
-        mcp_endpoint_server_config,
+        McpEndpointTlsService, PermissionDecision, PermissionStore, ReadPermission, ReadScope,
+        TokenStore, evaluate_connection_read, mcp_endpoint_server_config,
     };
-    use solstone_core_indexer_query::{AdmittedCategory, ConnectionScope};
     use solstone_core_journal_config::MCP_ENDPOINT_LOOPBACK_PORT;
 
     #[test]
@@ -86,17 +83,7 @@ mod mcp_endpoint_public_surface_tests {
         assert_eq!(record.read.as_ref().unwrap().scope, ReadScope::WholeJournal);
         assert_eq!(
             evaluate_connection_read(journal_path, &connection_key),
-            PermissionDecision::Snapshot(ConnectionReadSnapshot {
-                categories: [
-                    AdmittedCategory::Transcripts,
-                    AdmittedCategory::Entities,
-                    AdmittedCategory::Facets,
-                ]
-                .into_iter()
-                .collect(),
-                scope: ConnectionScope::WholeJournal,
-                generation: 1,
-            })
+            PermissionDecision::Allowed
         );
 
         // Show reflects active grant
