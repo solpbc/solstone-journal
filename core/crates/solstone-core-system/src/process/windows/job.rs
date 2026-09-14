@@ -75,6 +75,8 @@ pub(super) trait WindowsJobApi {
     fn kill_on_close_enabled(&self, job: &JobHandle) -> io::Result<bool>;
     fn terminate(&self, job: &JobHandle, exit_code: u32) -> io::Result<()>;
     fn accounting(&self, job: &JobHandle) -> io::Result<JobAccounting>;
+    /// Process IDs currently assigned to the Job.
+    fn member_process_ids(&self, job: &JobHandle) -> io::Result<Vec<u32>>;
     fn observe_member(
         &self,
         process: RawWindowsHandle,
@@ -335,6 +337,54 @@ impl WindowsJobApi for SystemWindowsJobApi {
         })
     }
 
+    fn member_process_ids(&self, job: &JobHandle) -> io::Result<Vec<u32>> {
+        use std::mem::size_of;
+        use std::ptr::null_mut;
+
+        use windows_sys::Win32::Foundation::ERROR_MORE_DATA;
+        use windows_sys::Win32::System::JobObjects::{
+            JOBOBJECT_BASIC_PROCESS_ID_LIST, JobObjectBasicProcessIdList, QueryInformationJobObject,
+        };
+
+        let mut capacity = 64usize;
+        loop {
+            // The list is a flexible array after its two-count header; the
+            // buffer is u64-aligned and sized for `capacity` entries.
+            let bytes = size_of::<JOBOBJECT_BASIC_PROCESS_ID_LIST>()
+                + capacity.saturating_sub(1) * size_of::<usize>();
+            let mut buffer = vec![0u64; bytes.div_ceil(size_of::<u64>())];
+            // SAFETY: `buffer` is a writable, suitably aligned result buffer of
+            // exactly `bytes` usable bytes, and `job` owns a live Job handle.
+            #[allow(unsafe_code)]
+            let queried = unsafe {
+                QueryInformationJobObject(
+                    job.raw(),
+                    JobObjectBasicProcessIdList,
+                    buffer.as_mut_ptr().cast(),
+                    bytes as u32,
+                    null_mut(),
+                )
+            };
+            if queried == 0 {
+                let error = io::Error::last_os_error();
+                if error.raw_os_error() == Some(ERROR_MORE_DATA as i32) && capacity < 65_536 {
+                    capacity *= 4;
+                    continue;
+                }
+                return Err(error);
+            }
+            // SAFETY: the call succeeded, so the header and the reported
+            // number of entries were written inside `buffer`.
+            #[allow(unsafe_code)]
+            let ids = unsafe {
+                let list = &*buffer.as_ptr().cast::<JOBOBJECT_BASIC_PROCESS_ID_LIST>();
+                let count = (list.NumberOfProcessIdsInList as usize).min(capacity);
+                std::slice::from_raw_parts(list.ProcessIdList.as_ptr(), count)
+            };
+            return Ok(ids.iter().map(|id| *id as u32).collect());
+        }
+    }
+
     fn observe_member(
         &self,
         process: RawWindowsHandle,
@@ -416,6 +466,10 @@ mod tests {
             Ok(JobAccounting {
                 active_processes: 0,
             })
+        }
+
+        fn member_process_ids(&self, _job: &JobHandle) -> io::Result<Vec<u32>> {
+            Ok(Vec::new())
         }
 
         fn observe_member(

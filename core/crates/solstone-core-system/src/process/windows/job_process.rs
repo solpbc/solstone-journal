@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::process::{ProcessBirth, ProcessInstance};
 
-use super::handle::{JobHandle, PrimaryThreadHandle, RootProcessHandle};
+use super::handle::{JobHandle, MemberProcessHandle, PrimaryThreadHandle, RootProcessHandle};
 #[cfg(windows)]
 use super::identity::{WindowsFileTime, filetime_value};
 use super::job::{JobMembership, WindowsJobApi};
@@ -56,6 +56,13 @@ pub(super) trait WindowsProcessControlApi {
         timeout: Duration,
     ) -> io::Result<ProcessWait>;
     fn exit_code(&self, process: &RootProcessHandle) -> io::Result<u32>;
+    /// Retain a wait-only handle to a Job member; `None` when it already exited.
+    fn open_member(&self, pid: u32) -> io::Result<Option<MemberProcessHandle>>;
+    fn wait_for_member(
+        &self,
+        member: &MemberProcessHandle,
+        timeout: Duration,
+    ) -> io::Result<ProcessWait>;
 }
 
 #[cfg(windows)]
@@ -88,6 +95,39 @@ impl WindowsProcessControlApi for SystemWindowsProcessControlApi {
             return Err(io::Error::last_os_error());
         }
         Ok(exit_code)
+    }
+
+    fn open_member(&self, pid: u32) -> io::Result<Option<MemberProcessHandle>> {
+        use windows_sys::Win32::Foundation::ERROR_INVALID_PARAMETER;
+        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
+
+        // SAFETY: OpenProcess takes plain integer arguments; the returned
+        // handle becomes owned here and is closed on drop.
+        #[allow(unsafe_code)]
+        let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
+        if raw.is_null() {
+            let error = io::Error::last_os_error();
+            // The member finished between enumeration and this open.
+            if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
+                return Ok(None);
+            }
+            return Err(error);
+        }
+        Ok(Some(MemberProcessHandle::new(raw)))
+    }
+
+    fn wait_for_member(
+        &self,
+        member: &MemberProcessHandle,
+        timeout: Duration,
+    ) -> io::Result<ProcessWait> {
+        use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+        let milliseconds = timeout.as_millis().min(u128::from(u32::MAX)) as u32;
+        // SAFETY: `member` owns a live SYNCHRONIZE handle for this wait.
+        #[allow(unsafe_code)]
+        let result = unsafe { WaitForSingleObject(member.raw(), milliseconds) };
+        map_windows_wait_result(result, io::Error::last_os_error())
     }
 }
 
@@ -233,6 +273,27 @@ impl WindowsJobProcess {
         process: &impl WindowsProcessControlApi,
         deadline: Instant,
     ) -> io::Result<i32> {
+        // Job accounting drops a member before its process object is
+        // signalled, so a count of zero alone is not descendant quiescence.
+        // Retain every live member before termination and require each
+        // object to signal below; a retry after an issued termination can no
+        // longer enumerate them and falls back to the count.
+        // Enumeration or open failures degrade to the count-only proof; they
+        // must never keep the termination itself from being issued.
+        let members = if self.hard_stop_issued {
+            Vec::new()
+        } else {
+            let mut retained = Vec::new();
+            for pid in jobs.member_process_ids(self.job()?).unwrap_or_default() {
+                if pid == self.identity.pid {
+                    continue;
+                }
+                if let Ok(Some(member)) = process.open_member(pid) {
+                    retained.push(member);
+                }
+            }
+            retained
+        };
         if !self.hard_stop_issued {
             jobs.terminate(self.job()?, JOB_HARD_STOP_EXIT_CODE)
                 .map_err(|error| {
@@ -278,6 +339,33 @@ impl WindowsJobProcess {
                 .active_processes
                 == 0
             {
+                for member in &members {
+                    let remaining =
+                        deadline
+                            .checked_duration_since(Instant::now())
+                            .ok_or_else(|| {
+                                io::Error::new(
+                                    io::ErrorKind::TimedOut,
+                                    "Job member did not signal after hard stop",
+                                )
+                            })?;
+                    match process
+                        .wait_for_member(member, remaining)
+                        .map_err(|error| {
+                            io::Error::new(
+                                error.kind(),
+                                format!("waiting for a hard-stopped Job member failed: {error}"),
+                            )
+                        })? {
+                        ProcessWait::Signaled => {}
+                        ProcessWait::Timeout => {
+                            return Err(io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "Job member did not signal after hard stop",
+                            ));
+                        }
+                    }
+                }
                 return process
                     .exit_code(&self.root)
                     .map_err(|error| {
@@ -1604,7 +1692,8 @@ mod tests {
     use crate::process::{ProcessBirth, ProcessInstance};
 
     use super::super::handle::{
-        JobHandle, PipeEndHandle, PrimaryThreadHandle, RawWindowsHandle, RootProcessHandle,
+        JobHandle, MemberProcessHandle, PipeEndHandle, PrimaryThreadHandle, RawWindowsHandle,
+        RootProcessHandle,
     };
     use super::super::job::{
         JobAccounting, JobMembership, JobResourceLimitReceipt, JobResourceLimits, WindowsJobApi,
@@ -1630,6 +1719,7 @@ mod tests {
         accounting: RefCell<VecDeque<u32>>,
         accounting_fallback: u32,
         membership: Cell<MembershipResult>,
+        members: RefCell<Vec<u32>>,
     }
 
     impl FakeJobApi {
@@ -1641,7 +1731,13 @@ mod tests {
                 accounting: RefCell::new(accounting.into_iter().collect()),
                 accounting_fallback,
                 membership: Cell::new(MembershipResult::Member),
+                members: RefCell::new(Vec::new()),
             }
+        }
+
+        fn with_members(self, members: impl IntoIterator<Item = u32>) -> Self {
+            *self.members.borrow_mut() = members.into_iter().collect();
+            self
         }
     }
 
@@ -1695,6 +1791,15 @@ mod tests {
             })
         }
 
+        fn member_process_ids(&self, _job: &JobHandle) -> io::Result<Vec<u32>> {
+            // Like the real Job, the list drains once termination is issued,
+            // so only a snapshot taken before `terminate` observes members.
+            if self.terminate_calls.get() > 0 {
+                return Ok(Vec::new());
+            }
+            Ok(self.members.borrow().clone())
+        }
+
         fn observe_member(
             &self,
             _process: RawWindowsHandle,
@@ -1714,6 +1819,9 @@ mod tests {
         exit_result: Cell<Result<u32, io::ErrorKind>>,
         wait_calls: Cell<u32>,
         exit_calls: Cell<u32>,
+        opened_members: RefCell<Vec<u32>>,
+        member_waits: RefCell<VecDeque<Result<ProcessWait, io::ErrorKind>>>,
+        member_wait_calls: Cell<u32>,
     }
 
     impl FakeProcessControlApi {
@@ -1728,7 +1836,18 @@ mod tests {
                 exit_result: Cell::new(exit_result),
                 wait_calls: Cell::new(0),
                 exit_calls: Cell::new(0),
+                opened_members: RefCell::new(Vec::new()),
+                member_waits: RefCell::new(VecDeque::new()),
+                member_wait_calls: Cell::new(0),
             }
+        }
+
+        fn with_member_waits(
+            self,
+            waits: impl IntoIterator<Item = Result<ProcessWait, io::ErrorKind>>,
+        ) -> Self {
+            *self.member_waits.borrow_mut() = waits.into_iter().collect();
+            self
         }
     }
 
@@ -1752,6 +1871,26 @@ mod tests {
             match self.exit_result.get() {
                 Ok(code) => Ok(code),
                 Err(kind) => Err(io::Error::from(kind)),
+            }
+        }
+
+        fn open_member(&self, pid: u32) -> io::Result<Option<MemberProcessHandle>> {
+            self.opened_members.borrow_mut().push(pid);
+            Ok(Some(MemberProcessHandle::new(
+                pid as usize as RawWindowsHandle,
+            )))
+        }
+
+        fn wait_for_member(
+            &self,
+            _member: &MemberProcessHandle,
+            _timeout: Duration,
+        ) -> io::Result<ProcessWait> {
+            self.member_wait_calls.set(self.member_wait_calls.get() + 1);
+            match self.member_waits.borrow_mut().pop_front() {
+                Some(Ok(wait)) => Ok(wait),
+                Some(Err(kind)) => Err(io::Error::from(kind)),
+                None => Ok(ProcessWait::Signaled),
             }
         }
     }
@@ -2132,6 +2271,42 @@ mod tests {
         assert_eq!(jobs.accounting_calls.get(), 3);
         assert_eq!(process.wait_calls.get(), 1);
         assert_eq!(process.exit_calls.get(), 1);
+        assert!(owner.hard_stop_issued);
+    }
+
+    #[test]
+    fn hard_stop_retains_members_before_termination_and_waits_for_each_object() {
+        let mut owner = owner();
+        // 7 is the root: it has its own handle and is never opened as a member.
+        let jobs = FakeJobApi::new([1, 0], 0).with_members([7, 4242, 4243]);
+        let process = FakeProcessControlApi::new([], ProcessWait::Signaled, Ok(0))
+            .with_member_waits([Ok(ProcessWait::Signaled), Ok(ProcessWait::Signaled)]);
+
+        assert_eq!(
+            owner
+                .hard_stop_with(&jobs, &process, Instant::now() + JOB_HARD_STOP_TIMEOUT,)
+                .expect("members signal after the count reaches zero"),
+            0
+        );
+        assert_eq!(*process.opened_members.borrow(), vec![4242, 4243]);
+        assert_eq!(process.member_wait_calls.get(), 2);
+        assert_eq!(jobs.terminate_calls.get(), 1);
+        assert!(owner.hard_stop_issued);
+    }
+
+    #[test]
+    fn zero_job_accounting_is_not_quiescence_while_a_member_object_is_unsignalled() {
+        let mut owner = owner();
+        let jobs = FakeJobApi::new([0], 0).with_members([4242]);
+        let process = FakeProcessControlApi::new([], ProcessWait::Signaled, Ok(0))
+            .with_member_waits([Ok(ProcessWait::Timeout)]);
+
+        let error = owner
+            .hard_stop_with(&jobs, &process, Instant::now() + JOB_HARD_STOP_TIMEOUT)
+            .expect_err("an unsignalled member refuses quiescence");
+        assert_eq!(error.kind(), io::ErrorKind::TimedOut);
+        assert_eq!(*process.opened_members.borrow(), vec![4242]);
+        assert_eq!(jobs.terminate_calls.get(), 1);
         assert!(owner.hard_stop_issued);
     }
 
