@@ -5,6 +5,7 @@ use solstone_core_indexer_query::AdmittedCategory;
 
 use crate::permissions::{ConnectionReadSnapshot, PermissionDecision};
 use crate::tools::search::MAX_QUERY_BYTES;
+use crate::tools::{MAX_DAY_BYTES, MAX_FACET_BYTES, MAX_OPAQUE_REFERENCE_BYTES};
 
 /// The complete, closed MCP tool vocabulary.
 #[derive(Debug, Clone, Copy)]
@@ -134,12 +135,12 @@ fn search_input_schema() -> Value {
         "properties": {
             "query": { "type": "string", "minLength": 1, "maxLength": MAX_QUERY_BYTES },
             "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-            "cursor": { "type": "string", "minLength": 1, "maxLength": 4096 },
-            "day": { "type": "string", "minLength": 1, "maxLength": 32 },
-            "day_from": { "type": "string", "minLength": 1, "maxLength": 32 },
-            "day_to": { "type": "string", "minLength": 1, "maxLength": 32 },
+            "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
+            "day_from": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
+            "day_to": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
             "category": { "type": "string", "enum": ["transcripts", "entities", "facets"] },
-            "facet": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "facet": { "type": "string", "minLength": 1, "maxLength": MAX_FACET_BYTES },
         }
     })
 }
@@ -150,7 +151,7 @@ fn fetch_input_schema() -> Value {
         "additionalProperties": false,
         "required": ["reference"],
         "properties": {
-            "reference": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
         }
     })
 }
@@ -161,8 +162,8 @@ fn list_transcripts_input_schema() -> Value {
         "additionalProperties": false,
         "properties": {
             "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-            "day": { "type": "string", "minLength": 1, "maxLength": 32 },
-            "facet": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "day": { "type": "string", "minLength": 1, "maxLength": MAX_DAY_BYTES },
+            "facet": { "type": "string", "minLength": 1, "maxLength": MAX_FACET_BYTES },
         }
     })
 }
@@ -173,7 +174,7 @@ fn list_entities_input_schema() -> Value {
         "additionalProperties": false,
         "properties": {
             "limit": { "type": "integer", "minimum": 1, "maximum": 100 },
-            "facet": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "facet": { "type": "string", "minLength": 1, "maxLength": MAX_FACET_BYTES },
         }
     })
 }
@@ -184,8 +185,8 @@ fn transcript_input_schema() -> Value {
         "additionalProperties": false,
         "required": ["reference"],
         "properties": {
-            "reference": { "type": "string", "minLength": 1, "maxLength": 4096 },
-            "cursor": { "type": "string", "minLength": 1, "maxLength": 4096 },
+            "reference": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
+            "cursor": { "type": "string", "minLength": 1, "maxLength": MAX_OPAQUE_REFERENCE_BYTES },
         }
     })
 }
@@ -208,6 +209,23 @@ mod tests {
         let tools = advertised_tools_list(&PermissionDecision::Snapshot(snapshot));
         assert_eq!(tools["tools"].as_array().unwrap().len(), 1);
         assert_eq!(tools["tools"][0]["name"], "list_facets");
+    }
+
+    #[test]
+    fn chosen_facet_advertisement_contains_no_journal_content() {
+        let snapshot = ConnectionReadSnapshot {
+            categories: [AdmittedCategory::Transcripts].into_iter().collect(),
+            scope: ConnectionScope::ChosenFacets {
+                ids: ["123e4567-e89b-42d3-a456-426614174000".to_owned()]
+                    .into_iter()
+                    .collect(),
+            },
+            generation: 1,
+        };
+
+        let serialized = advertised_tools_list(&PermissionDecision::Snapshot(snapshot)).to_string();
+        assert!(!serialized.contains("Alpha"));
+        assert!(!serialized.contains("20260914/default/090000_300"));
     }
 
     #[test]
@@ -244,5 +262,40 @@ mod tests {
             crate::tools::transcripts::validate_list(Some(&json!({"cursor": "nope"}))).is_err()
         );
         assert!(crate::tools::entities::validate_list(Some(&json!({"cursor": "nope"}))).is_err());
+    }
+
+    #[test]
+    fn opaque_schema_bounds_match_the_validators() {
+        let opaque = "x".repeat(MAX_OPAQUE_REFERENCE_BYTES);
+        assert_eq!(
+            search_input_schema()["properties"]["cursor"]["maxLength"],
+            MAX_OPAQUE_REFERENCE_BYTES
+        );
+        assert_eq!(
+            fetch_input_schema()["properties"]["reference"]["maxLength"],
+            MAX_OPAQUE_REFERENCE_BYTES
+        );
+        assert!(
+            crate::tools::search::validate(Some(&json!({
+                "query": "query",
+                "cursor": opaque,
+                "day": "20260914",
+                "facet": "facet-id"
+            })))
+            .is_ok()
+        );
+        assert!(
+            crate::tools::search::validate(Some(&json!({
+                "query": "query",
+                "day": "x".repeat(MAX_DAY_BYTES + 1)
+            })))
+            .is_err()
+        );
+        assert!(
+            crate::tools::entities::validate_list(Some(&json!({
+                "facet": "x".repeat(MAX_FACET_BYTES + 1)
+            })))
+            .is_err()
+        );
     }
 }

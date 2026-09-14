@@ -101,17 +101,27 @@ pub fn read_segment_transcript_page(
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or_default();
-        for line in complete_lines(&window)? {
+        let mut consumed = 0;
+        let mut stopped_in_window = false;
+        for (line, line_end) in complete_lines(&window)? {
             let text = project_line(name, line);
             if !text.trim().is_empty() {
                 entries.push(SegmentTranscriptEntry { text });
             }
+            consumed = line_end;
             if entries.len() == MAX_TRANSCRIPT_PAGE_ITEMS {
+                stopped_in_window = consumed < advanced;
                 break;
             }
         }
-        byte_offset = byte_offset.saturating_add(advanced as u64);
-        if exhausted {
+        byte_offset = byte_offset.saturating_add(
+            (if stopped_in_window {
+                consumed
+            } else {
+                advanced
+            }) as u64,
+        );
+        if exhausted && !stopped_in_window {
             source_index += 1;
             byte_offset = 0;
         }
@@ -210,9 +220,18 @@ fn read_window(
     Ok((bytes, advanced, exhausted))
 }
 
-fn complete_lines(bytes: &[u8]) -> Result<Vec<&str>, SegmentTranscriptReadError> {
+fn complete_lines(bytes: &[u8]) -> Result<Vec<(&str, usize)>, SegmentTranscriptReadError> {
     let text = std::str::from_utf8(bytes).map_err(|_| SegmentTranscriptReadError::Io)?;
-    let lines = text.lines().collect::<Vec<_>>();
+    let mut end = 0;
+    let lines = text
+        .split_inclusive('\n')
+        .map(|raw| {
+            end += raw.len();
+            let line = raw.strip_suffix('\n').unwrap_or(raw);
+            let line = line.strip_suffix('\r').unwrap_or(line);
+            (line, end)
+        })
+        .collect::<Vec<_>>();
     Ok(lines)
 }
 
@@ -224,7 +243,9 @@ fn project_line(_name: &str, line: &str) -> String {
 mod tests {
     use std::fs;
 
-    use super::{MAX_TRANSCRIPT_PAGE_BYTES, read_segment_transcript_page};
+    use super::{
+        MAX_TRANSCRIPT_PAGE_BYTES, MAX_TRANSCRIPT_PAGE_ITEMS, read_segment_transcript_page,
+    };
     use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 
     #[test]
@@ -282,5 +303,39 @@ mod tests {
                 text: "approved transcript line".to_owned(),
             }]
         );
+    }
+
+    #[test]
+    fn item_limited_page_resumes_at_the_first_unreturned_line() {
+        let root = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let segment = root.path().join("chronicle/20260914/default/090000_300");
+        fs::create_dir_all(&segment).unwrap();
+        let lines = (1..=MAX_TRANSCRIPT_PAGE_ITEMS + 5)
+            .map(|line| format!("line {line}\n"))
+            .collect::<String>();
+        fs::write(segment.join("meeting_transcript.md"), lines).unwrap();
+        let segment = iter_segments(root.path(), PathOrDay::Day("20260914"))
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        let first = read_segment_transcript_page(&segment, None).unwrap();
+        assert_eq!(first.entries.len(), MAX_TRANSCRIPT_PAGE_ITEMS);
+        assert_eq!(first.entries[0].text, "line 1");
+        assert_eq!(
+            first.entries[MAX_TRANSCRIPT_PAGE_ITEMS - 1].text,
+            "line 100"
+        );
+
+        let second = read_segment_transcript_page(&segment, first.next.as_ref()).unwrap();
+        assert_eq!(
+            second
+                .entries
+                .iter()
+                .map(|entry| entry.text.as_str())
+                .collect::<Vec<_>>(),
+            ["line 101", "line 102", "line 103", "line 104", "line 105"]
+        );
+        assert!(second.next.is_none());
     }
 }

@@ -15,6 +15,16 @@ pub(crate) use fetch::ValidatedFetch;
 pub(crate) use search::ValidatedSearch;
 pub(crate) use transcripts::{ValidatedGetTranscript, ValidatedListTranscripts};
 
+pub(crate) const MAX_OPAQUE_REFERENCE_BYTES: usize = 2_048;
+pub(crate) const MAX_DAY_BYTES: usize = 32;
+pub(crate) const MAX_FACET_BYTES: usize = 256;
+
+pub(crate) fn optional_string_within_limit(value: &Option<String>, maximum: usize) -> bool {
+    value
+        .as_ref()
+        .is_none_or(|value| !value.is_empty() && value.len() <= maximum)
+}
+
 /// One validated tool call whose schema has been admitted for audit.
 pub(crate) enum ValidatedTool {
     ListFacets(ValidatedListFacets),

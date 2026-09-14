@@ -4,7 +4,10 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{ToolError, search::MAX_LIMIT};
+use super::{
+    MAX_DAY_BYTES, MAX_FACET_BYTES, MAX_OPAQUE_REFERENCE_BYTES, ToolError,
+    optional_string_within_limit, search::MAX_LIMIT,
+};
 
 pub(crate) struct ValidatedListTranscripts {
     pub(crate) day: Option<String>,
@@ -45,6 +48,11 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListTrans
     let params =
         serde_json::from_value::<ListParams>(params).map_err(|_| ToolError::InvalidInput)?;
     validate_limit(params.limit)?;
+    if !optional_string_within_limit(&params.day, MAX_DAY_BYTES)
+        || !optional_string_within_limit(&params.facet, MAX_FACET_BYTES)
+    {
+        return Err(ToolError::InvalidInput);
+    }
     Ok(ValidatedListTranscripts {
         day: params.day,
         facet_id: params.facet,
@@ -60,11 +68,11 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetTranscr
     if params
         .cursor
         .as_ref()
-        .is_some_and(|value| value.len() > 2_048)
+        .is_some_and(|value| value.is_empty() || value.len() > MAX_OPAQUE_REFERENCE_BYTES)
     {
         return Err(ToolError::InvalidInput);
     }
-    if params.reference.is_empty() || params.reference.len() > 2_048 {
+    if params.reference.is_empty() || params.reference.len() > MAX_OPAQUE_REFERENCE_BYTES {
         return Err(ToolError::InvalidInput);
     }
     Ok(ValidatedGetTranscript {

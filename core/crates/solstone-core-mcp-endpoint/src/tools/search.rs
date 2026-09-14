@@ -5,7 +5,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use solstone_core_indexer_query::AdmittedCategory;
 
-use super::ToolError;
+use super::{
+    MAX_DAY_BYTES, MAX_FACET_BYTES, MAX_OPAQUE_REFERENCE_BYTES, ToolError,
+    optional_string_within_limit,
+};
 
 pub(crate) const MAX_QUERY_BYTES: usize = 4_096;
 pub(crate) const MAX_LIMIT: usize = 100;
@@ -56,7 +59,11 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedSearch, ToolEr
         || params
             .cursor
             .as_ref()
-            .is_some_and(|cursor| cursor.len() > 2_048)
+            .is_some_and(|cursor| cursor.is_empty() || cursor.len() > MAX_OPAQUE_REFERENCE_BYTES)
+        || !optional_string_within_limit(&params.day, MAX_DAY_BYTES)
+        || !optional_string_within_limit(&params.day_from, MAX_DAY_BYTES)
+        || !optional_string_within_limit(&params.day_to, MAX_DAY_BYTES)
+        || !optional_string_within_limit(&params.facet, MAX_FACET_BYTES)
     {
         return Err(ToolError::InvalidInput);
     }

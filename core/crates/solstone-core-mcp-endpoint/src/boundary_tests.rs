@@ -144,6 +144,42 @@ fn probe(
     run_mcp_probe(journal.path(), CONNECTION, tool, &arguments)
 }
 
+fn visible_search_page(result: &Value) -> Value {
+    let results = result["results"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|result| {
+            json!({
+                "title": result["title"],
+                "date": result["date"],
+                "snippet": result["snippet"],
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({"results": results, "coverage": result["coverage"]})
+}
+
+fn assert_no_coordinate_keys(value: &Value) {
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                assert_no_coordinate_keys(value);
+            }
+        }
+        Value::Object(values) => {
+            for (key, value) in values {
+                assert!(
+                    !matches!(key.as_str(), "path" | "idx" | "row_id" | "rowid" | "stream"),
+                    "agent result exposed internal key {key}"
+                );
+                assert_no_coordinate_keys(value);
+            }
+        }
+        _ => {}
+    }
+}
+
 #[test]
 fn ac5_live_check_rejects_reassigned_segment_without_rescanning_the_index() {
     let journal = fixture();
@@ -324,6 +360,52 @@ fn ac15_ac16_exam_bound_is_unquantified_when_live_drops_cannot_fill_the_page() {
 }
 
 #[test]
+fn ac14_unauthorized_chunks_do_not_change_visible_search_page_or_coverage() {
+    let journal = fixture();
+    let before = probe(&journal, "search", json!({"query": "indexed"})).unwrap();
+    let before = visible_search_page(&before);
+
+    let unauthorized_segment = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join("100000_300");
+    fs::create_dir_all(unauthorized_segment.join("talents")).unwrap();
+    fs::write(
+        unauthorized_segment.join("talents/facets.json"),
+        "[{\"facet\":\"beta\"}]",
+    )
+    .unwrap();
+    let unauthorized_path = "20260914/default/100000_300/talents/brief.md";
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    index
+        .execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+             VALUES ('indexed unauthorized', ?1, ?2, '', 'fixture-stream', ?3, 0, '')",
+            params![unauthorized_path, DAY, STREAM],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) \
+             VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            params![unauthorized_path],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?1, ?2)",
+            params![unauthorized_path, FACET_B],
+        )
+        .unwrap();
+    drop(index);
+
+    let after = probe(&journal, "search", json!({"query": "indexed"})).unwrap();
+    assert_eq!(visible_search_page(&after), before);
+}
+
+#[test]
 fn ac13_cursor_rejects_a_replaced_anchor_and_valid_cursor_continues_without_repeats() {
     let journal = fixture();
     let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
@@ -359,6 +441,57 @@ fn ac13_cursor_rejects_a_replaced_anchor_and_valid_cursor_continues_without_repe
         )
         .unwrap();
     drop(index);
+    assert_eq!(
+        probe(
+            &journal,
+            "search",
+            json!({"query": "indexed", "limit": 1, "cursor": cursor}),
+        ),
+        Err(McpProbeError::Unavailable)
+    );
+}
+
+#[test]
+fn ac13_cursor_rejects_a_reset_rebuild_with_rowids_restarted_at_one() {
+    let journal = fixture();
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    index
+        .execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 1, '')",
+            params![PATH, DAY, STREAM],
+        )
+        .unwrap();
+    drop(index);
+    let first = probe(&journal, "search", json!({"query": "indexed", "limit": 1})).unwrap();
+    let cursor = first["next_cursor"].as_str().unwrap().to_owned();
+
+    let index = solstone_core_indexer_store::db::open_index(journal.path()).unwrap();
+    index.execute("DELETE FROM chunks", []).unwrap();
+    index
+        .execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+             VALUES ('indexed next', ?1, ?2, '', 'fixture-stream', ?3, 1, '')",
+            params![PATH, DAY, STREAM],
+        )
+        .unwrap();
+    index
+        .execute(
+            "INSERT INTO chunks(content, path, day, facet, agent, stream, idx, time_bucket) \
+             VALUES ('indexed bytes', ?1, ?2, '', 'fixture-stream', ?3, 0, '')",
+            params![PATH, DAY, STREAM],
+        )
+        .unwrap();
+    let row_ids = index
+        .prepare("SELECT rowid FROM chunks ORDER BY rowid")
+        .unwrap()
+        .query_map([], |row| row.get::<_, i64>(0))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect::<Vec<_>>();
+    assert_eq!(row_ids, [1, 2]);
+    drop(index);
+
     assert_eq!(
         probe(
             &journal,
@@ -439,6 +572,54 @@ fn ac7_ac21_ac22_entities_are_scoped_stable_and_omit_forbidden_fields() {
 }
 
 #[test]
+fn ac19_ac20_all_agent_results_omit_coordinates_and_keep_index_coverage_statement() {
+    let journal = fixture();
+    PermissionStore::open(journal.path())
+        .set_permission(CONNECTION, ReadPermission::default_whole_journal())
+        .unwrap();
+
+    let facets = probe(&journal, "list_facets", json!({})).unwrap();
+    let search = probe(&journal, "search", json!({"query": "indexed"})).unwrap();
+    let fetch = probe(
+        &journal,
+        "fetch",
+        json!({"reference": search["results"][0]["reference"]}),
+    )
+    .unwrap();
+    let transcripts = probe(&journal, "list_transcripts", json!({})).unwrap();
+    let transcript = probe(
+        &journal,
+        "get_transcript",
+        json!({"reference": transcripts["transcripts"][0]["reference"]}),
+    )
+    .unwrap();
+    let entities = probe(&journal, "list_entities", json!({})).unwrap();
+    let entity = probe(
+        &journal,
+        "get_entity",
+        json!({"reference": entities["entities"][0]["reference"]}),
+    )
+    .unwrap();
+
+    for result in [
+        &facets,
+        &search,
+        &fetch,
+        &transcripts,
+        &transcript,
+        &entities,
+        &entity,
+    ] {
+        assert!(!result.to_string().contains("20260914/default/090000_300"));
+        assert_no_coordinate_keys(result);
+    }
+    assert_eq!(
+        search["coverage"]["transcript_index"],
+        "Raw transcript JSONL is not covered by index search."
+    );
+}
+
+#[test]
 fn ac6_delete_recreate_and_ac9_rename_keep_stable_facet_ids_real() {
     let journal = fixture();
     let alpha = journal.path().join("facets/alpha");
@@ -504,10 +685,8 @@ fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
         probe(&journal, "fetch", json!({"reference":"notes/a:b.txt:42"})),
         Err(McpProbeError::Unavailable)
     );
-    assert_eq!(
-        probe(&journal, "fetch", json!({"reference":"tampered"})),
-        Err(McpProbeError::Unavailable)
-    );
+    let tampered = probe(&journal, "fetch", json!({"reference":"tampered"}));
+    assert_eq!(tampered, Err(McpProbeError::Unavailable));
     PermissionStore::open(journal.path())
         .set_permission("bearer:other", ReadPermission::default_whole_journal())
         .unwrap();
@@ -520,6 +699,21 @@ fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
         ),
         Err(McpProbeError::Unavailable)
     );
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        probe(&journal, "fetch", json!({"reference": reference})),
+        tampered
+    );
     let facets = journal
         .path()
         .join("chronicle")
@@ -530,6 +724,12 @@ fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
     fs::write(facets, "not json").unwrap();
     assert!(
         probe(&journal, "list_transcripts", json!({})).unwrap()["transcripts"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        probe(&journal, "search", json!({"query":"indexed"})).unwrap()["results"]
             .as_array()
             .unwrap()
             .is_empty()

@@ -511,6 +511,7 @@ mod tests {
         )
         .unwrap();
         let ids = resolve_permission_facet_names(temp.path(), &["alpha".to_owned()]).unwrap();
+        let expected_ids = ids.clone();
         let store = PermissionStore::open(temp.path());
         store
             .set_permission(
@@ -521,6 +522,13 @@ mod tests {
                 },
             )
             .unwrap();
+        let stored = store
+            .get_permission("bearer:owner")
+            .unwrap()
+            .unwrap()
+            .read
+            .unwrap();
+        assert_eq!(stored.scope, ReadScope::Facets { ids: expected_ids });
         let before = fs::read(temp.path().join(ENDPOINT_DIRECTORY).join(PERMISSIONS_FILE)).unwrap();
         assert!(resolve_permission_facet_names(temp.path(), &["missing".to_owned()]).is_err());
         fs::write(facet.join("facet.json"), r#"{"title":"Alpha"}"#).unwrap();

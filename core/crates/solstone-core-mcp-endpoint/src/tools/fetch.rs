@@ -4,7 +4,7 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::ToolError;
+use super::{MAX_OPAQUE_REFERENCE_BYTES, ToolError};
 
 /// A closed opaque entry reference.
 pub(crate) struct ValidatedFetch {
@@ -21,7 +21,7 @@ pub(crate) fn validate(params: Option<&Value>) -> Result<ValidatedFetch, ToolErr
     let params = params.cloned().ok_or(ToolError::InvalidInput)?;
     let params =
         serde_json::from_value::<FetchParams>(params).map_err(|_| ToolError::InvalidInput)?;
-    if params.reference.is_empty() || params.reference.len() > 2_048 {
+    if params.reference.is_empty() || params.reference.len() > MAX_OPAQUE_REFERENCE_BYTES {
         return Err(ToolError::InvalidInput);
     }
     Ok(ValidatedFetch {

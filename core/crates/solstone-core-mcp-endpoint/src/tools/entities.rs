@@ -4,7 +4,10 @@
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{ToolError, search::MAX_LIMIT};
+use super::{
+    MAX_FACET_BYTES, MAX_OPAQUE_REFERENCE_BYTES, ToolError, optional_string_within_limit,
+    search::MAX_LIMIT,
+};
 
 pub(crate) struct ValidatedListEntities {
     pub(crate) facet_id: Option<String>,
@@ -41,6 +44,9 @@ pub(crate) fn validate_list(params: Option<&Value>) -> Result<ValidatedListEntit
     if !(1..=MAX_LIMIT).contains(&params.limit) {
         return Err(ToolError::InvalidInput);
     }
+    if !optional_string_within_limit(&params.facet, MAX_FACET_BYTES) {
+        return Err(ToolError::InvalidInput);
+    }
     Ok(ValidatedListEntities {
         facet_id: params.facet,
         limit: params.limit,
@@ -51,7 +57,7 @@ pub(crate) fn validate_get(params: Option<&Value>) -> Result<ValidatedGetEntity,
     let params = params.cloned().ok_or(ToolError::InvalidInput)?;
     let params =
         serde_json::from_value::<GetParams>(params).map_err(|_| ToolError::InvalidInput)?;
-    if params.reference.is_empty() || params.reference.len() > 2_048 {
+    if params.reference.is_empty() || params.reference.len() > MAX_OPAQUE_REFERENCE_BYTES {
         return Err(ToolError::InvalidInput);
     }
     Ok(ValidatedGetEntity {
