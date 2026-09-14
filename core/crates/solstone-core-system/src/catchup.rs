@@ -1033,7 +1033,7 @@ pub fn eligible_catchup_days(
     Ok(selected)
 }
 
-fn eligible_or_fail_open(journal: &Path, day: &str, force: bool, now: SystemTime) -> bool {
+pub fn eligible_or_fail_open(journal: &Path, day: &str, force: bool, now: SystemTime) -> bool {
     if force {
         return true;
     }

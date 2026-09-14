@@ -22,6 +22,7 @@ pub(crate) struct ThinkArgs {
     pub weekly: bool,
     pub cadence: bool,
     pub dry_run: bool,
+    pub sense_batch: bool,
     pub verbose: bool,
     pub debug: bool,
 }
@@ -48,6 +49,7 @@ impl Default for ThinkArgs {
             weekly: false,
             cadence: false,
             dry_run: false,
+            sense_batch: false,
             verbose: false,
             debug: false,
         }
@@ -118,6 +120,7 @@ pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
             "--weekly" => parsed.weekly = true,
             "--cadence" => parsed.cadence = true,
             "--dry-run" => parsed.dry_run = true,
+            "--sense-batch" => parsed.sense_batch = true,
             "-v" | "--verbose" => parsed.verbose = true,
             "-d" | "--debug" => parsed.debug = true,
             "-h" | "--help" => return Ok(ParseOutcome::Help),
@@ -126,6 +129,37 @@ pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
         index += 1;
     }
     Ok(ParseOutcome::Args(parsed))
+}
+
+pub(crate) const SENSE_BATCH_INCOMPATIBLE: &str = "--sense-batch is incompatible with ";
+
+pub(crate) fn sense_batch_offenders(args: &ThinkArgs) -> Vec<&'static str> {
+    let mut offenders = Vec::new();
+    if args.segment.is_some() {
+        offenders.push("--segment");
+    }
+    if args.segments {
+        offenders.push("--segments");
+    }
+    if args.flush {
+        offenders.push("--flush");
+    }
+    if args.weekly {
+        offenders.push("--weekly");
+    }
+    if args.cadence {
+        offenders.push("--cadence");
+    }
+    if args.activity.is_some() {
+        offenders.push("--activity");
+    }
+    if args.updated {
+        offenders.push("--updated");
+    }
+    if args.dry_run {
+        offenders.push("--dry-run");
+    }
+    offenders
 }
 
 pub(crate) fn updated_offenders(args: &ThinkArgs) -> Vec<&'static str> {
@@ -150,6 +184,9 @@ pub(crate) fn updated_offenders(args: &ThinkArgs) -> Vec<&'static str> {
     }
     if args.cadence {
         offenders.push("--cadence");
+    }
+    if args.sense_batch {
+        offenders.push("--sense-batch");
     }
     offenders
 }

@@ -241,6 +241,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "sense",
+        "lease",
+        include_str!("../../../solstone-core-sense/src/lease.rs"),
+    ),
+    (
+        "sense",
         "memory",
         include_str!("../../../solstone-core-sense/src/memory.rs"),
     ),

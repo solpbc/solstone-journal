@@ -23,6 +23,7 @@ use solstone_core_processing_record::{
 use thiserror::Error;
 
 use crate::config::{read_config, resolve_concurrency};
+use crate::log;
 use crate::dispatch::{BatchMarkerPolicy, Outbound, SenseDispatcher};
 
 /// Existing output classes that can be deleted before a batch reprocess.
@@ -91,6 +92,10 @@ pub enum BatchError {
     Runtime,
     #[error("sense batch timed out after {timeout:?}")]
     TimedOut { timeout: Duration },
+    #[error("sense batch lease error: {0}")]
+    Lease(#[from] solstone_core_journal_io::LeaseError),
+    #[error("sense batch lease for day {day} is held by another process")]
+    LeaseContended { day: String },
     #[error("{failed} failed of {ran} ran")]
     Failed { failed: usize, ran: usize },
     #[error("sense batch refused: {reason}")]
@@ -184,6 +189,24 @@ fn run_batch_with_environment_and_timeout_with_marker_policy(
         println!("Day directory not found: {}", day_dir.display());
         return Ok(());
     }
+
+    let _lease = match crate::lease::acquire_sense_day_lease(journal, &request.day)? {
+        Some(lease) => lease,
+        None => match marker_policy {
+            BatchMarkerPolicy::EnclosedWholeDay => {
+                log::warn!(
+                    "Sense batch lease for day {} is held; skipping batch walk",
+                    request.day
+                );
+                return Ok(());
+            }
+            BatchMarkerPolicy::AdvanceStream => {
+                return Err(BatchError::LeaseContended {
+                    day: request.day.clone(),
+                });
+            }
+        },
+    };
 
     let listed = iter_segments(journal, PathOrDay::Directory(&day_dir))?;
     check_record_identities(selected_segments(

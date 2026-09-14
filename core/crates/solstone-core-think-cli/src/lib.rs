@@ -150,6 +150,7 @@ pub fn requires_daily_lifecycle(raw_args: &[String]) -> bool {
         && parsed.segment.is_none()
         && !parsed.weekly
         && !parsed.dry_run
+        && !parsed.sense_batch
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -246,6 +247,45 @@ where
                     .chars()
                     .chain((!days.is_empty()).then_some('\n'))
                     .collect(),
+                stderr: String::new(),
+                exit_code: 0,
+            });
+        }
+
+        if parsed.sense_batch {
+            let offenders = args::sense_batch_offenders(&parsed);
+            if !offenders.is_empty() {
+                return Err(CliError::Usage {
+                    message: format!("{}{}", args::SENSE_BATCH_INCOMPATIBLE, offenders.join(", ")),
+                });
+            }
+            let Some(day) = &parsed.day else {
+                return Err(CliError::Usage {
+                    message: "--sense-batch requires --day".to_owned(),
+                });
+            };
+            let request = solstone_core_sense::batch::BatchRequest {
+                day: day.clone(),
+                jobs: parsed.jobs,
+                reprocess: None,
+                segment: None,
+                stream: parsed.stream.clone(),
+                dry_run: false,
+                verbose: parsed.verbose,
+                debug: parsed.debug,
+            };
+            let timeout = (!parsed.no_timeout).then_some(std::time::Duration::from_secs(1800));
+            solstone_core_sense::batch::run_batch_for_whole_day_with_environment_and_timeout(
+                journal,
+                &request,
+                sense_child_environment,
+                timeout,
+            )
+            .map_err(|error| CliError::InvalidDay {
+                message: error.to_string(),
+            })?;
+            return Ok(CliRun {
+                stdout: String::new(),
                 stderr: String::new(),
                 exit_code: 0,
             });
@@ -4933,5 +4973,63 @@ mod tests {
         assert_eq!(run.exit_code, 1);
         assert!(run.stderr.starts_with("journal think: 2 completed\n"));
         assert!(run.stderr.contains("think run log"));
+    }
+
+    #[test]
+    fn think_cli_sense_batch_flag_parses_and_disallows_incompatible_flags() {
+        let args = vec![
+            "--day".to_string(),
+            "20260914".to_string(),
+            "--sense-batch".to_string(),
+        ];
+        let outcome = args::parse(&args).expect("parse sense-batch");
+        match outcome {
+            args::ParseOutcome::Args(parsed) => {
+                assert!(parsed.sense_batch);
+                assert_eq!(parsed.day.as_deref(), Some("20260914"));
+            }
+            _ => panic!("expected parsed args"),
+        }
+        assert!(
+            !requires_daily_lifecycle(&args),
+            "requires_daily_lifecycle must be false for --sense-batch"
+        );
+
+        let offenders = [
+            vec!["--segment".to_string(), "100000_1".to_string()],
+            vec!["--segments".to_string()],
+            vec![
+                "--flush".to_string(),
+                "--segment".to_string(),
+                "100000_1".to_string(),
+            ],
+            vec!["--weekly".to_string()],
+            vec!["--cadence".to_string()],
+            vec![
+                "--activity".to_string(),
+                "act".to_string(),
+                "--facet".to_string(),
+                "f".to_string(),
+            ],
+            vec!["--updated".to_string()],
+            vec!["--dry-run".to_string()],
+        ];
+
+        for extra in offenders {
+            let mut test_args = vec![
+                "--day".to_string(),
+                "20260914".to_string(),
+                "--sense-batch".to_string(),
+            ];
+            test_args.extend(extra);
+            let parsed = match args::parse(&test_args) {
+                Ok(args::ParseOutcome::Args(p)) => p,
+                _ => continue,
+            };
+            assert!(
+                !args::sense_batch_offenders(&parsed).is_empty()
+                    || !args::updated_offenders(&parsed).is_empty()
+            );
+        }
     }
 }

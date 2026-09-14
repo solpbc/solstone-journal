@@ -49,6 +49,7 @@ struct State {
     pending_files: HashSet<(String, PathBuf)>,
     health: Health,
     stopping: bool,
+    day_leases: HashMap<String, solstone_core_journal_io::FileLease>,
 }
 
 /// Whether a completed Sense batch owns a stream-dirty transition.
@@ -304,6 +305,7 @@ impl SenseDispatcher {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            day_leases: HashMap::new(),
         }));
         let tally = Arc::new(JobTally::new());
         let cleanups = Arc::new(Mutex::new(Vec::new()));
@@ -439,6 +441,17 @@ impl SenseDispatcher {
             let mut state = self.state.lock().expect("sense state");
             if state.segments.contains_key(&context.key) {
                 return;
+            }
+            if !state.day_leases.contains_key(&context.key.day) {
+                match crate::lease::acquire_sense_day_lease(&self.journal, &context.key.day) {
+                    Ok(Some(lease)) => {
+                        state.day_leases.insert(context.key.day.clone(), lease);
+                    }
+                    Ok(None) | Err(_) => {
+                        // Contention with repair or unreadable: live skips admit for this day.
+                        return;
+                    }
+                }
             }
             state
                 .segments
@@ -1029,11 +1042,19 @@ fn complete(
             }
             segment.pending.is_empty()
         };
-        if empty {
+        let removed = if empty {
             state.segments.remove(key)
         } else {
             None
+        };
+        if !state
+            .segments
+            .keys()
+            .any(|candidate| candidate.day == key.day)
+        {
+            state.day_leases.remove(&key.day);
         }
+        removed
     };
     let mut marker_succeeded = true;
     if let Some(mut segment) = completed {
@@ -1272,6 +1293,7 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            day_leases: HashMap::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1340,6 +1362,7 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            day_leases: HashMap::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1437,6 +1460,7 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            day_leases: HashMap::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1484,6 +1508,7 @@ mod tests {
             pending_files: HashSet::new(),
             health: Health::default(),
             stopping: false,
+            day_leases: HashMap::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1577,4 +1602,5 @@ mod tests {
         assert!(failed >= 1);
         assert!(ran >= 1);
     }
+
 }

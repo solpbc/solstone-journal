@@ -544,17 +544,81 @@ pub(crate) fn initialize_catchup_with_reconcile<Reconcile>(
 where
     Reconcile: FnOnce(&Path, SystemTime) -> Result<(), CatchupError>,
 {
-    reconcile(journal, now)?;
+    let reconcile_res = reconcile(journal, now);
+    let today_str = today.format("%Y%m%d").to_string();
+    run_today_sense_repair(journal, queue, is_remote, no_daily, &today_str, now);
+
+    reconcile_res?;
     if is_remote || no_daily || processing_is_deferred(journal) {
         return Ok(());
     }
-    run_catchup_drain(
-        journal,
-        queue,
-        &BTreeSet::from([today.format("%Y%m%d").to_string()]),
-        &[],
-        now,
-    )
+    run_catchup_drain(journal, queue, &BTreeSet::from([today_str]), &[], now)
+}
+
+pub(crate) fn today_sense_repair_argv(day: &str) -> Vec<String> {
+    vec![
+        "journal".to_string(),
+        "think".to_string(),
+        "-v".to_string(),
+        "--day".to_string(),
+        day.to_string(),
+        "--sense-batch".to_string(),
+    ]
+}
+
+/// Check and submit a sense-only repair task for today's unprocessed observations.
+pub(crate) fn run_today_sense_repair(
+    journal: &Path,
+    queue: &TaskQueue,
+    is_remote: bool,
+    no_daily: bool,
+    today_str: &str,
+    now: SystemTime,
+) -> Option<(Vec<String>, SubmitOutcome)> {
+    if is_remote
+        || no_daily
+        || processing_is_deferred(journal)
+        || no_thinking_engine_chosen(journal)
+    {
+        return None;
+    }
+    if !solstone_core_system::catchup::eligible_or_fail_open(journal, today_str, false, now) {
+        return None;
+    }
+    let today_dir = journal.join("chronicle").join(today_str);
+    if !today_dir.exists() {
+        return None;
+    }
+    let work = match solstone_core_sense::batch::scan_unprocessed(
+        journal, &today_dir, None, None, None,
+    ) {
+        Ok(work) => work,
+        Err(e) => {
+            log::warn!(
+                "failed to scan unprocessed observations for today's sense repair ({today_str}): {e}"
+            );
+            return None;
+        }
+    };
+    if work.is_empty() {
+        return None;
+    }
+    let argv = today_sense_repair_argv(today_str);
+    let reference = format!("supervisor-sense-{today_str}");
+    if queue.contains_reference(&reference) {
+        log::debug!("today's sense repair task already referenced in queue: {reference}");
+        return Some((argv, SubmitOutcome::DuplicateQueuedReference));
+    }
+    let outcome = submit_think(queue, argv.clone(), today_str, reference);
+    match outcome {
+        SubmitOutcome::Rejected => {
+            log::warn!("today's sense repair task rejected");
+        }
+        ref other => {
+            log::debug!("today's sense repair submit outcome: {other:?}");
+        }
+    }
+    Some((argv, outcome))
 }
 
 /// Submit one daily think task for each selected, eligible catchup day.
@@ -2709,4 +2773,584 @@ mod tests {
             Ok(TaskArgv::Unknown { .. })
         ));
     }
+    #[test]
+    fn today_marker_dirty_all_sensed_skips_repair_submit() {
+        let bed = Bed::new("today-all-sensed");
+        bed.enable_thinking();
+        bed.updated_day("20260102");
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+        fs::write(seg_dir.join("audio.jsonl"), b"{\"timestamp_ms\": 0}\n").expect("write output");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_repair_gated_by_remote_mode() {
+        let bed = Bed::new("today-remote");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            true, // is_remote = true
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_repair_gated_by_deferred_processing() {
+        let bed = Bed::new("today-deferred");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+        fs::write(
+            bed.root.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}},"processing":{"mode":"deferred"}}"#,
+        )
+        .expect("deferred config");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_repair_gated_by_no_daily() {
+        let bed = Bed::new("today-no-daily");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            true, // no_daily = true
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_repair_gated_by_no_thinking_engine() {
+        let bed = Bed::new("today-no-engine");
+        // No bed.enable_thinking()
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_repair_gated_by_eligibility_backoff() {
+        let bed = Bed::new("today-backoff");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let fingerprint =
+            solstone_core_system::catchup::read_raw_input_fingerprint(&bed.root, "20260102")
+                .expect("fingerprint");
+
+        fs::create_dir_all(bed.root.join("health")).expect("catchup health");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "20260102:daily-catchup": {
+                        "day": "20260102",
+                        "command_kind": "daily-catchup",
+                        "active": null,
+                        "fingerprint": fingerprint,
+                        "next_retry_at": 100.0,
+                    }
+                }
+            }))
+            .expect("retry state"),
+        )
+        .expect("write retry state");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_repair_fails_open_on_unreadable_eligibility() {
+        let bed = Bed::new("today-fail-open");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        fs::create_dir_all(bed.root.join("health")).expect("catchup health");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            b"not-valid-json",
+        )
+        .expect("write corrupt state");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(pending(&queue), 1);
+    }
+
+    #[test]
+    fn today_repair_runs_when_catchup_capability_unavailable() {
+        let bed = Bed::new("today-capability-unavailable");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        let result = initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Err(CatchupError::CapabilityUnavailable),
+        );
+
+        assert!(matches!(result, Err(CatchupError::CapabilityUnavailable)));
+        assert_eq!(
+            pending(&queue),
+            1,
+            "today's repair must run even when capability is unavailable"
+        );
+    }
+
+    #[test]
+    fn today_orphan_submits_one_sense_batch_task() {
+        let bed = Bed::new("today-orphan-submit");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        let outcome = run_today_sense_repair(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            "20260102",
+            UNIX_EPOCH + Duration::from_secs(10),
+        );
+
+        let (argv, submit_outcome) = outcome.expect("repair outcome");
+        assert_eq!(
+            argv,
+            vec![
+                "journal".to_string(),
+                "think".to_string(),
+                "-v".to_string(),
+                "--day".to_string(),
+                "20260102".to_string(),
+                "--sense-batch".to_string(),
+            ]
+        );
+        assert!(matches!(
+            submit_outcome,
+            SubmitOutcome::Pending | SubmitOutcome::Queued | SubmitOutcome::Dispatched
+        ));
+        assert_eq!(pending(&queue), 1);
+        assert!(queue.contains_reference("supervisor-sense-20260102"));
+    }
+
+    #[test]
+    fn catchup_state_bytes_unchanged_on_repair_submit_and_fail() {
+        let bed = Bed::new("today-state-present");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let state_path = bed.root.join("health/catchup-state.json");
+        fs::create_dir_all(state_path.parent().unwrap()).expect("health dir");
+        let initial_bytes = b"{\"version\":1,\"entries\":{\"20260101:daily-catchup\":{\"day\":\"20260101\",\"command_kind\":\"daily-catchup\",\"active\":null,\"next_retry_at\":null},\"20260102:daily-catchup\":{\"day\":\"20260102\",\"command_kind\":\"daily-catchup\",\"active\":null,\"next_retry_at\":null}}}";
+        fs::write(&state_path, initial_bytes).expect("write state");
+
+        let queue1 = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue1,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup 1");
+        assert_eq!(fs::read(&state_path).expect("read state 1"), initial_bytes);
+
+        let queue2 = queue(&bed.root);
+        queue2.set_ready();
+        queue2.shutdown();
+        let _ = run_today_sense_repair(
+            &bed.root,
+            &queue2,
+            false,
+            false,
+            "20260102",
+            UNIX_EPOCH + Duration::from_secs(10),
+        );
+        assert_eq!(fs::read(&state_path).expect("read state 2"), initial_bytes);
+
+        let bed_absent = Bed::new("today-state-absent");
+        bed_absent.enable_thinking();
+        let seg_dir_absent = bed_absent.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir_absent).expect("segment dir");
+        fs::write(seg_dir_absent.join("audio.m4a"), b"audio-data").expect("write audio");
+        let absent_state_path = bed_absent.root.join("health/catchup-state.json");
+        assert!(!absent_state_path.exists());
+
+        let queue_absent1 = queue(&bed_absent.root);
+        initialize_catchup_with_reconcile(
+            &bed_absent.root,
+            &queue_absent1,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup absent 1");
+        assert!(!absent_state_path.exists());
+
+        let queue_absent2 = queue(&bed_absent.root);
+        queue_absent2.set_ready();
+        queue_absent2.shutdown();
+        let _ = run_today_sense_repair(
+            &bed_absent.root,
+            &queue_absent2,
+            false,
+            false,
+            "20260102",
+            UNIX_EPOCH + Duration::from_secs(10),
+        );
+        assert!(!absent_state_path.exists());
+    }
+
+    #[test]
+    fn marker_files_untouched_after_successful_sense_repair() {
+        let bed = Bed::new("today-markers-untouched");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let health_dir = bed.root.join("chronicle/20260102/health");
+        fs::create_dir_all(&health_dir).expect("health dir");
+        let stream_marker = health_dir.join("stream.updated");
+        let daily_marker = health_dir.join("daily.updated");
+
+        let stream_bytes = b"100.0\n";
+        let daily_bytes = b"50.0\n";
+        fs::write(&stream_marker, stream_bytes).expect("write stream marker");
+        fs::write(&daily_marker, daily_bytes).expect("write daily marker");
+
+        let queue = queue(&bed.root);
+        initialize_catchup_with_reconcile(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            date(2),
+            UNIX_EPOCH + Duration::from_secs(10),
+            |_, _| Ok(()),
+        )
+        .expect("initialize catchup");
+
+        assert_eq!(
+            fs::read(&stream_marker).expect("stream marker"),
+            stream_bytes
+        );
+        assert_eq!(fs::read(&daily_marker).expect("daily marker"), daily_bytes);
+    }
+
+    #[test]
+    fn ordinary_catchup_drain_still_selects_day_after_three_failed_today_repairs() {
+        let bed = Bed::new("catchup-drain-after-failed-repair");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let health_dir = bed.root.join("chronicle/20260102/health");
+        fs::create_dir_all(&health_dir).expect("health dir");
+        fs::write(health_dir.join("stream.updated"), b"100.0\n").expect("write stream marker");
+
+        let now = UNIX_EPOCH + Duration::from_secs(10);
+        for _ in 0..3 {
+            let q = queue(&bed.root);
+            q.set_ready();
+            q.shutdown();
+            let _ = run_today_sense_repair(&bed.root, &q, false, false, "20260102", now);
+        }
+
+        let drain_queue = queue(&bed.root);
+        run_catchup_drain(
+            &bed.root,
+            &drain_queue,
+            &BTreeSet::from(["20260103".to_string()]),
+            &[],
+            now,
+        )
+        .expect("catchup drain");
+
+        assert_eq!(pending(&drain_queue), 1);
+        assert!(drain_queue.contains_reference("supervisor-catchup-20260102"));
+    }
+
+    #[test]
+    fn ordinary_catchup_drain_still_selects_day_after_successful_today_repair() {
+        let bed = Bed::new("catchup-drain-after-successful-repair");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let health_dir = bed.root.join("chronicle/20260102/health");
+        fs::create_dir_all(&health_dir).expect("health dir");
+        fs::write(health_dir.join("stream.updated"), b"100.0\n").expect("write stream marker");
+
+        let now = UNIX_EPOCH + Duration::from_secs(10);
+        let q = queue(&bed.root);
+        let outcome = run_today_sense_repair(&bed.root, &q, false, false, "20260102", now);
+        assert!(outcome.is_some());
+
+        let drain_queue = queue(&bed.root);
+        run_catchup_drain(
+            &bed.root,
+            &drain_queue,
+            &BTreeSet::from(["20260103".to_string()]),
+            &[],
+            now,
+        )
+        .expect("catchup drain");
+
+        assert_eq!(pending(&drain_queue), 1);
+        assert!(drain_queue.contains_reference("supervisor-catchup-20260102"));
+    }
+
+    #[test]
+    fn no_thinking_engine_predicates_agree_on_absent_empty_and_unreadable_provider() {
+        let bed = Bed::new("no-engine-predicates");
+        fs::create_dir_all(bed.root.join("config")).expect("config dir");
+
+        fs::write(
+            bed.root.join("config/journal.json"),
+            br#"{"processing":{"mode":"immediate"}}"#,
+        )
+        .expect("write absent providers");
+        let sense_config_a = solstone_core_sense::config::read_config(&bed.root);
+        assert!(no_thinking_engine_chosen(&bed.root));
+        assert!(solstone_core_sense::config::no_thinking_engine(
+            &sense_config_a
+        ));
+
+        fs::write(
+            bed.root.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"   "}}}"#,
+        )
+        .expect("write empty provider");
+        let sense_config_b = solstone_core_sense::config::read_config(&bed.root);
+        assert!(no_thinking_engine_chosen(&bed.root));
+        assert!(solstone_core_sense::config::no_thinking_engine(
+            &sense_config_b
+        ));
+
+        fs::write(bed.root.join("config/journal.json"), b"{").expect("write unreadable config");
+        let sense_config_c = solstone_core_sense::config::read_config(&bed.root);
+        assert!(no_thinking_engine_chosen(&bed.root));
+        assert!(solstone_core_sense::config::no_thinking_engine(
+            &sense_config_c
+        ));
+
+        fs::write(
+            bed.root.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .expect("write valid provider");
+        let sense_config_d = solstone_core_sense::config::read_config(&bed.root);
+        assert!(!no_thinking_engine_chosen(&bed.root));
+        assert!(!solstone_core_sense::config::no_thinking_engine(
+            &sense_config_d
+        ));
+    }
+
+    #[test]
+    fn today_repair_skips_when_all_observations_already_sensed() {
+        let bed = Bed::new("today-all-sensed");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("screen.webm"), b"video").expect("write video");
+        fs::write(
+            seg_dir.join("screen.jsonl"),
+            "{\"frame_id\":1,\"timestamp\":0.0}\n",
+        )
+        .expect("evidence sidecar");
+
+        let queue = queue(&bed.root);
+        let outcome = run_today_sense_repair(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            "20260102",
+            UNIX_EPOCH + Duration::from_secs(10),
+        );
+        assert!(outcome.is_none());
+        assert_eq!(pending(&queue), 0);
+    }
+
+    #[test]
+    fn today_nothing_outstanding_submits_nothing_and_writes_no_attempt() {
+        let bed = Bed::new("today-nothing-outstanding");
+        bed.enable_thinking();
+        fs::create_dir_all(bed.root.join("chronicle/20260102")).expect("day dir");
+
+        let queue = queue(&bed.root);
+        let outcome = run_today_sense_repair(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            "20260102",
+            UNIX_EPOCH + Duration::from_secs(10),
+        );
+        assert!(outcome.is_none());
+        assert_eq!(pending(&queue), 0);
+        assert!(!bed.root.join("health/catchup-state.json").exists());
+        assert!(
+            !bed.root
+                .join("chronicle/20260102/health/sense-day.lease")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn today_repair_coalesces_when_reference_already_queued() {
+        let bed = Bed::new("today-coalesce");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        let now = UNIX_EPOCH + Duration::from_secs(10);
+        let first = run_today_sense_repair(&bed.root, &queue, false, false, "20260102", now);
+        assert!(first.is_some());
+        assert_eq!(pending(&queue), 1);
+
+        let second = run_today_sense_repair(&bed.root, &queue, false, false, "20260102", now);
+        let (_, second_outcome) = second.expect("second repair result");
+        assert_eq!(second_outcome, SubmitOutcome::DuplicateQueuedReference);
+        assert_eq!(pending(&queue), 1);
+    }
+
+    #[test]
+    fn today_repair_rejected_submission_is_logged_not_discarded() {
+        let bed = Bed::new("today-rejected");
+        bed.enable_thinking();
+        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
+        fs::create_dir_all(&seg_dir).expect("segment dir");
+        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
+
+        let queue = queue(&bed.root);
+        queue.set_ready();
+        queue.shutdown();
+
+        let outcome = run_today_sense_repair(
+            &bed.root,
+            &queue,
+            false,
+            false,
+            "20260102",
+            UNIX_EPOCH + Duration::from_secs(10),
+        );
+        let (_, submit_outcome) = outcome.expect("repair outcome");
+        assert_eq!(submit_outcome, SubmitOutcome::Rejected);
+    }
+
 }
