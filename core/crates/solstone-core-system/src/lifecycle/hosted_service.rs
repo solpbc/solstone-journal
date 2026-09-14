@@ -92,6 +92,16 @@ impl HostedServiceParentRuntime {
         retire_expected_requested(&self.journal, self.admission.generation)
     }
 
+    /// Resolve once the supervisor has asked this service to retire. A hosted
+    /// service selects on this beside genuine parent loss and the host signal
+    /// so a requested stop takes its normal cleanup path at once instead of
+    /// running out the supervisor's termination grace.
+    pub async fn await_retire_expected_request(&self) {
+        while !self.retire_expected_requested() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     /// Allow either genuine parent loss or the supervisor's authenticated
     /// retirement control a bounded window to arrive after a host-level
     /// signal stops this service. On systemd, `KillMode=control-group`

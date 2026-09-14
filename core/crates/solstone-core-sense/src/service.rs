@@ -189,6 +189,7 @@ async fn shutdown_with_hosted_parent(
     };
     tokio::select! {
         _ = shutdown_signal() => None,
+        _ = parent.await_retire_expected_request() => None,
         reason = parent.await_parent_loss() => Some(reason),
     }
 }

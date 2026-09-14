@@ -73,8 +73,10 @@ impl Drop for RawOwnedHandle {
 macro_rules! semantic_handle {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
+        #[cfg_attr(not(windows), allow(dead_code))]
         pub(super) struct $name(RawOwnedHandle);
 
+        #[cfg_attr(not(windows), allow(dead_code))]
         impl $name {
             pub(super) fn new(raw: RawWindowsHandle) -> Self {
                 Self(RawOwnedHandle::new(raw))
@@ -102,6 +104,10 @@ semantic_handle!(
 semantic_handle!(
     PipeEndHandle,
     "An owning endpoint of an anonymous stdio pipe."
+);
+semantic_handle!(
+    MemberProcessHandle,
+    "A SYNCHRONIZE-only handle to a Job member retained across a hard stop."
 );
 
 impl PrimaryThreadHandle {

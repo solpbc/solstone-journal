@@ -370,6 +370,7 @@ async fn shutdown_with_hosted_parent(
     };
     tokio::select! {
         mode = shutdown_signal() => mode,
+        _ = parent.await_retire_expected_request() => ShutdownMode::Immediate,
         reason = parent.await_parent_loss() => {
             *parent_loss
                 .lock()
