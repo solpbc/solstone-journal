@@ -73,8 +73,10 @@ impl Drop for RawOwnedHandle {
 macro_rules! semantic_handle {
     ($name:ident, $doc:literal) => {
         #[doc = $doc]
+        #[cfg_attr(not(windows), allow(dead_code))]
         pub(super) struct $name(RawOwnedHandle);
 
+        #[cfg_attr(not(windows), allow(dead_code))]
         impl $name {
             pub(super) fn new(raw: RawWindowsHandle) -> Self {
                 Self(RawOwnedHandle::new(raw))
