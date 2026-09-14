@@ -71,6 +71,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "client_binding",
     "client_delivery_stall",
     "client_ingest_health",
+    "client_transport_refusal",
     "orphan_segment_pdf",
     "default_stt_ready",
     "parakeet_cpp_stt_ready",
@@ -209,6 +210,18 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
             "first": rfc3339(first),
             "latest": rfc3339(latest),
             "active_count": rejection.get("active_count").and_then(serde_json::Value::as_u64).unwrap_or(1),
+        });
+    }
+    if let Some(refusal) = value
+        .get("health")
+        .and_then(|health| health.get("transport_refusal"))
+    {
+        let at = rfc3339(context.now.timestamp_millis());
+        entry["transport_refusal"] = serde_json::json!({
+            "reason_code": refusal.get("reason_code").and_then(serde_json::Value::as_str).unwrap_or("stream_limit"),
+            "first": at,
+            "latest": at,
+            "active_count": refusal.get("active_count").and_then(serde_json::Value::as_u64).unwrap_or(1),
         });
     }
     activity.insert(name.to_owned(), entry);
@@ -575,6 +588,16 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 );
             }
         }
+        "client_transport_refusal" => {
+            write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
+            if !ok {
+                write_client_fixture(
+                    &context,
+                    "abcdefgh",
+                    serde_json::json!({"key":"abcdefgh-key","name":"phone","enabled":true,"created_at":1,"health":{"transport_refusal":{"reason_code":"stream_limit","active_count":9}}}),
+                );
+            }
+        }
         "orphan_segment_pdf" => {
             let chronicle = context.journal_path.join("chronicle");
             fs::create_dir_all(&chronicle).unwrap();
@@ -629,6 +652,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "client_binding"
                     | "client_delivery_stall"
                     | "client_ingest_health"
+                    | "client_transport_refusal"
                     | "orphan_segment_pdf"
                     | "default_stt_ready"
                     | "parakeet_cpp_stt_ready"
@@ -650,6 +674,7 @@ fn check_severity_table_matches_reference() {
         ("client_binding", Severity::Advisory),
         ("client_delivery_stall", Severity::Advisory),
         ("client_ingest_health", Severity::Advisory),
+        ("client_transport_refusal", Severity::Advisory),
         ("orphan_segment_pdf", Severity::Advisory),
         ("default_stt_ready", Severity::Advisory),
         ("parakeet_cpp_stt_ready", Severity::Advisory),
@@ -679,6 +704,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
         ("client_binding", SecondBranch::DifferentDetail),
         ("client_delivery_stall", SecondBranch::DifferentStatus),
         ("client_ingest_health", SecondBranch::DifferentStatus),
+        ("client_transport_refusal", SecondBranch::DifferentStatus),
         ("orphan_segment_pdf", SecondBranch::DifferentStatus),
         ("default_stt_ready", SecondBranch::DifferentStatus),
         ("parakeet_cpp_stt_ready", SecondBranch::DifferentStatus),
@@ -792,6 +818,7 @@ fn no_enabled_clients_skip_client_delivery_and_ingest_checks() {
         "capture_health",
         "client_delivery_stall",
         "client_ingest_health",
+        "client_transport_refusal",
     ] {
         assert_eq!(status(name, &c), Status::Skip);
     }
@@ -1157,6 +1184,46 @@ fn client_binding_skips_when_authorization_ledger_is_unavailable() {
         row.detail,
         "device records unavailable: authorized client ledger unavailable: Unreadable"
     );
+}
+
+#[test]
+fn a_turned_away_request_and_a_rejected_upload_are_separate_findings() {
+    // The whole point. Before this, a device whose requests the door turned
+    // away was reported by nothing at all, so the only visible signal was the
+    // client's own "can't reach your journal" -- the same thing a dead network
+    // produces. These two checks must not collapse into each other.
+    let context = fixture();
+    write_client_fixture(
+        &context,
+        "abcdefgh",
+        serde_json::json!({
+            "key":"abcdefgh-key", "name":"phone", "enabled":true, "created_at":1,
+            "health":{"transport_refusal":{"reason_code":"stream_limit","active_count":9}}
+        }),
+    );
+
+    let refusal = result("client_transport_refusal", &context);
+    assert_eq!(refusal.status, Status::Warn);
+    assert_eq!(
+        refusal.detail,
+        "device abcdefgh had requests turned away: stream_limit, 9x through 2026-01-01"
+    );
+
+    // The negative control: nothing was rejected at ingest, so the sibling
+    // check stays quiet. A refusal that also tripped that one would be
+    // reporting the wrong cause.
+    assert_eq!(result("client_ingest_health", &context).status, Status::Ok);
+}
+
+#[test]
+fn a_journal_that_turned_nothing_away_says_so_rather_than_staying_silent() {
+    let context = fixture();
+    write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
+
+    let row = result("client_transport_refusal", &context);
+
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "no devices had requests turned away");
 }
 
 #[test]

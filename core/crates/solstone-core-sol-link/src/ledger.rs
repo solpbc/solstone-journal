@@ -89,6 +89,8 @@ pub struct ClientActivity {
     pub last_accepted_segment: Option<AcceptedSegment>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ingest_rejection: Option<IngestRejection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_refusal: Option<TransportRefusal>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub sources: BTreeMap<String, SourceRecord>,
 }
@@ -100,6 +102,7 @@ impl ClientActivity {
             last_accepted_ingest_at: None,
             last_accepted_segment: None,
             ingest_rejection: None,
+            transport_refusal: None,
             sources: BTreeMap::new(),
         }
     }
@@ -117,6 +120,27 @@ pub struct AcceptedSegment {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct IngestRejection {
+    pub reason_code: String,
+    pub first: String,
+    pub latest: String,
+    pub active_count: u64,
+}
+
+/// Streams the door refused on this device's carriers, by class.
+///
+/// A per-stream refusal resets one stream and deliberately leaves the carrier
+/// up, so it reaches the client as a closed stream with no status and reached
+/// this side as nothing at all. `stream_limit` is the one a well-behaved peer
+/// provokes simply by holding more concurrent streams than a carrier admits,
+/// and it is otherwise indistinguishable from the network dying.
+///
+/// Deliberately shaped like [`IngestRejection`] — same fields, same meaning one
+/// layer down — so a reader that already understands one understands this.
+/// Unlike a rejection it is never cleared by later success: it is a count of
+/// what happened, not a live streak, and an owner reading it needs the history.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransportRefusal {
     pub reason_code: String,
     pub first: String,
     pub latest: String,
@@ -751,6 +775,64 @@ impl AuthorizationLedger {
         Ok(true)
     }
 
+    /// Record streams the door refused on this device's carrier, at the current
+    /// RFC3339 UTC time.
+    ///
+    /// # Errors
+    ///
+    /// See [`Self::record_transport_refusal_at`].
+    pub fn record_transport_refusal(
+        &mut self,
+        cid: &str,
+        reason_code: &str,
+        observed: u64,
+    ) -> Result<bool, AuthorizedClientsMutationError> {
+        self.record_transport_refusal_at(
+            cid,
+            &rfc3339_utc(OffsetDateTime::now_utc()),
+            reason_code,
+            observed,
+        )
+    }
+
+    /// Record streams the door refused, at a caller-supplied RFC3339 UTC time.
+    ///
+    /// `observed` is how many refusals of `reason_code` this call is reporting,
+    /// because the door reads a carrier's running tally rather than being
+    /// notified per refusal. ⛔ Pass the *increase* since the last call, never
+    /// the running total, or the count compounds.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`AuthorizedClientsMutationError::InvalidActivityTimestamp`]
+    /// when `at` is not RFC3339 UTC, and a lock/load/device error otherwise.
+    pub fn record_transport_refusal_at(
+        &mut self,
+        cid: &str,
+        at: &str,
+        reason_code: &str,
+        observed: u64,
+    ) -> Result<bool, AuthorizedClientsMutationError> {
+        if parse_rfc3339_utc(at).is_none() {
+            return Err(AuthorizedClientsMutationError::InvalidActivityTimestamp(
+                "at",
+            ));
+        }
+        if observed == 0 {
+            return Ok(false);
+        }
+        let _authorization_lock = lock(&self.authorized_clients_path)?;
+        let clients = load_authorized_for_mutation(&self.authorized_clients_path)
+            .map_err(AuthorizedClientsMutationError::Load)?;
+        if clients.get(cid).is_none() {
+            return Ok(false);
+        }
+        self.set_cached(clients);
+        record_device_transport_refusal(&self.devices_path, cid, at, reason_code, observed)
+            .map_err(AuthorizedClientsMutationError::Device)?;
+        Ok(true)
+    }
+
     pub fn remove(
         &mut self,
         fingerprint: &str,
@@ -1091,6 +1173,44 @@ fn apply_rejected(ingest_rejection: &mut Option<IngestRejection>, at: &str, reas
     });
 }
 
+fn apply_transport_refusal(
+    transport_refusal: &mut Option<TransportRefusal>,
+    at: &str,
+    reason_code: &str,
+    observed: u64,
+) {
+    *transport_refusal = Some(match transport_refusal.take() {
+        Some(mut refusal) => {
+            refusal.reason_code = reason_code.to_owned();
+            refusal.latest = at.to_owned();
+            refusal.active_count = refusal.active_count.saturating_add(observed);
+            refusal
+        }
+        None => TransportRefusal {
+            reason_code: reason_code.to_owned(),
+            first: at.to_owned(),
+            latest: at.to_owned(),
+            active_count: observed,
+        },
+    });
+}
+
+fn record_device_transport_refusal(
+    path: &Path,
+    cid: &str,
+    at: &str,
+    reason_code: &str,
+    observed: u64,
+) -> Result<(), DevicesMutationError> {
+    mutate_devices(path, |devices| {
+        let activity = devices
+            .entry(cid.to_owned())
+            .or_insert_with(|| ClientActivity::new(at));
+        apply_transport_refusal(&mut activity.transport_refusal, at, reason_code, observed);
+        ((), true)
+    })
+}
+
 fn source_activity_for_mutation<'a>(
     sources: &'a mut BTreeMap<String, SourceRecord>,
     source: &str,
@@ -1295,6 +1415,11 @@ fn validate_activity(activity: &ClientActivity) -> Result<(), Box<dyn Error + Se
         activity.ingest_rejection.as_ref(),
     ) {
         return Err(invalid_activity_field(field));
+    }
+    if activity.transport_refusal.as_ref().is_some_and(|refusal| {
+        parse_rfc3339_utc(&refusal.first).is_none() || parse_rfc3339_utc(&refusal.latest).is_none()
+    }) {
+        return Err(invalid_activity_field("transport_refusal"));
     }
     Ok(())
 }

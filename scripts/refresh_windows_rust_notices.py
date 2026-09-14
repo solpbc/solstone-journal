@@ -14,15 +14,26 @@ one case where it is cheap and safe: the external (non-workspace) dependency
 population is unchanged, so the archive can be rebuilt by copying every
 vendored member across untouched and substituting only `Cargo.lock` itself.
 
+It handles one further case, and only one: a **git-source pin move**, where
+the set of external packages is unchanged by `(name, version)` and the rows
+that differ are all `git+` sources. That is the shape of advancing a first-party
+library tag. It cannot be member-preserved -- the vendored bytes genuinely
+change -- so this script performs the `cargo vendor` acquisition itself and
+substitutes only the members that actually moved, after proving that the
+vendored member *set* is identical and that every other member is byte-for-byte
+unchanged. Supply `--vendor-dir` to reuse a tree you already produced.
+
 It refuses -- loudly, with the reason -- rather than proceed, when:
-  * the external package population changed (an add/remove/upgrade/re-source).
-    That needs a fresh `cargo vendor` acquisition against the new lock, which
-    this script does not perform: it needs network egress to fetch the
-    changed crates' sources, which is a venue question for the caller, not
-    something to improvise here.
-  * the resolved dependency/feature graph changed even though the population
-    did not (a feature flag moved) -- same refusal, same reason.
+  * the external package population changed by `(name, version)` (an add,
+    remove, or upgrade). That is a real dependency change and needs licence
+    review, not a mechanical refresh.
+  * an external row changed source and either side is not a `git+` source.
+  * the resolved dependency/feature graph changed for any reason other than a
+    git revision moving (a feature flag or a dependency edge moved).
   * a workspace member changed by more than its own version number.
+  * a re-vendored package's licence text changed. The notices file is an input
+    here, not an output; a changed licence needs the notices regenerated, which
+    this script deliberately does not do.
 
 On success it writes the new archive plus a small report to `--out`, and
 rewrites `core/distribution/windows-rust-sources.json` in place. It also
@@ -128,6 +139,124 @@ def query_cargo_metadata(repo: Path) -> dict[str, Any]:
     return json.loads(result.stdout)
 
 
+def normalize_source(source: str) -> str:
+    """Drop a git source's locator so two revisions of one dependency compare
+    equal.
+
+    The graph and population controls exist to prove that no dependency or
+    feature MOVED. A git pin advancing is exactly the change this script is
+    allowed to carry, so the revision is the one component those controls must
+    not key on -- everything else about the row still has to match.
+    """
+    if not source.startswith("git+"):
+        return source
+    return source.split("#", 1)[0].split("?", 1)[0]
+
+
+def normalize_identity(identity: str) -> str:
+    """`name@version (source)` with a git source's locator dropped."""
+    head, _, source = identity.partition(" (")
+    if not source.endswith(")"):
+        return identity
+    return f"{head} ({normalize_source(source[:-1])})"
+
+
+def git_source_revision(source: str) -> str:
+    """The 40-character commit a git source resolves to."""
+    _, _, revision = source.partition("#")
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise RefreshError(f"git source has no resolved revision: {source!r}")
+    return revision
+
+
+def classify_external_delta(
+    old_external: list[dict[str, Any]], new_external: list[dict[str, Any]]
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Return the `(old_row, new_row)` pairs a git pin move explains.
+
+    Refuses anything else. An empty list means the population is identical and
+    the cheap member-preserving path applies unchanged.
+    """
+    old_by_id = {(p["name"], p["version"]): p for p in old_external}
+    new_by_id = {(p["name"], p["version"]): p for p in new_external}
+    if len(old_by_id) != len(old_external) or len(new_by_id) != len(new_external):
+        raise RefreshError(
+            "the lock has two external rows sharing one name and version; "
+            "this script cannot tell them apart -- scope this as engineering work"
+        )
+    if set(old_by_id) != set(new_by_id):
+        added = sorted(set(new_by_id) - set(old_by_id))
+        removed = sorted(set(old_by_id) - set(new_by_id))
+        raise RefreshError(
+            "the external (non-workspace) package population changed -- an "
+            f"added, removed, or upgraded dependency (added={added} "
+            f"removed={removed}). That is a real dependency change and needs "
+            "licence review, not a mechanical refresh."
+        )
+    moved = []
+    for identity, old_row in old_by_id.items():
+        new_row = new_by_id[identity]
+        if old_row == new_row:
+            continue
+        old_source = old_row.get("source", "")
+        new_source = new_row.get("source", "")
+        if not (old_source.startswith("git+") and new_source.startswith("git+")):
+            raise RefreshError(
+                f"external package {identity[0]} {identity[1]} changed "
+                f"{sorted(field for field in set(old_row) | set(new_row) if old_row.get(field) != new_row.get(field))} "
+                "and is not a git dependency on both sides. A member-preserving refresh "
+                "cannot attest to vendor bytes nobody produced, and this script only "
+                "re-vendors git pin moves."
+            )
+        if normalize_source(old_source) != normalize_source(new_source):
+            raise RefreshError(
+                f"git dependency {identity[0]} moved repository "
+                f"({normalize_source(old_source)} -> {normalize_source(new_source)}); "
+                "that is a re-source, not a pin move"
+            )
+        differing = {
+            field
+            for field in set(old_row) | set(new_row)
+            if old_row.get(field) != new_row.get(field)
+        }
+        if differing != {"source"}:
+            raise RefreshError(
+                f"git dependency {identity[0]} changed more than its source row "
+                f"({sorted(differing)}); refusing rather than guess what moved"
+            )
+        moved.append((old_row, new_row))
+    return moved
+
+
+def run_cargo_vendor(repo: Path, destination: Path) -> None:
+    """Acquire the vendor tree for the current lock.
+
+    This is the acquisition the member-preserving path cannot do. `--locked`
+    makes it refuse rather than quietly resolve something else.
+    """
+    result = subprocess.run(
+        [
+            "cargo",
+            "vendor",
+            "--locked",
+            "--versioned-dirs",
+            "--manifest-path",
+            str(repo / "core/Cargo.toml"),
+            str(destination),
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RefreshError(
+            "cargo vendor failed against the current lock (exit "
+            f"{result.returncode}): {result.stderr.decode(errors='replace').strip()}\n"
+            "This step needs network egress to fetch the moved dependency's "
+            "sources. If this session has no venue for that, stop here and say "
+            "so rather than improvising one."
+        )
+
+
 def normalize_graph(meta: dict[str, Any]) -> dict[str, Any]:
     """The resolved dependency/feature graph, keyed by identity rather than
     by cargo metadata's checkout-path-bearing package id -- two checkouts of
@@ -137,7 +266,7 @@ def normalize_graph(meta: dict[str, Any]) -> dict[str, Any]:
     def key(pkg_id: str) -> str:
         p = packages[pkg_id]
         if p["source"]:
-            return f"{p['name']}@{p['version']} ({p['source']})"
+            return f"{p['name']}@{p['version']} ({normalize_source(p['source'])})"
         return f"workspace:{p['name']}"
 
     normalized: dict[str, Any] = {}
@@ -153,6 +282,34 @@ def normalize_graph(meta: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def renormalize_graph_keys(graph: dict[str, Any]) -> dict[str, Any]:
+    """Re-key a graph produced before git locators were stripped.
+
+    An archive written by an earlier run carries the full `?tag=...#sha` in every
+    key, so comparing it against a freshly normalized graph would report a change
+    on every git pin move -- which is exactly the case this path exists to carry.
+    Applied to both sides, the comparison still proves what it is for: that no
+    dependency edge or feature moved.
+    """
+    return {
+        normalize_identity(key): {
+            "features": node["features"],
+            "deps": sorted(
+                (
+                    {
+                        "name": dep["name"],
+                        "pkg": normalize_identity(dep["pkg"]),
+                        "dep_kinds": dep["dep_kinds"],
+                    }
+                    for dep in node["deps"]
+                ),
+                key=lambda dep: (dep["name"], dep["pkg"]),
+            ),
+        }
+        for key, node in graph.items()
+    }
+
+
 def load_prior_graph(
     prior_archive: Path, prior_metadata: Path | None
 ) -> dict[str, Any]:
@@ -163,7 +320,7 @@ def load_prior_graph(
             member = None
         if member is not None:
             payload = json.loads(tar.extractfile(member).read())
-            return payload["graph"]
+            return renormalize_graph_keys(payload["graph"])
     if prior_metadata is None:
         raise RefreshError(
             f"--prior-archive has no embedded '{GRAPH_MEMBER_NAME}' member (it "
@@ -173,7 +330,9 @@ def load_prior_graph(
             "--prior-metadata pointing at the 'cargo metadata' JSON captured "
             "when --prior-archive was produced."
         )
-    return normalize_graph(json.loads(prior_metadata.read_bytes()))
+    return renormalize_graph_keys(
+        normalize_graph(json.loads(prior_metadata.read_bytes()))
+    )
 
 
 def windows_roots(repo: Path) -> list[str]:
@@ -246,11 +405,318 @@ def workspace_only_version_delta(
     return delta
 
 
+def advance_git_index_rows(
+    index: dict[str, Any], moved_git: list[tuple[dict[str, Any], dict[str, Any]]]
+) -> None:
+    """Point the committed index's git rows at the new revision.
+
+    Purely mechanical: identity, source, the recorded vcs sha1, and every notice
+    reference's revision and URL. The notice DIGESTS are deliberately untouched
+    -- `git_source_substitutions` has already proved they still hold at the new
+    revision, and rewriting one here would turn a proof into an assertion.
+    """
+    for old_row, new_row in moved_git:
+        old_identity = f"{old_row['name']}@{old_row['version']} ({old_row['source']})"
+        new_identity = f"{new_row['name']}@{new_row['version']} ({new_row['source']})"
+        revision = git_source_revision(new_row["source"])
+        old_revision = git_source_revision(old_row["source"])
+        matched = 0
+        for package in index["packages"]:
+            if package["identity"] != old_identity:
+                continue
+            matched += 1
+            package["identity"] = new_identity
+            package["source"] = new_row["source"]
+            if package.get("vcs", {}).get("git", {}).get("sha1") == old_revision:
+                package["vcs"]["git"]["sha1"] = revision
+            for reference in package["notice_references"]:
+                source = reference["source"]
+                if source.get("revision") == old_revision:
+                    source["revision"] = revision
+                if isinstance(source.get("source_url"), str):
+                    source["source_url"] = source["source_url"].replace(
+                        old_revision, revision
+                    )
+        if matched != 1:
+            raise RefreshError(
+                f"expected exactly one committed index row for {old_identity}, "
+                f"found {matched}"
+            )
+    stale = [
+        package["identity"]
+        for package in index["packages"]
+        if any(
+            git_source_revision(old_row["source"]) in json.dumps(package)
+            for old_row, _ in moved_git
+        )
+    ]
+    if stale:
+        raise RefreshError(
+            f"index rows still reference a superseded git revision: {stale}"
+        )
+
+
+def build_git_substitutions(
+    repo: Path,
+    prior_archive_path: Path,
+    moved_git: list[tuple[dict[str, Any], dict[str, Any]]],
+    old_index: dict[str, Any],
+    vendor_dir: Path | None,
+    revendored: list[dict[str, Any]],
+) -> dict[str, bytes]:
+    """Produce the replacement bytes for a git pin move, and prove the scope.
+
+    The whole safety of this path rests on one control: a fresh `cargo vendor`
+    must produce a member set IDENTICAL to the archive's, so the only thing that
+    can differ is the content of members that already exist. An added or removed
+    member means something moved that a pin bump cannot explain, and it refuses.
+    """
+    with tempfile.TemporaryDirectory(prefix="windows-rust-notice-vendor-") as scratch:
+        if vendor_dir is None:
+            vendor_root = Path(scratch) / "vendor"
+            run_cargo_vendor(repo, vendor_root)
+        else:
+            vendor_root = vendor_dir
+            if not vendor_root.is_dir():
+                raise RefreshError(f"--vendor-dir is not a directory: {vendor_root}")
+
+        prior_vendor: dict[str, str] = {}
+        with tarfile.open(prior_archive_path, "r:gz") as tar:
+            for member in tar:
+                if member.isfile() and member.name.startswith("vendor/"):
+                    prior_vendor[member.name] = sha256_bytes(
+                        tar.extractfile(member).read()
+                    )
+        fresh_vendor = {
+            "vendor/" + str(path.relative_to(vendor_root)): path
+            for path in vendor_root.rglob("*")
+            if path.is_file()
+        }
+        added = sorted(set(fresh_vendor) - set(prior_vendor))
+        removed = sorted(set(prior_vendor) - set(fresh_vendor))
+        if added or removed:
+            raise RefreshError(
+                "the freshly vendored tree does not have the same member set as "
+                f"the committed archive (added={added[:10]} removed={removed[:10]}). "
+                "A pin move cannot add or remove vendored files; refusing rather "
+                "than publish an archive whose shape nobody verified."
+            )
+
+        substitutions: dict[str, bytes] = {}
+        for name, digest in prior_vendor.items():
+            data = fresh_vendor[name].read_bytes()
+            if sha256_bytes(data) != digest:
+                substitutions[name] = data
+
+        moved_prefixes = tuple(
+            f"vendor/{new_row['name']}-{new_row['version']}/"
+            for _, new_row in moved_git
+        )
+        outside = sorted(
+            name for name in substitutions if not name.startswith(moved_prefixes)
+        )
+        if outside:
+            raise RefreshError(
+                "re-vendoring changed files outside the packages whose pin moved "
+                f"{sorted(moved_prefixes)}: {outside[:10]}. Refusing rather than "
+                "carry a change nobody accounted for."
+            )
+        if not substitutions:
+            raise RefreshError(
+                "the lock moved a git pin but no vendored byte changed. Either the "
+                "vendor tree is stale or the new revision is identical content; "
+                "refusing rather than publish an archive that attests to the wrong "
+                "revision."
+            )
+
+        verify_vendored_against_checkout(moved_git, old_index, vendor_root)
+        substitutions |= git_source_substitutions(moved_git, old_index, revendored)
+        for _, new_row in moved_git:
+            revendored.append(
+                {
+                    "name": new_row["name"],
+                    "version": new_row["version"],
+                    "source": new_row["source"],
+                    "substituted_members": sorted(
+                        name
+                        for name in substitutions
+                        if name.startswith(
+                            f"vendor/{new_row['name']}-{new_row['version']}/"
+                        )
+                    ),
+                }
+            )
+        return substitutions
+
+
+def verify_vendored_against_checkout(
+    moved_git: list[tuple[dict[str, Any], dict[str, Any]]],
+    old_index: dict[str, Any],
+    vendor_root: Path,
+) -> None:
+    """Prove the vendored bytes really are the revision the lock now names.
+
+    Everything else here compares the vendor tree against the *prior* archive,
+    which cannot tell a correct tree from a stale one at the same name and
+    version -- and `--vendor-dir` makes a stale tree an ordinary operator slip.
+    A git dependency has no registry checksum to fall back on, so the check is
+    against cargo's own checkout at the new revision.
+
+    `Cargo.toml` and `.cargo-checksum.json` are excluded: cargo rewrites the
+    first when vendoring and generates the second.
+    """
+    generated = {"Cargo.toml", ".cargo-checksum.json"}
+    for _, new_row in moved_git:
+        revision = git_source_revision(new_row["source"])
+        checkout = cargo_git_checkout(new_row["source"], revision)
+        path_in_vcs = index_path_in_vcs(old_index, new_row)
+        crate_root = checkout / path_in_vcs if path_in_vcs else checkout
+        vendored = vendor_root / f"{new_row['name']}-{new_row['version']}"
+        compared = 0
+        for path in sorted(vendored.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(vendored)
+            if str(relative) in generated:
+                continue
+            origin = crate_root / relative
+            if not origin.is_file():
+                raise RefreshError(
+                    f"vendored file '{relative}' for {new_row['name']} is absent from "
+                    f"the {revision} checkout; the vendor tree does not match the lock"
+                )
+            if sha256_file(origin) != sha256_file(path):
+                raise RefreshError(
+                    f"vendored file '{relative}' for {new_row['name']} does not match "
+                    f"the {revision} checkout. The vendor tree is for a different "
+                    "revision -- re-run without --vendor-dir."
+                )
+            compared += 1
+        if compared == 0:
+            raise RefreshError(
+                f"nothing was comparable for {new_row['name']} at {revision}; a check "
+                "that verifies zero files is not a check"
+            )
+
+
+def index_path_in_vcs(old_index: dict[str, Any], new_row: dict[str, Any]) -> str:
+    """Where in its repository a git dependency's crate lives."""
+    identity = f"{new_row['name']}@{new_row['version']}"
+    rows = [
+        package
+        for package in old_index["packages"]
+        if f"{package['name']}@{package['version']}" == identity
+    ]
+    if len(rows) != 1:
+        raise RefreshError(
+            f"expected exactly one committed index row for {identity}, found {len(rows)}"
+        )
+    return rows[0].get("vcs", {}).get("path_in_vcs", "")
+
+
+def git_source_substitutions(
+    moved_git: list[tuple[dict[str, Any], dict[str, Any]]],
+    old_index: dict[str, Any],
+    revendored: list[dict[str, Any]],
+) -> dict[str, bytes]:
+    """Rebuild `spl-source.tar` at the new revision, and prove the licence held.
+
+    The archive carries the first-party git dependency's full repository source
+    because the vendored crate directory does not contain the repository's
+    LICENSE -- the notices reference it as a git blob. That makes the licence a
+    thing to re-verify, not assume: if it moved, the notices file is stale and
+    regenerating it is out of this script's scope.
+    """
+    revisions = {git_source_revision(new_row["source"]) for _, new_row in moved_git}
+    if len(revisions) != 1:
+        raise RefreshError(
+            f"git pins moved to more than one revision {sorted(revisions)}; this "
+            "script assumes one first-party repository per refresh"
+        )
+    revision = revisions.pop()
+    checkout = cargo_git_checkout(moved_git[0][1]["source"], revision)
+
+    for _, new_row in moved_git:
+        identity = f"{new_row['name']}@{new_row['version']}"
+        rows = [
+            package
+            for package in old_index["packages"]
+            if f"{package['name']}@{package['version']}" == identity
+        ]
+        if len(rows) != 1:
+            raise RefreshError(
+                f"expected exactly one committed index row for {identity}, found {len(rows)}"
+            )
+        for reference in rows[0]["notice_references"]:
+            source = reference["source"]
+            if source.get("kind") != "git-blob":
+                continue
+            member = checkout / source["member"]
+            if not member.is_file():
+                raise RefreshError(
+                    f"{identity}'s notice source '{source['member']}' is absent at "
+                    f"{revision}; the notices file is stale and regenerating it is "
+                    "out of this script's scope"
+                )
+            data = member.read_bytes()
+            if (
+                sha256_bytes(data) != reference["sha256"]
+                or len(data) != reference["bytes"]
+            ):
+                raise RefreshError(
+                    f"{identity}'s licence text changed at {revision}. The notices "
+                    "file is an input here, not an output -- regenerate it and the "
+                    "index's notice spans before refreshing the archive."
+                )
+
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
+        for path in sorted(checkout.rglob("*")):
+            if path.name == ".cargo-ok":
+                continue
+            info = tar.gettarinfo(str(path), arcname=str(path.relative_to(checkout)))
+            # The archive is a source offer, not a filesystem image. Ownership
+            # from whichever machine produced it is noise at best and a leak at
+            # worst (VPE principle 8), and a checkout mtime is whenever cargo
+            # happened to fetch -- normalizing both is what lets a second
+            # operator rebuild this member and get the same bytes.
+            info.uid = 0
+            info.gid = 0
+            info.uname = "root"
+            info.gname = "root"
+            info.mtime = 0
+            if info.isfile():
+                with path.open("rb") as handle:
+                    tar.addfile(info, handle)
+            else:
+                tar.addfile(info)
+    return {"spl-source.tar": buffer.getvalue()}
+
+
+def cargo_git_checkout(source: str, revision: str) -> Path:
+    """Locate cargo's own checkout of a git dependency at `revision`.
+
+    Deliberately reads what cargo resolved rather than cloning independently: a
+    second clone is a second answer to "what is at this revision", and the point
+    is to attest to the bytes that were actually built.
+    """
+    root = Path.home() / ".cargo" / "git" / "checkouts"
+    candidates = sorted(root.glob(f"*/{revision[:7]}"))
+    if len(candidates) != 1:
+        raise RefreshError(
+            f"expected exactly one cargo git checkout for {source} at {revision}, "
+            f"found {len(candidates)}. Run `cargo fetch --locked --manifest-path "
+            "core/Cargo.toml` in this checkout first."
+        )
+    return candidates[0]
+
+
 def refresh(
     repo: Path,
     prior_archive_path: Path,
     prior_metadata_path: Path | None,
     out_dir: Path,
+    vendor_dir: Path | None = None,
 ) -> dict[str, Any]:
     old = load_index(repo)
 
@@ -288,17 +754,7 @@ def refresh(
 
     old_external = [p for p in old_lock["package"] if p.get("source")]
     new_external = [p for p in new_lock["package"] if p.get("source")]
-    if old_external != new_external:
-        raise RefreshError(
-            "the external (non-workspace) package population changed -- an "
-            "added, removed, upgraded, or re-sourced dependency. A "
-            "member-preserving refresh cannot attest to vendor bytes nobody "
-            "produced; this needs a fresh `cargo vendor` acquisition against "
-            "the new lock, not this tool. If this session has no venue for "
-            "that (network egress to fetch the changed crates' sources, plus "
-            "disk for the vendor tree), stop here and say so rather than "
-            "improvising one."
-        )
+    moved_git = classify_external_delta(old_external, new_external)
 
     workspace_delta = workspace_only_version_delta(old_lock, new_lock)
 
@@ -314,15 +770,22 @@ def refresh(
         )
 
     roots = windows_roots(repo)
-    selected = selected_external_identities(new_meta, roots)
-    wanted = {p["identity"] for p in old["packages"] if p["windows_notice_population"]}
+    selected = {
+        normalize_identity(identity)
+        for identity in selected_external_identities(new_meta, roots)
+    }
+    wanted = {
+        normalize_identity(p["identity"])
+        for p in old["packages"]
+        if p["windows_notice_population"]
+    }
     if selected != wanted:
         raise RefreshError(
             "the Windows notice population computed from the current lock "
             f"does not match the committed index: missing={sorted(wanted - selected)} "
             f"added={sorted(selected - wanted)}"
         )
-    all_identities = {p["identity"] for p in old["packages"]}
+    all_identities = {normalize_identity(p["identity"]) for p in old["packages"]}
     if not selected < all_identities:
         raise RefreshError(
             "negative control failed: the selected population is not a proper "
@@ -355,6 +818,30 @@ def refresh(
         + b"\n"
     )
 
+    substitutions: dict[str, bytes] = {"Cargo.lock": lock_bytes}
+    with tarfile.open(prior_archive_path, "r:gz") as tar:
+        if GRAPH_MEMBER_NAME in tar.getnames():
+            substitutions[GRAPH_MEMBER_NAME] = graph_member_payload
+    revendored: list[dict[str, Any]] = []
+    if moved_git:
+        substitutions |= build_git_substitutions(
+            repo, prior_archive_path, moved_git, old, vendor_dir, revendored
+        )
+
+    # A substitution whose bytes already match is not a change, and the
+    # controls below are stated in terms of changes. Running this tool against
+    # an unmoved lock is a legitimate smoke test and must stay a clean no-op.
+    with tarfile.open(prior_archive_path, "r:gz") as tar:
+        for name in list(substitutions):
+            try:
+                existing = tar.extractfile(name)
+            except KeyError:
+                continue
+            if existing is not None and sha256_bytes(existing.read()) == sha256_bytes(
+                substitutions[name]
+            ):
+                del substitutions[name]
+
     prior_members: dict[str, dict[str, Any]] = {}
     with (
         tarfile.open(prior_archive_path, "r:gz") as source,
@@ -377,15 +864,32 @@ def refresh(
                 "size": member.size,
                 "sha256": sha256_bytes(data) if data is not None else None,
             }
-            if member.name == "Cargo.lock":
-                data = lock_bytes
-                member.size = len(lock_bytes)
+            replacement = substitutions.get(member.name)
+            if replacement is not None:
+                if data is None:
+                    raise RefreshError(
+                        f"cannot substitute the non-file member {member.name}"
+                    )
+                data = replacement
+                member.size = len(replacement)
             dest.addfile(member, io.BytesIO(data) if data is not None else None)
 
-        graph_info = tarfile.TarInfo(GRAPH_MEMBER_NAME)
-        graph_info.size = len(graph_member_payload)
-        graph_info.mtime = 0
-        dest.addfile(graph_info, io.BytesIO(graph_member_payload))
+        # Substituted when the prior archive already carries it, appended only
+        # the first time. ⛔ Appending unconditionally writes a second member
+        # under the same name on every run after the first, which reads back as
+        # whichever copy the reader happens to keep.
+        if GRAPH_MEMBER_NAME not in prior_members:
+            graph_info = tarfile.TarInfo(GRAPH_MEMBER_NAME)
+            graph_info.size = len(graph_member_payload)
+            graph_info.mtime = 0
+            dest.addfile(graph_info, io.BytesIO(graph_member_payload))
+
+    unplaced = sorted(set(substitutions) - set(prior_members))
+    if unplaced:
+        raise RefreshError(
+            "substitutions were computed for members the prior archive does not "
+            f"carry, so they would have been silently dropped: {unplaced}"
+        )
 
     observed: dict[str, dict[str, Any]] = {}
     with tarfile.open(new_archive_path, "r:gz") as tar:
@@ -407,14 +911,21 @@ def refresh(
         raise RefreshError(
             f"the refresh added unexpected members: {sorted(added - {GRAPH_MEMBER_NAME})}"
         )
-    changed = [
+    changed = sorted(
         name
         for name in observed
         if name in prior_members and observed[name] != prior_members[name]
-    ]
-    if changed and changed != ["Cargo.lock"]:
+    )
+    unexpected = sorted(set(changed) - set(substitutions))
+    if unexpected:
         raise RefreshError(
-            f"the refresh changed members other than Cargo.lock: {changed}"
+            f"the refresh changed members it was not substituting: {unexpected}"
+        )
+    missed = sorted(set(substitutions) - set(changed))
+    if missed:
+        raise RefreshError(
+            "members were substituted but came out byte-identical, so the "
+            f"substitution did not take: {missed}"
         )
     if observed["Cargo.lock"]["sha256"] != lock_hash:
         raise RefreshError(
@@ -426,6 +937,9 @@ def refresh(
         for package in new_external:
             prefix = f"vendor/{package['name']}-{package['version']}/"
             checks = json.loads(tar.extractfile(prefix + ".cargo-checksum.json").read())
+            # A git dependency is not a registry archive: cargo writes a null
+            # `package` and the lock carries no checksum, so the comparison is
+            # null-to-absent and still meaningful.
             if checks.get("package") != package.get("checksum"):
                 raise RefreshError(
                     f"vendor checksum manifest for {package['name']} {package['version']} "
@@ -457,6 +971,7 @@ def refresh(
             )
 
     new_index = copy.deepcopy(old)
+    advance_git_index_rows(new_index, moved_git)
     new_index["cargo_lock_sha256"] = lock_hash
     new_index["population"]["query_utc"] = datetime.datetime.now(
         datetime.timezone.utc
@@ -482,6 +997,7 @@ def refresh(
 
     report = {
         "workspace_version_only_changes": workspace_delta,
+        "revendored_git_packages": revendored,
         "external_package_count": len(new_external),
         "selected_external_identities": sorted(selected),
         "new_archive": new_index["dependency_source_companion"],
@@ -525,6 +1041,16 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="output directory for the new archive and report (default: a fresh temp dir)",
     )
+    parser.add_argument(
+        "--vendor-dir",
+        type=Path,
+        default=None,
+        help=(
+            "an already-produced `cargo vendor --locked --versioned-dirs` tree for "
+            "the current lock, reused instead of running the acquisition again; "
+            "only consulted when a git pin moved"
+        ),
+    )
     args = parser.parse_args(argv)
 
     repo = args.repo.resolve()
@@ -536,7 +1062,13 @@ def main(argv: list[str] | None = None) -> int:
     prior_metadata = args.prior_metadata.resolve() if args.prior_metadata else None
 
     try:
-        result = refresh(repo, args.prior_archive.resolve(), prior_metadata, out_dir)
+        result = refresh(
+            repo,
+            args.prior_archive.resolve(),
+            prior_metadata,
+            out_dir,
+            args.vendor_dir.resolve() if args.vendor_dir else None,
+        )
     except RefreshError as error:
         print(f"refresh refused: {error}", file=sys.stderr)
         return 1

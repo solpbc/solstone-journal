@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::ledger::{
     AcceptedSegment, AuthorizedClientsRead, ClientActivity, ClientEntry, DeviceActivityRead,
-    IngestRejection, SourceRecord, parse_rfc3339_utc, read_authorized_clients,
+    IngestRejection, SourceRecord, TransportRefusal, parse_rfc3339_utc, read_authorized_clients,
     read_device_activity,
 };
 
@@ -71,6 +71,11 @@ pub struct ClientAssessment {
     pub last_accepted_ingest_at: Option<String>,
     pub last_accepted_segment: Option<AcceptedSegment>,
     pub ingest_rejection: Option<IngestRejection>,
+    /// Streams the door refused on this device's carriers. Never cleared by a
+    /// later success: unlike a rejection streak it is a history, because the
+    /// question it answers is "did this happen at all", and by the time an
+    /// owner asks the carrier has usually recovered.
+    pub transport_refusal: Option<TransportRefusal>,
     pub connection: ConnectionFreshness,
     pub capture_state: ClientCaptureState,
     pub capture_elapsed_ms: Option<i64>,
@@ -296,6 +301,7 @@ fn assessment_for(
     let last_accepted_segment =
         activity.and_then(|activity| activity.last_accepted_segment.clone());
     let ingest_rejection = activity.and_then(|activity| activity.ingest_rejection.clone());
+    let transport_refusal = activity.and_then(|activity| activity.transport_refusal.clone());
     let connection = match activity_state {
         ClientActivityState::Unreadable | ClientActivityState::Malformed => {
             ConnectionFreshness::Unknown
@@ -328,6 +334,7 @@ fn assessment_for(
         last_accepted_ingest_at,
         last_accepted_segment,
         ingest_rejection,
+        transport_refusal,
         connection,
         capture_state,
         capture_elapsed_ms,

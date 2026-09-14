@@ -40,7 +40,9 @@ use solstone_core_sol_link::pairing::nonces::{
 use solstone_core_sol_link::{
     DeviceDoorAuthorization, DeviceDoorVerifier, spawn_authorization_refresh,
 };
-use spl_home::{DEFAULT_DECODER_BUFFER_BYTES, HomeConfig, HomeConnection, MuxLimits};
+use spl_home::{
+    DEFAULT_DECODER_BUFFER_BYTES, HomeConfig, HomeConnection, MuxLimits, RefusalCounts,
+};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Mutex as AsyncMutex, watch};
@@ -70,6 +72,17 @@ const PAIRING_CARRIER_DRAIN_GRACE: Duration = Duration::from_millis(250);
 const PAIRING_CLOSE_DEADLINE: Duration = Duration::from_secs(5);
 const MAX_PAIRING_CARRIERS: usize = 4;
 const MAX_PAIRING_FAILURES: usize = 3;
+// A per-stream refusal resets one stream and deliberately leaves the carrier
+// up, so nothing wakes this loop when one happens and the tally is only ever
+// read by polling it. ⛔ Reporting at carrier end alone is not enough: the
+// carrier that is refusing is still open while the owner is watching uploads
+// fail, which is exactly when the record has to already exist.
+const REFUSAL_REPORT_INTERVAL: Duration = Duration::from_secs(5);
+// The refusal class a well-behaved peer provokes by holding more concurrent
+// streams than a carrier admits. The other three classes mean a misbehaving
+// peer or a local accounting failure; they stay in the log rather than on the
+// owner's device row, which exists to answer one question.
+const STREAM_LIMIT_REASON_CODE: &str = "stream_limit";
 
 /// A stream accepted under direct or exact relay pairing authority.
 #[derive(Clone, Debug)]
@@ -1014,6 +1027,12 @@ async fn serve_carrier(
     let mut pairing_close = pairing_control
         .as_ref()
         .map(|(_, _, receiver)| receiver.clone());
+    let mut reported_refusals = RefusalCounts::default();
+    let mut refusal_report = tokio::time::interval_at(
+        tokio::time::Instant::now() + REFUSAL_REPORT_INTERVAL,
+        REFUSAL_REPORT_INTERVAL,
+    );
+    refusal_report.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         #[cfg(debug_assertions)]
         config
@@ -1100,8 +1119,23 @@ async fn serve_carrier(
                 }
                 break;
             }
+            _ = refusal_report.tick() => {
+                report_carrier_refusals(
+                    &config,
+                    cid.as_ref(),
+                    connection.refusals(),
+                    &mut reported_refusals,
+                );
+            }
         }
     }
+    // The carrier is gone; catch anything refused since the last tick.
+    report_carrier_refusals(
+        &config,
+        cid.as_ref(),
+        connection.refusals(),
+        &mut reported_refusals,
+    );
     if let Some((id, _, _)) = pairing_control {
         config.pairing_registry.release(id);
     }
@@ -1185,6 +1219,54 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for StallBoundStream<S> {
         context: &mut Context<'_>,
     ) -> Poll<std::io::Result<()>> {
         Pin::new(&mut self.inner).poll_shutdown(context)
+    }
+}
+
+/// Record the streams this carrier has refused since the last report.
+///
+/// The door reads a running tally rather than being notified per refusal, so
+/// this writes the **increase** and advances `reported`. Writing the total
+/// would compound the count on every tick.
+fn report_carrier_refusals(
+    config: &DoorConnectionConfig,
+    cid: Option<&LinkedDeviceCid>,
+    current: RefusalCounts,
+    reported: &mut RefusalCounts,
+) {
+    if current == *reported {
+        return;
+    }
+    let stream_limit = current.stream_limit.saturating_sub(reported.stream_limit);
+    // warn, not debug: a refused stream reaches the client as a closed stream
+    // with no status and reached this side as nothing at all until spl-rust
+    // started counting. Production runs at the `warn` default.
+    log::warn!(
+        "paired-device carrier refused streams: stream_limit={} flow_control={} protocol={} internal={}",
+        current.stream_limit,
+        current.flow_control,
+        current.protocol,
+        current.internal
+    );
+    // A cert-less pairing carrier has no device row to attribute this to; the
+    // log line above is the whole record for it.
+    let Some(cid) = cid.filter(|_| stream_limit > 0) else {
+        *reported = current;
+        return;
+    };
+    match AuthorizationLedger::new(&config.journal_root).record_transport_refusal(
+        cid.as_str(),
+        STREAM_LIMIT_REASON_CODE,
+        stream_limit,
+    ) {
+        // `Ok(false)` means the device is no longer in the ledger, which no
+        // amount of retrying fixes.
+        Ok(_) => *reported = current,
+        // ⛔ Do not advance the baseline here. The next tick recomputes the
+        // same delta and tries again; advancing past a failed write would drop
+        // the count silently, which is the exact failure this record exists to
+        // end. The warn above repeating is the intended cost -- a journal that
+        // cannot write its own device ledger is worth seeing more than once.
+        Err(error) => log::debug!("paired-device refusal record failed: {error}"),
     }
 }
 
