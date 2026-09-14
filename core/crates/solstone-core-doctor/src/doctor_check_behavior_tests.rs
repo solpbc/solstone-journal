@@ -2437,7 +2437,7 @@ fn unretryable_transcribe_input_ac4_with_unrelated_pending_trips_caught_up() {
 
     let aged = SystemTime::UNIX_EPOCH
         + Duration::from_millis(
-            (c.now.timestamp_millis() - (MODALITY_INPUT_AGED_MS as i64 + 1_000)) as u64,
+            (c.now.timestamp_millis() - (MODALITY_INPUT_AGED_MS + 1_000)) as u64,
         );
     stage_raw_audio_pending(&c, aged);
 
