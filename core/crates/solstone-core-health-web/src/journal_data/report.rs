@@ -27,6 +27,11 @@ const FACET_SILENT_WARN_HOURS: i64 = 72;
 const FACET_SILENT_CRITICAL_HOURS: i64 = 168;
 const INDEXER_STALE_WARN_DAYS: i64 = 7;
 const SPEC_POINTER: &str = "core/crates/solstone-core-health-web/src/journal_data/report.rs";
+/// Days newer than this are always scanned for outstanding work. Older days are
+/// reached only when their marker pair still reads dirty, which bounds a
+/// per-request scan that would otherwise grow with the whole journal's history.
+const RECENT_BACKLOG_DAY_WINDOW: usize = 30;
+
 const NO_ENGINE_ANALYSIS_TEXT: &str =
     "No thinking engine is chosen yet. Choose one in Thinking so observations can be analyzed.";
 
@@ -778,7 +783,27 @@ fn build_segment_backlog_health(
     let segment_source = FilesystemSegmentSource;
     let chronicle_days = solstone_core_journal_io::day_dirs(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    for (day, _) in chronicle_days {
+    // Enumerating days is cheap; scanning every day's segments is not, and this
+    // runs on each health report. Scan the recent window unconditionally, since
+    // that is where interrupted work appears, and reach an older day only when
+    // its marker pair still reads dirty -- two small reads rather than a full
+    // segment walk. A marker read that fails is scanned, not skipped.
+    let mut day_keys: Vec<String> = chronicle_days.into_keys().collect();
+    day_keys.sort_unstable_by(|left, right| right.cmp(left));
+    let recent: BTreeSet<String> = day_keys
+        .iter()
+        .take(RECENT_BACKLOG_DAY_WINDOW)
+        .cloned()
+        .collect();
+    for day in day_keys {
+        if !recent.contains(&day)
+            && matches!(
+                solstone_core_journal_io::day_marker_pair_status(journal_root, &day),
+                Ok(status) if status.is_complete()
+            )
+        {
+            continue;
+        }
         let result = (|| {
             let progress =
                 read_segment_progress(&health_source, &day).map_err(|error| error.to_string())?;
@@ -815,9 +840,7 @@ fn build_segment_backlog_health(
         awaiting_analysis_text: if no_engine {
             Some(NO_ENGINE_ANALYSIS_TEXT.to_owned())
         } else if settings.deferred {
-            Some(format!(
-                "{awaiting_total} segments captured, awaiting analysis"
-            ))
+            Some(format!("{awaiting_total} segments waiting for analysis"))
         } else {
             None
         },
@@ -1047,11 +1070,11 @@ mod tests {
 
     use super::{
         DisplayPowersaveReading, DisplayPowersaveSettings, GateSettings, HealthError,
-        ProcessingSettings, ScanAggregate, TimeWindowSettings, build_capture_health,
-        build_consumer_signal_health, build_health_report, build_segment_backlog_health,
-        build_synthesis_health, derive_drain_state, evaluate_display_powersave,
-        evaluate_drain_gate, read_last_drained_at, resolve_range, scan_records,
-        scan_talent_indexes,
+        ProcessingSettings, RECENT_BACKLOG_DAY_WINDOW, ScanAggregate, TimeWindowSettings,
+        build_capture_health, build_consumer_signal_health, build_health_report,
+        build_segment_backlog_health, build_synthesis_health, derive_drain_state,
+        evaluate_display_powersave, evaluate_drain_gate, read_last_drained_at, resolve_range,
+        scan_records, scan_talent_indexes,
     };
 
     fn temporary() -> TempDir {
@@ -2139,7 +2162,7 @@ mod tests {
         assert_eq!(health.not_sensed, 1);
         assert_eq!(
             health.awaiting_analysis_text.as_deref(),
-            Some("1 segments captured, awaiting analysis")
+            Some("1 segments waiting for analysis")
         );
     }
 
@@ -2286,6 +2309,54 @@ mod tests {
         .unwrap();
         assert_eq!(health.not_sensed, 1);
         assert_eq!(health.days_with_backlog, 1);
+    }
+
+    #[test]
+    fn backlog_health_scans_older_days_only_when_their_marker_pair_is_dirty() {
+        let temporary = temporary();
+        let root = temporary.path();
+
+        // The day under test is the one the marker-clean case already proves is
+        // counted when scanned. Fill the window with newer days so it falls out.
+        let day = "20260409";
+        let segment = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("screen.jsonl"), "{}\n").unwrap();
+        for index in 0..RECENT_BACKLOG_DAY_WINDOW {
+            let filler = format!("20260{:03}", 410 + index);
+            fs::create_dir_all(root.join("chronicle").join(&filler)).unwrap();
+        }
+
+        let settled = build_segment_backlog_health(
+            root,
+            now(),
+            DisplayPowersaveReading::UNAVAILABLE,
+            false,
+            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            settled.not_sensed, 0,
+            "an older day whose marker pair reads complete must not be scanned"
+        );
+
+        // Same day, now marker-dirty: stream marker present, daily marker absent.
+        let health_dir = root.join("chronicle").join(day).join("health");
+        fs::create_dir_all(&health_dir).unwrap();
+        fs::write(health_dir.join("stream.updated"), b"100.0\n").unwrap();
+
+        let dirty = build_segment_backlog_health(
+            root,
+            now(),
+            DisplayPowersaveReading::UNAVAILABLE,
+            false,
+            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            dirty.not_sensed, 1,
+            "an older day whose marker pair is dirty must still be scanned"
+        );
     }
 
     #[test]

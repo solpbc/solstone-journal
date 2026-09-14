@@ -3729,6 +3729,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-sense::day_lease"
+package = "solstone-core-sense"
+target = "day_lease"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-sense::service_e2e"
 package = "solstone-core-sense"
 target = "service_e2e"

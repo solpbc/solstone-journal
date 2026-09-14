@@ -4,6 +4,12 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- unless you've set processing to deferred, work interrupted by a restart now resumes the next time your journal starts, instead of waiting until the next day.
+
 ## [2.0.5] - 2026-09-14
 
 ### Fixed

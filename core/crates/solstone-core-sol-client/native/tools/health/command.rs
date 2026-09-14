@@ -319,7 +319,7 @@ fn render_full(report: &Value) -> Vec<String> {
 }
 
 pub const BACKLOG_AWAITING_THINKING: &str = "awaiting thinking";
-pub const BACKLOG_AWAITING_SENSING: &str = "awaiting sensing";
+pub const BACKLOG_WAITING_MEDIA: &str = "waiting for media processing";
 pub const BACKLOG_INCOMPLETE_HEDGE: &str = "status incomplete";
 pub const BACKLOG_AT_LEAST: &str = "at least";
 pub const BACKLOG_STATUS_UNAVAILABLE: &str = "Segment analysis status unavailable";
@@ -331,63 +331,48 @@ fn render_backlog(lines: &mut Vec<String>, backlog: &Value) {
     let day_word = if m == 1 { "day" } else { "days" };
     let errors = truthy(&backlog["errors"]);
 
-    if not_thought == 0 && not_sensed == 0 && !errors {
+    if not_thought == 0 && not_sensed == 0 {
+        if errors {
+            lines.push(format!("  {BACKLOG_STATUS_UNAVAILABLE}"));
+        }
         return;
     }
 
-    if not_thought > 0 && not_sensed > 0 {
-        let t_word = if not_thought == 1 {
-            "segment"
-        } else {
-            "segments"
-        };
-        let s_word = if not_sensed == 1 {
-            "segment"
-        } else {
-            "segments"
-        };
-        if errors {
-            lines.push(format!(
-                "  {BACKLOG_AT_LEAST} {not_thought} {t_word} {BACKLOG_AWAITING_THINKING}, {not_sensed} {s_word} {BACKLOG_AWAITING_SENSING} across {m} {day_word} ({BACKLOG_INCOMPLETE_HEDGE})"
-            ));
-        } else {
-            lines.push(format!(
-                "  {not_thought} {t_word} {BACKLOG_AWAITING_THINKING}, {not_sensed} {s_word} {BACKLOG_AWAITING_SENSING} across {m} {day_word}"
-            ));
-        }
-    } else if not_sensed > 0 {
-        let seg_word = if not_sensed == 1 {
-            "segment"
-        } else {
-            "segments"
-        };
-        if errors {
-            lines.push(format!(
-                "  {BACKLOG_AT_LEAST} {not_sensed} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_SENSING} ({BACKLOG_INCOMPLETE_HEDGE})"
-            ));
-        } else {
-            lines.push(format!(
-                "  {not_sensed} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_SENSING}"
-            ));
-        }
-    } else if not_thought > 0 {
-        let seg_word = if not_thought == 1 {
-            "segment"
-        } else {
-            "segments"
-        };
-        if errors {
-            lines.push(format!(
-                "  {BACKLOG_AT_LEAST} {not_thought} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_THINKING} ({BACKLOG_INCOMPLETE_HEDGE})"
-            ));
-        } else {
-            lines.push(format!(
-                "  {not_thought} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_THINKING}"
-            ));
-        }
-    } else if errors {
-        lines.push(format!("  {BACKLOG_STATUS_UNAVAILABLE}"));
+    // A failed per-day read makes every count a floor, so the bound has to reach
+    // each number. Binding it to the first one alone reads as though the second
+    // is exact.
+    let bound = if errors {
+        format!("{BACKLOG_AT_LEAST} ")
+    } else {
+        String::new()
+    };
+    let segment_word = |count: i64| if count == 1 { "segment" } else { "segments" };
+
+    let mut parts = Vec::new();
+    if not_thought > 0 {
+        let word = segment_word(not_thought);
+        parts.push(format!(
+            "{bound}{not_thought} {word} {BACKLOG_AWAITING_THINKING}"
+        ));
     }
+    if not_sensed > 0 {
+        let word = segment_word(not_sensed);
+        parts.push(format!(
+            "{bound}{not_sensed} {word} {BACKLOG_WAITING_MEDIA}"
+        ));
+    }
+
+    // `across N days` keeps one position in every branch; moving it made the same
+    // fact read two different ways depending on which counts were non-zero.
+    let hedge = if errors {
+        format!(" ({BACKLOG_INCOMPLETE_HEDGE})")
+    } else {
+        String::new()
+    };
+    lines.push(format!(
+        "  {} across {m} {day_word}{hedge}",
+        parts.join(", ")
+    ));
 }
 
 fn truthy(value: &Value) -> bool {
@@ -637,7 +622,7 @@ mod tests {
             "errors": []
         });
         render_backlog(&mut lines, &backlog);
-        assert_eq!(lines, vec!["  2 segments across 1 day awaiting thinking"]);
+        assert_eq!(lines, vec!["  2 segments awaiting thinking across 1 day"]);
 
         lines.clear();
         let backlog = serde_json::json!({
@@ -647,7 +632,10 @@ mod tests {
             "errors": []
         });
         render_backlog(&mut lines, &backlog);
-        assert_eq!(lines, vec!["  3 segments across 2 days awaiting sensing"]);
+        assert_eq!(
+            lines,
+            vec!["  3 segments waiting for media processing across 2 days"]
+        );
 
         lines.clear();
         let backlog = serde_json::json!({
@@ -659,7 +647,9 @@ mod tests {
         render_backlog(&mut lines, &backlog);
         assert_eq!(
             lines,
-            vec!["  1 segment awaiting thinking, 2 segments awaiting sensing across 2 days"]
+            vec![
+                "  1 segment awaiting thinking, 2 segments waiting for media processing across 2 days"
+            ]
         );
     }
 
@@ -673,10 +663,10 @@ mod tests {
             "errors": []
         });
         render_backlog(&mut lines, &backlog);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains("5"));
-        assert!(lines[0].contains(BACKLOG_AWAITING_SENSING));
-        assert!(!lines[0].contains(BACKLOG_AWAITING_THINKING));
+        assert_eq!(
+            lines,
+            vec!["  5 segments waiting for media processing across 2 days"]
+        );
     }
 
     #[test]
@@ -689,12 +679,13 @@ mod tests {
             "errors": ["some error"]
         });
         render_backlog(&mut lines, &backlog);
-        assert_eq!(lines.len(), 1);
-        assert!(lines[0].contains(BACKLOG_AT_LEAST));
-        assert!(lines[0].contains(BACKLOG_INCOMPLETE_HEDGE));
-        assert!(lines[0].contains("3"));
-        assert!(lines[0].contains(BACKLOG_AWAITING_THINKING));
-        assert!(lines[0].contains("4"));
-        assert!(lines[0].contains(BACKLOG_AWAITING_SENSING));
+        // Exact, not `contains`: a containment assertion cannot tell which of the
+        // two counts the bound actually reaches, which is the defect this covers.
+        assert_eq!(
+            lines,
+            vec![
+                "  at least 3 segments awaiting thinking, at least 4 segments waiting for media processing across 1 day (status incomplete)"
+            ]
+        );
     }
 }
