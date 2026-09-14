@@ -59,6 +59,7 @@ pub enum DayOutcome {
     NoData,
     Submitted(Flavor),
     AlreadyComplete,
+    CurrentDegraded,
     Unreachable,
     Failed(String),
 }
@@ -260,7 +261,18 @@ where
         };
     }
     match day_is_complete(journal, day) {
-        Ok(true) => return DayOutcome::AlreadyComplete,
+        Ok(true) => match solstone_core_system::daily_coverage::read_daily_coverage(journal, day) {
+            Ok(coverage) => match coverage.state {
+                solstone_core_system::daily_coverage::CoverageState::Current => {
+                    return DayOutcome::AlreadyComplete;
+                }
+                solstone_core_system::daily_coverage::CoverageState::CurrentDegraded => {
+                    return DayOutcome::CurrentDegraded;
+                }
+                _ => {}
+            },
+            Err(error) => return DayOutcome::Failed(error),
+        },
         Ok(false) => {}
         Err(error) => return DayOutcome::Failed(error.to_string()),
     }
@@ -289,6 +301,9 @@ fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
         }
         DayOutcome::AlreadyComplete => success(format!(
             "day {day} already complete; use --from-scratch to force a full re-run\n"
+        )),
+        DayOutcome::CurrentDegraded => success(format!(
+            "day {day}: some daily processing is still unresolved. use --from-scratch to retry.\n"
         )),
         DayOutcome::Unreachable => failure(UNREACHABLE_MESSAGE),
         DayOutcome::Failed(error) => failure(&format!("reprocess failed: {error}")),
@@ -764,7 +779,7 @@ mod tests {
     }
 
     #[test]
-    fn complete_day_sends_nothing() {
+    fn legacy_daily_marker_does_not_suppress_unverified_work() {
         let root = TempDir::new().unwrap();
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
@@ -781,7 +796,102 @@ mod tests {
             true
         });
         assert_eq!(result.exit_code, 0);
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn process_now_reports_current_cap_but_conflict_remains_outstanding_and_force_retries() {
+        use solstone_core_journal_io::{DailyUnitRecord, DailyUnitStatus, save_daily_unit_record};
+        let root = TempDir::new().unwrap();
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("note_transcript.md"),
+            "# Note\nMeeting tomorrow.",
+        )
+        .unwrap();
+        let (talent, apps) = solstone_core_system::daily_coverage::package_roots().unwrap();
+        let configs =
+            solstone_core_system::daily_coverage::daily_configs(root.path(), &talent, &apps)
+                .unwrap();
+        let overrides = configs
+            .into_iter()
+            .map(|config| {
+                let key = match config.key.split_once(':') {
+                    Some((app, name)) => format!("talent.{app}.{name}"),
+                    None => format!("talent.system.{}", config.key),
+                };
+                (
+                    key,
+                    serde_json::json!({"disabled":config.key != "schedule"}),
+                )
+            })
+            .collect::<serde_json::Map<String, serde_json::Value>>();
+        fs::create_dir_all(root.path().join("config")).unwrap();
+        fs::write(
+            root.path().join("config/journal.json"),
+            serde_json::to_vec(&serde_json::json!({"talent_overrides":overrides})).unwrap(),
+        )
+        .unwrap();
+        let health = root.path().join("chronicle").join(DAY).join("health");
+        fs::create_dir_all(&health).unwrap();
+        fs::write(health.join("stream.updated"), "").unwrap();
+        fs::write(health.join("daily.updated"), "").unwrap();
+        let coverage =
+            solstone_core_system::daily_coverage::read_daily_coverage(root.path(), DAY).unwrap();
+        let unit = &coverage.units[0];
+        let mut record = DailyUnitRecord::new(
+            unit.identity.clone(),
+            &unit.evidence_revision,
+            &unit.contract_digest,
+        );
+        record.status = DailyUnitStatus::Capped;
+        record.failure_count = 1;
+        record.reason_code = Some("provider_request_rejected".into());
+        save_daily_unit_record(root.path(), &record).unwrap();
+        let mut calls = 0;
+        let result = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::ProcessNow,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(result, DayOutcome::CurrentDegraded));
         assert_eq!(calls, 0);
+        let forced = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::FromScratch,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(forced, DayOutcome::Submitted(Flavor::FromScratch)));
+        record.status = DailyUnitStatus::Conflicting;
+        record.reason_code = Some("daily_owner_conflict".into());
+        save_daily_unit_record(root.path(), &record).unwrap();
+        let conflict = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::ProcessNow,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(
+            conflict,
+            DayOutcome::Submitted(Flavor::ProcessNow)
+        ));
+        assert_eq!(calls, 2);
     }
 
     #[test]

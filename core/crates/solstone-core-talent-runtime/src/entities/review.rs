@@ -14,7 +14,7 @@ use crate::{
 use caseless::default_case_fold_str;
 use chrono::{Duration, NaiveDate};
 use serde_json::{Map, Value};
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ReviewState {
     packet: String,
 }
@@ -44,7 +44,7 @@ fn threshold(entity_type: &str) -> usize {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct ReviewInputs {
     eligible: Vec<Value>,
     hints: Vec<(String, String)>,
@@ -302,6 +302,60 @@ pub fn build(
             e.to_string(),
         ))
     })?;
+    let mut owner_before = Map::new();
+    for row in &inputs.eligible {
+        let name = row["name"].as_str().ok_or_else(|| {
+            RuntimeOutcome::StageFailed(stage_error(
+                "build",
+                "entities:entities_review",
+                prepared,
+                "candidate missing name",
+            ))
+        })?;
+        let slug = row["slug"].as_str().ok_or_else(|| {
+            RuntimeOutcome::StageFailed(stage_error(
+                "build",
+                "entities:entities_review",
+                prepared,
+                "candidate missing slug",
+            ))
+        })?;
+        let snapshot =
+            solstone_core_facets::review_promotion_snapshot(&context.journal, facet, name)
+                .map_err(|e| {
+                    RuntimeOutcome::StageFailed(stage_error(
+                        "build",
+                        "entities:entities_review",
+                        prepared,
+                        e,
+                    ))
+                })?;
+        owner_before.insert(slug.to_owned(), snapshot);
+    }
+    let after = build_review_inputs(&context.journal, facet, day).map_err(|e| {
+        RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "entities:entities_review",
+            prepared,
+            e,
+        ))
+    })?;
+    if inputs != after {
+        return Err(RuntimeOutcome::StageFailed(stage_error(
+            "build",
+            "entities:entities_review",
+            prepared,
+            "review inputs changed during preparation",
+        )));
+    }
+    prepared.config.insert(
+        "_daily_review_owner_before".to_owned(),
+        Value::Object(owner_before),
+    );
+    prepared.config.insert(
+        "_daily_review_inputs".to_owned(),
+        serde_json::json!({"eligible":inputs.eligible,"hints":inputs.hints,"prior":inputs.prior}),
+    );
     Ok(PrePostState::EntitiesReview(ReviewState {
         packet: format_review_packet(&inputs),
     }))
@@ -359,6 +413,223 @@ pub fn commit(
         day: day.to_owned(),
     }))
 }
+pub fn prepare_publication(
+    journal: &Path,
+    output: &str,
+    facet: &str,
+    day: &str,
+    prepared: &PreparedTalent,
+) -> Result<Vec<crate::writers::PreparedDailyAction>, String> {
+    use crate::writers::PreparedDailyAction;
+    let facet_id = solstone_core_facets::facet_write_identity(journal, facet)?;
+    let data: Value = serde_json::from_str(output).map_err(|e| e.to_string())?;
+    let promotions = data
+        .get("promotions")
+        .and_then(Value::as_array)
+        .ok_or("review output lacks promotions")?;
+    let merges = data
+        .get("merges")
+        .and_then(Value::as_array)
+        .ok_or("review output lacks merges")?;
+    let inputs = prepared
+        .config
+        .get("_daily_review_inputs")
+        .ok_or("missing frozen review admission inputs")?;
+    let owner_before = prepared
+        .config
+        .get("_daily_review_owner_before")
+        .and_then(Value::as_object)
+        .ok_or("missing frozen review owner state")?;
+    let eligible = inputs
+        .get("eligible")
+        .and_then(Value::as_array)
+        .ok_or("missing frozen review eligibility")?;
+    let hints: Vec<(String, String)> = serde_json::from_value(
+        inputs
+            .get("hints")
+            .cloned()
+            .ok_or("missing frozen review hints")?,
+    )
+    .map_err(|e| e.to_string())?;
+    let mut actions = Vec::new();
+    let mut promoted = 0usize;
+    let mut aliased = 0usize;
+    let mut skipped = 0usize;
+    let mut seen = BTreeSet::new();
+    for row in promotions {
+        let name = row
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let slug = solstone_core_entity_matching::entity_slug(name);
+        let description = row
+            .get("description")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        if row.get("promote").and_then(Value::as_bool) != Some(true)
+            || description.is_empty()
+            || !seen.insert(slug.clone())
+        {
+            skipped += 1;
+            continue;
+        }
+        let Some(candidate) = eligible
+            .iter()
+            .find(|candidate| candidate.get("slug").and_then(Value::as_str) == Some(slug.as_str()))
+        else {
+            skipped += 1;
+            continue;
+        };
+        let aliases = row
+            .get("aliases")
+            .and_then(Value::as_array)
+            .ok_or("review promotion lacks aliases")?
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|alias| !alias.is_empty())
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        let _facet_guard =
+            solstone_core_facets::hold_facet_trust_lock(journal).map_err(|e| e.to_string())?;
+        let _entity_guard =
+            solstone_core_entity::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
+        let canonical_name = candidate
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or("frozen candidate lacks name")?;
+        let expected = owner_before
+            .get(&slug)
+            .ok_or("missing frozen promotion owner state")?;
+        if &solstone_core_facets::review_promotion_snapshot(journal, facet, canonical_name)?
+            != expected
+        {
+            return Err("conflict: promotion owner state changed after prompt preparation".into());
+        }
+        let promotion = solstone_core_facets::prepare_review_promotion(
+            journal,
+            facet,
+            candidate
+                .get("type")
+                .and_then(Value::as_str)
+                .ok_or("frozen candidate lacks type")?,
+            candidate
+                .get("name")
+                .and_then(Value::as_str)
+                .ok_or("frozen candidate lacks name")?,
+            description,
+            &aliases,
+        )?;
+        if let Some(change) = promotion.identity {
+            actions.push(PreparedDailyAction::Identity {
+                facet: facet.into(),
+                facet_id: facet_id.clone(),
+                change,
+            });
+        }
+        actions.push(PreparedDailyAction::Attachment {
+            change: promotion.attachment,
+        });
+        if let Some(change) = promotion.aliases {
+            aliased += aliases.len();
+            actions.push(PreparedDailyAction::Aliases {
+                facet: facet.into(),
+                facet_id: facet_id.clone(),
+                change,
+            });
+        }
+        promoted += 1;
+    }
+    let hints = hints
+        .into_iter()
+        .map(|(a, b)| {
+            BTreeSet::from([
+                solstone_core_entity_matching::entity_slug(&a),
+                solstone_core_entity_matching::entity_slug(&b),
+            ])
+        })
+        .collect::<Vec<_>>();
+    let mut proposals = Vec::new();
+    for row in merges {
+        let source = row
+            .get("source")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let target = row
+            .get("canonical")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let summary = row
+            .get("evidence")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .trim();
+        let a = solstone_core_entity_matching::entity_slug(source);
+        let b = solstone_core_entity_matching::entity_slug(target);
+        if a.is_empty()
+            || b.is_empty()
+            || a == b
+            || summary.is_empty()
+            || !hints.contains(&BTreeSet::from([a.clone(), b.clone()]))
+        {
+            skipped += 1;
+            continue;
+        }
+        proposals.push(serde_json::json!({"facet":facet,"day":day,"source":source,"source_slug":a,"target":target,"target_slug":b,"summary":summary}));
+    }
+    if !proposals.is_empty() {
+        let _entity_guard =
+            solstone_core_entity::hold_entity_trust_lock(journal).map_err(|e| e.to_string())?;
+        let prior = inputs
+            .get("prior")
+            .and_then(Value::as_array)
+            .ok_or("missing frozen proposal state")?;
+        let current = solstone_core_entity::load_merge_candidates(journal, Some(facet), None)
+            .map_err(|e| e.to_string())?;
+        for proposal in &proposals {
+            let same_key = |row: &&Value| {
+                row.get("source_slug") == proposal.get("source_slug")
+                    && row.get("target_slug") == proposal.get("target_slug")
+            };
+            let expected = prior.iter().find(same_key);
+            let actual = current.iter().find(same_key);
+            if actual.is_some_and(|row| {
+                matches!(
+                    row.get("status").and_then(Value::as_str),
+                    Some("accepted" | "dismissed")
+                )
+            }) {
+                continue;
+            }
+            if actual != expected {
+                return Err("conflict: merge proposal changed after prompt preparation".into());
+            }
+        }
+        actions.push(PreparedDailyAction::MergeProposals {
+            facet: facet.into(),
+            facet_id: facet_id.clone(),
+            batch: solstone_core_entity::prepare_merge_proposals(journal, &proposals)?,
+        });
+    }
+    let outcome = serde_json::json!({"promoted":promoted,"aliased":aliased,"merges":proposals.len(),"skipped":skipped,"errored":0,"error":null,"ts":chrono::Utc::now().timestamp_millis()});
+    let path = journal
+        .join("facets")
+        .join(facet)
+        .join("entities")
+        .join(format!("{day}_review_outcome.json"));
+    actions.push(crate::writers::prepare_frozen_output_action(
+        journal,
+        &path,
+        format!("{outcome}\n").into_bytes(),
+        prepared,
+    )?);
+    Ok(actions)
+}
+
 pub fn apply_result(
     journal: &std::path::Path,
     output: &str,

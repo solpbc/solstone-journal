@@ -9,7 +9,7 @@ use solstone_core_system_health::BacklogView;
 
 use crate::{ActivityTotals, DayScan, JournalStatsError, SCHEMA_VERSION};
 
-/// Complete schema-v8 journal statistics document.
+/// Complete schema-v9 journal statistics document.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct StatsDocument {
     pub schema_version: u32,
@@ -25,9 +25,11 @@ pub struct StatsDocument {
     pub segment_fold_failed_days: Vec<String>,
 }
 
-/// The fourteen schema-v8 fields emitted for each day.
+/// Day statistics emitted alongside shared daily coverage.
 #[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct DocumentDayStats {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    daily_coverage: Option<solstone_core_system::daily_coverage::DailyCoverage>,
     transcript_sessions: u64,
     transcript_segments: u64,
     transcript_duration: f64,
@@ -104,7 +106,9 @@ pub(crate) fn assemble_document(
 
     for (day, scan) in scans {
         let stats = &scan.stats;
-        days.insert(day.clone(), project_day(stats));
+        let mut projected = project_day(stats);
+        projected.daily_coverage = scan.daily_coverage.clone();
+        days.insert(day.clone(), projected);
         apply_totals(&mut totals, stats);
         if stats.segment_fold_failed {
             segment_fold_failed_days.push(day.clone());
@@ -184,6 +188,7 @@ impl StatsDocument {
 
 fn project_day(stats: &crate::DayStats) -> DocumentDayStats {
     DocumentDayStats {
+        daily_coverage: None,
         transcript_sessions: stats.transcript_sessions,
         transcript_segments: stats.transcript_segments,
         transcript_duration: stats.transcript_duration,

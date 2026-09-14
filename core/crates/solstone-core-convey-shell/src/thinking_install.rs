@@ -143,7 +143,16 @@ pub(crate) fn stop(owner: &Value) -> Result<(), String> {
 fn stop_with(
     expected: ProcessInstance,
     source: &dyn ProcessInstanceSource,
+    signal: impl FnMut(SignalKind) -> Result<(), String>,
+) -> Result<(), String> {
+    stop_with_timeout(expected, source, signal, STOP_TIMEOUT)
+}
+
+fn stop_with_timeout(
+    expected: ProcessInstance,
+    source: &dyn ProcessInstanceSource,
     mut signal: impl FnMut(SignalKind) -> Result<(), String>,
+    timeout: Duration,
 ) -> Result<(), String> {
     for kind in [SignalKind::Terminate, SignalKind::Kill] {
         match source.observe(&expected) {
@@ -153,17 +162,23 @@ fn stop_with(
             }
             InstanceVerdict::SameLive { .. } => signal(kind)?,
         }
-        let deadline = Instant::now() + STOP_TIMEOUT;
+        let deadline = Instant::now() + timeout;
         loop {
             match source.observe(&expected) {
                 InstanceVerdict::NotSameOrExited => return Ok(()),
                 InstanceVerdict::Unverifiable => {
-                    return Err("installer process observation unavailable".into());
+                    // Reaping can remove the process between native inspector
+                    // reads. Observe again within this wait, but uncertainty
+                    // never authorizes another signal or a successful result.
+                    if Instant::now() >= deadline {
+                        return Err("installer process observation unavailable".into());
+                    }
                 }
-                InstanceVerdict::SameLive { .. } => {}
-            }
-            if Instant::now() >= deadline {
-                break;
+                InstanceVerdict::SameLive { .. } => {
+                    if Instant::now() >= deadline {
+                        break;
+                    }
+                }
             }
             std::thread::sleep(Duration::from_millis(25));
         }
@@ -183,6 +198,20 @@ mod tests {
         }
         fn census(&self) -> InstanceCensus {
             InstanceCensus::Incomplete(Vec::new())
+        }
+    }
+
+    struct Observations(Mutex<std::collections::VecDeque<InspectResult>>);
+    impl ProcessInstanceSource for Observations {
+        fn inspect(&self, _: u32) -> InspectResult {
+            self.0
+                .lock()
+                .unwrap()
+                .pop_front()
+                .expect("unexpected observation")
+        }
+        fn census(&self) -> InstanceCensus {
+            panic!("cancellation must inspect only its exact owner")
         }
     }
 
@@ -224,6 +253,92 @@ mod tests {
         );
         assert!(stop(&serde_json::json!({"pid": -1})).is_err());
         assert!(stop(&serde_json::json!({"pid": 4294967296_u64})).is_err());
+    }
+
+    #[test]
+    fn cancellation_observes_exit_after_transient_post_signal_uncertainty() {
+        let expected = ProcessInstance {
+            pid: 123,
+            birth: ProcessBirth::linux(10, 100, 100),
+        };
+        let source = Observations(Mutex::new(std::collections::VecDeque::from([
+            InspectResult::Present {
+                instance: expected,
+                uid: 1000,
+                execution: solstone_core_system::process::ExecutionState::Running,
+                ppid: None,
+                pgid: None,
+            },
+            // A concurrent waiter can reap between the Linux stat and uid reads.
+            InspectResult::Unverifiable,
+            InspectResult::Absent,
+        ])));
+        let mut signals = Vec::new();
+        let result = stop_with(expected, &source, |kind| {
+            signals.push(kind);
+            Ok(())
+        });
+        assert!(result.is_ok(), "{result:?}");
+        assert!(matches!(signals.as_slice(), [SignalKind::Terminate]));
+        assert!(source.0.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancellation_deadline_requires_verified_liveness_before_escalation() {
+        let expected = ProcessInstance {
+            pid: 123,
+            birth: ProcessBirth::linux(10, 100, 100),
+        };
+        let live = InspectResult::Present {
+            instance: expected,
+            uid: 1000,
+            execution: solstone_core_system::process::ExecutionState::Running,
+            ppid: None,
+            pgid: None,
+        };
+        let unknown = Observations(Mutex::new(std::collections::VecDeque::from([
+            live,
+            InspectResult::Unverifiable,
+        ])));
+        let mut signals = Vec::new();
+        let result = stop_with_timeout(
+            expected,
+            &unknown,
+            |kind| {
+                signals.push(kind);
+                Ok(())
+            },
+            Duration::ZERO,
+        );
+        assert_eq!(
+            result.unwrap_err(),
+            "installer process observation unavailable"
+        );
+        assert!(matches!(signals.as_slice(), [SignalKind::Terminate]));
+        assert!(unknown.0.lock().unwrap().is_empty());
+
+        let still_live = Observations(Mutex::new(std::collections::VecDeque::from([
+            live,
+            live,
+            live,
+            InspectResult::Absent,
+        ])));
+        signals.clear();
+        stop_with_timeout(
+            expected,
+            &still_live,
+            |kind| {
+                signals.push(kind);
+                Ok(())
+            },
+            Duration::ZERO,
+        )
+        .unwrap();
+        assert!(matches!(
+            signals.as_slice(),
+            [SignalKind::Terminate, SignalKind::Kill]
+        ));
+        assert!(still_live.0.lock().unwrap().is_empty());
     }
 
     #[test]

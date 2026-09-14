@@ -3,7 +3,7 @@
 
 //! Daily-schedule hook stages.
 
-use chrono::{Duration, Local, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use serde_json::{Map, Value};
 use solstone_core_journal_io::{PathOrDay, iter_segments};
 
@@ -13,7 +13,7 @@ use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct DailySchedulePreState {
     activity_spans: String,
 }
@@ -29,8 +29,15 @@ pub fn build(
         .and_then(|meta| meta.get("lookback_days"))
         .and_then(Value::as_i64)
         .unwrap_or(7);
+    let anchor =
+        solstone_core_indexer::daily_evidence::journal_today(&context.journal).map_err(|e| {
+            RuntimeOutcome::StageFailed(stage_error("build", "daily_schedule", prepared, e))
+        })?;
+    let activity_spans = generate_span_summary(&context.journal, days, anchor).map_err(|e| {
+        RuntimeOutcome::StageFailed(stage_error("build", "daily_schedule", prepared, e))
+    })?;
     Ok(PrePostState::DailySchedule(DailySchedulePreState {
-        activity_spans: generate_span_summary(&context.journal, days),
+        activity_spans,
     }))
 }
 
@@ -105,15 +112,21 @@ pub fn apply_result(journal: &std::path::Path, output: &str) -> Result<(), Strin
     .map_err(|error| error.to_string())
 }
 
-fn generate_span_summary(journal: &std::path::Path, days: i64) -> String {
-    let end_date = Local::now().date_naive();
+fn generate_span_summary(
+    journal: &std::path::Path,
+    days: i64,
+    end_date: NaiveDate,
+) -> Result<String, String> {
+    if !(1..=366).contains(&days) {
+        return Err("daily schedule lookback outside 1..=366".to_owned());
+    }
     let start_date = end_date - Duration::days(days - 1);
     let mut current = start_date;
     let mut lines = Vec::new();
     let mut days_with_data = 0;
     while current <= end_date {
         let day = current.format("%Y%m%d").to_string();
-        let spans = build_spans(segment_ranges(journal, &day));
+        let spans = build_spans(segment_ranges(journal, &day)?);
         if !spans.is_empty() {
             days_with_data += 1;
             lines.push(format!("{} ({}):", day, current.format("%A")));
@@ -130,23 +143,26 @@ fn generate_span_summary(journal: &std::path::Path, days: i64) -> String {
         current += Duration::days(1);
     }
     if days_with_data == 0 {
-        return "No activity data found for the past week.".to_owned();
+        return Ok("No activity data found for the past week.".to_owned());
     }
-    format!(
+    Ok(format!(
         "Activity windows for the past {days} days ({days_with_data} days with data):\n\n{}",
         lines.join("\n")
-    )
+    ))
 }
 
-fn segment_ranges(journal: &std::path::Path, day: &str) -> Vec<(NaiveDateTime, NaiveDateTime)> {
+fn segment_ranges(
+    journal: &std::path::Path,
+    day: &str,
+) -> Result<Vec<(NaiveDateTime, NaiveDateTime)>, String> {
     let anchor = NaiveDate::from_ymd_opt(2000, 1, 1).expect("fixed date is valid");
     let mut ranges = iter_segments(journal, PathOrDay::Day(day))
-        .unwrap_or_default()
+        .map_err(|e| e.to_string())?
         .into_iter()
         .filter_map(|segment| parse_segment(segment.key(), anchor))
         .collect::<Vec<_>>();
     ranges.sort_by_key(|(start, _)| *start);
-    ranges
+    Ok(ranges)
 }
 
 fn parse_segment(key: &str, anchor: NaiveDate) -> Option<(NaiveDateTime, NaiveDateTime)> {

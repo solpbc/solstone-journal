@@ -93,13 +93,156 @@ fn apply_event(
         Vec<solstone_core_entity::EntityResolutionEntity>,
     >,
 ) -> Result<(), String> {
+    let (facet, target_day_key, record) = prepare_event(
+        journal,
+        raw,
+        day,
+        current_day,
+        known_facets,
+        entity_cache,
+        false,
+    )?;
+    let new_id = require_text(&record, "id")?;
+    let cancelled = record
+        .get("cancelled")
+        .is_some_and(solstone_core_facets::activity_value_truthy);
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
+    let (action, superseded) = dedup_anticipation(journal, &facet, &target_day_key, &record)?;
+    match action {
+        AnticipationAction::Skip => return Ok(()),
+        AnticipationAction::Create => {
+            if !matches!(
+                solstone_core_facets::append_activity_record(
+                    journal,
+                    &facet,
+                    &target_day_key,
+                    record
+                )
+                .map_err(|error| error.to_string())?,
+                solstone_core_facets::AppendOutcome::Written(_)
+            ) {
+                return Ok(());
+            }
+        }
+        AnticipationAction::Update(patch) => {
+            solstone_core_facets::update_activity_record(
+                journal,
+                &facet,
+                &target_day_key,
+                &new_id,
+                &patch,
+                "schedule",
+                if cancelled {
+                    "updated by schedule (cancelled on calendar)"
+                } else {
+                    "updated by schedule"
+                },
+                &timestamp,
+            )
+            .map_err(|error| error.to_string())?;
+        }
+    }
+    for superseded_id in superseded {
+        solstone_core_facets::set_activity_hidden(
+            journal,
+            &facet,
+            &target_day_key,
+            &superseded_id,
+            true,
+            "schedule",
+            Some(&format!("superseded by {new_id}")),
+            &timestamp,
+        )
+        .map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn prepare_publication(
+    journal: &std::path::Path,
+    output: &str,
+    day: &str,
+) -> Result<Vec<solstone_core_facets::PreparedAnticipationBatch>, String> {
+    let value: Value =
+        serde_json::from_str(output).map_err(|e| format!("invalid schedule output: {e}"))?;
+    let events = if let Some(events) = value.as_array() {
+        events
+    } else {
+        value
+            .get("events")
+            .and_then(Value::as_array)
+            .ok_or("schedule output must contain events")?
+    };
+    let current_day = NaiveDate::parse_from_str(day, "%Y%m%d").map_err(|e| e.to_string())?;
+    let known = solstone_core_facets::list_declared_facet_names(journal)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .collect();
+    let mut cache = BTreeMap::new();
+    type DayAnticipations = Vec<(Map<String, Value>, Vec<String>)>;
+    let mut groups: BTreeMap<(String, String), DayAnticipations> = BTreeMap::new();
+    for raw in events {
+        let raw = raw.as_object().ok_or("schedule event must be an object")?;
+        let (facet, target, record) =
+            prepare_event(journal, raw, day, current_day, &known, &mut cache, true)?;
+        let existing = solstone_core_facets::load_activity_records(journal, &facet, &target, true)
+            .map_err(|e| e.to_string())?;
+        let exact_match = existing.iter().any(|old| old.get("id") == record.get("id"));
+        let superseded = existing
+            .iter()
+            .filter(|_| !exact_match)
+            .filter(|old| {
+                old.get("source").and_then(Value::as_str) == Some("anticipated")
+                    && old.get("id") != record.get("id")
+                    && sequence_ratio(
+                        &normalized_title(old.get("title")),
+                        &normalized_title(record.get("title")),
+                    ) >= ANTICIPATION_FUZZY_THRESHOLD
+            })
+            .filter_map(|old| old.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        groups
+            .entry((facet, target))
+            .or_default()
+            .push((record, superseded));
+    }
+    let timestamp = Utc::now().to_rfc3339_opts(SecondsFormat::Micros, true);
+    groups
+        .into_iter()
+        .map(|((facet, day), mut records)| {
+            let incoming_ids: BTreeSet<String> = records
+                .iter()
+                .filter_map(|(row, _)| row.get("id").and_then(Value::as_str).map(str::to_owned))
+                .collect();
+            for (_, superseded) in &mut records {
+                superseded.retain(|id| !incoming_ids.contains(id));
+            }
+            solstone_core_facets::prepare_anticipation_batch(
+                journal, &facet, &day, &records, &timestamp,
+            )
+        })
+        .collect()
+}
+
+fn prepare_event(
+    journal: &std::path::Path,
+    raw: &Map<String, Value>,
+    day: &str,
+    current_day: NaiveDate,
+    known_facets: &BTreeSet<String>,
+    entity_cache: &mut BTreeMap<
+        (String, String),
+        Vec<solstone_core_entity::EntityResolutionEntity>,
+    >,
+    read_only: bool,
+) -> Result<(String, String, Map<String, Value>), String> {
     let activity = require_text(raw, "activity")?;
     let target_date = require_text(raw, "target_date")?;
     let title = require_text(raw, "title")?;
     let description = require_text(raw, "description")?;
     let facet = require_text(raw, "facet")?;
     if !known_facets.contains(&facet) {
-        return Err(format!("unknown facet {facet:?}"));
+        return Err(format!("validation: unknown facet {facet:?}"));
     }
     let target_day =
         NaiveDate::parse_from_str(&target_date, "%Y-%m-%d").map_err(|error| error.to_string())?;
@@ -142,7 +285,7 @@ fn apply_event(
             json!({"kind":"facet","facet":facet}),
             json!({"lane":"talent.schedule","facet":facet,"day":target_day_key,"record_id":new_id,"field":"participation.name"}),
             90.0,
-            false,
+            read_only,
         )
         .map_err(|error| error.to_string())?;
         let entity_id = resolved_id(&resolution, entities);
@@ -207,31 +350,7 @@ fn apply_event(
         },
         &timestamp,
     );
-    let (write, superseded) = dedup_anticipation(journal, &facet, &target_day_key, &record)?;
-    if !write {
-        return Ok(());
-    }
-    if !matches!(
-        solstone_core_facets::append_activity_record(journal, &facet, &target_day_key, record)
-            .map_err(|error| error.to_string())?,
-        solstone_core_facets::AppendOutcome::Written(_)
-    ) {
-        return Ok(());
-    }
-    for superseded_id in superseded {
-        solstone_core_facets::set_activity_hidden(
-            journal,
-            &facet,
-            &target_day_key,
-            &superseded_id,
-            true,
-            "schedule",
-            Some(&format!("superseded by {new_id}")),
-            &timestamp,
-        )
-        .map_err(|error| error.to_string())?;
-    }
-    Ok(())
+    Ok((facet, target_day_key, record))
 }
 
 fn require_text(item: &Map<String, Value>, key: &str) -> Result<String, String> {
@@ -295,18 +414,26 @@ fn make_anticipation_id(
     ))
 }
 
+#[derive(Debug, PartialEq)]
+enum AnticipationAction {
+    Skip,
+    Create,
+    Update(Map<String, Value>),
+}
+
 fn dedup_anticipation(
     journal: &std::path::Path,
     facet: &str,
     target_day: &str,
     record: &Map<String, Value>,
-) -> Result<(bool, Vec<String>), String> {
+) -> Result<(AnticipationAction, Vec<String>), String> {
     let new_id = require_text(record, "id")?;
     let new_title = normalized_title(record.get("title"));
     let mut superseded = Vec::new();
-    for existing in solstone_core_facets::load_activity_records(journal, facet, target_day, false)
-        .map_err(|error| error.to_string())?
-    {
+    let existing_records =
+        solstone_core_facets::load_activity_records(journal, facet, target_day, true)
+            .map_err(|error| error.to_string())?;
+    for existing in existing_records {
         if existing.get("source").and_then(Value::as_str) != Some("anticipated") {
             continue;
         }
@@ -314,7 +441,32 @@ fn dedup_anticipation(
             .trim()
             .to_owned();
         if existing_id == new_id {
-            return Ok((false, Vec::new()));
+            let mut patch = Map::new();
+            for key in [
+                "activity",
+                "target_date",
+                "start",
+                "end",
+                "title",
+                "description",
+                "details",
+                "active_entities",
+                "participation",
+                "participation_confidence",
+                "cancelled",
+                "hidden",
+            ] {
+                let existing_val = existing.get(key).unwrap_or(&Value::Null);
+                let new_val = record.get(key).unwrap_or(&Value::Null);
+                if existing_val != new_val {
+                    patch.insert(key.to_owned(), new_val.clone());
+                }
+            }
+            if patch.is_empty() {
+                return Ok((AnticipationAction::Skip, Vec::new()));
+            } else {
+                return Ok((AnticipationAction::Update(patch), Vec::new()));
+            }
         }
         if sequence_ratio(&new_title, &normalized_title(existing.get("title")))
             >= ANTICIPATION_FUZZY_THRESHOLD
@@ -322,7 +474,7 @@ fn dedup_anticipation(
             superseded.push(existing_id);
         }
     }
-    Ok((true, superseded))
+    Ok((AnticipationAction::Create, superseded))
 }
 
 fn resolved_id(
@@ -450,5 +602,31 @@ mod tests {
             "anticipated_meeting_093000_0314"
         );
         assert!(sequence_ratio("project sync", "project synch") >= ANTICIPATION_FUZZY_THRESHOLD);
+    }
+
+    #[test]
+    fn apply_result_updates_same_id_when_cancelled_or_modified() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+
+        // Initial creation
+        let output1 = r#"{"events":[{"activity":"meeting","target_date":"2026-03-14","start":"09:30:00","title":"Project sync","description":"Discuss roadmap","facet":"work","participation":[]}]}"#;
+        apply_result(root.path(), output1, "20260310").unwrap();
+
+        let records =
+            solstone_core_facets::load_activity_records(root.path(), "work", "20260314", true)
+                .unwrap();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["cancelled"], false);
+
+        // Same ID update with cancelled = true
+        let output2 = r#"{"events":[{"activity":"meeting","target_date":"2026-03-14","start":"09:30:00","title":"Project sync","description":"Discuss roadmap","facet":"work","cancelled":true,"participation":[]}]}"#;
+        apply_result(root.path(), output2, "20260310").unwrap();
+
+        let records2 =
+            solstone_core_facets::load_activity_records(root.path(), "work", "20260314", true)
+                .unwrap();
+        assert_eq!(records2.len(), 1);
+        assert_eq!(records2[0]["cancelled"], true);
     }
 }

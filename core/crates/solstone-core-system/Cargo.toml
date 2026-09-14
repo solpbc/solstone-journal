@@ -21,6 +21,11 @@ test-hooks = ["solstone-core-journal-io/test-hooks", "solstone-core-installation
 
 [dependencies]
 chrono = { workspace = true }
+chrono-tz.workspace = true
+solstone-core-indexer.workspace = true
+solstone-core-talent-config.workspace = true
+solstone-core-facets.workspace = true
+solstone-core-journal.workspace = true
 getrandom = { workspace = true }
 libc = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
@@ -48,7 +53,6 @@ tempfile = "3.24.0"
 
 [target.'cfg(windows)'.dependencies]
 solstone-core-installation-identity.workspace = true
-solstone-core-journal.workspace = true
 solstone-core-assets = { workspace = true }
 solstone-core-brain = { workspace = true }
 solstone-core-journal-config = { workspace = true }

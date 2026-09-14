@@ -63,8 +63,9 @@ pub use repair::{
     repair_entity_identities,
 };
 pub use review_candidates::{
-    EntityReviewCandidateError, accept_merge_candidate, dismiss_merge_candidate,
-    load_merge_candidates, record_merge_candidate,
+    EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,
+    dismiss_merge_candidate, load_merge_candidates, prepare_merge_proposals,
+    publish_merge_proposals, record_merge_candidate,
 };
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{
@@ -78,8 +79,9 @@ pub use voiceprints::{
 pub use write::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityOperationContext,
     EntityOperationKind, EntitySaveResult, EntityWriteError, IdentityMapCacheLoad,
-    dismiss_ambiguity, record_ambiguity_choice, record_ambiguity_observation,
-    refresh_identity_map_cache, rewrite_identity_map_cache, save_entity_identity,
+    PreparedIdentityChange, dismiss_ambiguity, prepare_identity_changes, publish_identity_change,
+    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
+    rewrite_identity_map_cache, save_entity_identity,
 };
 
 #[cfg(test)]

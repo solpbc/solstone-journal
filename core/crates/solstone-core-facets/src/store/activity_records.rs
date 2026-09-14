@@ -188,6 +188,130 @@ fn locked_modify_day_records<T>(
     Ok(result)
 }
 
+/// One anticipated-calendar file, including corrections and supersession hides.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedAnticipationBatch {
+    pub facet: String,
+    pub facet_id: String,
+    pub day: String,
+    pub before: Option<String>,
+    pub after: String,
+}
+
+pub fn prepare_anticipation_batch(
+    root: &Path,
+    facet: &str,
+    day: &str,
+    incoming: &[(ActivityRecord, Vec<String>)],
+    timestamp: &str,
+) -> Result<PreparedAnticipationBatch, String> {
+    let _facet = crate::hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    let facet_id = super::declaration::facet_write_identity(root, facet)?;
+    let path = day_path(root, facet, day).map_err(|e| e.to_string())?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let before = optional_activity_bytes(&path)?;
+    let mut rows: Vec<ActivityRecord> = before
+        .as_deref()
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str(line).map_err(|e| format!("malformed activity record: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
+    let incoming_ids: std::collections::BTreeSet<&str> =
+        incoming.iter().map(|(record, _)| id(record)).collect();
+    for (record, superseded) in incoming {
+        let new_id = id(record);
+        let exact_match = rows.iter().any(|row| id(row) == new_id);
+        if let Some(existing) = rows.iter_mut().find(|row| id(row) == new_id) {
+            if existing.get("source").and_then(Value::as_str) != Some("anticipated") {
+                return Err("conflict: anticipated ID belongs to an owner activity".into());
+            }
+            let mut changed = Vec::new();
+            for (key, value) in record {
+                if matches!(key.as_str(), "edits" | "id") {
+                    continue;
+                }
+                if existing.get(key) != Some(value) {
+                    existing.insert(key.clone(), value.clone());
+                    changed.push(key.clone());
+                }
+            }
+            if !changed.is_empty() {
+                *existing = append_edit(
+                    existing.clone(),
+                    "schedule",
+                    changed,
+                    "updated by schedule",
+                    timestamp,
+                );
+            }
+        } else {
+            rows.push(normalize(record.clone()));
+        }
+        for row in &mut rows {
+            if !exact_match
+                && !incoming_ids.contains(id(row))
+                && superseded.iter().any(|old| old == id(row))
+                && !hidden(row)
+            {
+                row.insert("hidden".into(), Value::Bool(true));
+                *row = append_edit(
+                    row.clone(),
+                    "schedule",
+                    vec!["hidden".into()],
+                    &format!("superseded by {new_id}"),
+                    timestamp,
+                );
+            }
+        }
+    }
+    let mut after = String::new();
+    for row in rows {
+        after.push_str(&serde_json::to_string(&row).map_err(|e| e.to_string())?);
+        after.push('\n');
+    }
+    Ok(PreparedAnticipationBatch {
+        facet: facet.into(),
+        facet_id,
+        day: day.into(),
+        before,
+        after,
+    })
+}
+
+fn optional_activity_bytes(path: &Path) -> Result<Option<String>, String> {
+    solstone_core_journal_io::read_optional_text(path).map_err(|error| error.to_string())
+}
+
+pub fn publish_anticipation_batch(
+    root: &Path,
+    batch: &PreparedAnticipationBatch,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _facet = crate::hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    super::declaration::require_facet_write_identity(root, &batch.facet, &batch.facet_id)?;
+    let path = day_path(root, &batch.facet, &batch.day).map_err(|e| e.to_string())?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let current = optional_activity_bytes(&path)?;
+    if current.as_deref() != Some(batch.after.as_str()) {
+        if !allow_before || current != batch.before {
+            return Err("conflict: anticipated calendar changed after preparation".into());
+        }
+        atomic_replace(
+            &path,
+            batch.after.as_bytes(),
+            AtomicWriteOptions { mode: Some(0o600) },
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    receipt()
+}
+
 pub fn load_activity_records(
     root: &Path,
     facet: &str,

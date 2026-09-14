@@ -210,6 +210,44 @@ pub fn set_schedule_metadata(
     })
 }
 
+/// Only the daily scheduling field is owned by this retained action; unrelated
+/// owner schedule edits survive preparation and publication.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedDailyTime {
+    pub before: Option<Value>,
+    pub after: Value,
+}
+
+pub fn prepare_daily_time(path: &Path, primary: &str) -> Result<PreparedDailyTime, String> {
+    if chrono::NaiveTime::parse_from_str(primary, "%H:%M").is_err() {
+        return Err("invalid daily time".into());
+    }
+    let _lock = hold_lock(path, Default::default()).map_err(|e| e.to_string())?;
+    let raw = read_strict_raw(path).map_err(|e| e.to_string())?;
+    Ok(PreparedDailyTime {
+        before: raw.get("daily_time").cloned(),
+        after: Value::String(primary.into()),
+    })
+}
+
+pub fn publish_daily_time(
+    path: &Path,
+    batch: &PreparedDailyTime,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _lock = hold_lock(path, Default::default()).map_err(|e| e.to_string())?;
+    let mut raw = read_strict_raw(path).map_err(|e| e.to_string())?;
+    if raw.get("daily_time") != Some(&batch.after) {
+        if !allow_before || raw.get("daily_time") != batch.before.as_ref() {
+            return Err("conflict: daily time changed after preparation".into());
+        }
+        raw.insert("daily_time".into(), batch.after.clone());
+        write_raw(path, raw).map_err(|e| e.to_string())?;
+    }
+    receipt()
+}
+
 fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
     let raw = read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise).map_err(
         |error| match error {

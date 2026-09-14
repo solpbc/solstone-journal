@@ -299,7 +299,13 @@ mod tests {
                 .expect("fixture file parent directory");
             fs::copy(source.join(relative), &target).expect("captured fixture copy");
         }
-        fs::File::open(root.path().join("chronicle/20260715/stats.json"))
+        // The captured API cases exercise a current cache; keep the captured
+        // source immutable while adopting the current cache schema in the copy.
+        let cache_path = root.path().join("chronicle/20260715/stats.json");
+        let mut cache: Value = serde_json::from_slice(&fs::read(&cache_path).unwrap()).unwrap();
+        cache["schema_version"] = json!(solstone_core_journal_stats_cli::SCHEMA_VERSION);
+        fs::write(&cache_path, serde_json::to_vec(&cache).unwrap()).unwrap();
+        fs::File::open(cache_path)
             .expect("fresh stats cache")
             .set_modified(UNIX_EPOCH + Duration::from_secs(4_102_444_800))
             .expect("fresh stats-cache mtime");
@@ -1330,7 +1336,7 @@ mod tests {
     #[tokio::test]
     async fn stats_cache_wins_and_month_validation_is_exact() {
         let root = root();
-        let cache = json!({"schema_version": 8, "stats": {"transcript_sessions":0,"transcript_segments":0,"transcript_duration":0.0,"transcript_ranges":40,"percept_sessions":0,"percept_frames":0,"percept_duration":0.0,"percept_ranges":2,"browser_segments":1,"pending_segments":0,"segments_pending_think":0,"outputs_processed":0,"outputs_pending":0,"day_bytes":0}, "agent_data":{},"facet_data":{},"heatmap_data":{"weekday":0,"hours":{}}});
+        let cache = json!({"schema_version": solstone_core_journal_stats_cli::SCHEMA_VERSION, "stats": {"transcript_sessions":0,"transcript_segments":0,"transcript_duration":0.0,"transcript_ranges":40,"percept_sessions":0,"percept_frames":0,"percept_duration":0.0,"percept_ranges":2,"browser_segments":1,"pending_segments":0,"segments_pending_think":0,"outputs_processed":0,"outputs_pending":0,"day_bytes":0}, "agent_data":{},"facet_data":{},"heatmap_data":{"weekday":0,"hours":{}}});
         let path = root.path().join("chronicle/20260731/stats.json");
         fs::write(&path, serde_json::to_vec(&cache).unwrap()).unwrap();
         fs::File::open(&path)

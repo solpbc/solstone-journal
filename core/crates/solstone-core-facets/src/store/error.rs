@@ -110,6 +110,7 @@ pub enum FacetWriteError {
 #[derive(Debug)]
 pub enum ObservationWriteError {
     EmptyContent,
+    Conflict { message: String },
     TrustLock(FacetTrustLockError),
     Read(FacetStoreError),
     Write(FacetWriteError),
@@ -120,6 +121,7 @@ impl fmt::Display for ObservationWriteError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::EmptyContent => formatter.write_str("observation content cannot be empty"),
+            Self::Conflict { message } => write!(formatter, "observation conflict: {message}"),
             Self::TrustLock(error) => error.fmt(formatter),
             Self::Read(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
@@ -135,7 +137,7 @@ impl Error for ObservationWriteError {
             Self::Read(error) => Some(error),
             Self::Write(error) => Some(error),
             Self::Resolve(error) => Some(error),
-            Self::EmptyContent => None,
+            Self::EmptyContent | Self::Conflict { .. } => None,
         }
     }
 }
@@ -175,7 +177,7 @@ impl ObservationWriteError {
             Self::Write(error) => write_error_is_io(error),
             Self::Resolve(FacetEntityWriteError::TrustLock(error)) => trust_lock_is_io(error),
             Self::Resolve(FacetEntityWriteError::Io(_)) => true,
-            Self::EmptyContent | Self::Resolve(_) => false,
+            Self::EmptyContent | Self::Conflict { .. } | Self::Resolve(_) => false,
         }
     }
 }

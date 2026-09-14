@@ -21,6 +21,7 @@ pub mod bounded_read;
 pub mod claim_remove;
 pub mod cortex_use;
 mod create_only_retry;
+pub mod daily_unit;
 pub mod deconflict;
 pub mod entry;
 pub mod errors;
@@ -116,6 +117,13 @@ pub use claim_remove::{
     ClaimRemovalPrimitive, run_with_claim_removal_barrier, run_with_claim_removal_fault,
     run_with_two_claim_removal_barriers,
 };
+pub use daily_unit::{
+    AcceptedDailyResult, DAILY_UNIT_RECORD_VERSION, DailyUnitAuthority, DailyUnitError,
+    DailyUnitIdentity, DailyUnitRecord, DailyUnitStatus, accepted_daily_artifacts_valid,
+    daily_unit_record_dir, daily_unit_record_path, list_daily_unit_records, load_daily_unit_record,
+    maintenance_unit_record_path, read_daily_unit_record, save_daily_unit_record,
+    with_daily_unit_authority, with_locked_daily_unit_record, write_daily_unit_record,
+};
 pub use deconflict::{
     SegmentDeconflictError, find_available_segment, find_available_segment_with_occupied,
 };
@@ -195,7 +203,7 @@ pub use readers::{
 };
 pub use readers::{
     JsonlReadReport, JsonlRecord, MalformedPolicy, read_bytes, read_json, read_jsonl,
-    read_jsonl_with_report, read_text,
+    read_jsonl_with_report, read_optional_text, read_text,
 };
 pub use removal::{remove_contained_tree, remove_dir_all};
 pub use snapshot::{

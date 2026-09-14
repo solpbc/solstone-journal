@@ -30,7 +30,7 @@ const MAX_PACKET_CHARS: usize = 56000;
 const TIER_ONE_INDEX_AGENTS: [&str; 4] = ["flow", "span", "event", "meetings"];
 const TIER_TWO_INDEX_AGENTS: [&str; 2] = ["decisions", "followups"];
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub(super) struct Packet {
     pub source_packet: String,
     pub source_counts: String,
@@ -279,17 +279,13 @@ fn search_day_evidence(
     day: &str,
     gaps: &mut Vec<String>,
 ) -> Vec<Item> {
-    let mut request = SearchRequest::new("", Order::Relevance);
-    request.limit = INDEX_RESULTS_PER_AGENT;
-    request.day = Some(day.to_owned());
-    request.facet = Some(facet.to_owned());
-    request.agent = Some(agent.to_owned());
     let label = format!("index_result:{agent}");
-    let response = match search(
+    let response = match crate::daily_prepare::search_day_sources(
         journal,
-        OwnerBoundary,
-        &request,
-        NaiveDate::parse_from_str(day, "%Y%m%d").expect("validated day"),
+        day,
+        agent,
+        Some(facet),
+        INDEX_RESULTS_PER_AGENT,
     ) {
         Ok(response) => response,
         Err(error) => {
@@ -297,6 +293,12 @@ fn search_day_evidence(
             return Vec::new();
         }
     };
+    gaps.extend(
+        response
+            .warnings
+            .iter()
+            .map(|warning| format!("clipped: {warning}")),
+    );
     if response.results.is_empty() {
         gaps.push(format!("missing: {label} absent for {facet} {day}"));
         return Vec::new();

@@ -91,6 +91,9 @@ fn incomplete_at(root: &Path, day: &str, modified: SystemTime) {
 }
 
 fn view(root: &Path, window: usize) -> BacklogView {
+    if !root.join("config/journal.json").exists() {
+        super::configure_daily_work(root, None);
+    }
     read_backlog_view(
         &FilesystemHealthLogSource::new(root),
         &FilesystemSegmentSource,
@@ -134,7 +137,7 @@ fn complete_pending_and_stuck_days_keep_python_state_and_counts() {
 
     let result = view(root, 30);
     assert_eq!(result.days.len(), 3);
-    assert_eq!(result.days[0].state, BACKLOG_STATE_STUCK);
+    assert_eq!(result.days[0].state, BACKLOG_STATE_STUCK, "{result:?}");
     assert_eq!(result.days[1].state, BACKLOG_STATE_PENDING);
     assert_eq!(result.days[2].state, BACKLOG_STATE_COMPLETE);
     assert_eq!((result.pending_days, result.stuck_days), (1, 1));
@@ -144,6 +147,13 @@ fn complete_pending_and_stuck_days_keep_python_state_and_counts() {
     assert_eq!(
         result.days[0],
         BacklogDay {
+            daily_coverage: Some(solstone_core_system::daily_coverage::DailyCoverage {
+                maintenance: None,
+                day: stuck_day.to_owned(),
+                as_of_ms: NOW_MS,
+                state: solstone_core_system::daily_coverage::CoverageState::Current,
+                units: Vec::new()
+            }),
             day: stuck_day.to_owned(),
             state: BACKLOG_STATE_STUCK.to_owned(),
             segments: 1,
@@ -354,7 +364,7 @@ fn default_and_explicit_windows_are_bounded_and_echoed() {
 }
 
 #[test]
-fn complete_days_surface_capped_daily_and_repair_escalation() {
+fn current_revision_caps_surface_alongside_repair_escalation() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
     let day = "20990101";
@@ -365,6 +375,22 @@ fn complete_days_surface_capped_daily_and_repair_escalation() {
             r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"summary","reason_code":"provider_request_rejected"}"#,
         ],
     );
+    super::configure_daily_work(root, Some("schedule"));
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+    let unit = coverage
+        .units
+        .iter()
+        .find(|u| u.identity.name == "schedule")
+        .unwrap();
+    let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+        unit.identity.clone(),
+        &unit.evidence_revision,
+        &unit.contract_digest,
+    );
+    record.status = solstone_core_journal_io::DailyUnitStatus::Capped;
+    record.reason_code = Some("provider_request_rejected".into());
+    record.failure_count = 1;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
     let fingerprint = solstone_core_system::catchup::read_raw_input_fingerprint(root, day).unwrap();
     let state = root.join("health/catchup-state.json");
     fs::create_dir_all(state.parent().unwrap()).unwrap();
@@ -388,15 +414,18 @@ fn complete_days_surface_capped_daily_and_repair_escalation() {
 }
 
 #[test]
-fn capped_daily_read_error_is_a_local_unknown_not_a_view_error() {
+fn failed_terminal_read_is_a_local_unknown() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
     fs::create_dir_all(root.join("chronicle/20990101")).unwrap();
     let result =
         read_backlog_view(&FailingHealth, &FilesystemSegmentSource, root, 1, now()).unwrap();
     assert_eq!(result.days[0].state, BACKLOG_STATE_UNKNOWN);
-    assert_eq!(result.days[0].error.as_ref().unwrap().stage, "capped_daily");
-    assert!(result.errors.is_empty());
+    assert_eq!(
+        result.days[0].error.as_ref().unwrap().stage,
+        "terminal_states"
+    );
+    assert_eq!(result.errors.len(), 1);
 }
 
 #[test]
@@ -673,6 +702,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
         stuck: true,
     };
     let day = BacklogDay {
+        daily_coverage: None,
         day: "20990101".to_owned(),
         state: "stuck".to_owned(),
         segments: 0,
@@ -770,6 +800,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
     let minimal = serde_json::to_value(BacklogView {
         window: 1,
         days: vec![BacklogDay {
+            daily_coverage: None,
             day: "20990102".to_owned(),
             state: BACKLOG_STATE_COMPLETE.to_owned(),
             segments: 0,
@@ -810,6 +841,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
 #[test]
 fn empty_strings_are_omitted_at_day_and_unit_levels() {
     let value = serde_json::to_value(BacklogDay {
+        daily_coverage: None,
         day: "20990101".to_owned(),
         state: BACKLOG_STATE_PENDING.to_owned(),
         segments: 0,

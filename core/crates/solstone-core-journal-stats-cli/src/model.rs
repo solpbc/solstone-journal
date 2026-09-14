@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-pub const SCHEMA_VERSION: u32 = 8;
+pub const SCHEMA_VERSION: u32 = 9;
 
-/// The fourteen schema-v8 day fields and the fold degradation marker.
+/// Day statistics and the fold degradation marker.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DayStats {
     pub transcript_sessions: u64,
@@ -45,6 +45,8 @@ pub struct HeatmapData {
 /// Durable per-day cache payload and the result of a cache hit or scan.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DayScan {
+    #[serde(default)]
+    pub daily_coverage: Option<solstone_core_system::daily_coverage::DailyCoverage>,
     pub schema_version: u32,
     pub stats: DayStats,
     pub agent_data: BTreeMap<String, ActivityTotals>,
@@ -56,6 +58,7 @@ impl Default for DayScan {
     fn default() -> Self {
         Self {
             schema_version: SCHEMA_VERSION,
+            daily_coverage: None,
             stats: DayStats::default(),
             agent_data: BTreeMap::new(),
             facet_data: BTreeMap::new(),

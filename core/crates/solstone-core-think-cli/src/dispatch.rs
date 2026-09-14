@@ -202,12 +202,52 @@ pub(crate) fn dispatch(
     force: bool,
     extra: Map<String, Value>,
 ) -> Result<PendingUse, DispatchFailure> {
+    dispatch_prepared(
+        context,
+        runtime,
+        config,
+        DispatchSettings {
+            schedule,
+            facet,
+            force,
+            extra,
+        },
+        &mut |_| Ok(()),
+    )
+}
+
+pub(crate) struct DispatchSettings<'a> {
+    pub schedule: &'a str,
+    pub facet: Option<&'a str>,
+    pub force: bool,
+    pub extra: Map<String, Value>,
+}
+
+pub(crate) fn dispatch_prepared(
+    context: &ThinkContext,
+    runtime: &tokio::runtime::Runtime,
+    config: &TalentConfig,
+    settings: DispatchSettings<'_>,
+    prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+) -> Result<PendingUse, DispatchFailure> {
+    let DispatchSettings {
+        schedule,
+        facet,
+        force,
+        extra,
+    } = settings;
     let mut request = extra;
     request
         .entry("day".to_owned())
         .or_insert_with(|| Value::String(context.day.clone()));
     request.insert("schedule".to_owned(), Value::String(schedule.to_owned()));
-    let mut env = Map::from_iter([("SOL_DAY".to_owned(), Value::String(context.day.clone()))]);
+    let mut env = Map::from_iter([(
+        "SOL_DAY".to_owned(),
+        request
+            .get("day")
+            .cloned()
+            .unwrap_or_else(|| Value::String(context.day.clone())),
+    )]);
     if let Some(facet) = facet {
         request.insert("facet".to_owned(), Value::String(facet.to_owned()));
         env.insert("SOL_FACET".to_owned(), Value::String(facet.to_owned()));
@@ -310,7 +350,13 @@ pub(crate) fn dispatch(
         .map(PathBuf::from);
     let index_output = config.metadata.get("type").and_then(Value::as_str) == Some("generate")
         && config.metadata.get("output").and_then(Value::as_str) != Some("json");
-    let use_id = context.cortex.dispatch(runtime, &request)?;
+    let reserved = request
+        .config
+        .get("daily_reserved_use_id")
+        .and_then(Value::as_str);
+    let use_id = context
+        .cortex
+        .dispatch_prepared(runtime, &request, reserved, prepare)?;
     Ok(PendingUse {
         use_id,
         name: config.key.clone(),

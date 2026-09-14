@@ -42,7 +42,7 @@ pub enum ObservationLookup {
 }
 
 /// Counts returned after applying observation operations.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ObservationOperationCounts {
     pub update: usize,
     pub add: usize,
@@ -177,6 +177,14 @@ fn load_observations_with_mode(
     let Some(content) = read_facet_entity_observations(journal_root, facet_dir, entity_dir)? else {
         return Ok(Vec::new());
     };
+    parse_observation_rows(&content, &path, mode)
+}
+
+fn parse_observation_rows(
+    content: &str,
+    path: &Path,
+    mode: ObservationReadMode,
+) -> Result<Vec<Value>, FacetStoreError> {
     let mut observations = Vec::new();
     for (index, line) in content.lines().enumerate() {
         let line = line.trim();
@@ -188,7 +196,7 @@ fn load_observations_with_mode(
             Err(_) if matches!(mode, ObservationReadMode::Tolerant) => continue,
             Err(_) => {
                 return Err(FacetStoreError::MalformedObservation {
-                    path,
+                    path: path.to_owned(),
                     line: index + 1,
                     reason: "invalid JSON",
                 });
@@ -202,7 +210,7 @@ fn load_observations_with_mode(
                 .is_some_and(|content| !content.trim().is_empty())
         {
             return Err(FacetStoreError::MalformedObservation {
-                path,
+                path: path.to_owned(),
                 line: index + 1,
                 reason: "expected an object with nonblank string content",
             });
@@ -210,6 +218,21 @@ fn load_observations_with_mode(
         observations.push(parsed);
     }
     Ok(observations)
+}
+
+/// Validate operations against frozen JSONL using the owner's normal target rules.
+/// Malformed snapshot rows remain read failures, distinct from operation conflicts.
+pub fn validate_observation_operations(
+    snapshot: Option<&str>,
+    operations: &[Value],
+    source_day: Option<&str>,
+) -> Result<(), ObservationWriteError> {
+    let rows = parse_observation_rows(
+        snapshot.unwrap_or_default(),
+        Path::new("frozen-observation-snapshot"),
+        ObservationReadMode::Strict,
+    )?;
+    apply_observation_ops(&rows, operations, source_day).map(|_| ())
 }
 
 /// Atomically replace parsed facet-scoped observations as compact JSONL.
@@ -334,12 +357,108 @@ fn record_observation_ops_with_mode(
         let _trust = hold_facet_trust_lock(journal_root)?;
         let snapshot = load_observations_with_mode(journal_root, facet_dir, &resolved, mode)?;
         let (observations, counts, changed) =
-            apply_observation_ops(&snapshot, operations, source_day);
+            apply_observation_ops(&snapshot, operations, source_day)?;
         if changed {
             save_observations(journal_root, facet_dir, &resolved, &observations)?;
         }
         Ok(counts)
     })
+}
+
+/// A single observation file replacement prepared before any daily side effect.
+/// Ordinals and model quotes are interpreted once, against this before-image.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedObservationBatch {
+    pub facet: String,
+    pub facet_id: String,
+    pub entity_id: String,
+    pub relationship: Value,
+    pub entity_dir: String,
+    pub before: Option<String>,
+    pub after: String,
+    pub counts: ObservationOperationCounts,
+}
+
+pub fn prepare_observation_batch(
+    root: &Path,
+    facet: &str,
+    entity: &str,
+    operations: &[Value],
+    source_day: Option<&str>,
+) -> Result<PreparedObservationBatch, ObservationWriteError> {
+    let _trust = hold_facet_trust_lock(root)?;
+    let entity_dir = match resolve_observation_entity_dir(root, facet, entity)
+        .map_err(ObservationWriteError::Resolve)?
+    {
+        ObservationEntityResolution::Resolved { entity_dir } => entity_dir,
+        ObservationEntityResolution::NoSuchEntity => {
+            return Err(ObservationWriteError::Conflict {
+                message: "observation entity disappeared".into(),
+            });
+        }
+    };
+    let facet_id = super::declaration::facet_write_identity(root, facet)
+        .map_err(|message| ObservationWriteError::Conflict { message })?;
+    let scoped = list_scoped_facet_entities(root, facet, true, true)
+        .map_err(ObservationWriteError::Resolve)?;
+    let binding = scoped
+        .into_iter()
+        .find(|entity| entity.relationship_dir == entity_dir && !entity.detached && !entity.blocked)
+        .ok_or_else(|| ObservationWriteError::Conflict {
+            message: "observation target is not attached and unblocked".into(),
+        })?;
+    let before = read_facet_entity_observations(root, facet, &entity_dir)?;
+    let snapshot = load_observations_strict(root, facet, &entity_dir)?;
+    let (after, counts, _) = apply_observation_ops(&snapshot, operations, source_day)?;
+    let mut content = String::new();
+    for row in after {
+        content.push_str(&serde_json::to_string(&row).expect("Value serializes"));
+        content.push('\n');
+    }
+    Ok(PreparedObservationBatch {
+        facet: facet.into(),
+        facet_id,
+        entity_id: binding.entity_id,
+        relationship: binding.relationship,
+        entity_dir,
+        before,
+        after: content,
+        counts,
+    })
+}
+
+/// `allow_before` is true only on the original, disk-checkpointed invocation.
+/// An interrupted invocation may recognize exact-after, but cannot infer that
+/// an owner deletion (possibly restoring the original absence) permits a replay.
+pub fn publish_observation_batch(
+    root: &Path,
+    batch: &PreparedObservationBatch,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _trust = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    super::declaration::require_facet_write_identity(root, &batch.facet, &batch.facet_id)?;
+    let scoped =
+        list_scoped_facet_entities(root, &batch.facet, true, true).map_err(|e| e.to_string())?;
+    if !scoped.iter().any(|entity| {
+        entity.entity_id == batch.entity_id
+            && entity.relationship_dir == batch.entity_dir
+            && entity.relationship == batch.relationship
+            && !entity.detached
+            && !entity.blocked
+    }) {
+        return Err("conflict: observation entity relationship changed after preparation".into());
+    }
+    let current = read_facet_entity_observations(root, &batch.facet, &batch.entity_dir)
+        .map_err(|e| e.to_string())?;
+    if current.as_deref() != Some(batch.after.as_str()) {
+        if !allow_before || current != batch.before {
+            return Err("conflict: observation batch no longer matches its prepared state".into());
+        }
+        write_facet_entity_observations(root, &batch.facet, &batch.entity_dir, &batch.after)
+            .map_err(|e| e.to_string())?;
+    }
+    receipt()
 }
 
 /// Load observations through a name-or-id query without conflating empty and unreadable data.
@@ -405,23 +524,40 @@ fn new_observation(content: &str, source_day: Option<&str>, relation: Option<&Va
             Value::String(source_day.to_owned()),
         );
     }
-    if let Some(relation) = relation {
+    if let Some(relation) = relation.filter(|v| !v.is_null()) {
         observation.insert("relation".to_owned(), relation.clone());
     }
     Value::Object(observation)
+}
+
+fn observations_semantically_equal(left: &Value, right: &Value) -> bool {
+    let left_content = left.get("content").and_then(Value::as_str).map(str::trim);
+    let right_content = right.get("content").and_then(Value::as_str).map(str::trim);
+    if left_content != right_content {
+        return false;
+    }
+    let left_day = left.get("source_day").and_then(Value::as_str);
+    let right_day = right.get("source_day").and_then(Value::as_str);
+    if left_day != right_day {
+        return false;
+    }
+    let left_rel = left.get("relation").filter(|v| !v.is_null());
+    let right_rel = right.get("relation").filter(|v| !v.is_null());
+    left_rel == right_rel
 }
 
 fn apply_observation_ops(
     snapshot: &[Value],
     operations: &[Value],
     source_day: Option<&str>,
-) -> (Vec<Value>, ObservationOperationCounts, bool) {
+) -> Result<(Vec<Value>, ObservationOperationCounts, bool), ObservationWriteError> {
     let mut counts = operation_counts();
     let mut updates = BTreeMap::new();
     let mut drops = std::collections::BTreeSet::new();
     let mut additions = Vec::new();
     let mut changed = false;
 
+    // First pass: validate and prepare drops, updates, keeps
     for operation in operations {
         let Some(operation) = operation.as_object() else {
             counts.skipped += 1;
@@ -429,35 +565,62 @@ fn apply_observation_ops(
         };
         let action = operation.get("op").and_then(Value::as_str);
         if action == Some("add") {
-            let Some(content) = operation
-                .get("content")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|content| !content.is_empty())
-            else {
-                counts.skipped += 1;
-                continue;
-            };
-            additions.push(new_observation(
-                content,
-                source_day,
-                operation.get("relation"),
-            ));
-            counts.add += 1;
-            changed = true;
             continue;
         }
-
         if !matches!(action, Some("update" | "drop" | "keep")) {
             counts.skipped += 1;
             continue;
         }
-        let Some(target_index) = target_index_in_snapshot(operation.get("target_index"), snapshot)
-        else {
+
+        let has_target_quote = operation
+            .get("target_quote")
+            .and_then(Value::as_str)
+            .is_some();
+        let target_idx_val = operation.get("target_index");
+        let target_index = target_index_in_snapshot(target_idx_val, snapshot);
+
+        if target_index.is_none() && has_target_quote {
+            return Err(ObservationWriteError::Conflict {
+                message: format!(
+                    "target index {:?} out of bounds or missing for target quote {:?}",
+                    target_idx_val,
+                    operation.get("target_quote")
+                ),
+            });
+        }
+
+        let Some(target_index) = target_index else {
             counts.skipped += 1;
             continue;
         };
-        if !target_quote_matches(&snapshot[target_index], operation.get("target_quote")) {
+
+        let target_matches =
+            target_quote_matches(&snapshot[target_index], operation.get("target_quote"));
+        if !target_matches {
+            // Check if already applied (for idempotent retry)
+            if action == Some("update")
+                && let Some(content) = operation
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|content| !content.is_empty())
+            {
+                let expected_after =
+                    new_observation(content, source_day, operation.get("relation"));
+                if observations_semantically_equal(&snapshot[target_index], &expected_after) {
+                    counts.update += 1;
+                    continue;
+                }
+            }
+            if has_target_quote {
+                return Err(ObservationWriteError::Conflict {
+                    message: format!(
+                        "target quote {:?} does not match snapshot row {:?}",
+                        operation.get("target_quote"),
+                        snapshot.get(target_index)
+                    ),
+                });
+            }
             counts.skipped += 1;
             continue;
         }
@@ -492,22 +655,58 @@ fn apply_observation_ops(
         }
     }
 
-    if !changed {
-        return (snapshot.to_vec(), counts, false);
-    }
-    let mut observations = Vec::new();
+    // Build intermediate base after drops and updates
+    let mut intermediate_base = Vec::new();
     for (index, observation) in snapshot.iter().enumerate() {
         if drops.contains(&index) {
             continue;
         }
-        observations.push(
-            updates
-                .remove(&index)
-                .unwrap_or_else(|| observation.clone()),
-        );
+        if let Some(updated) = updates.get(&index) {
+            intermediate_base.push(updated.clone());
+        } else {
+            intermediate_base.push(observation.clone());
+        }
     }
+
+    // Second pass: process additions against intermediate_base and previously accumulated additions
+    for operation in operations {
+        let Some(operation) = operation.as_object() else {
+            continue;
+        };
+        if operation.get("op").and_then(Value::as_str) != Some("add") {
+            continue;
+        }
+        let Some(content) = operation
+            .get("content")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|content| !content.is_empty())
+        else {
+            counts.skipped += 1;
+            continue;
+        };
+        let candidate = new_observation(content, source_day, operation.get("relation"));
+        let already_present = intermediate_base
+            .iter()
+            .any(|obs| observations_semantically_equal(obs, &candidate))
+            || additions
+                .iter()
+                .any(|obs| observations_semantically_equal(obs, &candidate));
+        if already_present {
+            counts.keep += 1;
+            continue;
+        }
+        additions.push(candidate);
+        counts.add += 1;
+        changed = true;
+    }
+
+    if !changed {
+        return Ok((snapshot.to_vec(), counts, false));
+    }
+    let mut observations = intermediate_base;
     observations.extend(additions);
-    (observations, counts, true)
+    Ok((observations, counts, true))
 }
 
 fn retry_add_operation<T>(
@@ -575,4 +774,51 @@ pub(crate) fn retry_record_for_test<T>(
     operation: impl FnMut() -> Result<T, ObservationWriteError>,
 ) -> Result<T, ObservationWriteError> {
     retry_record_operation(operation)
+}
+
+#[cfg(test)]
+mod frozen_operation_validation_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn frozen_validation_preserves_owner_target_matching_and_error_kinds() {
+        let snapshot = r#"{"content":"Prefers concise updates", "observed_at":1}"#;
+        let operation = |index, quote| json!({"op":"update", "target_index":index, "target_quote":quote, "content":"Prefers weekly updates"});
+        validate_observation_operations(
+            Some(snapshot),
+            &[operation(0, "CONCISE updates")],
+            Some("20260910"),
+        )
+        .unwrap();
+        for invalid in [
+            operation(0, "\"Prefers concise updates\""),
+            operation(1, "Prefers concise updates"),
+        ] {
+            assert!(matches!(
+                validate_observation_operations(Some(snapshot), &[invalid], Some("20260910")),
+                Err(ObservationWriteError::Conflict { .. })
+            ));
+        }
+        for malformed in ["not JSON", r#"{"content":""}"#, r#"{"content":5}"#] {
+            assert!(matches!(
+                validate_observation_operations(
+                    Some(malformed),
+                    &[operation(0, "wrong quote")],
+                    Some("20260910")
+                ),
+                Err(ObservationWriteError::Read(
+                    FacetStoreError::MalformedObservation { .. }
+                ))
+            ));
+        }
+        let already_applied =
+            r#"{"content":"Prefers weekly updates","source_day":"20260910","observed_at":2}"#;
+        validate_observation_operations(
+            Some(already_applied),
+            &[operation(0, "Prefers concise updates")],
+            Some("20260910"),
+        )
+        .unwrap();
+    }
 }

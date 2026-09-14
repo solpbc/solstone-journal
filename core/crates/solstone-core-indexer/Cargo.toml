@@ -10,6 +10,9 @@ publish = false
 workspace = true
 
 [dependencies]
+serde.workspace = true
+sha2.workspace = true
+solstone-core-journal-io.workspace = true
 chrono.workspace = true
 chrono-tz.workspace = true
 glob.workspace = true

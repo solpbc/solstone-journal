@@ -239,7 +239,7 @@ fn ac2_run_builds_full_expected_document() {
             now()
         )),
         json!({
-            "schema_version": 8,
+            "schema_version": crate::SCHEMA_VERSION,
             "generated_at": "2026-01-06T12:00:00.000000+00:00",
             "day_count": 1,
             "days": {DAY: {

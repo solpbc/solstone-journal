@@ -210,6 +210,7 @@ pub struct CappedDailySummary {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BacklogDay {
+    pub daily_coverage: Option<solstone_core_system::daily_coverage::DailyCoverage>,
     pub day: String,
     pub state: String,
     pub segments: usize,
@@ -292,6 +293,9 @@ impl Serialize for CappedDailyUnit {
 impl Serialize for BacklogDay {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
+        if let Some(coverage) = &self.daily_coverage {
+            map.serialize_entry("daily_coverage", coverage)?;
+        }
         map.serialize_entry("day", &self.day)?;
         map.serialize_entry("state", &self.state)?;
         map.serialize_entry("segments", &self.segments)?;

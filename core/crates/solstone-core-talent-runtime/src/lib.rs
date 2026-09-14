@@ -21,6 +21,8 @@ pub mod activity_contract;
 pub mod assemble;
 pub mod cogitate;
 pub mod contract;
+mod daily_execution;
+pub mod daily_prepare;
 pub mod daily_schedule;
 pub mod documents;
 pub mod entities;
@@ -135,6 +137,16 @@ pub struct StageError {
 }
 
 impl StageError {
+    pub fn reason_code(&self) -> &'static str {
+        if self.phase == "conflict" {
+            "daily_owner_conflict"
+        } else if self.stage == "daily_output_validation" {
+            "schema_invalid"
+        } else {
+            "talent_stage_failed"
+        }
+    }
+
     pub fn new(
         phase: &'static str,
         stage: &'static str,
@@ -324,6 +336,9 @@ pub fn execute_request(
     cogitate: &CogitateOneShotClient,
     writer: &mut impl Write,
 ) -> RuntimeOutcome {
+    if request.contains_key("lock_token") {
+        return daily_execution::execute(request, context, generate, cogitate, writer);
+    }
     let mut prepared =
         match prepare::prepare(request, paths, context, prepare::PrepareMode::Execute) {
             Ok(prepared) => prepared,
@@ -564,26 +579,27 @@ fn cogitate_output(
     }
 }
 
-pub(crate) fn generate_and_write(
+type GeneratedTalentResponse = (String, Option<Box<Value>>, Option<Box<Value>>);
+
+fn generate_response(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
     generate: &OneShotClient,
     cogitate: &CogitateOneShotClient,
     writer: &mut impl Write,
     engine: EngineKind,
-    stage: Option<(&'static contract::StageSpec, PrePostState)>,
-) -> RuntimeOutcome {
+) -> Result<GeneratedTalentResponse, RuntimeOutcome> {
     let (response, usage, degraded) = match engine {
         EngineKind::Generate => {
             match screen_batch::generate_if_needed(prepared, context, generate, Some(writer)) {
                 Some(Ok(response)) => (response, None, None),
-                Some(Err(outcome)) => return outcome,
+                Some(Err(outcome)) => return Err(outcome),
                 None => {
                     let request = generate_request(prepared);
                     if prepared.name == "pulse" {
                         emit_generate_input(writer, &request);
                     }
-                    let response = match execute_bounded_attempts(
+                    let response = execute_bounded_attempts(
                         prepared.config.contains_key("json_schema"),
                         None,
                         |_attempt| {
@@ -592,22 +608,19 @@ pub(crate) fn generate_and_write(
                             })
                         },
                         |event| emit(writer, event),
-                    ) {
-                        Ok(response) => response,
-                        Err(outcome) => return outcome,
-                    };
+                    )?;
                     match response {
                         GenerateResponse::Generated(response) => {
                             if prepared.config.contains_key("json_schema")
                                 && schema_validation_failed(response.schema_validation.as_ref())
                             {
-                                return RuntimeOutcome::SchemaValidationFailed {
+                                return Err(RuntimeOutcome::SchemaValidationFailed {
                                     talent: prepared.name.clone(),
                                     validation: response
                                         .schema_validation
                                         .clone()
                                         .unwrap_or(Value::Null),
-                                };
+                                });
                             }
                             let usage = if response.usage.is_null() {
                                 None
@@ -617,7 +630,7 @@ pub(crate) fn generate_and_write(
                             (response.text.clone(), usage, None)
                         }
                         GenerateResponse::Refused(response) => {
-                            return RuntimeOutcome::GenerateRefused {
+                            return Err(RuntimeOutcome::GenerateRefused {
                                 error: stage_error(
                                     "generate",
                                     "runtime",
@@ -625,17 +638,34 @@ pub(crate) fn generate_and_write(
                                     response.detail.clone(),
                                 ),
                                 response: Box::new(response),
-                            };
+                            });
                         }
                     }
                 }
             }
         }
-        EngineKind::Cogitate => match cogitate_output(prepared, context, cogitate, writer) {
-            Ok(output) => (output.result, output.usage, output.degraded),
-            Err(outcome) => return outcome,
-        },
+        EngineKind::Cogitate => {
+            let output = cogitate_output(prepared, context, cogitate, writer)?;
+            (output.result, output.usage, output.degraded)
+        }
     };
+    Ok((response, usage, degraded))
+}
+
+pub(crate) fn generate_and_write(
+    prepared: &mut PreparedTalent,
+    context: &ExecutionContext,
+    generate: &OneShotClient,
+    cogitate: &CogitateOneShotClient,
+    writer: &mut impl Write,
+    engine: EngineKind,
+    stage: Option<(&'static contract::StageSpec, PrePostState)>,
+) -> RuntimeOutcome {
+    let (response, usage, degraded) =
+        match generate_response(prepared, context, generate, cogitate, writer, engine) {
+            Ok(response) => response,
+            Err(outcome) => return outcome,
+        };
     if let Some((stage, state)) = stage {
         let disposition;
         if let Some(commit) = stage.commit {
@@ -982,7 +1012,7 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
                 "terminal": true,
                 "name": error.talent,
                 "error": error.to_string(),
-                "reason_code": "talent_stage_failed",
+                "reason_code": error.reason_code(),
             });
             if let Some(usage) = error.usage {
                 event["usage"] = *usage;
@@ -3239,5 +3269,71 @@ mod tests {
         assert_eq!(terminals[0]["event"], "error");
         assert_eq!(terminals[0]["usage"], child["usage"]);
         assert_eq!(terminals[0]["degraded"], child["degraded"]);
+    }
+
+    #[test]
+    fn test_lock_token_mismatch_fences_write() {
+        let (root, paths, context) = fixture(
+            "morning_briefing",
+            "{\n\"type\":\"generate\", \"schedule\":\"daily\", \"output\":\"md\"\n}",
+        );
+        let day = "20260101";
+        let out_path = context.journal.join("briefing.md");
+        let identity =
+            solstone_core_journal_io::DailyUnitIdentity::new(day, "morning_briefing", None);
+        let mut record =
+            solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "rev-1", "contract-1");
+        record.lock_token = Some("newer-token".to_owned());
+        solstone_core_journal_io::save_daily_unit_record(&context.journal, &record).unwrap();
+
+        let client =
+            OneShotClient::at_path(test_support::one_shot_stub(root.path(), "briefing content"));
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            root.path().join("unused-cogitate"),
+        ));
+        let mut output = Vec::new();
+        let request = json!({
+            "name": "morning_briefing",
+            "day": day,
+            "lock_token": "stale-worker-token",
+            "output_path": out_path.display().to_string(),
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let outcome = execute_request(request, &paths, &context, &client, &cogitate, &mut output);
+        assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
+        assert!(!out_path.exists());
+    }
+
+    #[test]
+    fn test_missing_record_with_lock_token_fails_closed() {
+        let (root, paths, context) = fixture(
+            "morning_briefing",
+            "{\n\"type\":\"generate\", \"schedule\":\"daily\", \"output\":\"md\"\n}",
+        );
+        let day = "20260101";
+        let out_path = context.journal.join("briefing.md");
+
+        let client =
+            OneShotClient::at_path(test_support::one_shot_stub(root.path(), "briefing content"));
+        let cogitate = configure_cogitate_client(CogitateOneShotClient::at_path(
+            root.path().join("unused-cogitate"),
+        ));
+        let mut output = Vec::new();
+        let request = json!({
+            "name": "morning_briefing",
+            "day": day,
+            "lock_token": "orphan-token",
+            "output_path": out_path.display().to_string(),
+        })
+        .as_object()
+        .unwrap()
+        .clone();
+
+        let outcome = execute_request(request, &paths, &context, &client, &cogitate, &mut output);
+        assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
+        assert!(!out_path.exists());
     }
 }

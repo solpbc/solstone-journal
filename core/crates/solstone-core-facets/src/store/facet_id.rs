@@ -6,11 +6,27 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use super::declaration::read_facet_declaration;
+use super::declaration::{facet_write_identity, read_facet_declaration};
 use super::error::{FacetIdError, FacetIdResolveError};
 use super::map::list_declared_facet_names;
 use super::write::save_facet_declaration;
 use crate::hold_facet_trust_lock;
+
+/// Adopt the existing facet identity schema at daily write admission only.
+/// Existing valid identities and all other declaration fields are preserved.
+pub fn ensure_daily_facet_id(root: &Path, facet: &str) -> Result<String, String> {
+    let _guard = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    let declaration = read_facet_declaration(root, facet)
+        .map_err(|e| e.to_string())?
+        .ok_or("conflict: owning facet no longer exists")?;
+    if declaration.value().get("id").is_some() {
+        return facet_write_identity(root, facet);
+    }
+    let mut value = declaration.into_value();
+    let id = assign_new_facet_id_locked(&mut value, root).map_err(|e| e.to_string())?;
+    save_facet_declaration(root, facet, &value).map_err(|e| e.to_string())?;
+    Ok(id)
+}
 
 const MAX_COLLISION_RETRIES: usize = 32;
 

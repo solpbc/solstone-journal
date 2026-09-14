@@ -24,4 +24,5 @@ solstone-core-system.workspace = true
 solstone-core-system-health = { path = "../solstone-core-system-health" }
 
 [dev-dependencies]
+solstone-core-journal-io.workspace = true
 tempfile = "3.24.0"

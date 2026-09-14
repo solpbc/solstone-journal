@@ -36,10 +36,7 @@ use solstone_core_system::status_wire::{
     StaleHeartbeatWireInput, SupervisorStatusWireInput, project_supervisor_status,
 };
 use solstone_core_system::{
-    catchup::{
-        CatchupError, days_with_expired_retry, eligible_catchup_days,
-        reconcile_stale_catchup_attempts,
-    },
+    catchup::{CatchupError, eligible_catchup_days, reconcile_stale_catchup_attempts},
     queue::{SubmitOutcome, TaskQueue, TaskQueueStatusSnapshot},
 };
 
@@ -556,13 +553,9 @@ fn handle_retry_expiry_drain(
     }
     *last_drain = tick;
     let exclude = BTreeSet::from([today.format("%Y%m%d").to_string()]);
-    let expired_days = days_with_expired_retry(journal, &exclude, now)?;
-    if !expired_days.is_empty() {
-        // Expiry wakes the ordinary automatic selector. It is not an owner
-        // force: dirty-day filtering, both catchup gates, and the four-day cap
-        // remain authoritative.
-        run_catchup_drain(journal, queue, &exclude, &[], now)?;
-    }
+    // A bounded persisted reconciliation also discovers derived-only edits and lost notifications.
+    // The ordinary selector still applies pacing, current-day exclusion, and the four-day cap.
+    run_catchup_drain(journal, queue, &exclude, &[], now)?;
     Ok(())
 }
 
@@ -1820,7 +1813,7 @@ mod tests {
         fn enable_thinking(&self) {
             fs::write(
                 self.root.join("config/journal.json"),
-                br#"{"providers":{"active":{"provider":"local"}}}"#,
+                br#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"local"}}}"#,
             )
             .expect("thinking config");
         }
@@ -2269,6 +2262,11 @@ mod tests {
         NaiveDate::from_ymd_opt(2026, 1, day).expect("fixture date")
     }
 
+    fn wall_time(day: u32, seconds: u64) -> SystemTime {
+        let midnight = date(day).and_hms_opt(0, 0, 0).unwrap().and_utc();
+        SystemTime::from(midnight) + Duration::from_secs(seconds)
+    }
+
     #[test]
     fn retry_expiry_drain_throttles_and_excludes_today() {
         let bed = Bed::new("retry-expiry");
@@ -2286,13 +2284,13 @@ mod tests {
                         "day": "20260101",
                         "command_kind": "daily-catchup",
                         "active": null,
-                        "next_retry_at": 10.0,
+                        "next_retry_at": wall_time(3, 10).duration_since(UNIX_EPOCH).unwrap().as_secs_f64(),
                     },
                     "20260103:segment-repair": {
                         "day": "20260103",
                         "command_kind": "segment-repair",
                         "active": null,
-                        "next_retry_at": 10.0,
+                        "next_retry_at": wall_time(3, 10).duration_since(UNIX_EPOCH).unwrap().as_secs_f64(),
                     },
                 },
             }))
@@ -2303,7 +2301,7 @@ mod tests {
         let queue = queue(&bed.root);
         let origin = Instant::now();
         let mut last_drain = origin;
-        let now = UNIX_EPOCH + Duration::from_secs(10);
+        let now = wall_time(3, 10);
 
         handle_retry_expiry_drain(
             false,
@@ -2361,7 +2359,7 @@ mod tests {
                     "day": day,
                     "command_kind": "daily-catchup",
                     "active": null,
-                    "next_retry_at": 10.0,
+                    "next_retry_at": wall_time(7, 10).duration_since(UNIX_EPOCH).unwrap().as_secs_f64(),
                 }),
             );
         }
@@ -2383,7 +2381,7 @@ mod tests {
             &mut last_drain,
             date(7),
             origin + RETRY_EXPIRY_INTERVAL,
-            UNIX_EPOCH + Duration::from_secs(10),
+            wall_time(7, 10),
         )
         .expect("expired retry tick");
 
@@ -2394,6 +2392,29 @@ mod tests {
     fn retry_expiry_does_not_force_a_day_whose_marker_pair_is_already_clean() {
         let bed = Bed::new("retry-expiry-clean");
         bed.enable_thinking();
+        // This fixture tests raw-marker retry behavior with no enabled daily work.
+        let (talent, apps) = solstone_core_system::daily_coverage::package_roots().unwrap();
+        let overrides =
+            solstone_core_system::daily_coverage::daily_configs(&bed.root, &talent, &apps)
+                .unwrap()
+                .into_iter()
+                .map(|config| {
+                    let key = match config.key.split_once(':') {
+                        Some((app, name)) => format!("talent.{app}.{name}"),
+                        None => format!("talent.system.{}", config.key),
+                    };
+                    (key, json!({"disabled": true}))
+                })
+                .collect::<Map<String, Value>>();
+        fs::write(
+            bed.root.join("config/journal.json"),
+            serde_json::to_vec(&json!({
+                "identity":{"timezone":"UTC"}, "providers":{"active":{"provider":"local"}},
+                "talent_overrides": overrides
+            }))
+            .unwrap(),
+        )
+        .unwrap();
         let health = bed.root.join("chronicle/20260101/health");
         fs::create_dir_all(&health).expect("health directory");
         fs::write(
@@ -2435,7 +2456,7 @@ mod tests {
             &mut last_drain,
             date(2),
             origin + RETRY_EXPIRY_INTERVAL,
-            UNIX_EPOCH + Duration::from_secs(10),
+            wall_time(2, 10),
         )
         .expect("expired retry tick");
 
@@ -2521,7 +2542,7 @@ mod tests {
                     "20260101:daily-catchup": {
                         "day": "20260101",
                         "command_kind": "daily-catchup",
-                        "active": {"ref": "lost", "started_at": 1.0},
+                        "active": {"ref": "lost", "started_at": wall_time(3, 1).duration_since(UNIX_EPOCH).unwrap().as_secs_f64()},
                         "admitted_generation": 1,
                         "fingerprint": solstone_core_system::catchup::read_raw_input_fingerprint(
                             &bed.root,
@@ -2537,15 +2558,8 @@ mod tests {
         .expect("write catchup state");
         let queue = queue(&bed.root);
 
-        initialize_catchup(
-            &bed.root,
-            &queue,
-            false,
-            false,
-            date(3),
-            UNIX_EPOCH + Duration::from_secs(20),
-        )
-        .expect("startup catchup");
+        initialize_catchup(&bed.root, &queue, false, false, date(3), wall_time(3, 20))
+            .expect("startup catchup");
 
         assert_eq!(pending(&queue), 1, "only fresh past-day dirtiness drains");
         let state: Value = serde_json::from_slice(
@@ -2554,7 +2568,13 @@ mod tests {
         .expect("catchup JSON");
         let stale = &state["entries"]["20260101:daily-catchup"];
         assert_eq!(stale["last_outcome"], "interrupted");
-        assert_eq!(stale["next_retry_at"], 620.0);
+        assert_eq!(
+            stale["next_retry_at"],
+            wall_time(3, 620)
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs_f64()
+        );
     }
 
     #[test]
@@ -2730,7 +2750,7 @@ mod tests {
             &mut daily,
             &mut flush,
             date(7),
-            UNIX_EPOCH,
+            wall_time(7, 0),
         )
         .expect("daily rollover");
 
@@ -3241,7 +3261,7 @@ mod tests {
         fs::create_dir_all(&health_dir).expect("health dir");
         fs::write(health_dir.join("stream.updated"), b"100.0\n").expect("write stream marker");
 
-        let now = UNIX_EPOCH + Duration::from_secs(10);
+        let now = wall_time(3, 10);
         for _ in 0..3 {
             let q = queue(&bed.root);
             q.set_ready();
@@ -3275,7 +3295,7 @@ mod tests {
         fs::create_dir_all(&health_dir).expect("health dir");
         fs::write(health_dir.join("stream.updated"), b"100.0\n").expect("write stream marker");
 
-        let now = UNIX_EPOCH + Duration::from_secs(10);
+        let now = wall_time(3, 10);
         let q = queue(&bed.root);
         let outcome = run_today_sense_repair(&bed.root, &q, false, false, "20260102", now);
         assert!(outcome.is_some());
@@ -3330,7 +3350,7 @@ mod tests {
 
         fs::write(
             bed.root.join("config/journal.json"),
-            br#"{"providers":{"active":{"provider":"local"}}}"#,
+            br#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"local"}}}"#,
         )
         .expect("write valid provider");
         let sense_config_d = solstone_core_sense::config::read_config(&bed.root);

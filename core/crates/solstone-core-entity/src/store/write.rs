@@ -399,6 +399,85 @@ fn save_entity_identity_with_lock_options(
     })
 }
 
+/// Exact identity states for a retained daily promotion/alias sequence.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedIdentityChange {
+    pub entity_id: String,
+    pub entity_dir: String,
+    pub before: Option<Value>,
+    pub after: Value,
+}
+
+pub fn prepare_identity_changes(
+    root: &Path,
+    entity_id: &str,
+    states: &[Value],
+) -> Result<Vec<PreparedIdentityChange>, String> {
+    let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let map = read_identity_map(root).map_err(|e| e.to_string())?;
+    let entity_dir = map
+        .resolved
+        .get(entity_id)
+        .cloned()
+        .unwrap_or_else(|| entity_id.into());
+    let mut before = read_entity_identity(root, &entity_dir)
+        .map_err(|e| e.to_string())?
+        .map(|s| s.value().clone());
+    let mut changes = Vec::new();
+    for state in states {
+        let after = normalized_identity(entity_id, state).map_err(|e| e.to_string())?;
+        if before.as_ref() != Some(&after) {
+            changes.push(PreparedIdentityChange {
+                entity_id: entity_id.into(),
+                entity_dir: entity_dir.clone(),
+                before: before.clone(),
+                after: after.clone(),
+            });
+        }
+        before = Some(after);
+    }
+    Ok(changes)
+}
+
+pub fn publish_identity_change(
+    root: &Path,
+    change: &PreparedIdentityChange,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let map = read_identity_map(root).map_err(|e| e.to_string())?;
+    if map
+        .resolved
+        .get(&change.entity_id)
+        .is_some_and(|dir| dir != &change.entity_dir)
+    {
+        return Err("conflict: promoted identity moved after preparation".into());
+    }
+    reconcile_prepared_history(root, &change.entity_dir).map_err(|e| e.to_string())?;
+    let current = read_entity_identity(root, &change.entity_dir)
+        .map_err(|e| e.to_string())?
+        .map(|s| s.value().clone());
+    if current.as_ref() != Some(&change.after) {
+        if !allow_before || current != change.before {
+            return Err("conflict: promoted identity changed after preparation".into());
+        }
+        let operation = EntityOperationContext {
+            kind: if change.before.is_none() {
+                EntityOperationKind::Create
+            } else {
+                EntityOperationKind::Update
+            },
+            caller: serde_json::json!({"kind":"talent", "name":"entities:entities_review"}),
+            actor: serde_json::json!({"kind":"system"}),
+            metadata: serde_json::json!({}),
+        };
+        save_entity_identity(root, &change.entity_id, &change.after, Some(&operation))
+            .map_err(|e| e.to_string())?;
+    }
+    receipt()
+}
+
 /// Create or update an ambiguity observation under the trust and file locks.
 pub fn record_ambiguity_observation(
     journal_root: &Path,

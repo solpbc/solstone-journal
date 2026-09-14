@@ -19,10 +19,10 @@ use thiserror::Error;
 
 pub use caps::baseline_cap_contributions;
 pub use config::{
-    ConfigDiagnostic, ScheduleConfig, ScheduleEntry, ScheduleMutation,
+    ConfigDiagnostic, PreparedDailyTime, ScheduleConfig, ScheduleEntry, ScheduleMutation,
     add_missing_schedule_entries, initialize_schedule_config, mutate_schedule_entries,
-    read_enabled_schedule_entry, register_default_entries, remove_schedule_entry,
-    set_schedule_metadata,
+    prepare_daily_time, publish_daily_time, read_enabled_schedule_entry, register_default_entries,
+    remove_schedule_entry, set_schedule_metadata,
 };
 pub use due::{daily_mark, hour_mark, is_due, weekly_mark};
 pub use engine::{CatchUpReport, CheckReport, ScheduleEngine};

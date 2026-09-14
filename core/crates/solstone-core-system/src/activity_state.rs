@@ -44,6 +44,35 @@ pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
     active
 }
 
+/// Coverage admission must distinguish absent classification from unreadable classification.
+pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<String>, String> {
+    let segments = solstone_core_journal_io::iter_segments(
+        journal,
+        solstone_core_journal_io::PathOrDay::Day(day),
+    )
+    .map_err(|e| e.to_string())?;
+    let mut facets = BTreeSet::new();
+    for segment in segments {
+        let path = segment.path().join("talents/facets.json");
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("{}: {error}", path.display())),
+        };
+        let rows: Vec<Value> =
+            serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+        for row in rows {
+            let facet = row
+                .get("facet")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+                .ok_or_else(|| format!("{}: invalid facet classification", path.display()))?;
+            facets.insert(facet.to_owned());
+        }
+    }
+    Ok(facets)
+}
+
 fn collect_segment_facets(segment: &Path, active: &mut BTreeSet<String>) {
     let path = segment.join("talents/facets.json");
     let Ok(bytes) = fs::read(path) else {

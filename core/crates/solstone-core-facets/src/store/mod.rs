@@ -34,9 +34,10 @@ pub use activities::{
     read_activity_file, remove_activity, update_activity, write_activity_file,
 };
 pub use activity_records::{
-    ActivityRecord, ActivityRecordStoreError, AppendOutcome, activity_is_available,
-    activity_value_or_empty, activity_value_string, activity_value_truthy, append_activity_record,
-    append_edit, get_activity_record, load_activity_records, set_activity_hidden,
+    ActivityRecord, ActivityRecordStoreError, AppendOutcome, PreparedAnticipationBatch,
+    activity_is_available, activity_value_or_empty, activity_value_string, activity_value_truthy,
+    append_activity_record, append_edit, get_activity_record, load_activity_records,
+    prepare_anticipation_batch, publish_anticipation_batch, set_activity_hidden,
     update_activity_record,
 };
 pub use awareness::{
@@ -44,7 +45,10 @@ pub use awareness::{
     record_import_nudge, record_import_offer_declined,
 };
 pub use connections_horizon::{ConnectionsHorizon, refresh_connections_horizon};
-pub use declaration::{FacetDeclarationSnapshot, read_facet_declaration};
+pub use declaration::{
+    FacetDeclarationSnapshot, facet_write_identity, read_facet_declaration,
+    require_facet_write_identity,
+};
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,
     read_detected_entities_strict, save_detected_entity, update_detected_entity,
@@ -62,15 +66,17 @@ pub use error::{
 };
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
 pub use facet_entities::{
-    FacetEntityAttachResult, ScopedFacetEntity, add_entity_aka, attach_or_reactivate_entity,
-    detach_facet_entity, list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
-    update_facet_entity_description, update_facet_entity_identity,
+    FacetEntityAttachResult, PreparedReviewAttachment, PreparedReviewPromotion, ScopedFacetEntity,
+    add_entity_aka, attach_or_reactivate_entity, detach_facet_entity, list_scoped_facet_entities,
+    list_scoped_facet_entities_tolerant, prepare_review_promotion, publish_review_aliases,
+    publish_review_attachment, review_promotion_snapshot, update_facet_entity_description,
+    update_facet_entity_identity,
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use facet_id::{
     BackfillReport, allocate_facet_id, allocate_facet_id_locked, assign_new_facet_id,
-    assign_new_facet_id_locked, backfill_facet_ids, is_well_formed_facet_id, resolve_facet_id,
-    strip_incoming_facet_id,
+    assign_new_facet_id_locked, backfill_facet_ids, ensure_daily_facet_id, is_well_formed_facet_id,
+    resolve_facet_id, strip_incoming_facet_id,
 };
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use legacy_entity_migration::{
@@ -88,13 +94,17 @@ pub use lifecycle::{
 };
 pub use logs::{read_log_file, write_log_file};
 pub use map::{list_declared_facet_names, list_facet_directories, list_facet_entity_directories};
-pub use news::{read_news_file, write_news_file};
+pub use news::{
+    PreparedNewsReplacement, prepare_news_replacement, publish_news_replacement, read_news_file,
+    write_news_file,
+};
 pub use observations::{
-    ObservationEntityResolution, ObservationLookup, ObservationOperationCounts, add_observation,
-    count_observations, load_observations, load_observations_for_query, load_observations_strict,
-    observation_day_counts, read_facet_entity_observations, record_observation_ops,
-    record_observation_ops_strict, resolve_observation_entity_dir, save_observations,
-    write_facet_entity_observations,
+    ObservationEntityResolution, ObservationLookup, ObservationOperationCounts,
+    PreparedObservationBatch, add_observation, count_observations, load_observations,
+    load_observations_for_query, load_observations_strict, observation_day_counts,
+    prepare_observation_batch, publish_observation_batch, read_facet_entity_observations,
+    record_observation_ops, record_observation_ops_strict, resolve_observation_entity_dir,
+    save_observations, validate_observation_operations, write_facet_entity_observations,
 };
 #[cfg(all(test, feature = "full-tests"))]
 pub(crate) use observations::{retry_add_for_test, retry_record_for_test};

@@ -311,6 +311,284 @@ pub fn update_facet_entity_description(
     Ok(Value::Object(relationship))
 }
 
+/// Attachment is retained separately from identity creation and alias mutation,
+/// so a restart after attachment resumes the same admitted identity.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedReviewAttachment {
+    pub facet: String,
+    pub facet_id: String,
+    pub relationship_dir: String,
+    pub entity_id: String,
+    pub before: Option<Value>,
+    pub after: Value,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedReviewPromotion {
+    pub identity: Option<solstone_core_entity::PreparedIdentityChange>,
+    pub attachment: PreparedReviewAttachment,
+    pub aliases: Option<solstone_core_entity::PreparedIdentityChange>,
+}
+
+/// Owner state relevant to resolving one promotion name, captured alongside
+/// the review prompt. Unrelated entities do not invalidate this snapshot.
+pub fn review_promotion_snapshot(root: &Path, facet: &str, name: &str) -> Result<Value, String> {
+    let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let query = normalize_resolution_query(name);
+    let groups = read_identity_group_map(root).map_err(|e| e.to_string())?;
+    let mut identities = Vec::new();
+    for directories in groups.groups.values() {
+        for directory in directories {
+            let Some(identity) =
+                read_entity_identity(root, directory).map_err(|e| e.to_string())?
+            else {
+                continue;
+            };
+            if identity_name(identity.value()) == query {
+                identities.push(json!({"directory":directory,"identity":identity.value()}));
+            }
+        }
+    }
+    identities.sort_by_key(Value::to_string);
+    let mut links = Vec::new();
+    for entity in list_scoped_facet_entities(root, facet, true, true).map_err(|e| e.to_string())? {
+        if identity_name(&entity.identity) == query || entity.relationship_dir == entity_slug(name)
+        {
+            links.push(
+                json!({"directory":entity.relationship_dir,"relationship":entity.relationship}),
+            );
+        }
+    }
+    links.sort_by_key(Value::to_string);
+    Ok(json!({"identities":identities,"relationships":links}))
+}
+
+pub fn prepare_review_promotion(
+    root: &Path,
+    facet: &str,
+    entity_type: &str,
+    name: &str,
+    description: &str,
+    aliases: &[String],
+) -> Result<PreparedReviewPromotion, String> {
+    let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let facet_id = super::declaration::facet_write_identity(root, facet)?;
+    let query = normalize_resolution_query(name);
+    let scoped = list_scoped_facet_entities(root, facet, true, true).map_err(|e| e.to_string())?;
+    let existing = scoped
+        .iter()
+        .find(|entity| identity_name(&entity.identity) == query);
+    let mut relationship_dir = entity_slug(name);
+    let mut before_link = None;
+    let now = now_iso();
+    let (entity_id, mut identity) = if let Some(existing) = existing {
+        if existing.blocked {
+            return Err("conflict: promoted entity is blocked".into());
+        }
+        relationship_dir = existing.relationship_dir.clone();
+        before_link = Some(existing.relationship.clone());
+        (existing.entity_id.clone(), existing.identity.clone())
+    } else {
+        let groups = read_identity_group_map(root).map_err(|e| e.to_string())?;
+        let mut matches = Vec::new();
+        for directories in groups.groups.values() {
+            for (index, directory) in directories.iter().enumerate() {
+                let Some(identity) =
+                    read_entity_identity(root, directory).map_err(|e| e.to_string())?
+                else {
+                    continue;
+                };
+                if identity_name(identity.value()) == query {
+                    if index != 0 {
+                        return Err("conflict: promotion matches an identity-map loser".into());
+                    }
+                    matches.push((identity.entity_id().to_owned(), identity.value().clone()));
+                }
+            }
+        }
+        if matches.len() > 1 {
+            return Err("conflict: promotion identity is ambiguous".into());
+        }
+        if let Some(found) = matches.pop() {
+            found
+        } else {
+            let id = entity_slug(name);
+            if id.is_empty()
+                || read_identity_map(root)
+                    .map_err(|e| e.to_string())?
+                    .resolved
+                    .contains_key(&id)
+            {
+                return Err("conflict: promotion ID already belongs to another identity".into());
+            }
+            (
+                id.clone(),
+                json!({"id":id,"name":name,"type":entity_type,"created_at":now}),
+            )
+        }
+    };
+    if identity.get("blocked") == Some(&Value::Bool(true)) {
+        return Err("conflict: promoted entity is blocked".into());
+    }
+    if before_link
+        .as_ref()
+        .is_some_and(|link| link.get("detached") == Some(&Value::Bool(true)))
+    {
+        identity
+            .as_object_mut()
+            .ok_or("malformed promotion identity")?
+            .insert("type".into(), Value::String(entity_type.into()));
+    }
+    if before_link.is_none() {
+        let actual =
+            read_facet_entity_link(root, facet, &relationship_dir).map_err(|e| e.to_string())?;
+        if actual.is_some() {
+            return Err("conflict: promotion relationship directory is occupied".into());
+        }
+    }
+    let mut after_link = before_link.clone().unwrap_or_else(|| json!({"entity_id":entity_id,"description":description,"attached_at":now,"updated_at":now}));
+    if after_link.get("detached") == Some(&Value::Bool(true)) {
+        let object = after_link.as_object_mut().ok_or("malformed relationship")?;
+        object.remove("detached");
+        object.insert("description".into(), Value::String(description.into()));
+        object.insert("updated_at".into(), Value::String(now.clone()));
+    }
+    let initial = identity.clone();
+    let mut desired = identity_aliases(&identity)
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    for alias in aliases {
+        if entity_slug(alias) == entity_slug(name) {
+            continue;
+        }
+        let query = normalize_resolution_query(alias);
+        if scoped.iter().any(|other| {
+            other.entity_id != entity_id
+                && !other.detached
+                && !other.blocked
+                && (identity_name(&other.identity) == query
+                    || identity_aliases(&other.identity)
+                        .iter()
+                        .any(|aka| normalize_resolution_query(aka) == query))
+        }) {
+            continue;
+        }
+        desired.insert(alias.clone());
+    }
+    if !desired.is_empty() {
+        identity
+            .as_object_mut()
+            .ok_or("malformed identity")?
+            .insert("aka".into(), json!(desired));
+    }
+    let changes = solstone_core_entity::prepare_identity_changes(
+        root,
+        &entity_id,
+        &[initial.clone(), identity.clone()],
+    )?;
+    let identity_change = changes
+        .iter()
+        .find(|change| change.after == initial)
+        .cloned();
+    let aliases = if identity != initial {
+        changes
+            .iter()
+            .find(|change| change.after == identity)
+            .cloned()
+    } else {
+        None
+    };
+    Ok(PreparedReviewPromotion {
+        identity: identity_change,
+        attachment: PreparedReviewAttachment {
+            facet: facet.into(),
+            facet_id,
+            relationship_dir,
+            entity_id,
+            before: before_link,
+            after: after_link,
+        },
+        aliases,
+    })
+}
+
+pub fn publish_review_attachment(
+    root: &Path,
+    change: &PreparedReviewAttachment,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    super::declaration::require_facet_write_identity(root, &change.facet, &change.facet_id)?;
+    let map = read_identity_map(root).map_err(|e| e.to_string())?;
+    let dir = map
+        .resolved
+        .get(&change.entity_id)
+        .ok_or("conflict: promotion identity disappeared")?;
+    let identity = read_entity_identity(root, dir)
+        .map_err(|e| e.to_string())?
+        .ok_or("conflict: promotion identity disappeared")?;
+    if identity.value().get("blocked") == Some(&Value::Bool(true)) {
+        return Err("conflict: promotion identity blocked".into());
+    }
+    let current = read_facet_entity_link(root, &change.facet, &change.relationship_dir)
+        .map_err(|e| e.to_string())?
+        .map(|s| s.value().clone());
+    if current.as_ref() != Some(&change.after) {
+        if !allow_before || current != change.before {
+            return Err("conflict: promotion relationship changed after preparation".into());
+        }
+        save_facet_entity_link(
+            root,
+            &change.facet,
+            &change.relationship_dir,
+            &change.entity_id,
+            change
+                .after
+                .as_object()
+                .ok_or("malformed prepared relationship")?,
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    receipt()
+}
+
+pub fn publish_review_aliases(
+    root: &Path,
+    facet: &str,
+    change: &solstone_core_entity::PreparedIdentityChange,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let scoped = list_scoped_facet_entities(root, facet, true, true).map_err(|e| e.to_string())?;
+    if !scoped
+        .iter()
+        .any(|entity| entity.entity_id == change.entity_id && !entity.detached && !entity.blocked)
+    {
+        return Err("conflict: alias target is no longer attached".into());
+    }
+    for alias in identity_aliases(&change.after) {
+        let query = normalize_resolution_query(&alias);
+        if scoped.iter().any(|other| {
+            other.entity_id != change.entity_id
+                && !other.detached
+                && !other.blocked
+                && (identity_name(&other.identity) == query
+                    || identity_aliases(&other.identity)
+                        .iter()
+                        .any(|aka| normalize_resolution_query(aka) == query))
+        }) {
+            return Err("conflict: promotion alias was claimed after preparation".into());
+        }
+    }
+    solstone_core_entity::publish_identity_change(root, change, allow_before, receipt)
+}
+
 pub fn add_entity_aka(
     journal_root: &Path,
     facet_dir: &str,

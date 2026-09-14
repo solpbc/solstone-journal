@@ -56,6 +56,33 @@ pub fn read_facet_declaration(
     }))
 }
 
+/// Stable lifecycle identity for a prepared facet-owned mutation. This read
+/// never allocates an identity for a missing or unadopted declaration.
+pub fn facet_write_identity(root: &Path, facet: &str) -> Result<String, String> {
+    let declaration = read_facet_declaration(root, facet)
+        .map_err(|e| e.to_string())?
+        .ok_or("conflict: owning facet no longer exists")?;
+    let id = declaration
+        .value()
+        .get("id")
+        .and_then(Value::as_str)
+        .filter(|id| super::facet_id::is_well_formed_facet_id(id))
+        .ok_or("conflict: owning facet has no valid stable identity")?;
+    Ok(id.to_owned())
+}
+
+/// The caller holds facet trust through this check, mutation and receipt.
+pub fn require_facet_write_identity(
+    root: &Path,
+    facet: &str,
+    expected: &str,
+) -> Result<(), String> {
+    if facet_write_identity(root, facet)? != expected {
+        return Err("conflict: owning facet was replaced after preparation".into());
+    }
+    Ok(())
+}
+
 fn string_field(value: Option<&Value>) -> String {
     value.and_then(Value::as_str).unwrap_or_default().to_owned()
 }

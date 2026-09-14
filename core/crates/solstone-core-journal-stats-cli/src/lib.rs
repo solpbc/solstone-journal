@@ -15,7 +15,6 @@ mod migrations;
 mod model;
 mod run;
 mod scan;
-mod talents;
 mod tokens;
 
 #[cfg(test)]

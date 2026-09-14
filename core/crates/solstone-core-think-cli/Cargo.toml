@@ -31,6 +31,7 @@ solstone-core-cortex-client.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-identity.workspace = true
 solstone-core-indexer-store.workspace = true
+solstone-core-indexer.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
@@ -40,11 +41,14 @@ solstone-core-segment.workspace = true
 solstone-core-sense.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
+solstone-core-talent-cli.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-talent-runtime.workspace = true
 tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
+solstone-core-generate.workspace = true
+solstone-core-cogitate-wire.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 filetime = "0.2.29"
 solstone-core-transcripts-web.workspace = true

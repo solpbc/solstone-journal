@@ -21,6 +21,8 @@ mod helpers;
 mod phase_process;
 mod run_log;
 mod segment;
+pub mod snapshot;
+pub use snapshot::compute_daily_evidence_revision;
 mod weekly;
 mod workers;
 
@@ -758,6 +760,15 @@ mod tests {
         day: &str,
         now_ms: i64,
     ) -> (context::ThinkContext, Arc<Recorder>) {
+        let config_path = journal.join("config/journal.json");
+        if !config_path.exists() {
+            fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+            fs::write(
+                &config_path,
+                r#"{"providers":{"active":{"provider":"openai","model":"test-model"}}}"#,
+            )
+            .unwrap();
+        }
         let recorder = Arc::new(Recorder::default());
         let day_dir = day::create_day(journal, day).unwrap();
         (
@@ -1511,22 +1522,17 @@ mod tests {
     fn batch_drain_bounded_drains_at_two_then_the_group_remainder() {
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
+        for facet in ["alpha", "bravo", "charlie"] {
+            let path = journal.path().join("facets").join(facet);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("facet.json"), "{}").unwrap();
+        }
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
-            &[
-                (
-                    "charlie",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
-                ),
-                (
-                    "alpha",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
-                ),
-                (
-                    "bravo",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
-                ),
-            ],
+            &[(
+                "schedule",
+                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
+            )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let context = context.with_talent_roots(talent_root, apps_root);
@@ -1549,7 +1555,7 @@ mod tests {
                 .lock()
                 .unwrap()
                 .iter()
-                .map(|request| request.name.as_str())
+                .map(|request| request.config["facet"].as_str().unwrap())
                 .collect::<Vec<_>>(),
             vec!["alpha", "bravo", "charlie"]
         );
@@ -1565,8 +1571,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "multi",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1589,8 +1595,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "always-multi",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true, \"always\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 10);
@@ -1599,7 +1605,7 @@ mod tests {
         let result = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(
             result.applicable_units,
-            BTreeSet::from([("always-multi".to_owned(), Some("work".to_owned()))])
+            BTreeSet::from([("schedule".to_owned(), Some("work".to_owned()))])
         );
         assert_eq!(recorder.requests.lock().unwrap()[0].config["facet"], "work");
     }
@@ -1620,15 +1626,15 @@ mod tests {
     }
 
     #[test]
-    fn ac7_completed_unit_guard_dispatches_fresh_then_skips_terminal_unit() {
+    fn legacy_complete_log_does_not_skip_unaccepted_evidence() {
         // Source-derived, not measured: thinking.py:2123-2125 skips a completed daily unit on rerun.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "completed",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1641,25 +1647,25 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.complete","ts":1,"mode":"daily","name":"completed"}"#,
+            r#"{"event":"talent.complete","ts":1,"mode":"daily","name":"schedule"}"#,
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
-        assert_eq!(repeated.terminal_units, repeated.applicable_units);
+        assert!(repeated.terminal_units.is_empty());
         assert!(repeated.capped_units.is_empty());
-        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
 
     #[test]
-    fn ac7_deterministic_failure_guard_dispatches_fresh_then_skips_failure() {
+    fn legacy_lifetime_failure_log_does_not_cap_current_evidence() {
         // Source-derived, not measured: thinking.py:2124-2125 keeps deterministic daily failures out of a rerun.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "deterministic",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1670,14 +1676,14 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":10,"mode":"daily","name":"deterministic","reason_code":"no_output"}
-{"event":"talent.fail","ts":11,"mode":"daily","name":"deterministic","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":10,"mode":"daily","name":"schedule","reason_code":"no_output"}
+{"event":"talent.fail","ts":11,"mode":"daily","name":"schedule","reason_code":"no_output"}"#,
         );
         let repeated = daily::run(&context, &mut log, None, false, 2).unwrap();
         assert_eq!(repeated.applicable_units, fresh.applicable_units);
-        assert_eq!(repeated.terminal_units, repeated.applicable_units);
-        assert_eq!(repeated.capped_units, repeated.applicable_units);
-        assert_eq!(recorder.requests.lock().unwrap().len(), 1);
+        assert!(repeated.terminal_units.is_empty());
+        assert!(repeated.capped_units.is_empty());
+        assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
 
     #[test]
@@ -1686,14 +1692,14 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"deterministic","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"schedule","reason_code":"no_output"}"#,
         );
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "deterministic",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1714,14 +1720,14 @@ mod tests {
         write_health_event(
             journal.path(),
             "20260813",
-            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"retry","reason_code":"no_output"}"#,
+            r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"schedule","reason_code":"no_output"}"#,
         );
         let roots = tempdir().unwrap();
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "retry",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"retry_on_deterministic_failure\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1737,22 +1743,17 @@ mod tests {
         // Source-derived, not measured: thinking.py:2086 documents zero as unlimited per priority group.
         let journal = tempdir().unwrap();
         let roots = tempdir().unwrap();
+        for facet in ["alpha", "bravo", "charlie"] {
+            let path = journal.path().join("facets").join(facet);
+            fs::create_dir_all(&path).unwrap();
+            fs::write(path.join("facet.json"), "{}").unwrap();
+        }
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
-            &[
-                (
-                    "one",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
-                ),
-                (
-                    "two",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
-                ),
-                (
-                    "three",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
-                ),
-            ],
+            &[(
+                "schedule",
+                "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"hook\":{\"post\":\"schedule\"},\"priority\":1,\"output\":\"json\",\"multi_facet\":true,\"always\":true\n}\n",
+            )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
         let context = context.with_talent_roots(talent_root, apps_root);
@@ -1788,8 +1789,8 @@ mod tests {
         let (talent_root, apps_root) = talent_roots(
             roots.path(),
             &[(
-                "multi",
-                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
+                "schedule",
+                "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\", \"multi_facet\": true\n}\n",
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
@@ -1799,8 +1800,8 @@ mod tests {
         assert_eq!(
             result.applicable_units,
             BTreeSet::from([
-                ("multi".to_owned(), Some("home".to_owned())),
-                ("multi".to_owned(), Some("work".to_owned())),
+                ("schedule".to_owned(), Some("home".to_owned())),
+                ("schedule".to_owned(), Some("work".to_owned())),
             ])
         );
         assert_eq!(result.success, 2);
@@ -1869,8 +1870,8 @@ mod tests {
             roots.path(),
             &[
                 (
-                    "daily-output",
-                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"json\"\n}\n",
+                    "schedule",
+                    "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"json\"\n}\n",
                 ),
                 (
                     "weekly-output",
@@ -1897,7 +1898,7 @@ mod tests {
         )
         .unwrap();
         let requests = recorder.requests.lock().unwrap();
-        for name in ["daily-output", "weekly-output", "cadence-output"] {
+        for name in ["schedule", "weekly-output", "cadence-output"] {
             let request = requests
                 .iter()
                 .find(|request| request.name == name)

@@ -23,8 +23,8 @@ substitutes only the members that actually moved, after proving that the
 vendored member *set* is identical and that every other member is byte-for-byte
 unchanged. Supply `--vendor-dir` to reuse a tree you already produced.
 
-The second is a **workspace path-dependency move**, where a workspace member
-gains or loses a path dependency on another workspace member. The archive holds
+The second is a **workspace dependency-edge move**, where a workspace member
+gains or loses a dependency on an already present, unchanged package. The archive holds
 vendored EXTERNAL sources plus `Cargo.lock`, so that edge cannot change one
 vendored byte when no external package moved -- and it cannot change a notice
 when it does not move anything in or out of the Windows notice closure, which is
@@ -40,8 +40,8 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
     inventory binary roots. That is the set the notices are derived from, so a
     graph difference that moves it needs a fresh acquisition. A graph difference
     that leaves it untouched does not, and is admitted.
-  * a workspace member changed by more than its own version or its path
-    dependencies on other workspace members.
+  * a workspace member changed by more than its own version or its
+    dependency edges to existing, unchanged packages.
   * a re-vendored package's licence text changed. The notices file is an input
     here, not an output; a changed licence needs the notices regenerated, which
     this script deliberately does not do.
@@ -411,15 +411,30 @@ def selected_from_graph(graph: dict[str, Any], roots: list[str]) -> set[str]:
     return {key for key in seen if not key.startswith("workspace:")}
 
 
-def _workspace_path_deps_only(
+def _resolve_lock_dependency(token: str, packages: list[dict[str, Any]]) -> tuple[str, str, str] | None:
+    """Resolve Cargo.lock's short or qualified edge without guessing between versions."""
+    matches = set()
+    for package in packages:
+        name, version, source = package["name"], package["version"], package.get("source", "")
+        forms = {name, f"{name} {version}"}
+        if source:
+            forms.add(f"{name} {version} ({source})")
+        if token in forms:
+            matches.add((name, version, source))
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
+def _workspace_existing_deps_only(
     left: dict[str, Any],
     right: dict[str, Any],
-    workspace_names: set[str],
+    old_lock: dict[str, Any],
+    new_lock: dict[str, Any],
     external_unchanged: bool,
 ) -> bool:
-    """Whether two workspace package rows differ ONLY by path dependencies on
-    other workspace members, with the external population proven unchanged."""
-    if not external_unchanged:
+    """Admit only edges to exactly resolved packages with unchanged external rows."""
+    old_external = [p for p in old_lock["package"] if p.get("source")]
+    new_external = [p for p in new_lock["package"] if p.get("source")]
+    if not external_unchanged or old_external != new_external:
         return False
     left_rest, right_rest = dict(left), dict(right)
     left_deps = left_rest.pop("dependencies", None)
@@ -427,32 +442,33 @@ def _workspace_path_deps_only(
     if left_rest != right_rest or left_deps == right_deps:
         return False
     moved = set(left_deps or []) ^ set(right_deps or [])
-    return bool(moved) and moved <= workspace_names
+    for token in moved:
+        old = _resolve_lock_dependency(token, old_lock["package"])
+        new = _resolve_lock_dependency(token, new_lock["package"])
+        if old is None or new is None:
+            return False
+        # Workspace version moves remain permitted. External identities must
+        # match exactly, including source, after unambiguous edge resolution.
+        if old != new and not (old[0] == new[0] and old[2] == new[2] == ""):
+            return False
+    return bool(moved)
 
 
 def workspace_only_version_delta(
     old_lock: dict[str, Any], new_lock: dict[str, Any], external_unchanged: bool
 ) -> list[str]:
-    """Assert every workspace package is unchanged except (optionally) its own
-    version, or -- when the external population is provably identical -- its own
-    path dependencies on other workspace members. No hardcoded version strings,
-    unlike the prior-art scripts this generalizes. Any other difference refuses.
+    """Allow workspace versions or edges to existing packages only.
 
-    The second case is admitted on a strictly stronger proof than the first. The
-    archive holds vendored EXTERNAL sources plus `Cargo.lock` and nothing else,
-    so a workspace member gaining or losing a path dependency on another
-    workspace member cannot change one vendored byte -- provided no external
-    package moved, and provided every dependency that actually moved is itself a
-    workspace member. Both are required; neither is inferred. Whether that edge
-    moved anything in or out of the Windows notice closure is a separate
-    question, checked separately."""
+    Edge changes require exact external-row equality and unambiguous dependency
+    resolution in both locks. The resulting Windows notice closure is checked
+    separately before any archive or index is published.
+    """
     old_by_name = {p["name"]: p for p in old_lock["package"] if not p.get("source")}
     new_by_name = {p["name"]: p for p in new_lock["package"] if not p.get("source")}
     if set(old_by_name) != set(new_by_name):
         raise RefreshError(
             "the workspace package set changed (a crate was added or removed); "
-            "this tool only refreshes a version-only lock move -- scope this as "
-            "engineering work instead"
+            "scope this as engineering work instead"
         )
     delta = []
     for name, old_pkg in old_by_name.items():
@@ -462,19 +478,29 @@ def workspace_only_version_delta(
         left, right = dict(old_pkg), dict(new_pkg)
         left.pop("version", None)
         right.pop("version", None)
-        if left != right and _workspace_path_deps_only(
-            left, right, set(old_by_name) | set(new_by_name), external_unchanged
+        if left != right and not _workspace_existing_deps_only(
+            left, right, old_lock, new_lock, external_unchanged
         ):
-            delta.append(name)
-            continue
-        if left != right:
             raise RefreshError(
-                f"workspace package '{name}' changed by more than its version; "
-                "this tool only refreshes a version-only lock move -- scope this "
-                "as engineering work instead"
+                f"workspace package '{name}' changed beyond its version or "
+                "resolved dependency edges to existing unchanged packages; "
+                "scope this as engineering work instead"
             )
         delta.append(name)
     return delta
+
+
+def require_unchanged_notice_closure(
+    old_graph: dict[str, Any], new_graph: dict[str, Any], roots: list[str]
+) -> None:
+    if selected_from_graph(old_graph, roots) != selected_from_graph(new_graph, roots):
+        raise RefreshError(
+            "the Windows notice closure changed even though the external "
+            "package population did not (a feature flag or dependency edge "
+            "moved something in or out of the Windows binary reach). Fresh "
+            "acquisition required; refusing rather than publish an "
+            "attestation for an unverified closure."
+        )
 
 
 def advance_git_index_rows(
@@ -836,24 +862,7 @@ def refresh(
     new_meta = query_cargo_metadata(repo)
     new_graph = normalize_graph(new_meta)
     roots = windows_roots(repo)
-    if old_graph != new_graph:
-        # A graph difference is only tolerable when the thing this attestation
-        # is actually derived from is unchanged: the Windows notice closure.
-        # Comparing the whole graph is a proxy for that, and it is a coarse one
-        # -- a workspace member gaining a path dependency moves the graph while
-        # leaving the closure, and therefore every notice, untouched. Check the
-        # property rather than the proxy, and keep refusing when the property
-        # itself moves.
-        if selected_from_graph(old_graph, roots) != selected_from_graph(
-            new_graph, roots
-        ):
-            raise RefreshError(
-                "the Windows notice closure changed even though the external "
-                "package population did not (a feature flag or dependency edge "
-                "moved something in or out of the Windows binary reach). Fresh "
-                "acquisition required; refusing rather than publish an "
-                "attestation for an unverified closure."
-            )
+    require_unchanged_notice_closure(old_graph, new_graph, roots)
 
     selected = {
         normalize_identity(identity)

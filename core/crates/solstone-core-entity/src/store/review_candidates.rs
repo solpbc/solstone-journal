@@ -126,6 +126,107 @@ pub fn record_merge_candidate(
     })
 }
 
+/// Prepared proposal file; owner decisions are preserved in the after-image.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PreparedMergeProposals {
+    pub before: Option<String>,
+    pub after: String,
+}
+
+pub fn prepare_merge_proposals(
+    root: &Path,
+    proposals: &[Value],
+) -> Result<PreparedMergeProposals, String> {
+    let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let path = review_candidates_path(root).map_err(|e| e.to_string())?;
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let before = proposal_bytes(&path)?;
+    let mut rows: Vec<Value> = before
+        .as_deref()
+        .unwrap_or_default()
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            serde_json::from_str(line).map_err(|e| format!("malformed merge candidate: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
+    if rows.iter().any(|row| !row.is_object()) {
+        return Err("malformed merge candidate object".into());
+    }
+    let now = candidate_now_iso();
+    for proposal in proposals {
+        for key in [
+            "facet",
+            "source",
+            "source_slug",
+            "target",
+            "target_slug",
+            "day",
+            "summary",
+        ] {
+            if proposal.get(key).and_then(Value::as_str).is_none() {
+                return Err(format!("merge proposal missing {key}"));
+            }
+        }
+        let key = candidate_key_for_row(proposal);
+        if let Some(existing) = rows
+            .iter_mut()
+            .find(|row| candidate_key_for_row(row) == key)
+        {
+            if matches!(
+                existing.get("status").and_then(Value::as_str),
+                Some("accepted" | "dismissed")
+            ) {
+                continue;
+            }
+            let object = existing.as_object_mut().ok_or("malformed candidate")?;
+            object.insert("last_surfaced".into(), proposal["day"].clone());
+            object.insert("updated_at".into(), Value::String(now.clone()));
+            object.insert("evidence".into(), serde_json::json!({"basis":"name-variant", "summary":proposal["summary"], "detection_count":null, "needs":null}));
+        } else {
+            rows.push(serde_json::json!({
+                "facet":proposal["facet"], "source":proposal["source"], "source_slug":proposal["source_slug"],
+                "target":proposal["target"], "target_slug":proposal["target_slug"], "status":"open",
+                "evidence":{"basis":"name-variant", "summary":proposal["summary"], "detection_count":null, "needs":null},
+                "first_surfaced":proposal["day"], "last_surfaced":proposal["day"], "created_at":now, "updated_at":now,
+            }));
+        }
+    }
+    let after = rows
+        .iter()
+        .map(|row| serde_json::to_string(row).expect("Value serializes") + "\n")
+        .collect();
+    Ok(PreparedMergeProposals { before, after })
+}
+
+fn proposal_bytes(path: &Path) -> Result<Option<String>, String> {
+    solstone_core_journal_io::read_optional_text(path).map_err(|error| error.to_string())
+}
+
+pub fn publish_merge_proposals(
+    root: &Path,
+    batch: &PreparedMergeProposals,
+    allow_before: bool,
+    receipt: impl FnOnce() -> Result<(), String>,
+) -> Result<(), String> {
+    let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let path = review_candidates_path(root).map_err(|e| e.to_string())?;
+    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let current = proposal_bytes(&path)?;
+    if current.as_deref() != Some(batch.after.as_str()) {
+        if !allow_before || current != batch.before {
+            return Err("conflict: merge proposals changed after preparation".into());
+        }
+        write_text(
+            &path,
+            &batch.after,
+            AtomicWriteOptions { mode: Some(0o600) },
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    receipt()
+}
+
 /// Mark one entity merge-review candidate accepted, when it exists.
 pub fn accept_merge_candidate(
     journal_root: &Path,

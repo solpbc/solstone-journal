@@ -368,7 +368,36 @@ fn args() -> DoctorArgs {
     }
 }
 
+fn configure_daily_work(root: &Path, enabled: Option<&str>) {
+    let (talent, apps) = solstone_core_system::daily_coverage::package_roots().unwrap();
+    let overrides = solstone_core_system::daily_coverage::daily_configs(root, &talent, &apps)
+        .unwrap()
+        .into_iter()
+        .map(|config| {
+            let key = match config.key.split_once(':') {
+                Some((app, name)) => format!("talent.{app}.{name}"),
+                None => format!("talent.system.{}", config.key),
+            };
+            (
+                key,
+                serde_json::json!({"disabled": enabled != Some(config.key.as_str())}),
+            )
+        })
+        .collect::<serde_json::Map<String, serde_json::Value>>();
+    fs::create_dir_all(root.join("config")).unwrap();
+    fs::write(
+        root.join("config/journal.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "identity":{"timezone":"UTC"}, "talent_overrides": overrides
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+}
+
 fn stage_backlog_pending(context: &CheckContext) {
+    // This fixture isolates segment backlog rather than daily evidence parsing.
+    configure_daily_work(&context.journal_path, None);
     screen_segment(context, "20251231");
     health(
         context,
@@ -381,6 +410,8 @@ fn stage_backlog_pending(context: &CheckContext) {
 }
 
 fn stage_raw_audio_pending(context: &CheckContext, modified: SystemTime) {
+    // Isolate the raw-audio grace period from historical daily coverage.
+    configure_daily_work(&context.journal_path, None);
     let path = context
         .journal_path
         .join("chronicle")
@@ -1446,6 +1477,31 @@ fn caught_up_native_backlog_fixture_states() {
             r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"summary","reason_code":"provider_request_rejected"}"#,
         ],
     );
+    let row = result("journal_caught_up", &capped);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail, "1 day(s) pending, 0 day(s) stuck; oldest outstanding 20251230",
+        "legacy terminal logs cannot prove current daily coverage"
+    );
+
+    let root = &capped.journal_path;
+    configure_daily_work(root, Some("schedule"));
+    let coverage =
+        solstone_core_system::daily_coverage::read_daily_coverage(root, "20251230").unwrap();
+    let unit = coverage
+        .units
+        .iter()
+        .find(|unit| unit.identity.name == "schedule")
+        .unwrap();
+    let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+        unit.identity.clone(),
+        &unit.evidence_revision,
+        &unit.contract_digest,
+    );
+    record.status = solstone_core_journal_io::DailyUnitStatus::Capped;
+    record.reason_code = Some("provider_request_rejected".into());
+    record.failure_count = 1;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
     let row = result("journal_caught_up", &capped);
     assert_eq!(row.status, Status::Warn);
     assert_eq!(

@@ -2110,7 +2110,7 @@
 	    })
 	      .then((result) => {
 	        if (!statusEl) return;
-	        if (result && (result.status === 'already_complete' || result.status === 'held_by_backoff')) {
+	        if (result && (result.status === 'already_complete' || result.status === 'current_degraded' || result.status === 'held_by_backoff')) {
 	          statusEl.textContent = result.message || '';
 	          buttons.forEach((rowButton) => { rowButton.disabled = false; });
 	          return;

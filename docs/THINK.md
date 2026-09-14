@@ -37,6 +37,42 @@ Terminal work identity includes the source day from its event payload. The local
 oplog partition records execution time; it does not replace an activity's source
 day when completion crosses midnight.
 
+### Daily completion and recovery
+
+Daily completion records the evidence revision and effective talent contract that
+each analysis consumed. New source text, derived evidence, or a relevant contract
+change makes earlier results historical. Ordinary catchup processes the changed
+revision; unchanged accepted results remain reusable. The raw-input marker still
+guards whole-day publication, but cannot prove that a daily analysis consumed new
+evidence.
+
+The daily unit record in `chronicle/<day>/health/daily-units/` retains the prepared
+input, model result, owner actions, and publication receipts. A retry resumes that
+plan under the unit's publication lock. A replaced worker cannot publish with its
+old attempt token. Completed domain actions remain historical receipts after an
+owner edits or deletes their results. If an interrupted action cannot be distinguished
+from an owner change, recovery reports a conflict and preserves the current files.
+Missing or changed required output files make coverage outstanding without replaying
+already committed domain actions.
+
+Publication also checks the admitted facet identity and entity attachment. Daily
+write admission assigns missing facet IDs through the facet owner before capturing
+evidence; read-only coverage checks do not migrate declarations.
+
+First adoption covers the latest seven closed local calendar days. New days,
+known dirty older days, and explicitly requested days also become eligible. Bounded
+reconciliation finds later evidence changes on adopted days; untouched older history
+remains unverified. Coverage distinguishes current, current-degraded, outstanding,
+historical-unverified, and unreadable results. Unsupported daily hook contracts stay
+unverified. Current bounded analyses retain their selection and exclusion information;
+they do not assert that every entity was processed.
+
+`daily_schedule` has one global record at `health/maintenance/daily_schedule.json`,
+shared across historical catchups for the current local window. Its status is reported
+separately from historical daily coverage. Failure caps apply to the current evidence
+and contract. Capped environmental failures receive one persisted, bounded revalidation
+per local day; owner-write conflicts do not become successful capped results.
+
 ## Architecture
 
 ```

@@ -14,14 +14,14 @@ use solstone_core_home::{
     briefing::BriefingDates,
     readers::{enabled_facet_names, read_latest},
 };
-use solstone_core_indexer_query::{OwnerBoundary, SearchHit, SearchRequest, search};
+use solstone_core_indexer_query::SearchHit;
 
 use crate::contract::{GateDecision, PrePostState};
 use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MorningBriefingPreState {
     values: Map<String, Value>,
 }
@@ -60,6 +60,10 @@ pub fn build(
             .and_then(Value::as_str)
             .unwrap_or("unknown"),
         context,
+        prepared
+            .config
+            .get("_daily_upstream")
+            .and_then(Value::as_object),
     )
     .map(|values| PrePostState::MorningBriefing(MorningBriefingPreState { values }))
     .map_err(|error| RuntimeOutcome::Skipped {
@@ -100,6 +104,7 @@ fn build_packet(
     analysis_day: NaiveDate,
     model: &str,
     context: &ExecutionContext,
+    upstream: Option<&Map<String, Value>>,
 ) -> Result<Map<String, Value>, String> {
     let dates = BriefingDates::for_analysis(analysis_day).ok_or("briefing date overflow")?;
     let presentation_day = dates.presentation.format("%Y%m%d").to_string();
@@ -119,9 +124,26 @@ fn build_packet(
     if facets.is_empty() {
         gaps.push("no active facets available".to_owned());
     }
-    let newsletters = load_newsletters(&facets, day, context, &mut gaps);
+    let newsletter_facets = facets
+        .iter()
+        .filter(|(facet, _)| {
+            upstream.is_none_or(|outcomes| {
+                outcomes.get(&format!("facet_newsletter:{facet}")) == Some(&Value::Bool(true))
+            })
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    let newsletters = load_newsletters(&newsletter_facets, day, context, &mut gaps);
+    let schedule_current =
+        upstream.is_none_or(|outcomes| outcomes.get("schedule") == Some(&Value::Bool(true)));
+    let schedule_facets = if schedule_current {
+        facets.as_slice()
+    } else {
+        gaps.push("current schedule unavailable".to_owned());
+        &[]
+    };
     let today = load_activities(
-        &facets,
+        schedule_facets,
         std::slice::from_ref(&presentation_day),
         context,
         &mut gaps,
@@ -135,7 +157,7 @@ fn build_packet(
         })
         .collect::<Vec<_>>();
     let forward = load_activities(
-        &facets,
+        schedule_facets,
         &forward_days,
         context,
         &mut gaps,
@@ -297,18 +319,9 @@ fn search_agent(
     context: &ExecutionContext,
     gaps: &mut Vec<String>,
 ) -> (u64, Vec<SearchHit>) {
-    let mut request = SearchRequest::new("", Default::default());
-    request.limit = 10;
-    request.day = Some(day.into());
-    request.agent = Some(agent.into());
-    request.counts = true;
-    match search(
-        &context.journal,
-        OwnerBoundary,
-        &request,
-        Utc::now().date_naive(),
-    ) {
+    match crate::daily_prepare::search_day_sources(&context.journal, day, agent, None, 10) {
         Ok(response) => {
+            gaps.extend(response.warnings.iter().cloned());
             if response.results.is_empty() {
                 gaps.push(format!("no {label} found"));
             }
@@ -500,7 +513,7 @@ fn coverage_preamble(
     followups_total: u64,
 ) -> String {
     let mut sentence = format!(
-        "Built from {} indexed source paths, {} anticipated activities today, {forward} forward-looking anticipated activities, {} facet newsletters, {} follow-ups, {decisions_total} decision results.",
+        "Built from {} source paths, {} anticipated activities today, {forward} forward-looking anticipated activities, {} facet newsletters, {} follow-ups, {decisions_total} decision results.",
         counts["segments"],
         counts["anticipated_activities"],
         counts["facet_newsletters"],
@@ -508,7 +521,7 @@ fn coverage_preamble(
     );
     if followups_total > counts["followups"].as_u64().unwrap_or(0) {
         sentence.push_str(&format!(
-            " Follow-up search returned {followups_total} total matches."
+            " Follow-up sources contain {followups_total} total matches."
         ));
     }
     if gaps.is_empty() {
@@ -557,6 +570,7 @@ mod tests {
             NaiveDate::from_ymd_opt(2026, 12, 31).unwrap(),
             "test",
             &context,
+            None,
         )
         .unwrap();
         assert_eq!(values["briefing_analysis_day"], "20261231");
@@ -585,6 +599,42 @@ mod tests {
         assert_eq!(
             gate(&prepared, &context).unwrap(),
             GateDecision::Skip("missing day".into())
+        );
+    }
+    #[test]
+    fn briefing_never_lends_retained_news_or_calendar_after_no_output_then_accepts_recovery() {
+        let root = tempfile::tempdir().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(facet.join("news")).unwrap();
+        fs::create_dir_all(facet.join("activities")).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        fs::write(facet.join("news/20260910.md"), "Retained OLD newsletter").unwrap();
+        fs::write(
+            facet.join("activities/20260911.jsonl"),
+            r#"{"id":"old","source":"anticipated","title":"Retained OLD agenda"}"#,
+        )
+        .unwrap();
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let date = NaiveDate::from_ymd_opt(2026, 9, 10).unwrap();
+        let unavailable = Map::from_iter([
+            ("schedule".to_owned(), json!(false)),
+            ("facet_newsletter:work".to_owned(), json!(false)),
+        ]);
+        let values = build_packet("20260910", date, "test", &context, Some(&unavailable)).unwrap();
+        let text = serde_json::to_string(&values).unwrap();
+        assert!(!text.contains("Retained OLD"));
+        fs::write(facet.join("news/20260910.md"), "Recovered NEW newsletter").unwrap();
+        let available = Map::from_iter([
+            ("schedule".to_owned(), json!(true)),
+            ("facet_newsletter:work".to_owned(), json!(true)),
+        ]);
+        let values = build_packet("20260910", date, "test", &context, Some(&available)).unwrap();
+        assert!(
+            serde_json::to_string(&values)
+                .unwrap()
+                .contains("Recovered NEW newsletter")
         );
     }
 }

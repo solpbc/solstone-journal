@@ -251,6 +251,9 @@ fn run_with_phase_process(
         .as_ref()
         .map(|blockers| blocker_progress(&lifecycle_blockers, blockers));
 
+    if let Err(error) = refresh_daily_terminal_fold(context, &mut daily_result) {
+        merge_mode_result(&mut total, failed_phase("daily_completion_input", error));
+    }
     maybe_finalize_completion(
         context,
         log,
@@ -490,41 +493,36 @@ fn refresh_daily_terminal_fold(
     context: &ThinkContext,
     result: &mut ModeResult,
 ) -> Result<(), String> {
-    let source = FilesystemHealthLogSource::new(&context.journal);
-    let completed = solstone_core_system_health::read_completed_units(&source, &context.day)
-        .map_err(|error| error.to_string())?;
-    let deterministic =
-        solstone_core_system_health::read_daily_deterministic_failures(&source, &context.day)
-            .map_err(|error| error.to_string())?;
-    if completed.malformed_line_count != 0 || deterministic.malformed_line_count != 0 {
-        return Err(format!(
-            "daily terminal health records contain malformed lines (completed={}, deterministic={})",
-            completed.malformed_line_count, deterministic.malformed_line_count
-        ));
-    }
-    let completed = completed.value;
-    let deterministic = deterministic.value;
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
+        &context.journal,
+        &context.day,
+        &context.talent_root,
+        &context.apps_root,
+    )?;
     result.terminal_units.clear();
     result.capped_units.clear();
-    for unit in &result.applicable_units {
-        let completed_key = solstone_core_system_health::CompletedUnit {
-            mode: "daily".to_owned(),
-            name: unit.0.clone(),
-            facet: unit.1.clone(),
-        };
-        if completed.contains(&completed_key) {
-            result.terminal_units.insert(unit.clone());
+    for unit in coverage.units {
+        let key = (unit.identity.name, unit.identity.facet);
+        if !result.applicable_units.contains(&key) {
             continue;
         }
-        let failure_key = solstone_core_system_health::DailyUnit {
-            name: unit.0.clone(),
-            facet: unit.1.clone(),
-        };
-        if deterministic.get(&failure_key).is_some_and(|failure| {
-            solstone_core_system_health::daily_failure_capped(&failure.reason_code, failure.count)
-        }) {
-            result.terminal_units.insert(unit.clone());
-            result.capped_units.insert(unit.clone());
+        if unit.state.is_current() {
+            result.terminal_units.insert(key.clone());
+        }
+        if unit.state == solstone_core_system::daily_coverage::CoverageState::CurrentDegraded {
+            let record = solstone_core_journal_io::load_daily_unit_record(
+                &context.journal,
+                &solstone_core_journal_io::DailyUnitIdentity::new(
+                    &context.day,
+                    &key.0,
+                    key.1.clone(),
+                ),
+            )
+            .map_err(|e| e.to_string())?;
+            if record.is_some_and(|r| r.status == solstone_core_journal_io::DailyUnitStatus::Capped)
+            {
+                result.capped_units.insert(key);
+            }
         }
     }
     Ok(())
@@ -658,36 +656,23 @@ fn capped_unit_payload(context: &ThinkContext, daily: &ModeResult) -> Result<Vec
     if daily.capped_units.is_empty() {
         return Ok(Vec::new());
     }
-    let failures = solstone_core_system_health::read_daily_deterministic_failures(
-        &FilesystemHealthLogSource::new(&context.journal),
-        &context.day,
-    )
-    .map_err(|error| error.to_string())?
-    .value;
-    Ok(daily
+    daily
         .capped_units
         .iter()
-        .filter_map(|(name, facet)| {
-            let key = solstone_core_system_health::DailyUnit {
-                name: name.clone(),
-                facet: facet.clone(),
-            };
-            failures.get(&key).map(|failure| {
-                Value::Object(Map::from_iter([
-                    ("name".to_owned(), Value::String(name.clone())),
-                    (
-                        "facet".to_owned(),
-                        facet.clone().map_or(Value::Null, Value::String),
-                    ),
-                    (
-                        "reason_code".to_owned(),
-                        Value::String(failure.reason_code.clone()),
-                    ),
-                    ("count".to_owned(), Value::from(failure.count)),
-                ]))
-            })
+        .map(|(name, facet)| {
+            let identity =
+                solstone_core_journal_io::DailyUnitIdentity::new(&context.day, name, facet.clone());
+            let record =
+                solstone_core_journal_io::load_daily_unit_record(&context.journal, &identity)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("capped daily record disappeared")?;
+            Ok(
+                serde_json::json!({"name": name, "facet": facet, "reason_code": record.reason_code,
+            "count": record.failure_count, "evidence_revision": record.evidence_revision,
+            "contract_digest": record.contract_digest}),
+            )
         })
-        .collect())
+        .collect()
 }
 
 fn log_completion_fold(
@@ -873,12 +858,14 @@ mod tests {
 
         fn dispatch_prepared(
             &self,
-            _: &tokio::runtime::Runtime,
-            _: &solstone_core_cortex_client::CortexRequest,
-            _: Option<&str>,
-            _: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+            runtime: &tokio::runtime::Runtime,
+            request: &solstone_core_cortex_client::CortexRequest,
+            _reserved: Option<&str>,
+            prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
         ) -> Result<String, crate::context::DispatchFailure> {
-            unreachable!("daily-only fixture")
+            let use_id = self.dispatch(runtime, request)?;
+            prepare(&use_id).map_err(|_| crate::context::DispatchFailure::Unavailable)?;
+            Ok(use_id)
         }
         fn wait(
             &self,
@@ -905,6 +892,12 @@ mod tests {
     }
 
     fn context(journal: &std::path::Path) -> ThinkContext {
+        fs::create_dir_all(journal.join("config")).unwrap();
+        fs::write(
+            journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"openai","model":"test-model"}}}"#,
+        )
+        .unwrap();
         let day_dir = crate::day::create_day(journal, DAY).unwrap();
         let roots = tempdir().unwrap();
         let talent_root = roots.keep().join("talent");
@@ -946,8 +939,8 @@ mod tests {
     fn terminal_context(journal: &std::path::Path, end_state: UseEndState) -> ThinkContext {
         let context = context(journal);
         fs::write(
-            context.talent_root.join("fresh.md"),
-            "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"priority\": 1, \"output\": \"md\"\n}\n",
+            context.talent_root.join("schedule.md"),
+            "{\n\"type\": \"generate\", \"schedule\": \"daily\", \"hook\": {\"post\":\"schedule\"}, \"priority\": 1, \"output\": \"md\"\n}\n",
         )
         .unwrap();
         context.with_boundary(Arc::new(TerminalCortex { end_state }))
@@ -1023,24 +1016,32 @@ mod tests {
     }
 
     #[test]
-    fn newly_dispatched_daily_unit_is_durably_folded_before_publication() {
+    fn cortex_finish_without_accepted_evidence_cannot_publish_daily_completion() {
         let journal = tempdir().unwrap();
         bump_stream_marker(journal.path(), DAY).unwrap();
         let context = terminal_context(journal.path(), UseEndState::Finish);
         let mut log = health_log(journal.path());
 
-        let result = run(
+        let mut result = daily::run(&context, &mut log, None, false, 1).unwrap();
+        refresh_daily_terminal_fold(&context, &mut result).unwrap();
+        assert_eq!(result.success, 1, "Cortex finish remains execution history");
+        assert!(
+            result.terminal_units.is_empty(),
+            "no committed analysis receipt exists"
+        );
+        let mut total = result.clone();
+        maybe_finalize_completion(
             &context,
             &mut log,
-            &ThinkArgs::default(),
-            1,
-            Some(Duration::from_secs(610)),
-            &solstone_core_system::process::ChildLaunchContext::default(),
-        )
-        .unwrap();
-
-        assert_eq!(result.failed, 0);
-        assert_eq!(marker_generation(journal.path()), Some(1));
+            completion_scope(journal.path(), 1),
+            &result,
+            &BTreeSet::new(),
+            None,
+            &mut total,
+            |_, _, _| panic!("unproven completion emitted"),
+        );
+        assert!(total.failed > 0);
+        assert_eq!(marker_generation(journal.path()), None);
         let completed = solstone_core_system_health::read_completed_units(
             &FilesystemHealthLogSource::new(journal.path()),
             DAY,
@@ -1052,7 +1053,7 @@ mod tests {
                 .value
                 .contains(&solstone_core_system_health::CompletedUnit {
                     mode: "daily".to_owned(),
-                    name: "fresh".to_owned(),
+                    name: "schedule".to_owned(),
                     facet: None,
                 })
         );
@@ -1081,8 +1082,8 @@ mod tests {
         assert!(rows.iter().any(|row| {
             row["event"] == "talent.fail"
                 && row["mode"] == "daily"
-                && row["name"] == "fresh"
-                && row["use_id"] == "use-fresh"
+                && row["name"] == "schedule"
+                && row["use_id"] == "use-schedule"
                 && row["state"] == "error"
         }));
     }
@@ -1091,12 +1092,9 @@ mod tests {
     fn malformed_daily_terminal_fold_withholds_publication() {
         let journal = tempdir().unwrap();
         bump_stream_marker(journal.path(), DAY).unwrap();
-        let context = context(journal.path());
-        let malformed = journal
-            .path()
-            .join("chronicle")
-            .join(DAY)
-            .join("health/malformed.jsonl");
+        let context = terminal_context(journal.path(), UseEndState::Finish);
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(DAY, "schedule", None);
+        let malformed = solstone_core_journal_io::daily_unit_record_path(journal.path(), &identity);
         fs::create_dir_all(malformed.parent().unwrap()).unwrap();
         fs::write(malformed, b"{not json}\n").unwrap();
         let mut log = log(journal.path());

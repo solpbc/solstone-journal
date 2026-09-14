@@ -91,7 +91,13 @@ pub fn day_is_complete(journal: &std::path::Path, day: &str) -> Result<bool, Hea
     #[cfg(unix)]
     {
         let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
-        Ok(solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete())
+        Ok(
+            solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete()
+                && solstone_core_system::daily_coverage::read_daily_coverage(journal, day)
+                    .map_err(HealthError::Source)?
+                    .state
+                    .is_current(),
+        )
     }
 }
 

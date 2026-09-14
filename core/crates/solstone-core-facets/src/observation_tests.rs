@@ -539,3 +539,170 @@ fn io_error() -> ObservationWriteError {
         source: std::io::Error::other("injected"),
     }))
 }
+
+#[test]
+fn repeated_same_day_add_keeps_one_semantically_identical_row() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+
+    // First attempt: adds "Content C"
+    let counts1 = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"op":"add","content":"Content C"})],
+        Some("20260813"),
+    )
+    .unwrap();
+    assert_eq!(counts1.add, 1);
+
+    // Repeating the same operation deduplicates it against the current owner rows.
+    let counts2 = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[json!({"op":"add","content":"Content C"})],
+        Some("20260813"),
+    )
+    .unwrap();
+    assert_eq!(counts2.keep, 1);
+    assert_eq!(counts2.add, 0);
+
+    let observations = load_observations(temporary.path(), "work", "legacy-ada").unwrap();
+    assert_eq!(observations.len(), 1);
+    assert_eq!(observations[0]["content"], "Content C");
+}
+
+#[test]
+fn stale_quoted_update_preserves_intervening_owner_edit() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+
+    // Initial state
+    save_observations(
+        temporary.path(),
+        "work",
+        "legacy-ada",
+        &[json!({"content":"Original C","observed_at":1})],
+    )
+    .unwrap();
+
+    // Owner edits "Original C" -> "Owner Edited C"
+    save_observations(
+        temporary.path(),
+        "work",
+        "legacy-ada",
+        &[json!({"content":"Owner Edited C","observed_at":2})],
+    )
+    .unwrap();
+
+    // Stale update operation with target_quote "Original C" fails with typed Conflict
+    let result = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[
+            json!({"op":"update","target_index":0,"target_quote":"Original C","content":"Worker C2"}),
+        ],
+        Some("20260813"),
+    );
+    assert!(matches!(
+        result,
+        Err(ObservationWriteError::Conflict { .. })
+    ));
+
+    // Owner state is preserved
+    let observations = load_observations(temporary.path(), "work", "legacy-ada").unwrap();
+    assert_eq!(observations.len(), 1);
+    assert_eq!(observations[0]["content"], "Owner Edited C");
+}
+
+#[test]
+fn test_two_same_day_same_prose_distinct_relations_both_kept() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[
+            json!({"op":"add","content":"Met at coffee shop","relation":{"type":"colleague","name":"Bob"}}),
+            json!({"op":"add","content":"Met at coffee shop","relation":{"type":"mentor","name":"Alice"}}),
+        ],
+        Some("20260813"),
+    )
+    .unwrap();
+    assert_eq!(counts.add, 2);
+
+    let observations = load_observations(temporary.path(), "work", "legacy-ada").unwrap();
+    assert_eq!(observations.len(), 2);
+    assert_eq!(observations[0]["relation"]["type"], "colleague");
+    assert_eq!(observations[1]["relation"]["type"], "mentor");
+}
+
+#[test]
+fn test_atomic_drop_old_plus_add_same_content_day_with_new_relation() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+
+    save_observations(
+        temporary.path(),
+        "work",
+        "legacy-ada",
+        &[json!({"content":"Fact X","source_day":"20260813","observed_at":1})],
+    )
+    .unwrap();
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[
+            json!({"op":"drop","target_index":0,"target_quote":"Fact X"}),
+            json!({"op":"add","content":"Fact X","relation":{"type":"updated_rel"}}),
+        ],
+        Some("20260813"),
+    )
+    .unwrap();
+    assert_eq!(counts.drop, 1);
+    assert_eq!(counts.add, 1);
+
+    let observations = load_observations(temporary.path(), "work", "legacy-ada").unwrap();
+    assert_eq!(observations.len(), 1);
+    assert_eq!(observations[0]["content"], "Fact X");
+    assert_eq!(observations[0]["relation"]["type"], "updated_rel");
+}
+
+#[test]
+fn test_update_c_to_c2_plus_add_new_c_both_exist() {
+    let temporary = TempDir::new();
+    three_way_ada(temporary.path());
+
+    save_observations(
+        temporary.path(),
+        "work",
+        "legacy-ada",
+        &[json!({"content":"C","observed_at":1})],
+    )
+    .unwrap();
+
+    let counts = record_observation_ops(
+        temporary.path(),
+        "work",
+        "effective-ada",
+        &[
+            json!({"op":"update","target_index":0,"target_quote":"C","content":"C2"}),
+            json!({"op":"add","content":"C"}),
+        ],
+        Some("20260813"),
+    )
+    .unwrap();
+    assert_eq!(counts.update, 1);
+    assert_eq!(counts.add, 1);
+
+    let observations = load_observations(temporary.path(), "work", "legacy-ada").unwrap();
+    assert_eq!(observations.len(), 2);
+    assert_eq!(observations[0]["content"], "C2");
+    assert_eq!(observations[1]["content"], "C");
+}

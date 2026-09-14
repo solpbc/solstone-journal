@@ -215,12 +215,14 @@ fn daily_marker_proves_attempt(
     admitted_generation: u64,
     fingerprint: &str,
 ) -> bool {
-    matches!(
-        read_health_marker(journal, day, HealthMarkerKind::Daily),
-        Ok(HealthMarkerState::Versioned { marker, .. })
-            if marker.generation == admitted_generation
-                && marker.fingerprint.as_deref() == Some(fingerprint)
-    )
+    crate::daily_coverage::read_daily_coverage(journal, day)
+        .is_ok_and(|coverage| coverage.state.is_current())
+        && matches!(
+            read_health_marker(journal, day, HealthMarkerKind::Daily),
+            Ok(HealthMarkerState::Versioned { marker, .. })
+                if marker.generation == admitted_generation
+                    && marker.fingerprint.as_deref() == Some(fingerprint)
+        )
 }
 
 fn prune(entries: &mut Map<String, Value>, journal: &Path) {
@@ -1014,7 +1016,9 @@ pub fn eligible_catchup_days(
     exclude: &BTreeSet<String>,
     now: SystemTime,
 ) -> Result<Vec<String>, CatchupError> {
-    let natural = updated_days(journal, exclude)?;
+    let natural = crate::daily_coverage::reconcile_days(journal, force_days, now.into())
+        .map_err(CatchupError::State)?;
+    let natural = natural.into_iter().filter(|day| !exclude.contains(day));
     let eligible_natural = natural
         .into_iter()
         .filter(|day| eligible_or_fail_open(journal, day, false, now))
@@ -1453,6 +1457,7 @@ mod tests {
     fn completed_daily_catchup_settles_preexisting_inactive_segment_repair() {
         for reconcile in [false, true] {
             let bed = Bed::new("daily-settles-repair");
+            crate::daily_coverage::configure_no_daily_work(&bed.root);
             let day = "20260101";
             let fingerprint = empty_fingerprint();
             record_segment_repair_attempt(&bed.root, day, 1.0);
@@ -1601,6 +1606,7 @@ mod tests {
     #[test]
     fn daily_catchup_completion_uses_generation_proof_over_exit_status() {
         let bed = Bed::new("daily-complete");
+        crate::daily_coverage::configure_no_daily_work(&bed.root);
         let fingerprint = empty_fingerprint();
         record_daily_catchup_attempt(&bed.root, "20260101", "catchup", 10.0, 2, &fingerprint);
         bed.write(
@@ -1632,6 +1638,7 @@ mod tests {
     #[test]
     fn daily_catchup_zero_generation_requires_versioned_daily_marker() {
         let bed = Bed::new("daily-zero-generation");
+        crate::daily_coverage::configure_no_daily_work(&bed.root);
         let fingerprint = empty_fingerprint();
         record_daily_catchup_attempt(&bed.root, "20260101", "catchup", 10.0, 0, &fingerprint);
 
@@ -1850,6 +1857,7 @@ mod tests {
     #[test]
     fn stale_active_reconciliation_uses_completion_then_new_input_then_interruption() {
         let completed = Bed::new("reconcile-completed");
+        crate::daily_coverage::configure_no_daily_work(&completed.root);
         let fingerprint = empty_fingerprint();
         record_daily_catchup_attempt(&completed.root, "20260101", "active", 1.0, 2, &fingerprint);
         completed.write(
@@ -1867,6 +1875,7 @@ mod tests {
         );
 
         let superseded = Bed::new("reconcile-superseded");
+        crate::daily_coverage::configure_no_daily_work(&superseded.root);
         record_daily_catchup_attempt(&superseded.root, "20260101", "active", 1.0, 1, &fingerprint);
         superseded.write(
             "chronicle/20260101/health/stream.updated",
@@ -1882,6 +1891,7 @@ mod tests {
         assert_eq!(daily["next_retry_at"], 0);
 
         let interrupted = Bed::new("reconcile-interrupted");
+        crate::daily_coverage::configure_no_daily_work(&interrupted.root);
         record_daily_catchup_attempt(
             &interrupted.root,
             "20260101",
@@ -1900,6 +1910,7 @@ mod tests {
         assert_eq!(daily["next_retry_at"], 620.0);
 
         let segment = Bed::new("reconcile-segment");
+        crate::daily_coverage::configure_no_daily_work(&segment.root);
         record_segment_repair_attempt(&segment.root, "20260101", 1.0);
         reconcile_stale_catchup_attempts(&segment.root, UNIX_EPOCH + Duration::from_secs(20))
             .unwrap();
@@ -1910,6 +1921,7 @@ mod tests {
         assert_eq!(repair["next_retry_at"], 620.0);
 
         let changed_segment = Bed::new("reconcile-segment-changed");
+        crate::daily_coverage::configure_no_daily_work(&changed_segment.root);
         record_segment_repair_attempt(&changed_segment.root, "20260101", 1.0);
         changed_segment.segment_file("20260101", "000000_1", "audio.json", br#"{}"#);
         reconcile_stale_catchup_attempts(
@@ -1932,15 +1944,16 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let terminal = Bed::new("daily-terminal-unreadable-fingerprint");
+        crate::daily_coverage::configure_no_daily_work(&terminal.root);
         let fingerprint = empty_fingerprint();
-        record_daily_catchup_attempt(&terminal.root, "20260101", "active", 10.0, 1, &fingerprint);
+        record_daily_catchup_attempt(&terminal.root, "19691231", "active", 10.0, 1, &fingerprint);
         terminal.write(
-            "chronicle/20260101/health/daily.updated",
+            "chronicle/19691231/health/daily.updated",
             daily_marker(1, &fingerprint),
         );
         let unreadable = terminal
             .root
-            .join("chronicle/20260101/000000_1")
+            .join("chronicle/19691231/000000_1")
             .join(OsString::from_vec(vec![0xff]));
         fs::create_dir_all(unreadable.parent().unwrap()).unwrap();
         fs::write(&unreadable, b"raw").unwrap();
@@ -1948,7 +1961,7 @@ mod tests {
         assert!(
             record_daily_catchup_outcome(
                 &terminal.root,
-                "20260101",
+                "19691231",
                 "active",
                 1,
                 &fingerprint,
@@ -1958,14 +1971,14 @@ mod tests {
         );
         let state: Value =
             serde_json::from_slice(&fs::read(catchup_state_path(&terminal.root)).unwrap()).unwrap();
-        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        let daily = &state["entries"][catchup_state_key("19691231", KIND_DAILY_CATCHUP)];
         assert_eq!(daily["last_outcome"], "error");
         assert_eq!(daily["reason_code"], "fingerprint_unreadable");
         assert_eq!(daily["next_retry_at"], 620.0);
         // Keep the day dirty so the automatic selector reaches the retry gate
         // instead of treating the matching daily marker as already complete.
         terminal.write(
-            "chronicle/20260101/health/stream.updated",
+            "chronicle/19691231/health/stream.updated",
             br#"{"version":1,"generation":2,"fingerprint":null}"#,
         );
         assert_eq!(
@@ -1986,18 +1999,18 @@ mod tests {
                 UNIX_EPOCH + Duration::from_secs(620),
             )
             .expect("unreadable fingerprint is eligible at retry"),
-            vec!["20260101".to_owned()],
+            vec!["19691231".to_owned()],
         );
 
         let restart = Bed::new("daily-restart-unreadable-fingerprint");
-        record_daily_catchup_attempt(&restart.root, "20260101", "active", 10.0, 1, &fingerprint);
+        record_daily_catchup_attempt(&restart.root, "19691231", "active", 10.0, 1, &fingerprint);
         restart.write(
-            "chronicle/20260101/health/daily.updated",
+            "chronicle/19691231/health/daily.updated",
             daily_marker(1, &fingerprint),
         );
         let unreadable = restart
             .root
-            .join("chronicle/20260101/000000_1")
+            .join("chronicle/19691231/000000_1")
             .join(OsString::from_vec(vec![0xff]));
         fs::create_dir_all(unreadable.parent().unwrap()).unwrap();
         fs::write(&unreadable, b"raw").unwrap();
@@ -2006,7 +2019,7 @@ mod tests {
             .unwrap();
         let state: Value =
             serde_json::from_slice(&fs::read(catchup_state_path(&restart.root)).unwrap()).unwrap();
-        let daily = &state["entries"][catchup_state_key("20260101", KIND_DAILY_CATCHUP)];
+        let daily = &state["entries"][catchup_state_key("19691231", KIND_DAILY_CATCHUP)];
         assert_eq!(daily["last_outcome"], "error");
         assert_eq!(daily["reason_code"], "fingerprint_unreadable");
         assert_eq!(daily["next_retry_at"], 620.0);
@@ -2436,6 +2449,8 @@ mod tests {
     #[test]
     fn eligible_days_caps_natural_days_but_keeps_forced_days() {
         let bed = Bed::new("cap");
+        let test_now = UNIX_EPOCH + Duration::from_secs(1767830400);
+        let next_retry = 1767830410_u64;
         for day in [
             "20260101", "20260102", "20260103", "20260104", "20260105", "20260106",
         ] {
@@ -2451,7 +2466,7 @@ mod tests {
             "20260101".to_owned(),
         ];
         assert_eq!(
-            eligible_catchup_days(&bed.root, &force, &exclude, UNIX_EPOCH).expect("eligible days"),
+            eligible_catchup_days(&bed.root, &force, &exclude, test_now).expect("eligible days"),
             capped_with_forced
         );
 
@@ -2461,7 +2476,7 @@ mod tests {
             state_entry(
                 "20260106",
                 CatchupKind::DailyCatchup,
-                &format!(r#"{{"next_retry_at":10,"fingerprint":"{fingerprint}"}}"#),
+                &format!(r#"{{"next_retry_at":{next_retry},"fingerprint":"{fingerprint}"}}"#),
             ),
         );
         assert_eq!(
@@ -2469,7 +2484,7 @@ mod tests {
                 &bed.root,
                 &force,
                 &exclude,
-                UNIX_EPOCH + Duration::from_secs(9)
+                test_now + Duration::from_secs(9)
             )
             .expect("before retry"),
             vec![
@@ -2485,7 +2500,7 @@ mod tests {
                 &bed.root,
                 &force,
                 &exclude,
-                UNIX_EPOCH + Duration::from_secs(10)
+                test_now + Duration::from_secs(10)
             )
             .expect("at retry"),
             capped_with_forced
@@ -2495,7 +2510,7 @@ mod tests {
                 &bed.root,
                 &force,
                 &exclude,
-                UNIX_EPOCH + Duration::from_secs(11)
+                test_now + Duration::from_secs(11)
             )
             .expect("after retry"),
             capped_with_forced

@@ -2248,6 +2248,7 @@ mod tests {
     #[test]
     fn queued_catchup_samples_primary_admission_and_retains_it_for_terminal_correlation() {
         let journal = tempfile::tempdir().expect("journal");
+        crate::daily_coverage::configure_no_daily_work(journal.path());
         let day = "20260101";
         let health = journal.path().join("chronicle").join(day).join("health");
         fs::create_dir_all(&health).expect("health");

@@ -349,10 +349,15 @@ fn oplog_payload<'a>(path: &Path, contents: &'a [u8]) -> Option<(&'a [u8], usize
 
 /// Read UTF-8 text, treating a missing path as `default`.
 pub fn read_text(path: impl AsRef<Path>, default: String) -> Result<String, ReadError> {
+    Ok(read_optional_text(path)?.unwrap_or(default))
+}
+
+/// Read text while preserving the distinction between an absent and an empty file.
+pub fn read_optional_text(path: impl AsRef<Path>) -> Result<Option<String>, ReadError> {
     let path = path.as_ref();
     match fs::read_to_string(path) {
-        Ok(contents) => Ok(contents),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(default),
+        Ok(contents) => Ok(Some(contents)),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(source) => Err(io_error(path, source)),
     }
 }
@@ -603,6 +608,31 @@ mod tests {
             .lock()
             .unwrap()
             .clear();
+    }
+
+    #[test]
+    fn optional_text_distinguishes_absence_empty_content_and_read_errors() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("owner.txt");
+        assert_eq!(read_optional_text(&path).unwrap(), None);
+        assert_eq!(read_text(&path, "default".into()).unwrap(), "default");
+        fs::write(&path, "").unwrap();
+        assert_eq!(read_optional_text(&path).unwrap(), Some(String::new()));
+        assert_eq!(read_text(&path, "default".into()).unwrap(), "");
+        fs::write(&path, "saved owner content").unwrap();
+        assert_eq!(
+            read_optional_text(&path).unwrap().as_deref(),
+            Some("saved owner content")
+        );
+        fs::write(&path, [0xff]).unwrap();
+        assert!(matches!(
+            read_optional_text(&path),
+            Err(ReadError::Io { .. })
+        ));
+        assert!(matches!(
+            read_optional_text(temporary.path()),
+            Err(ReadError::Io { .. })
+        ));
     }
 
     #[test]

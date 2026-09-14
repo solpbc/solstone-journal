@@ -14,8 +14,8 @@ use serde_json::Value;
 use crate::{
     BACKLOG_STATE_COMPLETE, BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK, BACKLOG_STATE_UNKNOWN,
     BacklogDay, BacklogError, BacklogUnit, BacklogView, CappedDailySummary, CappedDailyUnit,
-    DailyUnit, DeterministicFailure, HealthError, HealthLogSource, MODALITY_INPUT_AGED_MS,
-    NO_SENSE_COMPLETE_AGED_MS, REASON_CATCHUP_BACKOFF, REASON_CORRUPT_RAW, REASON_FAILING_STEP,
+    HealthError, HealthLogSource, MODALITY_INPUT_AGED_MS, NO_SENSE_COMPLETE_AGED_MS,
+    REASON_CATCHUP_BACKOFF, REASON_CORRUPT_RAW, REASON_FAILING_STEP,
     REASON_SEGMENT_REPAIR_DEGRADED, REASON_SEGMENT_REPAIR_PROGRESSING, REASON_SEGMENT_REPAIR_STUCK,
     REASON_SEGMENT_REPAIR_UNKNOWN, SEGMENT_REPAIR_STATUS_DEGRADED,
     SEGMENT_REPAIR_STATUS_PROGRESSING, SEGMENT_REPAIR_STATUS_STUCK, SEGMENT_REPAIR_STATUS_UNKNOWN,
@@ -23,9 +23,9 @@ use crate::{
     SegmentRepairSummary, SegmentSource, TerminalEvent, TerminalState, TerminalUnit,
     WHY_CORRUPT_RAW, WHY_FAILED, WHY_NEVER_ATTEMPTED, WHY_NO_SENSE_COMPLETE_AGED,
     WHY_SENSED_NOT_THOUGHT, classify_segment_completion, day_is_complete, lookup_segment_progress,
-    read_backoff_summary, read_daily_deterministic_failures, read_segment_progress,
-    read_segment_repair_attempted, read_segment_repair_summary, read_terminal_states, scan_day,
-    segment_fully_sensed, segment_fully_thought, segment_requires_processing,
+    read_backoff_summary, read_segment_progress, read_segment_repair_attempted,
+    read_segment_repair_summary, read_terminal_states, scan_day, segment_fully_sensed,
+    segment_fully_thought, segment_requires_processing,
 };
 
 /// Return a bounded, read-only cross-day processing backlog report.
@@ -150,6 +150,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     repair.as_ref(),
                 );
                 backlog_days.push(BacklogDay {
+                    daily_coverage: None,
                     day,
                     state,
                     segments: segment_depth,
@@ -167,6 +168,104 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                 });
             }
             Err(error) => backlog_days.push(unknown_day(&day, "day_is_complete", error)),
+        }
+    }
+
+    for day in &mut backlog_days {
+        match solstone_core_system::daily_coverage::read_daily_coverage(journal, &day.day) {
+            Ok(mut coverage) => {
+                coverage.as_of_ms = now.timestamp_millis();
+                if !coverage.state.is_current() && day.state == BACKLOG_STATE_COMPLETE {
+                    day.state = BACKLOG_STATE_PENDING.to_owned();
+                }
+                // Caps from another revision are history, never present degraded coverage.
+                let capped = coverage
+                    .units
+                    .iter()
+                    .filter(|unit| {
+                        unit.state
+                            == solstone_core_system::daily_coverage::CoverageState::CurrentDegraded
+                            && solstone_core_journal_io::load_daily_unit_record(
+                                journal,
+                                &unit.identity,
+                            )
+                            .ok()
+                            .flatten()
+                            .is_some_and(|record| {
+                                record.status == solstone_core_journal_io::DailyUnitStatus::Capped
+                            })
+                    })
+                    .collect::<Vec<_>>();
+                day.capped_daily = capped.first().map(|unit| CappedDailySummary {
+                    count: capped.len(),
+                    unit: CappedDailyUnit {
+                        name: unit.identity.name.clone(),
+                        facet: unit.identity.facet.clone(),
+                        reason_code: unit.reason_code.clone().unwrap_or_default(),
+                        count: solstone_core_journal_io::load_daily_unit_record(
+                            journal,
+                            &unit.identity,
+                        )
+                        .ok()
+                        .flatten()
+                        .map_or(0, |r| r.failure_count as usize),
+                    },
+                });
+                for unit in &coverage.units {
+                    if unit.state
+                        != solstone_core_system::daily_coverage::CoverageState::Outstanding
+                    {
+                        continue;
+                    }
+                    let Some(reason) = unit.reason_code.as_ref() else {
+                        continue;
+                    };
+                    let record =
+                        solstone_core_journal_io::load_daily_unit_record(journal, &unit.identity)
+                            .ok()
+                            .flatten();
+                    let conflicting = record.as_ref().is_some_and(|r| {
+                        r.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
+                    });
+                    day.why.push(BacklogUnit {
+                        mode: "daily".to_owned(),
+                        name: unit.identity.name.clone(),
+                        facet: unit.identity.facet.clone(),
+                        stream: None,
+                        segment: None,
+                        why: WHY_FAILED.to_owned(),
+                        reason_code: Some(reason.clone()),
+                        provider: None,
+                        model: None,
+                        trailing_fail_count: record
+                            .as_ref()
+                            .map_or(0, |r| r.failure_count as usize),
+                        last_fail_ts: record.as_ref().map(|r| r.updated_at_ms),
+                        stuck: conflicting,
+                    });
+                    if conflicting {
+                        day.state = BACKLOG_STATE_STUCK.to_owned();
+                        day.reason_code = Some(reason.clone());
+                    }
+                }
+                day.units = day.why.len();
+                day.daily_coverage = Some(coverage);
+            }
+            Err(error) => {
+                day.state = BACKLOG_STATE_UNKNOWN.to_owned();
+                day.daily_coverage = Some(solstone_core_system::daily_coverage::DailyCoverage {
+                    maintenance: None,
+                    day: day.day.clone(),
+                    as_of_ms: now.timestamp_millis(),
+                    state: solstone_core_system::daily_coverage::CoverageState::Unreadable,
+                    units: Vec::new(),
+                });
+                day.error = Some(BacklogError {
+                    day: day.day.clone(),
+                    stage: "daily_coverage".to_owned(),
+                    message: error,
+                });
+            }
         }
     }
 
@@ -205,12 +304,11 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
 }
 
 fn complete_backlog_day<H: HealthLogSource>(
-    health_source: &H,
+    _health_source: &H,
     day: &str,
     repair: Option<&SegmentRepairSummary>,
 ) -> Result<(BacklogDay, usize), HealthError> {
-    let daily = read_daily_deterministic_failures(health_source, day)?;
-    let capped_daily = capped_daily_summary(daily.value);
+    let capped_daily = None;
     let (state, reason, reason_code, error) = escalate_for_repair(
         BACKLOG_STATE_COMPLETE.to_owned(),
         None,
@@ -221,6 +319,7 @@ fn complete_backlog_day<H: HealthLogSource>(
     );
     Ok((
         BacklogDay {
+            daily_coverage: None,
             day: day.to_owned(),
             state,
             segments: 0,
@@ -236,41 +335,13 @@ fn complete_backlog_day<H: HealthLogSource>(
             segment_repair: repair.cloned(),
             capped_daily,
         },
-        daily.malformed_line_count,
+        0,
     ))
-}
-
-fn capped_daily_summary(
-    failures: BTreeMap<DailyUnit, DeterministicFailure>,
-) -> Option<CappedDailySummary> {
-    let capped = failures
-        .into_iter()
-        .filter(|(_, failure)| daily_failure_capped(&failure.reason_code, failure.count))
-        .collect::<Vec<_>>();
-    let count = capped.len();
-    let ((unit, failure), _) = capped
-        .into_iter()
-        .map(|item| {
-            let key = (
-                item.0.name.clone(),
-                item.0.facet.clone().unwrap_or_default(),
-            );
-            (item, key)
-        })
-        .min_by(|left, right| left.1.cmp(&right.1))?;
-    Some(CappedDailySummary {
-        count,
-        unit: CappedDailyUnit {
-            name: unit.name,
-            facet: unit.facet,
-            reason_code: failure.reason_code,
-            count: failure.count,
-        },
-    })
 }
 
 fn unknown_day(day: &str, stage: &str, error: HealthError) -> BacklogDay {
     BacklogDay {
+        daily_coverage: None,
         day: day.to_owned(),
         state: BACKLOG_STATE_UNKNOWN.to_owned(),
         segments: 0,
@@ -580,7 +651,7 @@ fn non_segment_failed_units(
         .into_iter()
         .filter(|(unit, state)| {
             unit.segment.is_none()
-                && matches!(unit.mode.as_str(), "daily" | "activity" | "flush")
+                && matches!(unit.mode.as_str(), "activity" | "flush")
                 && state.latest_event == TerminalEvent::Fail
         })
         .map(|(unit, state)| failed_backlog_unit(unit, state, stream_updated_ms))
@@ -660,19 +731,10 @@ fn state_severity(state: &str) -> usize {
 /// Dispatch and completion folding share this predicate: the same cap that
 /// stops automatic retries makes the unit terminal-degraded for the day.
 pub fn daily_failure_capped(reason_code: &str, count: usize) -> bool {
-    let cap = match reason_code {
-        "model_not_found" | "provider_request_rejected" => 1,
-        "schema_invalid" => 3,
-        "agent_stuck"
-        | "context_window_exceeded"
-        | "max_turns_exhausted"
-        | "no_output"
-        | "non_responsive"
-        | "token_budget_exceeded"
-        | "wall_clock_exceeded" => 2,
-        _ => return false,
-    };
-    count >= cap
+    solstone_core_system::daily_coverage::daily_failure_capped(
+        reason_code,
+        u32::try_from(count).unwrap_or(u32::MAX),
+    )
 }
 
 #[cfg(test)]

@@ -58,6 +58,7 @@ fn catchup_writers_match_inlined_state() {
 #[test]
 fn daily_catchup_completion_keeps_admitted_marker_provenance_in_the_envelope() {
     let native_root = tempfile::tempdir().unwrap();
+    super::configure_daily_work(native_root.path(), None);
     seed_raw_day(native_root.path());
     let fingerprint = read_raw_input_fingerprint(native_root.path(), DAY).unwrap();
     let admitted_generation = bump_stream_marker(native_root.path(), DAY).unwrap();

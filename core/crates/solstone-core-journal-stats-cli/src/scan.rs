@@ -15,7 +15,7 @@ use solstone_core_processing_record::{MediaKind, media_kind};
 
 use crate::{
     DayScanRequest, activities::accumulate_activities, error::JournalStatsError,
-    fold::fold_segments, model::DayScan, talents::daily_output_counts,
+    fold::fold_segments, model::DayScan,
 };
 
 pub(crate) fn compute_day<S, H, W>(
@@ -38,15 +38,6 @@ where
     scan.stats.percept_duration = percept.duration;
 
     scan.stats.pending_segments = pending_segments(request.journal_root, request.day)?;
-    let outputs = daily_output_counts(
-        day_dir,
-        request.system_talent_root,
-        request.apps_root,
-        request.talent_overrides,
-    )?;
-    scan.stats.outputs_processed = outputs.processed;
-    scan.stats.outputs_pending = outputs.pending;
-
     let fold = fold_segments(
         request.segment_source,
         request.health_source,
@@ -65,6 +56,36 @@ where
     scan.facet_data = activities.facet_data;
     scan.heatmap_data = activities.heatmap_data;
     scan.stats.day_bytes = day_bytes(day_dir)?;
+    let mut coverage = solstone_core_system::daily_coverage::read_daily_coverage_with_roots(
+        request.journal_root,
+        request.day,
+        request.system_talent_root,
+        request.apps_root,
+    )
+    .map_err(JournalStatsError::Validation)?;
+    coverage.as_of_ms = request.now.timestamp_millis();
+    scan.stats.outputs_processed = coverage
+        .units
+        .iter()
+        .filter(|u| {
+            u.state.is_current()
+                && solstone_core_journal_io::load_daily_unit_record(
+                    request.journal_root,
+                    &u.identity,
+                )
+                .ok()
+                .flatten()
+                .is_some_and(|record| {
+                    record.is_reusable_for(&u.evidence_revision, &u.contract_digest)
+                })
+        })
+        .count() as u64;
+    scan.stats.outputs_pending = coverage
+        .units
+        .iter()
+        .filter(|u| !u.state.is_current())
+        .count() as u64;
+    scan.daily_coverage = Some(coverage);
     Ok(scan)
 }
 

@@ -426,6 +426,7 @@ fn midnight_range_wraps_while_segment_end_clamps() {
 fn day_complete_follows_marker_presence_and_inclusive_order() {
     let temporary = TempDir::new().unwrap();
     let root = temporary.path();
+    super::configure_daily_work(root, None);
     assert!(day_is_complete(root, DAY).unwrap());
     let health = day_path(root).join("health");
     fs::create_dir_all(&health).unwrap();

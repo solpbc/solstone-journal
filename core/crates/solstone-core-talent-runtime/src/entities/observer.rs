@@ -15,7 +15,7 @@ use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct EntityBudgetExclusion {
     pub entity_id: String,
     pub chars: usize,
@@ -30,13 +30,45 @@ struct ObserverContextAssembly {
     context: String,
     served_ids: BTreeSet<String>,
     exclusions: Vec<EntityBudgetExclusion>,
+    observation_before: Map<String, Value>,
+    resolution: ObserverResolutionSnapshot,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ObserverState {
     pub context: Option<String>,
     pub served_ids: BTreeSet<String>,
     pub exclusions: Vec<EntityBudgetExclusion>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ObserverResolutionCandidate {
+    id: Option<String>,
+    name: String,
+    aka: Vec<String>,
+    emails: Vec<String>,
+    blocked: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ObserverResolutionSnapshot {
+    entities: Vec<ObserverResolutionCandidate>,
+    choices: Vec<Value>,
+}
+
+impl ObserverResolutionSnapshot {
+    fn entities(&self) -> Vec<solstone_core_entity::EntityResolutionEntity> {
+        self.entities
+            .iter()
+            .map(|entity| solstone_core_entity::EntityResolutionEntity {
+                id: entity.id.clone(),
+                name: entity.name.clone(),
+                aka: entity.aka.clone(),
+                emails: entity.emails.clone(),
+                blocked: entity.blocked,
+            })
+            .collect()
+    }
 }
 
 type Counts = BTreeMap<&'static str, usize>;
@@ -171,11 +203,7 @@ fn attached_entities(
 fn clean_relation(
     value: Option<&Value>,
     op: &str,
-    entities: &[solstone_core_entity::EntityResolutionEntity],
-    journal: &Path,
-    facet: &str,
-    day: &str,
-    entity_id: &str,
+    context: &OperationContext<'_>,
 ) -> Result<(Option<Value>, Option<&'static str>), String> {
     if value.is_none() || value.is_some_and(Value::is_null) || matches!(op, "drop" | "keep") {
         return Ok((None, None));
@@ -193,6 +221,14 @@ fn clean_relation(
     if !crate::story::RELATIONS.contains(&kind) || (kind == "other" && note.trim().is_empty()) {
         return Ok((None, Some("skipped")));
     }
+    let OperationContext {
+        journal,
+        facet,
+        day,
+        entity_id,
+        entities,
+        read_only,
+    } = context;
     let resolution = solstone_core_entity::record_entity_resolution(
         journal,
         target_name,
@@ -200,7 +236,7 @@ fn clean_relation(
         json!({"kind":"facet","facet":facet}),
         json!({"lane":"apps.entities.entity_observer","facet":facet,"day":day,"record_id":entity_id,"field":"relation.target_name"}),
         90.0,
-        false,
+        *read_only,
     )
     .map_err(|error| error.to_string())?;
     let target_entity_id = (resolution.outcome
@@ -221,6 +257,7 @@ fn clean_relation(
 }
 
 struct OperationContext<'a> {
+    read_only: bool,
     journal: &'a Path,
     facet: &'a str,
     day: &'a str,
@@ -248,15 +285,7 @@ fn clean_operation(
         else {
             return Ok((None, Some("skipped")));
         };
-        let (relation, status) = clean_relation(
-            item.get("relation"),
-            op,
-            context.entities,
-            context.journal,
-            context.facet,
-            context.day,
-            context.entity_id,
-        )?;
+        let (relation, status) = clean_relation(item.get("relation"), op, context)?;
         if status == Some("skipped") {
             return Ok((None, status));
         }
@@ -296,15 +325,7 @@ fn clean_operation(
         None
     };
     seen_indexes.push(index);
-    let (relation, status) = clean_relation(
-        item.get("relation"),
-        op,
-        context.entities,
-        context.journal,
-        context.facet,
-        context.day,
-        context.entity_id,
-    )?;
+    let (relation, status) = clean_relation(item.get("relation"), op, context)?;
     if status == Some("skipped") {
         return Ok((None, status));
     }
@@ -430,6 +451,14 @@ pub fn build(
                         detail,
                     ))
                 })?;
+            prepared.config.insert(
+                "_daily_observer_resolution".to_owned(),
+                serde_json::to_value(&assembly.resolution).expect("observer snapshot serializes"),
+            );
+            prepared.config.insert(
+                "_daily_observation_before".to_owned(),
+                Value::Object(assembly.observation_before),
+            );
             (
                 Some(assembly.context),
                 assembly.served_ids,
@@ -506,6 +535,210 @@ pub fn commit(
     }))
 }
 
+pub fn prepare_publication(
+    journal: &Path,
+    output: &str,
+    facet: &str,
+    day: &str,
+    served_ids: &BTreeSet<String>,
+    exclusions: &[EntityBudgetExclusion],
+    prepared: &PreparedTalent,
+) -> Result<(Vec<solstone_core_facets::PreparedObservationBatch>, Value), String> {
+    let data: Value = serde_json::from_str(output).map_err(|e| e.to_string())?;
+    let entries = data
+        .get("entities")
+        .and_then(Value::as_array)
+        .ok_or("entities is not a list")?;
+    let frozen_before = prepared
+        .config
+        .get("_daily_observation_before")
+        .and_then(Value::as_object)
+        .ok_or("missing frozen observation snapshots")?;
+    let frozen: ObserverResolutionSnapshot = serde_json::from_value(
+        prepared
+            .config
+            .get("_daily_observer_resolution")
+            .cloned()
+            .ok_or("missing frozen observer resolution")?,
+    )
+    .map_err(|e| format!("invalid frozen observer resolution: {e}"))?;
+    let entities = frozen.entities();
+    let _trust = solstone_core_facets::hold_facet_trust_lock(journal).map_err(|e| e.to_string())?;
+    let (attached_ids, live_entities) = attached_entities(journal, facet)?;
+    let mut counts = empty_counts();
+    let mut batches = Vec::new();
+    let mut combined: std::collections::BTreeMap<String, Vec<Value>> =
+        std::collections::BTreeMap::new();
+    for entry in entries {
+        let Some(ops) = entry.get("operations").and_then(Value::as_array) else {
+            continue;
+        };
+        let Some(id) = entry.get("entity_id").and_then(Value::as_str) else {
+            *counts.entry("skipped").or_default() += ops.len();
+            continue;
+        };
+        if exclusions.iter().any(|ex| ex.entity_id == id) {
+            *counts.entry("excluded").or_default() += ops.len();
+            continue;
+        }
+        if !served_ids.contains(id) {
+            *counts.entry("unselected").or_default() += ops.len();
+            continue;
+        }
+        if !attached_ids.iter().any(|attached| attached == id) {
+            return Err("conflict: served entity is no longer attached".into());
+        }
+        combined
+            .entry(id.into())
+            .or_default()
+            .extend(ops.iter().cloned());
+    }
+    let mut inputs = Vec::new();
+    for (entity_id, operations) in combined {
+        let mut clean = Vec::new();
+        let mut seen = Vec::new();
+        let context = OperationContext {
+            read_only: true,
+            journal,
+            facet,
+            day,
+            entity_id: &entity_id,
+            entities: &entities,
+        };
+        let live_context = OperationContext {
+            entities: &live_entities,
+            ..context
+        };
+        for raw in operations {
+            // The resolver also honors persisted choices. Refuse a changed
+            // choice before invoking it against the frozen candidate set.
+            if matches!(
+                raw.get("op").and_then(Value::as_str),
+                Some("add" | "update")
+            ) && let Some(query) = raw
+                .get("relation")
+                .and_then(|r| r.get("target_name"))
+                .and_then(Value::as_str)
+            {
+                let normalized = solstone_core_entity_matching::normalize_resolution_query(query);
+                let expected = frozen.choices.iter().find(|row| {
+                    row.get("normalized_query").and_then(Value::as_str) == Some(normalized.as_str())
+                });
+                let current = solstone_core_entity::load_resolved_ambiguity_choice(
+                    journal,
+                    &json!({"kind":"facet", "facet":facet}),
+                    &normalized,
+                )
+                .map_err(|e| e.to_string())?;
+                if current.as_ref() != expected {
+                    return Err(
+                        "conflict: observer relation choice changed after prompt preparation"
+                            .into(),
+                    );
+                }
+            }
+            let (operation, status) = clean_operation(&raw, &mut seen, &context)?;
+            if let Some(status) = status {
+                *counts.entry(status).or_default() += 1;
+            }
+            if let Some(operation) = operation {
+                if let Some(relation) = operation.get("relation") {
+                    let (live, _) = clean_relation(
+                        raw.get("relation"),
+                        operation["op"].as_str().unwrap_or_default(),
+                        &live_context,
+                    )
+                    .map_err(|e| format!("conflict: observer relation target changed: {e}"))?;
+                    if live.as_ref() != Some(relation) {
+                        return Err(
+                            "conflict: observer relation target changed after prompt preparation"
+                                .into(),
+                        );
+                    }
+                }
+                clean.push(operation);
+            }
+        }
+        if clean.is_empty() {
+            continue;
+        }
+        let expected = frozen_before
+            .get(&entity_id)
+            .ok_or("missing served observation snapshot")?;
+        let expected = match expected {
+            Value::Null => None,
+            Value::String(text) => Some(text.as_str()),
+            _ => return Err("invalid served observation snapshot".into()),
+        };
+        let relationship_dir =
+            match solstone_core_facets::resolve_observation_entity_dir(journal, facet, &entity_id)
+                .map_err(|e| e.to_string())?
+            {
+                solstone_core_facets::ObservationEntityResolution::Resolved { entity_dir } => {
+                    entity_dir
+                }
+                solstone_core_facets::ObservationEntityResolution::NoSuchEntity => {
+                    return Err("conflict: observation entity disappeared".into());
+                }
+            };
+        let current =
+            solstone_core_facets::read_facet_entity_observations(journal, facet, &relationship_dir)
+                .map_err(|e| e.to_string())?;
+        if current.as_deref() != expected {
+            return Err("conflict: observation changed after prompt preparation".into());
+        }
+        inputs.push((entity_id, clean, expected));
+    }
+    // All owner before-images must still match before any model reference is
+    // classified as invalid. A later entity's owner edit must not be hidden by
+    // an earlier entity's bad model quote.
+    for (entity_id, clean, expected) in inputs {
+        solstone_core_facets::validate_observation_operations(expected, &clean, Some(day))
+            .map_err(|e| match e {
+                solstone_core_facets::ObservationWriteError::Conflict { message } => {
+                    format!("validation: {message}")
+                }
+                other => other.to_string(),
+            })?;
+        let batch = solstone_core_facets::prepare_observation_batch(
+            journal,
+            facet,
+            &entity_id,
+            &clean,
+            Some(day),
+        )
+        .map_err(|e| match e {
+            solstone_core_facets::ObservationWriteError::Conflict { message } => {
+                format!("conflict: {message}")
+            }
+            other => other.to_string(),
+        })?;
+        if batch.before.as_deref() != expected {
+            return Err("conflict: observation changed after prompt preparation".into());
+        }
+        merge_counts(&mut counts, &batch.counts);
+        batches.push(batch);
+    }
+    let mut outcome = Map::new();
+    for (key, count) in counts {
+        outcome.insert(key.into(), Value::from(count));
+    }
+    outcome.insert(
+        "served_ids".into(),
+        serde_json::to_value(served_ids).map_err(|e| e.to_string())?,
+    );
+    outcome.insert(
+        "exclusions".into(),
+        serde_json::to_value(exclusions).map_err(|e| e.to_string())?,
+    );
+    outcome.insert("error".into(), Value::Null);
+    outcome.insert(
+        "ts".into(),
+        Value::from(chrono::Utc::now().timestamp_millis()),
+    );
+    Ok((batches, Value::Object(outcome)))
+}
+
 pub fn apply_result(
     journal: &Path,
     output: &str,
@@ -570,6 +803,7 @@ pub fn apply_result(
             let mut clean = Vec::new();
             let mut seen = Vec::new();
             let operation_context = OperationContext {
+                read_only: false,
                 journal,
                 facet,
                 day,
@@ -926,6 +1160,35 @@ fn assemble_observer_context(
     facet: &str,
     day: &str,
 ) -> Result<ObserverContextAssembly, String> {
+    let _trust = solstone_core_facets::hold_facet_trust_lock(journal).map_err(|e| e.to_string())?;
+    // Relation targets include all attached entities, even entities omitted
+    // from the bounded observation packet.
+    let (_, attached) = attached_entities(journal, facet)?;
+    let scope = json!({"kind":"facet", "facet":facet});
+    let choices = solstone_core_entity::read_ambiguities(
+        journal,
+        solstone_core_journal_io::MalformedPolicy::Raise,
+    )
+    .map_err(|e| e.to_string())?
+    .into_iter()
+    .filter(|row| {
+        row.get("scope") == Some(&scope)
+            && row.get("status").and_then(Value::as_str) == Some("resolved")
+    })
+    .collect();
+    let resolution = ObserverResolutionSnapshot {
+        entities: attached
+            .into_iter()
+            .map(|entity| ObserverResolutionCandidate {
+                id: entity.id,
+                name: entity.name,
+                aka: entity.aka,
+                emails: entity.emails,
+                blocked: entity.blocked,
+            })
+            .collect(),
+        choices,
+    };
     let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
         .map_err(|error| error.to_string())?;
     let detected = solstone_core_facets::read_detected_entities_strict(journal, facet, day)
@@ -977,6 +1240,8 @@ fn assemble_observer_context(
             context: "No active entities found for this day.".to_owned(),
             served_ids: BTreeSet::new(),
             exclusions: Vec::new(),
+            observation_before: Map::new(),
+            resolution,
         });
     }
     let total = active.len();
@@ -987,9 +1252,33 @@ fn assemble_observer_context(
     let mut sections = Vec::with_capacity(selected.len());
     let mut served_ids = BTreeSet::new();
     let mut exclusions = Vec::new();
+    let mut observation_before = Map::new();
     for (entity, rows) in &selected {
-        match render_entity_packet(journal, facet, day, entity, rows)? {
+        let before = solstone_core_facets::read_facet_entity_observations(
+            journal,
+            facet,
+            &entity.relationship_dir,
+        )
+        .map_err(|e| e.to_string())?;
+        let rendered = render_entity_packet(journal, facet, day, entity, rows)?;
+        let after = solstone_core_facets::read_facet_entity_observations(
+            journal,
+            facet,
+            &entity.relationship_dir,
+        )
+        .map_err(|e| e.to_string())?;
+        if before != after {
+            return Err(format!(
+                "observations changed during preparation for {}",
+                entity.entity_id
+            ));
+        }
+        match rendered {
             EntityPacketOutcome::Rendered(packet) => {
+                observation_before.insert(
+                    entity.entity_id.clone(),
+                    before.map(Value::String).unwrap_or(Value::Null),
+                );
                 served_ids.insert(entity.entity_id.clone());
                 sections.push(packet);
             }
@@ -1028,6 +1317,8 @@ fn assemble_observer_context(
         context,
         served_ids,
         exclusions,
+        observation_before,
+        resolution,
     })
 }
 
@@ -1949,6 +2240,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let entities = Vec::new();
         let context = OperationContext {
+            read_only: false,
             journal: root.path(),
             facet: "work",
             day: "20260101",
@@ -1976,6 +2268,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let entities = Vec::new();
         let context = OperationContext {
+            read_only: false,
             journal: root.path(),
             facet: "work",
             day: "20260101",
