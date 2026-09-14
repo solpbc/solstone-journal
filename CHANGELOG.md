@@ -6,10 +6,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [2.0.5] - 2026-09-14
 
-### Added
-
-- agent connections now have read-only permissions you can set, review, or clear before they search or fetch from your journal. each connection sees only the tools its current permission allows.
-
 ### Fixed
 
 - pictures from your screen no longer stall before description when the journal runs with detailed diagnostics. journal health now also recognizes pictures that were already handled another way instead of leaving them marked as waiting.
