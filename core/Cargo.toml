@@ -387,9 +387,9 @@ hmac = "0.12.1"
 getrandom = "0.3.4"
 interprocess = { version = "=2.4.3", default-features = false }
 ryu = "1.0.23"
-spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.7.0" }
-spl-home = { git = "https://github.com/solpbc/spl-rust", tag = "v0.7.0" }
-spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.7.0" }
+spl-core = { git = "https://github.com/solpbc/spl-rust", tag = "v0.7.1" }
+spl-home = { git = "https://github.com/solpbc/spl-rust", tag = "v0.7.1" }
+spl-transport = { git = "https://github.com/solpbc/spl-rust", tag = "v0.7.1" }
 tokio = { version = "1", default-features = false }
 thiserror = "2.0.19"
 toml_edit = { version = "0.22.27", default-features = false, features = ["parse"] }

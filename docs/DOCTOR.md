@@ -145,6 +145,15 @@ the journal, not whether a retired local observer process recently checked in.
 when the journal has recorded an active client ingest rejection, but never
 blocks. Remediation is to update or restart the client, then confirm a valid
 upload clears the active rejection.
+`journal doctor` also runs the `client_transport_refusal` advisory check. It
+warns when the journal has turned a paired device's requests away because that
+device's connection was already carrying as many requests as the journal accepts
+at once. It is separate from `client_ingest_health` on purpose: a rejection
+happens after a request arrives, a refusal happens instead of one arriving, and
+the device sees nothing but the same generic network error either way. Knowing
+which of the two occurred is the remediation; a device that keeps provoking it
+is worth reporting.
+
 `journal doctor` reports `capture_health` and `client_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal.
 Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment under `client_delivery`. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
 

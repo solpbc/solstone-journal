@@ -5,6 +5,7 @@ pub mod capture_health;
 pub mod client_binding;
 pub mod client_delivery_stall;
 pub mod client_ingest_health;
+pub mod client_transport_refusal;
 pub mod common;
 pub mod config_dir_readable;
 pub mod default_stt_ready;

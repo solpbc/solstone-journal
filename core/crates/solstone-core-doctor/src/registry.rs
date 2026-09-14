@@ -88,6 +88,9 @@ fn client_delivery(c: &CheckContext) -> RunnerResult {
 fn client_ingest(c: &CheckContext) -> RunnerResult {
     checks::client_ingest_health::run(c, CHECK_CLIENT_INGEST)
 }
+fn client_transport_refusal(c: &CheckContext) -> RunnerResult {
+    checks::client_transport_refusal::run(c, CHECK_CLIENT_TRANSPORT_REFUSAL)
+}
 fn orphan(c: &CheckContext) -> RunnerResult {
     checks::orphan_segment_pdf::run(c, CHECK_ORPHAN)
 }
@@ -183,6 +186,11 @@ const CHECK_CLIENT_DELIVERY: Check = Check {
 };
 const CHECK_CLIENT_INGEST: Check = Check {
     name: "client_ingest_health",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_CLIENT_TRANSPORT_REFUSAL: Check = Check {
+    name: "client_transport_refusal",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -285,6 +293,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_CLIENT_INGEST,
         runner: client_ingest,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_CLIENT_TRANSPORT_REFUSAL,
+        runner: client_transport_refusal,
         deferred: None,
     },
     RegistryEntry {

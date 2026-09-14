@@ -126,7 +126,10 @@ mod tests {
     }
     #[test]
     fn registry_ground_truth() {
-        assert_eq!(registry::union_names().len(), 22);
+        // ⚠ This number is the size of the native check set, so it moves when a
+        // check is genuinely added. What it pins is that the union and the two
+        // batteries agree -- a name in one and not the other is the defect.
+        assert_eq!(registry::union_names().len(), 23);
         assert_eq!(
             registry::union_names()
                 .iter()
@@ -134,7 +137,7 @@ mod tests {
                     .or_else(|| registry::lookup(Battery::JournalReadiness, name))
                     .is_some())
                 .count(),
-            22
+            23
         );
         assert_eq!(
             registry::union_names()
@@ -526,8 +529,12 @@ mod tests {
         assert_ne!(b.detail, "no local journal");
     }
     #[test]
-    fn ac12_union_is_native_only_22_names() {
-        assert_eq!(registry::union_names().len(), 22);
+    fn ac12_union_is_native_only() {
+        // ⛔ The count is deliberately not in this test's name any more. The
+        // conversion AC is *native only* -- no surviving Python check -- and a
+        // name carrying a number turns every honest addition into an argument
+        // about whether the acceptance criterion still holds.
+        assert_eq!(registry::union_names().len(), 23);
     }
     #[test]
     fn ac13_battery_is_read_only_for_missing_paths() {

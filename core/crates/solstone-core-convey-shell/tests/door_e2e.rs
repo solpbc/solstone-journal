@@ -2271,6 +2271,128 @@ async fn ac6_ca_signed_but_unlisted_client_is_refused() {
 }
 
 #[tokio::test]
+async fn a_carrier_at_its_stream_cap_records_the_refusal_against_the_device() {
+    // The real failure, at the granularity it actually happens: MAX_CONCURRENT_STREAMS
+    // is per carrier, so this holds eight streams open on ONE mTLS carrier and
+    // opens a ninth. ⛔ Eight TCP connections at the door proves nothing.
+    //
+    // The ninth is refused, the carrier deliberately stays up, and before this
+    // change nothing anywhere recorded that -- which is why the client's
+    // "the network connection was lost" was indistinguishable from a real one.
+    //
+    // Asserted while the carrier is still OPEN, on purpose: a report that only
+    // fired at carrier end would be empty for exactly as long as the owner is
+    // watching uploads fail.
+    let fixture = Fixture::established(1);
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let mut carrier = live_carrier(&fixture, port).await;
+
+    // Bare OPENs allocate a stream each and never complete, so all eight slots
+    // stay held. Odd ids are the peer's half of the parity split.
+    for stream_id in (1..=15).step_by(2) {
+        carrier
+            .write_all(
+                &Frame::new(stream_id as u32, FLAG_OPEN, Vec::new())
+                    .encode()
+                    .expect("open frame"),
+            )
+            .await
+            .expect("cap-filling opens write");
+    }
+    carrier.flush().await.expect("cap-filling flush");
+    carrier
+        .write_all(
+            &Frame::new(17, FLAG_OPEN, Vec::new())
+                .encode()
+                .expect("ninth open frame"),
+        )
+        .await
+        .expect("ninth open writes");
+    carrier.flush().await.expect("ninth open flush");
+
+    let refusal = await_transport_refusal(&fixture, &cid).await;
+    assert_eq!(
+        refusal["reason_code"].as_str(),
+        Some("stream_limit"),
+        "the ninth stream is refused for the cap, not for anything else"
+    );
+    assert!(
+        refusal["active_count"]
+            .as_u64()
+            .is_some_and(|count| count >= 1),
+        "the refusal is counted: {refusal}"
+    );
+    drop(carrier);
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn a_carrier_under_its_stream_cap_records_no_refusal_at_all() {
+    // The negative control. Without it a nonzero reading proves nothing: the
+    // record has to be absent on an ordinary healthy carrier, or "your journal
+    // turned requests away" becomes noise the owner learns to ignore.
+    let fixture = Fixture::established(1);
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let port = door_port(handle.door_outcome());
+    let mut carrier = live_carrier(&fixture, port).await;
+    let mut decoder = FrameDecoder::new();
+    let response = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        1,
+        "GET",
+        "/api/system/status",
+        &[],
+        &[],
+    )
+    .await
+    .expect("ordinary request completes");
+    assert_eq!(response.status, 200);
+    drop(carrier);
+    handle.shutdown();
+
+    assert!(
+        read_transport_refusal(&fixture, &cid).is_none(),
+        "an ordinary carrier records no refusal"
+    );
+}
+
+fn read_transport_refusal(fixture: &Fixture, cid: &str) -> Option<serde_json::Value> {
+    let bytes = fs::read(fixture.root.join("link/devices.json")).ok()?;
+    let devices = serde_json::from_slice::<serde_json::Value>(&bytes).ok()?;
+    devices
+        .get(cid)?
+        .get("transport_refusal")
+        .filter(|value| !value.is_null())
+        .cloned()
+}
+
+/// Poll for the refusal record while the carrier is still open.
+///
+/// The door reads its carrier's running tally on a timer rather than being
+/// notified, so this waits out one report interval instead of racing it.
+async fn await_transport_refusal(fixture: &Fixture, cid: &str) -> serde_json::Value {
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    loop {
+        if let Some(refusal) = read_transport_refusal(fixture, cid) {
+            return refusal;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the door never recorded a stream-limit refusal for {cid}"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+#[tokio::test]
 async fn ac6_authorized_client_is_admitted() {
     let fixture = Fixture::established(1);
     let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));

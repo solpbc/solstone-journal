@@ -1972,6 +1972,7 @@ mod tests {
             last_accepted_ingest_at: None,
             last_accepted_segment: None,
             ingest_rejection: None,
+            transport_refusal: None,
             connection: ConnectionFreshness::Known {
                 state: ConnectionState::Connected,
                 group: ConnectionGroup::Active,
