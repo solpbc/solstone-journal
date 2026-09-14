@@ -199,4 +199,17 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn json_categories_define_schemas_in_metadata() {
+        for category in CATEGORIES_META.iter() {
+            if category.output == OutputKind::Json {
+                assert!(
+                    category.schema.is_some(),
+                    "JSON category {} must declare a schema",
+                    category.name
+                );
+            }
+        }
+    }
 }

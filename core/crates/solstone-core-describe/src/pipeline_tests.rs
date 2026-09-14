@@ -873,3 +873,242 @@ fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
         3
     );
 }
+
+fn oracle_fixture(category_name: &str, body_json: &str) -> (String, Option<Value>) {
+    let category = crate::categories::CATEGORIES_META
+        .iter()
+        .find(|c| c.name == category_name)
+        .unwrap_or_else(|| panic!("category {category_name} not found in CATEGORIES_META"));
+    let schema_text = category
+        .schema
+        .unwrap_or_else(|| panic!("category {category_name} has no schema"));
+    let schema: Value = serde_json::from_str(schema_text).expect("valid schema JSON");
+    let result = solstone_core_generate_wire::validate_schema_with_annotations(body_json, &schema);
+    (result.text, Some(result.validation))
+}
+
+fn invalid_calendar_json() -> String {
+    json!({
+        "app": "Google Calendar",
+        "view": "agenda",
+        "range": "2026-09-14",
+        "events": [
+            {
+                "title": "Planning Sync",
+                "start": "2026-09-14T09:00:00Z",
+                "end": "2026-09-14T10:00:00Z",
+                "location": "Room 101",
+                "conferencing": null,
+                "guests": [
+                    "g1@example.com","g2@example.com","g3@example.com","g4@example.com","g5@example.com",
+                    "g6@example.com","g7@example.com","g8@example.com","g9@example.com","g10@example.com",
+                    "g11@example.com","g12@example.com","g13@example.com","g14@example.com","g15@example.com",
+                    "g16@example.com","g17@example.com","g18@example.com","g19@example.com","g20@example.com",
+                    "g21@example.com"
+                ],
+                "status": "accepted",
+                "recurrence": null,
+                "calendar": "Work",
+                "description": "Team Sync"
+            }
+        ],
+        "availability": []
+    })
+    .to_string()
+}
+
+fn valid_calendar_json() -> String {
+    json!({
+        "app": "Google Calendar",
+        "view": "agenda",
+        "range": "2026-09-14",
+        "events": [],
+        "availability": [],
+        "notes": "No upcoming events"
+    })
+    .to_string()
+}
+
+fn invalid_messaging_json() -> String {
+    let invalid_messages: Vec<Value> = (0..61)
+        .map(|i| {
+            json!({
+                "sender": format!("user{i}@example.com"),
+                "timestamp": "2026-09-14T09:00:00Z",
+                "subject": null,
+                "text": "hello"
+            })
+        })
+        .collect();
+    json!({
+        "app": "Slack",
+        "thread": "project-updates",
+        "messages": invalid_messages
+    })
+    .to_string()
+}
+
+#[test]
+fn synthetic_decode_schema_invalid_extraction_fails_terminal_without_retries() {
+    let test = TestRun::new("schema-invalid-extraction");
+    let (body, validation) = oracle_fixture("calendar", &invalid_calendar_json());
+    let factory = ScriptedFactory::new(move |request| match request.context.as_str() {
+        "observe.describe.frame" => generated(request, category("calendar", "none", true)),
+        "observe.describe.calendar" => {
+            generated_with_finish(request, &body, "stop", validation.clone())
+        }
+        _ => default_response(request),
+    });
+    run_decoded(test.options(false, Vec::new()), &factory, decoded(&[1]))
+        .expect("pipeline completes and latches row failure");
+
+    let requests = factory.requests();
+    let calendar_requests = phase_requests(&requests, "observe.describe.calendar");
+    assert_eq!(
+        calendar_requests.len(),
+        1,
+        "schema validation failure must be terminal without retries"
+    );
+
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    assert_eq!(
+        rows[0]["_solstone_processing"]["reason_code"],
+        "analysis_failed"
+    );
+
+    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    assert!(
+        frame.get("content").and_then(|c| c.get("calendar")).is_none(),
+        "invalid schema extraction must not be written to content"
+    );
+    let error = frame["error"].as_str().expect("error string present");
+    assert!(
+        error.starts_with("Schema validation failed for calendar:"),
+        "error message must name the category: {error}"
+    );
+    assert!(
+        error.contains("required"),
+        "error must mention required constraint: {error}"
+    );
+    assert!(
+        error.contains("maxItems") && error.contains("/events/0/guests"),
+        "error must contain nested bound constraint and path: {error}"
+    );
+}
+
+#[test]
+fn synthetic_decode_schema_valid_advisory_writes_content_successfully() {
+    let test = TestRun::new("schema-valid-advisory");
+    let (body, validation) = oracle_fixture("calendar", &valid_calendar_json());
+    assert_eq!(
+        validation.as_ref().and_then(|v| v.get("valid")),
+        Some(&Value::Bool(true))
+    );
+    let factory = ScriptedFactory::new(move |request| match request.context.as_str() {
+        "observe.describe.frame" => generated(request, category("calendar", "none", true)),
+        "observe.describe.calendar" => {
+            generated_with_finish(request, &body, "stop", validation.clone())
+        }
+        _ => default_response(request),
+    });
+    run_decoded(test.options(false, Vec::new()), &factory, decoded(&[1]))
+        .expect("pipeline completes successfully");
+
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    assert!(frame.get("error").is_none());
+    assert_eq!(frame["content"]["calendar"]["app"], "Google Calendar");
+}
+
+#[test]
+fn synthetic_decode_absent_schema_validation_accepts_json_content() {
+    let test = TestRun::new("absent-schema-validation");
+    let factory = ScriptedFactory::new(|request| match request.context.as_str() {
+        "observe.describe.frame" => generated(request, category("messaging", "none", true)),
+        _ => default_response(request),
+    });
+    run_decoded(test.options(false, Vec::new()), &factory, decoded(&[1]))
+        .expect("absent schema_validation accepts");
+
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
+    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    assert!(frame.get("error").is_none());
+    assert_eq!(frame["content"]["messaging"]["ok"], true);
+}
+
+#[test]
+fn synthetic_decode_mixed_success_and_schema_failure_keeps_success_content_and_latches_error() {
+    let test = TestRun::new("mixed-success-schema-fail");
+    let (calendar_body, calendar_val) = oracle_fixture("calendar", &invalid_calendar_json());
+    let factory = ScriptedFactory::new(move |request| match request.context.as_str() {
+        "observe.describe.frame" => generated(request, category("code", "calendar", false)),
+        "observe.describe.code" => generated(request, "# markdown code extracted"),
+        "observe.describe.calendar" => {
+            generated_with_finish(request, &calendar_body, "stop", calendar_val.clone())
+        }
+        _ => default_response(request),
+    });
+    run_decoded(test.options(false, Vec::new()), &factory, decoded(&[1]))
+        .expect("pipeline completes with mixed row outcome");
+
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    assert_eq!(frame["content"]["code"], "# markdown code extracted");
+    assert!(
+        frame.get("content").and_then(|c| c.get("calendar")).is_none(),
+        "failed category must be absent from content"
+    );
+    let error = frame["error"].as_str().expect("error string present");
+    assert!(
+        error.starts_with("Schema validation failed for calendar:"),
+        "error must be calendar schema failure: {error}"
+    );
+}
+
+#[test]
+fn synthetic_decode_double_schema_failure_latches_first_error_and_suppresses_second() {
+    let test = TestRun::new("double-schema-fail");
+    let (calendar_body, calendar_val) = oracle_fixture("calendar", &invalid_calendar_json());
+    let (messaging_body, messaging_val) = oracle_fixture("messaging", &invalid_messaging_json());
+    let factory = ScriptedFactory::new(move |request| match request.context.as_str() {
+        "observe.describe.frame" => generated(request, category("calendar", "messaging", false)),
+        "observe.describe.calendar" => {
+            generated_with_finish(request, &calendar_body, "stop", calendar_val.clone())
+        }
+        "observe.describe.messaging" => {
+            generated_with_finish(request, &messaging_body, "stop", messaging_val.clone())
+        }
+        _ => default_response(request),
+    });
+    run_decoded(test.options(false, Vec::new()), &factory, decoded(&[1]))
+        .expect("pipeline completes with double schema failure");
+
+    let rows = test.rows();
+    assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
+    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    assert!(
+        frame.get("content").and_then(|c| c.get("calendar")).is_none(),
+        "calendar must be absent from content"
+    );
+    assert!(
+        frame.get("content").and_then(|c| c.get("messaging")).is_none(),
+        "messaging must be absent from content"
+    );
+    let error = frame["error"].as_str().expect("error string present");
+    assert!(
+        error.starts_with("Schema validation failed for calendar:"),
+        "error must latch first category failure (calendar): {error}"
+    );
+    assert!(
+        error.contains("/events/0/guests"),
+        "error must contain first category's nested constraint: {error}"
+    );
+    assert!(
+        !error.contains("/messages"),
+        "error must suppress second category's error details: {error}"
+    );
+}

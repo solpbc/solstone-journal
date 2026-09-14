@@ -57,6 +57,7 @@ required-features = ["test-stubs"]
 [dev-dependencies]
 sha2.workspace = true
 solstone-core-distribution.workspace = true
+solstone-core-generate-wire.workspace = true
 ffmpeg-next = { version = "9.0.0", default-features = false, features = ["format", "software-scaling", "build"] }
 tempfile = "3.24.0"
 

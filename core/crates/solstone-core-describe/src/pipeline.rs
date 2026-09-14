@@ -15,6 +15,7 @@ use solstone_core_processing_record::{
 };
 
 use crate::WinnowConfig;
+use crate::categories::OutputKind;
 use crate::decode::{QualifiedFrame, process_video, resize_for_vlm_png};
 use crate::detect;
 use crate::extraction;
@@ -658,6 +659,23 @@ fn extract_category(
                     &generated.finish_reason,
                 ) {
                     Ok(value) => {
+                        if category.output == OutputKind::Json
+                            && schema_validation_failed(generated.schema_validation.as_ref())
+                        {
+                            return Err(ExtractionError::Failed {
+                                error: schema_validation_error_message(
+                                    category.name,
+                                    generated.schema_validation.as_ref(),
+                                ),
+                                record: Some(request_record(
+                                    "category",
+                                    model,
+                                    duration,
+                                    attempt,
+                                    Some(category.name),
+                                )),
+                            });
+                        }
                         return Ok((
                             value,
                             request_record(
@@ -754,6 +772,21 @@ fn schema_validation_failed(validation: Option<&Value>) -> bool {
                 .and_then(Value::as_array)
                 .is_some_and(|errors| !errors.is_empty())
     })
+}
+
+fn schema_validation_error_message(category_name: &str, validation: Option<&Value>) -> String {
+    if let Some(errors) = validation
+        .and_then(|v| v.get("errors"))
+        .and_then(Value::as_array)
+        .filter(|errors| !errors.is_empty())
+    {
+        format!(
+            "Schema validation failed for {category_name}: {}",
+            Value::Array(errors.clone())
+        )
+    } else {
+        format!("Schema validation failed for {category_name}")
+    }
 }
 
 fn emit_value(

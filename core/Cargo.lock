@@ -3942,6 +3942,7 @@ dependencies = [
  "solstone-core-distribution",
  "solstone-core-format",
  "solstone-core-generate",
+ "solstone-core-generate-wire",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
