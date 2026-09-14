@@ -17,6 +17,7 @@ use solstone_core_format::content::{
     Family, RawPerceptFamily, produce_chunks, produce_raw_percept_chunks, talent_projection_map,
 };
 use solstone_core_format::segment::segment_parse;
+use solstone_core_processing_record::vocab;
 use solstone_core_system_health::{DataState, derive_modality_state};
 
 use crate::day::valid_day;
@@ -217,9 +218,48 @@ fn prepare_segment(
     if data_state.contains_key("screen") {
         md_files.remove("screen");
     }
-    Ok(
-        json!({"chunks":chunks,"audio_file":media.audio_file,"duration":duration,"video_files":media.video_files,"image_files":media.image_files,"md_files":md_files,"segment_key":key,"media_sizes":media.media_sizes,"media_purged":{"audio":media.purged("audio"),"screen":media.purged("screen")},"data_state":data_state,"signals":signals(&dir),"transcripts_copy":copy_payload(),"speaker_labels":speakers.state,"warnings":warnings.len(),"warning_details":warnings}),
-    )
+    let reason_code = extract_modality_reason_codes(&records);
+    let mut payload = json!({
+        "chunks": chunks,
+        "audio_file": media.audio_file,
+        "duration": duration,
+        "video_files": media.video_files,
+        "image_files": media.image_files,
+        "md_files": md_files,
+        "segment_key": key,
+        "media_sizes": media.media_sizes,
+        "media_purged": {
+            "audio": media.purged("audio"),
+            "screen": media.purged("screen"),
+        },
+        "data_state": data_state,
+        "signals": signals(&dir),
+        "transcripts_copy": copy_payload(),
+        "speaker_labels": speakers.state,
+        "warnings": warnings.len(),
+        "warning_details": warnings,
+    });
+    if let Some(reason_code) = reason_code
+        && let Some(obj) = payload.as_object_mut()
+    {
+        obj.insert("reason_code".to_owned(), Value::Object(reason_code));
+    }
+    Ok(payload)
+}
+
+fn extract_modality_reason_codes(
+    records: &BTreeMap<String, Option<Value>>,
+) -> Option<Map<String, Value>> {
+    let mut map = Map::new();
+    for (modality, record) in records {
+        if let Some(record) = record
+            && record.get("state").and_then(Value::as_str) == Some(vocab::STATE_FAILED)
+            && let Some(reason_code) = record.get("reason_code").and_then(Value::as_str)
+        {
+            map.insert(modality.clone(), Value::String(reason_code.to_owned()));
+        }
+    }
+    if map.is_empty() { None } else { Some(map) }
 }
 
 fn audio_chunks(
@@ -644,6 +684,7 @@ fn invalid(detail: &str) -> Response {
 mod tests {
     use chrono::{Local, NaiveDateTime, TimeZone};
     use serde_json::json;
+    use solstone_core_processing_record::vocab;
 
     use super::{day_timestamp, local_time, timestamp};
 
@@ -665,5 +706,75 @@ mod tests {
             .timestamp_millis();
 
         assert_eq!(day_timestamp("20260731", "09:00:00", 0), expected);
+    }
+
+    #[test]
+    fn prepare_segment_emits_reason_code_for_failed_modality() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/_default/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        let audio_jsonl = segment_dir.join("audio.jsonl");
+        std::fs::write(
+            audio_jsonl,
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+        )
+        .unwrap();
+
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "_default",
+            "120000_60",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+
+        assert_eq!(
+            value.get("reason_code"),
+            Some(&json!({
+                "audio": "corrupt_input"
+            }))
+        );
+    }
+
+    #[test]
+    fn prepare_segment_omits_reason_code_for_successful_and_empty_modalities() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/_default/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        let audio_jsonl = segment_dir.join("audio.jsonl");
+        std::fs::write(
+            audio_jsonl,
+            format!(
+                "{{\"_solstone_processing\":{{\"handler\":\"{}\",\"state\":\"{}\",\"reason_code\":\"{}\"}}}}\n",
+                vocab::HANDLER_TRANSCRIBE,
+                vocab::STATE_EMPTY,
+                vocab::REASON_NO_SPEECH
+            ),
+        )
+        .unwrap();
+        let screen_jsonl = segment_dir.join("screen.jsonl");
+        std::fs::write(
+            screen_jsonl,
+            format!(
+                "{{\"_solstone_processing\":{{\"handler\":\"{}\",\"state\":\"{}\"}}}}\n",
+                vocab::HANDLER_DESCRIBE,
+                vocab::STATE_ANALYZED
+            ),
+        )
+        .unwrap();
+
+        let value = super::prepare_segment(
+            root,
+            "20260101",
+            "_default",
+            "120000_60",
+            chrono::Utc::now(),
+        )
+        .unwrap();
+
+        assert_eq!(value.get("reason_code"), None);
     }
 }
