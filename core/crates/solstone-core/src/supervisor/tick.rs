@@ -46,7 +46,8 @@ use solstone_core_system::{
 use super::bus::{SupervisorProviderSink, SupervisorScheduleSink, emit};
 use super::config::{no_thinking_engine_chosen, processing_is_deferred};
 use super::runtime::{
-    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, SupervisorState, apply_app_exit,
+    AppExit, AppService, DailyState, FlushState, ManagedAppProcess, RetainedSenseStatus,
+    SupervisorState, apply_app_exit,
 };
 
 const MAX_INBOUND_PER_TICK: usize = 256;
@@ -138,6 +139,8 @@ struct StatusEmissionInputs<'a> {
     stale_heartbeats: Vec<StaleHeartbeatWireInput>,
     schedules: Vec<ScheduleStatus>,
     callosum_clients: usize,
+    retained_sense: Option<&'a RetainedSenseStatus>,
+    now: Instant,
 }
 
 fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan {
@@ -204,6 +207,18 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
         })
         .collect::<Vec<_>>();
     crashed.extend(inputs.app_crashed);
+    let (sense_pending_queue_depth, sense_pending_age_ms, sense_pending_received) =
+        match inputs.retained_sense {
+            Some(sense) => {
+                let age = inputs.now.saturating_duration_since(sense.received_at);
+                (
+                    Some(sense.pending_queue_depth as u64),
+                    Some(age.as_millis() as u64),
+                    true,
+                )
+            }
+            None => (None, None, false),
+        };
     StatusEmissionPlan::Status(SupervisorStatusWireInput {
         services,
         crashed,
@@ -211,6 +226,9 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
         stale_heartbeats: inputs.stale_heartbeats,
         schedules: inputs.schedules,
         callosum_clients: inputs.callosum_clients,
+        sense_pending_queue_depth,
+        sense_pending_age_ms,
+        sense_pending_received,
     })
 }
 
@@ -380,6 +398,8 @@ pub(crate) async fn run(
                     .collect(),
                 schedules,
                 callosum_clients: state.server.client_count(),
+                retained_sense: state.retained_sense.as_ref(),
+                now: status_now,
             }) {
                 StatusEmissionPlan::Errors(services) => {
                     for service in services {
@@ -1171,10 +1191,27 @@ fn handle_message(state: &mut SupervisorState, message: CallosumEnvelope) {
     handle_supervisor_request(state, &message);
     handle_supervisor_drain(state, &message);
     handle_segment_observed(state, &message);
+    handle_sense_status(&mut state.retained_sense, &message);
     handle_activity_recorded(state, &message);
     handle_think_daily_complete(state, &message);
     handle_segment_event_log(&state.journal, &message);
     handle_cortex_outcome(state, &message);
+}
+
+fn handle_sense_status(retained: &mut Option<RetainedSenseStatus>, message: &CallosumEnvelope) {
+    if message.tract != "observe" || message.event != "status" {
+        return;
+    }
+    if let Some(depth) = message
+        .extra
+        .get("pending_queue_depth")
+        .and_then(Value::as_u64)
+    {
+        *retained = Some(RetainedSenseStatus {
+            pending_queue_depth: depth as usize,
+            received_at: Instant::now(),
+        });
+    }
 }
 
 enum SupervisorRequestError {
@@ -2029,6 +2066,8 @@ mod tests {
             stale_heartbeats: Vec::new(),
             schedules: Vec::new(),
             callosum_clients: 2,
+            retained_sense: None,
+            now: Instant::now(),
         });
 
         let StatusEmissionPlan::Status(input) = plan else {
@@ -2074,6 +2113,8 @@ mod tests {
             stale_heartbeats: Vec::new(),
             schedules: Vec::new(),
             callosum_clients: 2,
+            retained_sense: None,
+            now: Instant::now(),
         });
         assert!(matches!(app_plan, StatusEmissionPlan::Errors(services) if services == ["convey"]));
 
@@ -2090,6 +2131,8 @@ mod tests {
             stale_heartbeats: Vec::new(),
             schedules: Vec::new(),
             callosum_clients: 2,
+            retained_sense: None,
+            now: Instant::now(),
         });
         assert!(
             matches!(provider_plan, StatusEmissionPlan::Errors(services) if services == ["local"])
@@ -2118,6 +2161,8 @@ mod tests {
             stale_heartbeats: Vec::new(),
             schedules: Vec::new(),
             callosum_clients: 2,
+            retained_sense: None,
+            now: Instant::now(),
         });
         let StatusEmissionPlan::Status(input) = plan else {
             panic!("determinate observations must produce a status plan");
@@ -2773,6 +2818,7 @@ mod tests {
             Ok(TaskArgv::Unknown { .. })
         ));
     }
+
     #[test]
     fn today_marker_dirty_all_sensed_skips_repair_submit() {
         let bed = Bed::new("today-all-sensed");
@@ -3353,4 +3399,58 @@ mod tests {
         assert_eq!(submit_outcome, SubmitOutcome::Rejected);
     }
 
+    #[test]
+    fn handle_sense_status_updates_retained_state() {
+        let mut retained_sense = None;
+        let message = CallosumEnvelope {
+            tract: "observe".to_owned(),
+            event: "status".to_owned(),
+            ts: None,
+            extra: serde_json::Map::from_iter([(
+                "pending_queue_depth".to_owned(),
+                serde_json::json!(5),
+            )]),
+        };
+
+        handle_sense_status(&mut retained_sense, &message);
+        assert!(retained_sense.is_some());
+        let retained = retained_sense.unwrap();
+        assert_eq!(retained.pending_queue_depth, 5);
+    }
+
+    #[test]
+    fn plan_status_emission_projects_retained_sense_depth_and_age() {
+        let local = provider_state(ProviderName::Local, RuntimePhase::Ready);
+        let parakeet = provider_state(ProviderName::Parakeet, RuntimePhase::Ready);
+        let received_at = Instant::now();
+        let now = received_at + Duration::from_secs(3);
+        let sense = RetainedSenseStatus {
+            pending_queue_depth: 7,
+            received_at,
+        };
+
+        let plan = plan_status_emission(StatusEmissionInputs {
+            app_observations: Vec::new(),
+            app_crashed: Vec::new(),
+            local_observation: live_observation("local:12", 12),
+            parakeet_observation: live_observation("parakeet:13", 13),
+            local_state: &local,
+            parakeet_state: &parakeet,
+            supervisor_pid: 10,
+            supervisor_uptime_seconds: 8,
+            queue: empty_queue_snapshot(),
+            stale_heartbeats: Vec::new(),
+            schedules: Vec::new(),
+            callosum_clients: 2,
+            retained_sense: Some(&sense),
+            now,
+        });
+
+        let StatusEmissionPlan::Status(input) = plan else {
+            panic!("expected status");
+        };
+        assert_eq!(input.sense_pending_queue_depth, Some(7));
+        assert_eq!(input.sense_pending_age_ms, Some(3000));
+        assert_eq!(input.sense_pending_received, true);
+    }
 }

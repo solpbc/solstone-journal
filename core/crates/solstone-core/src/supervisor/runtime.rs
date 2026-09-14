@@ -210,6 +210,13 @@ pub(crate) struct SupervisorState {
     /// the revision already inherited by the current Sense process tree.
     #[cfg(windows)]
     pub parakeet_sense_credentials_revision: u64,
+    pub retained_sense: Option<RetainedSenseStatus>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RetainedSenseStatus {
+    pub pending_queue_depth: usize,
+    pub received_at: Instant,
 }
 
 #[cfg(unix)]
@@ -1699,6 +1706,7 @@ pub(crate) async fn boot_and_tick(
         sense_child_environment,
         #[cfg(windows)]
         parakeet_sense_credentials_revision: 0,
+        retained_sense: None,
     };
     let startup_journal = state.journal.clone();
     let startup_server = Arc::clone(&state.server);

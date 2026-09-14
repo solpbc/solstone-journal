@@ -16,6 +16,9 @@ pub struct SupervisorStatusWireInput {
     pub stale_heartbeats: Vec<StaleHeartbeatWireInput>,
     pub schedules: Vec<ScheduleStatus>,
     pub callosum_clients: usize,
+    pub sense_pending_queue_depth: Option<u64>,
+    pub sense_pending_age_ms: Option<u64>,
+    pub sense_pending_received: bool,
 }
 pub enum ServiceCandidate {
     SupervisorSelf {
@@ -286,6 +289,18 @@ pub fn project_supervisor_status(mut input: SupervisorStatusWireInput) -> Map<St
         ),
         ("schedules".into(), Value::Array(schedules)),
         ("callosum_clients".into(), row(input.callosum_clients)),
+        (
+            "sense_pending_queue_depth".into(),
+            row(input.sense_pending_queue_depth),
+        ),
+        (
+            "sense_pending_age_ms".into(),
+            row(input.sense_pending_age_ms),
+        ),
+        (
+            "sense_pending_received".into(),
+            row(input.sense_pending_received),
+        ),
     ])
 }
 
@@ -314,6 +329,9 @@ mod tests {
             stale_heartbeats: vec![],
             schedules: vec![],
             callosum_clients: 0,
+            sense_pending_queue_depth: None,
+            sense_pending_age_ms: None,
+            sense_pending_received: false,
         }
     }
 
@@ -477,6 +495,9 @@ mod tests {
                 Some(("mon", "09:00")),
             )],
             callosum_clients: 12,
+            sense_pending_queue_depth: None,
+            sense_pending_age_ms: None,
+            sense_pending_received: false,
         }
     }
 
@@ -520,7 +541,7 @@ mod tests {
         assert_eq!(
             output,
             expected(
-                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12}"#
+                r#"{"services":[{"name":"supervisor","pid":1,"uptime_seconds":2,"ref":"sup-ref","phase":"running","reason_code":null},{"name":"convey","pid":3,"uptime_seconds":4,"ref":"app-ref","phase":"running","reason_code":null},{"name":"local","pid":5,"uptime_seconds":6,"ref":"provider-ref","phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"crashed":[{"name":"local","restart_attempts":7,"phase":"cleanup-failed","reason_code":"cleanup-attempt-failed"}],"tasks":[{"ref":"task-ref","name":"daily","max_runtime_seconds":9,"duration_seconds":8,"slow":true,"stuck":false}],"recent_tasks":[{"ref":"recent-ref","exit_status":"ok","scheduler_name":null}],"queues":{"a":2,"z":1},"stale_heartbeats":["(unknown) (/two)","01234567 (/one)"],"stale_heartbeat_details":[{"hostname":"","heartbeat_schema":"unidentified","legacy_machine_id_prefix":null,"writer_id_prefix":null,"run_id":null,"journal_path":"/two","pid":null,"wall_time":null,"malformed":true,"reason_code":"malformed-heartbeat"},{"hostname":"","heartbeat_schema":"v1","legacy_machine_id_prefix":"01234567","writer_id_prefix":null,"run_id":null,"journal_path":"/one","pid":10,"wall_time":"","malformed":false,"reason_code":"stale-heartbeat"}],"schedules":[{"name":"weekly","every":"weekly","last_run":null,"due":false,"next_run":11,"daily_time":null,"weekly_day":"mon","weekly_time":"09:00"}],"callosum_clients":12,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
             )
         );
     }
@@ -531,7 +552,7 @@ mod tests {
         assert_eq!(
             Value::Object(project_supervisor_status(empty)),
             expected(
-                r#"{"services":[],"crashed":[],"tasks":[],"recent_tasks":[],"queues":{},"stale_heartbeats":[],"stale_heartbeat_details":[],"schedules":[],"callosum_clients":0}"#
+                r#"{"services":[],"crashed":[],"tasks":[],"recent_tasks":[],"queues":{},"stale_heartbeats":[],"stale_heartbeat_details":[],"schedules":[],"callosum_clients":0,"sense_pending_queue_depth":null,"sense_pending_age_ms":null,"sense_pending_received":false}"#
             )
         );
     }
@@ -721,7 +742,10 @@ mod tests {
                 "stale_heartbeats",
                 "stale_heartbeat_details",
                 "schedules",
-                "callosum_clients"
+                "callosum_clients",
+                "sense_pending_queue_depth",
+                "sense_pending_age_ms",
+                "sense_pending_received",
             ]
         );
         assert_eq!(output["services"][2]["name"], "local");
@@ -735,5 +759,18 @@ mod tests {
         }
         assert!(!output["schedules"][0].is_string());
         assert_eq!(output["schedules"][0]["weekly_time"], "09:00");
+    }
+
+    #[test]
+    fn projects_sense_pending_fields_when_populated() {
+        let mut input = input(vec![]);
+        input.sense_pending_queue_depth = Some(42);
+        input.sense_pending_age_ms = Some(1500);
+        input.sense_pending_received = true;
+
+        let output = Value::Object(project_supervisor_status(input));
+        assert_eq!(output["sense_pending_queue_depth"], 42);
+        assert_eq!(output["sense_pending_age_ms"], 1500);
+        assert_eq!(output["sense_pending_received"], true);
     }
 }

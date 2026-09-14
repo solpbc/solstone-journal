@@ -46,6 +46,9 @@ fn status_input(services: Vec<ServiceCandidate>) -> SupervisorStatusWireInput {
         stale_heartbeats: vec![],
         schedules: vec![],
         callosum_clients: 0,
+        sense_pending_queue_depth: None,
+        sense_pending_age_ms: None,
+        sense_pending_received: false,
     }
 }
 

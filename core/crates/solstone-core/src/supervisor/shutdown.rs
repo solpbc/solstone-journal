@@ -432,6 +432,7 @@ mod tests {
             },
             parent_loss_coordinator: None,
             sense_child_environment: solstone_core_system::process::ChildLaunchContext::default(),
+            retained_sense: None,
         };
         Fixture {
             driver: SupervisorShutdownDriver::new(
