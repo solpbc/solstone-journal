@@ -318,22 +318,75 @@ fn render_full(report: &Value) -> Vec<String> {
     lines
 }
 
+pub const BACKLOG_AWAITING_THINKING: &str = "awaiting thinking";
+pub const BACKLOG_AWAITING_SENSING: &str = "awaiting sensing";
+pub const BACKLOG_INCOMPLETE_HEDGE: &str = "status incomplete";
+pub const BACKLOG_AT_LEAST: &str = "at least";
+pub const BACKLOG_STATUS_UNAVAILABLE: &str = "Segment analysis status unavailable";
+
 fn render_backlog(lines: &mut Vec<String>, backlog: &Value) {
-    let n = backlog["not_thought"].as_i64().expect("backlog count");
-    let m = backlog["days_with_backlog"].as_i64().expect("backlog days");
-    let seg_word = if n == 1 { "segment" } else { "segments" };
+    let not_thought = backlog["not_thought"].as_i64().unwrap_or(0);
+    let not_sensed = backlog["not_sensed"].as_i64().unwrap_or(0);
+    let m = backlog["days_with_backlog"].as_i64().unwrap_or(0);
     let day_word = if m == 1 { "day" } else { "days" };
     let errors = truthy(&backlog["errors"]);
-    if errors && n > 0 {
-        lines.push(format!(
-            "  at least {n} {seg_word} across {m} {day_word} awaiting thinking (status incomplete)"
-        ));
+
+    if not_thought == 0 && not_sensed == 0 && !errors {
+        return;
+    }
+
+    if not_thought > 0 && not_sensed > 0 {
+        let t_word = if not_thought == 1 {
+            "segment"
+        } else {
+            "segments"
+        };
+        let s_word = if not_sensed == 1 {
+            "segment"
+        } else {
+            "segments"
+        };
+        if errors {
+            lines.push(format!(
+                "  {BACKLOG_AT_LEAST} {not_thought} {t_word} {BACKLOG_AWAITING_THINKING}, {not_sensed} {s_word} {BACKLOG_AWAITING_SENSING} across {m} {day_word} ({BACKLOG_INCOMPLETE_HEDGE})"
+            ));
+        } else {
+            lines.push(format!(
+                "  {not_thought} {t_word} {BACKLOG_AWAITING_THINKING}, {not_sensed} {s_word} {BACKLOG_AWAITING_SENSING} across {m} {day_word}"
+            ));
+        }
+    } else if not_sensed > 0 {
+        let seg_word = if not_sensed == 1 {
+            "segment"
+        } else {
+            "segments"
+        };
+        if errors {
+            lines.push(format!(
+                "  {BACKLOG_AT_LEAST} {not_sensed} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_SENSING} ({BACKLOG_INCOMPLETE_HEDGE})"
+            ));
+        } else {
+            lines.push(format!(
+                "  {not_sensed} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_SENSING}"
+            ));
+        }
+    } else if not_thought > 0 {
+        let seg_word = if not_thought == 1 {
+            "segment"
+        } else {
+            "segments"
+        };
+        if errors {
+            lines.push(format!(
+                "  {BACKLOG_AT_LEAST} {not_thought} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_THINKING} ({BACKLOG_INCOMPLETE_HEDGE})"
+            ));
+        } else {
+            lines.push(format!(
+                "  {not_thought} {seg_word} across {m} {day_word} {BACKLOG_AWAITING_THINKING}"
+            ));
+        }
     } else if errors {
-        lines.push("  Segment analysis status unavailable".to_string());
-    } else if n > 0 {
-        lines.push(format!(
-            "  {n} {seg_word} across {m} {day_word} awaiting thinking"
-        ));
+        lines.push(format!("  {BACKLOG_STATUS_UNAVAILABLE}"));
     }
 }
 
@@ -572,5 +625,76 @@ mod tests {
             }
         );
         transport.assert_done();
+    }
+
+    #[test]
+    fn render_backlog_formats_various_backlog_states() {
+        let mut lines = Vec::new();
+        let backlog = serde_json::json!({
+            "not_thought": 2,
+            "not_sensed": 0,
+            "days_with_backlog": 1,
+            "errors": []
+        });
+        render_backlog(&mut lines, &backlog);
+        assert_eq!(lines, vec!["  2 segments across 1 day awaiting thinking"]);
+
+        lines.clear();
+        let backlog = serde_json::json!({
+            "not_thought": 0,
+            "not_sensed": 3,
+            "days_with_backlog": 2,
+            "errors": []
+        });
+        render_backlog(&mut lines, &backlog);
+        assert_eq!(lines, vec!["  3 segments across 2 days awaiting sensing"]);
+
+        lines.clear();
+        let backlog = serde_json::json!({
+            "not_thought": 1,
+            "not_sensed": 2,
+            "days_with_backlog": 2,
+            "errors": []
+        });
+        render_backlog(&mut lines, &backlog);
+        assert_eq!(
+            lines,
+            vec!["  1 segment awaiting thinking, 2 segments awaiting sensing across 2 days"]
+        );
+    }
+
+    #[test]
+    fn render_backlog_emits_when_only_sense_backlog_exists() {
+        let mut lines = Vec::new();
+        let backlog = serde_json::json!({
+            "not_thought": 0,
+            "not_sensed": 5,
+            "days_with_backlog": 2,
+            "errors": []
+        });
+        render_backlog(&mut lines, &backlog);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("5"));
+        assert!(lines[0].contains(BACKLOG_AWAITING_SENSING));
+        assert!(!lines[0].contains(BACKLOG_AWAITING_THINKING));
+    }
+
+    #[test]
+    fn render_backlog_hedges_both_halves_when_errors_present() {
+        let mut lines = Vec::new();
+        let backlog = serde_json::json!({
+            "not_thought": 3,
+            "not_sensed": 4,
+            "days_with_backlog": 1,
+            "errors": ["some error"]
+        });
+        render_backlog(&mut lines, &backlog);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains(BACKLOG_AT_LEAST));
+        assert!(lines[0].contains(BACKLOG_INCOMPLETE_HEDGE));
+        assert!(lines[0].contains("3"));
+        assert!(lines[0].contains(BACKLOG_AWAITING_THINKING));
+        assert!(lines[0].contains("4"));
+        assert!(lines[0].contains(BACKLOG_AWAITING_SENSING));
     }
 }

@@ -776,9 +776,9 @@ fn build_segment_backlog_health(
     let mut errors = Vec::new();
     let health_source = FilesystemHealthLogSource::new(journal_root);
     let segment_source = FilesystemSegmentSource;
-    let updated_days = solstone_core_system::catchup::updated_days(journal_root, &BTreeSet::new())
+    let chronicle_days = solstone_core_journal_io::day_dirs(journal_root)
         .map_err(|error| HealthError::internal(error.to_string()))?;
-    for day in updated_days {
+    for (day, _) in chronicle_days {
         let result = (|| {
             let progress =
                 read_segment_progress(&health_source, &day).map_err(|error| error.to_string())?;
@@ -794,7 +794,7 @@ fn build_segment_backlog_health(
             Ok(completion) => {
                 not_thought += completion.not_thought;
                 not_sensed += completion.not_sensed;
-                if completion.not_thought > 0 {
+                if completion.not_thought > 0 || completion.not_sensed > 0 {
                     days_with_backlog += 1;
                 }
             }
@@ -2266,5 +2266,101 @@ mod tests {
             DisplayPowersaveReading::UNAVAILABLE,
         );
         assert_eq!(derive_drain_state(settings, &gate, false), "window_open");
+    }
+
+    #[test]
+    fn backlog_health_counts_orphan_marker_clean_day_using_day_dirs() {
+        let temporary = temporary();
+        let root = temporary.path();
+        let day = "20260409";
+        let segment = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("screen.jsonl"), "{}\n").unwrap();
+        let health = build_segment_backlog_health(
+            root,
+            now(),
+            DisplayPowersaveReading::UNAVAILABLE,
+            false,
+            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(health.not_sensed, 1);
+        assert_eq!(health.days_with_backlog, 1);
+    }
+
+    #[test]
+    fn backlog_health_increments_days_with_backlog_for_sense_only_day() {
+        let temporary = temporary();
+        let root = temporary.path();
+        let day = "20260409";
+        let segment = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(segment.join("screen.jsonl"), "{}\n").unwrap();
+        let health = build_segment_backlog_health(
+            root,
+            now(),
+            DisplayPowersaveReading::UNAVAILABLE,
+            false,
+            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(health.not_sensed, 1);
+        assert_eq!(health.not_thought, 0);
+        assert_eq!(health.days_with_backlog, 1);
+    }
+
+    #[test]
+    fn backlog_health_sense_complete_thinking_outstanding_contributes_zero_to_sense_half() {
+        let temporary = temporary();
+        let root = temporary.path();
+        let day = "20260409";
+        screen_segment(root, day, "120000_60");
+        health_log(
+            root,
+            day,
+            &[
+                json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"120000_60","density":"active"}),
+            ],
+        );
+        let health = build_segment_backlog_health(
+            root,
+            now(),
+            DisplayPowersaveReading::UNAVAILABLE,
+            false,
+            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(health.not_sensed, 0);
+        assert_eq!(health.not_thought, 1);
+        assert_eq!(health.days_with_backlog, 1);
+    }
+
+    #[test]
+    fn backlog_health_counts_day_with_both_outstanding_once() {
+        let temporary = temporary();
+        let root = temporary.path();
+        let day = "20260409";
+        let segment1 = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(&segment1).unwrap();
+        fs::write(segment1.join("screen.jsonl"), "{}\n").unwrap();
+        screen_segment(root, day, "130000_60");
+        health_log(
+            root,
+            day,
+            &[
+                json!({"event":"sense.complete","ts":1,"mode":"segment","stream":"_default","segment":"130000_60","density":"active"}),
+            ],
+        );
+        let health = build_segment_backlog_health(
+            root,
+            now(),
+            DisplayPowersaveReading::UNAVAILABLE,
+            false,
+            NaiveTime::from_hms_opt(3, 0, 0).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(health.not_sensed, 1);
+        assert_eq!(health.not_thought, 1);
+        assert_eq!(health.days_with_backlog, 1);
     }
 }
