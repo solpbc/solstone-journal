@@ -3487,6 +3487,6 @@ mod tests {
         };
         assert_eq!(input.sense_pending_queue_depth, Some(7));
         assert_eq!(input.sense_pending_age_ms, Some(3000));
-        assert_eq!(input.sense_pending_received, true);
+        assert!(input.sense_pending_received);
     }
 }
