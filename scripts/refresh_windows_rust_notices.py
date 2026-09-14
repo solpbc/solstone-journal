@@ -14,7 +14,7 @@ one case where it is cheap and safe: the external (non-workspace) dependency
 population is unchanged, so the archive can be rebuilt by copying every
 vendored member across untouched and substituting only `Cargo.lock` itself.
 
-It handles one further case, and only one: a **git-source pin move**, where
+It handles two further cases. The first is a **git-source pin move**, where
 the set of external packages is unchanged by `(name, version)` and the rows
 that differ are all `git+` sources. That is the shape of advancing a first-party
 library tag. It cannot be member-preserved -- the vendored bytes genuinely
@@ -23,14 +23,25 @@ substitutes only the members that actually moved, after proving that the
 vendored member *set* is identical and that every other member is byte-for-byte
 unchanged. Supply `--vendor-dir` to reuse a tree you already produced.
 
+The second is a **workspace path-dependency move**, where a workspace member
+gains or loses a path dependency on another workspace member. The archive holds
+vendored EXTERNAL sources plus `Cargo.lock`, so that edge cannot change one
+vendored byte when no external package moved -- and it cannot change a notice
+when it does not move anything in or out of the Windows notice closure, which is
+what the attestation is actually derived from. Both are required, and both are
+checked rather than assumed.
+
 It refuses -- loudly, with the reason -- rather than proceed, when:
   * the external package population changed by `(name, version)` (an add,
     remove, or upgrade). That is a real dependency change and needs licence
     review, not a mechanical refresh.
   * an external row changed source and either side is not a `git+` source.
-  * the resolved dependency/feature graph changed for any reason other than a
-    git revision moving (a feature flag or a dependency edge moved).
-  * a workspace member changed by more than its own version number.
+  * the **Windows notice closure** changed -- the non-dev reach of the Windows
+    inventory binary roots. That is the set the notices are derived from, so a
+    graph difference that moves it needs a fresh acquisition. A graph difference
+    that leaves it untouched does not, and is admitted.
+  * a workspace member changed by more than its own version or its path
+    dependencies on other workspace members.
   * a re-vendored package's licence text changed. The notices file is an input
     here, not an output; a changed licence needs the notices regenerated, which
     this script deliberately does not do.
