@@ -45,14 +45,6 @@ const ANTHROPIC_UNSUPPORTED: &[&str] = &[
 // the whole reason this strip exists: without it the failure is undiagnosable,
 // and a reader who removes the strip gets a 400 they cannot trace back to here.
 
-pub fn unsupported_keyword_hits(schema: Option<&Value>, provider: &str) -> Vec<String> {
-    let mut hits = Vec::new();
-    if let Some(schema) = schema {
-        find_hits(schema, provider_keywords(provider), "$", &mut hits);
-    }
-    hits
-}
-
 /// Reduces only the provider request copy. Canonical response validation still enforces every
 /// stripped bound and annotation, so a Google or Anthropic response that overruns a stripped
 /// `maxItems` or `maxLength` bound still raises on generate or records invalid canonical validation
@@ -97,31 +89,9 @@ mod fallback_tests {
             reduced, schema,
             "an undeclared provider must not be reduced"
         );
-        assert!(unsupported_keyword_hits(Some(&schema), "some-future-provider").is_empty());
-
         // ... while a declared one still is.
         let openai = prepare_provider_schema(Some(&schema), "openai").expect("schema is present");
         assert_ne!(openai, schema, "a declared provider is still reduced");
-    }
-}
-
-fn find_hits(value: &Value, unsupported: &[&str], path: &str, hits: &mut Vec<String>) {
-    match value {
-        Value::Object(values) => {
-            for (key, child) in values {
-                let child_path = format!("{path}/{key}");
-                if unsupported.contains(&key.as_str()) {
-                    hits.push(child_path.clone());
-                }
-                find_hits(child, unsupported, &child_path, hits);
-            }
-        }
-        Value::Array(values) => {
-            for (index, child) in values.iter().enumerate() {
-                find_hits(child, unsupported, &format!("{path}[{index}]"), hits);
-            }
-        }
-        _ => {}
     }
 }
 
@@ -215,18 +185,5 @@ mod tests {
         let reduced = prepare_provider_schema(Some(&schema), "anthropic").unwrap();
         assert!(reduced["properties"]["name"].get("maxLength").is_none());
         assert!(reduced["items"].get("minimum").is_none());
-    }
-
-    #[test]
-    fn unsupported_keyword_hits_reports_nested_paths_and_clean_schemas() {
-        let schema = json!({
-            "properties": {"name": {"minLength": 1}},
-            "items": [{"maximum": 5}],
-        });
-        assert_eq!(
-            unsupported_keyword_hits(Some(&schema), "anthropic"),
-            vec!["$/properties/name/minLength", "$/items[0]/maximum"]
-        );
-        assert!(unsupported_keyword_hits(Some(&json!({"type": "object"})), "anthropic").is_empty());
     }
 }

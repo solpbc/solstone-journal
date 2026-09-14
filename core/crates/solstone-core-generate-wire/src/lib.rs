@@ -60,7 +60,7 @@ pub use responsiveness::{
     NON_RESPONSIVE_RAW_OUTPUT_CAP_CHARS, ResponsivenessSignal, ResponsivenessVerdict,
     classify_output_responsiveness,
 };
-pub use schema_prep::{prepare_provider_schema, unsupported_keyword_hits};
+pub use schema_prep::prepare_provider_schema;
 pub use schema_validation::{SchemaValidationResult, validate_schema_with_annotations};
 pub use session::{SessionConfig, SessionHost, SessionOutcome, run_session};
 pub use token_budget::generate_token_budget;
