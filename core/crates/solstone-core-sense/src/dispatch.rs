@@ -443,7 +443,13 @@ impl SenseDispatcher {
             if state.segments.contains_key(&context.key) {
                 return;
             }
-            if !state.day_leases.contains_key(&context.key.day) {
+            // A batch walk already holds this day's lease for its whole run
+            // (`batch.rs` takes it before scanning). Taking it again here
+            // through a second descriptor contends with our own process and
+            // would silently drop every batch segment, so only the live
+            // service path admits per day; a repair batch and live sensing
+            // still exclude each other through the batch-level lease.
+            if !batch && !state.day_leases.contains_key(&context.key.day) {
                 match crate::lease::acquire_sense_day_lease(&self.journal, &context.key.day) {
                     Ok(Some(lease)) => {
                         state.day_leases.insert(context.key.day.clone(), lease);
@@ -1158,6 +1164,65 @@ mod tests {
                 ("files".into(), json!(["ignored.txt"])),
             ]),
         }
+    }
+
+    #[test]
+    fn batch_segments_admit_while_the_batch_owner_holds_the_day_lease() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let held = crate::lease::acquire_sense_day_lease(temp.path(), "20260812")
+            .expect("lease acquire")
+            .expect("lease is free");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/bin/nonexistent"),
+            }),
+            BatchContext::default(),
+            None,
+        );
+        let mut live = observing("stream1", "120000_1");
+        live.extra.insert("files".into(), json!([]));
+        let mut batch = observing("stream1", "130000_1");
+        batch.extra.insert("files".into(), json!([]));
+        batch.extra.insert("batch".into(), json!(true));
+
+        // The live path contends with the held lease and admits nothing.
+        dispatcher.handle(&live);
+        assert!(
+            receiver.try_recv().is_err(),
+            "live segment must not admit under a held day lease"
+        );
+        assert!(
+            !dispatcher
+                .state
+                .lock()
+                .unwrap()
+                .day_leases
+                .contains_key("20260812")
+        );
+
+        // The batch path is the lease owner and completes its segment.
+        dispatcher.handle(&batch);
+        let event = receiver
+            .try_recv()
+            .expect("batch segment completes with an observed event");
+        assert_eq!(event.event, "observed");
+        assert_eq!(event.fields.get("segment"), Some(&json!("130000_1")));
+        assert!(
+            !dispatcher
+                .state
+                .lock()
+                .unwrap()
+                .day_leases
+                .contains_key("20260812")
+        );
+        drop(held);
+        assert!(dispatcher.stop_and_wait());
     }
 
     #[test]
