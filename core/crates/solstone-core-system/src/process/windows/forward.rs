@@ -16,6 +16,65 @@ use super::launch_control::{
 };
 use crate::process::SERVICE_SHUTDOWN_TIMEOUT;
 
+/// Console session-end events (logoff, shutdown, console close) reach every
+/// console process in the session, this forwarder included. Without a handler
+/// the default one exits immediately, which closes the kill-on-close Job and
+/// terminates the resident before it can clear its readiness and identity.
+/// This handler instead latches a stop request for the forwarding loop and
+/// never returns, exactly as tokio's Windows handler does for these three
+/// events, so the system's own session-end grace is spent draining the tree.
+mod session_end {
+    use std::io;
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::time::Duration;
+
+    use windows_sys::Win32::Foundation::BOOL;
+    use windows_sys::Win32::System::Console::{
+        CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, SetConsoleCtrlHandler,
+    };
+
+    static REQUESTED: AtomicBool = AtomicBool::new(false);
+    static INSTALLED: OnceLock<io::Result<()>> = OnceLock::new();
+
+    #[allow(unsafe_code)]
+    unsafe extern "system" fn handler(control_type: u32) -> BOOL {
+        match control_type {
+            CTRL_CLOSE_EVENT | CTRL_LOGOFF_EVENT | CTRL_SHUTDOWN_EVENT => {
+                REQUESTED.store(true, Ordering::SeqCst);
+                // Returning hands the process to the system for termination.
+                // The forwarding loop finishes the tree and exits the process.
+                loop {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            }
+            _ => 0,
+        }
+    }
+
+    /// Install once per process; a later failure is reported, never retried.
+    pub(super) fn install() -> io::Result<()> {
+        INSTALLED
+            .get_or_init(|| {
+                // SAFETY: `handler` is a valid `HandlerRoutine` for the life of
+                // the process and is never removed.
+                #[allow(unsafe_code)]
+                if unsafe { SetConsoleCtrlHandler(Some(handler), 1) } == 0 {
+                    Err(io::Error::last_os_error())
+                } else {
+                    Ok(())
+                }
+            })
+            .as_ref()
+            .map(|()| ())
+            .map_err(|error| io::Error::new(error.kind(), error.to_string()))
+    }
+
+    pub(super) fn requested() -> bool {
+        REQUESTED.load(Ordering::SeqCst)
+    }
+}
+
 /// Run a native sibling with the current standard handles and retain its Job
 /// until the entire owned tree is quiescent. An admitted CLI hop reissues its
 /// exact provenance, grants and latched stop through a fresh launch transaction.
@@ -75,6 +134,9 @@ fn forward(
     }
     let reservation = Reservation::track_until(Instant::now() + JOB_HARD_STOP_TIMEOUT)
         .map_err(io::Error::other)?;
+    // Best effort: a forwarder that cannot register still forwards; it merely
+    // keeps the pre-existing immediate-exit behavior at session end.
+    let _ = session_end::install();
     let mut owner = match launch_windows_forwarder(&command, &environment) {
         Ok(owner) => owner,
         Err(failure) => {
@@ -110,6 +172,15 @@ fn forward(
                     )?;
                     stop_deadline = Some(Instant::now() + SERVICE_SHUTDOWN_TIMEOUT);
                 }
+            }
+            if session_end::requested() && stop_deadline.is_none() {
+                // Session end: ask the child to stop, then bound the drain.
+                // An installed resident also receives the same console event
+                // itself and clears its lifecycle artifacts on the way out.
+                if let Some(stop) = stop.as_ref() {
+                    signal_stop(stop)?;
+                }
+                stop_deadline = Some(Instant::now() + SERVICE_SHUTDOWN_TIMEOUT);
             }
             if stop_deadline.is_some_and(|deadline| Instant::now() >= deadline) {
                 return owner.hard_stop_until(Instant::now() + JOB_HARD_STOP_TIMEOUT);

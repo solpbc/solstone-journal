@@ -6,6 +6,7 @@ mod config;
 mod host;
 pub mod receipt;
 mod runtime;
+pub(crate) use runtime::AppService;
 mod shutdown;
 mod tick;
 

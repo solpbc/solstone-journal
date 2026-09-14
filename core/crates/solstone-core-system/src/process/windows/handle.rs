@@ -103,6 +103,10 @@ semantic_handle!(
     PipeEndHandle,
     "An owning endpoint of an anonymous stdio pipe."
 );
+semantic_handle!(
+    MemberProcessHandle,
+    "A SYNCHRONIZE-only handle to a Job member retained across a hard stop."
+);
 
 impl PrimaryThreadHandle {
     #[cfg(windows)]

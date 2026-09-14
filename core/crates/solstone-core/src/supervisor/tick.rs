@@ -69,6 +69,16 @@ pub(crate) struct ShutdownSignals {
     terminate: tokio::signal::unix::Signal,
     #[cfg(unix)]
     interrupt: tokio::signal::unix::Signal,
+    #[cfg(windows)]
+    ctrl_c: tokio::signal::windows::CtrlC,
+    #[cfg(windows)]
+    ctrl_break: tokio::signal::windows::CtrlBreak,
+    #[cfg(windows)]
+    ctrl_close: tokio::signal::windows::CtrlClose,
+    #[cfg(windows)]
+    ctrl_logoff: tokio::signal::windows::CtrlLogoff,
+    #[cfg(windows)]
+    ctrl_shutdown: tokio::signal::windows::CtrlShutdown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +115,25 @@ impl ShutdownSignals {
                 interrupt: signal(SignalKind::interrupt()).map_err(|error| error.to_string())?,
             })
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            // Logoff, shutdown and console close are the Windows session-end
+            // events. tokio's handler deliberately never returns for those
+            // three, which keeps this process alive while the standard
+            // shutdown clears readiness, identity and children; the system
+            // terminates the process after its own session-end grace.
+            use tokio::signal::windows::{
+                ctrl_break, ctrl_c, ctrl_close, ctrl_logoff, ctrl_shutdown,
+            };
+            Ok(Self {
+                ctrl_c: ctrl_c().map_err(|error| error.to_string())?,
+                ctrl_break: ctrl_break().map_err(|error| error.to_string())?,
+                ctrl_close: ctrl_close().map_err(|error| error.to_string())?,
+                ctrl_logoff: ctrl_logoff().map_err(|error| error.to_string())?,
+                ctrl_shutdown: ctrl_shutdown().map_err(|error| error.to_string())?,
+            })
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             Ok(Self {})
         }
@@ -117,7 +145,15 @@ impl ShutdownSignals {
             _ = self.terminate.recv() => SupervisorSignal::SigTerm,
             _ = self.interrupt.recv() => SupervisorSignal::SigInt,
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        tokio::select! {
+            _ = self.ctrl_c.recv() => SupervisorSignal::SigInt,
+            _ = self.ctrl_break.recv() => SupervisorSignal::SigInt,
+            _ = self.ctrl_close.recv() => SupervisorSignal::SigTerm,
+            _ = self.ctrl_logoff.recv() => SupervisorSignal::SigTerm,
+            _ = self.ctrl_shutdown.recv() => SupervisorSignal::SigTerm,
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = tokio::signal::ctrl_c().await;
             SupervisorSignal::SigInt

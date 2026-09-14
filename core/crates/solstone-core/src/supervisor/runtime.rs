@@ -307,6 +307,16 @@ pub(crate) enum AppService {
 }
 
 impl AppService {
+    /// Every hosted app service the supervisor can own; the public stop
+    /// deadline is derived from this count.
+    pub(crate) const ALL: [Self; 5] = [
+        Self::Convey,
+        Self::Sense,
+        Self::Cortex,
+        Self::Spl,
+        Self::Mcp,
+    ];
+
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
             Self::Convey => "convey",
