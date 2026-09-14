@@ -35,7 +35,7 @@ const READY_TIMEOUT: Duration = Duration::from_secs(120);
 /// still in progress was reported as a failed stop.
 const STOP_TIMEOUT: Duration = Duration::from_secs(
     solstone_core_system::lifecycle::standard_shutdown_ceiling(
-        crate::supervisor::AppService::ALL.len(),
+        crate::supervisor::HOSTED_APP_SERVICE_COUNT,
     )
     .as_secs()
         + 15,
