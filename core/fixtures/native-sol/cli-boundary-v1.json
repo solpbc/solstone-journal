@@ -249,6 +249,7 @@
         "news write"
       ],
       "service_commands": [
+        "backfill-facet-ids",
         "backfill-processing-records",
         "backup",
         "brain",

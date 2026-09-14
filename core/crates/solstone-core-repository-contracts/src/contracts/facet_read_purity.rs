@@ -20,7 +20,7 @@ impl ForbiddenIdentVisitor {
 
     fn record_forbidden_identifier(&mut self, raw: &str) {
         let normalized = raw.strip_prefix("r#").unwrap_or(raw);
-        if self.forbidden.iter().any(|&f| f == normalized) {
+        if self.forbidden.contains(&normalized) {
             self.hits.push(normalized.to_owned());
         }
     }
