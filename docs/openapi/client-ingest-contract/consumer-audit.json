@@ -9,7 +9,7 @@
       "consumer": "solstone-linux"
     },
     {
-      "commit": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
+      "commit": "f276076e3554c75d75cbd3616644f46d831c0d90",
       "consumer": "solstone-windows"
     }
   ],
@@ -93,50 +93,6 @@
       "source_files": [
         "crates/solstone-linux/src/upload.rs"
       ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-windows",
-      "legacy_surface": "observer_v2_register",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "source_files": [
-        "crates/observer-pl/src/lib.rs",
-        "crates/observer-pl/src/wire.rs"
-      ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-windows",
-      "legacy_surface": "observer_ingest_v2_upload",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "source_files": [
-        "crates/observer-pl/src/lib.rs",
-        "crates/observer-pl/src/wire.rs"
-      ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-windows",
-      "legacy_surface": "observer_ingest_v2_event",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "source_files": [
-        "crates/observer-pl/src/lib.rs",
-        "crates/observer-pl/src/wire.rs"
-      ]
-    },
-    {
-      "classification": "legacy_v2_unmigrated",
-      "consumer": "solstone-windows",
-      "legacy_surface": "observer_ingest_v2_segments",
-      "rationale": "Pinned revision calls a legacy v2 capability and is not verified against the linked-device v3 ingest surface.",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
-      "source_files": [
-        "crates/observer-pl/src/lib.rs",
-        "crates/observer-pl/src/wire.rs"
-      ]
     }
   ],
   "schema": "solstone.client-ingest-contract-consumer-audit.v2",
@@ -155,14 +111,14 @@
     },
     {
       "consumer": "solstone-windows",
-      "path": "crates/observer-pl/src/lib.rs",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
+      "path": "crates/pl-transport-win/src/client.rs",
+      "revision": "f276076e3554c75d75cbd3616644f46d831c0d90",
       "role": "production"
     },
     {
       "consumer": "solstone-windows",
-      "path": "crates/observer-pl/src/wire.rs",
-      "revision": "19c972c4fea775176cea6421ac8b87f3bb20ab42",
+      "path": "crates/pl-transport-win/src/coordinator.rs",
+      "revision": "f276076e3554c75d75cbd3616644f46d831c0d90",
       "role": "production"
     }
   ],
