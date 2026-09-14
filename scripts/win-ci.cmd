@@ -127,10 +127,10 @@ call :run_source_marked_target "journal-io create-only publication protocol" "so
 call :run_source_marked_target "journal-io install-file publication" "solstone-core-journal-io" "windows_install_file" "" "journal_win_ci_windows_install_file_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE" || exit /b 1
 echo === cargo test --locked (journal-io install-file publication protocol) ===
 set "JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG=core\target\journal-win-ci-install-protocol-%RANDOM%%RANDOM%.log"
-cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --nocapture > "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" 2>&1
-if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --show-output > "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" 2>&1
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" & del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )
 powershell -NoProfile -Command "$text = [IO.File]::ReadAllText($env:JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG); $marker = 'JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL'; $pass = [regex]::Escape($marker + '=admission/retry/sharing/reconciliation/cleanup/uncertainty/pass'); if ([regex]::Matches($text, '(?m)^' + [regex]::Escape($marker) + '=.*\r?$').Count -eq 1 -and [regex]::Matches($text, '(?m)^' + $pass + '\r?$').Count -eq 1) { exit 0 }; exit 1"
-if not "%ERRORLEVEL%"=="0" ( del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )
+if not "%ERRORLEVEL%"=="0" ( type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" & del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )
 type "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%"
 del /q "%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%" >nul 2>&1
 call :run_source_marker "journal-io install-file publication protocol" "solstone-core-journal-io" "windows_install_file_protocol" "test-hooks" "journal_win_ci_windows_install_file_protocol_marker" "JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL" || exit /b 1

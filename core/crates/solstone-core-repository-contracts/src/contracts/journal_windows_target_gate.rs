@@ -392,10 +392,10 @@ fn native_foundation_targets_run_before_source_markers_and_are_host_required() {
         "feature-qualified full-target execution must precede its marker"
     );
 
-    let install_target = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --nocapture > \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" 2>&1";
-    let install_target_guard = "if not \"%ERRORLEVEL%\"==\"0\" ( del /q \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )";
+    let install_target = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core-journal-io --test windows_install_file_protocol --features test-hooks -- --show-output > \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" 2>&1";
+    let install_target_guard = "if not \"%ERRORLEVEL%\"==\"0\" ( type \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" & del /q \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" >nul 2>&1 & echo ERROR: journal-io install-file publication protocol failed & exit /b 1 )";
     let install_receipt = "$marker = 'JOURNAL_WIN_CI_INSTALL_FILE_PROTOCOL';";
-    let install_receipt_guard = "if not \"%ERRORLEVEL%\"==\"0\" ( del /q \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )";
+    let install_receipt_guard = "if not \"%ERRORLEVEL%\"==\"0\" ( type \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" & del /q \"%JOURNAL_WIN_CI_INSTALL_PROTOCOL_LOG%\" >nul 2>&1 & echo ERROR: journal-io install-file protocol did not emit exactly one source-originated pass marker & exit /b 1 )";
     let install_marker = "call :run_source_marker \"journal-io install-file publication protocol\" \"solstone-core-journal-io\" \"windows_install_file_protocol\" \"test-hooks\" \"journal_win_ci_windows_install_file_protocol_marker\" \"JOURNAL_WIN_CI_TARGET_WINDOWS_INSTALL_FILE_PROTOCOL\" || exit /b 1";
     for command in [
         install_target,
