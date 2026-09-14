@@ -92,6 +92,7 @@ and remote-network boundary, not a defense against malware already running as th
 | `described` | describe | Vision analysis complete |
 | `transcribed` | transcribe | Audio transcription complete (includes VAD metadata) |
 | `observed` | sense | All files for segment fully processed (may include errors) |
+| `interrupted` | sense | Segment processing interrupted during graceful shutdown |
 | `memory_throttle_started` | sense | Handler waiting for memory headroom |
 | `memory_throttle_completed` | sense | Handler admitted or stopped after memory throttle |
 
@@ -101,6 +102,11 @@ and remote-network boundary, not a defense against malware already running as th
 - `source` (str): Client-supplied source selected with `cid` when binding the native stream.
 - `meta` (dict, optional): Metadata dict from the ingest request. Contains any client-provided fields (e.g., `facet`, `setting`). Passed to handlers via `SEGMENT_META` env var and unrolled into JSONL metadata headers.
 - `stream` (str, optional): Native stream name identifying the segment source.
+
+**`interrupted` event fields:**
+- `reason` (str): Reason for interruption (`"shutdown"`)
+- `handlers` (list[str]): Array of unfinished handler names
+- `day` (str), `segment` (str), `stream` (str, optional)
 
 **`observed` event fields:**
 - `stream` (str, optional): Stream name, forwarded from the originating `observing` event.

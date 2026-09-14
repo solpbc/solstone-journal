@@ -22,6 +22,7 @@ use crate::config::{
     resolve_max_runtime,
 };
 use crate::events;
+use crate::log;
 use crate::memory::{Admission, SystemMemoryProbe};
 use crate::registry::{
     DispatcherResolveError, HandlerSpec, command_for, default_registry, match_handler,
@@ -565,6 +566,62 @@ impl SenseDispatcher {
     /// Returns whether every worker and cleanup thread joined without panic.
     pub fn stop_and_wait(&self) -> bool {
         self.stop();
+        let pending_by_segment = {
+            let state = self.state.lock().expect("sense state");
+            let mut grouped: HashMap<PathBuf, (String, String, Option<String>, Vec<String>)> =
+                HashMap::new();
+            for (handler, file_path) in &state.pending_files {
+                let Some(dir) = file_path.parent() else {
+                    continue;
+                };
+                let dir_buf = dir.to_path_buf();
+                let key_opt = state.segments.keys().find(|k| {
+                    segment_dir(&self.journal, &k.day, k.stream.as_deref(), &k.segment) == dir_buf
+                });
+                if let Some(key) = key_opt {
+                    let entry = grouped.entry(dir_buf).or_insert_with(|| {
+                        (
+                            key.day.clone(),
+                            key.segment.clone(),
+                            key.stream.clone(),
+                            Vec::new(),
+                        )
+                    });
+                    if !entry.3.contains(handler) {
+                        entry.3.push(handler.clone());
+                    }
+                }
+            }
+            grouped
+        };
+        for (dir, (day, segment, stream, mut handlers)) in pending_by_segment {
+            handlers.sort();
+            if dir.is_dir() {
+                let mut extra = serde_json::Map::new();
+                extra.insert("day".into(), json!(day));
+                extra.insert("segment".into(), json!(segment));
+                if let Some(stream) = stream {
+                    extra.insert("stream".into(), json!(stream));
+                }
+                extra.insert("handlers".into(), json!(handlers));
+                extra.insert("reason".into(), json!("shutdown"));
+                let envelope = solstone_core_callosum::CallosumEnvelope {
+                    tract: "observe".to_string(),
+                    event: "interrupted".to_string(),
+                    ts: Some(chrono::Utc::now().timestamp_millis()),
+                    extra,
+                };
+                if let Err(error) = solstone_core_callosum::append_durable_event(
+                    &dir,
+                    &solstone_core_callosum::DurableEvent::Callosum(envelope),
+                ) {
+                    log::warn!(
+                        "failed to record observe.interrupted event to {}: {error}",
+                        dir.display()
+                    );
+                }
+            }
+        }
         self.join_workers()
     }
 
@@ -1603,4 +1660,183 @@ mod tests {
         assert!(ran >= 1);
     }
 
+    #[test]
+    fn stop_and_wait_records_observe_interrupted_event_to_uncompleted_segment() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let seg_dir = temp.path().join("chronicle/20260812/stream1/120000_1");
+        std::fs::create_dir_all(&seg_dir).expect("segment dir");
+        let (outbound, _receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/bin/nonexistent"),
+            }),
+            BatchContext::default(),
+            None,
+        );
+
+        let key = SegmentKey {
+            day: "20260812".into(),
+            stream: Some("stream1".into()),
+            segment: "120000_1".into(),
+        };
+        let context = SegmentContext {
+            key: key.clone(),
+            cid: None,
+            source: None,
+            batch: false,
+            meta: None,
+        };
+        let mut seg_state = SegmentState::new(context);
+        let audio_path = seg_dir.join("test.wav");
+        seg_state.pending.insert(audio_path.clone());
+        {
+            let mut state = dispatcher.state.lock().unwrap();
+            state
+                .pending_files
+                .insert(("transcribe".into(), audio_path));
+            state.segments.insert(key, seg_state);
+        }
+
+        dispatcher.stop_and_wait();
+
+        let events_path = seg_dir.join("events.jsonl");
+        assert!(events_path.exists());
+        let contents = std::fs::read_to_string(events_path).expect("read events.jsonl");
+        assert!(contents.contains("\"tract\":\"observe\""));
+        assert!(contents.contains("\"event\":\"interrupted\""));
+        assert!(contents.contains("\"reason\":\"shutdown\""));
+        assert!(contents.contains("\"handlers\":[\"transcribe\"]"));
+    }
+
+    #[test]
+    fn sense_dispatcher_interruption_ignores_completed_and_unobserved_segments() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let completed_dir = temp.path().join("chronicle/20260812/stream1/120000_1");
+        let unobserved_dir = temp.path().join("chronicle/20260812/stream1/130000_1");
+        std::fs::create_dir_all(&completed_dir).expect("completed dir");
+        std::fs::create_dir_all(&unobserved_dir).expect("unobserved dir");
+
+        let (outbound, _receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/bin/nonexistent"),
+            }),
+            BatchContext::default(),
+            None,
+        );
+
+        let key = SegmentKey {
+            day: "20260812".into(),
+            stream: Some("stream1".into()),
+            segment: "120000_1".into(),
+        };
+        let context = SegmentContext {
+            key: key.clone(),
+            cid: None,
+            source: None,
+            batch: false,
+            meta: None,
+        };
+        let mut seg_state = SegmentState::new(context);
+        let audio_path = completed_dir.join("test.wav");
+        seg_state.pending.insert(audio_path.clone());
+        {
+            let mut state = dispatcher.state.lock().unwrap();
+            state
+                .pending_files
+                .insert(("transcribe".into(), audio_path.clone()));
+            state.segments.insert(key.clone(), seg_state);
+        }
+
+        complete(
+            &dispatcher.state,
+            &dispatcher.outbound,
+            temp.path(),
+            &key,
+            Some(&audio_path),
+            None,
+            None,
+            BatchMarkerPolicy::AdvanceStream,
+        );
+
+        dispatcher.stop_and_wait();
+
+        let completed_events = completed_dir.join("events.jsonl");
+        if completed_events.exists() {
+            let contents = std::fs::read_to_string(completed_events).unwrap();
+            assert!(!contents.contains("\"event\":\"interrupted\""));
+        }
+        let unobserved_events = unobserved_dir.join("events.jsonl");
+        assert!(!unobserved_events.exists());
+    }
+
+    #[test]
+    fn sense_dispatcher_interruption_cost_under_shutdown_timeout() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let (outbound, _receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/bin/nonexistent"),
+            }),
+            BatchContext::default(),
+            None,
+        );
+
+        let segment_count = 256;
+        {
+            let mut state = dispatcher.state.lock().unwrap();
+            for i in 0..segment_count {
+                let seg_name = format!("12{:04}_1", i);
+                let seg_dir = temp.path().join("chronicle/20260812").join(&seg_name);
+                std::fs::create_dir_all(&seg_dir).expect("create seg dir");
+                let key = SegmentKey {
+                    day: "20260812".into(),
+                    stream: None,
+                    segment: seg_name,
+                };
+                let context = SegmentContext {
+                    key: key.clone(),
+                    cid: None,
+                    source: None,
+                    batch: false,
+                    meta: None,
+                };
+                let mut seg_state = SegmentState::new(context);
+                let audio_path = seg_dir.join("audio.wav");
+                let video_path = seg_dir.join("video.mp4");
+                seg_state.pending.insert(audio_path.clone());
+                seg_state.pending.insert(video_path.clone());
+                state
+                    .pending_files
+                    .insert(("transcribe".into(), audio_path));
+                state.pending_files.insert(("describe".into(), video_path));
+                state.segments.insert(key, seg_state);
+            }
+        }
+
+        let start = std::time::Instant::now();
+        dispatcher.stop_and_wait();
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed < SERVICE_SHUTDOWN_TIMEOUT,
+            "interruption cost ({:?}) must be well under shutdown timeout ({:?})",
+            elapsed,
+            SERVICE_SHUTDOWN_TIMEOUT
+        );
+    }
 }
