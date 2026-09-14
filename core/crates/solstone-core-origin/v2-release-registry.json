@@ -20,6 +20,11 @@
       "version": "2.0.4",
       "logical_target": "software/journal/2.0.4/release-record.json",
       "record_sha256": "bb342dd13d7d8d2a4de5475422bf9672f7c55c853d22bf4170e0bd2903c9302d"
+    },
+    {
+      "version": "2.0.5",
+      "logical_target": "software/journal/2.0.5/release-record.json",
+      "record_sha256": "8b84d812a8a26f2a7a2fe108bd64b44d458f5493d71ad607cbb38645ac93e759"
     }
   ]
 }
