@@ -23,8 +23,8 @@ use solstone_core_processing_record::{
 use thiserror::Error;
 
 use crate::config::{read_config, resolve_concurrency};
-use crate::log;
 use crate::dispatch::{BatchMarkerPolicy, Outbound, SenseDispatcher};
+use crate::log;
 
 /// Existing output classes that can be deleted before a batch reprocess.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
