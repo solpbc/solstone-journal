@@ -100,7 +100,7 @@ pub use readiness::{readiness_is_valid, wait_ready};
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
 pub use shutdown::{
     ArtifactClearOutcome, ShutdownDisposition, ShutdownDriver, ShutdownOutcome, ShutdownPhase,
-    ShutdownRegime, ShutdownReport, shutdown,
+    ShutdownRegime, ShutdownReport, shutdown, standard_shutdown_ceiling,
 };
 #[cfg(unix)]
 pub use startup::{

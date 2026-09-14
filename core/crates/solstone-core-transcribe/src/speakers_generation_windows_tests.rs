@@ -45,10 +45,12 @@ fn windows_generation_cleanup_bag_receipt() {
             SpeakersAnalyzeOwnerRole::Maintenance,
             None,
         )
-        .is_err_and(|error| error
-            .message()
-            .is_some_and(|message| message.starts_with("generation-lease-contended:"))),
-        "ordinary unrelated maintenance root must refuse a live holder"
+        .is_err_and(|error| error.message().is_some_and(|message| {
+            message.starts_with("generation-lease-contended:")
+                && message.contains("owner_role=convey")
+                && message.contains(&format!("owner_pid={}", std::process::id()))
+        })),
+        "ordinary unrelated maintenance root must refuse a live holder and name it"
     );
 
     let weak = Arc::downgrade(&generation);

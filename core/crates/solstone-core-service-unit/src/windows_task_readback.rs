@@ -375,6 +375,46 @@ mod tests {
     }
 
     #[test]
+    fn raw_scheduler_readback_needs_native_normalization_before_this_parser() {
+        // Live Task Scheduler readback embeds the registration ACL and spells the
+        // logon-trigger principal as an account name. The COM transport validates
+        // both natively and produces the normalized profile this parser accepts;
+        // the raw text itself must stay refused, so a saved artifact has to be
+        // the normalized profile rather than the raw readback.
+        let source = xml();
+        let raw = source
+            .replace(
+                "<RegistrationInfo>",
+                "<RegistrationInfo><SecurityDescriptor>O:S-1-5-21-1-2-3-1001G:S-1-5-21-1-2-3-1001D:PAI(A;;FA;;;S-1-5-21-1-2-3-1001)(A;;FA;;;SY)(A;;FA;;;BA)</SecurityDescriptor>",
+            )
+            .replace(
+                "<LogonTrigger>\n      <UserId>S-1-5-21-1-2-3-1001</UserId>",
+                "<LogonTrigger>\n      <UserId>HOST\\owner</UserId>",
+            );
+        assert_ne!(
+            raw, source,
+            "fixture must exercise both raw-readback spellings"
+        );
+        assert!(parse_windows_task_xml(&raw).is_err());
+        let descriptor_only = source.replace(
+            "<RegistrationInfo>",
+            "<RegistrationInfo><SecurityDescriptor>O:S-1-5-21-1-2-3-1001</SecurityDescriptor>",
+        );
+        assert!(parse_windows_task_xml(&descriptor_only).is_err());
+        let account_only = source.replace(
+            "<LogonTrigger>\n      <UserId>S-1-5-21-1-2-3-1001</UserId>",
+            "<LogonTrigger>\n      <UserId>HOST\\owner</UserId>",
+        );
+        assert!(parse_windows_task_xml(&account_only).is_err());
+        // The normalized form round-trips through the saved-artifact encoding.
+        let saved = encode_windows_task_xml(&source).unwrap();
+        assert_eq!(
+            parse_windows_task_xml(&decode_windows_task_xml(&saved).unwrap()),
+            parse_windows_task_xml(&source)
+        );
+    }
+
+    #[test]
     fn accepts_scheduler_omitted_profile_defaults() {
         let source = xml();
         // Observed together in native Task Scheduler readback. Owner-name

@@ -109,13 +109,32 @@ fn shutdown_app_supervised(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
     )
 }
 
+const STANDARD_REAP_TIMEOUT: Duration = Duration::from_secs(3);
+const STANDARD_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+const STANDARD_BUS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Worst-case wall clock a standard-regime shutdown can spend before the
+/// supervisor process exits: every phase cap, with each hosted child allowed
+/// its full termination grace in turn, since children are stopped one after
+/// another. A controller that waits for the supervisor to exit must allow at
+/// least this long before calling its cleanup unverified.
+pub const fn standard_shutdown_ceiling(hosted_children: usize) -> Duration {
+    Duration::from_secs(
+        STANDARD_REAP_TIMEOUT.as_secs()
+            + STANDARD_DRAIN_TIMEOUT.as_secs()
+            + crate::process::SERVICE_SHUTDOWN_TIMEOUT.as_secs() * hosted_children as u64
+            + CHILD_STOP_TIMEOUT.as_secs()
+            + STANDARD_BUS_JOIN_TIMEOUT.as_secs(),
+    )
+}
+
 fn shutdown_standard(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
     run_shutdown(
         driver,
-        Duration::from_secs(3),
-        Duration::from_secs(10),
+        STANDARD_REAP_TIMEOUT,
+        STANDARD_DRAIN_TIMEOUT,
         Some(CHILD_STOP_TIMEOUT),
-        Duration::from_secs(5),
+        STANDARD_BUS_JOIN_TIMEOUT,
     )
 }
 

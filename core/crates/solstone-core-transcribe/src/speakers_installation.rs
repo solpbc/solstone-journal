@@ -344,6 +344,9 @@ pub fn enter_speakers_analyze_generation(
         OWNER_WRITE_OPTIONS,
     )
     .map_err(|error| installation_error(format!("generation-record: {error}")))?;
+    // Observability only: a later contended root names this owner exactly as
+    // the Unix path does. Never consulted for admission.
+    let _ = write_owner_record(journal, role, &id);
     // The reduced-rights duplicate retains the same exclusive file object after
     // this local writable handle closes; there is no explicit unlock on Drop.
     drop(file);
@@ -504,9 +507,16 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
     if record.get("schema").and_then(Value::as_str) != Some(INSTALL_GENERATION_SCHEMA) {
         return None;
     }
-    let current_token = fs::read_to_string(generation_lock_path(journal)).ok()?;
-    if record.get("token").and_then(Value::as_str) != Some(current_token.as_str()) {
-        return None;
+    // Unix leaves the token readable beside the advisory lease. A Windows root
+    // holds the lock as an exclusive file object, so the token is unreadable
+    // there by design; the record id plus the live owner process identity
+    // below carry the staleness check instead.
+    #[cfg(unix)]
+    {
+        let current_token = fs::read_to_string(generation_lock_path(journal)).ok()?;
+        if record.get("token").and_then(Value::as_str) != Some(current_token.as_str()) {
+            return None;
+        }
     }
     let owner = read_json(owner_path(journal), Value::Null, MalformedPolicy::Skip).ok()?;
     if owner.get("schema").and_then(Value::as_str) != Some(OWNER_SCHEMA) {
@@ -839,7 +849,27 @@ fn generation_lock_path_is_held(path: &Path) -> bool {
             solstone_core_journal_io::lease::LeaseProbe::Active
         )
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+
+        // A live root holds the lock through a share-nothing file object, so
+        // any other data open fails with ERROR_SHARING_VIOLATION (32). A
+        // successful open means nobody holds it; every other error is unknown
+        // and reads as not held, exactly like the Unix probe's open failure.
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .open(path)
+        {
+            Ok(_) => false,
+            Err(error) => error.raw_os_error() == Some(32),
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = path;
         false
