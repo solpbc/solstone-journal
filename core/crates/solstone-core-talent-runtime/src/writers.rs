@@ -66,6 +66,8 @@ pub enum WriteIntent {
         output: String,
         facet: String,
         day: String,
+        served_ids: std::collections::BTreeSet<String>,
+        exclusions: Vec<crate::entities::observer::EntityBudgetExclusion>,
     },
     SpeakerAttribution {
         output: String,
@@ -211,16 +213,29 @@ pub fn apply(
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
-        CommitPlan::Write(WriteIntent::EntityObserver { output, facet, day }) => {
-            crate::entities::observer::apply_result(&context.journal, &output, &facet, &day)
-                .map_err(|detail| {
-                    StageError::new(
-                        "write-intent",
-                        "entities:entity_observer",
-                        "entities:entity_observer",
-                        detail,
-                    )
-                })?;
+        CommitPlan::Write(WriteIntent::EntityObserver {
+            output,
+            facet,
+            day,
+            served_ids,
+            exclusions,
+        }) => {
+            crate::entities::observer::apply_result(
+                &context.journal,
+                &output,
+                &facet,
+                &day,
+                &served_ids,
+                &exclusions,
+            )
+            .map_err(|detail| {
+                StageError::new(
+                    "write-intent",
+                    "entities:entity_observer",
+                    "entities:entity_observer",
+                    detail,
+                )
+            })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::SpeakerAttribution {

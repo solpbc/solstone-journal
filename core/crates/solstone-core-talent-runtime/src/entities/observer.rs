@@ -15,9 +15,28 @@ use crate::{
     ExecutionContext, PreparedTalent, RuntimeOutcome, StageError, apply_template_vars, stage_error,
 };
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntityBudgetExclusion {
+    pub entity_id: String,
+    pub chars: usize,
+}
+
+enum EntityPacketOutcome {
+    Rendered(String),
+    BudgetExcluded(EntityBudgetExclusion),
+}
+
+struct ObserverContextAssembly {
+    context: String,
+    served_ids: BTreeSet<String>,
+    exclusions: Vec<EntityBudgetExclusion>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ObserverState {
-    context: Option<String>,
+    pub context: Option<String>,
+    pub served_ids: BTreeSet<String>,
+    pub exclusions: Vec<EntityBudgetExclusion>,
 }
 
 type Counts = BTreeMap<&'static str, usize>;
@@ -28,6 +47,11 @@ const MAX_SEGMENT_CONTEXT_CHARS: usize = 800;
 const MAX_ENTITY_CONTEXT_CHARS: usize = 3_800;
 const MAX_OBSERVER_CONTEXT_CHARS: usize = 24_000;
 
+#[cfg(test)]
+const HEADER_ALLOWANCE: usize = MAX_OBSERVER_CONTEXT_CHARS
+    - MAX_ACTIVE_ENTITIES * MAX_ENTITY_CONTEXT_CHARS
+    - (MAX_ACTIVE_ENTITIES - 1) * 7;
+
 fn empty_counts() -> Counts {
     BTreeMap::from([
         ("update", 0),
@@ -36,6 +60,8 @@ fn empty_counts() -> Counts {
         ("keep", 0),
         ("skipped", 0),
         ("relation_unresolved", 0),
+        ("excluded", 0),
+        ("unselected", 0),
     ])
 }
 
@@ -44,6 +70,7 @@ fn write_outcome(
     facet: &str,
     day: &str,
     counts: &Counts,
+    exclusions: &[EntityBudgetExclusion],
     error: Option<&str>,
 ) -> Result<(), String> {
     let path = journal
@@ -55,6 +82,20 @@ fn write_outcome(
         counts
             .iter()
             .map(|(name, count)| ((*name).to_owned(), Value::from(*count))),
+    );
+    payload.insert(
+        "exclusions".to_owned(),
+        Value::Array(
+            exclusions
+                .iter()
+                .map(|exclusion| {
+                    json!({
+                        "entity_id": exclusion.entity_id,
+                        "chars": exclusion.chars,
+                    })
+                })
+                .collect(),
+        ),
     );
     payload.insert(
         "error".to_owned(),
@@ -378,21 +419,29 @@ pub fn build(
 ) -> Result<PrePostState, RuntimeOutcome> {
     let facet = prepared.config.get("facet").and_then(Value::as_str);
     let day = prepared.config.get("day").and_then(Value::as_str);
-    let observer_context = match (facet, day) {
-        (Some(facet), Some(day)) if !facet.is_empty() && !day.is_empty() => Some(
-            assemble_observer_context(&context.journal, facet, day).map_err(|detail| {
-                RuntimeOutcome::StageFailed(stage_error(
-                    "build",
-                    "entities:entity_observer",
-                    prepared,
-                    detail,
-                ))
-            })?,
-        ),
+    let (context_str, served_ids, exclusions) = match (facet, day) {
+        (Some(facet), Some(day)) if !facet.is_empty() && !day.is_empty() => {
+            let assembly =
+                assemble_observer_context(&context.journal, facet, day).map_err(|detail| {
+                    RuntimeOutcome::StageFailed(stage_error(
+                        "build",
+                        "entities:entity_observer",
+                        prepared,
+                        detail,
+                    ))
+                })?;
+            (
+                Some(assembly.context),
+                assembly.served_ids,
+                assembly.exclusions,
+            )
+        }
         _ => return Err(skip_missing_scope(prepared)),
     };
     Ok(PrePostState::EntityObserver(ObserverState {
-        context: observer_context,
+        context: context_str,
+        served_ids,
+        exclusions,
     }))
 }
 
@@ -431,7 +480,7 @@ pub fn parse(
 pub fn commit(
     parsed: ParsedOutput,
     prepared: &PreparedTalent,
-    _: &PrePostState,
+    state: &PrePostState,
 ) -> Result<CommitPlan, StageError> {
     let ParsedOutput::Text(output) = parsed else {
         return Err(stage_error(
@@ -441,9 +490,10 @@ pub fn commit(
             "expected text output",
         ));
     };
-    let (Some(facet), Some(day)) = (
+    let (Some(facet), Some(day), PrePostState::EntityObserver(state)) = (
         prepared.config.get("facet").and_then(Value::as_str),
         prepared.config.get("day").and_then(Value::as_str),
+        state,
     ) else {
         return Ok(CommitPlan::NoOutput);
     };
@@ -451,10 +501,19 @@ pub fn commit(
         output,
         facet: facet.to_owned(),
         day: day.to_owned(),
+        served_ids: state.served_ids.clone(),
+        exclusions: state.exclusions.clone(),
     }))
 }
 
-pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Result<(), String> {
+pub fn apply_result(
+    journal: &Path,
+    output: &str,
+    facet: &str,
+    day: &str,
+    served_ids: &BTreeSet<String>,
+    exclusions: &[EntityBudgetExclusion],
+) -> Result<(), String> {
     let mut counts = empty_counts();
     let mut error = None;
     let result = (|| -> Result<(), String> {
@@ -466,9 +525,38 @@ pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Res
         let Some(entries) = data.get("entities").and_then(Value::as_array) else {
             return Err("entities is not a list".to_owned());
         };
-        let (ids, entities) = attached_entities(journal, facet)?;
-        preflight_observation_snapshots(journal, facet, entries, &ids)?;
+        let (attached_ids, entities) = attached_entities(journal, facet)?;
+
+        let mut served_entries = Vec::new();
         for entry in entries {
+            let Some(entry_obj) = entry.as_object() else {
+                continue;
+            };
+            let operations = entry_obj.get("operations").and_then(Value::as_array);
+            let op_len = operations.map_or(0, |ops| ops.len());
+
+            let Some(entity_id) = entry_obj.get("entity_id").and_then(Value::as_str) else {
+                *counts.entry("skipped").or_default() += op_len;
+                continue;
+            };
+            if !attached_ids.iter().any(|id| id == entity_id) {
+                *counts.entry("skipped").or_default() += op_len;
+                continue;
+            }
+            if exclusions.iter().any(|ex| ex.entity_id == entity_id) {
+                *counts.entry("excluded").or_default() += op_len;
+                continue;
+            }
+            if !served_ids.contains(entity_id) {
+                *counts.entry("unselected").or_default() += op_len;
+                continue;
+            }
+            served_entries.push(entry.clone());
+        }
+
+        preflight_observation_snapshots(journal, facet, &served_entries, &attached_ids)?;
+
+        for entry in &served_entries {
             let Some(entry) = entry.as_object() else {
                 continue;
             };
@@ -477,13 +565,8 @@ pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Res
                 continue;
             };
             let Some(entity_id) = entry.get("entity_id").and_then(Value::as_str) else {
-                *counts.entry("skipped").or_default() += operations.len();
                 continue;
             };
-            if !ids.iter().any(|id| id == entity_id) {
-                *counts.entry("skipped").or_default() += operations.len();
-                continue;
-            }
             let mut clean = Vec::new();
             let mut seen = Vec::new();
             let operation_context = OperationContext {
@@ -525,7 +608,7 @@ pub fn apply_result(journal: &Path, output: &str, facet: &str, day: &str) -> Res
     if let Err(detail) = result {
         error = Some(detail);
     }
-    write_outcome(journal, facet, day, &counts, error.as_deref())
+    write_outcome(journal, facet, day, &counts, exclusions, error.as_deref())
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -701,7 +784,7 @@ fn render_entity_packet(
     day: &str,
     entity: &solstone_core_facets::ScopedFacetEntity,
     rows: &[Value],
-) -> Result<String, String> {
+) -> Result<EntityPacketOutcome, String> {
     let name = entity
         .identity
         .get("name")
@@ -830,15 +913,19 @@ fn render_entity_packet(
     let packet = lines.join("\n");
     let packet_chars = packet.chars().count();
     if packet_chars > MAX_ENTITY_CONTEXT_CHARS {
-        return Err(format!(
-            "entity observer context for {} is {packet_chars} characters; maximum is {MAX_ENTITY_CONTEXT_CHARS}",
-            entity.entity_id
-        ));
+        return Ok(EntityPacketOutcome::BudgetExcluded(EntityBudgetExclusion {
+            entity_id: entity.entity_id.clone(),
+            chars: packet_chars,
+        }));
     }
-    Ok(packet)
+    Ok(EntityPacketOutcome::Rendered(packet))
 }
 
-fn assemble_observer_context(journal: &Path, facet: &str, day: &str) -> Result<String, String> {
+fn assemble_observer_context(
+    journal: &Path,
+    facet: &str,
+    day: &str,
+) -> Result<ObserverContextAssembly, String> {
     let scoped = solstone_core_facets::list_scoped_facet_entities(journal, facet, false, false)
         .map_err(|error| error.to_string())?;
     let detected = solstone_core_facets::read_detected_entities_strict(journal, facet, day)
@@ -886,7 +973,11 @@ fn assemble_observer_context(journal: &Path, facet: &str, day: &str) -> Result<S
         }
     }
     if active.is_empty() {
-        return Ok("No active entities found for this day.".to_owned());
+        return Ok(ObserverContextAssembly {
+            context: "No active entities found for this day.".to_owned(),
+            served_ids: BTreeSet::new(),
+            exclusions: Vec::new(),
+        });
     }
     let total = active.len();
     let selected = active
@@ -894,28 +985,50 @@ fn assemble_observer_context(journal: &Path, facet: &str, day: &str) -> Result<S
         .take(MAX_ACTIVE_ENTITIES)
         .collect::<Vec<_>>();
     let mut sections = Vec::with_capacity(selected.len());
+    let mut served_ids = BTreeSet::new();
+    let mut exclusions = Vec::new();
     for (entity, rows) in &selected {
-        sections.push(render_entity_packet(journal, facet, day, entity, rows)?);
+        match render_entity_packet(journal, facet, day, entity, rows)? {
+            EntityPacketOutcome::Rendered(packet) => {
+                served_ids.insert(entity.entity_id.clone());
+                sections.push(packet);
+            }
+            EntityPacketOutcome::BudgetExcluded(exclusion) => {
+                exclusions.push(exclusion);
+            }
+        }
     }
-    let mut context = [
+    let mut header_elements = vec![
         "# Entity Observer Context".to_owned(),
         String::new(),
         format!("## Facet: {facet}"),
         format!("## Day: {day}"),
         format!("## Active Entities: {} of {total} active", sections.len()),
-        String::new(),
-        "### Entities".to_owned(),
-        String::new(),
-    ]
-    .join("\n");
-    context.push_str(&sections.join("\n\n---\n\n"));
+    ];
+    if !exclusions.is_empty() {
+        header_elements.push(format!(
+            "## Budget Exclusions: {} active entities exceeded character budget",
+            exclusions.len()
+        ));
+    }
+    header_elements.extend([String::new(), "### Entities".to_owned(), String::new()]);
+    let mut context = header_elements.join("\n");
+    if sections.is_empty() {
+        context.push_str("All active entities were excluded due to character limits.");
+    } else {
+        context.push_str(&sections.join("\n\n---\n\n"));
+    }
     let context_chars = context.chars().count();
     if context_chars > MAX_OBSERVER_CONTEXT_CHARS {
         return Err(format!(
             "entity observer context is {context_chars} characters; maximum is {MAX_OBSERVER_CONTEXT_CHARS}"
         ));
     }
-    Ok(context)
+    Ok(ObserverContextAssembly {
+        context,
+        served_ids,
+        exclusions,
+    })
 }
 
 // Keep the identifying quote distinct from both the full content and provenance.
@@ -1136,7 +1249,9 @@ mod tests {
         )
         .unwrap();
 
-        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        let context = assemble_observer_context(root.path(), "work", DAY)
+            .unwrap()
+            .context;
         assert!(context.contains("DIRECT_SENTINEL"));
         assert!(!context.contains("COLLIDING_NAMED_SENTINEL"));
         assert!(!context.contains("TRAVERSAL_SENTINEL"));
@@ -1172,7 +1287,9 @@ mod tests {
         )
         .unwrap();
 
-        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        let context = assemble_observer_context(root.path(), "work", DAY)
+            .unwrap()
+            .context;
         assert_eq!(context.matches("SUMMARY_ONE").count(), 1);
         assert_eq!(context.matches("SUMMARY_TWO").count(), 1);
         for sentinel in ["NINE_INCLUDED", "TEN_INCLUDED", "ELEVEN_INCLUDED"] {
@@ -1200,7 +1317,9 @@ mod tests {
         write_source_segment(root.path(), origin, "GRACE_SOURCE", "p", "a", "c");
         save_detection(root.path(), "Grace", "with source", origin);
 
-        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        let context = assemble_observer_context(root.path(), "work", DAY)
+            .unwrap()
+            .context;
         assert!(context.contains("originless summary"));
         assert!(context.contains("no linked source origins"));
         assert!(context.contains("GRACE_SOURCE"));
@@ -1227,7 +1346,9 @@ mod tests {
         )
         .unwrap();
 
-        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        let context = assemble_observer_context(root.path(), "work", DAY)
+            .unwrap()
+            .context;
         assert!(context.contains("summary unavailable"));
         assert!(context.contains("rejected non-array segments field"));
         assert!(context.contains("GRACE_VALID_SOURCE"));
@@ -1246,6 +1367,8 @@ mod tests {
             .to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         apply_result(
@@ -1257,6 +1380,8 @@ mod tests {
             .to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         let before = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
@@ -1271,6 +1396,8 @@ mod tests {
             .to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         assert_eq!(
@@ -1310,6 +1437,8 @@ mod tests {
             ]}],"summary":"guards"}).to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         assert_eq!(
@@ -1331,6 +1460,8 @@ mod tests {
             ]}],"summary":"duplicates"}).to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         assert_eq!(
@@ -1379,6 +1510,8 @@ mod tests {
             .to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         assert_eq!(fs::read(&path).unwrap(), before);
@@ -1422,6 +1555,8 @@ mod tests {
             .to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned(), "grace".to_owned()]),
+            &[],
         )
         .unwrap();
         assert!(
@@ -1515,6 +1650,8 @@ mod tests {
             .to_string(),
             "work",
             DAY,
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap_err();
         assert!(!error.is_empty());
@@ -1529,6 +1666,8 @@ mod tests {
             r#"{"entities":[],"summary":"No durable changes."}"#,
             "work",
             DAY,
+            &BTreeSet::new(),
+            &[],
         )
         .unwrap();
         let outcome: Value = serde_json::from_slice(
@@ -1539,7 +1678,15 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        for key in ["add", "update", "drop", "keep", "skipped"] {
+        for key in [
+            "add",
+            "update",
+            "drop",
+            "keep",
+            "skipped",
+            "excluded",
+            "unselected",
+        ] {
             assert_eq!(outcome[key], 0, "nonzero {key}");
         }
         assert!(outcome["error"].is_null());
@@ -1561,7 +1708,9 @@ mod tests {
             )
             .unwrap();
         }
-        let context = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        let context = assemble_observer_context(root.path(), "work", DAY)
+            .unwrap()
+            .context;
         assert!(context.chars().count() <= MAX_OBSERVER_CONTEXT_CHARS);
         for index in 0..6 {
             assert!(context.contains(&format!("#### Person {index}")));
@@ -1572,7 +1721,10 @@ mod tests {
     }
 
     #[test]
-    fn over_budget_observation_inventory_refuses_generation() {
+    fn over_budget_observation_inventory_excludes_the_entity_and_still_generates() {
+        // Criterion 8 & 9: All-excluded case: not StageFailed, not Skipped; context states budget exclusion;
+        // no empty-active string; outcome names each excluded entity with measured size.
+        // Operations naming any attached entity write nothing (count excluded, observations unchanged).
         let root = tempfile::tempdir().unwrap();
         attach(root.path(), "Ada");
         solstone_core_facets::save_detected_entity(
@@ -1593,8 +1745,67 @@ mod tests {
             None,
         )
         .unwrap();
-        let error = assemble_observer_context(root.path(), "work", DAY).unwrap_err();
-        assert!(error.contains("maximum is 3800"));
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(assembly.served_ids.is_empty());
+        assert_eq!(assembly.exclusions.len(), 1);
+        assert_eq!(assembly.exclusions[0].entity_id, "ada");
+        assert!(assembly.exclusions[0].chars > MAX_ENTITY_CONTEXT_CHARS);
+        assert!(
+            !assembly
+                .context
+                .contains("No active entities found for this day.")
+        );
+        assert!(assembly.context.contains("0 of 1 active"));
+        assert!(!assembly.exclusions.is_empty());
+        assert!(assembly.context.lines().count() > 8);
+
+        // Build test
+        let mut prepared = PreparedTalent {
+            name: "entity_observer".to_owned(),
+            config: Map::from_iter([
+                (
+                    "prompt".to_owned(),
+                    Value::String("$observer_context".to_owned()),
+                ),
+                ("facet".to_owned(), Value::String("work".to_owned())),
+                ("day".to_owned(), Value::String(DAY.to_owned())),
+            ]),
+        };
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let _state = build(&mut prepared, &context).unwrap();
+
+        // Apply test (Criterion 9: operation naming attached/excluded entity writes nothing, count excluded)
+        let before_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        apply_result(
+            root.path(),
+            &json!({"entities":[{"entity_id":"ada","operations":[{"op":"add","content":"Should not persist"}]}]}).to_string(),
+            "work",
+            DAY,
+            &assembly.served_ids,
+            &assembly.exclusions,
+        )
+        .unwrap();
+        let after_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert_eq!(after_obs, before_obs);
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["excluded"], 1);
+        assert_eq!(outcome["add"], 0);
+        let exclusions = outcome["exclusions"].as_array().unwrap();
+        assert_eq!(exclusions.len(), 1);
+        assert_eq!(exclusions[0]["entity_id"], "ada");
+        assert_eq!(exclusions[0]["chars"], assembly.exclusions[0].chars);
     }
 
     #[test]
@@ -1640,6 +1851,8 @@ mod tests {
                 &json!({"entities":[{"entity_id":"ada","operations":[operation]}]}).to_string(),
                 "work",
                 "20260101",
+                &BTreeSet::from(["ada".to_owned()]),
+                &[],
             )
             .unwrap();
         };
@@ -1791,7 +2004,15 @@ mod tests {
     fn malformed_result_writes_an_error_outcome_sidecar() {
         // Derived from solstone/apps/entities/talent/entity_observer.py:55-64,225-242.
         let root = tempfile::tempdir().unwrap();
-        apply_result(root.path(), "not json", "work", "20260101").unwrap();
+        apply_result(
+            root.path(),
+            "not json",
+            "work",
+            "20260101",
+            &BTreeSet::new(),
+            &[],
+        )
+        .unwrap();
         let sidecar: Value = serde_json::from_str(
             &fs::read_to_string(
                 root.path()
@@ -1815,6 +2036,8 @@ mod tests {
             r#"{"entities":[{"entity_id":"ada","operations":[{"op":"add","content":"Prefers concise updates."}]}]}"#,
             "work",
             "20260101",
+            &BTreeSet::from(["ada".to_owned()]),
+            &[],
         )
         .unwrap();
         let observations =
@@ -1857,6 +2080,8 @@ mod tests {
             r#"{"entities":[{"entity_id":"effective-ada","operations":[{"op":"add","content":"from apply"}]}]}"#,
             "work",
             "20260101",
+            &BTreeSet::from(["effective-ada".to_owned()]),
+            &[],
         )
         .unwrap();
         let observations =
@@ -1867,5 +2092,679 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn criterion_1_one_over_budget_and_two_fitting_entities() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        attach(root.path(), "Person 0");
+        for name in ["Ada", "Grace", "Person 0"] {
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                name,
+                "summary",
+            )
+            .unwrap();
+        }
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "ada",
+            &"é😀".repeat(2_000),
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "grace",
+            "Short fact.",
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert_eq!(
+            assembly.served_ids,
+            BTreeSet::from(["grace".to_owned(), "person_0".to_owned()])
+        );
+        assert_eq!(assembly.exclusions.len(), 1);
+        assert_eq!(assembly.exclusions[0].entity_id, "ada");
+        assert!(assembly.exclusions[0].chars > MAX_ENTITY_CONTEXT_CHARS);
+        assert!(assembly.context.contains("2 of 3 active"));
+        assert!(assembly.context.contains("#### Grace (grace)"));
+        assert!(assembly.context.contains("#### Person 0 (person_0)"));
+        assert!(!assembly.context.contains("#### Ada (ada)"));
+    }
+
+    #[test]
+    fn criterion_2_boundary_just_under_and_just_over_multibyte() {
+        let chunk = "é😀".repeat(20);
+        let mut ada_content = "é😀".repeat(1_200);
+        loop {
+            let root = tempfile::tempdir().unwrap();
+            attach(root.path(), "Ada");
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                "Ada",
+                "s",
+            )
+            .unwrap();
+            solstone_core_facets::add_observation(
+                root.path(),
+                "work",
+                "ada",
+                &ada_content,
+                Some(DAY),
+                None,
+            )
+            .unwrap();
+            let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+            if assembly.served_ids.contains("ada") {
+                let start = assembly.context.find("#### Ada").expect("Ada in context");
+                let rendered_packet = &assembly.context[start..];
+                let chars = rendered_packet.chars().count();
+                if chars > MAX_ENTITY_CONTEXT_CHARS - 500 && chars <= MAX_ENTITY_CONTEXT_CHARS {
+                    break;
+                }
+            }
+            ada_content.push_str(&chunk);
+        }
+
+        let mut grace_content = ada_content.clone();
+        loop {
+            grace_content.push_str(&chunk);
+            let root = tempfile::tempdir().unwrap();
+            attach(root.path(), "Grace");
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                "Grace",
+                "s",
+            )
+            .unwrap();
+            solstone_core_facets::add_observation(
+                root.path(),
+                "work",
+                "grace",
+                &grace_content,
+                Some(DAY),
+                None,
+            )
+            .unwrap();
+            let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+            if !assembly.exclusions.is_empty() {
+                let chars = assembly.exclusions[0].chars;
+                if chars > MAX_ENTITY_CONTEXT_CHARS && chars <= MAX_ENTITY_CONTEXT_CHARS + 500 {
+                    break;
+                }
+            }
+        }
+
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        solstone_core_facets::save_detected_entity(root.path(), "work", DAY, "Person", "Ada", "s")
+            .unwrap();
+        solstone_core_facets::save_detected_entity(
+            root.path(),
+            "work",
+            DAY,
+            "Person",
+            "Grace",
+            "s",
+        )
+        .unwrap();
+
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "ada",
+            &ada_content,
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "grace",
+            &grace_content,
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(assembly.served_ids.contains("ada"));
+        assert!(!assembly.served_ids.contains("grace"));
+        assert_eq!(assembly.exclusions.len(), 1);
+        assert_eq!(assembly.exclusions[0].entity_id, "grace");
+
+        let ada_start = assembly.context.find("#### Ada").expect("Ada in context");
+        let ada_packet_chars = assembly.context[ada_start..].chars().count();
+        assert!(ada_packet_chars > MAX_ENTITY_CONTEXT_CHARS - 500);
+        assert!(ada_packet_chars <= MAX_ENTITY_CONTEXT_CHARS);
+
+        let grace_exclusion_chars = assembly.exclusions[0].chars;
+        assert!(grace_exclusion_chars > MAX_ENTITY_CONTEXT_CHARS);
+        assert!(grace_exclusion_chars <= MAX_ENTITY_CONTEXT_CHARS + 500);
+
+        assert!(assembly.context.contains("#### Ada (ada)"));
+        assert!(!assembly.context.contains("#### Grace (grace)"));
+        assert!(assembly.context.contains(&ada_content));
+    }
+
+    #[test]
+    fn criterion_3_and_4_zero_exclusion_header_byte_identical_and_observations_rendered() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        let origin = "20260101/field/090000_60";
+        write_source_segment(
+            root.path(),
+            origin,
+            "ADA_EVIDENCE",
+            "percept",
+            "activity",
+            "context",
+        );
+        save_detection(root.path(), "Ada", "Ada summary text", origin);
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "ada",
+            "Numbered durable observation text.",
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(assembly.exclusions.is_empty());
+        assert_eq!(assembly.served_ids, BTreeSet::from(["ada".to_owned()]));
+
+        let expected_header = [
+            "# Entity Observer Context",
+            "",
+            "## Facet: work",
+            "## Day: 20260101",
+            "## Active Entities: 1 of 1 active",
+            "",
+            "### Entities",
+            "",
+        ]
+        .join("\n");
+        assert!(assembly.context.starts_with(&expected_header));
+        assert!(assembly.context.contains("Ada summary text"));
+        assert!(assembly.context.contains("ADA_EVIDENCE"));
+        assert!(
+            assembly
+                .context
+                .contains("Numbered durable observation text.")
+        );
+        assert!(assembly.context.contains("0. target_quote: "));
+    }
+
+    #[test]
+    fn criterion_5_6_11_18_eight_active_six_selected_one_excluded_gating_and_counts() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..8 {
+            let name = format!("Person {index}");
+            attach(root.path(), &name);
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                &name,
+                "summary",
+            )
+            .unwrap();
+        }
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "person_0",
+            &"é😀".repeat(2_000),
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert_eq!(assembly.served_ids.len(), 5);
+        for index in 1..=5 {
+            assert!(assembly.served_ids.contains(&format!("person_{index}")));
+        }
+        assert!(!assembly.served_ids.contains("person_0"));
+        assert!(!assembly.served_ids.contains("person_6"));
+        assert!(!assembly.served_ids.contains("person_7"));
+        assert_eq!(assembly.exclusions.len(), 1);
+        assert_eq!(assembly.exclusions[0].entity_id, "person_0");
+
+        assert!(assembly.context.contains("5 of 8 active"));
+        assert!(!assembly.context.contains("person_0"));
+        assert!(!assembly.context.contains("person_6"));
+        assert!(!assembly.context.contains("person_7"));
+        assert!(!assembly.context.contains("#### Person 0"));
+        assert!(!assembly.context.contains("#### Person 6"));
+
+        let payload = json!({
+            "entities": [
+                {"entity_id": "person_0", "operations": [{"op": "add", "content": "Excluded write"}]},
+                {"entity_id": "person_1", "operations": [{"op": "add", "content": "Served write"}]},
+                {"entity_id": "person_6", "operations": [{"op": "add", "content": "Unselected write"}]},
+                {"entity_id": "unattached", "operations": [{"op": "add", "content": "Unattached write"}]}
+            ],
+            "summary": "mixed test"
+        });
+        apply_result(
+            root.path(),
+            &payload.to_string(),
+            "work",
+            DAY,
+            &assembly.served_ids,
+            &assembly.exclusions,
+        )
+        .unwrap();
+
+        let p0_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "person_0").unwrap();
+        assert!(!p0_obs.iter().any(|o| o["content"] == "Excluded write"));
+        let p1_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "person_1").unwrap();
+        assert!(p1_obs.iter().any(|o| o["content"] == "Served write"));
+        let p6_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "person_6").unwrap();
+        assert!(p6_obs.is_empty());
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["add"], 1);
+        assert_eq!(outcome["excluded"], 1);
+        assert_eq!(outcome["unselected"], 1);
+        assert_eq!(outcome["skipped"], 1);
+    }
+
+    #[test]
+    fn criterion_7_excluded_entity_with_corrupted_file_does_not_block_served_writes() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        solstone_core_facets::save_detected_entity(root.path(), "work", DAY, "Person", "Ada", "s")
+            .unwrap();
+        solstone_core_facets::save_detected_entity(
+            root.path(),
+            "work",
+            DAY,
+            "Person",
+            "Grace",
+            "s",
+        )
+        .unwrap();
+
+        let grace_path = root
+            .path()
+            .join("facets/work/entities/grace/observations.jsonl");
+        fs::write(&grace_path, "{}\n").unwrap();
+
+        let served_ids = BTreeSet::from(["ada".to_owned()]);
+        let exclusions = vec![EntityBudgetExclusion {
+            entity_id: "grace".to_owned(),
+            chars: 4000,
+        }];
+
+        let payload = json!({
+            "entities": [
+                {"entity_id": "ada", "operations": [{"op": "add", "content": "Valid Ada observation"}]},
+                {"entity_id": "grace", "operations": [{"op": "add", "content": "Grace write should be excluded"}]}
+            ],
+            "summary": "preflight isolation"
+        });
+        apply_result(
+            root.path(),
+            &payload.to_string(),
+            "work",
+            DAY,
+            &served_ids,
+            &exclusions,
+        )
+        .unwrap();
+
+        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert_eq!(ada_obs[0]["content"], "Valid Ada observation");
+        assert_eq!(fs::read_to_string(grace_path).unwrap(), "{}\n");
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["add"], 1);
+        assert_eq!(outcome["excluded"], 1);
+        assert!(outcome["error"].is_null());
+    }
+
+    #[test]
+    fn criterion_10_empty_active_closed_by_default() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert_eq!(assembly.context, "No active entities found for this day.");
+        assert!(assembly.served_ids.is_empty());
+        assert!(assembly.exclusions.is_empty());
+
+        let payload = json!({
+            "entities": [
+                {"entity_id": "ada", "operations": [{"op": "add", "content": "Hallucinated write"}]}
+            ],
+            "summary": "empty active"
+        });
+        apply_result(
+            root.path(),
+            &payload.to_string(),
+            "work",
+            DAY,
+            &assembly.served_ids,
+            &assembly.exclusions,
+        )
+        .unwrap();
+
+        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert!(ada_obs.is_empty());
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["unselected"], 1);
+        assert_eq!(outcome["add"], 0);
+    }
+
+    #[test]
+    fn criterion_13_large_evidence_status_alone_excludes_entity() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        let detected_path = root.path().join("facets/work/entities/20260101.jsonl");
+        fs::create_dir_all(detected_path.parent().unwrap()).unwrap();
+
+        let long_invalid_segments = (0..50)
+            .map(|i| {
+                format!(
+                    "20260101/invalid_stream_name_that_is_very_long_{:0>70}_{i}",
+                    "x"
+                )
+            })
+            .collect::<Vec<_>>();
+        let row = json!({
+            "id": "ada",
+            "type": "Person",
+            "name": "Ada",
+            "description": null,
+            "segments": long_invalid_segments,
+        });
+        fs::write(detected_path, format!("{row}\n")).unwrap();
+
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(assembly.served_ids.is_empty());
+        assert_eq!(assembly.exclusions.len(), 1);
+        assert_eq!(assembly.exclusions[0].entity_id, "ada");
+        assert!(assembly.exclusions[0].chars > MAX_ENTITY_CONTEXT_CHARS);
+    }
+
+    #[test]
+    fn criterion_14_header_allowance_boundary_table_test() {
+        assert_eq!(HEADER_ALLOWANCE, 1_165);
+        let bound_check = |n: usize| {
+            n * MAX_ENTITY_CONTEXT_CHARS + n.saturating_sub(1) * 7 + HEADER_ALLOWANCE
+                <= MAX_OBSERVER_CONTEXT_CHARS
+        };
+        assert!(bound_check(MAX_ACTIVE_ENTITIES));
+        assert!(!bound_check(MAX_ACTIVE_ENTITIES + 1));
+    }
+
+    #[test]
+    fn criterion_15_real_thread_build_commit_apply() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        for name in ["Ada", "Grace"] {
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                name,
+                "s",
+            )
+            .unwrap();
+        }
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "grace",
+            &"é😀".repeat(2_000),
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+
+        let mut prepared = PreparedTalent {
+            name: "entity_observer".to_owned(),
+            config: Map::from_iter([
+                (
+                    "prompt".to_owned(),
+                    Value::String("$observer_context".to_owned()),
+                ),
+                ("facet".to_owned(), Value::String("work".to_owned())),
+                ("day".to_owned(), Value::String(DAY.to_owned())),
+            ]),
+        };
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let state = build(&mut prepared, &context).unwrap();
+
+        let payload = json!({
+            "entities": [
+                {"entity_id": "ada", "operations": [{"op": "add", "content": "Ada durable note"}]},
+                {"entity_id": "grace", "operations": [{"op": "add", "content": "Grace durable note"}]}
+            ],
+            "summary": "thread test"
+        });
+        let parsed = parse(&payload.to_string(), &prepared, &state).unwrap();
+        let plan = commit(parsed, &prepared, &state).unwrap();
+
+        let exec_context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        crate::writers::apply(plan, &exec_context).unwrap();
+
+        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert_eq!(ada_obs[0]["content"], "Ada durable note");
+        let grace_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "grace").unwrap();
+        assert!(
+            !grace_obs
+                .iter()
+                .any(|o| o["content"] == "Grace durable note")
+        );
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["add"], 1);
+        assert_eq!(outcome["excluded"], 1);
+    }
+
+    #[test]
+    fn criterion_16_seven_active_zero_exclusions_served_set_exact_six() {
+        let root = tempfile::tempdir().unwrap();
+        for index in 0..7 {
+            let name = format!("Person {index}");
+            attach(root.path(), &name);
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                &name,
+                "summary",
+            )
+            .unwrap();
+        }
+
+        let mut prepared = PreparedTalent {
+            name: "entity_observer".to_owned(),
+            config: Map::from_iter([
+                (
+                    "prompt".to_owned(),
+                    Value::String("$observer_context".to_owned()),
+                ),
+                ("facet".to_owned(), Value::String("work".to_owned())),
+                ("day".to_owned(), Value::String(DAY.to_owned())),
+            ]),
+        };
+        let context = ExecutionContext {
+            journal: root.path().to_owned(),
+        };
+        let state = build(&mut prepared, &context).unwrap();
+        let PrePostState::EntityObserver(observer_state) = &state else {
+            panic!("expected EntityObserver state");
+        };
+        assert_eq!(observer_state.served_ids.len(), 6);
+        assert!(observer_state.exclusions.is_empty());
+        assert!(!observer_state.served_ids.contains("person_6"));
+
+        let payload = json!({
+            "entities": [
+                {"entity_id": "person_6", "operations": [{"op": "add", "content": "Should be unselected"}]}
+            ],
+            "summary": "person 6 test"
+        });
+        let parsed = parse(&payload.to_string(), &prepared, &state).unwrap();
+        let plan = commit(parsed, &prepared, &state).unwrap();
+        crate::writers::apply(plan, &context).unwrap();
+
+        let p6_obs =
+            solstone_core_facets::load_observations(root.path(), "work", "person_6").unwrap();
+        assert!(p6_obs.is_empty());
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["unselected"], 1);
+        assert_eq!(outcome["add"], 0);
+    }
+
+    #[test]
+    fn criterion_17_relation_to_budget_excluded_attached_entity_resolves() {
+        let root = tempfile::tempdir().unwrap();
+        attach(root.path(), "Ada");
+        attach(root.path(), "Grace");
+        for name in ["Ada", "Grace"] {
+            solstone_core_facets::save_detected_entity(
+                root.path(),
+                "work",
+                DAY,
+                "Person",
+                name,
+                "s",
+            )
+            .unwrap();
+        }
+        solstone_core_facets::add_observation(
+            root.path(),
+            "work",
+            "grace",
+            &"é😀".repeat(2_000),
+            Some(DAY),
+            None,
+        )
+        .unwrap();
+
+        let assembly = assemble_observer_context(root.path(), "work", DAY).unwrap();
+        assert!(assembly.served_ids.contains("ada"));
+        assert!(!assembly.served_ids.contains("grace"));
+        assert_eq!(assembly.exclusions.len(), 1);
+
+        let payload = json!({
+            "entities": [
+                {"entity_id": "ada", "operations": [{
+                    "op": "add",
+                    "content": "Collaborates with Grace.",
+                    "target_index": null,
+                    "target_quote": null,
+                    "reasoning": "collaboration",
+                    "relation": {
+                        "kind": "works-with",
+                        "target_name": "Grace",
+                        "note": "team project"
+                    }
+                }]}
+            ],
+            "summary": "relation test"
+        });
+        apply_result(
+            root.path(),
+            &payload.to_string(),
+            "work",
+            DAY,
+            &assembly.served_ids,
+            &assembly.exclusions,
+        )
+        .unwrap();
+
+        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        assert_eq!(ada_obs[0]["content"], "Collaborates with Grace.");
+        let rel = &ada_obs[0]["relation"];
+        assert_eq!(rel["kind"], "works-with");
+        assert_eq!(rel["target_entity_id"], "grace");
+
+        let outcome: Value = serde_json::from_slice(
+            &fs::read(
+                root.path()
+                    .join("facets/work/entities/20260101_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(outcome["add"], 1);
+        assert_eq!(outcome["relation_unresolved"], 0);
     }
 }
