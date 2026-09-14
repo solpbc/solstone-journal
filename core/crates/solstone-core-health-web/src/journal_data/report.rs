@@ -840,7 +840,14 @@ fn build_segment_backlog_health(
         awaiting_analysis_text: if no_engine {
             Some(NO_ENGINE_ANALYSIS_TEXT.to_owned())
         } else if settings.deferred {
-            Some(format!("{awaiting_total} segments waiting for analysis"))
+            Some(format!(
+                "{awaiting_total} {} waiting for analysis",
+                if awaiting_total == 1 {
+                    "segment"
+                } else {
+                    "segments"
+                }
+            ))
         } else {
             None
         },
@@ -2162,7 +2169,7 @@ mod tests {
         assert_eq!(health.not_sensed, 1);
         assert_eq!(
             health.awaiting_analysis_text.as_deref(),
-            Some("1 segments waiting for analysis")
+            Some("1 segment waiting for analysis")
         );
     }
 
