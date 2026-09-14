@@ -977,9 +977,15 @@ fn synthetic_decode_schema_invalid_extraction_fails_terminal_without_retries() {
         "analysis_failed"
     );
 
-    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    let frame = rows
+        .iter()
+        .find(|row| row["frame_id"] == 1)
+        .expect("frame 1");
     assert!(
-        frame.get("content").and_then(|c| c.get("calendar")).is_none(),
+        frame
+            .get("content")
+            .and_then(|c| c.get("calendar"))
+            .is_none(),
         "invalid schema extraction must not be written to content"
     );
     let error = frame["error"].as_str().expect("error string present");
@@ -1017,7 +1023,10 @@ fn synthetic_decode_schema_valid_advisory_writes_content_successfully() {
 
     let rows = test.rows();
     assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
-    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    let frame = rows
+        .iter()
+        .find(|row| row["frame_id"] == 1)
+        .expect("frame 1");
     assert!(frame.get("error").is_none());
     assert_eq!(frame["content"]["calendar"]["app"], "Google Calendar");
 }
@@ -1034,7 +1043,10 @@ fn synthetic_decode_absent_schema_validation_accepts_json_content() {
 
     let rows = test.rows();
     assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
-    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    let frame = rows
+        .iter()
+        .find(|row| row["frame_id"] == 1)
+        .expect("frame 1");
     assert!(frame.get("error").is_none());
     assert_eq!(frame["content"]["messaging"]["ok"], true);
 }
@@ -1056,10 +1068,16 @@ fn synthetic_decode_mixed_success_and_schema_failure_keeps_success_content_and_l
 
     let rows = test.rows();
     assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
-    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    let frame = rows
+        .iter()
+        .find(|row| row["frame_id"] == 1)
+        .expect("frame 1");
     assert_eq!(frame["content"]["code"], "# markdown code extracted");
     assert!(
-        frame.get("content").and_then(|c| c.get("calendar")).is_none(),
+        frame
+            .get("content")
+            .and_then(|c| c.get("calendar"))
+            .is_none(),
         "failed category must be absent from content"
     );
     let error = frame["error"].as_str().expect("error string present");
@@ -1089,13 +1107,22 @@ fn synthetic_decode_double_schema_failure_latches_first_error_and_suppresses_sec
 
     let rows = test.rows();
     assert_eq!(rows[0]["_solstone_processing"]["state"], "failed");
-    let frame = rows.iter().find(|row| row["frame_id"] == 1).expect("frame 1");
+    let frame = rows
+        .iter()
+        .find(|row| row["frame_id"] == 1)
+        .expect("frame 1");
     assert!(
-        frame.get("content").and_then(|c| c.get("calendar")).is_none(),
+        frame
+            .get("content")
+            .and_then(|c| c.get("calendar"))
+            .is_none(),
         "calendar must be absent from content"
     );
     assert!(
-        frame.get("content").and_then(|c| c.get("messaging")).is_none(),
+        frame
+            .get("content")
+            .and_then(|c| c.get("messaging"))
+            .is_none(),
         "messaging must be absent from content"
     );
     let error = frame["error"].as_str().expect("error string present");
