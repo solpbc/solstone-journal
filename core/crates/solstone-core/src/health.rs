@@ -575,39 +575,42 @@ fn render_status(status: &SupervisorStatus) -> String {
     }
     let _ = writeln!(output, "Callosum: {} clients", status.callosum_clients);
     if !status.sense_pending_received {
-        output.push_str("Sense: not running\n");
+        let _ = writeln!(output, "{SENSE_NOT_RUNNING_LABEL}");
     } else if let Some(age_ms) = status.sense_pending_age_ms {
         if age_ms > SENSE_STALENESS_THRESHOLD_MS {
             let s = age_ms / 1000;
             if let Some(depth) = status.sense_pending_queue_depth {
-                let _ = writeln!(output, "Sense: {depth} pending (stale, {s}s since beacon)");
+                let _ = writeln!(
+                    output,
+                    "Sense: {depth} pending ({SENSE_STALE_LABEL}, {s}s since beacon)"
+                );
             } else {
-                let _ = writeln!(output, "Sense: stale ({s}s since beacon)");
+                let _ = writeln!(output, "Sense: {SENSE_STALE_LABEL} ({s}s since beacon)");
             }
         } else if let Some(depth) = status.sense_pending_queue_depth {
             if depth == 0 {
-                output.push_str("Sense: idle\n");
+                let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
             } else {
                 let _ = writeln!(output, "Sense: {depth} pending");
             }
         } else {
-            output.push_str("Sense: idle\n");
+            let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
         }
     } else if let Some(depth) = status.sense_pending_queue_depth {
         if depth == 0 {
-            output.push_str("Sense: idle\n");
+            let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
         } else {
             let _ = writeln!(output, "Sense: {depth} pending");
         }
     } else {
-        output.push_str("Sense: not running\n");
+        let _ = writeln!(output, "{SENSE_NOT_RUNNING_LABEL}");
     }
     output
 }
 
-pub const SENSE_NOT_RUNNING_LABEL: &str = "Sense: not running";
-pub const SENSE_IDLE_LABEL: &str = "Sense: idle";
-pub const SENSE_STALE_LABEL: &str = "stale";
+pub(crate) const SENSE_NOT_RUNNING_LABEL: &str = "Sense: not running";
+pub(crate) const SENSE_IDLE_LABEL: &str = "Sense: idle";
+pub(crate) const SENSE_STALE_LABEL: &str = "stale";
 pub(crate) const SENSE_STALENESS_THRESHOLD_MS: u64 = 15_000;
 
 #[cfg(test)]
@@ -697,17 +700,19 @@ mod tests {
         value["sense_pending_queue_depth"] = json!(0);
         let status: SupervisorStatus = serde_json::from_value(value.clone()).unwrap();
         let rendered = render_status(&status);
-        assert!(rendered.ends_with("Sense: idle\n"));
+        assert!(rendered.ends_with(&format!("{SENSE_IDLE_LABEL}\n")));
 
         value["sense_pending_age_ms"] = json!(16000);
         let status: SupervisorStatus = serde_json::from_value(value.clone()).unwrap();
         let rendered = render_status(&status);
-        assert!(rendered.ends_with("Sense: 0 pending (stale, 16s since beacon)\n"));
+        assert!(rendered.ends_with(&format!(
+            "Sense: 0 pending ({SENSE_STALE_LABEL}, 16s since beacon)\n"
+        )));
 
         value["sense_pending_received"] = json!(false);
         let status: SupervisorStatus = serde_json::from_value(value).unwrap();
         let rendered = render_status(&status);
-        assert!(rendered.ends_with("Sense: not running\n"));
+        assert!(rendered.ends_with(&format!("{SENSE_NOT_RUNNING_LABEL}\n")));
     }
 
     #[test]
