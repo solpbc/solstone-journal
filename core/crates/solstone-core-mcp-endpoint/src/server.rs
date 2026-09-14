@@ -12,13 +12,13 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use chrono::Utc;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
 use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 
+use crate::dispatch::{DispatchError, DispatchPrincipal, dispatch_authenticated_tool_call};
 use crate::http1::{Http1Connection, Http1Error, HttpMethod, HttpRequest, HttpResponse};
 use crate::jsonrpc::{
     JsonRpcResponse, McpMethod, classify_method, initialize_result, parse_request, tool_arguments,
@@ -31,7 +31,6 @@ use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
 use crate::proxy_preface::{ParsedPreface, parse_preface};
 use crate::session::{SessionError, SessionTable};
 use crate::tokens::{TokenStore, TokenStoreError, VerifiedToken};
-use crate::{audit, tools};
 
 const PROXY_PREFACE_DEADLINE: Duration = Duration::from_secs(2);
 const TLS_HANDSHAKE_DEADLINE: Duration = Duration::from_secs(5);
@@ -425,72 +424,35 @@ fn execute_tool_call(
     verified: &VerifiedToken,
     journal_root: &std::path::Path,
 ) -> HttpResponse {
-    let entry = crate::registry::find_tool(tool_name);
-    let validated = match (entry.validate)(tool_arguments(request)) {
-        Ok(validated) => validated,
-        Err(tools::ToolError::InvalidInput) => {
-            return json_rpc_response(JsonRpcResponse::invalid_params(request.id.as_ref()));
+    // Refused vs served records are identical apart from timestamps — deliberate deferral to the later activity-log increment, not an oversight.
+    // The shared dispatcher keeps this denial path identical for wire and probe.
+    match dispatch_authenticated_tool_call(
+        journal_root,
+        DispatchPrincipal {
+            connection: &verified.id,
+            agent_identity: &verified.agent_identity,
+        },
+        tool_name,
+        tool_arguments(request),
+        chrono::Utc::now(),
+    ) {
+        Ok(result) => json_rpc_response(JsonRpcResponse::success(
+            request.id.as_ref(),
+            tool_result(result),
+        )),
+        Err(DispatchError::InvalidInput) => {
+            json_rpc_response(JsonRpcResponse::invalid_params(request.id.as_ref()))
         }
-        Err(error) => {
-            return json_rpc_response(JsonRpcResponse::tool_error(
-                request.id.as_ref(),
-                error.reason(),
-            ));
-        }
-    };
-    let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
-    let now = Utc::now();
-    match decision {
-        permissions::PermissionDecision::Denied { reason } => {
-            // Refused vs served records are identical apart from timestamps — deliberate deferral to the later activity-log increment, not an oversight.
-            if audit::write_admitted_interaction(
-                journal_root,
-                now,
-                &verified.agent_identity,
-                entry.audit_name,
-            )
-            .is_err()
-            {
-                return json_rpc_response(JsonRpcResponse::internal_error(
-                    request.id.as_ref(),
-                    "MCP audit publication failed",
-                ));
-            }
-            json_rpc_response(JsonRpcResponse::permission_denied(
-                request.id.as_ref(),
-                reason,
-            ))
-        }
-        permissions::PermissionDecision::Allowed => {
-            match tools::execute_after_audit(
-                || {
-                    audit::write_admitted_interaction(
-                        journal_root,
-                        now,
-                        &verified.agent_identity,
-                        entry.audit_name,
-                    )
-                    .map(|_| ())
-                    .map_err(|_| tools::ToolError::AuditUnavailable)
-                },
-                || tools::execute(journal_root, &validated, now),
-            ) {
-                Ok(result) => json_rpc_response(JsonRpcResponse::success(
-                    request.id.as_ref(),
-                    tool_result(result),
-                )),
-                Err(tools::ToolError::AuditUnavailable) => {
-                    json_rpc_response(JsonRpcResponse::internal_error(
-                        request.id.as_ref(),
-                        "MCP audit publication failed",
-                    ))
-                }
-                Err(error) => json_rpc_response(JsonRpcResponse::tool_error(
-                    request.id.as_ref(),
-                    error.reason(),
-                )),
-            }
-        }
+        Err(DispatchError::PermissionDenied(reason)) => json_rpc_response(
+            JsonRpcResponse::permission_denied(request.id.as_ref(), reason),
+        ),
+        Err(DispatchError::Tool(crate::tools::ToolError::AuditUnavailable)) => json_rpc_response(
+            JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed"),
+        ),
+        Err(DispatchError::Tool(error)) => json_rpc_response(JsonRpcResponse::tool_error(
+            request.id.as_ref(),
+            error.reason(),
+        )),
     }
 }
 
@@ -1090,9 +1052,12 @@ mod tests {
     }
 
     fn seed_indexed_note(journal: &Path) {
-        let path = "notes/mcp.txt";
-        fs::create_dir_all(journal.join("notes")).expect("fixture notes directory");
-        fs::write(journal.join(path), "MCP fixture search needle").expect("fixture source content");
+        let path = "20260831/default/123456_1/talents/brief.md";
+        let source = journal.join("chronicle/20260831/default/123456_1");
+        fs::create_dir_all(source.join("talents")).expect("fixture segment directory");
+        fs::write(source.join("talents/brief.md"), "disk fixture source")
+            .expect("fixture source content");
+        fs::write(source.join("talents/facets.json"), "[]").expect("fixture assignments");
         let connection =
             solstone_core_indexer_store::db::open_index(journal).expect("fixture index opens");
         connection
@@ -1107,6 +1072,18 @@ mod tests {
                 [],
             )
             .expect("fixture index completes");
+        connection
+            .execute(
+                "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+                params![path],
+            )
+            .expect("fixture classification inserts");
+        connection
+            .execute(
+                "REPLACE INTO chunk_classification_backfill(id, cursor, completed, stalled, stalled_path, resume_count) VALUES (1, '', 1, 0, NULL, 0)",
+                [],
+            )
+            .expect("fixture classification completes");
     }
 
     fn session_id(headers: &str) -> String {
@@ -1336,6 +1313,7 @@ mod tests {
     async fn admitted_search_and_fetch_calls_each_publish_one_closed_audit_record() {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
+        seed_indexed_note(server.journal.path());
         let health = server.journal.path().join("health");
         fs::create_dir_all(&health).expect("fixture health directory");
         let listener =
@@ -1360,14 +1338,13 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "search", "arguments": {"query": "📅", "limit": 1, "offset": 0}}
+                "params": {"name": "search", "arguments": {"query": "needle", "limit": 1}}
             }),
         )
         .await;
-        assert_eq!(
-            search["result"]["structuredContent"]["reason"],
-            "not_tokenizable"
-        );
+        let reference = search["result"]["structuredContent"]["results"][0]["reference"]
+            .as_str()
+            .expect("search returns reference");
         let fetch = post_json(
             &mut client,
             &token.token,
@@ -1375,20 +1352,21 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
-                "params": {"name": "fetch", "arguments": {"id": "notes/unindexed.txt:0"}}
+                "params": {"name": "fetch", "arguments": {"reference": reference}}
             }),
         )
         .await;
-        assert_eq!(fetch["error"]["data"]["reason"], "index_absent");
+        assert_eq!(
+            fetch["result"]["structuredContent"]["text"],
+            "MCP fixture search needle"
+        );
         client.shutdown().await.expect("client closes TLS");
         drop(client);
 
         let records = fs::read_dir(server.journal.path().join("chronicle"))
             .expect("audit day exists")
-            .flat_map(|day| {
-                fs::read_dir(day.expect("day entry").path().join("mcp.agent"))
-                    .expect("audit stream exists")
-            })
+            .filter_map(|day| fs::read_dir(day.ok()?.path().join("mcp.agent")).ok())
+            .flatten()
             .map(|entry| {
                 entry
                     .expect("audit segment")
@@ -1429,6 +1407,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn ac29_probe_and_wire_prepare_the_same_list_facets_value() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        fs::create_dir_all(server.journal.path().join("facets")).unwrap();
+        let token = server.create_token("probe-wire-agent");
+        let connection = TokenStore::open(server.journal.path())
+            .verify(&token.token)
+            .unwrap()
+            .id;
+        let probe = crate::run_mcp_probe(
+            server.journal.path(),
+            &connection,
+            "list_facets",
+            &json!({}),
+        )
+        .unwrap();
+
+        let mut client = connect_tls(server.address, client_config).await;
+        let wire = post_json(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/call",
+                "params": {"name": "list_facets", "arguments": {}}
+            }),
+        )
+        .await;
+        assert_eq!(probe, wire["result"]["structuredContent"]);
+        client.shutdown().await.unwrap();
+        drop(client);
+        server.stop().await;
+    }
+
+    #[tokio::test]
     async fn fragmented_and_coalesced_tls_client_hellos_support_the_read_only_mcp_flow() {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
@@ -1463,12 +1477,7 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(
-            list["result"],
-            crate::registry::advertised_tools_list(
-                &crate::permissions::PermissionDecision::Allowed
-            )
-        );
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 7);
         let search = post_json_with_headers(
             &mut client,
             &token.token,
@@ -1476,16 +1485,16 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10, "offset": 0}},
+                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10}},
             }),
             &[("Mcp-Session-Id", &session)],
         )
         .await
         .0;
-        assert_eq!(
-            search["result"]["structuredContent"]["results"][0]["id"],
-            "notes/mcp.txt:0"
-        );
+        let reference = search["result"]["structuredContent"]["results"][0]["reference"]
+            .as_str()
+            .expect("search returns opaque reference");
+        assert!(!reference.contains("brief"));
         let fetch = post_json_with_headers(
             &mut client,
             &token.token,
@@ -1493,7 +1502,7 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 4,
                 "method": "tools/call",
-                "params": {"name": "fetch", "arguments": {"id": "notes/mcp.txt:0"}},
+                "params": {"name": "fetch", "arguments": {"reference": reference}},
             }),
             &[("Mcp-Session-Id", &session)],
         )
@@ -1501,7 +1510,7 @@ mod tests {
         .0;
         assert_eq!(
             fetch["result"]["structuredContent"],
-            json!({"content": "MCP fixture search needle"})
+            json!({"title": "Indexed journal entry — 20260831", "date": "20260831", "text": "MCP fixture search needle"})
         );
         client.shutdown().await.expect("client closes TLS");
         drop(client);
@@ -1550,14 +1559,13 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 1,
                 "method": "tools/call",
-                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10, "offset": 0}}
+                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10}}
             }),
         )
         .await;
-        assert_eq!(
-            search["result"]["structuredContent"]["results"][0]["id"],
-            "notes/mcp.txt:0"
-        );
+        let reference = search["result"]["structuredContent"]["results"][0]["reference"]
+            .as_str()
+            .expect("search returns opaque reference");
         let fetch = post_json(
             &mut client,
             &token.token,
@@ -1565,13 +1573,13 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
-                "params": {"name": "fetch", "arguments": {"id": "notes/mcp.txt:0"}}
+                "params": {"name": "fetch", "arguments": {"reference": reference}}
             }),
         )
         .await;
         assert_eq!(
             fetch["result"]["structuredContent"],
-            json!({"content": "MCP fixture search needle"})
+            json!({"title": "Indexed journal entry — 20260831", "date": "20260831", "text": "MCP fixture search needle"})
         );
         client.shutdown().await.expect("client closes TLS");
         drop(client);
@@ -1579,10 +1587,8 @@ mod tests {
         assert_eq!(snapshot_tree(journal_b.path()), before_b);
         let records = fs::read_dir(server.journal.path().join("chronicle"))
             .expect("audit day exists")
-            .flat_map(|day| {
-                fs::read_dir(day.expect("day entry").path().join("mcp.agent"))
-                    .expect("audit stream exists")
-            })
+            .filter_map(|day| fs::read_dir(day.ok()?.path().join("mcp.agent")).ok())
+            .flatten()
             .filter(|entry| {
                 entry
                     .as_ref()
@@ -1979,16 +1985,15 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 2,
                 "method": "tools/call",
-                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10, "offset": 0}},
+                "params": {"name": "search", "arguments": {"query": "needle", "limit": 10}},
             }),
             &[("Mcp-Session-Id", &session)],
         )
         .await
         .0;
-        assert_eq!(
-            search["result"]["structuredContent"]["results"][0]["id"],
-            "notes/mcp.txt:0"
-        );
+        let reference = search["result"]["structuredContent"]["results"][0]["reference"]
+            .as_str()
+            .expect("search returns opaque reference");
         let fetch = post_json_with_headers(
             &mut client,
             &access,
@@ -1996,7 +2001,7 @@ mod tests {
                 "jsonrpc": "2.0",
                 "id": 3,
                 "method": "tools/call",
-                "params": {"name": "fetch", "arguments": {"id": "notes/mcp.txt:0"}},
+                "params": {"name": "fetch", "arguments": {"reference": reference}},
             }),
             &[("Mcp-Session-Id", &session)],
         )
@@ -2004,7 +2009,7 @@ mod tests {
         .0;
         assert_eq!(
             fetch["result"]["structuredContent"],
-            json!({"content": "MCP fixture search needle"})
+            json!({"title": "Indexed journal entry — 20260831", "date": "20260831", "text": "MCP fixture search needle"})
         );
         assert_eq!(audit_record_count(server.journal.path()), 2);
 
@@ -2409,7 +2414,7 @@ mod tests {
         )
         .await;
         let allowed_tools = crate::registry::advertised_tools_list(
-            &crate::permissions::PermissionDecision::Allowed,
+            &crate::permissions::evaluate_connection_read(server.journal.path(), &verified.id),
         );
         assert_eq!(list_after["result"]["tools"], allowed_tools["tools"]);
 

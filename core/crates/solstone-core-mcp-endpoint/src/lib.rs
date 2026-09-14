@@ -29,6 +29,8 @@ use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capabilit
 mod account_wire;
 #[cfg(unix)]
 mod audit;
+#[cfg(all(test, unix, feature = "full-tests"))]
+mod boundary_tests;
 #[cfg(unix)]
 mod bridge_carrier;
 #[cfg(unix)]
@@ -37,6 +39,8 @@ mod bridge_forwarder;
 mod bridge_pop;
 #[cfg(unix)]
 mod bridge_session;
+#[cfg(unix)]
+mod dispatch;
 #[cfg(unix)]
 mod http1;
 #[cfg(unix)]
@@ -49,6 +53,8 @@ mod permissions;
 mod permits;
 #[cfg(unix)]
 mod proxy_preface;
+#[cfg(unix)]
+mod references;
 #[cfg(unix)]
 mod registry;
 #[cfg(unix)]
@@ -75,13 +81,16 @@ pub use bridge_carrier::McpBridgeCarrierError;
 #[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
+pub use dispatch::{McpProbeError, run_mcp_probe};
+#[cfg(unix)]
 pub use oauth::store::{
     CreatedPairingCode, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
 };
 #[cfg(unix)]
 pub use permissions::{
-    ConnectionPermissionRecord, PermissionDecision, PermissionStore, PermissionStoreError,
-    PermissionsFile, ReadPermission, ReadScope, evaluate_connection_read,
+    ConnectionPermissionRecord, ConnectionReadSnapshot, PermissionDecision, PermissionStore,
+    PermissionStoreError, PermissionsFile, ReadPermission, ReadScope, evaluate_connection_read,
+    resolve_permission_facet_names,
 };
 #[cfg(unix)]
 pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};

@@ -675,11 +675,11 @@ pub const SPL_HELP: &str = concat!(
 
 /// The parse-error usage for `journal mcp`.
 pub const MCP_USAGE: &str =
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission} ...\n";
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,probe} ...\n";
 
 /// `journal mcp --help`.
 pub const MCP_HELP: &str = concat!(
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission} ...\n",
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,probe} ...\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
@@ -691,6 +691,7 @@ pub const MCP_HELP: &str = concat!(
     "  pairing               Manage the local owner pairing code\n",
     "  oauth                 Manage registered OAuth clients\n",
     "  permission            Manage connection read permissions\n",
+    "  probe                 Invoke one MCP read without opening a listener\n",
 );
 
 pub const BACKFILL_FACET_IDS_USAGE: &str = "usage: journal backfill-facet-ids [-h] [--commit]\n";
@@ -1299,6 +1300,7 @@ pub enum McpCommand {
     Pairing(McpPairingCommand),
     Oauth(McpOauthCommand),
     Permission(McpPermissionCommand),
+    Probe(McpProbeCommand),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1314,9 +1316,24 @@ pub enum McpTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpPermissionCommand {
-    Show { target: Option<McpTarget> },
-    Set { target: McpTarget },
-    Clear { target: McpTarget },
+    Show {
+        target: Option<McpTarget>,
+    },
+    Set {
+        target: McpTarget,
+        categories: Vec<String>,
+        facets: Vec<String>,
+    },
+    Clear {
+        target: McpTarget,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpProbeCommand {
+    pub target: McpTarget,
+    pub tool: String,
+    pub arguments: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3924,7 +3941,7 @@ fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
 fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
         return Err(McpUsageError(
-            "the following arguments are required: service, status, token, pairing, oauth, permission"
+            "the following arguments are required: service, status, token, pairing, oauth, permission, probe"
                 .to_owned(),
         ));
     };
@@ -3935,6 +3952,7 @@ fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
         Some("pairing") => parse_mcp_pairing(rest).map(McpCommand::Pairing),
         Some("oauth") => parse_mcp_oauth(rest).map(McpCommand::Oauth),
         Some("permission") => parse_mcp_permission(rest).map(McpCommand::Permission),
+        Some("probe") => parse_mcp_probe(rest).map(McpCommand::Probe),
         _ => Err(McpUsageError(format!(
             "invalid MCP command: {}",
             command.to_string_lossy()
@@ -3959,10 +3977,7 @@ fn parse_mcp_permission(args: &[OsString]) -> Result<McpPermissionCommand, McpUs
                 })
             }
         }
-        Some("set") => {
-            let target = parse_mcp_target(rest)?;
-            Ok(McpPermissionCommand::Set { target })
-        }
+        Some("set") => parse_mcp_permission_set(rest),
         Some("clear") => {
             let target = parse_mcp_target(rest)?;
             Ok(McpPermissionCommand::Clear { target })
@@ -3972,6 +3987,111 @@ fn parse_mcp_permission(args: &[OsString]) -> Result<McpPermissionCommand, McpUs
             subcommand.to_string_lossy()
         ))),
     }
+}
+
+fn parse_mcp_permission_set(args: &[OsString]) -> Result<McpPermissionCommand, McpUsageError> {
+    let mut target_args = Vec::new();
+    let mut categories = Vec::new();
+    let mut facets = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--category") {
+            let value = iter
+                .next()
+                .ok_or_else(|| McpUsageError("expected argument after --category".to_owned()))?;
+            let value = value
+                .to_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    McpUsageError("category must be valid UTF-8 and nonempty".to_owned())
+                })?;
+            categories.push(value.to_owned());
+        } else if let Some(value) = arg
+            .to_str()
+            .and_then(|value| value.strip_prefix("--category="))
+        {
+            if value.is_empty() {
+                return Err(McpUsageError("category must be nonempty".to_owned()));
+            }
+            categories.push(value.to_owned());
+        } else if arg == OsStr::new("--facet") {
+            let value = iter
+                .next()
+                .ok_or_else(|| McpUsageError("expected argument after --facet".to_owned()))?;
+            let value = value
+                .to_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    McpUsageError("facet name must be valid UTF-8 and nonempty".to_owned())
+                })?;
+            facets.push(value.to_owned());
+        } else if let Some(value) = arg
+            .to_str()
+            .and_then(|value| value.strip_prefix("--facet="))
+        {
+            if value.is_empty() {
+                return Err(McpUsageError("facet name must be nonempty".to_owned()));
+            }
+            facets.push(value.to_owned());
+        } else {
+            target_args.push(arg.clone());
+        }
+    }
+    let target = parse_mcp_target(&target_args)?;
+    if categories.is_empty() {
+        return Err(McpUsageError(
+            "at least one --category is required".to_owned(),
+        ));
+    }
+    Ok(McpPermissionCommand::Set {
+        target,
+        categories,
+        facets,
+    })
+}
+
+fn parse_mcp_probe(args: &[OsString]) -> Result<McpProbeCommand, McpUsageError> {
+    let mut target_args = Vec::new();
+    let mut tool = None;
+    let mut arguments = None;
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--tool") {
+            tool = Some(
+                iter.next()
+                    .ok_or_else(|| McpUsageError("expected argument after --tool".to_owned()))?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        } else if let Some(value) = arg.to_str().and_then(|value| value.strip_prefix("--tool=")) {
+            tool = Some(value.to_owned());
+        } else if arg == OsStr::new("--arguments") {
+            arguments = Some(
+                iter.next()
+                    .ok_or_else(|| McpUsageError("expected argument after --arguments".to_owned()))?
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+        } else if let Some(value) = arg
+            .to_str()
+            .and_then(|value| value.strip_prefix("--arguments="))
+        {
+            arguments = Some(value.to_owned());
+        } else {
+            target_args.push(arg.clone());
+        }
+    }
+    let tool = tool
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| McpUsageError("--tool is required".to_owned()))?;
+    let arguments = arguments
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| McpUsageError("--arguments is required".to_owned()))?;
+    Ok(McpProbeCommand {
+        target: parse_mcp_target(&target_args)?,
+        tool,
+        arguments,
+    })
 }
 
 fn parse_mcp_target(args: &[OsString]) -> Result<McpTarget, McpUsageError> {
@@ -8900,7 +9020,11 @@ mod tests {
                 "--oauth",
                 "client-1",
                 "--created",
-                "2026-09-13T18:00:00Z"
+                "2026-09-13T18:00:00Z",
+                "--category",
+                "transcripts",
+                "--facet",
+                "work"
             ])),
             Ok(Command::Mcp(McpCommand::Permission(
                 McpPermissionCommand::Set {
@@ -8908,8 +9032,29 @@ mod tests {
                         client_id: "client-1".to_owned(),
                         created_at: Some("2026-09-13T18:00:00Z".to_owned()),
                     },
+                    categories: vec!["transcripts".to_owned()],
+                    facets: vec!["work".to_owned()],
                 }
             )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "probe",
+                "--token",
+                "test-agent",
+                "--tool",
+                "list_facets",
+                "--arguments",
+                "{}"
+            ])),
+            Ok(Command::Mcp(McpCommand::Probe(McpProbeCommand {
+                target: McpTarget::Token {
+                    label: "test-agent".to_owned()
+                },
+                tool: "list_facets".to_owned(),
+                arguments: "{}".to_owned(),
+            })))
         );
         assert_eq!(
             evaluate_args(&args(&[
@@ -8930,7 +9075,7 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["mcp"])),
             Ok(Command::McpUsage(McpUsageError(
-                "the following arguments are required: service, status, token, pairing, oauth, permission"
+                "the following arguments are required: service, status, token, pairing, oauth, permission, probe"
                     .to_owned()
             )))
         );
