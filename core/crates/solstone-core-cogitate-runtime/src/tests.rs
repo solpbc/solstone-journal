@@ -701,15 +701,15 @@ fn tail_precedence_and_non_responsive_composition_are_preserved() {
     for (tail_state, expected) in [
         (
             state(true, false, false, false, "I cannot do that."),
-            "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline after producing the thinking engine didn't answer the request",
+            "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline after producing the model didn't answer the request",
         ),
         (
             state(false, true, false, false, "I cannot do that."),
-            "token_budget_exceeded: cogitate run reached its per-run resource budget after producing the thinking engine didn't answer the request",
+            "token_budget_exceeded: cogitate run reached its per-run resource budget after producing the model didn't answer the request",
         ),
         (
             state(false, false, false, true, "I cannot do that."),
-            "agent_stuck: cogitate run was interrupted/stuck after producing the thinking engine didn't answer the request",
+            "agent_stuck: cogitate run was interrupted/stuck after producing the model didn't answer the request",
         ),
     ] {
         let outcome = compose_tail(tail_state);

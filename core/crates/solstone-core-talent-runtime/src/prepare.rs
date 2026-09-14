@@ -40,7 +40,7 @@ impl std::fmt::Display for PrepareFailure {
                 "Cannot resolve cwd for talent '{talent}' — journal path unavailable"
             ),
             Self::NoBrainConfigured => {
-                formatter.write_str("No thinking engine is chosen yet. Choose one in Thinking.")
+                formatter.write_str("No model is chosen yet. Choose one in Thinking.")
             }
         }
     }

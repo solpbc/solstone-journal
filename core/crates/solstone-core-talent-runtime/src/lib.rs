@@ -1856,7 +1856,7 @@ mod tests {
         };
         assert_eq!(
             error.to_string(),
-            "No thinking engine is chosen yet. Choose one in Thinking."
+            "No model is chosen yet. Choose one in Thinking."
         );
     }
 
@@ -1914,7 +1914,7 @@ mod tests {
         let no_brain_events = events(&no_brain);
         assert_eq!(
             no_brain_events[0]["error"],
-            "No thinking engine is chosen yet. Choose one in Thinking."
+            "No model is chosen yet. Choose one in Thinking."
         );
     }
 

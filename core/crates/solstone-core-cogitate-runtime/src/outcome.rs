@@ -105,7 +105,7 @@ pub(crate) fn compose_tail(state: TailState) -> RunOutcome {
         (
             "wall_clock_exceeded",
             if non_responsive {
-                "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline after producing the thinking engine didn't answer the request"
+                "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline after producing the model didn't answer the request"
             } else if partial {
                 "wall_clock_exceeded: cogitate run exceeded its wall-clock deadline and was force-finished with a partial result preserved"
             } else {
@@ -117,7 +117,7 @@ pub(crate) fn compose_tail(state: TailState) -> RunOutcome {
             (
                 "token_budget_exceeded",
                 if non_responsive {
-                    "token_budget_exceeded: cogitate run reached its per-run resource budget after producing the thinking engine didn't answer the request"
+                    "token_budget_exceeded: cogitate run reached its per-run resource budget after producing the model didn't answer the request"
                 } else if partial {
                     "token_budget_exceeded: cogitate run reached its per-run resource budget and was force-finished with a partial result preserved"
                 } else {
@@ -128,7 +128,7 @@ pub(crate) fn compose_tail(state: TailState) -> RunOutcome {
             (
                 "max_turns_exhausted",
                 if non_responsive {
-                    "max_turns_exhausted: cogitate run reached its turn budget after producing the thinking engine didn't answer the request"
+                    "max_turns_exhausted: cogitate run reached its turn budget after producing the model didn't answer the request"
                 } else if partial {
                     "max_turns_exhausted: cogitate run reached its turn budget and was force-finished with a partial result preserved"
                 } else {
@@ -140,7 +140,7 @@ pub(crate) fn compose_tail(state: TailState) -> RunOutcome {
         (
             "agent_stuck",
             if non_responsive {
-                "agent_stuck: cogitate run was interrupted/stuck after producing the thinking engine didn't answer the request"
+                "agent_stuck: cogitate run was interrupted/stuck after producing the model didn't answer the request"
             } else if partial {
                 "agent_stuck: cogitate run was interrupted/stuck with a partial result preserved"
             } else {
@@ -150,7 +150,7 @@ pub(crate) fn compose_tail(state: TailState) -> RunOutcome {
     } else if non_responsive {
         (
             NON_RESPONSIVE_REASON_CODE,
-            "non_responsive: cogitate run produced the thinking engine didn't answer the request",
+            "non_responsive: cogitate run produced the model didn't answer the request",
         )
     } else if state.expects_emit_final && !partial {
         (

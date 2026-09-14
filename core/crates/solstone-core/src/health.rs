@@ -582,16 +582,19 @@ fn render_status(status: &SupervisorStatus) -> String {
             if let Some(depth) = status.sense_pending_queue_depth {
                 let _ = writeln!(
                     output,
-                    "Sense: {depth} pending ({SENSE_STALE_LABEL}, {s}s since beacon)"
+                    "Media processor: {depth} pending ({SENSE_STALE_LABEL}, {s}s since beacon)"
                 );
             } else {
-                let _ = writeln!(output, "Sense: {SENSE_STALE_LABEL} ({s}s since beacon)");
+                let _ = writeln!(
+                    output,
+                    "Media processor: {SENSE_STALE_LABEL} ({s}s since beacon)"
+                );
             }
         } else if let Some(depth) = status.sense_pending_queue_depth {
             if depth == 0 {
                 let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
             } else {
-                let _ = writeln!(output, "Sense: {depth} pending");
+                let _ = writeln!(output, "Media processor: {depth} pending");
             }
         } else {
             let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
@@ -600,7 +603,7 @@ fn render_status(status: &SupervisorStatus) -> String {
         if depth == 0 {
             let _ = writeln!(output, "{SENSE_IDLE_LABEL}");
         } else {
-            let _ = writeln!(output, "Sense: {depth} pending");
+            let _ = writeln!(output, "Media processor: {depth} pending");
         }
     } else {
         let _ = writeln!(output, "{SENSE_NOT_RUNNING_LABEL}");
@@ -608,8 +611,8 @@ fn render_status(status: &SupervisorStatus) -> String {
     output
 }
 
-pub(crate) const SENSE_NOT_RUNNING_LABEL: &str = "Sense: not running";
-pub(crate) const SENSE_IDLE_LABEL: &str = "Sense: idle";
+pub(crate) const SENSE_NOT_RUNNING_LABEL: &str = "Media processor: not reporting";
+pub(crate) const SENSE_IDLE_LABEL: &str = "Media processor: idle";
 pub(crate) const SENSE_STALE_LABEL: &str = "stale";
 pub(crate) const SENSE_STALENESS_THRESHOLD_MS: u64 = 15_000;
 
@@ -683,7 +686,7 @@ mod tests {
         let status: SupervisorStatus = serde_json::from_value(status_value()).unwrap();
         assert_eq!(
             render_status(&status),
-            "Services:\n  convey\\n          pid 3  uptime 1h 1m\n\nCrashed:\n  local            2 restart attempts\n\nTasks:\n  daily\\t           21s  SLOW (cap 20s)\n  queued z\\x1b        1\n\nHeartbeat: STALE (host (path\\r))\nCallosum: 2 clients\nSense: not running\n"
+            "Services:\n  convey\\n          pid 3  uptime 1h 1m\n\nCrashed:\n  local            2 restart attempts\n\nTasks:\n  daily\\t           21s  SLOW (cap 20s)\n  queued z\\x1b        1\n\nHeartbeat: STALE (host (path\\r))\nCallosum: 2 clients\nMedia processor: not reporting\n"
         );
     }
 
@@ -695,7 +698,7 @@ mod tests {
         value["sense_pending_age_ms"] = json!(2000);
         let status: SupervisorStatus = serde_json::from_value(value.clone()).unwrap();
         let rendered = render_status(&status);
-        assert!(rendered.ends_with("Sense: 3 pending\n"));
+        assert!(rendered.ends_with("Media processor: 3 pending\n"));
 
         value["sense_pending_queue_depth"] = json!(0);
         let status: SupervisorStatus = serde_json::from_value(value.clone()).unwrap();
@@ -706,7 +709,7 @@ mod tests {
         let status: SupervisorStatus = serde_json::from_value(value.clone()).unwrap();
         let rendered = render_status(&status);
         assert!(rendered.ends_with(&format!(
-            "Sense: 0 pending ({SENSE_STALE_LABEL}, 16s since beacon)\n"
+            "Media processor: 0 pending ({SENSE_STALE_LABEL}, 16s since beacon)\n"
         )));
 
         value["sense_pending_received"] = json!(false);
@@ -935,7 +938,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             render_status(&status),
-            "Services:\n\nTasks: none\nHeartbeat: ok\nCallosum: 0 clients\nSense: not running\n"
+            "Services:\n\nTasks: none\nHeartbeat: ok\nCallosum: 0 clients\nMedia processor: not reporting\n"
         );
     }
 

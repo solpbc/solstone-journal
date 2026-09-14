@@ -389,8 +389,44 @@
     updateStatusSummary();
   }
 
+  function renderMediaBacklog(notSensed) {
+    const card = document.getElementById('brain');
+    const existing = document.getElementById('mediaBacklogLine');
+    const count = Number(notSensed);
+    if (!card) return;
+    if (Number.isFinite(count) && count > 0) {
+      const word = count === 1 ? 'segment' : 'segments';
+      const el = existing || document.createElement('p');
+      el.id = 'mediaBacklogLine';
+      el.className = 'brain-health-pending';
+      el.textContent = `${count} ${word} waiting for media processing`;
+      if (!existing) {
+        card.appendChild(el);
+      }
+    } else if (existing) {
+      existing.remove();
+    }
+  }
+
+  async function loadMediaBacklog() {
+    try {
+      let payload;
+      if (window.apiJson) {
+        payload = await window.apiJson('/api/health/summary', { noAuthRedirect: true });
+      } else {
+        const response = await fetch('/api/health/summary', { headers: { Accept: 'application/json' } });
+        if (!response.ok) throw new Error('summary fetch failed');
+        payload = await response.json();
+      }
+      renderMediaBacklog(payload?.segment_backlog?.not_sensed);
+    } catch {
+      renderMediaBacklog(0);
+    }
+  }
+
   async function loadHealthState() {
     clearHealthStateError();
+    loadMediaBacklog();
     try {
       const payload = await getJson('/app/health/api/state');
       renderBacklogState(payload.backlog);

@@ -58,7 +58,7 @@ fn headline(state: &str) -> &'static str {
 fn brain_reason_text(reason: Option<&str>) -> String {
     match reason {
         None => "ok".to_owned(),
-        Some("thinking_engine_not_chosen") => "no thinking engine chosen".to_owned(),
+        Some("thinking_engine_not_chosen") => "no model chosen".to_owned(),
         Some("configuration_invalid") => "configuration invalid".to_owned(),
         Some("stale_expected_fingerprint") => "stale expected fingerprint".to_owned(),
         Some("lost_fence") => "refresh fence lost".to_owned(),

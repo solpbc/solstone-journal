@@ -83,7 +83,7 @@ fn component(record: Option<&Value>, name: &str) -> Value {
 
 fn reason_text(reason: &str) -> String {
     match reason {
-        "thinking_engine_not_chosen" => "no thinking engine chosen".to_owned(),
+        "thinking_engine_not_chosen" => "no model chosen".to_owned(),
         "configuration_invalid" => "configuration invalid".to_owned(),
         "stale_expected_fingerprint" => "stale expected fingerprint".to_owned(),
         "lost_fence" => "refresh fence lost".to_owned(),

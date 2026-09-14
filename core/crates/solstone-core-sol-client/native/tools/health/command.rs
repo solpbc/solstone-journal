@@ -198,7 +198,7 @@ fn render_summary(report: &Value) -> Vec<String> {
         display_value(&range[0]),
         display_value(&range[1])
     ));
-    lines.push("Capture".to_string());
+    lines.push("Intake".to_string());
     lines.push(format!(
         "  hours_with_capture: {}",
         display_value(&capture["hours_with_capture"])

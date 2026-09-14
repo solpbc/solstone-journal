@@ -33,7 +33,7 @@ const SPEC_POINTER: &str = "core/crates/solstone-core-health-web/src/journal_dat
 const RECENT_BACKLOG_DAY_WINDOW: usize = 30;
 
 const NO_ENGINE_ANALYSIS_TEXT: &str =
-    "No thinking engine is chosen yet. Choose one in Thinking so observations can be analyzed.";
+    "No model is chosen yet. Choose one in Thinking so your segments can be analyzed.";
 
 #[derive(Debug)]
 pub(crate) enum HealthError {
