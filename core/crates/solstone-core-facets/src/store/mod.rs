@@ -12,6 +12,7 @@ mod error;
 mod event_topic_migration;
 mod facet_entities;
 mod facet_entity_move;
+mod facet_id;
 mod identity;
 mod legacy_entity_migration;
 mod lifecycle;
@@ -56,8 +57,8 @@ pub use detected_entity_activity::{
     load_detected_entities_recent, read_detected_entity_names_strict,
 };
 pub use error::{
-    FacetEntityWriteError, FacetRenameError, FacetStoreError, FacetWriteError,
-    ObservationLookupError, ObservationWriteError,
+    FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetRenameError, FacetStoreError,
+    FacetWriteError, ObservationLookupError, ObservationWriteError,
 };
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
 pub use facet_entities::{
@@ -66,6 +67,11 @@ pub use facet_entities::{
     update_facet_entity_description, update_facet_entity_identity,
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
+pub use facet_id::{
+    BackfillReport, allocate_facet_id, allocate_facet_id_locked, assign_new_facet_id,
+    assign_new_facet_id_locked, backfill_facet_ids, is_well_formed_facet_id, resolve_facet_id,
+    strip_incoming_facet_id,
+};
 pub use identity::{FacetEntityLinkSnapshot, read_facet_entity_link};
 pub use legacy_entity_migration::{
     FacetEntityMigrationError, LegacyFacetEntityMigrationReport, migrate_legacy_facet_entities,

@@ -282,6 +282,40 @@ impl TokenStore {
             .collect())
     }
 
+    /// Find a bearer token's internal ID by its label.
+    pub fn find_id_by_label(&self, label: &str) -> Result<Option<String>, TokenStoreError> {
+        let label = normalize_label(label).map_err(TokenStoreError::InvalidLabel)?;
+        Ok(self
+            .read_store()?
+            .tokens
+            .into_iter()
+            .find(|entry| entry.label.eq_ignore_ascii_case(&label))
+            .map(|entry| entry.id))
+    }
+
+    /// Revoke a bearer token by its connection ID. Returns true if removed.
+    pub fn revoke_by_id(&self, id: &str) -> Result<bool, TokenStoreError> {
+        self.ensure_directory()?;
+        let path = self.tokens_path();
+        let _lock = hold_lock(
+            &path,
+            LockOptions {
+                mode: Some(0o600),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(TokenStoreError::Lock)?;
+        let mut store = self.read_store()?;
+        let Some(index) = store.tokens.iter().position(|entry| entry.id == id) else {
+            return Ok(false);
+        };
+        let removed = store.tokens.remove(index);
+        self.write_store(&path, &store)?;
+        let _ = crate::permissions::PermissionStore::open(&self.root)
+            .remove_connection(&format!("bearer:{}", removed.id));
+        Ok(true)
+    }
+
     /// Remove the named token after rereading the locked durable store.
     pub fn revoke(&self, label: &str) -> Result<(), TokenStoreError> {
         let label = normalize_label(label).map_err(TokenStoreError::InvalidLabel)?;
@@ -303,8 +337,11 @@ impl TokenStore {
         else {
             return Err(TokenStoreError::NotFound { label });
         };
-        store.tokens.remove(index);
-        self.write_store(&path, &store)
+        let removed = store.tokens.remove(index);
+        self.write_store(&path, &store)?;
+        let _ = crate::permissions::PermissionStore::open(&self.root)
+            .remove_connection(&format!("bearer:{}", removed.id));
+        Ok(())
     }
 
     /// Verify a presented bearer token against freshly loaded durable state.
@@ -320,7 +357,7 @@ impl TokenStore {
                 })?;
             if bool::from(digest.ct_eq(&verifier)) && verified.is_none() {
                 verified = Some(VerifiedToken {
-                    id: entry.id,
+                    id: format!("bearer:{}", entry.id),
                     agent_identity: entry.label,
                 });
             }

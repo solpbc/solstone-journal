@@ -674,11 +674,12 @@ pub const SPL_HELP: &str = concat!(
 );
 
 /// The parse-error usage for `journal mcp`.
-pub const MCP_USAGE: &str = "usage: journal mcp [-h] {service,status,token,pairing,oauth} ...\n";
+pub const MCP_USAGE: &str =
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission} ...\n";
 
 /// `journal mcp --help`.
 pub const MCP_HELP: &str = concat!(
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth} ...\n",
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission} ...\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
@@ -689,6 +690,19 @@ pub const MCP_HELP: &str = concat!(
     "  token                 Manage MCP bearer tokens\n",
     "  pairing               Manage the local owner pairing code\n",
     "  oauth                 Manage registered OAuth clients\n",
+    "  permission            Manage connection read permissions\n",
+);
+
+pub const BACKFILL_FACET_IDS_USAGE: &str = "usage: journal backfill-facet-ids [-h] [--commit]\n";
+
+pub const BACKFILL_FACET_IDS_HELP: &str = concat!(
+    "usage: journal backfill-facet-ids [-h] [--commit]\n",
+    "\n",
+    "Backfill missing UUIDv4 identifiers across all facet declarations.\n",
+    "\n",
+    "options:\n",
+    "  -h, --help  show this help message and exit\n",
+    "  --commit    Write backfilled facet IDs to disk (default is dry run)\n",
 );
 
 pub const TALENT_USAGE: &str =
@@ -755,6 +769,9 @@ pub enum Command {
     JournalStats(Vec<OsString>),
     Talent(Vec<OsString>),
     Backfill(Vec<OsString>),
+    BackfillFacetIds { commit: bool },
+    BackfillFacetIdsHelp,
+    BackfillFacetIdsUsage,
     FacetCandidates,
     InstallModels(InstallModelsOptions),
     InstallModelsUsage,
@@ -1281,6 +1298,25 @@ pub enum McpCommand {
     Token(McpTokenCommand),
     Pairing(McpPairingCommand),
     Oauth(McpOauthCommand),
+    Permission(McpPermissionCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpTarget {
+    Token {
+        label: String,
+    },
+    Oauth {
+        client_id: String,
+        created_at: Option<String>,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum McpPermissionCommand {
+    Show { target: Option<McpTarget> },
+    Set { target: McpTarget },
+    Clear { target: McpTarget },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1624,6 +1660,18 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("backfill-processing-records") => {
             Ok(Command::Backfill(rest.to_vec()))
+        }
+        [command, rest @ ..] if command == OsStr::new("backfill-facet-ids") => {
+            let help = |argument: &OsString| {
+                argument == OsStr::new("--help") || argument == OsStr::new("-h")
+            };
+            if rest.iter().any(help) {
+                return Ok(Command::BackfillFacetIdsHelp);
+            }
+            match parse_backfill_facet_ids(rest) {
+                Ok(commit) => Ok(Command::BackfillFacetIds { commit }),
+                Err(()) => Ok(Command::BackfillFacetIdsUsage),
+            }
         }
         [command, rest @ ..] if command == OsStr::new("facet-candidates") => {
             let help = |argument: &OsString| {
@@ -3876,7 +3924,7 @@ fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
 fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
         return Err(McpUsageError(
-            "the following arguments are required: service, status, token, pairing, oauth"
+            "the following arguments are required: service, status, token, pairing, oauth, permission"
                 .to_owned(),
         ));
     };
@@ -3886,10 +3934,129 @@ fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
         Some("token") => parse_mcp_token(rest).map(McpCommand::Token),
         Some("pairing") => parse_mcp_pairing(rest).map(McpCommand::Pairing),
         Some("oauth") => parse_mcp_oauth(rest).map(McpCommand::Oauth),
+        Some("permission") => parse_mcp_permission(rest).map(McpCommand::Permission),
         _ => Err(McpUsageError(format!(
             "invalid MCP command: {}",
             command.to_string_lossy()
         ))),
+    }
+}
+
+fn parse_mcp_permission(args: &[OsString]) -> Result<McpPermissionCommand, McpUsageError> {
+    let [subcommand, rest @ ..] = args else {
+        return Err(McpUsageError(
+            "the following arguments are required: show, set, clear".to_owned(),
+        ));
+    };
+    match subcommand.to_str() {
+        Some("show") => {
+            if rest.is_empty() {
+                Ok(McpPermissionCommand::Show { target: None })
+            } else {
+                let target = parse_mcp_target(rest)?;
+                Ok(McpPermissionCommand::Show {
+                    target: Some(target),
+                })
+            }
+        }
+        Some("set") => {
+            let target = parse_mcp_target(rest)?;
+            Ok(McpPermissionCommand::Set { target })
+        }
+        Some("clear") => {
+            let target = parse_mcp_target(rest)?;
+            Ok(McpPermissionCommand::Clear { target })
+        }
+        _ => Err(McpUsageError(format!(
+            "invalid MCP permission command: {}",
+            subcommand.to_string_lossy()
+        ))),
+    }
+}
+
+fn parse_mcp_target(args: &[OsString]) -> Result<McpTarget, McpUsageError> {
+    let mut token_label: Option<String> = None;
+    let mut oauth_client_id: Option<String> = None;
+    let mut oauth_created: Option<String> = None;
+
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == OsStr::new("--token") {
+            let val = iter
+                .next()
+                .ok_or_else(|| McpUsageError("expected argument after --token".to_owned()))?;
+            let s = val.to_str().filter(|s| !s.is_empty()).ok_or_else(|| {
+                McpUsageError("token label must be valid UTF-8 and nonempty".to_owned())
+            })?;
+            token_label = Some(s.to_owned());
+        } else if let Some(val) = arg.to_str().and_then(|s| s.strip_prefix("--token=")) {
+            if val.is_empty() {
+                return Err(McpUsageError("token label must be nonempty".to_owned()));
+            }
+            token_label = Some(val.to_owned());
+        } else if arg == OsStr::new("--oauth") {
+            let val = iter
+                .next()
+                .ok_or_else(|| McpUsageError("expected argument after --oauth".to_owned()))?;
+            let s = val.to_str().filter(|s| !s.is_empty()).ok_or_else(|| {
+                McpUsageError("oauth client-id must be valid UTF-8 and nonempty".to_owned())
+            })?;
+            oauth_client_id = Some(s.to_owned());
+        } else if let Some(val) = arg.to_str().and_then(|s| s.strip_prefix("--oauth=")) {
+            if val.is_empty() {
+                return Err(McpUsageError("oauth client-id must be nonempty".to_owned()));
+            }
+            oauth_client_id = Some(val.to_owned());
+        } else if arg == OsStr::new("--created") {
+            let val = iter
+                .next()
+                .ok_or_else(|| McpUsageError("expected argument after --created".to_owned()))?;
+            let s = val.to_str().filter(|s| !s.is_empty()).ok_or_else(|| {
+                McpUsageError("created timestamp must be valid UTF-8 and nonempty".to_owned())
+            })?;
+            oauth_created = Some(s.to_owned());
+        } else if let Some(val) = arg.to_str().and_then(|s| s.strip_prefix("--created=")) {
+            if val.is_empty() {
+                return Err(McpUsageError(
+                    "created timestamp must be nonempty".to_owned(),
+                ));
+            }
+            oauth_created = Some(val.to_owned());
+        } else {
+            return Err(McpUsageError(format!(
+                "unexpected argument: {}",
+                arg.to_string_lossy()
+            )));
+        }
+    }
+
+    match (token_label, oauth_client_id) {
+        (Some(label), None) => {
+            if oauth_created.is_some() {
+                return Err(McpUsageError(
+                    "--created cannot be used with --token".to_owned(),
+                ));
+            }
+            Ok(McpTarget::Token { label })
+        }
+        (None, Some(client_id)) => Ok(McpTarget::Oauth {
+            client_id,
+            created_at: oauth_created,
+        }),
+        (Some(_), Some(_)) => Err(McpUsageError(
+            "specify either --token or --oauth, not both".to_owned(),
+        )),
+        (None, None) => Err(McpUsageError(
+            "one of --token or --oauth is required".to_owned(),
+        )),
+    }
+}
+
+fn parse_backfill_facet_ids(args: &[OsString]) -> Result<bool, ()> {
+    match args {
+        [] => Ok(false),
+        [flag] if flag == OsStr::new("--commit") => Ok(true),
+        _ => Err(()),
     }
 }
 
@@ -8704,9 +8871,66 @@ mod tests {
             })))
         );
         assert_eq!(
+            evaluate_args(&args(&["mcp", "permission", "show"])),
+            Ok(Command::Mcp(McpCommand::Permission(
+                McpPermissionCommand::Show { target: None }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "permission",
+                "show",
+                "--token",
+                "test-agent"
+            ])),
+            Ok(Command::Mcp(McpCommand::Permission(
+                McpPermissionCommand::Show {
+                    target: Some(McpTarget::Token {
+                        label: "test-agent".to_owned(),
+                    }),
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "permission",
+                "set",
+                "--oauth",
+                "client-1",
+                "--created",
+                "2026-09-13T18:00:00Z"
+            ])),
+            Ok(Command::Mcp(McpCommand::Permission(
+                McpPermissionCommand::Set {
+                    target: McpTarget::Oauth {
+                        client_id: "client-1".to_owned(),
+                        created_at: Some("2026-09-13T18:00:00Z".to_owned()),
+                    },
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "permission",
+                "clear",
+                "--token",
+                "test-agent"
+            ])),
+            Ok(Command::Mcp(McpCommand::Permission(
+                McpPermissionCommand::Clear {
+                    target: McpTarget::Token {
+                        label: "test-agent".to_owned(),
+                    },
+                }
+            )))
+        );
+        assert_eq!(
             evaluate_args(&args(&["mcp"])),
             Ok(Command::McpUsage(McpUsageError(
-                "the following arguments are required: service, status, token, pairing, oauth"
+                "the following arguments are required: service, status, token, pairing, oauth, permission"
                     .to_owned()
             )))
         );
@@ -8714,6 +8938,18 @@ mod tests {
             evaluate_args(&args(&["mcp", "pairing"])),
             Ok(Command::McpUsage(McpUsageError(
                 "the following arguments are required: generate, revoke".to_owned()
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "permission"])),
+            Ok(Command::McpUsage(McpUsageError(
+                "the following arguments are required: show, set, clear".to_owned()
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "permission", "set"])),
+            Ok(Command::McpUsage(McpUsageError(
+                "one of --token or --oauth is required".to_owned()
             )))
         );
         assert_eq!(
@@ -8737,6 +8973,26 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["mcp", "--help"])),
             Ok(Command::McpHelp)
+        );
+    }
+
+    #[test]
+    fn backfill_facet_ids_grammar_tests() {
+        assert_eq!(
+            evaluate_args(&args(&["backfill-facet-ids"])),
+            Ok(Command::BackfillFacetIds { commit: false })
+        );
+        assert_eq!(
+            evaluate_args(&args(&["backfill-facet-ids", "--commit"])),
+            Ok(Command::BackfillFacetIds { commit: true })
+        );
+        assert_eq!(
+            evaluate_args(&args(&["backfill-facet-ids", "--help"])),
+            Ok(Command::BackfillFacetIdsHelp)
+        );
+        assert_eq!(
+            evaluate_args(&args(&["backfill-facet-ids", "--nonsense"])),
+            Ok(Command::BackfillFacetIdsUsage)
         );
     }
 

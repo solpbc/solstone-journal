@@ -88,6 +88,16 @@ pub struct OAuthClientSummary {
     pub created_at: DateTime<Utc>,
 }
 
+/// Non-secret grant metadata suitable for registry tracking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OAuthGrantSummary {
+    pub id: String,
+    pub client_id: String,
+    pub client_name: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub access_expires_at: DateTime<Utc>,
+}
+
 /// Failure while operating the OAuth ledger.
 #[derive(Debug)]
 pub enum OAuthStoreError {
@@ -336,7 +346,7 @@ impl OAuthStore {
                     continue;
                 }
                 verified = Some(VerifiedToken {
-                    id: grant.id.clone(),
+                    id: format!("oauth:{}", grant.id),
                     agent_identity: grant.client_id.clone(),
                 });
             }
@@ -758,6 +768,7 @@ impl OAuthStore {
     /// Invalidate outstanding tokens for one client without deleting its record.
     #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn revoke_client(&self, client_record_id: &str) -> Result<(), OAuthStoreError> {
+        let mut grant_ids = Vec::new();
         self.mutate(|store, _now| {
             let client = store
                 .clients
@@ -765,8 +776,19 @@ impl OAuthStore {
                 .find(|client| client.id == client_record_id)
                 .ok_or(OAuthStoreError::ClientNotFound)?;
             client.revocation_generation = client.revocation_generation.saturating_add(1);
+            grant_ids = store
+                .grants
+                .iter()
+                .filter(|g| g.client_record_id == client_record_id)
+                .map(|g| g.id.clone())
+                .collect();
             Ok(())
-        })
+        })?;
+        let perm_store = crate::permissions::PermissionStore::open(&self.root);
+        for gid in grant_ids {
+            let _ = perm_store.remove_connection(&format!("oauth:{gid}"));
+        }
+        Ok(())
     }
 
     /// List only non-secret OAuth client metadata from the current store.
@@ -786,6 +808,7 @@ impl OAuthStore {
     /// Invalidate outstanding tokens for the client identified by `client_id`.
     pub fn revoke_client_by_client_id(&self, client_id: &str) -> Result<(), OAuthStoreError> {
         let client_id = client_id.to_owned();
+        let mut grant_ids = Vec::new();
         self.mutate(|store, _now| {
             let client = store
                 .clients
@@ -793,8 +816,64 @@ impl OAuthStore {
                 .find(|client| client.client_id == client_id)
                 .ok_or(OAuthStoreError::ClientNotFound)?;
             client.revocation_generation = client.revocation_generation.saturating_add(1);
+            let client_record_id = client.id.clone();
+            grant_ids = store
+                .grants
+                .iter()
+                .filter(|g| g.client_record_id == client_record_id)
+                .map(|g| g.id.clone())
+                .collect();
             Ok(())
-        })
+        })?;
+        let perm_store = crate::permissions::PermissionStore::open(&self.root);
+        for gid in grant_ids {
+            let _ = perm_store.remove_connection(&format!("oauth:{gid}"));
+        }
+        Ok(())
+    }
+
+    /// List all active grants with their client metadata.
+    pub fn list_grants(&self) -> Result<Vec<OAuthGrantSummary>, OAuthStoreError> {
+        let store = self.read_store()?;
+        let now = current_time();
+        let mut summaries = Vec::new();
+        for grant in &store.grants {
+            if grant.access_expires_at <= now && grant.refresh_expires_at <= now {
+                continue;
+            }
+            let client = store
+                .clients
+                .iter()
+                .find(|c| c.id == grant.client_record_id);
+            let client_name = client.and_then(|c| c.client_name.clone());
+            summaries.push(OAuthGrantSummary {
+                id: grant.id.clone(),
+                client_id: grant.client_id.clone(),
+                client_name,
+                created_at: grant.created_at,
+                access_expires_at: grant.access_expires_at,
+            });
+        }
+        Ok(summaries)
+    }
+
+    /// Revoke a specific grant by its connection ID.
+    pub fn revoke_grant_by_id(&self, grant_id: &str) -> Result<bool, OAuthStoreError> {
+        let grant_id = grant_id.to_owned();
+        let mut removed = false;
+        self.mutate(|store, _now| {
+            let Some(index) = store.grants.iter().position(|g| g.id == grant_id) else {
+                return Ok(false);
+            };
+            store.grants.remove(index);
+            removed = true;
+            Ok(true)
+        })?;
+        if removed {
+            let _ = crate::permissions::PermissionStore::open(&self.root)
+                .remove_connection(&format!("oauth:{grant_id}"));
+        }
+        Ok(removed)
     }
 
     fn mutate<T>(

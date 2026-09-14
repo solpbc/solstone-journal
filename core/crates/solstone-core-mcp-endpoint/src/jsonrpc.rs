@@ -96,6 +96,10 @@ impl JsonRpcResponse {
         )
     }
 
+    pub(crate) fn permission_denied(id: Option<&Value>, reason: &'static str) -> Self {
+        Self::error_with_data(id, -32001, "Access denied", json!({ "reason": reason }))
+    }
+
     fn error(id: Option<&Value>, code: i32, message: &'static str) -> Self {
         Self::error_with_optional_data(id, code, message, None)
     }
@@ -161,47 +165,6 @@ pub(crate) fn initialize_result() -> Value {
     })
 }
 
-pub(crate) fn tools_list_result() -> Value {
-    json!({
-        "tools": [
-            {
-                "name": "search",
-                "inputSchema": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": {
-                        "query": { "type": "string", "minLength": 1 },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
-                        "offset": { "type": "integer", "minimum": 0, "maximum": 10000, "default": 0 },
-                        "day": { "type": "string" },
-                        "day_from": { "type": "string" },
-                        "day_to": { "type": "string" },
-                        "facet": { "type": "string" },
-                        "agent": { "type": "string" },
-                        "stream": { "type": "string" },
-                        "time_bucket": { "type": "string" },
-                        "relax": { "type": "boolean", "default": false },
-                        "counts": { "type": "boolean", "default": false },
-                        "order": { "type": "string", "enum": ["relevance", "recency"], "default": "relevance" }
-                    },
-                    "required": ["query"]
-                },
-                "annotations": { "readOnlyHint": true }
-            },
-            {
-                "name": "fetch",
-                "inputSchema": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "properties": { "id": { "type": "string", "minLength": 3 } },
-                    "required": ["id"]
-                },
-                "annotations": { "readOnlyHint": true }
-            }
-        ]
-    })
-}
-
 /// Render a successful tool result in the MCP `CallToolResult` shape.
 ///
 /// `content` is required by MCP clients, including when the machine-readable
@@ -227,12 +190,12 @@ fn classify_tool_call(request: &JsonRpcRequest) -> Result<McpMethod, JsonRpcFail
             request.id.as_ref(),
         )));
     };
-    match name.as_str() {
-        "search" => Ok(McpMethod::ToolsCall(ToolName::Search)),
-        "fetch" => Ok(McpMethod::ToolsCall(ToolName::Fetch)),
-        _ => Err(Box::new(JsonRpcResponse::tool_not_found(
+    if let Some(entry) = crate::registry::find_tool_by_wire_name(name) {
+        Ok(McpMethod::ToolsCall(entry.tool_name))
+    } else {
+        Err(Box::new(JsonRpcResponse::tool_not_found(
             request.id.as_ref(),
-        ))),
+        )))
     }
 }
 
@@ -259,8 +222,10 @@ mod tests {
 
     use super::{
         JsonRpcResponse, McpMethod, ToolName, classify_method, initialize_result, parse_request,
-        tool_result, tools_list_result,
+        tool_result,
     };
+    use crate::permissions::PermissionDecision;
+    use crate::registry::advertised_tools_list;
 
     fn error_code(response: &JsonRpcResponse) -> i32 {
         serde_json::from_slice::<Value>(&response.to_bytes().unwrap()).unwrap()["error"]["code"]
@@ -304,7 +269,7 @@ mod tests {
 
     #[test]
     fn tool_registry_is_exactly_the_two_read_only_tools() {
-        let result = tools_list_result();
+        let result = advertised_tools_list(&PermissionDecision::Allowed);
         assert_eq!(
             result,
             json!({

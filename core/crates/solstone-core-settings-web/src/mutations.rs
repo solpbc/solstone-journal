@@ -314,6 +314,23 @@ fn fixture_tree_file<'a>(corpus: &'a Value, path: &str) -> &'a str {
         .expect("fixture tree file")
 }
 
+fn assert_created_facet_matches_fixture(produced: &str, expected: &str, path: &str) {
+    let mut produced_json: Value = serde_json::from_str(produced).expect("produced facet JSON");
+    let expected_json: Value = serde_json::from_str(expected).expect("fixture facet JSON");
+    let id = produced_json
+        .as_object_mut()
+        .expect("produced facet object")
+        .remove("id");
+    let Some(Value::String(id)) = id else {
+        panic!("{path} missing allocated facet id");
+    };
+    assert!(
+        solstone_core_facets::is_well_formed_facet_id(&id),
+        "{path} id {id:?} is not a well-formed facet id"
+    );
+    assert_eq!(produced_json, expected_json, "{path} fixture bytes");
+}
+
 fn normalized_log_bytes(text: &str) -> String {
     text.lines()
         .filter(|line| !line.is_empty())
@@ -379,11 +396,13 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
         "facets/work-life/activities/activities.jsonl",
         "facets/zeta-project/facet.json",
     ] {
-        assert_eq!(
-            fs::read_to_string(root.path().join(path)).expect("produced tree file"),
-            fixture_tree_file(&corpus, path),
-            "{path} fixture bytes"
-        );
+        let produced = fs::read_to_string(root.path().join(path)).expect("produced tree file");
+        let expected = fixture_tree_file(&corpus, path);
+        if path.ends_with("facet.json") {
+            assert_created_facet_matches_fixture(&produced, expected, path);
+        } else {
+            assert_eq!(produced, expected, "{path} fixture bytes");
+        }
     }
     let day = chrono::Local::now().format("%Y%m%d").to_string();
     for path in [

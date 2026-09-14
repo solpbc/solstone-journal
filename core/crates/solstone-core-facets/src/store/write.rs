@@ -11,6 +11,7 @@ use crate::hold_facet_trust_lock;
 
 use super::declaration::read_facet_declaration;
 use super::error::{FacetRenameError, FacetStoreError, FacetWriteError};
+use super::facet_id::allocate_facet_id_locked;
 use super::identity::read_facet_entity_link;
 use super::paths::{declaration_path, facet_dir_path, facet_entity_link_path};
 
@@ -33,7 +34,14 @@ pub fn create_facet(
     icon: Option<&str>,
 ) -> Result<(), FacetWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
+    if read_facet_declaration(journal_root, facet_dir)?.is_some() {
+        return Err(FacetWriteError::AlreadyExists {
+            path: declaration_path(journal_root, facet_dir)?,
+        });
+    }
+    let id = allocate_facet_id_locked(journal_root)?;
     let mut declaration = Map::new();
+    declaration.insert("id".to_owned(), Value::String(id));
     declaration.insert("title".to_owned(), Value::String(title.to_owned()));
     declaration.insert(
         "description".to_owned(),

@@ -44,9 +44,13 @@ mod jsonrpc;
 #[cfg(unix)]
 mod oauth;
 #[cfg(unix)]
+mod permissions;
+#[cfg(unix)]
 mod permits;
 #[cfg(unix)]
 mod proxy_preface;
+#[cfg(unix)]
+mod registry;
 #[cfg(unix)]
 mod server;
 #[cfg(unix)]
@@ -71,7 +75,14 @@ pub use bridge_carrier::McpBridgeCarrierError;
 #[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
-pub use oauth::store::{CreatedPairingCode, OAuthClientSummary, OAuthStore, OAuthStoreError};
+pub use oauth::store::{
+    CreatedPairingCode, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
+};
+#[cfg(unix)]
+pub use permissions::{
+    ConnectionPermissionRecord, PermissionDecision, PermissionStore, PermissionStoreError,
+    PermissionsFile, ReadPermission, ReadScope, evaluate_connection_read,
+};
 #[cfg(unix)]
 pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};
 #[cfg(unix)]

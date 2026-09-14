@@ -131,6 +131,20 @@ fn write_value(path: &Path, value: &Value) -> Result<(), String> {
     )
 }
 
+fn strip_incoming_facet_id(value: &mut Value) {
+    if let Some(map) = value.as_object_mut() {
+        map.remove("id");
+    }
+}
+
+fn assign_local_facet_id(value: &mut Value) -> Result<(), String> {
+    let id = solstone_core_journal_io::mint_uuid_v4().map_err(|error| error.to_string())?;
+    if let Some(map) = value.as_object_mut() {
+        map.insert("id".to_owned(), Value::String(id));
+    }
+    Ok(())
+}
+
 pub(crate) fn merge_facet_json(
     target: &Path,
     bytes: &[u8],
@@ -139,9 +153,11 @@ pub(crate) fn merge_facet_json(
     facet: &str,
     relative: &str,
 ) -> Result<MergeResult, String> {
-    let source: Value = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    let mut source: Value = serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    strip_incoming_facet_id(&mut source);
     if new_facet || !target.exists() {
-        write_bytes(target, bytes)?;
+        assign_local_facet_id(&mut source)?;
+        write_value(target, &source)?;
         return Ok(MergeResult {
             status: "written",
             reason: if new_facet {
@@ -154,7 +170,9 @@ pub(crate) fn merge_facet_json(
     let owner: Value =
         serde_json::from_slice(&fs::read(target).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
-    if owner == source {
+    let mut owner_stripped = owner.clone();
+    strip_incoming_facet_id(&mut owner_stripped);
+    if owner_stripped == source {
         return Ok(MergeResult {
             status: "skipped",
             reason: "facet_json_match",
@@ -455,10 +473,9 @@ fn ensure_facet_metadata(facet_dir: &Path, facet: &str) -> Result<(), String> {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    write_value(
-        &path,
-        &json!({"title":title,"description":"","color":"#667eea","emoji":"📦"}),
-    )
+    let mut value = json!({"title":title,"description":"","color":"#667eea","emoji":"📦"});
+    assign_local_facet_id(&mut value)?;
+    write_value(&path, &value)
 }
 
 pub(crate) fn process_facet(
@@ -719,12 +736,33 @@ mod tests {
         )
         .unwrap();
         assert_eq!((new.status, new.reason), ("written", "new_facet"));
-        assert_eq!(fs::read(&target).unwrap(), br#"{"source":true}"#);
         let conflict: Value = serde_json::from_slice(
             &fs::read(staged.join("work/facet_json/facet.json.staged.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(conflict["source_content"], json!({"source":true}));
+    }
+
+    #[test]
+    fn merge_facet_json_strips_foreign_id_and_allocates_local_id() {
+        let temp = TempDir::new().unwrap();
+        let target = temp.path().join("facets/work/facet.json");
+        let staged = temp.path().join("state/staged");
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        let foreign_bytes = br#"{"id":"00000000-0000-0000-0000-000000000001","title":"Work"}"#;
+        let merged =
+            merge_facet_json(&target, foreign_bytes, true, &staged, "work", "facet.json").unwrap();
+        assert_eq!((merged.status, merged.reason), ("written", "new_facet"));
+        let written: Value = serde_json::from_slice(&fs::read(&target).unwrap()).unwrap();
+        assert_eq!(written["title"], "Work");
+        let local_id = written["id"].as_str().expect("local id assigned");
+        assert_ne!(local_id, "00000000-0000-0000-0000-000000000001");
+        assert!(solstone_core_journal_io::is_uuid_v4(local_id));
+
+        // When merging with matching content but foreign ID, it matches without conflict
+        let same =
+            merge_facet_json(&target, foreign_bytes, false, &staged, "work", "facet.json").unwrap();
+        assert_eq!((same.status, same.reason), ("skipped", "facet_json_match"));
     }
 
     #[test]

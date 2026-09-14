@@ -127,6 +127,17 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
+id = "journal-mcp-endpoint"
+make_target = "check-rust-journal-mcp-endpoint"
+set = "component"
+areas = ["trust"]
+packages = ["solstone-core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
 id = "doctests"
 make_target = "check-rust-doc"
 set = "component"

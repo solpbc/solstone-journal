@@ -815,3 +815,180 @@ fn incomplete_report(error: FacetEntityLinkRepairError) -> crate::FacetEntityLin
         other => panic!("expected incomplete repair, got {other}"),
     }
 }
+
+#[test]
+fn facet_creation_allocates_uuid_and_refuses_duplicate() {
+    let temporary = TempDir::new();
+    create_facet(
+        temporary.path(),
+        "work",
+        "Work",
+        "Work context",
+        "#667eea",
+        "💼",
+        None,
+    )
+    .unwrap();
+
+    let declaration = read_facet_declaration(temporary.path(), "work")
+        .unwrap()
+        .unwrap();
+    let id = declaration
+        .value()
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap();
+    assert!(crate::is_well_formed_facet_id(id));
+
+    // Refuses duplicate creation
+    let err = create_facet(
+        temporary.path(),
+        "work",
+        "Work 2",
+        "Different",
+        "#ff0000",
+        "🔥",
+        None,
+    )
+    .unwrap_err();
+    assert!(matches!(err, crate::FacetWriteError::AlreadyExists { .. }));
+}
+
+#[test]
+fn facet_rename_and_update_preserves_id() {
+    let temporary = TempDir::new();
+    create_facet(
+        temporary.path(),
+        "work",
+        "Work",
+        "Work context",
+        "#667eea",
+        "💼",
+        None,
+    )
+    .unwrap();
+
+    let initial = read_facet_declaration(temporary.path(), "work")
+        .unwrap()
+        .unwrap();
+    let id = initial
+        .value()
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_owned();
+
+    update_facet(
+        temporary.path(),
+        "work",
+        "Work Updated",
+        "New description",
+        "#112233",
+        "📁",
+        None,
+    )
+    .unwrap();
+
+    let updated = read_facet_declaration(temporary.path(), "work")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        updated.value().get("id").and_then(Value::as_str),
+        Some(id.as_str())
+    );
+
+    rename_facet(temporary.path(), "work", "work-renamed").unwrap();
+
+    let renamed = read_facet_declaration(temporary.path(), "work-renamed")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        renamed.value().get("id").and_then(Value::as_str),
+        Some(id.as_str())
+    );
+
+    // Resolution across rename
+    assert_eq!(
+        crate::resolve_facet_id(temporary.path(), &id).unwrap(),
+        "work-renamed"
+    );
+}
+
+#[test]
+fn facet_id_resolution_and_backfill() {
+    let temporary = TempDir::new();
+
+    // Create legacy facet manually without an id
+    let legacy_path = temporary.path().join("facets/legacy");
+    fs::create_dir_all(&legacy_path).unwrap();
+    fs::write(
+        legacy_path.join("facet.json"),
+        json!({
+            "title": "Legacy",
+            "description": "No ID",
+            "color": "#667eea",
+            "emoji": "📦"
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    // Create a modern facet with id
+    create_facet(
+        temporary.path(),
+        "modern",
+        "Modern",
+        "Has ID",
+        "#667eea",
+        "📦",
+        None,
+    )
+    .unwrap();
+
+    // Dry-run backfill
+    let dry_run = crate::backfill_facet_ids(temporary.path(), false).unwrap();
+    assert_eq!(dry_run.total_scanned, 2);
+    assert_eq!(dry_run.backfilled_count, 1);
+    assert_eq!(dry_run.unchanged_count, 1);
+    assert!(!dry_run.committed);
+
+    // Legacy still has no ID after dry run
+    let legacy_decl = read_facet_declaration(temporary.path(), "legacy")
+        .unwrap()
+        .unwrap();
+    assert!(legacy_decl.value().get("id").is_none());
+
+    // Commit backfill
+    let committed = crate::backfill_facet_ids(temporary.path(), true).unwrap();
+    assert_eq!(committed.total_scanned, 2);
+    assert_eq!(committed.backfilled_count, 1);
+    assert_eq!(committed.unchanged_count, 1);
+    assert!(committed.committed);
+
+    // Legacy now has a well-formed ID
+    let legacy_after = read_facet_declaration(temporary.path(), "legacy")
+        .unwrap()
+        .unwrap();
+    let legacy_id = legacy_after
+        .value()
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap();
+    assert!(crate::is_well_formed_facet_id(legacy_id));
+
+    // Resolution works
+    assert_eq!(
+        crate::resolve_facet_id(temporary.path(), legacy_id).unwrap(),
+        "legacy"
+    );
+
+    // Resolution errors
+    assert_eq!(
+        crate::resolve_facet_id(temporary.path(), "nonexistent-0000-4000-8000-000000000000"),
+        Err(crate::FacetIdResolveError::Malformed)
+    );
+    assert_eq!(
+        crate::resolve_facet_id(temporary.path(), "00000000-0000-4000-8000-000000000000"),
+        Err(crate::FacetIdResolveError::Missing)
+    );
+}

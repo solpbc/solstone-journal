@@ -7,7 +7,9 @@ use std::io;
 use std::path::PathBuf;
 
 use solstone_core_entity::EntityAmbiguityRescopeError;
-use solstone_core_journal_io::{AtomicWriteError, LockError, PathError, ReadError};
+use solstone_core_journal_io::{
+    AtomicWriteError, IdentifierMintError, LockError, PathError, ReadError,
+};
 
 use crate::FacetTrustLockError;
 
@@ -95,6 +97,8 @@ impl From<PathError> for FacetStoreError {
 pub enum FacetWriteError {
     TrustLock(FacetTrustLockError),
     Read(FacetStoreError),
+    AlreadyExists { path: PathBuf },
+    FacetId(FacetIdError),
     DeclarationMissing { path: PathBuf },
     DeclarationWrite(AtomicWriteError),
     EntityLinkWrite(AtomicWriteError),
@@ -207,7 +211,10 @@ fn write_error_is_io(error: &FacetWriteError) -> bool {
         FacetWriteError::DeclarationWrite(AtomicWriteError::PublicationUncertain { .. })
         | FacetWriteError::EntityLinkWrite(AtomicWriteError::PublicationUncertain { .. })
         | FacetWriteError::ContentWrite(AtomicWriteError::PublicationUncertain { .. }) => false,
-        FacetWriteError::DeclarationMissing { .. } | FacetWriteError::EntityLinkRemoval(_) => false,
+        FacetWriteError::AlreadyExists { .. }
+        | FacetWriteError::FacetId(_)
+        | FacetWriteError::DeclarationMissing { .. }
+        | FacetWriteError::EntityLinkRemoval(_) => false,
     }
 }
 
@@ -244,6 +251,14 @@ impl fmt::Display for FacetWriteError {
         match self {
             Self::TrustLock(error) => error.fmt(formatter),
             Self::Read(error) => error.fmt(formatter),
+            Self::AlreadyExists { path } => {
+                write!(
+                    formatter,
+                    "facet declaration already exists: {}",
+                    path.display()
+                )
+            }
+            Self::FacetId(error) => error.fmt(formatter),
             Self::DeclarationMissing { path } => {
                 write!(
                     formatter,
@@ -264,11 +279,12 @@ impl Error for FacetWriteError {
         match self {
             Self::TrustLock(error) => Some(error),
             Self::Read(error) => Some(error),
+            Self::FacetId(error) => Some(error),
             Self::DeclarationWrite(error)
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => Some(error),
             Self::EntityLinkRemoval(error) => Some(error),
-            Self::DeclarationMissing { .. } => None,
+            Self::AlreadyExists { .. } | Self::DeclarationMissing { .. } => None,
         }
     }
 }
@@ -284,6 +300,105 @@ impl From<FacetTrustLockError> for FacetWriteError {
         Self::TrustLock(error)
     }
 }
+
+impl From<FacetIdError> for FacetWriteError {
+    fn from(error: FacetIdError) -> Self {
+        Self::FacetId(error)
+    }
+}
+
+/// Failure while allocating, assigning, or backfilling facet identifiers.
+#[derive(Debug)]
+pub enum FacetIdError {
+    Random(IdentifierMintError),
+    TrustLock(FacetTrustLockError),
+    Store(FacetStoreError),
+    Write(Box<FacetWriteError>),
+    CollisionExhausted,
+    DuplicateIdOnDisk { id: String },
+}
+
+impl fmt::Display for FacetIdError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Random(error) => error.fmt(formatter),
+            Self::TrustLock(error) => error.fmt(formatter),
+            Self::Store(error) => error.fmt(formatter),
+            Self::Write(error) => error.fmt(formatter),
+            Self::CollisionExhausted => {
+                formatter.write_str("exhausted retries generating a unique facet identifier")
+            }
+            Self::DuplicateIdOnDisk { id } => write!(
+                formatter,
+                "duplicate well-formed facet identifier already on disk: {id}"
+            ),
+        }
+    }
+}
+
+impl Error for FacetIdError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Random(error) => Some(error),
+            Self::TrustLock(error) => Some(error),
+            Self::Store(error) => Some(error),
+            Self::Write(error) => Some(error),
+            Self::CollisionExhausted | Self::DuplicateIdOnDisk { .. } => None,
+        }
+    }
+}
+
+impl From<IdentifierMintError> for FacetIdError {
+    fn from(error: IdentifierMintError) -> Self {
+        Self::Random(error)
+    }
+}
+
+impl From<FacetTrustLockError> for FacetIdError {
+    fn from(error: FacetTrustLockError) -> Self {
+        Self::TrustLock(error)
+    }
+}
+
+impl From<FacetStoreError> for FacetIdError {
+    fn from(error: FacetStoreError) -> Self {
+        Self::Store(error)
+    }
+}
+
+impl From<FacetWriteError> for FacetIdError {
+    fn from(error: FacetWriteError) -> Self {
+        Self::Write(Box::new(error))
+    }
+}
+
+/// Failure while resolving a facet identifier to its directory name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FacetIdResolveError {
+    Missing,
+    Malformed,
+    Duplicate,
+    Store,
+}
+
+impl fmt::Display for FacetIdResolveError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Missing => {
+                formatter.write_str("no facet declaration found with the requested identifier")
+            }
+            Self::Malformed => formatter.write_str("facet identifier is malformed"),
+            Self::Duplicate => {
+                formatter.write_str("multiple facet declarations share the requested identifier")
+            }
+            Self::Store => {
+                formatter.write_str("could not read facet declarations to resolve identifier")
+            }
+        }
+    }
+}
+
+impl Error for FacetIdResolveError {}
 
 /// Failure while changing a facet entity relationship or its journal identity.
 #[derive(Debug)]

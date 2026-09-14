@@ -21,31 +21,33 @@ use chrono::{Local, Utc};
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
 use solstone_core_cli::{
-    BodyAppleOptions, BodyCommand, BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions,
-    BodyRebuildOptions, BrainCommand, BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions,
-    BrainRefreshExpectArg, BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP,
-    CHECK_USAGE, CONFIG_HELP, CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE,
-    CONTRACT_CHECK_HELP, CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP,
-    CONVEY_USAGE, CORTEX_HELP, CORTEX_USAGE, CogitateCommand, Command, ContractCommand,
-    ConveyOptions, ENGAGE_HELP, ENGAGE_USAGE, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE,
-    GRAB_HELP, GRAB_USAGE, GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions,
-    HEALTH_HELP, HEALTH_USAGE, HEARTBEAT_HELP, HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP,
-    IDENTITY_BRIEFING_USAGE, IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP,
-    IDENTITY_PARTNER_HELP, IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP,
-    INSTALL_MODELS_USAGE, INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand,
-    IndexerCountsOptions, IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
+    BACKFILL_FACET_IDS_HELP, BACKFILL_FACET_IDS_USAGE, BodyAppleOptions, BodyCommand,
+    BodyOuraCommand, BodyOuraConnectOptions, BodyOuraSyncOptions, BodyRebuildOptions, BrainCommand,
+    BrainInspectOptions, BrainPrerequisiteRenewalSessionOptions, BrainRefreshExpectArg,
+    BrainRefreshSessionOptions, BrainRuntimeFailureOptions, CHECK_HELP, CHECK_USAGE, CONFIG_HELP,
+    CONFIG_USAGE, CONTRACT_BUILD_HELP, CONTRACT_BUILD_USAGE, CONTRACT_CHECK_HELP,
+    CONTRACT_CHECK_USAGE, CONTRACT_HELP, CONTRACT_USAGE, CONVEY_HELP, CONVEY_USAGE, CORTEX_HELP,
+    CORTEX_USAGE, CogitateCommand, Command, ContractCommand, ConveyOptions, ENGAGE_HELP,
+    ENGAGE_USAGE, FACET_CANDIDATES_HELP, FACET_CANDIDATES_USAGE, GRAB_HELP, GRAB_USAGE,
+    GenerateCommand, GenerateSessionOptions, GrabCommand, GrabOptions, HEALTH_HELP, HEALTH_USAGE,
+    HEARTBEAT_HELP, HEARTBEAT_USAGE, IDENTITY_BRIEFING_HELP, IDENTITY_BRIEFING_USAGE,
+    IDENTITY_HEALTH_HELP, IDENTITY_HEALTH_USAGE, IDENTITY_HELP, IDENTITY_PARTNER_HELP,
+    IDENTITY_PARTNER_USAGE, IDENTITY_USAGE, INSTALL_MODELS_HELP, INSTALL_MODELS_USAGE,
+    INSTALL_PROVIDER_HELP, INSTALL_PROVIDER_USAGE, IndexerCommand, IndexerCountsOptions,
+    IndexerFoldEntityEdgesOptions, IndexerOptions, IndexerPrunePathsOptions,
     IndexerPruneStreamOptions, IndexerQueryOptions, IndexerReadOptions, IndexerSearchOptions,
     InstallCommand, JournalBrainOwnerCommand, JournalConfigCommand, JournalConfigCommitOptions,
     JournalConfigExpectArg, JournalConfigReadOptions, JournalPathOptions, LocalCommand, MCP_HELP,
-    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpTokenCommand, NAVIGATE_HELP,
-    NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP, SENSE_USAGE, SETTINGS_CONVEY_HELP,
-    SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP, SETTINGS_USAGE, SPL_HELP,
-    SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP, SUPERVISOR_USAGE, ScheduleOptions,
-    SenseOptions, SenseReprocessKind, ServiceAction, ServiceOptions, ServiceParseOutcome,
-    SettingsParseError, SpeakerResolveCommand, SplCommand, THINKING_HELP, THINKING_SET_LANE_HELP,
-    THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP, TOP_USAGE, TRANSCRIBE_HELP,
-    TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand, TranscribeOptions, TransferCommand,
-    TransferSendOptions, USAGE, evaluate_args, render_service_diagnostic, version_line,
+    MCP_USAGE, McpCommand, McpOauthCommand, McpPairingCommand, McpPermissionCommand,
+    McpTokenCommand, NAVIGATE_HELP, NAVIGATE_USAGE, SCHEDULE_HELP, SCHEDULE_USAGE, SENSE_HELP,
+    SENSE_USAGE, SETTINGS_CONVEY_HELP, SETTINGS_CONVEY_USAGE, SETTINGS_HELP, SETTINGS_STATUS_HELP,
+    SETTINGS_USAGE, SPL_HELP, SPL_USAGE, START_HELP, START_USAGE, SUPERVISOR_HELP,
+    SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
+    ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
+    THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP,
+    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand,
+    TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
+    render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 #[cfg(unix)]
@@ -82,6 +84,8 @@ mod settings;
 use solstone_core::supervisor;
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 use solstone_core::{OAuthStore, OAuthStoreError, TokenStore, TokenStoreError};
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+use solstone_core_cli::McpTarget;
 #[cfg(unix)]
 use solstone_core_system::lifecycle::{
     ADMISSION_WAIT_TERMINAL_COPY, ADMISSION_WAIT_UNVERIFIABLE_COPY,
@@ -671,6 +675,14 @@ fn main() -> ExitCode {
         Ok(Command::JournalStats(args)) => run_journal_stats(args),
         Ok(Command::Talent(args)) => run_talent(args),
         Ok(Command::Backfill(args)) => run_backfill(args),
+        Ok(Command::BackfillFacetIds { commit }) => run_backfill_facet_ids(commit),
+        Ok(Command::BackfillFacetIdsHelp) => {
+            print!("{BACKFILL_FACET_IDS_HELP}");
+            ExitCode::SUCCESS
+        }
+        Ok(Command::BackfillFacetIdsUsage) => {
+            render_usage_error(BACKFILL_FACET_IDS_USAGE, "journal backfill-facet-ids")
+        }
         Ok(Command::FacetCandidates) => run_facet_candidates(),
         Ok(Command::InstallModels(options)) => install_models::run(options),
         Ok(Command::InstallModelsUsage) => {
@@ -1459,6 +1471,36 @@ fn run_backfill(args: Vec<OsString>) -> ExitCode {
         &mut stderr.lock(),
     );
     ExitCode::from(exit_code as u8)
+}
+
+fn run_backfill_facet_ids(commit: bool) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal.path,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    match solstone_core_facets::backfill_facet_ids(&journal, commit) {
+        Ok(report) => {
+            if commit {
+                println!(
+                    "Examined {} facets; backfilled IDs for {} facets.",
+                    report.total_scanned, report.backfilled_count
+                );
+            } else {
+                println!(
+                    "Dry run: examined {} facets; {} facets require IDs (pass --commit to apply).",
+                    report.total_scanned, report.backfilled_count
+                );
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("journal backfill-facet-ids: error: {error}");
+            ExitCode::from(EXIT_DATAERR)
+        }
+    }
 }
 
 fn run_facet_candidates() -> ExitCode {
@@ -5135,6 +5177,7 @@ fn run_mcp_process(
         McpCommand::Token(command) => run_mcp_token(command),
         McpCommand::Pairing(command) => run_mcp_pairing(command),
         McpCommand::Oauth(command) => run_mcp_oauth(command),
+        McpCommand::Permission(command) => run_mcp_permission(command),
     }
 }
 
@@ -5436,6 +5479,196 @@ const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
         | OAuthStoreError::EntryTooLarge
         | OAuthStoreError::StateTooLarge => EXIT_UNAVAILABLE,
     }
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let store = solstone_core::PermissionStore::open(&journal.path);
+    match command {
+        McpPermissionCommand::Show { target } => match target {
+            None => match store.read() {
+                Ok(file) => {
+                    if file.permissions.is_empty() {
+                        println!("No MCP connection permissions configured.");
+                        return ExitCode::SUCCESS;
+                    }
+                    for perm in file.permissions {
+                        let read_summary = match &perm.read {
+                            Some(r) => match &r.scope {
+                                solstone_core::ReadScope::WholeJournal => "read: whole_journal",
+                                solstone_core::ReadScope::Facets { .. } => "read: facets",
+                            },
+                            None => "no read permission",
+                        };
+                        println!(
+                            "{}\tgeneration: {}\tevaluation: {}\t{}",
+                            perm.connection, perm.generation, perm.evaluation, read_summary
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("journal mcp permission show: {error}");
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
+            },
+            Some(target) => {
+                let key = match resolve_connection_key(&journal.path, &target) {
+                    Ok(k) => k,
+                    Err(code) => return code,
+                };
+                match store.get_permission(&key) {
+                    Ok(Some(perm)) => {
+                        println!("Connection: {}", perm.connection);
+                        println!("Generation: {}", perm.generation);
+                        println!("Evaluation: {}", perm.evaluation);
+                        match perm.read {
+                            Some(read) => {
+                                let scope_str = match &read.scope {
+                                    solstone_core::ReadScope::WholeJournal => {
+                                        "whole_journal".to_string()
+                                    }
+                                    solstone_core::ReadScope::Facets { ids } => {
+                                        format!("facets ({})", ids.join(", "))
+                                    }
+                                };
+                                println!("Read scope: {scope_str}");
+                                println!("Categories: {}", read.categories.join(", "));
+                            }
+                            None => {
+                                println!("Read:       no read permission configured");
+                            }
+                        }
+                        ExitCode::SUCCESS
+                    }
+                    Ok(None) => {
+                        println!("Connection: {key}");
+                        println!("Permission: no permission configured");
+                        ExitCode::SUCCESS
+                    }
+                    Err(error) => {
+                        eprintln!("journal mcp permission show: {error}");
+                        ExitCode::from(EXIT_TEMPFAIL)
+                    }
+                }
+            }
+        },
+        McpPermissionCommand::Set { target } => {
+            let key = match resolve_connection_key(&journal.path, &target) {
+                Ok(k) => k,
+                Err(code) => return code,
+            };
+            let perm = solstone_core::ReadPermission::default_whole_journal();
+            match store.set_permission(&key, perm) {
+                Ok(record) => {
+                    println!(
+                        "Set whole-journal read permission for connection {} (generation {}).",
+                        record.connection, record.generation
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("journal mcp permission set: {error}");
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
+            }
+        }
+        McpPermissionCommand::Clear { target } => {
+            let key = match resolve_connection_key(&journal.path, &target) {
+                Ok(k) => k,
+                Err(code) => return code,
+            };
+            match store.clear_permission(&key) {
+                Ok(cleared) => {
+                    if cleared {
+                        println!("Cleared permission for connection {key}.");
+                    } else {
+                        println!("No permission was configured for connection {key}.");
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("journal mcp permission clear: {error}");
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
+            }
+        }
+    }
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn resolve_connection_key(
+    journal_path: &std::path::Path,
+    target: &McpTarget,
+) -> Result<String, ExitCode> {
+    match target {
+        McpTarget::Token { label } => {
+            let token_store = solstone_core::TokenStore::open(journal_path);
+            match token_store.find_id_by_label(label) {
+                Ok(Some(id)) => Ok(format!("bearer:{id}")),
+                Ok(None) => {
+                    eprintln!("journal mcp permission: no bearer token exists for label {label:?}");
+                    Err(ExitCode::from(EXIT_DATAERR))
+                }
+                Err(e) => {
+                    eprintln!("journal mcp permission: failed to query token store: {e}");
+                    Err(ExitCode::from(EXIT_TEMPFAIL))
+                }
+            }
+        }
+        McpTarget::Oauth {
+            client_id,
+            created_at,
+        } => {
+            let oauth_store = solstone_core::OAuthStore::open(journal_path);
+            match oauth_store.list_grants() {
+                Ok(grants) => {
+                    let matches: Vec<_> = grants
+                        .into_iter()
+                        .filter(|g| g.client_id == *client_id)
+                        .filter(|g| {
+                            if let Some(created) = created_at {
+                                g.created_at.to_rfc3339() == *created
+                                    || format!("{}", g.created_at.timestamp()) == *created
+                            } else {
+                                true
+                            }
+                        })
+                        .collect();
+                    if matches.is_empty() {
+                        eprintln!(
+                            "journal mcp permission: no OAuth grant found matching client_id {client_id:?}"
+                        );
+                        Err(ExitCode::from(EXIT_DATAERR))
+                    } else if matches.len() > 1 {
+                        eprintln!(
+                            "journal mcp permission: multiple OAuth grants matched client_id {client_id:?}; specify --created <timestamp>"
+                        );
+                        Err(ExitCode::from(EXIT_DATAERR))
+                    } else {
+                        Ok(format!("oauth:{}", matches[0].id))
+                    }
+                }
+                Err(e) => {
+                    eprintln!("journal mcp permission: failed to query oauth store: {e}");
+                    Err(ExitCode::from(EXIT_TEMPFAIL))
+                }
+            }
+        }
+    }
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_permission(_command: McpPermissionCommand) -> ExitCode {
+    eprintln!("journal mcp permission management is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
 }
 
 #[cfg(any(unix, windows))]

@@ -606,6 +606,12 @@ const PROBES: &[Probe] = &[
         stderr_anchor: None,
     },
     Probe {
+        token: "backfill-facet-ids",
+        argv: &["--nonsense"],
+        expected_exit: 2,
+        stderr_anchor: Some(b"usage: journal backfill-facet-ids [-h] [--commit]\n"),
+    },
+    Probe {
         token: "think",
         argv: &["--nonsense"],
         expected_exit: 2,
