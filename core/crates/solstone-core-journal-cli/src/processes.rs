@@ -265,6 +265,11 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["backfill-processing-records"],
     },
     NativeProcessSpec {
+        token: "backfill-facet-ids",
+        binary: "solstone-core",
+        preset_argv: &["backfill-facet-ids"],
+    },
+    NativeProcessSpec {
         token: "think",
         binary: "solstone-core",
         preset_argv: &["think"],
@@ -401,6 +406,12 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "backfill-processing-records",
         module: "solstone.think.backfill_processing_records",
+        preset_argv: EMPTY,
+        kind: ProcessKind::Service,
+    },
+    ProcessSpec {
+        token: "backfill-facet-ids",
+        module: "solstone.think.backfill_facet_ids",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },

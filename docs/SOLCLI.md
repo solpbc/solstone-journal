@@ -240,6 +240,8 @@ Use `journal mcp token list` to view labels and creation times, and `journal
 mcp token revoke --label <label>` to disable a credential immediately.
 Local pairing and OAuth client registration are documented in
 [MCP OAuth](MCP_OAUTH.md) (`journal mcp pairing` and `journal mcp oauth`).
+`journal mcp permission {show,set,clear}` manages connection read permissions
+for bearer tokens (`--token --label LABEL`) and OAuth clients (`--oauth --client-id CLIENT_ID`).
 `journal mcp status` reports the compiled capability, the current journal
 configuration result, and token count. It is capability/configuration status,
 not a listener-liveness check.
@@ -261,8 +263,9 @@ drop-in HTTPS URL. In either connection mode, send `Authorization: Bearer
 <token>` on every request, where `<token>` is a static MCP token or an OAuth
 access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retain the returned
 `Mcp-Session-Id` response header, then call `tools/list` or `tools/call` with
-that header. The server advertises exactly the read-only `search` and `fetch`
-tools.
+that header. Advertised tools are the closed registry intersected with what
+this connection can actually use; a connection with no permission or a stored
+boundary this build cannot enforce gets an empty list.
 
 The Journal MCP endpoint is listed in the [current command inventory](#current-command-inventory).
 

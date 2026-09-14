@@ -3,15 +3,13 @@
 
 //! Closed read-only MCP tool validation and execution.
 
-mod fetch;
-mod search;
+pub(crate) mod fetch;
+pub(crate) mod search;
 
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-
-use crate::jsonrpc::ToolName;
 
 pub(crate) use fetch::ValidatedFetch;
 pub(crate) use search::ValidatedSearch;
@@ -57,17 +55,6 @@ impl ToolError {
             Self::Serialization => "tool_result_unavailable",
             Self::AuditUnavailable => "audit_unavailable",
         }
-    }
-}
-
-/// Validate all tool input before the call is eligible for durable auditing.
-pub(crate) fn validate(
-    tool_name: ToolName,
-    params: Option<&Value>,
-) -> Result<ValidatedTool, ToolError> {
-    match tool_name {
-        ToolName::Search => search::validate(params).map(ValidatedTool::Search),
-        ToolName::Fetch => fetch::validate(params).map(ValidatedTool::Fetch),
     }
 }
 

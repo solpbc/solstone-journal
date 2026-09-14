@@ -28,6 +28,7 @@ mod exclusive_copy;
 #[cfg(unix)]
 pub mod flat_directory;
 pub mod health_marker;
+pub mod identifier;
 mod install_retry;
 pub mod inventory_budget;
 pub mod journal_root;
@@ -138,6 +139,7 @@ pub use health_marker::{
     PublishOutcome, bump_stream_marker, day_marker_pair_status, health_marker_path,
     publish_daily_marker_if_current, read_health_marker,
 };
+pub use identifier::{IdentifierMintError, is_uuid_v4, mint_uuid_v4};
 pub use inventory_budget::{InventoryBudget, InventoryBudgetLimit};
 #[cfg(all(unix, feature = "test-hooks"))]
 pub use journal_root::{AcquisitionPrimitive, run_with_acquisition_fault};

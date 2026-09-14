@@ -13,7 +13,6 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use chrono::Utc;
-use solstone_core_mcp_audit::ToolName as AuditToolName;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{Semaphore, watch};
@@ -23,10 +22,11 @@ use tokio_rustls::TlsAcceptor;
 use crate::http1::{Http1Connection, Http1Error, HttpMethod, HttpRequest, HttpResponse};
 use crate::jsonrpc::{
     JsonRpcResponse, McpMethod, classify_method, initialize_result, parse_request, tool_arguments,
-    tool_result, tools_list_result,
+    tool_result,
 };
 use crate::oauth::OAuthRuntime;
 use crate::oauth::store::OAuthStore;
+use crate::permissions;
 use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
 use crate::proxy_preface::{ParsedPreface, parse_preface};
 use crate::session::{SessionError, SessionTable};
@@ -405,10 +405,13 @@ fn post_json_rpc(
                 json_rpc_response(session_error_response(json_request.id.as_ref(), error))
             }
         },
-        Ok(McpMethod::ToolsList) => json_rpc_response(JsonRpcResponse::success(
-            json_request.id.as_ref(),
-            tools_list_result(),
-        )),
+        Ok(McpMethod::ToolsList) => {
+            let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
+            json_rpc_response(JsonRpcResponse::success(
+                json_request.id.as_ref(),
+                crate::registry::advertised_tools_list(&decision),
+            ))
+        }
         Ok(McpMethod::ToolsCall(tool_name)) => {
             execute_tool_call(&json_request, tool_name, verified, journal_root)
         }
@@ -422,7 +425,8 @@ fn execute_tool_call(
     verified: &VerifiedToken,
     journal_root: &std::path::Path,
 ) -> HttpResponse {
-    let validated = match tools::validate(tool_name, tool_arguments(request)) {
+    let entry = crate::registry::find_tool(tool_name);
+    let validated = match (entry.validate)(tool_arguments(request)) {
         Ok(validated) => validated,
         Err(tools::ToolError::InvalidInput) => {
             return json_rpc_response(JsonRpcResponse::invalid_params(request.id.as_ref()));
@@ -434,35 +438,59 @@ fn execute_tool_call(
             ));
         }
     };
+    let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
     let now = Utc::now();
-    let audit_tool = match tool_name {
-        crate::jsonrpc::ToolName::Search => AuditToolName::Search,
-        crate::jsonrpc::ToolName::Fetch => AuditToolName::Fetch,
-    };
-    match tools::execute_after_audit(
-        || {
-            audit::write_admitted_interaction(
+    match decision {
+        permissions::PermissionDecision::Denied { reason } => {
+            // Refused vs served records are identical apart from timestamps — deliberate deferral to the later activity-log increment, not an oversight.
+            if audit::write_admitted_interaction(
                 journal_root,
                 now,
                 &verified.agent_identity,
-                audit_tool,
+                entry.audit_name,
             )
-            .map(|_| ())
-            .map_err(|_| tools::ToolError::AuditUnavailable)
-        },
-        || tools::execute(journal_root, &validated, now),
-    ) {
-        Ok(result) => json_rpc_response(JsonRpcResponse::success(
-            request.id.as_ref(),
-            tool_result(result),
-        )),
-        Err(tools::ToolError::AuditUnavailable) => json_rpc_response(
-            JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed"),
-        ),
-        Err(error) => json_rpc_response(JsonRpcResponse::tool_error(
-            request.id.as_ref(),
-            error.reason(),
-        )),
+            .is_err()
+            {
+                return json_rpc_response(JsonRpcResponse::internal_error(
+                    request.id.as_ref(),
+                    "MCP audit publication failed",
+                ));
+            }
+            json_rpc_response(JsonRpcResponse::permission_denied(
+                request.id.as_ref(),
+                reason,
+            ))
+        }
+        permissions::PermissionDecision::Allowed => {
+            match tools::execute_after_audit(
+                || {
+                    audit::write_admitted_interaction(
+                        journal_root,
+                        now,
+                        &verified.agent_identity,
+                        entry.audit_name,
+                    )
+                    .map(|_| ())
+                    .map_err(|_| tools::ToolError::AuditUnavailable)
+                },
+                || tools::execute(journal_root, &validated, now),
+            ) {
+                Ok(result) => json_rpc_response(JsonRpcResponse::success(
+                    request.id.as_ref(),
+                    tool_result(result),
+                )),
+                Err(tools::ToolError::AuditUnavailable) => {
+                    json_rpc_response(JsonRpcResponse::internal_error(
+                        request.id.as_ref(),
+                        "MCP audit publication failed",
+                    ))
+                }
+                Err(error) => json_rpc_response(JsonRpcResponse::tool_error(
+                    request.id.as_ref(),
+                    error.reason(),
+                )),
+            }
+        }
     }
 }
 
@@ -592,7 +620,6 @@ mod tests {
     use tokio::time::{Duration, advance};
     use tokio_rustls::{TlsAcceptor, TlsConnector, client::TlsStream};
 
-    use crate::jsonrpc::tools_list_result;
     use crate::oauth::OAuthRuntime;
     use crate::permits::{
         CONNECTION_PERMITS, connection_permit_pool, try_acquire_connection_permit,
@@ -773,7 +800,26 @@ mod tests {
             }
         }
 
+        fn grant_permission(&self, connection_key: &str) {
+            crate::permissions::PermissionStore::open(self.journal.path())
+                .set_permission(
+                    connection_key,
+                    crate::permissions::ReadPermission::default_whole_journal(),
+                )
+                .expect("fixture grants read permission");
+        }
+
         fn create_token(&self, label: &str) -> crate::tokens::CreatedToken {
+            let store = TokenStore::open(self.journal.path());
+            let created = store.create(label).expect("fixture creates bearer token");
+            let verified = store
+                .verify(&created.token)
+                .expect("fixture verifies bearer token");
+            self.grant_permission(&verified.id);
+            created
+        }
+
+        fn create_unpermissioned_token(&self, label: &str) -> crate::tokens::CreatedToken {
             TokenStore::open(self.journal.path())
                 .create(label)
                 .expect("fixture creates bearer token")
@@ -1072,11 +1118,17 @@ mod tests {
     }
 
     fn audit_record_count(journal: &Path) -> usize {
-        fs::read_dir(journal.join("chronicle"))
+        let chronicle = journal.join("chronicle");
+        if !chronicle.exists() {
+            return 0;
+        }
+        fs::read_dir(chronicle)
             .expect("audit day exists")
             .flat_map(|day| {
                 fs::read_dir(day.expect("day entry").path().join("mcp.agent"))
-                    .expect("audit stream exists")
+                    .ok()
+                    .into_iter()
+                    .flatten()
             })
             .filter(|entry| {
                 entry
@@ -1411,7 +1463,12 @@ mod tests {
         )
         .await
         .0;
-        assert_eq!(list["result"], tools_list_result());
+        assert_eq!(
+            list["result"],
+            crate::registry::advertised_tools_list(
+                &crate::permissions::PermissionDecision::Allowed
+            )
+        );
         let search = post_json_with_headers(
             &mut client,
             &token.token,
@@ -1899,6 +1956,13 @@ mod tests {
             .expect("wall clock after epoch")
             .as_secs() as i64;
 
+        let verified_oauth = server
+            .oauth
+            .store
+            .verify_access_token(&access)
+            .expect("verifies oauth access token");
+        server.grant_permission(&verified_oauth.id);
+
         let (init, headers) = post_json_with_headers(
             &mut client,
             &access,
@@ -2285,6 +2349,70 @@ mod tests {
         .await
         .expect("DCR does not wait on think/indexer");
         assert_eq!(register.0, 400);
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn unpermissioned_token_receives_empty_tools_list_and_call_refusal() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let token = server.create_unpermissioned_token("unpermissioned-agent");
+        let mut client = connect_tls(server.address, client_config).await;
+
+        let list_resp = post_json(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "tools/list",
+                "params": {}
+            }),
+        )
+        .await;
+        assert_eq!(list_resp["result"]["tools"], json!([]));
+
+        let call_resp = post_json(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 2,
+                "method": "tools/call",
+                "params": {"name": "search", "arguments": {"query": "test"}}
+            }),
+        )
+        .await;
+        assert_eq!(call_resp["error"]["code"], -32001);
+        assert_eq!(call_resp["error"]["data"]["reason"], "no_permission");
+
+        // Assert refusal is audited
+        assert_eq!(audit_record_count(server.journal.path()), 1);
+
+        // Now grant permission dynamically and verify access succeeds
+        let verified = TokenStore::open(server.journal.path())
+            .verify(&token.token)
+            .expect("verifies token");
+        server.grant_permission(&verified.id);
+
+        let list_after = post_json(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/list",
+                "params": {}
+            }),
+        )
+        .await;
+        let allowed_tools = crate::registry::advertised_tools_list(
+            &crate::permissions::PermissionDecision::Allowed,
+        );
+        assert_eq!(list_after["result"]["tools"], allowed_tools["tools"]);
+
         drop(client);
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
