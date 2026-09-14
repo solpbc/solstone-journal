@@ -99,12 +99,12 @@ impl WindowsProcessControlApi for SystemWindowsProcessControlApi {
 
     fn open_member(&self, pid: u32) -> io::Result<Option<MemberProcessHandle>> {
         use windows_sys::Win32::Foundation::ERROR_INVALID_PARAMETER;
-        use windows_sys::Win32::System::Threading::{OpenProcess, SYNCHRONIZE};
+        use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
 
         // SAFETY: OpenProcess takes plain integer arguments; the returned
         // handle becomes owned here and is closed on drop.
         #[allow(unsafe_code)]
-        let raw = unsafe { OpenProcess(SYNCHRONIZE, 0, pid) };
+        let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
         if raw.is_null() {
             let error = io::Error::last_os_error();
             // The member finished between enumeration and this open.

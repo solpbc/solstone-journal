@@ -29,7 +29,6 @@ mod session_end {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
-    use windows_sys::Win32::Foundation::BOOL;
     use windows_sys::Win32::System::Console::{
         CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, SetConsoleCtrlHandler,
     };
@@ -38,7 +37,7 @@ mod session_end {
     static INSTALLED: OnceLock<io::Result<()>> = OnceLock::new();
 
     #[allow(unsafe_code)]
-    unsafe extern "system" fn handler(control_type: u32) -> BOOL {
+    unsafe extern "system" fn handler(control_type: u32) -> windows_sys::core::BOOL {
         match control_type {
             CTRL_CLOSE_EVENT | CTRL_LOGOFF_EVENT | CTRL_SHUTDOWN_EVENT => {
                 REQUESTED.store(true, Ordering::SeqCst);
