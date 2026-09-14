@@ -169,8 +169,14 @@ async fn wait_for_hosted_parent(
     shutdown: watch::Sender<bool>,
     parent_loss: tokio::sync::oneshot::Sender<ParentLossReason>,
 ) {
-    let reason = parent.await_parent_loss().await;
-    let _ = parent_loss.send(reason);
+    tokio::select! {
+        reason = parent.await_parent_loss() => {
+            let _ = parent_loss.send(reason);
+        }
+        // A requested retirement stops the loop without a parent-loss reason;
+        // the post-loop check then reads the same request and finishes cleanly.
+        _ = parent.await_retire_expected_request() => {}
+    }
     let _ = shutdown.send(true);
 }
 

@@ -28,8 +28,21 @@ use task_scheduler::{Operation, Snapshot, TaskInstance};
 use crate::resolve_process_journal_path;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
-const STOP_TIMEOUT: Duration = Duration::from_secs(40);
+/// A public stop waits out the supervisor's own worst-case standard shutdown
+/// (every hosted child granted its full grace in turn), then the forwarder's
+/// Job drain and a Scheduler readback, before it may call cleanup unverified.
+/// The former fixed 40 s sat below that ceiling, so a clean shutdown that was
+/// still in progress was reported as a failed stop.
+const STOP_TIMEOUT: Duration = Duration::from_secs(
+    solstone_core_system::lifecycle::standard_shutdown_ceiling(
+        crate::supervisor::HOSTED_APP_SERVICE_COUNT,
+    )
+    .as_secs()
+        + 15,
+);
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// How long a public stop keeps retrying its one-shot request to the resident.
+const STOP_REQUEST_RETRY_WINDOW: Duration = Duration::from_secs(30);
 
 pub(crate) fn run(action: ServiceAction) -> ExitCode {
     // Explicit service entry may settle this process's failed independent launches;
@@ -234,6 +247,11 @@ fn install_task(ctx: &ServiceContext, port: u16) -> Result<(), ExitCode> {
     }
     // Preserve the setup artifact only after actual scheduler readback succeeds.
     // It is never authorization to replace/delete the registered task.
+    // Save the natively normalized profile that was just validated, not the
+    // raw Scheduler readback: raw XML embeds the registration ACL and spells
+    // the trigger principal as an account name, and the strict profile parser
+    // that later reads this artifact (setup evidence) performs no native
+    // normalization, so a raw artifact refuses every later setup as malformed.
     let provider = ctx.owner.path();
     let directory = provider
         .ancestors()
@@ -245,7 +263,7 @@ fn install_task(ctx: &ServiceContext, port: u16) -> Result<(), ExitCode> {
         directory.join(format!("{}.xml", ctx.guard.namespace)),
         encode_windows_task_xml(
             after
-                .xml
+                .validation_xml
                 .as_deref()
                 .ok_or_else(|| task_error("task XML readback missing"))?,
         )
@@ -409,14 +427,29 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
         "guard":solstone_core_installation_identity::service_guard_environment(&ctx.guard)});
     let mut line = serde_json::to_string(&frame).map_err(task_error)?;
     line.push('\n');
-    solstone_core_callosum::CallosumOneShotSender::new(
-        ctx.journal.join("health/callosum.sock"),
-        deadline
-            .saturating_duration_since(Instant::now())
-            .min(Duration::from_secs(3)),
-    )
-    .send_line(&line)
-    .map_err(task_error)?;
+    // The one-shot pipe handshake is bounded to a few seconds and a busy
+    // resident can miss that window (observed once as "transport unavailable"
+    // while the tree was healthy), so the stop request retries within its own
+    // deadline before the failure is reported.
+    let send_deadline = Instant::now() + STOP_REQUEST_RETRY_WINDOW;
+    loop {
+        let attempt = solstone_core_callosum::CallosumOneShotSender::new(
+            ctx.journal.join("health/callosum.sock"),
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_secs(3)),
+        )
+        .send_line(&line);
+        match attempt {
+            Ok(()) => break,
+            Err(error) => {
+                if Instant::now() >= send_deadline || Instant::now() >= deadline {
+                    return Err(task_error(error));
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
     loop {
         if Instant::now() >= deadline {
             return Err(task_error(

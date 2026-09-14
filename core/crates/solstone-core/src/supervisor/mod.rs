@@ -6,6 +6,9 @@ mod config;
 mod host;
 pub mod receipt;
 mod runtime;
+/// Every hosted app service the supervisor can own; the public stop deadline
+/// in the binary is derived from this count.
+pub const HOSTED_APP_SERVICE_COUNT: usize = runtime::AppService::ALL.len();
 mod shutdown;
 mod tick;
 

@@ -53,6 +53,16 @@ impl HostedServiceParentRuntime {
         self.admitted.stop_requested().unwrap_or(false)
     }
 
+    /// Resolve once the supervisor has asked this service to retire. A hosted
+    /// service selects on this beside genuine parent loss and the host signal
+    /// so a requested stop takes its normal cleanup path at once instead of
+    /// running out the supervisor's termination grace.
+    pub async fn await_retire_expected_request(&self) {
+        while !self.retire_expected_requested() {
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+    }
+
     pub async fn await_parent_loss_or_retire_expected_request(&self) -> Option<ParentLossReason> {
         loop {
             match self.admitted.stop_requested() {
