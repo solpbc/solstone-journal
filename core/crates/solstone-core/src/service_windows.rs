@@ -41,6 +41,8 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(
         + 15,
 );
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// How long a public stop keeps retrying its one-shot request to the resident.
+const STOP_REQUEST_RETRY_WINDOW: Duration = Duration::from_secs(30);
 
 pub(crate) fn run(action: ServiceAction) -> ExitCode {
     // Explicit service entry may settle this process's failed independent launches;
@@ -425,14 +427,29 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
         "guard":solstone_core_installation_identity::service_guard_environment(&ctx.guard)});
     let mut line = serde_json::to_string(&frame).map_err(task_error)?;
     line.push('\n');
-    solstone_core_callosum::CallosumOneShotSender::new(
-        ctx.journal.join("health/callosum.sock"),
-        deadline
-            .saturating_duration_since(Instant::now())
-            .min(Duration::from_secs(3)),
-    )
-    .send_line(&line)
-    .map_err(task_error)?;
+    // The one-shot pipe handshake is bounded to a few seconds and a busy
+    // resident can miss that window (observed once as "transport unavailable"
+    // while the tree was healthy), so the stop request retries within its own
+    // deadline before the failure is reported.
+    let send_deadline = Instant::now() + STOP_REQUEST_RETRY_WINDOW;
+    loop {
+        let attempt = solstone_core_callosum::CallosumOneShotSender::new(
+            ctx.journal.join("health/callosum.sock"),
+            deadline
+                .saturating_duration_since(Instant::now())
+                .min(Duration::from_secs(3)),
+        )
+        .send_line(&line);
+        match attempt {
+            Ok(()) => break,
+            Err(error) => {
+                if Instant::now() >= send_deadline || Instant::now() >= deadline {
+                    return Err(task_error(error));
+                }
+                std::thread::sleep(Duration::from_secs(1));
+            }
+        }
+    }
     loop {
         if Instant::now() >= deadline {
             return Err(task_error(
