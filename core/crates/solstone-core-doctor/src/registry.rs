@@ -109,6 +109,9 @@ fn vad_runtime(c: &CheckContext) -> RunnerResult {
 fn skills(c: &CheckContext) -> RunnerResult {
     checks::skill_state::run(c, CHECK_SKILLS)
 }
+fn unretryable_transcribe_input(c: &CheckContext) -> RunnerResult {
+    checks::unretryable_transcribe_input::run(c, CHECK_UNRETRYABLE_TRANSCRIBE_INPUT)
+}
 const CHECK_CONFIG: Check = Check {
     name: "config_dir_readable",
     severity: Severity::Blocker,
@@ -224,6 +227,11 @@ const CHECK_SKILLS: Check = Check {
     severity: Severity::Advisory,
     platforms: BOTH,
 };
+const CHECK_UNRETRYABLE_TRANSCRIBE_INPUT: Check = Check {
+    name: "unretryable_transcribe_input",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
 pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_DISK_SPACE,
@@ -333,6 +341,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_SKILLS,
         runner: skills,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_UNRETRYABLE_TRANSCRIBE_INPUT,
+        runner: unretryable_transcribe_input,
         deferred: None,
     },
 ];

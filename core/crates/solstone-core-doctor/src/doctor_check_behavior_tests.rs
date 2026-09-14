@@ -78,6 +78,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "speakers_analyze_installation",
     "vad_runtime_ready",
     "skill_state",
+    "unretryable_transcribe_input",
 ];
 
 const BASELINE_CHECK_NAMES: &[&str] = &[
@@ -633,6 +634,23 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
             #[cfg(unix)]
             stage_router_skills(&mut context, !ok);
         }
+        "unretryable_transcribe_input" => {
+            if !ok {
+                let segment_dir = context.journal_path.join("chronicle/20260101/120000_60");
+                fs::create_dir_all(&segment_dir).unwrap();
+                let audio_jsonl = segment_dir.join("audio.jsonl");
+                fs::write(
+                    audio_jsonl,
+                    format!(
+                        "{{\"_solstone_processing\":{{\"handler\":\"{}\",\"state\":\"{}\",\"reason_code\":\"{}\"}}}}\n",
+                        solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+                        solstone_core_processing_record::vocab::STATE_FAILED,
+                        solstone_core_processing_record::vocab::REASON_CORRUPT_INPUT
+                    ),
+                )
+                .unwrap();
+            }
+        }
         _ => unreachable!("unknown W3C check {name}"),
     }
     result(name, &context)
@@ -659,6 +677,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "speakers_analyze_installation"
                     | "vad_runtime_ready"
                     | "skill_state"
+                    | "unretryable_transcribe_input"
             ))
             .all(|e| e.deferred.is_none())
     );
@@ -681,6 +700,7 @@ fn check_severity_table_matches_reference() {
         ("speakers_analyze_installation", Severity::Blocker),
         ("vad_runtime_ready", Severity::Blocker),
         ("skill_state", Severity::Advisory),
+        ("unretryable_transcribe_input", Severity::Advisory),
     ] {
         assert_eq!(
             registry::lookup(Battery::Journal, name)
@@ -714,6 +734,10 @@ fn fixture_covers_ok_and_non_ok_paths() {
         ),
         ("vad_runtime_ready", SecondBranch::DifferentStatus),
         ("skill_state", SecondBranch::DifferentStatus),
+        (
+            "unretryable_transcribe_input",
+            SecondBranch::DifferentStatus,
+        ),
     ];
     let coverage_names = coverage
         .iter()
@@ -2187,4 +2211,486 @@ fn batteries_preserve_staged_home_and_journal() {
     assert_eq!(snapshot(&c.home_dir), home_before);
     assert!(!c.journal_path.join("chronicle").exists());
     assert!(!c.journal_path.join("apps/observer/observers").exists());
+}
+
+#[test]
+fn unretryable_transcribe_input_reports_healthy_zero_on_clean_journal() {
+    let c = fixture();
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert_eq!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(
+            std::collections::BTreeSet::new()
+        )
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(
+        row.detail,
+        "0 recordings the journal will not retry on its own (handler: transcribe, reason_code: corrupt_input)"
+    );
+    assert_eq!(row.fix, None);
+}
+
+#[test]
+fn unretryable_transcribe_input_reports_warn_with_ids_and_fix_on_corrupt_input() {
+    let c = fixture();
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    let audio_jsonl = segment_dir.join("audio.jsonl");
+    fs::write(
+        audio_jsonl,
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    let mut expected_set = std::collections::BTreeSet::new();
+    expected_set.insert((
+        "20260101".to_owned(),
+        "_default".to_owned(),
+        "120000_60".to_owned(),
+    ));
+    assert_eq!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(expected_set)
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert_eq!(
+        row.detail,
+        "1 recordings the journal will not retry on its own (handler: transcribe, reason_code: corrupt_input): 20260101/_default/120000_60"
+    );
+    assert_eq!(row.fix, Some("journal transcribe --redo".to_owned()));
+}
+
+#[test]
+fn unretryable_transcribe_input_formats_direct_and_named_streams_and_truncates() {
+    let c = fixture();
+    for i in 0..15 {
+        let day = format!("202601{:02}", i + 1);
+        let segment_dir = c
+            .journal_path
+            .join(format!("chronicle/{day}/stream_long_name_{i}/120000_60"));
+        fs::create_dir_all(&segment_dir).unwrap();
+        fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+        )
+        .unwrap();
+    }
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    match scan_result {
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(set) => {
+            assert_eq!(set.len(), 15);
+        }
+        other => panic!("expected Counted, got {other:?}"),
+    }
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.len() <= 400);
+    assert!(row.detail.ends_with("..."));
+    assert!(row.detail.starts_with(
+        "15 recordings the journal will not retry on its own (handler: transcribe, reason_code: corrupt_input): "
+    ));
+}
+
+#[test]
+fn unretryable_transcribe_input_corrupt_input_on_completed_fold_day_is_healthy_to_caught_up_and_warn_to_unretryable()
+ {
+    let c = fixture();
+    incomplete(&c, "20260101");
+
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    health(
+        &c,
+        "20260101",
+        &[
+            "{\"event\":\"sense.complete\",\"ts\":1,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"density\":\"active\"}",
+            "{\"event\":\"talent.complete\",\"ts\":2,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"name\":\"documents\"}",
+        ],
+    );
+
+    let caught_up_row = result("journal_caught_up", &c);
+    assert_eq!(caught_up_row.status, Status::Ok);
+
+    let unretryable_row = result("unretryable_transcribe_input", &c);
+    assert_eq!(unretryable_row.status, Status::Warn);
+}
+
+#[test]
+fn unretryable_transcribe_input_ac4_without_sense_complete_trips_caught_up() {
+    let c = fixture();
+    incomplete(&c, "20260101");
+
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    health(
+        &c,
+        "20260101",
+        &[
+            "{\"event\":\"talent.complete\",\"ts\":2,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"name\":\"documents\"}",
+        ],
+    );
+
+    let caught_up_row = result("journal_caught_up", &c);
+    assert_eq!(caught_up_row.status, Status::Warn);
+}
+
+#[test]
+fn unretryable_transcribe_input_ac4_with_unrelated_pending_trips_caught_up() {
+    let c = fixture();
+    incomplete(&c, "20260101");
+
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    health(
+        &c,
+        "20260101",
+        &[
+            "{\"event\":\"sense.complete\",\"ts\":1,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"density\":\"active\"}",
+            "{\"event\":\"talent.complete\",\"ts\":2,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"name\":\"documents\"}",
+        ],
+    );
+
+    let aged = SystemTime::UNIX_EPOCH
+        + Duration::from_millis(
+            (c.now.timestamp_millis() - (MODALITY_INPUT_AGED_MS as i64 + 1_000)) as u64,
+        );
+    stage_raw_audio_pending(&c, aged);
+
+    let caught_up_row = result("journal_caught_up", &c);
+    assert_eq!(caught_up_row.status, Status::Warn);
+
+    let unretryable_row = result("unretryable_transcribe_input", &c);
+    assert_eq!(unretryable_row.status, Status::Warn);
+}
+
+#[test]
+fn unretryable_transcribe_input_negative_twin_exhausted_decode_transient_is_zero() {
+    let c = fixture();
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    let audio_jsonl = segment_dir.join("audio.jsonl");
+    let record = serde_json::json!({
+        "handler": solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+        "state": solstone_core_processing_record::vocab::STATE_FAILED,
+        "reason_code": solstone_core_processing_record::vocab::REASON_DECODE_TRANSIENT,
+        "attempts": 3,
+    });
+    fs::write(
+        &audio_jsonl,
+        format!("{{\"_solstone_processing\":{}}}\n", record),
+    )
+    .unwrap();
+
+    let state = solstone_core_system_health::derive_modality_state(
+        &segment_dir,
+        "audio",
+        false,
+        true,
+        false,
+        Some(&record),
+        c.now,
+    );
+    assert_eq!(state, solstone_core_system_health::DataState::FailedFinal);
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert_eq!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(
+            std::collections::BTreeSet::new()
+        )
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Ok);
+}
+
+#[test]
+fn unretryable_transcribe_input_negative_twin_describe_corrupt_input_is_zero() {
+    let c = fixture();
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("screen.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"describe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert_eq!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(
+            std::collections::BTreeSet::new()
+        )
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Ok);
+}
+
+#[test]
+fn unretryable_transcribe_input_negative_twin_no_audio_stream_is_zero() {
+    let c = fixture();
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    let record = serde_json::json!({
+        "handler": solstone_core_processing_record::vocab::HANDLER_TRANSCRIBE,
+        "state": solstone_core_processing_record::vocab::STATE_FAILED,
+        "reason_code": solstone_core_processing_record::vocab::REASON_NO_AUDIO_STREAM,
+        "attempts": 1,
+    });
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        format!("{{\"_solstone_processing\":{}}}\n", record),
+    )
+    .unwrap();
+
+    let state = solstone_core_system_health::derive_modality_state(
+        &segment_dir,
+        "audio",
+        false,
+        true,
+        false,
+        Some(&record),
+        c.now,
+    );
+    assert_eq!(state, solstone_core_system_health::DataState::FailedFinal);
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert_eq!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(
+            std::collections::BTreeSet::new()
+        )
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Ok);
+}
+
+#[test]
+fn unretryable_transcribe_input_cannot_determine_on_missing_handler_field() {
+    let c = fixture();
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert!(matches!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::CannotDetermine(_)
+    ));
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.starts_with(
+        "could not determine how many recordings the journal will not retry on its own ("
+    ));
+}
+
+#[test]
+fn unretryable_transcribe_input_cannot_determine_on_oversized_first_row() {
+    let c = fixture();
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    let oversized = "a".repeat(70_000) + "\n";
+    fs::write(segment_dir.join("audio.jsonl"), oversized).unwrap();
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert!(matches!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::CannotDetermine(_)
+    ));
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+}
+
+#[test]
+fn unretryable_transcribe_input_scans_across_days_outside_backlog_window_and_multiple_streams() {
+    let c = fixture();
+    // Create 32 days: 20250101 through 20250201
+    for i in 1..=31 {
+        let day_dir = c.journal_path.join(format!("chronicle/202501{:02}", i));
+        fs::create_dir_all(&day_dir).unwrap();
+    }
+    let day_dir = c.journal_path.join("chronicle/20250201");
+    fs::create_dir_all(&day_dir).unwrap();
+
+    // In the oldest day 20250101 (outside the 30-day window):
+    // Two named streams with corrupt_input
+    let phone_dir = c.journal_path.join("chronicle/20250101/phone/120000_60");
+    fs::create_dir_all(&phone_dir).unwrap();
+    fs::write(
+        phone_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    let watch_dir = c.journal_path.join("chronicle/20250101/watch/120000_60");
+    fs::create_dir_all(&watch_dir).unwrap();
+    fs::write(
+        watch_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    // Control: tablet stream with decode_transient attempts:1
+    let tablet_dir = c.journal_path.join("chronicle/20250101/tablet/120000_60");
+    fs::create_dir_all(&tablet_dir).unwrap();
+    fs::write(
+        tablet_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"decode_transient\",\"attempts\":1}}\n",
+    )
+    .unwrap();
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    let mut expected_set = std::collections::BTreeSet::new();
+    expected_set.insert((
+        "20250101".to_owned(),
+        "phone".to_owned(),
+        "120000_60".to_owned(),
+    ));
+    expected_set.insert((
+        "20250101".to_owned(),
+        "watch".to_owned(),
+        "120000_60".to_owned(),
+    ));
+
+    assert_eq!(
+        scan_result,
+        crate::checks::unretryable_transcribe_input::UnretryableScan::Counted(expected_set)
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.starts_with(
+        "2 recordings the journal will not retry on its own (handler: transcribe, reason_code: corrupt_input): "
+    ));
+    assert!(row.detail.contains("20250101/phone/120000_60"));
+    assert!(row.detail.contains("20250101/watch/120000_60"));
+    assert!(!row.detail.contains("tablet"));
+}
+
+#[test]
+#[cfg(unix)]
+fn unretryable_transcribe_input_cannot_determine_on_unreadable_directory() {
+    use std::os::unix::fs::PermissionsExt;
+
+    struct RestorePerms(PathBuf);
+    impl Drop for RestorePerms {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    let c = fixture();
+    let day_dir = c.journal_path.join("chronicle/20260101");
+    let segment_dir = day_dir.join("120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    let _guard = RestorePerms(day_dir.clone());
+    fs::set_permissions(&day_dir, fs::Permissions::from_mode(0o000)).unwrap();
+
+    let scan_result = crate::checks::unretryable_transcribe_input::scan(&c.journal_path);
+    assert!(
+        matches!(
+            scan_result,
+            crate::checks::unretryable_transcribe_input::UnretryableScan::CannotDetermine(_)
+        ),
+        "expected CannotDetermine on unreadable day dir, got {:?}",
+        scan_result
+    );
+
+    let row = result("unretryable_transcribe_input", &c);
+    assert_eq!(row.status, Status::Warn);
+}
+
+#[test]
+fn unretryable_transcribe_input_registered_for_both_platforms() {
+    let entry = registry::lookup(Battery::Journal, "unretryable_transcribe_input")
+        .expect("unretryable_transcribe_input must be registered in Journal battery");
+    assert!(entry.check.platforms.contains(&Platform::Linux));
+    assert!(entry.check.platforms.contains(&Platform::Darwin));
+}
+
+#[test]
+fn unretryable_transcribe_input_ac4_fixture_reports_backlog_view_complete() {
+    let c = fixture();
+    incomplete(&c, "20260101");
+
+    let segment_dir = c.journal_path.join("chronicle/20260101/120000_60");
+    fs::create_dir_all(&segment_dir).unwrap();
+    fs::write(
+        segment_dir.join("audio.jsonl"),
+        "{\"_solstone_processing\":{\"handler\":\"transcribe\",\"state\":\"failed\",\"reason_code\":\"corrupt_input\"}}\n",
+    )
+    .unwrap();
+
+    health(
+        &c,
+        "20260101",
+        &[
+            "{\"event\":\"sense.complete\",\"ts\":1,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"density\":\"active\"}",
+            "{\"event\":\"talent.complete\",\"ts\":2,\"mode\":\"segment\",\"stream\":\"_default\",\"segment\":\"120000_60\",\"name\":\"documents\"}",
+        ],
+    );
+
+    let source = solstone_core_system_health::FilesystemHealthLogSource::new(&c.journal_path);
+    let segment_source = solstone_core_system_health::FilesystemSegmentSource;
+    let view = solstone_core_system_health::read_backlog_view(
+        &source,
+        &segment_source,
+        &c.journal_path,
+        solstone_core_system_health::BACKLOG_DEFAULT_WINDOW,
+        c.now,
+    )
+    .unwrap();
+    let day = view
+        .days
+        .iter()
+        .find(|d| d.day == "20260101")
+        .expect("20260101 backlog day exists");
+    assert_eq!(
+        day.state,
+        solstone_core_system_health::BACKLOG_STATE_COMPLETE
+    );
+    // `day.segments` in `BacklogDay` is `segment_depth` (not_sensed + completion.not_thought), which is 0 for a complete day.
+    assert_eq!(day.segments, 0);
+    assert_eq!(view.pending_days, 0);
+    assert_eq!(view.stuck_days, 0);
 }
