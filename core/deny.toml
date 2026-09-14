@@ -7,6 +7,14 @@
 # production path loads it.
 ignore = [
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser is reached only through pdf-extract, a facets-web dev-dependency that extracts text from PDFs this crate generated; no production reach and no safe upgrade" },
+    # VPE exception, 2026-09-14: RUSTSEC-2024-0388 applies to derivative 2.2.0,
+    # reached only through the pinned Velopack =1.2.0 Windows-installer callback
+    # dependency. RustSec lists no patched derivative release; Velopack's own current
+    # policy records derivative as deeply embedded with no drop-in replacement. Review
+    # on every Velopack version change, or when Velopack removes its corresponding
+    # exception/migrates off derivative. Upstream: rustsec.org/advisories/RUSTSEC-2024-0388
+    # and github.com/velopack/velopack/blob/develop/deny.toml.
+    { id = "RUSTSEC-2024-0388", reason = "VPE-approved dependency-compatibility exception for derivative 2.2.0 via pinned Velopack =1.2.0; no patched release or drop-in replacement exists" },
 ]
 
 [licenses]
