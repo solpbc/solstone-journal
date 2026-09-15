@@ -20,8 +20,8 @@ use solstone_core_journal_io::{JsonWriteOptions, MalformedPolicy, read_json, wri
 #[cfg(not(windows))]
 use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
 use solstone_core_system::process::{
-    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
-    SystemProcessInstanceSource,
+    InstanceVerdict, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
+    current_process_identity,
 };
 
 use crate::args::{CliError, installation_error};
@@ -769,13 +769,13 @@ fn inheritance_map(id: &str, fd: &str, token: &str) -> BTreeMap<OsString, OsStri
 
 fn write_owner_record(journal: &Path, role: SpeakersAnalyzeOwnerRole, id: &str) -> Result<(), ()> {
     let pid = std::process::id();
-    let InspectResult::Present {
-        instance: process_instance,
-        ..
-    } = SystemProcessInstanceSource.inspect(pid)
-    else {
+    // `inspect` is a by-PID reader and Windows answers `Unverifiable` for every
+    // PID, so reading our own identity through it wrote no owner record there at
+    // all and every contended lease could say only `owner_details=unavailable`.
+    let process_instance = current_process_identity().ok_or(())?;
+    if process_instance.pid != pid {
         return Err(());
-    };
+    }
     let started_at = process_started_at(&process_instance).ok_or(())?;
     let record = json!({
         "schema": OWNER_SCHEMA,

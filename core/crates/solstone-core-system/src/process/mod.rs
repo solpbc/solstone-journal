@@ -107,3 +107,47 @@ pub(crate) fn signal_aware_exit_code(status: &ExitStatus) -> i32 {
 pub use platform::{
     HelperCleanupObservationFault, run_bounded_helper_with_observation_fault_for_test,
 };
+
+/// This process's own birth-bound identity, on every supported platform.
+///
+/// [`ProcessInstanceSource::inspect`] is a by-PID reader and it is Unix-only:
+/// [`InspectResult::Present`] carries `uid`, `ppid` and `pgid`, none of which
+/// Windows can answer honestly, so the Windows implementation returns
+/// `Unverifiable` for every PID. A caller that needs only *its own* instance —
+/// to write an owner record beside a lease, say — must not read that as "this
+/// platform has no process identity": Windows does have one, the creation
+/// FILETIME the same source already uses to `observe`, and this is the way to
+/// ask for it.
+pub fn current_process_identity() -> Option<ProcessInstance> {
+    #[cfg(windows)]
+    {
+        current_windows_process_instance().ok()
+    }
+    #[cfg(not(windows))]
+    {
+        match SystemProcessInstanceSource.inspect(std::process::id()) {
+            InspectResult::Present { instance, .. } => Some(instance),
+            InspectResult::Absent | InspectResult::Unverifiable => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod current_process_identity_tests {
+    use super::*;
+
+    /// Windows carried an unported `inspect` that made every by-PID read
+    /// `Unverifiable`, so an owner record built from it was silently never
+    /// written and a contended lease could only say `owner_details=unavailable`.
+    /// This asserts the platform can name its own live process.
+    #[test]
+    fn current_process_identity_names_this_live_process() {
+        let instance = current_process_identity().expect("this platform can name its own process");
+        assert_eq!(instance.pid, std::process::id());
+        assert!(instance.birth.is_verifiable());
+        assert!(matches!(
+            SystemProcessInstanceSource.observe(&instance),
+            InstanceVerdict::SameLive { .. }
+        ));
+    }
+}
