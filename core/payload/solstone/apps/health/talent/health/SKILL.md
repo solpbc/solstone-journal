@@ -188,7 +188,7 @@ Which services write where:
 ## Troubleshooting
 
 ### `journal health` returns "Connection refused" or times out
-The supervisor is not running. Check if `journal supervisor` is active. The owner may need to start solstone with `journal start` or `make dev`.
+The supervisor is not running. Check if `journal supervisor` is active. The owner may need to start the service with `journal up` (`make dev` in a dev checkout). ⛔ Do not tell an owner to run `journal start` — it runs the supervisor in the foreground, tied to their terminal, and does not touch the installed service.
 
 ### Agent run shows "error" status in `journal talent logs`
 Run `journal talent log <ID> --full` to see the complete event timeline including the error. Common causes:
