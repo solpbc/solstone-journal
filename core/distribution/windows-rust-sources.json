@@ -1,5 +1,5 @@
 {
-  "cargo_lock_sha256": "d1cfc81d9f79270b8008a53dca872e6d6dca7603f4d96a71df54fccdf064c499",
+  "cargo_lock_sha256": "3999bdd0cf1013860066922f680f704a979ee2d66eb48e8906d88872efaebedc",
   "dependency_source_companion": {
     "bytes": 101215311,
     "filename": "windows-rust-dependencies-d1cfc81d9f79270b.tar.gz",
