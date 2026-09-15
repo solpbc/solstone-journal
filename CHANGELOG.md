@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - the agent-connection permissions announced in 2.0.5 are not available yet. this release does not turn them on.
 - daily processing now waits until each part of the day has been saved before calling the day complete, and interrupted work resumes without starting over.
+- default importance settings for screen categories now take effect during picture description, so categories set to low importance capture fewer pictures, and ignored categories are skipped while still keeping the first picture of each capture.
 
 ### Fixed
 

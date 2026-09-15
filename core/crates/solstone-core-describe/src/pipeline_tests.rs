@@ -30,7 +30,10 @@ use solstone_core_generate::{
 use super::{DescribeOptions, RunError, run_decoded};
 use crate::decode::{DescribeResult, QualifiedFrame};
 use crate::session::{DescribeSession, DescribeSessionFactory};
-use crate::{WinnowConfig, selection::CategoryOverride};
+use crate::{
+    WinnowConfig,
+    selection::{CategoryOverride, Importance},
+};
 
 type ResponsePlan = dyn Fn(&GenerateRequest) -> SessionCompletion + Send + Sync;
 
@@ -336,12 +339,20 @@ fn artifact_body(path: &Path) -> String {
 fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
     let test = TestRun::new("contracts");
     let factory = ScriptedFactory::new(default_response);
+    let mut options = test.options(
+        false,
+        vec!["secret one".to_owned(), "secret two".to_owned()],
+    );
+    options.category_overrides.insert(
+        "code".to_owned(),
+        CategoryOverride {
+            importance: Some(Importance::Normal),
+            extraction: None,
+        },
+    );
 
     run_decoded(
-        test.options(
-            false,
-            vec!["secret one".to_owned(), "secret two".to_owned()],
-        ),
+        options,
         &factory,
         decoded(&[1, 2, 3]),
     )
@@ -808,8 +819,17 @@ fn synthetic_decode_handles_session_and_phase_blockers_without_artifacts() {
 fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
     let test = TestRun::new("reentry-gaps");
     let initial = ScriptedFactory::new(default_response);
+    let code_overrides = BTreeMap::from([(
+        "code".to_owned(),
+        CategoryOverride {
+            importance: Some(Importance::Normal),
+            extraction: None,
+        },
+    )]);
+    let mut initial_options = test.options(false, Vec::new());
+    initial_options.category_overrides = code_overrides.clone();
     run_decoded(
-        test.options(false, Vec::new()),
+        initial_options,
         &initial,
         decoded(&[1, 2, 3]),
     )
@@ -833,8 +853,10 @@ fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
     fs::write(test.artifact(), fixture).expect("write reentry fixture");
 
     let reentry = ScriptedFactory::new(default_response);
+    let mut reentry_options = test.options(false, Vec::new());
+    reentry_options.category_overrides = code_overrides.clone();
     run_decoded(
-        test.options(false, Vec::new()),
+        reentry_options,
         &reentry,
         decoded(&[1, 2, 3]),
     )
@@ -866,7 +888,9 @@ fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
         header["_solstone_processing"]["reason_code"] = json!("analysis_failed");
     });
     let redo = ScriptedFactory::new(default_response);
-    run_decoded(test.options(true, Vec::new()), &redo, decoded(&[1, 2, 3]))
+    let mut redo_options = test.options(true, Vec::new());
+    redo_options.category_overrides = code_overrides;
+    run_decoded(redo_options, &redo, decoded(&[1, 2, 3]))
         .expect("redo starts a fresh run");
     assert_eq!(
         phase_requests(&redo.requests(), "observe.describe.frame").len(),

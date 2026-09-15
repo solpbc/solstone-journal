@@ -212,6 +212,27 @@ pub fn fallback_select_frames(frames: &[CategorizedFrame], max_extractions: u32)
     selected.into_iter().map(|(frame_id, _)| frame_id).collect()
 }
 
+fn resolved_importance(
+    category: Option<&str>,
+    overrides: &BTreeMap<String, CategoryOverride>,
+) -> Importance {
+    let Some(category) = category else {
+        return Importance::Normal;
+    };
+    if let Some(importance) = overrides.get(category).and_then(|value| value.importance) {
+        return importance;
+    }
+    let definition = CATEGORIES_META.iter().find(|meta| meta.name == category);
+    definition
+        .and_then(|meta| meta.importance.as_deref())
+        .map(|importance| {
+            Importance::parse(importance).unwrap_or_else(|| {
+                panic!("invalid embedded category importance for {category}: {importance:?}")
+            })
+        })
+        .unwrap_or(Importance::Normal)
+}
+
 pub fn apply_category_caps(
     selected_ids: Vec<u64>,
     frames: &[CategorizedFrame],
@@ -237,12 +258,7 @@ pub fn apply_category_caps(
         .into_iter()
         .filter(|frame_id| {
             let category = categories.get(frame_id).cloned().flatten();
-            match category
-                .as_deref()
-                .and_then(|name| overrides.get(name))
-                .and_then(|override_value| override_value.importance)
-                .unwrap_or(Importance::Normal)
-            {
+            match resolved_importance(category.as_deref(), overrides) {
                 Importance::Ignore => false,
                 Importance::Low => {
                     let count = counts.entry(category).or_default();
@@ -305,9 +321,7 @@ fn extraction_guidance(overrides: &BTreeMap<String, CategoryOverride>) -> String
     categories.sort_unstable_by_key(|category| category.name);
     for category in categories {
         let override_value = overrides.get(category.name);
-        let importance = override_value
-            .and_then(|value| value.importance)
-            .unwrap_or(Importance::Normal);
+        let importance = resolved_importance(Some(category.name), overrides);
         let extraction = override_value
             .and_then(|value| value.extraction.as_deref())
             .filter(|value| !value.is_empty())
@@ -423,14 +437,22 @@ mod tests {
             .collect::<Vec<_>>();
         let fallback = fallback_select_frames(&frames, fixture.max_extractions);
         assert_eq!(fallback, fixture.expected_fallback_order);
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "code".to_owned(),
+            CategoryOverride {
+                importance: Some(Importance::Normal),
+                extraction: None,
+            },
+        );
         assert_eq!(
-            finalize_selection(fallback, &frames, &BTreeMap::new()),
+            finalize_selection(fallback, &frames, &overrides),
             fixture.expected_final_order
         );
     }
 
     #[test]
-    fn category_caps_only_consult_config_overrides_and_restore_first_frame() {
+    fn category_caps_bind_definition_defaults_and_allow_overrides() {
         let categorized_frames = frames(&[
             (1, 0.0, "gaming"),
             (2, 1.0, "gaming"),
@@ -439,10 +461,29 @@ mod tests {
         ]);
         assert_eq!(
             apply_category_caps(vec![4, 3, 2, 1], &categorized_frames, &BTreeMap::new()),
-            vec![1, 2, 3, 4],
-            "gaming frontmatter importance is not a cap"
+            vec![4],
+            "gaming definition importance is ignore so caps drop frames 1, 2, 3"
         );
+        assert_eq!(
+            finalize_selection(vec![4, 3, 2, 1], &categorized_frames, &BTreeMap::new()),
+            vec![1, 4],
+            "the first frame is restored after its ignored category is dropped"
+        );
+
         let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "gaming".to_owned(),
+            CategoryOverride {
+                importance: None,
+                extraction: Some("custom extraction".to_owned()),
+            },
+        );
+        assert_eq!(
+            apply_category_caps(vec![4, 3, 2, 1], &categorized_frames, &overrides),
+            vec![4],
+            "extraction-only override still binds definition ignore"
+        );
+
         overrides.insert(
             "gaming".to_owned(),
             CategoryOverride {
@@ -490,6 +531,18 @@ mod tests {
                 "{importance:?} is uncapped"
             );
         }
+
+        let browsing_frames = frames(&[
+            (1, 0.0, "browsing"),
+            (2, 1.0, "browsing"),
+            (3, 2.0, "browsing"),
+            (4, 3.0, "browsing"),
+        ]);
+        assert_eq!(
+            apply_category_caps(vec![4, 3, 2, 1], &browsing_frames, &BTreeMap::new()),
+            vec![1, 2, 3, 4],
+            "browsing third-rung default is normal (uncapped)"
+        );
     }
 
     #[test]
@@ -505,5 +558,86 @@ mod tests {
         let guidance = extraction_guidance(&overrides);
         assert!(guidance.contains("- browsing: Use the configured browsing guidance."));
         assert!(!guidance.contains("Extract when visiting distinctly different websites"));
+    }
+
+    #[test]
+    fn extraction_guidance_binds_definition_defaults_and_allows_overrides() {
+        let guidance = extraction_guidance(&BTreeMap::new());
+        assert!(
+            guidance.contains("**Skip unless notable:**\n- gaming"),
+            "gaming defaults to skip/ignore"
+        );
+        assert!(
+            guidance.contains("**Normal:**") && guidance.contains("- browsing:"),
+            "browsing defaults to normal"
+        );
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "gaming".to_owned(),
+            CategoryOverride {
+                importance: Some(Importance::High),
+                extraction: Some("Extract gaming scoreboard.".to_owned()),
+            },
+        );
+        let overridden_guidance = extraction_guidance(&overrides);
+        assert!(
+            overridden_guidance.contains("**Prioritize:**")
+                && overridden_guidance.contains("- gaming: Extract gaming scoreboard."),
+            "gaming override to high moves it to prioritize heading"
+        );
+        assert!(
+            !overridden_guidance.contains("- gaming\n")
+                && !overridden_guidance.ends_with("- gaming"),
+            "gaming is no longer under skip heading"
+        );
+    }
+
+    #[test]
+    fn resolved_importance_resolves_three_rungs() {
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            "gaming".to_owned(),
+            CategoryOverride {
+                importance: Some(Importance::High),
+                extraction: None,
+            },
+        );
+        overrides.insert(
+            "code".to_owned(),
+            CategoryOverride {
+                importance: None,
+                extraction: Some("custom extraction".to_owned()),
+            },
+        );
+
+        // 1. Override wins
+        assert_eq!(
+            super::resolved_importance(Some("gaming"), &overrides),
+            Importance::High
+        );
+        // 2. Importance None falls through to definition
+        assert_eq!(
+            super::resolved_importance(Some("code"), &overrides),
+            Importance::Low
+        );
+        // 3. Live definition with no importance (third rung) -> Normal
+        assert_eq!(
+            super::resolved_importance(Some("browsing"), &overrides),
+            Importance::Normal
+        );
+        assert_eq!(
+            super::resolved_importance(Some("social"), &overrides),
+            Importance::Normal
+        );
+        // 4. Unknown or None category -> Normal
+        assert_eq!(
+            super::resolved_importance(Some("unknown"), &overrides),
+            Importance::Normal
+        );
+        assert_eq!(
+            super::resolved_importance(None, &overrides),
+            Importance::Normal
+        );
     }
 }
