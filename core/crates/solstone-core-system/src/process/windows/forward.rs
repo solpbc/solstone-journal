@@ -16,25 +16,52 @@ use super::launch_control::{
 };
 use crate::process::SERVICE_SHUTDOWN_TIMEOUT;
 
-/// Console session-end events (logoff, shutdown, console close) reach every
-/// console process in the session, this forwarder included. Without a handler
-/// the default one exits immediately, which closes the kill-on-close Job and
-/// terminates the resident before it can clear its readiness and identity.
-/// This handler instead latches a stop request for the forwarding loop and
-/// never returns, exactly as tokio's Windows handler does for these three
-/// events, so the system's own session-end grace is spent draining the tree.
+/// Session-end detection for an ordinary (non-service) forwarder process.
+///
+/// `SetConsoleCtrlHandler` alone is not sufficient: `CTRL_LOGOFF_EVENT` is
+/// documented to reach services only ("interactive applications are
+/// terminated at logoff, so they are not present when the system sends this
+/// signal" -- MS HandlerRoutine docs), and measured behavior on this product
+/// shows `CTRL_SHUTDOWN_EVENT` does not reliably reach a Job-hosted console
+/// child either: the forwarder and its children run under hidden or
+/// terminal-hosted consoles that never receive an end-session console event,
+/// so the tree was killed outright with no chance to clear readiness/identity
+/// markers. The reliable, documented mechanism for an ordinary interactive
+/// process is a top-level window's `WM_QUERYENDSESSION`/`WM_ENDSESSION`
+/// messages, delivered by the session broadcast regardless of console
+/// attachment. This module runs both: the console handler as a cheap
+/// best-effort path, and a dedicated hidden window + message pump as the
+/// mechanism that actually closes the logoff/shutdown gap.
 mod session_end {
     use std::io;
     use std::sync::OnceLock;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::time::Duration;
 
+    use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::Console::{
-        CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, SetConsoleCtrlHandler,
+        CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, GetConsoleWindow,
+        SetConsoleCtrlHandler,
+    };
+    use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, RegisterClassExW,
+        SW_HIDE, ShowWindow, TranslateMessage, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSEXW,
+        WS_OVERLAPPED,
     };
 
     static REQUESTED: AtomicBool = AtomicBool::new(false);
     static INSTALLED: OnceLock<io::Result<()>> = OnceLock::new();
+
+    fn window_class_name() -> &'static [u16] {
+        static NAME: OnceLock<Vec<u16>> = OnceLock::new();
+        NAME.get_or_init(|| {
+            "SolstoneJournalSessionEnd"
+                .encode_utf16()
+                .chain([0])
+                .collect()
+        })
+    }
 
     #[allow(unsafe_code)]
     unsafe extern "system" fn handler(control_type: u32) -> windows_sys::core::BOOL {
@@ -51,6 +78,83 @@ mod session_end {
         }
     }
 
+    /// `WM_QUERYENDSESSION` is the query every top-level window receives
+    /// first, whether the window is visible or not; latching here (rather
+    /// than waiting for `WM_ENDSESSION`) gives the forwarding loop the whole
+    /// session-end grace to drain the tree. Returning nonzero allows the
+    /// session to end -- this process does not veto logoff/shutdown, it only
+    /// uses the notice to shut its tree down cleanly ahead of being killed.
+    #[allow(unsafe_code)]
+    unsafe extern "system" fn window_proc(
+        window: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        match message {
+            WM_QUERYENDSESSION | WM_ENDSESSION => {
+                REQUESTED.store(true, Ordering::SeqCst);
+                1
+            }
+            _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
+        }
+    }
+
+    /// Create a hidden top-level window and pump its message loop for the
+    /// life of the process. Never returns; runs on its own thread. A failure
+    /// to register the class or create the window leaves this process with
+    /// only the console-handler path (best effort, logged by the caller).
+    #[allow(unsafe_code)]
+    fn pump_session_end_window() {
+        let class_name = window_class_name().as_ptr();
+        #[allow(unsafe_code)]
+        let instance = unsafe { GetModuleHandleW(std::ptr::null()) };
+        let class = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(window_proc),
+            hInstance: instance,
+            lpszClassName: class_name,
+            ..Default::default()
+        };
+        #[allow(unsafe_code)]
+        if unsafe { RegisterClassExW(&class) } == 0 {
+            return;
+        }
+        #[allow(unsafe_code)]
+        let window = unsafe {
+            CreateWindowExW(
+                0,
+                class_name,
+                class_name,
+                WS_OVERLAPPED,
+                0,
+                0,
+                0,
+                0,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                instance,
+                std::ptr::null(),
+            )
+        };
+        if window.is_null() {
+            return;
+        }
+        let mut message = MSG::default();
+        loop {
+            #[allow(unsafe_code)]
+            let result = unsafe { GetMessageW(&mut message, std::ptr::null_mut(), 0, 0) };
+            if result <= 0 {
+                return;
+            }
+            #[allow(unsafe_code)]
+            unsafe {
+                TranslateMessage(&message);
+                DispatchMessageW(&message);
+            }
+        }
+    }
+
     /// Install once per process; a later failure is reported, never retried.
     pub(super) fn install() -> io::Result<()> {
         INSTALLED
@@ -59,10 +163,26 @@ mod session_end {
                 // the process and is never removed.
                 #[allow(unsafe_code)]
                 if unsafe { SetConsoleCtrlHandler(Some(handler), 1) } == 0 {
-                    Err(io::Error::last_os_error())
-                } else {
-                    Ok(())
+                    return Err(io::Error::last_os_error());
                 }
+                if let Err(error) = std::thread::Builder::new()
+                    .name("session-end-window".to_owned())
+                    .spawn(pump_session_end_window)
+                {
+                    return Err(io::Error::other(error.to_string()));
+                }
+                // Best effort: hides the console window Task Scheduler
+                // otherwise leaves visible at every logon. Session-end
+                // detection above does not depend on the console at all, so
+                // a failure here is cosmetic, not functional.
+                #[allow(unsafe_code)]
+                unsafe {
+                    let console = GetConsoleWindow();
+                    if !console.is_null() {
+                        ShowWindow(console, SW_HIDE);
+                    }
+                }
+                Ok(())
             })
             .as_ref()
             .map(|()| ())

@@ -11,7 +11,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
-#[cfg(unix)]
 use solstone_core_journal_io::{
     HealthMarkerError, HealthMarkerKind, HealthMarkerState, day_marker_pair_status,
     read_health_marker,
@@ -187,12 +186,10 @@ fn apply_no_progress_backoff(record: &mut Map<String, Value>, ended_at: f64) {
     }
 }
 
-#[cfg(unix)]
 fn marker_generation(journal: &Path, day: &str, kind: HealthMarkerKind) -> u64 {
     versioned_generation(journal, day, kind).unwrap_or(0)
 }
 
-#[cfg(unix)]
 fn versioned_generation(journal: &Path, day: &str, kind: HealthMarkerKind) -> Option<u64> {
     match read_health_marker(journal, day, kind) {
         Ok(HealthMarkerState::Versioned { marker, .. }) => Some(marker.generation),
@@ -208,7 +205,6 @@ fn versioned_generation(journal: &Path, day: &str, kind: HealthMarkerKind) -> Op
     }
 }
 
-#[cfg(unix)]
 fn daily_marker_proves_attempt(
     journal: &Path,
     day: &str,
@@ -358,7 +354,6 @@ pub fn record_daily_catchup_attempt(
     });
 }
 
-#[cfg(unix)]
 fn settled_segment_repair_key(
     entries: &Map<String, Value>,
     day: &str,
@@ -405,12 +400,6 @@ where
     Capability: FnOnce() -> Result<(), CatchupError>,
 {
     capability()?;
-    #[cfg(not(unix))]
-    {
-        let _ = (journal, day, reference, started_at);
-        return Err(CatchupError::CapabilityUnavailable);
-    }
-    #[cfg(unix)]
     {
         let generation = match read_health_marker(journal, day, HealthMarkerKind::Stream)? {
             HealthMarkerState::Versioned { marker, .. } => marker.generation,
@@ -505,19 +494,6 @@ where
     Capability: FnOnce() -> Result<(), CatchupError>,
 {
     capability()?;
-    #[cfg(not(unix))]
-    {
-        let _ = (
-            journal,
-            day,
-            reference,
-            admitted_generation,
-            fingerprint,
-            outcome,
-        );
-        return Err(CatchupError::CapabilityUnavailable);
-    }
-    #[cfg(unix)]
     {
         let stream_generation = marker_generation(journal, day, HealthMarkerKind::Stream);
         let current_fingerprint = read_raw_input_fingerprint(journal, day);
@@ -654,12 +630,6 @@ where
     Capability: FnOnce() -> Result<(), CatchupError>,
 {
     capability()?;
-    #[cfg(not(unix))]
-    {
-        let _ = (journal, now);
-        return Err(CatchupError::CapabilityUnavailable);
-    }
-    #[cfg(unix)]
     {
         let ended_at = now
             .duration_since(UNIX_EPOCH)
@@ -865,20 +835,16 @@ pub enum CatchupError {
     Io { path: PathBuf, source: io::Error },
     #[error("catchup state is malformed: {0}")]
     State(String),
-    #[cfg(unix)]
     #[error("catchup marker error: {0}")]
     Marker(#[from] HealthMarkerError),
 }
 
+/// Health-marker reads and the catchup state file are plain `std::fs` + JSON
+/// on every platform this product ships (see `health_marker.rs`); this
+/// capability seam exists so a caller can simulate refusal (tests below), not
+/// because any platform genuinely lacks the capability.
 pub(crate) fn catchup_marker_capability() -> Result<(), CatchupError> {
-    #[cfg(unix)]
-    {
-        Ok(())
-    }
-    #[cfg(not(unix))]
-    {
-        Err(CatchupError::CapabilityUnavailable)
-    }
+    Ok(())
 }
 
 /// Return ascending day keys whose stream marker has not been completed.
@@ -887,12 +853,6 @@ pub fn updated_days(
     exclude: &BTreeSet<String>,
 ) -> Result<Vec<String>, CatchupError> {
     catchup_marker_capability()?;
-    #[cfg(not(unix))]
-    {
-        let _ = (journal, exclude);
-        return Err(CatchupError::CapabilityUnavailable);
-    }
-    #[cfg(unix)]
     {
         let days = day_dirs(journal)?;
         let mut updated = Vec::new();
@@ -1389,6 +1349,14 @@ mod tests {
             daily["active"],
             json!({"ref": "supervisor-catchup-20260101", "started_at": 10.0})
         );
+    }
+
+    #[test]
+    fn marker_capability_is_not_platform_gated() {
+        // Regression for the Windows catchup gap: health-marker reads and the
+        // catchup-state file are plain std::fs + JSON on every platform this
+        // product ships, so this capability must not refuse on any target.
+        assert!(catchup_marker_capability().is_ok());
     }
 
     #[test]

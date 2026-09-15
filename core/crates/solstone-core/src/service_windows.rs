@@ -41,8 +41,6 @@ const STOP_TIMEOUT: Duration = Duration::from_secs(
         + 15,
 );
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
-/// How long a public stop keeps retrying its one-shot request to the resident.
-const STOP_REQUEST_RETRY_WINDOW: Duration = Duration::from_secs(30);
 
 pub(crate) fn run(action: ServiceAction) -> ExitCode {
     // Explicit service entry may settle this process's failed independent launches;
@@ -429,9 +427,13 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     line.push('\n');
     // The one-shot pipe handshake is bounded to a few seconds and a busy
     // resident can miss that window (observed once as "transport unavailable"
-    // while the tree was healthy), so the stop request retries within its own
-    // deadline before the failure is reported.
-    let send_deadline = Instant::now() + STOP_REQUEST_RETRY_WINDOW;
+    // while the tree was healthy), so the stop request retries. A readiness
+    // marker proves the supervisor process exists, not that its Callosum
+    // listener has finished coming up -- measured up to and past 30 s on a
+    // `restart` issued shortly after `start` -- so this retries against the
+    // same command deadline the rest of `stop_task` already uses, rather than
+    // a separate, tighter sub-window with no basis in the resident's own
+    // worst-case startup latency.
     loop {
         let attempt = solstone_core_callosum::CallosumOneShotSender::new(
             ctx.journal.join("health/callosum.sock"),
@@ -443,7 +445,7 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
         match attempt {
             Ok(()) => break,
             Err(error) => {
-                if Instant::now() >= send_deadline || Instant::now() >= deadline {
+                if Instant::now() >= deadline {
                     return Err(task_error(error));
                 }
                 std::thread::sleep(Duration::from_secs(1));
