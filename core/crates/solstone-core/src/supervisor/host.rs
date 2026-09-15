@@ -211,6 +211,10 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
 /// are launch, identity and stop-confirmation failures that never touch them,
 /// and offering the same `mv` for those leaves the owner re-running into an
 /// identical error with a stray directory beside their journal.
+///
+/// ⚠ The two arms close differently on purpose. "untouched" is only true where
+/// nothing inside the journal was named, and the gated arm prints a path under
+/// `health/` -- there the reassurance has to be about that record instead.
 fn format_lifecycle_recovery_copy(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
@@ -221,6 +225,16 @@ fn format_lifecycle_recovery_copy(
         runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
     ) {
         let records = journal.join("health/parent-loss");
+        // ⚠ A fixed `.set-aside` destination silently NESTS on a second run:
+        // once `parent-loss.set-aside` exists, `mv parent-loss
+        // parent-loss.set-aside` puts the record *inside* it and reports
+        // nothing. Stamping the destination keeps every refusal's third line
+        // new, so a repeat either works or fails out loud.
+        let set_aside = format!(
+            "{}.set-aside-{}",
+            records.display(),
+            chrono::Local::now().format("%Y%m%d-%H%M%S")
+        );
         // ⚠ The stop comes first and is not optional: this refusal exits
         // TEMPFAIL and the installed unit restarts on failure, so without it the
         // service is starting again every few seconds while the owner types.
@@ -228,26 +242,32 @@ fn format_lifecycle_recovery_copy(
         let stop = "launchctl bootout gui/$(id -u)/org.solpbc.solstone";
         #[cfg(not(target_os = "macos"))]
         let stop = "systemctl --user stop solstone.service";
+        // ⛔ `journal up`, never `journal start`. `journal start` runs the
+        // supervisor in the FOREGROUND and does not touch the service, so it
+        // would leave the owner holding a process tied to that terminal with
+        // the unit line 1 just stopped still down. `journal up` is the alias
+        // for `journal service start`, and the inverse of the stop above.
         copy.push_str(&format!(
-            "\nthis can be a record left behind by an earlier start. to clear it, open a \
+            "\nan earlier start may have left a record behind. to move it aside, open a \
              terminal and run these three lines:\n\
              \x20   {stop}\n\
-             \x20   mv {} {}.set-aside\n\
-             \x20   journal start\n",
-            records.display(),
+             \x20   mv {} {set_aside}\n\
+             \x20   journal up\n\
+             \nnone of this holds your memories.\n",
             records.display()
         ));
     } else {
-        // ⚠ Every sibling refusal in this family ends in something to try. These
-        // three arms have no ledger to clear, so without this they would be the
-        // only ones that hand the owner nothing at all.
-        copy.push_str("\ntry starting it again.\n");
+        // ⚠ This is the settled close for the family --
+        // ADMISSION_WAIT_{TERMINAL,ACTIVE,UNVERIFIABLE}_COPY all end on exactly
+        // "wait a moment, then try again." The wait is load-bearing on
+        // `CoordinatorRetirementUnverified`, where retrying at once re-enters
+        // the race that produced the refusal.
+        //
+        // ⛔ No demonstrative in the closing line here: these arms print no
+        // path, so "none of this holds your memories" would point at nothing
+        // and its most available reading is the opposite of the intent.
+        copy.push_str("\nwait a moment, then try again.\n\nyour journal is untouched.\n");
     }
-    // ⛔ NOT "your journal itself is untouched" -- the sibling copy can say that
-    // because it removes files OUTSIDE the journal. This one names a path inside
-    // it, so that sentence would be read literally and be false. What is true,
-    // and what the owner is actually asking, is the second half.
-    copy.push_str("\nnone of this holds your memories.\n");
     copy
 }
 
@@ -887,13 +907,15 @@ mod tests {
 
     /// ⛔ A FALSIFICATION test for the refusal copy, not a snapshot of it.
     ///
-    /// Two properties, each of which an ordinary edit breaks silently:
+    /// Four properties, each of which an ordinary edit breaks silently:
     ///   1. every variant hands the owner something to try. The recovery block
     ///      is gated to the one cause it actually fixes, so without a fallback
     ///      the other three end on a bare diagnosis -- the only refusals in
     ///      this family that would.
-    ///   2. only that gated cause names the ledger path, and no arm claims the
-    ///      journal is "untouched" while printing a path inside it.
+    ///   2. no arm sends the owner to `journal start`, which starts the
+    ///      supervisor in the foreground rather than the service.
+    ///   3. only the gated cause names the ledger path.
+    ///   4. "untouched" appears only where no path inside the journal does.
     #[test]
     fn every_lifecycle_recovery_copy_ends_in_something_the_owner_can_do() {
         use super::runtime::ParentLossCoordinatorBootstrapFailure as Failure;
@@ -917,22 +939,36 @@ mod tests {
         let journal = std::path::Path::new("/home/owner/journal");
         for reason in ALL {
             let copy = super::format_lifecycle_recovery_copy(journal, reason);
+            let gated = reason == Failure::InitialAdmissionHandshake;
 
             assert!(
-                copy.contains("journal start") || copy.contains("try starting it again"),
+                copy.contains("journal up") || copy.contains("wait a moment, then try again."),
                 "{reason:?} leaves the owner with nothing to try:\n{copy}"
             );
+
             assert!(
-                !copy.contains("untouched"),
-                "{reason:?} calls the journal untouched while naming a path inside it:\n{copy}"
+                !copy.contains("journal start"),
+                "{reason:?} sends the owner to `journal start`, which runs the supervisor in the \
+                 foreground and leaves the service it just stopped down. The owner-facing start \
+                 is `journal up`:\n{copy}"
             );
 
             assert_eq!(
                 copy.contains("health/parent-loss"),
-                reason == Failure::InitialAdmissionHandshake,
+                gated,
                 "{reason:?} may name the parent-loss records only if it is the cause that reads \
-                 them -- every other arm sends the owner to move a directory that is not the \
-                 problem:\n{copy}"
+                 them -- every other arm would send the owner to move a directory that is not \
+                 the problem:\n{copy}"
+            );
+
+            // ⚠ The asymmetry is the point. Claiming the journal is untouched
+            // while printing a path under `health/` is read against the `mv`
+            // directly above it, and is false there.
+            assert_eq!(
+                copy.contains("untouched"),
+                !gated,
+                "{reason:?} must reassure about the record it named, not about the journal it \
+                 just told the owner to reach into:\n{copy}"
             );
         }
     }
@@ -959,6 +995,27 @@ mod tests {
         assert!(
             stop < set_aside,
             "the stop must come before the set-aside:\n{copy}"
+        );
+    }
+
+    /// ⚠ `mv a a.set-aside` moves `a` INSIDE `a.set-aside` once that directory
+    /// exists, silently, which is exactly what an owner running these lines a
+    /// second time does. The destination carries a stamp so every refusal names
+    /// somewhere new and a repeat cannot nest.
+    #[test]
+    fn admission_recovery_set_aside_destination_cannot_nest_on_a_second_run() {
+        let copy = super::format_lifecycle_recovery_copy(
+            std::path::Path::new("/home/owner/journal"),
+            super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
+        );
+
+        assert!(
+            copy.contains("health/parent-loss.set-aside-"),
+            "the set-aside destination must be stamped:\n{copy}"
+        );
+        assert!(
+            !copy.contains("health/parent-loss.set-aside\n"),
+            "a bare `.set-aside` destination nests on the owner's second run:\n{copy}"
         );
     }
 }
