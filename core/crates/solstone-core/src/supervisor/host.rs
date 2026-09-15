@@ -215,23 +215,30 @@ fn format_lifecycle_recovery_copy(
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
 ) -> String {
     let records = journal.join("health/parent-loss");
-    // ⛔ The variant is necessary but NOT sufficient, on both halves.
+    // ⛔ `exists` is a guard against naming a path that is not there. It is NOT
+    // evidence that a leftover record is the cause, and must never be read as
+    // such: `reserve_generation` runs `create_dir_all` on this directory on
+    // every boot and nothing in production removes it, so this is true for
+    // every journal that has ever started.
     //
-    // Only `InitialAdmissionHandshake` reads these records; offering the same
-    // `mv` for a launch, identity or stop-confirmation failure leaves the owner
-    // re-running into an identical error with a stray directory beside their
-    // journal.
-    //
-    // ⚠ And the walkthrough is only honest if the records are actually there.
-    // Nothing downstream checks, so without `exists` an owner whose start
-    // failed for some other reason is handed `mv: No such file or directory`
-    // on top of a journal that will not start.
+    // ⚠ Which is why the walkthrough is offered BELOW the retry rather than
+    // instead of it. `InitialAdmissionHandshake` returns from five production
+    // sites in `bootstrap_parent_loss_coordinator`, and the common one is
+    // simply missing a 3s deadline under load -- an owner in that case needs
+    // "try again", and must not be sent to move lifecycle state out of their
+    // journal as their first act.
     let offer_recovery = matches!(
         reason,
         runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
     ) && records.exists();
 
     let mut copy = String::from("this start could not continue.\n");
+    // ⚠ The settled close for this family --
+    // ADMISSION_WAIT_{TERMINAL,ACTIVE,UNVERIFIABLE}_COPY all end on exactly
+    // "wait a moment, then try again." The wait is load-bearing on
+    // `CoordinatorRetirementUnverified`, where retrying at once re-enters the
+    // race that produced the refusal.
+    copy.push_str("\nwait a moment, then try again.\n");
 
     if offer_recovery {
         // ⚠ A fixed `.set-aside` destination silently NESTS on a second run:
@@ -239,9 +246,17 @@ fn format_lifecycle_recovery_copy(
         // parent-loss.set-aside` puts the record *inside* it and reports
         // nothing. Stamping it keeps every refusal's destination new, so a
         // repeat either works or fails out loud.
+        //
+        // ⛔ Sanitize and quote. The journal path is owner-chosen (`--journal`,
+        // `SOLSTONE_JOURNAL`, `config.toml`) and only has to be absolute, so it
+        // can hold spaces -- an unquoted `mv` then silently becomes a
+        // four-argument one. Every sibling routes interpolated text through the
+        // sanitizer before it reaches a terminal.
+        let shown = solstone_core_system_health::sanitize_str_for_terminal_bounded(
+            &records.display().to_string(),
+        );
         let set_aside = format!(
-            "{}.set-aside-{}",
-            records.display(),
+            "{shown}.set-aside-{}",
             chrono::Local::now().format("%Y%m%d-%H%M%S")
         );
         // ⚠ The stop comes first and is not optional: this refusal exits
@@ -259,20 +274,12 @@ fn format_lifecycle_recovery_copy(
         // owner-facing aliases for service stop/start, identical on both
         // platforms, so the recipe needs no shell substitution and no cfg.
         copy.push_str(&format!(
-            "\nan earlier start may have left a record behind. to move it aside, open a \
-             terminal and run these three lines:\n\
+            "\nif it keeps failing, an earlier start may have left a record behind. to move \
+             it aside, open a terminal and run these three lines:\n\
              \x20   journal down\n\
-             \x20   mv {} {set_aside}\n\
-             \x20   journal up\n",
-            records.display()
+             \x20   mv '{shown}' '{set_aside}'\n\
+             \x20   journal up\n"
         ));
-    } else {
-        // ⚠ The settled close for this family --
-        // ADMISSION_WAIT_{TERMINAL,ACTIVE,UNVERIFIABLE}_COPY all end on exactly
-        // "wait a moment, then try again." The wait is load-bearing on
-        // `CoordinatorRetirementUnverified`, where retrying at once re-enters
-        // the race that produced the refusal.
-        copy.push_str("\nwait a moment, then try again.\n");
     }
 
     // ⛔ "your memories", NOT "your journal is untouched". Every one of these
@@ -280,9 +287,16 @@ fn format_lifecycle_recovery_copy(
     // `CoordinatorRetirementUnverified` is returned precisely when a helper
     // that may still be RUNNING could not be confirmed stopped -- so the one
     // arm named for its lack of confirmation is the one that would be
-    // asserting a confirmed fact about the journal. Memories are what the
-    // owner is actually asking about, and the claim is true on all four arms.
-    copy.push_str("\nyour memories are untouched.\n");
+    // asserting a confirmed fact about the journal.
+    //
+    // ⚠ The gated arm needs the second clause. That owner has just been shown
+    // a path INSIDE their own journal and asked to move it; "untouched" alone
+    // does not tell them the thing in their hand is safe to move.
+    if offer_recovery {
+        copy.push_str("\nyour memories are untouched; that record holds none of them.\n");
+    } else {
+        copy.push_str("\nyour memories are untouched.\n");
+    }
     copy.push_str(&format!("\ndetails: {reason}\n"));
     copy
 }
@@ -961,9 +975,14 @@ mod tests {
             let copy = super::format_lifecycle_recovery_copy(journal, reason);
             let gated = reason == Failure::InitialAdmissionHandshake;
 
+            // ⛔ EVERY arm, including the gated one. `records.exists()` is
+            // true for every journal that has booted, and the common cause of
+            // this refusal is a missed 3s deadline under load -- so an owner
+            // whose only problem is load must still be told to try again,
+            // rather than being sent to move lifecycle state as a first act.
             assert!(
-                copy.contains("journal up") || copy.contains("wait a moment, then try again."),
-                "{reason:?} leaves the owner with nothing to try:\n{copy}"
+                copy.contains("wait a moment, then try again."),
+                "{reason:?} must offer the retry, whatever else it offers:\n{copy}"
             );
 
             assert!(
@@ -986,7 +1005,7 @@ mod tests {
             // "untouched" claim is exactly what that arm cannot make. The
             // reassurance has to be about memories on every arm.
             assert!(
-                copy.contains("your memories are untouched."),
+                copy.contains("your memories are untouched"),
                 "{reason:?} must close on the owner's memories:\n{copy}"
             );
             assert!(
@@ -1071,6 +1090,48 @@ mod tests {
         assert!(
             !copy.contains("health/parent-loss.set-aside\n"),
             "a bare `.set-aside` destination nests on the owner's second run:\n{copy}"
+        );
+    }
+
+    /// ⛔ The walkthrough is offered BELOW the retry, never instead of it, and
+    /// its paths are quoted.
+    ///
+    /// `records.exists()` does not establish that a leftover record is the
+    /// cause -- `reserve_generation` creates that directory on every boot and
+    /// nothing in production removes it. `InitialAdmissionHandshake` also
+    /// returns from five production sites, the common one being a missed 3s
+    /// deadline under load, so leading with the `mv` would route the most
+    /// likely owner away from the one action that works.
+    #[test]
+    fn the_walkthrough_sits_below_the_retry_and_quotes_its_paths() {
+        let home = tempdir().expect("tempdir");
+        std::fs::create_dir_all(home.path().join("health/parent-loss")).expect("records");
+        let copy = super::format_lifecycle_recovery_copy(
+            home.path(),
+            super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
+        );
+
+        let retry = copy
+            .find("wait a moment, then try again.")
+            .expect("the gated arm still offers the retry");
+        let walkthrough = copy
+            .find("if it keeps failing")
+            .expect("the walkthrough is conditioned");
+        assert!(
+            retry < walkthrough,
+            "the retry must come first; the walkthrough is the fallback:\n{copy}"
+        );
+
+        // ⚠ The journal path is owner-chosen and only has to be absolute, so it
+        // can hold spaces. An unquoted `mv` silently becomes four arguments.
+        let line = copy
+            .lines()
+            .find(|line| line.trim_start().starts_with("mv "))
+            .expect("the mv line");
+        assert_eq!(
+            line.matches('\'').count(),
+            4,
+            "both mv paths must be single-quoted: {line}"
         );
     }
 }
