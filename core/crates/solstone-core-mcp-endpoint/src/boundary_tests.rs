@@ -469,6 +469,33 @@ fn ac4_entities_without_facets_can_list_only_facet_id_and_name() {
 }
 
 #[test]
+fn a_malformed_or_undeclared_facet_directory_is_skipped_not_fatal() {
+    let journal = fixture();
+    let malformed = journal.path().join("facets").join("gamma");
+    fs::create_dir_all(&malformed).unwrap();
+    fs::write(malformed.join("facet.json"), "not json").unwrap();
+    let undeclared = journal.path().join("facets").join("delta");
+    fs::create_dir_all(&undeclared).unwrap();
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["transcripts".to_owned()],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+    let result = probe(&journal, "list_facets", json!({})).unwrap();
+    let ids = result["facets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|facet| facet["id"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    assert_eq!(ids, vec![FACET_A.to_owned(), FACET_B.to_owned()]);
+}
+
+#[test]
 fn ac3_search_and_fetch_require_the_transcripts_category() {
     let journal = fixture();
     PermissionStore::open(journal.path())

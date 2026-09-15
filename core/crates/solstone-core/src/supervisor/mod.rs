@@ -10,6 +10,8 @@ mod runtime;
 /// in the binary is derived from this count.
 pub const HOSTED_APP_SERVICE_COUNT: usize = runtime::AppService::ALL.len();
 mod shutdown;
+#[cfg(test)]
+mod test_support;
 mod tick;
 
 pub use host::{

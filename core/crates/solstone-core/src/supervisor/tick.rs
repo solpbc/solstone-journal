@@ -1754,7 +1754,8 @@ mod tests {
     use std::time::Duration;
 
     use chrono::NaiveDate;
-    use solstone_core_system::cap::CapResolver;
+    use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
+    use solstone_core_system::cap::{CapResolver, DefaultCapResolver};
     use solstone_core_system::lifecycle::{
         HeartbeatClassification, HeartbeatV2, RunId, SyncPeerIdentity, WriterId,
     };
@@ -1764,8 +1765,9 @@ mod tests {
         ProcessInstanceSource,
     };
     use solstone_core_system::queue::{
-        ProcessState, ProcessStateProbe, TaskQueue, TaskQueueOptions,
+        ProcessState, ProcessStateProbe, SystemProcessStateProbe, TaskQueue, TaskQueueOptions,
     };
+    use tempfile::TempDir;
 
     use super::*;
 
@@ -1791,6 +1793,111 @@ mod tests {
         assert!(!is_mcp_audit_segment(message_string(&capture, "stream")));
         // A direct-layout segment carries no stream at all and is not audit.
         assert!(!is_mcp_audit_segment(None));
+    }
+
+    /// A `SupervisorState` built with a `TaskQueue` in `ready: false` mode: a
+    /// call to `submit` records a pending reference and returns without ever
+    /// reaching `start_dispatch`, so this drives the real handler — not a
+    /// stand-in for it — without spawning a `journal think` child process.
+    async fn queue_only_state(journal: &std::path::Path) -> SupervisorState {
+        fs::create_dir_all(journal.join("config")).expect("config dir");
+        fs::write(
+            journal.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"anthropic"}}}"#,
+        )
+        .expect("journal config writes");
+
+        let socket_path = journal.join("callosum.sock");
+        let server = Arc::new(
+            CallosumSocketServer::bind(&socket_path)
+                .await
+                .expect("callosum server"),
+        );
+        let connection = CallosumSocketConnection::new(&socket_path, Map::new());
+        let queue = TaskQueue::new(TaskQueueOptions {
+            #[cfg(windows)]
+            read_file_grants: Vec::new(),
+            journal_root: journal.to_path_buf(),
+            cap_resolver: Arc::new(DefaultCapResolver::new(Duration::from_secs(1))),
+            process_state_probe: Arc::new(SystemProcessStateProbe),
+            queue_sink: None,
+            process_sink: None,
+            ready: false,
+            before_deadline_commit: None,
+            child_environment: BTreeMap::new(),
+        });
+        let (local, parakeet) = super::super::test_support::stopped_providers(journal);
+        SupervisorState {
+            journal: journal.to_path_buf(),
+            is_remote_mode: false,
+            no_daily: true,
+            server,
+            connection,
+            queue,
+            last_sync_snapshot: None,
+            stale_heartbeats: Vec::new(),
+            shutdown_started: std::sync::atomic::AtomicBool::new(false),
+            started: Instant::now(),
+            scheduler: None,
+            recorded_schedule_completions: BTreeSet::new(),
+            app_processes: Vec::new(),
+            local,
+            parakeet,
+            flush: FlushState::default(),
+            daily: DailyState { last_day: None },
+            last_retry_expiry_drain: Instant::now(),
+            last_activity_retry_drain: Instant::now(),
+            activity_retry_seed_day: None,
+            wedge: solstone_core_system::provider_runtime::WedgeState::default(),
+            timing: super::super::runtime::SupervisorTiming {
+                tick_interval: Duration::from_secs(1),
+                status_interval: Duration::from_secs(5),
+            },
+            parent_loss_coordinator: None,
+            sense_child_environment: solstone_core_system::process::ChildLaunchContext::default(),
+            retained_sense: None,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_guard_is_load_bearing_removing_it_would_submit_the_audit_segment() {
+        // ⚠ The predicate test above pins `is_mcp_audit_segment` in isolation
+        // — this drives `handle_segment_observed` itself, against a queue
+        // that records a submission without dispatching one. The bar this
+        // meets: delete the `is_mcp_audit_segment` check from the handler and
+        // the first assertion below goes red, because the audit segment's
+        // reference would then land in the queue exactly like the control's.
+        let journal = TempDir::new().expect("temporary journal");
+        let mut state = queue_only_state(journal.path()).await;
+
+        let audit: CallosumEnvelope = serde_json::from_value(json!({
+            "tract": "observe", "event": "observed", "day": "20260831",
+            "stream": "mcp.agent", "segment": "123456_1"
+        }))
+        .unwrap();
+        handle_segment_observed(&mut state, &audit);
+        assert!(
+            !state
+                .queue
+                .contains_reference("supervisor-observed-20260831-123456_1"),
+            "an mcp audit segment must not be submitted for enrichment"
+        );
+
+        // The control that makes the negative mean something: an ordinary
+        // capture segment, observed by the same handler against the same
+        // state, still reaches the queue.
+        let capture: CallosumEnvelope = serde_json::from_value(json!({
+            "tract": "observe", "event": "observed", "day": "20260831",
+            "stream": "device", "segment": "120000_60"
+        }))
+        .unwrap();
+        handle_segment_observed(&mut state, &capture);
+        assert!(
+            state
+                .queue
+                .contains_reference("supervisor-observed-20260831-120000_60"),
+            "an ordinary capture segment must still be submitted for enrichment"
+        );
     }
 
     #[test]

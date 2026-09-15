@@ -1088,13 +1088,21 @@ pub(crate) fn available_facets(
     )>,
     DispatchError,
 > {
-    let names = solstone_core_facets::list_declared_facet_names(journal_root)
+    // `list_facet_directories` is a bare readdir with no per-entry open, unlike
+    // `list_declared_facet_names` (which opens every `facet.json` once itself
+    // to pre-filter). Reading each candidate's declaration here, once, and
+    // skipping whatever that single read cannot resolve, halves the opens on
+    // this call's discovery-path callers without changing anything this
+    // function returns: a missing, malformed, or non-object declaration was
+    // already silently excluded by the two-read form, for the same reason
+    // `read_text`/`read_json` treat any read failure as "not declared" there.
+    let names = solstone_core_facets::list_facet_directories(journal_root)
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
     let mut facets = Vec::new();
     for name in names {
-        let declaration = solstone_core_facets::read_facet_declaration(journal_root, &name)
-            .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?;
-        let Some(declaration) = declaration else {
+        let Ok(Some(declaration)) =
+            solstone_core_facets::read_facet_declaration(journal_root, &name)
+        else {
             continue;
         };
         let Some(id) = declaration

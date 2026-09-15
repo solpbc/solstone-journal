@@ -272,7 +272,6 @@ mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::io;
     use std::panic::{AssertUnwindSafe, catch_unwind};
-    use std::path::Path;
     use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -280,25 +279,19 @@ mod tests {
     use nix::sys::signal::{Signal, kill};
     use nix::unistd::Pid;
     use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
-    use solstone_core_local::plan::Platform;
     use solstone_core_system::cap::DefaultCapResolver;
     use solstone_core_system::lifecycle::{
         ShutdownDisposition, ShutdownPhase, ShutdownRegime, shutdown,
     };
     use solstone_core_system::process::{ManagedProcess, SpawnOptions, TerminationError};
-    use solstone_core_system::provider_runtime::{
-        FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
-        LocalTruthSeam, ParakeetLifecycleSeam, ParakeetProbeSeam, ParakeetRuntimeShared,
-        ParakeetTruthConfig, ParakeetTruthSeam, ProviderName, ProviderRuntimeCoordinator,
-        ProviderRuntimeState, RuntimeClock, SystemRuntimeClock, WedgeState,
-    };
+    use solstone_core_system::provider_runtime::WedgeState;
     use solstone_core_system::queue::{SystemProcessStateProbe, TaskQueue, TaskQueueOptions};
     use tempfile::TempDir;
 
     use super::super::runtime::{
-        AppService, DailyState, FlushState, LocalProvider, ManagedAppProcess, ParakeetProvider,
-        SupervisorState, SupervisorTiming,
+        AppService, DailyState, FlushState, ManagedAppProcess, SupervisorState, SupervisorTiming,
     };
+    use super::super::test_support::stopped_providers;
     use super::{BoundedShutdownDiagnosticSink, SupervisorShutdownDriver};
 
     #[derive(Default)]
@@ -444,66 +437,6 @@ mod tests {
             _journal: journal,
             child_pids,
         }
-    }
-
-    fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvider) {
-        let clock: Arc<dyn RuntimeClock> = Arc::new(SystemRuntimeClock::default());
-        let local_shared = Arc::new(LocalRuntimeShared::default());
-        let local = LocalProvider {
-            coordinator: ProviderRuntimeCoordinator::new(),
-            shared: local_shared.clone(),
-            truth: LocalTruthSeam::with_config(
-                local_shared.clone(),
-                LocalTruthConfig {
-                    journal_path: journal.to_path_buf(),
-                    platform: if cfg!(target_os = "macos") {
-                        Platform::Darwin
-                    } else {
-                        Platform::Linux
-                    },
-                    nvidia_probe: None,
-                    vulkan_devices: Vec::new(),
-                },
-            ),
-            lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone()),
-            probe: LocalProbeSeam::new(local_shared.clone(), journal),
-            store: FileRuntimeStore::new(
-                journal,
-                ProviderName::Local,
-                local_shared.clone(),
-                clock.clone(),
-            ),
-            state: ProviderRuntimeState::new(ProviderName::Local),
-            processes: Vec::new(),
-            launch_recorded_for: None,
-            fixture_launch: None,
-        };
-        let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
-        let parakeet = ParakeetProvider {
-            coordinator: ProviderRuntimeCoordinator::new(),
-            shared: parakeet_shared.clone(),
-            truth: ParakeetTruthSeam::with_config(
-                parakeet_shared.clone(),
-                ParakeetTruthConfig {
-                    journal_path: journal.to_path_buf(),
-                    remote_mode: false,
-                    platform: std::env::consts::OS.to_owned(),
-                    machine: std::env::consts::ARCH.to_owned(),
-                    vulkan_devices: Vec::new(),
-                },
-            ),
-            lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone()),
-            probe: ParakeetProbeSeam::new(parakeet_shared.clone(), journal),
-            store: FileRuntimeStore::new(
-                journal,
-                ProviderName::Parakeet,
-                parakeet_shared.clone(),
-                clock,
-            ),
-            state: ProviderRuntimeState::new(ProviderName::Parakeet),
-            processes: Vec::new(),
-        };
-        (local, parakeet)
     }
 
     fn run_shutdown(mut fixture: Fixture) -> solstone_core_system::lifecycle::ShutdownReport {
