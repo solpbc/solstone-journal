@@ -533,7 +533,10 @@ fn service_running_accepted_silent_cannot_tell() {
     // something IS listening -- only no status frame arrived. Reporting "not
     // running" about a live service is the defect this arm exists to remove.
     assert_eq!(row.status, Status::Skip);
-    assert_eq!(row.detail, "couldn't get a status — took too long to answer");
+    assert_eq!(
+        row.detail,
+        "couldn't get a status — took too long to answer"
+    );
     assert!(row.execution_error.is_none());
     assert!(!results_failed(&[row]));
 }
@@ -666,7 +669,10 @@ fn service_command_exit_still_terminates_descendants_holding_output_pipes() {
     // something IS listening -- only no status frame arrived. Reporting "not
     // running" about a live service is the defect this arm exists to remove.
     assert_eq!(row.status, Status::Skip);
-    assert_eq!(row.detail, "couldn't get a status — took too long to answer");
+    assert_eq!(
+        row.detail,
+        "couldn't get a status — took too long to answer"
+    );
     assert!(row.execution_error.is_none());
 }
 
@@ -730,7 +736,10 @@ fn service_timeout_terminates_the_owned_descendant_group() {
     // something IS listening -- only no status frame arrived. Reporting "not
     // running" about a live service is the defect this arm exists to remove.
     assert_eq!(row.status, Status::Skip);
-    assert_eq!(row.detail, "couldn't get a status — took too long to answer");
+    assert_eq!(
+        row.detail,
+        "couldn't get a status — took too long to answer"
+    );
     assert!(row.execution_error.is_none());
 }
 

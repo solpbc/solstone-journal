@@ -280,27 +280,12 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
         }
     }
 
-    // History that predates evidence-bound completion is readable and unverified
-    // by design: it sits outside the adoption boundary and nothing will ever
-    // regenerate it.  Counting it as backlog is a standing false alarm about work
-    // that will never happen -- on the reference host every day in the window read
-    // as pending or stuck, permanently.
-    // ⚠ Only the COUNTS are affected.  Each day keeps its own state and its own
-    // error, so an unreadable day still reports unknown rather than vanishing.
-    let counts_as_backlog = |day: &&BacklogDay| {
-        !matches!(
-            day.daily_coverage.as_ref().map(|coverage| coverage.state),
-            Some(solstone_core_system::daily_coverage::CoverageState::HistoricalUnverified)
-        )
-    };
     let pending_days = backlog_days
         .iter()
-        .filter(counts_as_backlog)
         .filter(|day| day.state == BACKLOG_STATE_PENDING)
         .count();
     let stuck_days = backlog_days
         .iter()
-        .filter(counts_as_backlog)
         .filter(|day| day.state == BACKLOG_STATE_STUCK)
         .count();
     let oldest_pending_day = backlog_days
