@@ -565,7 +565,6 @@ mod tests {
         save_daily_unit_record(journal, &record).unwrap();
         record
     }
-    #[test]
     /// The owed question, per state.  ⚠ Total classification is the point: if a
     /// state is ever added and not classified here, this reds rather than
     /// silently defaulting it to not-owed.
@@ -583,6 +582,7 @@ mod tests {
         }
     }
 
+    #[test]
     fn current_requires_matching_evidence_and_contract_not_legacy_logs_or_terminal_failure() {
         let (dir, talent, apps) = fixture();
         let root = dir.path();
