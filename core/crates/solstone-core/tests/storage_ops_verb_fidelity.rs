@@ -318,6 +318,22 @@ fn storage_ops_body_diagnostics_and_reprocess_unreachable_are_preserved() {
         )
     );
 
+    // A chosen thinking engine is a precondition this fixture must satisfy on
+    // its own: `no_thinking_engine_chosen` is a cheap local-config guard that
+    // fires before the transport attempt for every reprocess flavor
+    // (`4721f1638`, unit-proven by `no_thinking_engine_refuses_all_flavors_without_send`
+    // in solstone-core-reprocess-cli), so an unconfigured fixture cannot reach
+    // the transport layer this assertion means to exercise.
+    fs::create_dir_all(journal.path().join("config")).unwrap();
+    fs::write(
+        journal.path().join("config/journal.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "providers": {"active": {"provider": "test"}}
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
     let reprocess = run_journal(
         journal.path(),
         &["reprocess", "20250101", "--from-scratch"],
