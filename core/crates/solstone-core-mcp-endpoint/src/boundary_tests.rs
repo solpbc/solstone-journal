@@ -268,8 +268,14 @@ fn ac23_chosen_scope_excludes_unassigned_segments_while_whole_journal_includes_t
 }
 
 #[test]
-fn ac25_denial_is_a_three_field_audit_record() {
+fn ac25_a_refusal_is_recorded_and_the_owner_can_tell_it_from_a_served_call() {
+    // 🔑 This supersedes the three-field assertion: EVIDENCE.md § 5.3's gap was
+    // that an owner asking "what did this connection try?" could not be told
+    // "and it was refused". A denial and an admission differed only by
+    // timestamp. They no longer do.
     let journal = fixture();
+    let served = probe(&journal, "search", json!({"query": "indexed"}));
+    assert!(served.is_ok());
     PermissionStore::open(journal.path())
         .clear_permission(CONNECTION)
         .unwrap();
@@ -277,17 +283,178 @@ fn ac25_denial_is_a_three_field_audit_record() {
         probe(&journal, "search", json!({"query": "indexed"})),
         Err(McpProbeError::PermissionDenied)
     );
-    let record = fs::read_dir(journal.path().join("chronicle"))
-        .unwrap()
-        .flat_map(|day| fs::read_dir(day.unwrap().path().join("mcp.agent")).unwrap())
-        .next()
-        .unwrap()
-        .unwrap()
-        .path()
-        .join("interaction.json");
-    let record: Value = serde_json::from_slice(&fs::read(record).unwrap()).unwrap();
-    assert_eq!(record.as_object().unwrap().len(), 3);
-    assert_eq!(record["tool_name"], "search");
+
+    let page = crate::activity::read_activity(
+        journal.path(),
+        &crate::activity::ActivityQuery {
+            limit: 10,
+            ..crate::activity::ActivityQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(page.entries.len(), 2);
+    let outcomes = page
+        .entries
+        .iter()
+        .map(|entry| entry.outcome)
+        .collect::<Vec<_>>();
+    assert!(outcomes.contains(&crate::activity::RecordedOutcome::Refused));
+    assert!(outcomes.contains(&crate::activity::RecordedOutcome::Served));
+    let refused = page
+        .entries
+        .iter()
+        .find(|entry| entry.outcome == crate::activity::RecordedOutcome::Refused)
+        .unwrap();
+    assert_eq!(refused.tool_name, solstone_core_mcp_audit::ToolName::Search);
+    assert_eq!(refused.connection.as_deref(), Some(CONNECTION));
+    assert_eq!(
+        refused.reason.as_deref(),
+        Some("this connection has no read permission")
+    );
+    // 🔑 And the wire keeps the other half of the asymmetry: both refusals
+    // — no permission at all, and a permission that lacks the category —
+    // render identically to the agent.
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".to_owned()],
+                scope: ReadScope::Facets {
+                    ids: vec![FACET_A.to_owned()],
+                },
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        probe(&journal, "search", json!({"query": "indexed"})),
+        Err(McpProbeError::PermissionDenied)
+    );
+    let page = crate::activity::read_activity(
+        journal.path(),
+        &crate::activity::ActivityQuery {
+            limit: 10,
+            outcome: Some(crate::activity::RecordedOutcome::Refused),
+            ..crate::activity::ActivityQuery::default()
+        },
+    )
+    .unwrap();
+    // ⚠ Two refusals, indistinguishable on the wire, distinguishable here.
+    assert_eq!(page.entries.len(), 2);
+    let mut reasons = page
+        .entries
+        .iter()
+        .filter_map(|entry| entry.reason.clone())
+        .collect::<Vec<_>>();
+    reasons.sort();
+    assert_eq!(
+        reasons,
+        [
+            "this connection does not have the transcripts category",
+            "this connection has no read permission",
+        ]
+    );
+}
+
+#[test]
+fn ac25b_a_search_that_matches_nothing_is_recorded_empty_rather_than_served() {
+    let journal = fixture();
+    assert!(
+        probe(&journal, "search", json!({"query": "zzzznotpresent"})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let page = crate::activity::read_activity(
+        journal.path(),
+        &crate::activity::ActivityQuery {
+            limit: 10,
+            ..crate::activity::ActivityQuery::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(page.entries.len(), 1);
+    assert_eq!(
+        page.entries[0].outcome,
+        crate::activity::RecordedOutcome::Empty
+    );
+    assert_eq!(
+        page.entries[0].request.as_ref().unwrap().arguments["query"],
+        "zzzznotpresent"
+    );
+}
+
+#[test]
+fn ac26_the_owners_activity_log_is_unreachable_through_the_boundary_it_audits() {
+    // 🔴 The recursion, measured rather than argued. A connection with the
+    // widest grant this build can express searches for a term that exists only
+    // inside its own interaction records.
+    let journal = fixture();
+    probe(
+        &journal,
+        "search",
+        json!({"query": "supercalifragilisticexpialidocious"}),
+    )
+    .unwrap();
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec![
+                    "transcripts".to_owned(),
+                    "entities".to_owned(),
+                    "facets".to_owned(),
+                ],
+                scope: ReadScope::WholeJournal,
+            },
+        )
+        .unwrap();
+
+    // Control: the term really is on disk, in this journal, right now.
+    let recorded = crate::activity::read_activity(
+        journal.path(),
+        &crate::activity::ActivityQuery {
+            limit: 10,
+            ..crate::activity::ActivityQuery::default()
+        },
+    )
+    .unwrap();
+    assert!(
+        recorded.entries.iter().any(|entry| {
+            entry.request.as_ref().is_some_and(|request| {
+                request.arguments["query"] == "supercalifragilisticexpialidocious"
+            })
+        }),
+        "control failed: the term was never recorded, so the negative below proves nothing"
+    );
+    // Second control, on the coordinate that could be wrong: the same query
+    // shape does find the fixture's indexed material.
+    assert_eq!(
+        probe(&journal, "search", json!({"query": "indexed"})).unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+
+    assert!(
+        probe(
+            &journal,
+            "search",
+            json!({"query": "supercalifragilisticexpialidocious"})
+        )
+        .unwrap()["results"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "an agent reached the owner's log of its own queries"
+    );
+    assert!(
+        probe(&journal, "list_transcripts", json!({})).unwrap()["transcripts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|segment| !segment.to_string().contains("mcp.agent"))
+    );
 }
 
 #[test]

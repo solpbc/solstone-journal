@@ -22,12 +22,14 @@ mod journal_route_record;
 
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 pub use solstone_core_mcp_endpoint::{
-    ConnectionReadSnapshot, CreatedPairingCode, McpEndpointTlsService, McpProbeError,
-    McpServiceError, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
-    PermissionDecision, PermissionStore, PermissionStoreError, PermissionsFile, ReadPermission,
-    ReadScope, TokenStore, TokenStoreError, TokenSummary, VerifiedToken, evaluate_connection_read,
-    mcp_endpoint_server_config, resolve_permission_facet_names, run_mcp_probe,
-    run_native_service_with_hosted_parent,
+    ActivityAnchor, ActivityEntry, ActivityPage, ActivityQuery, ActivityReadError, AuditOutcome,
+    AuditToolName, ConnectionReadSnapshot, CreatedPairingCode, McpEndpointTlsService,
+    McpProbeError, McpServiceError, OAuthClientSummary, OAuthGrantSummary, OAuthStore,
+    OAuthStoreError, PermissionDecision, PermissionStore, PermissionStoreError, PermissionsFile,
+    ReadPermission, ReadScope, RecordedOutcome, RequestRecord, ResultShape, TokenStore,
+    TokenStoreError, TokenSummary, VerifiedToken, evaluate_connection_read,
+    mcp_endpoint_server_config, read_activity, resolve_permission_facet_names, run_mcp_probe,
+    run_native_service_with_hosted_parent, tally,
 };
 
 #[cfg(all(test, unix, feature = "journal-mcp-endpoint"))]

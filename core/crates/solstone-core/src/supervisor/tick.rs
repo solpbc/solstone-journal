@@ -1363,6 +1363,20 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         return;
     }
     let stream = message_string(message, "stream").map(str::to_owned);
+    // ⛔ An MCP audit record is not an observation of the owner's world. The
+    // audit writer publishes into `chronicle/<day>/mcp.agent/<segment>/` and
+    // notifies Callosum like any other new segment, and the generic handler
+    // below would answer by submitting `journal think` for it — one process
+    // per agent tool call, writing an idle sense artifact into the very stream
+    // the owner-agent boundary keeps out of enrichment. Nothing is read and no
+    // model is called, so this is cost and contamination rather than a leak,
+    // but the plan's "audit records are excluded from sense/talent enrichment"
+    // has to hold for the process as well as the content.
+    //
+    if is_mcp_audit_segment(stream.as_deref()) {
+        log::debug!("supervisor: MCP audit segment is not enriched: {day}/{segment}");
+        return;
+    }
     state.flush.last_segment_ts = Some(Instant::now());
     state.flush.day = Some(day.clone());
     state.flush.segment = Some(segment.to_owned());
@@ -1387,6 +1401,16 @@ fn handle_segment_observed(state: &mut SupervisorState, message: &CallosumEnvelo
         &day,
         format!("supervisor-observed-{day}-{segment}"),
     );
+}
+
+/// Whether an observed segment is an MCP audit record.
+///
+/// ⚠ The stream name is duplicated from `solstone-core-mcp-audit`'s
+/// `AUDIT_STREAM` rather than imported: this guard must hold whether or not the
+/// endpoint feature is compiled into this build, because the records can
+/// predate the binary that finds them.
+fn is_mcp_audit_segment(stream: Option<&str>) -> bool {
+    stream == Some("mcp.agent")
 }
 
 fn handle_activity_recorded(state: &mut SupervisorState, message: &CallosumEnvelope) {
@@ -1744,6 +1768,30 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn an_mcp_audit_segment_is_not_submitted_for_enrichment() {
+        // The envelope below is byte-for-byte the shape
+        // `solstone-core-mcp-endpoint`'s `emit_observed` publishes, so this
+        // pins the cross-crate contract rather than restating the constant.
+        let audit: CallosumEnvelope = serde_json::from_value(json!({
+            "tract": "observe", "event": "observed", "day": "20260831",
+            "stream": "mcp.agent", "segment": "123456_1"
+        }))
+        .unwrap();
+        assert!(is_mcp_audit_segment(message_string(&audit, "stream")));
+
+        // The control that makes the negative mean something: an ordinary
+        // capture segment still reaches enrichment.
+        let capture: CallosumEnvelope = serde_json::from_value(json!({
+            "tract": "observe", "event": "observed", "day": "20260831",
+            "stream": "device", "segment": "120000_60"
+        }))
+        .unwrap();
+        assert!(!is_mcp_audit_segment(message_string(&capture, "stream")));
+        // A direct-layout segment carries no stream at all and is not audit.
+        assert!(!is_mcp_audit_segment(None));
+    }
 
     #[test]
     fn segment_event_log_keeps_concurrent_custody_rows_intact() {

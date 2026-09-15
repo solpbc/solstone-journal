@@ -5179,6 +5179,7 @@ fn run_mcp_process(
         McpCommand::Pairing(command) => run_mcp_pairing(command),
         McpCommand::Oauth(command) => run_mcp_oauth(command),
         McpCommand::Permission(command) => run_mcp_permission(command),
+        McpCommand::Activity(command) => run_mcp_activity(command),
         McpCommand::Probe(command) => run_mcp_probe_command(command),
     }
 }
@@ -5657,6 +5658,211 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
     }
 }
 
+/// Show what each connection asked for and how it ended.
+///
+/// ⛔ Owner-only: this reads the journal directly, on the owner's machine, and
+/// no MCP bearer credential reaches it — the closed tool registry has no row
+/// that names this surface. ⚠ Operator-plain by design; the owner's product
+/// surface and its wording are lane D's.
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode {
+    use solstone_core::{ActivityQuery, RecordedOutcome, read_activity, tally};
+
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let connection = match command.target.as_ref() {
+        Some(target) => match resolve_connection_key(&journal.path, target) {
+            Ok(key) => Some(key),
+            Err(code) => return code,
+        },
+        None => None,
+    };
+    let tool = match command.tool.as_deref() {
+        Some(value) => match solstone_core_mcp_audit_tool_name(value) {
+            Some(tool) => Some(tool),
+            None => {
+                eprintln!("journal mcp activity: unknown tool {value:?}");
+                return ExitCode::from(EXIT_DATAERR);
+            }
+        },
+        None => None,
+    };
+    let outcome = match command.outcome.as_deref() {
+        Some(value) => match RecordedOutcome::from_token(value) {
+            Some(outcome) => Some(outcome),
+            None => {
+                eprintln!("journal mcp activity: unknown outcome {value:?}");
+                return ExitCode::from(EXIT_DATAERR);
+            }
+        },
+        None => None,
+    };
+
+    let page = match read_activity(
+        &journal.path,
+        &ActivityQuery {
+            connection,
+            tool,
+            outcome,
+            day_from: command.day_from.clone(),
+            day_to: command.day_to.clone(),
+            limit: command.limit,
+            start_after: None,
+        },
+    ) {
+        Ok(page) => page,
+        Err(error) => {
+            eprintln!("journal mcp activity: {error}");
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+
+    if command.json {
+        let entries = page
+            .entries
+            .iter()
+            .map(|entry| {
+                serde_json::json!({
+                    "day": entry.day,
+                    "segment": entry.segment,
+                    "schema": entry.schema,
+                    "timestamp": entry.timestamp,
+                    "connection": entry.connection,
+                    "agent_identity": entry.agent_identity,
+                    "tool": entry.tool_name.token(),
+                    "outcome": entry.outcome.token(),
+                    "reason": entry.reason,
+                    "request": entry.request.as_ref().map(|request| serde_json::json!({
+                        "arguments": request.arguments,
+                        "arguments_omitted": request.arguments_omitted,
+                    })),
+                    "result": entry.result.as_ref().map(|result| serde_json::json!({
+                        "count": result.count,
+                        "targets": result.targets,
+                        "targets_truncated": result.targets_truncated,
+                        "digest": result.digest,
+                    })),
+                })
+            })
+            .collect::<Vec<_>>();
+        let document = serde_json::json!({
+            "entries": entries,
+            "examined": page.examined,
+            "examination_complete": page.examination_complete,
+            "unreadable": page.unreadable,
+        });
+        println!("{document}");
+        return ExitCode::SUCCESS;
+    }
+
+    if page.entries.is_empty() {
+        // ⚠ Nothing found and the walk hitting its bound are different
+        // answers, and only one of them means "there is none".
+        if page.examination_complete {
+            println!("No recorded MCP activity matches.");
+        } else {
+            println!(
+                "No match in the {} records examined; more may exist further back.",
+                page.examined
+            );
+        }
+        return ExitCode::SUCCESS;
+    }
+
+    for entry in &page.entries {
+        println!(
+            "{}\t{}\t{}\t{}",
+            entry.timestamp.format("%Y-%m-%dT%H:%M:%SZ"),
+            entry.outcome.token(),
+            entry.tool_name.token(),
+            entry
+                .connection
+                .as_deref()
+                .unwrap_or("(schema 1: no connection recorded)"),
+        );
+        // ⚠ The coordinate is deliberately not beside the timestamp. The
+        // journal's allocator takes a random ±1-second step to deconflict a
+        // colliding segment name, so the two legitimately disagree by a second
+        // or two and reading them side by side looks like a bug in the log.
+        println!("    record:  {}/{}", entry.day, entry.segment);
+        match entry.request.as_ref() {
+            Some(request) if request.arguments_omitted => {
+                println!("    request: (arguments exceeded the record bound and were not stored)");
+            }
+            Some(request) => {
+                // ⚠ Untrusted local strings: rendered as escaped data, never
+                // interpreted, and never re-emitted as instructions.
+                let rendered = request
+                    .arguments
+                    .iter()
+                    .map(|(key, value)| format!("{key}={value}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                println!("    request: {rendered}");
+            }
+            None => println!("    request: (schema 1: not recorded)"),
+        }
+        if let Some(reason) = entry.reason.as_deref() {
+            println!("    reason:  {reason}");
+        }
+        if let Some(result) = entry.result.as_ref() {
+            let targets = if result.targets.is_empty() {
+                String::new()
+            } else {
+                let suffix = if result.targets_truncated {
+                    ", ..."
+                } else {
+                    ""
+                };
+                format!(", targets {}{suffix}", result.targets.join(", "))
+            };
+            println!(
+                "    result:  {} result(s), digest {}{targets}",
+                result.count, result.digest
+            );
+        }
+    }
+
+    // 🔑 A count enters this output with its construction: the population is
+    // this page, over this filter, from this bounded walk.
+    let counts = tally(&page.entries)
+        .into_iter()
+        .map(|(outcome, count)| format!("{outcome} {count}"))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    println!();
+    println!(
+        "{} record(s) shown of {} examined{}. {counts}",
+        page.entries.len(),
+        page.examined,
+        if page.examination_complete {
+            String::new()
+        } else {
+            " (more may exist further back)".to_owned()
+        }
+    );
+    if page.unreadable > 0 {
+        println!(
+            "{} record(s) in range could not be parsed and are not counted above.",
+            page.unreadable
+        );
+    }
+    if page.next.is_some() && page.entries.len() >= command.limit {
+        println!("Raise --limit or narrow --day-from/--day-to to see more.");
+    }
+    ExitCode::SUCCESS
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn solstone_core_mcp_audit_tool_name(value: &str) -> Option<solstone_core::AuditToolName> {
+    solstone_core::AuditToolName::from_token(value)
+}
+
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 fn run_mcp_probe_command(command: solstone_core_cli::McpProbeCommand) -> ExitCode {
     let journal = match resolve_process_journal_path() {
@@ -5713,11 +5919,11 @@ fn resolve_connection_key(
             match token_store.find_id_by_label(label) {
                 Ok(Some(id)) => Ok(format!("bearer:{id}")),
                 Ok(None) => {
-                    eprintln!("journal mcp permission: no bearer token exists for label {label:?}");
+                    eprintln!("journal mcp: no bearer token exists for label {label:?}");
                     Err(ExitCode::from(EXIT_DATAERR))
                 }
                 Err(e) => {
-                    eprintln!("journal mcp permission: failed to query token store: {e}");
+                    eprintln!("journal mcp: failed to query token store: {e}");
                     Err(ExitCode::from(EXIT_TEMPFAIL))
                 }
             }
@@ -5743,12 +5949,12 @@ fn resolve_connection_key(
                         .collect();
                     if matches.is_empty() {
                         eprintln!(
-                            "journal mcp permission: no OAuth grant found matching client_id {client_id:?}"
+                            "journal mcp: no OAuth grant found matching client_id {client_id:?}"
                         );
                         Err(ExitCode::from(EXIT_DATAERR))
                     } else if matches.len() > 1 {
                         eprintln!(
-                            "journal mcp permission: multiple OAuth grants matched client_id {client_id:?}; specify --created <timestamp>"
+                            "journal mcp: multiple OAuth grants matched client_id {client_id:?}; specify --created <timestamp>"
                         );
                         Err(ExitCode::from(EXIT_DATAERR))
                     } else {
@@ -5756,7 +5962,7 @@ fn resolve_connection_key(
                     }
                 }
                 Err(e) => {
-                    eprintln!("journal mcp permission: failed to query oauth store: {e}");
+                    eprintln!("journal mcp: failed to query oauth store: {e}");
                     Err(ExitCode::from(EXIT_TEMPFAIL))
                 }
             }
@@ -5767,6 +5973,12 @@ fn resolve_connection_key(
 #[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
 fn run_mcp_permission(_command: McpPermissionCommand) -> ExitCode {
     eprintln!("journal mcp permission management is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_activity(_command: solstone_core_cli::McpActivityCommand) -> ExitCode {
+    eprintln!("journal mcp activity is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 

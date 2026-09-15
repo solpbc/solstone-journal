@@ -28,6 +28,8 @@ use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capabilit
 #[allow(dead_code)]
 mod account_wire;
 #[cfg(unix)]
+mod activity;
+#[cfg(unix)]
 mod audit;
 #[cfg(all(test, unix, feature = "full-tests"))]
 mod boundary_tests;
@@ -77,6 +79,11 @@ mod tools;
 mod unix;
 
 #[cfg(unix)]
+pub use activity::{
+    ActivityAnchor, ActivityEntry, ActivityPage, ActivityQuery, ActivityReadError,
+    MAX_EXAMINED_RECORDS, RecordedOutcome, read_activity, tally,
+};
+#[cfg(unix)]
 pub use bridge_carrier::McpBridgeCarrierError;
 #[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
@@ -94,6 +101,15 @@ pub use permissions::{
 };
 #[cfg(unix)]
 pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};
+/// The closed audit vocabulary, re-exported for the owner's CLI.
+///
+/// ⛔ This is the record *type*, not a reader: `solstone-core-mcp-audit` stays a
+/// write-only leaf, and the owner's read lives in this crate beside the closed
+/// registry that keeps it away from the wire.
+#[cfg(unix)]
+pub use solstone_core_mcp_audit::{
+    Outcome as AuditOutcome, RequestRecord, ResultShape, ToolName as AuditToolName,
+};
 #[cfg(unix)]
 pub use tls::{
     McpEndpointCertificateLifecycleError, McpEndpointTlsService, mcp_endpoint_server_config,
