@@ -101,5 +101,36 @@ class ExistingDependencyEdges(unittest.TestCase):
         self.assertEqual(self.admit(), ["app", "indexer"])
 
 
+class GitPinVendorDelta(unittest.TestCase):
+    prefix = "vendor/spl-transport-0.1.0/"
+
+    def test_added_file_under_moved_prefix_is_admitted(self):
+        prior = {self.prefix + "src/lib.rs"}
+        fresh = {self.prefix + "src/lib.rs", self.prefix + "src/observe.rs"}
+        self.assertEqual(
+            refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,)),
+            [self.prefix + "src/observe.rs"],
+        )
+
+    def test_identical_member_set_returns_empty(self):
+        members = {self.prefix + "src/lib.rs"}
+        self.assertEqual(
+            refresh.admit_git_pin_vendor_delta(members, members, (self.prefix,)),
+            [],
+        )
+
+    def test_added_file_outside_moved_prefix_refuses(self):
+        prior = {self.prefix + "src/lib.rs"}
+        fresh = {self.prefix + "src/lib.rs", "vendor/other-1.0.0/src/lib.rs"}
+        with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
+            refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
+
+    def test_removed_file_refuses(self):
+        prior = {self.prefix + "src/lib.rs", self.prefix + "src/old.rs"}
+        fresh = {self.prefix + "src/lib.rs"}
+        with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
+            refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
+
+
 if __name__ == "__main__":
     unittest.main()

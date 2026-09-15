@@ -19,9 +19,10 @@ the set of external packages is unchanged by `(name, version)` and the rows
 that differ are all `git+` sources. That is the shape of advancing a first-party
 library tag. It cannot be member-preserved -- the vendored bytes genuinely
 change -- so this script performs the `cargo vendor` acquisition itself and
-substitutes only the members that actually moved, after proving that the
-vendored member *set* is identical and that every other member is byte-for-byte
-unchanged. Supply `--vendor-dir` to reuse a tree you already produced.
+substitutes the members that actually moved. Added files are admitted only
+when they sit under a moved package prefix (`vendor/<name>-<version>/`);
+every other member must stay byte-for-byte unchanged, and removals still
+refuse. Supply `--vendor-dir` to reuse a tree you already produced.
 
 The second is a **workspace dependency-edge move**, where a workspace member
 gains or loses a dependency on an already present, unchanged package. The archive holds
@@ -45,6 +46,10 @@ It refuses -- loudly, with the reason -- rather than proceed, when:
   * a re-vendored package's licence text changed. The notices file is an input
     here, not an output; a changed licence needs the notices regenerated, which
     this script deliberately does not do.
+  * a git pin move removed vendored files, or added files outside the moved
+    package prefix. Additions inside that prefix are the shape of a first-party
+    crate growing source; anything else is not a pin move this script will
+    attest.
 
 On success it writes the new archive plus a small report to `--out`, and
 rewrites `core/distribution/windows-rust-sources.json` in place. It also
@@ -554,6 +559,29 @@ def advance_git_index_rows(
         )
 
 
+def admit_git_pin_vendor_delta(
+    prior_vendor: set[str],
+    fresh_vendor: set[str],
+    moved_prefixes: tuple[str, ...],
+) -> list[str]:
+    """Return added members a git pin move may carry, or refuse.
+
+    A first-party pin can grow files inside `vendor/<name>-<version>/`. Removals,
+    and additions outside those prefixes, are not a pin move this script attests.
+    """
+    added = sorted(fresh_vendor - prior_vendor)
+    removed = sorted(prior_vendor - fresh_vendor)
+    added_outside = [name for name in added if not name.startswith(moved_prefixes)]
+    if removed or added_outside:
+        raise RefreshError(
+            "the freshly vendored tree does not have the same member set as "
+            f"the committed archive (added={added[:10]} removed={removed[:10]}). "
+            "A pin move may add files only under the moved package prefix; "
+            "removed files or additions outside that prefix are refused."
+        )
+    return [name for name in added if name.startswith(moved_prefixes)]
+
+
 def build_git_substitutions(
     repo: Path,
     prior_archive_path: Path,
@@ -564,10 +592,10 @@ def build_git_substitutions(
 ) -> dict[str, bytes]:
     """Produce the replacement bytes for a git pin move, and prove the scope.
 
-    The whole safety of this path rests on one control: a fresh `cargo vendor`
-    must produce a member set IDENTICAL to the archive's, so the only thing that
-    can differ is the content of members that already exist. An added or removed
-    member means something moved that a pin bump cannot explain, and it refuses.
+    A fresh `cargo vendor` may change bytes of the moved packages and add files
+    under those packages' prefixes. Every other vendored member must stay
+    byte-for-byte unchanged. Removals, and additions outside the moved prefixes,
+    still refuse.
     """
     with tempfile.TemporaryDirectory(prefix="windows-rust-notice-vendor-") as scratch:
         if vendor_dir is None:
@@ -590,26 +618,22 @@ def build_git_substitutions(
             for path in vendor_root.rglob("*")
             if path.is_file()
         }
-        added = sorted(set(fresh_vendor) - set(prior_vendor))
-        removed = sorted(set(prior_vendor) - set(fresh_vendor))
-        if added or removed:
-            raise RefreshError(
-                "the freshly vendored tree does not have the same member set as "
-                f"the committed archive (added={added[:10]} removed={removed[:10]}). "
-                "A pin move cannot add or remove vendored files; refusing rather "
-                "than publish an archive whose shape nobody verified."
-            )
+        moved_prefixes = tuple(
+            f"vendor/{new_row['name']}-{new_row['version']}/"
+            for _, new_row in moved_git
+        )
+        added_inside = admit_git_pin_vendor_delta(
+            set(prior_vendor), set(fresh_vendor), moved_prefixes
+        )
 
         substitutions: dict[str, bytes] = {}
         for name, digest in prior_vendor.items():
             data = fresh_vendor[name].read_bytes()
             if sha256_bytes(data) != digest:
                 substitutions[name] = data
+        for name in added_inside:
+            substitutions[name] = fresh_vendor[name].read_bytes()
 
-        moved_prefixes = tuple(
-            f"vendor/{new_row['name']}-{new_row['version']}/"
-            for _, new_row in moved_git
-        )
         outside = sorted(
             name for name in substitutions if not name.startswith(moved_prefixes)
         )
@@ -978,12 +1002,16 @@ def refresh(
             graph_info.mtime = 0
             dest.addfile(graph_info, io.BytesIO(graph_member_payload))
 
-    unplaced = sorted(set(substitutions) - set(prior_members))
-    if unplaced:
-        raise RefreshError(
-            "substitutions were computed for members the prior archive does not "
-            f"carry, so they would have been silently dropped: {unplaced}"
-        )
+        for name in sorted(set(substitutions) - set(prior_members)):
+            if name == GRAPH_MEMBER_NAME:
+                continue
+            if name.startswith("/") or ".." in Path(name).parts:
+                raise RefreshError(f"unsafe tar member path: {name}")
+            info = tarfile.TarInfo(name)
+            info.size = len(substitutions[name])
+            info.mtime = 0
+            info.mode = 0o644
+            dest.addfile(info, io.BytesIO(substitutions[name]))
 
     observed: dict[str, dict[str, Any]] = {}
     with tarfile.open(new_archive_path, "r:gz") as tar:
@@ -1001,9 +1029,19 @@ def refresh(
             f"the refresh dropped members that must be preserved: {sorted(removed)}"
         )
     added = set(observed) - set(prior_members)
-    if added - {GRAPH_MEMBER_NAME}:
+    expected_added = set(substitutions) - set(prior_members)
+    if GRAPH_MEMBER_NAME not in prior_members:
+        expected_added.add(GRAPH_MEMBER_NAME)
+    unexpected_added = added - expected_added
+    if unexpected_added:
         raise RefreshError(
-            f"the refresh added unexpected members: {sorted(added - {GRAPH_MEMBER_NAME})}"
+            f"the refresh added unexpected members: {sorted(unexpected_added)}"
+        )
+    missing_added = expected_added - added
+    if missing_added:
+        raise RefreshError(
+            "substitutions were computed for members the prior archive does not "
+            f"carry, so they were dropped: {sorted(missing_added)}"
         )
     changed = sorted(
         name
@@ -1015,7 +1053,7 @@ def refresh(
         raise RefreshError(
             f"the refresh changed members it was not substituting: {unexpected}"
         )
-    missed = sorted(set(substitutions) - set(changed))
+    missed = sorted((set(substitutions) & set(prior_members)) - set(changed))
     if missed:
         raise RefreshError(
             "members were substituted but came out byte-identical, so the "
