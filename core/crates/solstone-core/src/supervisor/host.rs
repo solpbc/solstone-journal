@@ -204,6 +204,16 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
     }
 }
 
+/// Wrap `text` as one total single-quoted shell word.
+///
+/// ⛔ The only character that matters is `'` itself: inside single quotes the
+/// shell treats everything else literally, so the standard closing-reopening
+/// form is both necessary and sufficient. An owner's journal path is arbitrary
+/// and reaches a terminal here, so this is not optional.
+fn shell_single_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
+
 /// Owner copy for a start that could not establish its lifecycle authority.
 ///
 /// Shape follows the sibling refusals: headline, then what to do, then the
@@ -259,6 +269,12 @@ fn format_lifecycle_recovery_copy(
             "{shown}.set-aside-{}",
             chrono::Local::now().format("%Y%m%d-%H%M%S")
         );
+        // ⛔ Single quotes alone are not enough. The sanitizer passes U+0027
+        // through untouched, so a journal under `Sam's journal` closes our
+        // quote mid-path and `mv` re-splits into the wrong arguments. This is
+        // the one escape that makes a single-quoted shell word total.
+        let shown = shell_single_quote(&shown);
+        let set_aside = shell_single_quote(&set_aside);
         // ⚠ The stop comes first and is not optional: this refusal exits
         // TEMPFAIL and the installed unit restarts on failure, so without it
         // the service is starting again every few seconds while the owner
@@ -277,7 +293,7 @@ fn format_lifecycle_recovery_copy(
             "\nif it keeps failing, an earlier start may have left a record behind. to move \
              it aside, open a terminal and run these three lines:\n\
              \x20   journal down\n\
-             \x20   mv '{shown}' '{set_aside}'\n\
+             \x20   mv {shown} {set_aside}\n\
              \x20   journal up\n"
         ));
     }
@@ -1122,16 +1138,46 @@ mod tests {
             "the retry must come first; the walkthrough is the fallback:\n{copy}"
         );
 
-        // ⚠ The journal path is owner-chosen and only has to be absolute, so it
-        // can hold spaces. An unquoted `mv` silently becomes four arguments.
+        // ⛔ Do NOT assert a quote count here. That is what this test did
+        // first, and a path holding an apostrophe satisfies `count == 4` while
+        // being exactly the string that breaks. Assert the escaping instead.
         let line = copy
             .lines()
             .find(|line| line.trim_start().starts_with("mv "))
             .expect("the mv line");
-        assert_eq!(
-            line.matches('\'').count(),
-            4,
+        let line = line.trim();
+        assert!(
+            line.starts_with("mv '") && line.ends_with('\''),
             "both mv paths must be single-quoted: {line}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod shell_quoting_tests {
+    /// ⛔ A journal under `Sam's journal` closed our quote mid-path, and `mv`
+    /// re-split into the wrong arguments -- the copy said "run these three
+    /// lines" and line 2 was not runnable. The sanitizer does not touch
+    /// U+0027, so the escaping has to happen here.
+    #[test]
+    fn an_apostrophe_in_the_path_cannot_break_out_of_the_quoting() {
+        let quoted = super::shell_single_quote("/Users/sam/Sam's journal/health/parent-loss");
+
+        assert_eq!(quoted, "'/Users/sam/Sam'\\''s journal/health/parent-loss'");
+        // ⚠ The property that actually matters: no bare apostrophe survives
+        // to end the quoted word early. `Sam's` appearing intact would mean
+        // exactly that.
+        assert!(
+            !quoted.contains("Sam's"),
+            "a raw apostrophe still closes the word: {quoted}"
+        );
+    }
+
+    #[test]
+    fn an_ordinary_path_is_quoted_without_escapes() {
+        assert_eq!(
+            super::shell_single_quote("/home/owner/journal/health/parent-loss"),
+            "'/home/owner/journal/health/parent-loss'"
         );
     }
 }

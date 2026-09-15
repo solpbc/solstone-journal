@@ -2928,14 +2928,18 @@ fn a_pathless_cause_does_not_promise_a_file() {
     .unwrap();
 
     assert_eq!(result.status, Status::Warn);
+    let fix = result.fix.as_deref().unwrap_or_default();
     assert!(
-        !result
-            .fix
-            .as_deref()
-            .unwrap_or_default()
-            .contains("named above"),
-        "the cause names no file, so the fix must not point at one: {:?}",
-        result.fix
+        !fix.contains("the file named above"),
+        "the cause names no file, so the fix must not point at one: {fix:?}"
+    );
+    // ⛔ And 20260230 is eight digits but not a calendar date, so
+    // `journal reprocess 20260230` refuses with "expected day in YYYYMMDD
+    // format" -- which reads as the owner's own typo, about a day this line
+    // handed them.
+    assert!(
+        !fix.contains("journal reprocess"),
+        "a day that cannot parse must not be sent to reprocess: {fix:?}"
     );
     // ⛔ And the day rides with the cause, so an owner who repairs one of
     // several days does not read the surviving warning as a failed repair.

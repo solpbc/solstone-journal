@@ -155,7 +155,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         // line is already holding: the verbose flag unfilters ok and skipped
         // rows, it does not surface a per-day reason.
         let mut line = format!(
-            "{} day(s) hold a file that couldn't be read ({})",
+            "{} day(s) couldn't be scanned ({})",
             unreadable.len(),
             listed(&unreadable)
         );
@@ -185,15 +185,32 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             listed(&fold_failed)
         ));
     }
+    // ⛔ `is_day_key` admits ANY eight ascii digits, so a folder named
+    // `20260230` enumerates and reaches this list. `journal reprocess` parses
+    // its argument as a calendar date and refuses with "expected day in
+    // YYYYMMDD format" -- which reads as the OWNER's typo, about a day this
+    // very line handed them. Do not send anyone there for a day that cannot
+    // parse.
+    let every_day_is_a_date = unreadable
+        .iter()
+        .chain(fold_failed.iter())
+        .all(|day| chrono::NaiveDate::parse_from_str(day, "%Y%m%d").is_ok());
     Ok(make_result(
         check,
         Status::Warn,
         parts.join("; "),
-        Some(if named_a_file {
-            "repair the file named above, then run journal reprocess <day> for each listed day \
-             that has already ended"
-        } else {
-            "run journal reprocess <day> for each listed day that has already ended"
+        Some(match (every_day_is_a_date, named_a_file) {
+            (false, _) => {
+                "check the day folders named above — a name that is not a calendar date is not a \
+                 day the journal can process"
+            }
+            (true, true) => {
+                "repair the file named above, then run journal reprocess <day> for each listed \
+                 day that has already ended"
+            }
+            (true, false) => {
+                "run journal reprocess <day> for each listed day that has already ended"
+            }
         }),
     ))
 }
