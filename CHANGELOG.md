@@ -4,17 +4,27 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.6] - 2026-09-15
 
 ### Added
 
-- journal health now shows how many segments are still waiting to have their audio transcribed or pictures described, instead of only reporting once everything is caught up.
+- `journal health` now shows how many segments are still waiting to have their audio transcribed or pictures described, instead of only reporting once everything is caught up.
+
+### Changed
+
+- the agent-connection permissions announced in 2.0.5 are not available yet. this release does not turn them on.
+- daily processing now waits until each part of the day has been saved before calling the day complete, and interrupted work resumes without starting over.
 
 ### Fixed
 
 - unless you've set processing to deferred, work interrupted by a restart now resumes the next time your journal starts, instead of waiting until the next day.
+- `journal doctor` now identifies audio that cannot be transcribed, instead of leaving it in a retry loop that cannot succeed.
 
 ## [2.0.5] - 2026-09-14
+
+### Added
+
+- agent connections now have read-only permissions you can set, review, or clear before they search or fetch from your journal. each connection sees only the tools its current permission allows.
 
 ### Fixed
 
