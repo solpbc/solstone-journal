@@ -49,7 +49,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // when one is present, so a genuine foreign writer is still surfaced
     // instead of silently erased by an unconditional "this device only".
     if matches!(diagnosis, SyncRescanDiagnosis::HeartbeatNeedsAttention(_))
-        && service_status::fetch(context).is_some()
+        && service_status::fetch(context).is_ok()
         && let Ok(SyncRescan::Complete(result)) =
             rescan_sync_read_only(&context.journal_path, "doctor.check", None, now)
     {

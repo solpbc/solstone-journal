@@ -22,8 +22,24 @@ pub enum CoverageState {
     Unreadable,
 }
 impl CoverageState {
+    /// An accepted result exists for the evidence that was observed.
+    ///
+    /// This is the publication question: may this unit's day certify, and did
+    /// an attempt actually finish.  ⛔ It is not the question a backlog, a
+    /// pending count or a reconciler is asking — those want [`Self::is_owed`].
     pub fn is_current(self) -> bool {
         matches!(self, Self::Current | Self::CurrentDegraded)
+    }
+
+    /// The owner is missing an output they should have.
+    ///
+    /// `HistoricalUnverified` is deliberately excluded: history that predates
+    /// evidence-bound completion is readable and unverified by design, is
+    /// outside the adoption boundary, and will never be regenerated on its
+    /// own — reporting it as owed work is a standing false alarm for something
+    /// nobody will ever act on.
+    pub fn is_owed(self) -> bool {
+        matches!(self, Self::Outstanding | Self::Unreadable)
     }
 }
 
@@ -356,47 +372,59 @@ pub fn reconcile_days_with_roots(
     let today = local_day(journal, now)?;
     let path = journal.join("health/daily-adoption.json");
     std::fs::create_dir_all(path.parent().expect("health parent")).map_err(|e| e.to_string())?;
-    let _lock = hold_lock(path.with_extension("lock"), LockOptions::default())
-        .map_err(|e| e.to_string())?;
-    let mut state = load_adoption(&path, &today)?;
+    let lock_path = path.with_extension("lock");
     let days = solstone_core_journal_io::day_dirs(journal).map_err(|e| e.to_string())?;
-    for day in days.keys() {
-        if day >= &today {
-            continue;
+
+    // Phase 1, under the lock: adopt days and choose this pass's batch.  The
+    // lock covers only the read-modify-write of the adoption file.
+    let (selected, adopted_at_selection) = {
+        let _lock = hold_lock(&lock_path, LockOptions::default()).map_err(|e| e.to_string())?;
+        let mut state = load_adoption(&path, &today)?;
+        for day in days.keys() {
+            if day >= &today {
+                continue;
+            }
+            let known_dirty = raw_marker_dirty(journal, day)?;
+            if (day >= &state.first_closed_day || explicit.contains(day) || known_dirty)
+                && (state.adopted.insert(day.clone()) || known_dirty)
+            {
+                state.pending.insert(day.clone());
+            }
         }
-        let known_dirty = raw_marker_dirty(journal, day)?;
-        if (day >= &state.first_closed_day || explicit.contains(day) || known_dirty)
-            && (state.adopted.insert(day.clone()) || known_dirty)
-        {
-            state.pending.insert(day.clone());
+        for day in explicit {
+            if days.contains_key(day) {
+                state.adopted.insert(day.clone());
+                state.pending.insert(day.clone());
+            }
         }
-    }
-    for day in explicit {
-        if days.contains_key(day) {
-            state.adopted.insert(day.clone());
-            state.pending.insert(day.clone());
-        }
-    }
-    let candidates = state
-        .adopted
-        .iter()
-        .filter(|day| day.as_str() < today.as_str())
-        .cloned()
-        .collect::<Vec<_>>();
-    let start = state
-        .cursor
-        .as_ref()
-        .map(|cursor| candidates.partition_point(|day| day <= cursor))
-        .unwrap_or(0);
-    let selected = candidates
-        .iter()
-        .skip(start)
-        .chain(candidates.iter().take(start))
-        .take(4)
-        .cloned()
-        .collect::<Vec<_>>();
+        let candidates = state
+            .adopted
+            .iter()
+            .filter(|day| day.as_str() < today.as_str())
+            .cloned()
+            .collect::<Vec<_>>();
+        let start = state
+            .cursor
+            .as_ref()
+            .map(|cursor| candidates.partition_point(|day| day <= cursor))
+            .unwrap_or(0);
+        let selected = candidates
+            .iter()
+            .skip(start)
+            .chain(candidates.iter().take(start))
+            .take(4)
+            .cloned()
+            .collect::<Vec<_>>();
+        write_json(&path, &state, JsonWriteOptions::default()).map_err(|e| e.to_string())?;
+        (selected, state.adopted)
+    };
+
+    // Phase 2, unlocked: coverage is the most expensive read in this module and
+    // it mutates nothing.  Holding the adoption lock across it made every
+    // concurrent `register_daily_day` race a 10s timeout.
+    let mut decisions = Vec::with_capacity(selected.len());
     for day in selected {
-        match read_daily_coverage_with_roots(journal, &day, talent, apps) {
+        let still_pending = match read_daily_coverage_with_roots(journal, &day, talent, apps) {
             Ok(coverage) => {
                 let retry_due = coverage.units.iter().any(|unit| {
                     unit.state == CoverageState::CurrentDegraded
@@ -411,15 +439,31 @@ pub fn reconcile_days_with_roots(
                                 record.environmental_retry_day.as_deref() != Some(today.as_str())
                             })
                 });
-                if !coverage.state.is_current() || retry_due || raw_marker_dirty(journal, &day)? {
-                    state.pending.insert(day.clone());
-                } else {
-                    state.pending.remove(&day);
-                }
+                coverage.state.is_owed() || retry_due || raw_marker_dirty(journal, &day)?
             }
-            Err(_) => {
-                state.pending.insert(day.clone());
-            }
+            Err(_) => true,
+        };
+        decisions.push((day, still_pending));
+    }
+
+    // Phase 3, under the lock again: re-read before writing.  ⛔ Never write
+    // back the phase-1 struct — a day registered while phase 2 ran is in the
+    // file and not in that copy, and restoring it would be a lost update whose
+    // symptom is a registered day that is never processed.
+    let _lock = hold_lock(&lock_path, LockOptions::default()).map_err(|e| e.to_string())?;
+    let mut state = load_adoption(&path, &today)?;
+    // `register_daily_day` inserts into `adopted` and `pending` together, so a
+    // grown adopted set is the signal that a day was registered while phase 2
+    // ran.  Settling a day on a coverage reading taken before that would erase
+    // the registration, and its symptom is a registered day that is never
+    // processed.  Deferring the removals by one pass cannot lose work; applying
+    // a stale one can.
+    let registered_during_pass = state.adopted != adopted_at_selection;
+    for (day, still_pending) in decisions {
+        if still_pending {
+            state.pending.insert(day.clone());
+        } else if !registered_during_pass {
+            state.pending.remove(&day);
         }
         state.cursor = Some(day);
     }
@@ -522,6 +566,23 @@ mod tests {
         record
     }
     #[test]
+    /// The owed question, per state.  ⚠ Total classification is the point: if a
+    /// state is ever added and not classified here, this reds rather than
+    /// silently defaulting it to not-owed.
+    #[test]
+    fn owed_is_outstanding_or_unreadable_and_never_unverified_history() {
+        for (state, owed, current) in [
+            (CoverageState::Current, false, true),
+            (CoverageState::CurrentDegraded, false, true),
+            (CoverageState::Outstanding, true, false),
+            (CoverageState::HistoricalUnverified, false, false),
+            (CoverageState::Unreadable, true, false),
+        ] {
+            assert_eq!(state.is_owed(), owed, "is_owed({state:?})");
+            assert_eq!(state.is_current(), current, "is_current({state:?})");
+        }
+    }
+
     fn current_requires_matching_evidence_and_contract_not_legacy_logs_or_terminal_failure() {
         let (dir, talent, apps) = fixture();
         let root = dir.path();

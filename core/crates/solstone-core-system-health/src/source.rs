@@ -90,14 +90,48 @@ pub fn day_is_complete(journal: &std::path::Path, day: &str) -> Result<bool, Hea
     }
     #[cfg(unix)]
     {
+        let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, day);
+        day_is_complete_with(journal, day, coverage.as_ref())
+    }
+}
+
+/// [`day_is_complete`] over coverage the caller already computed.
+///
+/// Reading a day's coverage is the most expensive operation in this module —
+/// it resolves every daily talent against every active facet and digests the
+/// evidence each one declares.  A caller that needs the coverage anyway passes
+/// it here rather than paying for it twice behind a boolean-sounding name.
+pub fn day_is_complete_with(
+    journal: &std::path::Path,
+    day: &str,
+    coverage: Result<&solstone_core_system::daily_coverage::DailyCoverage, &String>,
+) -> Result<bool, HealthError> {
+    #[cfg(not(unix))]
+    {
+        let _ = (journal, day, coverage);
+        return Err(HealthError::CapabilityUnavailable {
+            needed: "health-markers",
+        });
+    }
+    #[cfg(unix)]
+    {
         let _ = solstone_core_journal_io::day_path(journal, Some(day), false)?;
-        Ok(
-            solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete()
-                && solstone_core_system::daily_coverage::read_daily_coverage(journal, day)
-                    .map_err(HealthError::Source)?
-                    .state
-                    .is_current(),
-        )
+        // ⛔ The marker check comes first and returns early.  It replaces an
+        // `&&` whose short-circuit was load-bearing: a day whose raw markers
+        // are not both published is incomplete whatever its coverage says, and
+        // consulting coverage anyway turns an unreadable day into a hard error
+        // for callers -- `journal reprocess` among them -- that previously
+        // never reached the coverage read at all.
+        if !solstone_core_journal_io::day_marker_pair_status(journal, day)?.is_complete() {
+            return Ok(false);
+        }
+        let coverage = coverage.map_err(|error| HealthError::Source(error.clone()))?;
+        // A day is complete when its raw markers are published and nothing is
+        // still owed on it.  ⛔ Not `is_current()`: every day older than the
+        // adoption boundary has no daily-unit records at all and therefore reads
+        // `HistoricalUnverified`, which is the correct resting state for untouched
+        // history and not a backlog entry.
+        Ok(!coverage.state.is_owed())
     }
 }
 

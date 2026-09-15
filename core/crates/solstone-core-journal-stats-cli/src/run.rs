@@ -9,8 +9,8 @@ use solstone_core_talent_config::read_talent_overrides;
 
 use crate::{
     BacklogViewReader, CacheStatus, DayScanRequest, DocumentWriter, FilesystemDayCacheWriter,
-    JournalStatsError, backlog::degraded_backlog_view, cli, document::assemble_document,
-    scan_day_with_cache, tokens::scan_tokens,
+    JournalStatsError, backlog::degraded_backlog_view, cli, document::UnreadableDay,
+    document::assemble_document, scan_day_with_cache, tokens::scan_tokens,
 };
 
 /// Observable result of a journal-level CLI invocation.
@@ -98,10 +98,30 @@ fn run(
     let cache_writer = FilesystemDayCacheWriter;
     let talent_overrides = read_talent_overrides(journal_root)
         .map_err(|message| JournalStatsError::Validation(message).to_string())?;
+    // Journal-scoped prerequisites are resolved once, before any day is
+    // scanned.  Their failure is a property of the journal's configuration,
+    // not of whichever day happened to sort first, and it must not be reported
+    // against a day or contained as if that day were damaged.
+    solstone_core_system::daily_coverage::daily_configs(
+        journal_root,
+        system_talent_root,
+        apps_root,
+    )
+    .map_err(|message| format!("Error loading daily talent configuration: {message}"))?;
     let mut scans = BTreeMap::new();
     let mut diagnostics = Vec::new();
+    let mut evidence_unreadable_days = Vec::new();
+    // Each day publishes its own cache as it is scanned, so a run cut short by
+    // its phase budget leaves the days it reached warm and the next run starts
+    // further along.  ⚠ Before containment the loop aborted on the first
+    // damaged day, so a full cold walk of a large corpus has never been
+    // exercised; it converges across runs rather than in one.
     for (day, _) in days {
-        let outcome = scan_day_with_cache(
+        // One day's damaged bytes cannot discard every other day's statistics.
+        // A day that cannot be scanned contributes nothing and is named with
+        // its cause; no cache is published for it, so a later run re-attempts
+        // it rather than reading a cache that would outlive the repair.
+        match scan_day_with_cache(
             DayScanRequest {
                 journal_root,
                 day: &day,
@@ -114,19 +134,25 @@ fn run(
                 cache_writer: &cache_writer,
             },
             use_cache,
-        )
-        .map_err(|error| format!("Error scanning {day}: {error}"))?;
-        if debug && let CacheStatus::SaveFailed { message } = &outcome.cache_status {
-            diagnostics.push(format!("Day cache save failed for {day}: {message}"));
+        ) {
+            Ok(outcome) => {
+                if debug && let CacheStatus::SaveFailed { message } = &outcome.cache_status {
+                    diagnostics.push(format!("Day cache save failed for {day}: {message}"));
+                }
+                scans.insert(day, outcome.scan);
+            }
+            Err(error) => evidence_unreadable_days.push(UnreadableDay {
+                day: day.clone(),
+                cause: error.to_string(),
+            }),
         }
-        scans.insert(day, outcome.scan);
     }
 
     let backlog = backlog_reader
         .read_backlog_view(journal_root, now)
         .unwrap_or_else(|_| degraded_backlog_view());
     let tokens = scan_tokens(journal_root, now, use_cache, &mut diagnostics);
-    let document = assemble_document(&scans, tokens, backlog, now);
+    let document = assemble_document(&scans, tokens, backlog, now, evidence_unreadable_days);
     document
         .validate()
         .map_err(|error| format!("Error validating stats.json: {error}"))?;

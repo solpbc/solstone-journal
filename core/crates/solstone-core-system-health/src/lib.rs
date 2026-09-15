@@ -48,7 +48,7 @@ pub use scan::{DaySegment, ScanResult, TimeRange, scan_day};
 pub use segment_state::{find_segment_dir, read_segment_data_state};
 pub use source::{
     FilesystemHealthLogSource, FilesystemSegmentSource, HealthLogSource, SegmentSource,
-    day_is_complete,
+    day_is_complete, day_is_complete_with,
 };
 pub use sync_copy::{
     ADMISSION_WAIT_UNVERIFIABLE_COPY, HEARTBEAT_WITHOUT_WAIT_MARKER_COPY, SyncRescanDiagnosis,

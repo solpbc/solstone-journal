@@ -7,7 +7,7 @@ use crate::{
 };
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let status = service_status::fetch(context);
-    from_status(check, status.as_ref())
+    from_status(check, status.as_ref().ok())
 }
 
 pub(crate) fn from_status(check: Check, status: Option<&serde_json::Value>) -> RunnerResult {

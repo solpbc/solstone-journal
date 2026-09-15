@@ -562,9 +562,20 @@ pub fn compute_daily_evidence_revision(
             "morning_briefing" => (0..=8).collect(),
             _ => vec![0],
         };
+        // A closed day's evidence stops at the last closed day.  The briefing
+        // hook reads forward, and the adoption boundary is seven closed days,
+        // so without this every adopted day's window contains the current day
+        // — which is still being written, so the revision moves between the
+        // reading taken at admission and the one taken after preparation and
+        // the day can never freeze.  The day's own sources are never dropped:
+        // only offsets that move forward past the last closed day are.
+        let today = journal_today(journal)?.format("%Y%m%d").to_string();
         let mut sources = Vec::new();
         for offset in offsets {
             let d = (date + Duration::days(offset)).format("%Y%m%d").to_string();
+            if offset > 0 && d >= today {
+                continue;
+            }
             sources.extend(if hook == "entities:entities_review" {
                 capture_facet_day_sources(journal, &d, "entities", facet)?.sources
             } else if offset > 0 {

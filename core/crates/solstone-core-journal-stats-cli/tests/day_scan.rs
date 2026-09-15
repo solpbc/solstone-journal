@@ -183,7 +183,10 @@ fn ac1_comprehensive_day_tree_populates_every_day_field() {
     assert_eq!(stats.pending_segments, 1);
     assert_eq!(stats.segments_pending_think, 1);
     assert_eq!(stats.outputs_processed, 0);
-    assert_eq!(stats.outputs_pending, 3);
+    // ⚠ 0, not 3. Every daily talent in this fixture is hookless, so each unit's
+    // coverage is `HistoricalUnverified` -- unverifiable rather than owed. The
+    // owed predicate is covered per state in `solstone-core-system`.
+    assert_eq!(stats.outputs_pending, 0);
     assert_eq!(stats.day_bytes, expected_bytes);
     assert!(!stats.segment_fold_failed);
 }
@@ -275,7 +278,12 @@ fn legacy_outputs_do_not_certify_daily_work_and_disabled_work_is_excluded() {
 
     let outcome = scan_filesystem(root, &system, &apps);
     assert_eq!(outcome.scan.stats.outputs_processed, 0);
-    assert_eq!(outcome.scan.stats.outputs_pending, 2);
+    // ⚠ Deliberately 0, not 2. The coverage state asserted just below is
+    // `HistoricalUnverified` -- history this journal will never regenerate --
+    // and the owner is not owed an output it was never going to produce.
+    // `outputs_processed` staying 0 is the certification property this test
+    // is named for, and it is unchanged.
+    assert_eq!(outcome.scan.stats.outputs_pending, 0);
     assert_eq!(
         outcome.scan.daily_coverage.unwrap().state,
         solstone_core_system::daily_coverage::CoverageState::HistoricalUnverified

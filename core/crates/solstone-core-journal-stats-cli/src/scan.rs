@@ -80,11 +80,9 @@ where
                 })
         })
         .count() as u64;
-    scan.stats.outputs_pending = coverage
-        .units
-        .iter()
-        .filter(|u| !u.state.is_current())
-        .count() as u64;
+    // What the owner is still owed, not merely what is not current: history
+    // that predates evidence certification is neither owed nor coming.
+    scan.stats.outputs_pending = coverage.units.iter().filter(|u| u.state.is_owed()).count() as u64;
     scan.daily_coverage = Some(coverage);
     Ok(scan)
 }

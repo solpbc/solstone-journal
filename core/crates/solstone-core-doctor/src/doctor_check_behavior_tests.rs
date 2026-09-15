@@ -65,6 +65,7 @@ static NEXT: AtomicUsize = AtomicUsize::new(0);
 const W3C_CHECK_NAMES: &[&str] = &[
     "journal_sync",
     "journal_caught_up",
+    "journal_sources_readable",
     "task_pace",
     "brain",
     "capture_health",
@@ -548,6 +549,24 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 stage_backlog_pending(&context);
             }
         }
+        "journal_sources_readable" => {
+            let path = context.journal_path.join("stats.json");
+            let unreadable = if ok {
+                serde_json::json!([])
+            } else {
+                serde_json::json!([{ "day": "20251231", "cause": "fixture damage" }])
+            };
+            fs::write(
+                path,
+                serde_json::to_vec(&serde_json::json!({
+                    "generated_at": context.now.to_rfc3339(),
+                    "evidence_unreadable_days": unreadable,
+                    "segment_fold_failed_days": [],
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+        }
         "task_pace" => {
             return if ok {
                 task_pace_with(serde_json::json!([{ "name":"index", "slow":false }]))
@@ -718,6 +737,7 @@ fn check_severity_table_matches_reference() {
     for (name, severity) in [
         ("journal_sync", Severity::Blocker),
         ("journal_caught_up", Severity::Advisory),
+        ("journal_sources_readable", Severity::Advisory),
         ("task_pace", Severity::Advisory),
         ("brain", Severity::Advisory),
         ("capture_health", Severity::Advisory),
@@ -747,6 +767,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
     let coverage = [
         ("journal_sync", SecondBranch::DifferentStatus),
         ("journal_caught_up", SecondBranch::DifferentStatus),
+        ("journal_sources_readable", SecondBranch::DifferentStatus),
         ("task_pace", SecondBranch::DifferentStatus),
         ("brain", SecondBranch::DifferentStatus),
         ("capture_health", SecondBranch::DifferentStatus),
@@ -1501,12 +1522,23 @@ fn caught_up_native_backlog_fixture_states() {
             r#"{"event":"talent.fail","ts":1,"mode":"daily","name":"summary","reason_code":"provider_request_rejected"}"#,
         ],
     );
-    let row = result("journal_caught_up", &capped);
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(
-        row.detail, "1 day(s) pending, 0 day(s) stuck; oldest outstanding 20251230",
+    // The property this fixture protects is that a legacy terminal log cannot
+    // PROVE coverage, so assert that directly rather than through the backlog
+    // count.  ⚠ The count moved deliberately: an unadopted day is
+    // historical-unverified, which is the resting state for history that is
+    // never regenerated, and reporting it as pending is a permanent warning
+    // about work nothing will ever do.
+    let legacy =
+        solstone_core_system::daily_coverage::read_daily_coverage(&capped.journal_path, "20251230")
+            .unwrap();
+    assert_ne!(
+        legacy.state,
+        solstone_core_system::daily_coverage::CoverageState::Current,
         "legacy terminal logs cannot prove current daily coverage"
     );
+    let row = result("journal_caught_up", &capped);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(row.detail, "caught up");
 
     let root = &capped.journal_path;
     configure_daily_work(root, Some("schedule"));

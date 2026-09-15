@@ -115,21 +115,39 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    let Some(status) = service_status::fetch(context) else {
-        if service_is_failed(context) {
+    let status = match service_status::fetch(context) {
+        Ok(status) => status,
+        Err(cause) => {
+            // A failed unit is a loud, established fact whatever the probe did,
+            // so it keeps precedence over every no-status cause.
+            if service_is_failed(context) {
+                return Ok(make_result(
+                    check,
+                    Status::Fail,
+                    "journal service unit is failed",
+                    Some("run journal service restart; if it persists, run journal service logs"),
+                ));
+            }
+            // ⛔ Only an absent socket establishes that nothing is running.
+            // The other causes mean the probe could not tell, and saying "not
+            // running" about a live service is worse than saying nothing.
+            if cause == service_status::Unavailable::NoSocket {
+                return Ok(make_result(
+                    check,
+                    Status::Warn,
+                    "service installed but not running",
+                    Some("run journal service start"),
+                ));
+            }
             return Ok(make_result(
                 check,
-                Status::Fail,
-                "journal service unit is failed",
-                Some("run journal service restart; if it persists, run journal service logs"),
+                Status::Skip,
+                // ⛔ "supervisor" is a backstage process name; the owner-facing
+                // surfaces call this the system manager.
+                format!("couldn't get a status — {}", cause.as_str()),
+                None::<String>,
             ));
         }
-        return Ok(make_result(
-            check,
-            Status::Warn,
-            "service installed but not running",
-            Some("run journal service start"),
-        ));
     };
     let crashed = status
         .get("crashed")

@@ -70,6 +70,9 @@ fn journal_sync(c: &CheckContext) -> RunnerResult {
 fn caught_up(c: &CheckContext) -> RunnerResult {
     checks::journal_caught_up::run(c, CHECK_CAUGHT_UP)
 }
+fn sources_readable(c: &CheckContext) -> RunnerResult {
+    checks::journal_sources_readable::run(c, CHECK_SOURCES_READABLE)
+}
 fn task_pace(c: &CheckContext) -> RunnerResult {
     checks::task_pace::run(c, CHECK_TASK_PACE)
 }
@@ -159,6 +162,11 @@ const CHECK_SYNC: Check = Check {
 };
 const CHECK_CAUGHT_UP: Check = Check {
     name: "journal_caught_up",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_SOURCES_READABLE: Check = Check {
+    name: "journal_sources_readable",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -271,6 +279,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_CAUGHT_UP,
         runner: caught_up,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_SOURCES_READABLE,
+        runner: sources_readable,
         deferred: None,
     },
     RegistryEntry {

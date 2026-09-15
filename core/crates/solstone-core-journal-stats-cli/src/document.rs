@@ -23,6 +23,21 @@ pub struct StatsDocument {
     pub facets: ActivityDocument,
     pub backlog: BacklogView,
     pub segment_fold_failed_days: Vec<String>,
+    /// Days this scan could not read, with the cause.  A day listed here
+    /// contributes nothing to `days`, `totals`, `heatmap` or `day_count`, so
+    /// those remain derived from exactly the days that scanned.
+    pub evidence_unreadable_days: Vec<UnreadableDay>,
+}
+
+/// One day a scan could not read, and why.
+///
+/// The cause travels with the day deliberately: `segment_fold_failed_days`
+/// records only day names, and a degradation record with no cause is a record
+/// nobody can act on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UnreadableDay {
+    pub day: String,
+    pub cause: String,
 }
 
 /// Day statistics emitted alongside shared daily coverage.
@@ -92,6 +107,7 @@ pub(crate) fn assemble_document(
     tokens: TokenUsage,
     backlog: BacklogView,
     now: DateTime<Utc>,
+    evidence_unreadable_days: Vec<UnreadableDay>,
 ) -> StatsDocument {
     let mut days = BTreeMap::new();
     let mut totals = Totals::default();
@@ -166,6 +182,7 @@ pub(crate) fn assemble_document(
         },
         backlog,
         segment_fold_failed_days,
+        evidence_unreadable_days,
     }
 }
 

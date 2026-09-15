@@ -22,10 +22,10 @@ use crate::{
     SENSED_TERMINAL_STATES, STUCK_FAIL_THRESHOLD, SegmentInput, SegmentProgress,
     SegmentRepairSummary, SegmentSource, TerminalEvent, TerminalState, TerminalUnit,
     WHY_CORRUPT_RAW, WHY_FAILED, WHY_NEVER_ATTEMPTED, WHY_NO_SENSE_COMPLETE_AGED,
-    WHY_SENSED_NOT_THOUGHT, classify_segment_completion, day_is_complete, lookup_segment_progress,
-    read_backoff_summary, read_segment_progress, read_segment_repair_attempted,
-    read_segment_repair_summary, read_terminal_states, scan_day, segment_fully_sensed,
-    segment_fully_thought, segment_requires_processing,
+    WHY_SENSED_NOT_THOUGHT, classify_segment_completion, day_is_complete_with,
+    lookup_segment_progress, read_backoff_summary, read_segment_progress,
+    read_segment_repair_attempted, read_segment_repair_summary, read_terminal_states, scan_day,
+    segment_fully_sensed, segment_fully_thought, segment_requires_processing,
 };
 
 /// Return a bounded, read-only cross-day processing backlog report.
@@ -45,10 +45,19 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     let mut backlog_days = Vec::new();
     let mut errors = Vec::new();
     let mut malformed_line_count = 0;
+    // Each day's coverage is computed once and reused by the classification
+    // pass below.  Reading it twice per day was the whole of this view's cost.
+    let mut coverage_by_day: BTreeMap<
+        String,
+        Result<solstone_core_system::daily_coverage::DailyCoverage, String>,
+    > = BTreeMap::new();
     for day in days {
         let repair = read_segment_repair_summary(journal, &day);
         let repair_attempted = read_segment_repair_attempted(journal, &day);
-        match day_is_complete(journal, &day) {
+        let coverage = solstone_core_system::daily_coverage::read_daily_coverage(journal, &day);
+        let completeness = day_is_complete_with(journal, &day, coverage.as_ref());
+        coverage_by_day.insert(day.clone(), coverage);
+        match completeness {
             Ok(true) => match complete_backlog_day(health_source, &day, repair.as_ref()) {
                 Ok((day_value, malformed)) => {
                     malformed_line_count += malformed;
@@ -172,10 +181,12 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     }
 
     for day in &mut backlog_days {
-        match solstone_core_system::daily_coverage::read_daily_coverage(journal, &day.day) {
+        match coverage_by_day.remove(&day.day).unwrap_or_else(|| {
+            solstone_core_system::daily_coverage::read_daily_coverage(journal, &day.day)
+        }) {
             Ok(mut coverage) => {
                 coverage.as_of_ms = now.timestamp_millis();
-                if !coverage.state.is_current() && day.state == BACKLOG_STATE_COMPLETE {
+                if coverage.state.is_owed() && day.state == BACKLOG_STATE_COMPLETE {
                     day.state = BACKLOG_STATE_PENDING.to_owned();
                 }
                 // Caps from another revision are history, never present degraded coverage.

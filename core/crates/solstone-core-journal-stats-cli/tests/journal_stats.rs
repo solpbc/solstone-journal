@@ -236,7 +236,8 @@ fn ac2_run_builds_full_expected_document() {
             &scans,
             tokens,
             populated_backlog(),
-            now()
+            now(),
+            Vec::new()
         )),
         json!({
             "schema_version": crate::SCHEMA_VERSION,
@@ -300,7 +301,8 @@ fn ac2_run_builds_full_expected_document() {
                 "degraded": false,
                 "malformed_line_count": 0
             },
-            "segment_fold_failed_days": []
+            "segment_fold_failed_days": [],
+            "evidence_unreadable_days": []
         })
     );
 }
@@ -583,6 +585,7 @@ fn rounded_minutes_match_python_half_even_behavior() {
         TokenUsage::default(),
         empty_backlog(),
         now(),
+        Vec::new(),
     ));
     let expected = json!({
         "above_tie": 1.14,
@@ -614,8 +617,10 @@ fn day_cache_save_failure_is_debug_only() {
     assert!(debug.stderr.contains("Day cache save failed for 20260105"));
 }
 
+/// A broken talent configuration is a property of the journal, not of whichever
+/// day sorts first.  ⛔ It must not be contained and reported as day damage.
 #[test]
-fn run_errors_identify_the_failed_operation() {
+fn journal_scoped_prerequisite_failure_names_the_prerequisite_not_a_day() {
     let (temporary, system, apps) = setup();
     fs::create_dir_all(&system).unwrap();
     fs::write(system.join("invalid.md"), "{\n\"type\": generate\n}\n").unwrap();
@@ -625,8 +630,113 @@ fn run_errors_identify_the_failed_operation() {
     let result = run_with(temporary.path(), &system, &apps, &[], &reader, &writer);
 
     assert_eq!(result.exit_code, 1);
-    assert!(result.stderr.starts_with("Error scanning 20260105:"));
+    assert!(
+        result
+            .stderr
+            .starts_with("Error loading daily talent configuration:"),
+        "{}",
+        result.stderr
+    );
+    assert!(
+        !result.stderr.contains("Error scanning"),
+        "a journal-scoped fault must not be blamed on a day: {}",
+        result.stderr
+    );
     assert!(!result.stderr.starts_with("Error writing stats.json:"));
+}
+
+fn daily_talent(system: &Path) {
+    fs::create_dir_all(system).unwrap();
+    fs::write(
+        system.join("schedule.md"),
+        "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":10,\"hook\":{\"post\":\"schedule\"}\n}\nExtract scheduled items.",
+    )
+    .unwrap();
+}
+
+/// Damage the day's own unit record: journal-io rejects it as malformed.
+fn damage_via_unit_record(root: &Path, day: &str) {
+    let dir = root
+        .join("chronicle")
+        .join(day)
+        .join("health")
+        .join("daily-units");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("u-schedule.json"), "{").unwrap();
+}
+
+/// Damage a source file the evidence projection has to read whole.  This is the
+/// shape the reference host actually carries: a capture writer cut off mid-line.
+fn damage_via_truncated_source(root: &Path, day: &str) {
+    let dir = root
+        .join("chronicle")
+        .join(day)
+        .join("suze")
+        .join("120000_300");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("audio.jsonl"),
+        "{\"start\":\"12:00:00\",\"text\":\"fine\"}\n{\"start\":\"12:00:01\",\"te",
+    )
+    .unwrap();
+}
+
+/// One damaged day cannot discard every other day's statistics.
+///
+/// Falsifier: replace the per-day `match` in `run()` with `?` and both arms of
+/// this test red.  Both damage sources are permission-independent, so a CI that
+/// happens to run as root cannot turn the falsifier green.
+#[test]
+fn a_day_that_cannot_be_scanned_is_named_and_the_rest_still_scan() {
+    for (label, damage) in [
+        (
+            "malformed unit record",
+            damage_via_unit_record as fn(&Path, &str),
+        ),
+        (
+            "truncated source file",
+            damage_via_truncated_source as fn(&Path, &str),
+        ),
+    ] {
+        let (temporary, system, apps) = setup();
+        let root = temporary.path();
+        daily_talent(&system);
+        fs::create_dir_all(root.join("chronicle").join(OTHER_DAY)).unwrap();
+        damage(root, DAY);
+
+        let reader = EmptyBacklog;
+        let writer = RecordingWriter::default();
+        let result = run_with(root, &system, &apps, &[], &reader, &writer);
+
+        assert_eq!(result.exit_code, 0, "{label}: {}", result.stderr);
+        let document = writer.document();
+        assert_eq!(
+            document.evidence_unreadable_days.len(),
+            1,
+            "{label}: expected exactly one damaged day"
+        );
+        assert_eq!(document.evidence_unreadable_days[0].day, DAY, "{label}");
+        assert!(
+            !document.evidence_unreadable_days[0].cause.is_empty(),
+            "{label}: a damaged day must carry its cause"
+        );
+        assert!(
+            document.days.contains_key(OTHER_DAY),
+            "{label}: the healthy day must still be scanned"
+        );
+        assert!(
+            !document.days.contains_key(DAY),
+            "{label}: a damaged day contributes no statistics"
+        );
+        assert_eq!(
+            document.day_count, 1,
+            "{label}: day_count counts days that scanned"
+        );
+        assert!(
+            !root.join("chronicle").join(DAY).join("stats.json").exists(),
+            "{label}: a damaged day must publish no cache, or the damage outlives its repair"
+        );
+    }
 }
 
 #[test]
@@ -654,6 +764,7 @@ fn ac8_counts_by_day_requires_positive_count() {
         crate::document::TokenUsage::default(),
         empty_backlog(),
         now(),
+        Vec::new(),
     ));
 
     assert_eq!(document["talents"]["counts"], json!({"zero": 0}));
@@ -680,6 +791,7 @@ fn ac9_heatmap_accumulates_all_days() {
         crate::document::TokenUsage::default(),
         empty_backlog(),
         now(),
+        Vec::new(),
     ));
 
     assert_eq!(document["heatmap"][0][10], 2.0);
@@ -744,6 +856,7 @@ fn ac12_duration_fold_and_generated_at_are_stable() {
         crate::document::TokenUsage::default(),
         empty_backlog(),
         now(),
+        Vec::new(),
     ));
 
     assert_eq!(document["generated_at"], "2026-01-06T12:00:00.000000+00:00");
@@ -770,6 +883,7 @@ fn ac13_segment_fold_failure_signal_is_top_level() {
         crate::document::TokenUsage::default(),
         empty_backlog(),
         now(),
+        Vec::new(),
     ));
 
     assert_eq!(document["segment_fold_failed_days"], json!([DAY]));

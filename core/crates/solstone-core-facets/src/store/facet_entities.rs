@@ -385,7 +385,7 @@ pub fn prepare_review_promotion(
     let now = now_iso();
     let (entity_id, mut identity) = if let Some(existing) = existing {
         if existing.blocked {
-            return Err("conflict: promoted entity is blocked".into());
+            return Err(format!("conflict: promoted entity {name:?} is blocked"));
         }
         relationship_dir = existing.relationship_dir.clone();
         before_link = Some(existing.relationship.clone());
@@ -402,26 +402,45 @@ pub fn prepare_review_promotion(
                 };
                 if identity_name(identity.value()) == query {
                     if index != 0 {
-                        return Err("conflict: promotion matches an identity-map loser".into());
+                        return Err(format!(
+                            "conflict: promotion {name:?} matches {directory:?}, which lost its identity-map group"
+                        ));
                     }
                     matches.push((identity.entity_id().to_owned(), identity.value().clone()));
                 }
             }
         }
         if matches.len() > 1 {
-            return Err("conflict: promotion identity is ambiguous".into());
+            return Err(format!(
+                "conflict: promotion {name:?} matches {} identities by name",
+                matches.len()
+            ));
         }
         if let Some(found) = matches.pop() {
             found
         } else {
             let id = entity_slug(name);
-            if id.is_empty()
-                || read_identity_map(root)
-                    .map_err(|e| e.to_string())?
-                    .resolved
-                    .contains_key(&id)
-            {
-                return Err("conflict: promotion ID already belongs to another identity".into());
+            // Name the collision.  `entity_slug` collapses punctuation that
+            // `normalize_resolution_query` preserves, so a name can be
+            // unmatchable by name and uncreatable by id at the same time --
+            // and without the two spellings in the message there is nothing an
+            // owner can act on.
+            let resolved = read_identity_map(root).map_err(|e| e.to_string())?.resolved;
+            if id.is_empty() {
+                return Err(format!(
+                    "conflict: promotion {name:?} has no usable entity id"
+                ));
+            }
+            if let Some(owner_dir) = resolved.get(&id) {
+                let owner_name = read_entity_identity(root, owner_dir)
+                    .ok()
+                    .flatten()
+                    .map(|identity| identity_display_name(identity.value()).to_owned())
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or_else(|| owner_dir.clone());
+                return Err(format!(
+                    "conflict: promotion {name:?} derives entity id {id:?}, which already belongs to {owner_name:?}"
+                ));
             }
             (
                 id.clone(),
@@ -445,7 +464,9 @@ pub fn prepare_review_promotion(
         let actual =
             read_facet_entity_link(root, facet, &relationship_dir).map_err(|e| e.to_string())?;
         if actual.is_some() {
-            return Err("conflict: promotion relationship directory is occupied".into());
+            return Err(format!(
+                "conflict: promotion {name:?} needs relationship directory {relationship_dir:?}, which is already occupied"
+            ));
         }
     }
     let mut after_link = before_link.clone().unwrap_or_else(|| json!({"entity_id":entity_id,"description":description,"attached_at":now,"updated_at":now}));

@@ -12,6 +12,7 @@ pub mod default_stt_ready;
 pub mod disk_space;
 pub mod journal_caught_up;
 pub mod journal_dir_writable;
+pub mod journal_sources_readable;
 pub mod journal_sync;
 pub mod launchd_stale_plist;
 pub mod local_bin_solstone_reachable;

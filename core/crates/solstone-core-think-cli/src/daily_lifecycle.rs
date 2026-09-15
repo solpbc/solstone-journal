@@ -45,12 +45,30 @@ struct SegmentPhaseOutcome {
     blockers: Option<BTreeSet<SegmentIdentity>>,
 }
 
-const REQUIRED_PHASES: [&str; 5] = [
-    "sense_batch",
-    "segment_repair",
-    "daily",
-    "indexer",
-    "journal_stats",
+/// Whether a phase's failure is evidence about the day being processed.
+///
+/// A day certifies its own completion from its own evidence and results.  A
+/// phase that takes the whole journal as input can fail for reasons belonging
+/// to some other day, so its failure is reported but never withholds this
+/// day's completion marker.  Declaring the scope beside the phase name keeps
+/// the classification from being inferred at the gate, and makes a phase added
+/// later state which it is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PhaseScope {
+    /// Input and failure are properties of the day being processed.
+    Day,
+    /// Input is the whole journal; failure says nothing about this day.
+    Corpus,
+}
+
+const REQUIRED_PHASES: [(&str, PhaseScope); 5] = [
+    ("sense_batch", PhaseScope::Day),
+    ("segment_repair", PhaseScope::Day),
+    ("daily", PhaseScope::Day),
+    // `indexer --rescan` walks every indexable file in the journal.
+    ("indexer", PhaseScope::Corpus),
+    // `journal-stats` scans every day directory and writes one document.
+    ("journal_stats", PhaseScope::Corpus),
 ];
 const SKIP_SEGMENT_REPAIR_FAILED: &str = "segment_repair_failed";
 const SKIP_READINESS_UNAVAILABLE: &str = "readiness_unavailable";
@@ -128,7 +146,10 @@ fn run_with_phase_process(
     let force_all_repairs = force_all_repairs(args);
     let mut daily_result = ModeResult::default();
     let segment_outcome = std::cell::RefCell::new(SegmentPhaseOutcome::default());
-    let mut total = run_required_phases(
+    let PhaseOutcomes {
+        mut total,
+        mut day_scoped,
+    } = run_required_phases(
         log,
         context,
         &REQUIRED_PHASES,
@@ -252,6 +273,10 @@ fn run_with_phase_process(
         .map(|blockers| blocker_progress(&lifecycle_blockers, blockers));
 
     if let Err(error) = refresh_daily_terminal_fold(context, &mut daily_result) {
+        // Reading this day's own coverage is day-scoped work, and it is a
+        // failure rather than a skip: it names itself.
+        day_scoped.unfinished += 1;
+        day_scoped.failed += 1;
         merge_mode_result(&mut total, failed_phase("daily_completion_input", error));
     }
     maybe_finalize_completion(
@@ -265,6 +290,7 @@ fn run_with_phase_process(
         &daily_result,
         post_repair_blocked,
         lifecycle_progress,
+        day_scoped,
         &mut total,
         |journal, now_ms, fields| helpers::emit(journal, now_ms, "daily_complete", fields),
     );
@@ -419,16 +445,42 @@ fn skipped_phase(phase: &str, reason: &'static str) -> ModeResult {
     }
 }
 
+/// What the day's own phases did, separated from the run's overall result.
+///
+/// ⚠ Two counts, two different questions.  Collapsing them loses one of them:
+/// a skipped phase blocks completion but explains nothing in `failed_names`,
+/// and a corpus-scoped failure explains something but blocks nothing.
+#[derive(Clone, Copy, Default)]
+struct DayScopedOutcome {
+    /// Day-scoped phases that did not finish -- failed **or** skipped.  This is
+    /// the completion gate: a day cannot certify work it never attempted.
+    /// Corpus-scoped outcomes are absent by construction, which is what keeps
+    /// one damaged day elsewhere in the journal from withholding this marker.
+    unfinished: usize,
+    /// Day-scoped phases that failed.  This is the diagnostic guard: a failure
+    /// has already named itself in `failed_names`, a skip has not.
+    failed: usize,
+}
+
+/// The lifecycle's accumulated result, plus the half of it that is evidence
+/// about this day.
+struct PhaseOutcomes {
+    /// Every phase's result, as reported by the run and its exit status.
+    total: ModeResult,
+    day_scoped: DayScopedOutcome,
+}
+
 fn run_required_phases(
     log: &mut RunLogWriter,
     context: &ThinkContext,
-    phases: &[&str],
+    phases: &[(&str, PhaseScope)],
     phase_budget: impl Fn(&str) -> Option<PhaseBudget>,
     mut execute: impl FnMut(&str, &mut RunLogWriter) -> ModeResult,
     mut skip: impl FnMut(&str) -> Option<&'static str>,
-) -> ModeResult {
+) -> PhaseOutcomes {
     let mut total = ModeResult::default();
-    for phase in phases {
+    let mut day_scoped = DayScopedOutcome::default();
+    for (phase, scope) in phases {
         let started = Instant::now();
         log_phase_start(log, context, phase);
         let result = if let Some(reason) = skip(phase) {
@@ -444,9 +496,16 @@ fn run_required_phases(
             phase_budget(phase),
             &result,
         );
+        if *scope == PhaseScope::Day {
+            // Skips count toward `unfinished` too: a day cannot certify work it
+            // never attempted, and `daily` is skipped whenever its prerequisites
+            // did not clear.
+            day_scoped.unfinished += result.failed + result.skipped;
+            day_scoped.failed += result.failed;
+        }
         merge_mode_result(&mut total, result);
     }
-    total
+    PhaseOutcomes { total, day_scoped }
 }
 
 fn stream_generation(context: &ThinkContext) -> Result<u64, String> {
@@ -564,6 +623,7 @@ fn maybe_finalize_completion(
     daily: &ModeResult,
     segment_blockers: &BTreeSet<SegmentIdentity>,
     progress: Option<(usize, usize)>,
+    day_scoped: DayScopedOutcome,
     total: &mut ModeResult,
     emit: impl FnOnce(&std::path::Path, i64, Map<String, Value>) -> bool,
 ) {
@@ -571,14 +631,19 @@ fn maybe_finalize_completion(
         log_completion_fold(log, context, false, true, daily, segment_blockers);
         return;
     }
-    let completion_candidate = total.failed == 0
+    // Corpus-scoped phase failures are deliberately absent from this gate: a
+    // day whose own evidence was processed is complete even while a whole-
+    // journal index or statistics scan is failing on some other day's bytes.
+    let completion_candidate = day_scoped.unfinished == 0
         && daily.applicable_units.is_subset(&daily.terminal_units)
         && segment_blockers.is_empty();
     if let Some((cleared, remaining)) = progress {
         record_daily_catchup_progress(&context.journal, &context.day, cleared, remaining);
     }
     if !completion_candidate {
-        if total.failed == 0 {
+        // ⚠ `failed`, not `unfinished`: a skipped phase blocks completion and
+        // explains nothing, so the reason still has to be recorded.
+        if day_scoped.failed == 0 {
             let nonterminal_daily = daily
                 .applicable_units
                 .difference(&daily.terminal_units)
@@ -1037,6 +1102,7 @@ mod tests {
             &result,
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| panic!("unproven completion emitted"),
         );
@@ -1129,6 +1195,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             Some((2, 0)),
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, fields| {
                 events += 1;
@@ -1153,12 +1220,12 @@ mod tests {
     }
 
     #[test]
-    fn failed_phase_withholds_marker_and_event() {
+    fn day_scoped_phase_failure_withholds_marker_and_event() {
         let journal = tempdir().unwrap();
         bump_stream_marker(journal.path(), DAY).unwrap();
         let context = context(journal.path());
         let mut log = log(journal.path());
-        let mut total = failed_phase("indexer", "failed");
+        let mut total = failed_phase("daily", "failed");
         let mut events = 0;
         maybe_finalize_completion(
             &context,
@@ -1167,6 +1234,10 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome {
+                unfinished: 1,
+                failed: 1,
+            },
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1179,7 +1250,67 @@ mod tests {
             total.failed, 1,
             "existing phase failure is not double-counted"
         );
-        assert_eq!(total.failed_names, ["indexer (failed)"]);
+        assert_eq!(total.failed_names, ["daily (failed)"]);
+    }
+
+    /// A day certifies from its own evidence.  A whole-journal scan can fail on
+    /// some other day's bytes, and when it does this day is still complete --
+    /// the failure is still reported, it just no longer withholds the marker.
+    #[test]
+    fn corpus_scoped_phase_failure_reports_but_does_not_withhold_the_marker() {
+        for phase in REQUIRED_PHASES
+            .iter()
+            .filter(|(_, scope)| *scope == PhaseScope::Corpus)
+            .map(|(name, _)| *name)
+        {
+            let journal = tempdir().unwrap();
+            bump_stream_marker(journal.path(), DAY).unwrap();
+            let context = context(journal.path());
+            let mut log = log(journal.path());
+            let mut total = failed_phase(phase, "whole-journal scan failed");
+            let mut events = 0;
+            maybe_finalize_completion(
+                &context,
+                &mut log,
+                completion_scope(journal.path(), 1),
+                &complete_daily(),
+                &BTreeSet::new(),
+                None,
+                DayScopedOutcome::default(),
+                &mut total,
+                |_, _, _| {
+                    events += 1;
+                    true
+                },
+            );
+            assert_eq!(
+                marker_generation(journal.path()),
+                Some(1),
+                "{phase} withheld the marker"
+            );
+            assert_eq!(events, 1, "{phase} suppressed the completion event");
+            assert_eq!(
+                total.failed, 1,
+                "{phase} failure must still be reported by the run"
+            );
+        }
+    }
+
+    /// Pins which phases take the whole journal as input.  Moving a phase
+    /// between these sets changes which days can complete, so it is a
+    /// deliberate act, not an edit.
+    #[test]
+    fn phase_scopes_are_declared_as_expected() {
+        assert_eq!(
+            REQUIRED_PHASES,
+            [
+                ("sense_batch", PhaseScope::Day),
+                ("segment_repair", PhaseScope::Day),
+                ("daily", PhaseScope::Day),
+                ("indexer", PhaseScope::Corpus),
+                ("journal_stats", PhaseScope::Corpus),
+            ]
+        );
     }
 
     #[test]
@@ -1201,6 +1332,7 @@ mod tests {
             &complete_daily(),
             &blockers,
             Some((0, 1)),
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1231,6 +1363,7 @@ mod tests {
             &daily,
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1264,6 +1397,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1312,6 +1446,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut first,
             |_, _, _| {
                 first_events += 1;
@@ -1327,6 +1462,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut second,
             |_, _, _| {
                 second_events += 1;
@@ -1358,6 +1494,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1415,6 +1552,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1467,6 +1605,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             None,
+            DayScopedOutcome::default(),
             &mut total,
             |_, _, _| {
                 events += 1;
@@ -1507,7 +1646,7 @@ mod tests {
         log: &mut RunLogWriter,
         repair: SegmentPhaseOutcome,
         mut execute: impl FnMut(&str) -> ModeResult,
-    ) -> (ModeResult, Vec<String>) {
+    ) -> (ModeResult, DayScopedOutcome, Vec<String>) {
         let repair = std::cell::RefCell::new(repair);
         let invoked = std::cell::RefCell::new(Vec::new());
         let total = run_required_phases(
@@ -1530,7 +1669,7 @@ mod tests {
                 }
             },
         );
-        (total, invoked.into_inner())
+        (total.total, total.day_scoped, invoked.into_inner())
     }
 
     fn succeeded_repair() -> SegmentPhaseOutcome {
@@ -1597,13 +1736,14 @@ mod tests {
         let context = context(journal.path());
         let mut log = log(journal.path());
         let mut daily_calls = 0;
-        let (total, invoked) = policy_run(&context, &mut log, succeeded_repair(), |phase| {
-            if phase == "daily" {
-                daily_calls += 1;
-            }
-            succeeded_phase(phase)
-        });
-        assert_eq!(invoked, REQUIRED_PHASES);
+        let (total, _total_day_scoped, invoked) =
+            policy_run(&context, &mut log, succeeded_repair(), |phase| {
+                if phase == "daily" {
+                    daily_calls += 1;
+                }
+                succeeded_phase(phase)
+            });
+        assert_eq!(invoked, REQUIRED_PHASES.map(|(name, _)| name.to_owned()));
         assert_eq!(daily_calls, 1);
         assert_eq!(total.failed, 0);
         assert_eq!(total.skipped, 0);
@@ -1637,15 +1777,16 @@ mod tests {
             let mut log = log(journal.path());
             let mut daily_calls = 0;
             let sense_result = sense.clone();
-            let (mut total, invoked) = policy_run(&context, &mut log, blocked_repair(), |phase| {
-                if phase == "daily" {
-                    daily_calls += 1;
-                }
-                if phase == "sense_batch" {
-                    return sense_result.clone();
-                }
-                succeeded_phase(phase)
-            });
+            let (mut total, _total_day_scoped, invoked) =
+                policy_run(&context, &mut log, blocked_repair(), |phase| {
+                    if phase == "daily" {
+                        daily_calls += 1;
+                    }
+                    if phase == "sense_batch" {
+                        return sense_result.clone();
+                    }
+                    succeeded_phase(phase)
+                });
             assert_eq!(
                 invoked,
                 ["sense_batch", "segment_repair", "indexer", "journal_stats"]
@@ -1661,6 +1802,7 @@ mod tests {
                 &complete_daily(),
                 &BTreeSet::from([blocker("090000_300")]),
                 Some((0, 1)),
+                DayScopedOutcome::default(),
                 &mut total,
                 |_, _, _| true,
             );
@@ -1675,16 +1817,17 @@ mod tests {
         let context = context(journal.path());
         let mut log = log(journal.path());
         let mut daily_calls = 0;
-        let (mut total, invoked) = policy_run(&context, &mut log, succeeded_repair(), |phase| {
-            if phase == "daily" {
-                daily_calls += 1;
-            }
-            if phase == "sense_batch" {
-                return failed_phase("sense_batch", "injected");
-            }
-            succeeded_phase(phase)
-        });
-        assert_eq!(invoked, REQUIRED_PHASES);
+        let (mut total, total_day_scoped, invoked) =
+            policy_run(&context, &mut log, succeeded_repair(), |phase| {
+                if phase == "daily" {
+                    daily_calls += 1;
+                }
+                if phase == "sense_batch" {
+                    return failed_phase("sense_batch", "injected");
+                }
+                succeeded_phase(phase)
+            });
+        assert_eq!(invoked, REQUIRED_PHASES.map(|(name, _)| name.to_owned()));
         assert_eq!(daily_calls, 1);
         assert_eq!(total.failed, 1);
         assert_eq!(total.failed_names, ["sense_batch (injected)"]);
@@ -1696,6 +1839,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             Some((0, 0)),
+            total_day_scoped,
             &mut total,
             |_, _, _| true,
         );
@@ -1710,7 +1854,7 @@ mod tests {
         let blocked_context = context(journal.path());
         let mut blocked_log = log(journal.path());
         let mut daily_calls = 0;
-        let (mut blocked_total, blocked_invoked) = policy_run(
+        let (mut blocked_total, blocked_total_day_scoped, blocked_invoked) = policy_run(
             &blocked_context,
             &mut blocked_log,
             blocked_repair(),
@@ -1734,6 +1878,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::from([blocker("090000_300")]),
             Some((0, 1)),
+            blocked_total_day_scoped,
             &mut blocked_total,
             |_, _, _| true,
         );
@@ -1745,7 +1890,7 @@ mod tests {
         let clear_context = context(clear_journal.path());
         let mut clear_log = log(clear_journal.path());
         daily_calls = 0;
-        let (mut clear_total, clear_invoked) = policy_run(
+        let (mut clear_total, clear_total_day_scoped, clear_invoked) = policy_run(
             &clear_context,
             &mut clear_log,
             succeeded_repair(),
@@ -1756,7 +1901,10 @@ mod tests {
                 succeeded_phase(phase)
             },
         );
-        assert_eq!(clear_invoked, REQUIRED_PHASES);
+        assert_eq!(
+            clear_invoked,
+            REQUIRED_PHASES.map(|(name, _)| name.to_owned())
+        );
         assert_eq!(daily_calls, 1);
         maybe_finalize_completion(
             &clear_context,
@@ -1765,6 +1913,7 @@ mod tests {
             &complete_daily(),
             &BTreeSet::new(),
             Some((1, 0)),
+            clear_total_day_scoped,
             &mut clear_total,
             |_, _, _| true,
         );
@@ -1780,7 +1929,7 @@ mod tests {
             let context = context(journal.path());
             let mut log = log(journal.path());
             let mut daily_calls = 0;
-            let (mut total, invoked) =
+            let (mut total, total_day_scoped, invoked) =
                 policy_run(&context, &mut log, unread_repair(detail), |phase| {
                     if phase == "daily" {
                         daily_calls += 1;
@@ -1811,6 +1960,7 @@ mod tests {
                 &complete_daily(),
                 &BTreeSet::new(),
                 None,
+                total_day_scoped,
                 &mut total,
                 |_, _, _| true,
             );
@@ -1850,13 +2000,14 @@ mod tests {
             let daily_result = daily.clone();
             let expect_daily = daily_dependency_skip(&repair).is_none();
             let mut daily_calls = 0;
-            let (total, invoked) = policy_run(&context, &mut log, repair, |phase| {
-                if phase == "daily" {
-                    daily_calls += 1;
-                    return daily_result.clone();
-                }
-                succeeded_phase(phase)
-            });
+            let (total, _total_day_scoped, invoked) =
+                policy_run(&context, &mut log, repair, |phase| {
+                    if phase == "daily" {
+                        daily_calls += 1;
+                        return daily_result.clone();
+                    }
+                    succeeded_phase(phase)
+                });
             assert!(
                 invoked.ends_with(&["indexer".to_owned(), "journal_stats".to_owned()]),
                 "{label}: {invoked:?}"
@@ -1921,11 +2072,13 @@ mod tests {
         );
         assert_eq!(calls[1].0, "journal_stats");
         assert_eq!(calls[1].1.last().map(String::as_str), Some("journal-stats"));
-        assert_eq!(marker_generation(journal.path()), None);
+        // ⚠ The marker IS published. `indexer --rescan` walks the whole journal,
+        // so its failure is not evidence about this day.
+        assert_eq!(marker_generation(journal.path()), Some(0));
     }
 
     #[test]
-    fn statistics_failure_fails_the_attempt_and_withholds_completion() {
+    fn statistics_failure_is_reported_without_withholding_completion() {
         let journal = tempdir().unwrap();
         bump_stream_marker(journal.path(), DAY).unwrap();
         let context = context(journal.path());
@@ -1948,6 +2101,7 @@ mod tests {
         )
         .unwrap();
 
+        // The failure is still reported by the run and its exit status ...
         assert_eq!(result.failed, 1);
         assert!(result.timed_out);
         let calls = runner.calls.lock().unwrap();
@@ -1955,7 +2109,9 @@ mod tests {
         assert_eq!(calls[0].1.last().map(String::as_str), Some("--rescan"));
         assert_eq!(calls[1].0, "journal_stats");
         assert_eq!(calls[1].1.last().map(String::as_str), Some("journal-stats"));
-        assert_eq!(marker_generation(journal.path()), None);
+        // ... and the day still completes.  A whole-corpus statistics scan can
+        // time out on some other day's bytes; that is not this day's evidence.
+        assert_eq!(marker_generation(journal.path()), Some(1));
     }
 
     #[test]
@@ -1964,12 +2120,16 @@ mod tests {
         let context = context(journal.path());
         let mut log = log(journal.path());
         let sentinel = "SENTINEL_STDERR_/journal/path/raw";
-        let (_total, invoked) = policy_run(&context, &mut log, blocked_repair(), |phase| {
-            if phase == "sense_batch" {
-                return failed_phase("sense_batch", format!("command failed: {sentinel} exit 1"));
-            }
-            succeeded_phase(phase)
-        });
+        let (_total, _total_day_scoped, invoked) =
+            policy_run(&context, &mut log, blocked_repair(), |phase| {
+                if phase == "sense_batch" {
+                    return failed_phase(
+                        "sense_batch",
+                        format!("command failed: {sentinel} exit 1"),
+                    );
+                }
+                succeeded_phase(phase)
+            });
         assert_eq!(
             invoked,
             ["sense_batch", "segment_repair", "indexer", "journal_stats"]
@@ -1982,7 +2142,7 @@ mod tests {
             .iter()
             .map(|row| row["phase"].as_str().unwrap().to_owned())
             .collect::<Vec<_>>();
-        assert_eq!(phases, REQUIRED_PHASES);
+        assert_eq!(phases, REQUIRED_PHASES.map(|(name, _)| name.to_owned()));
         let daily = completions
             .iter()
             .find(|row| row["phase"] == "daily")
@@ -2018,12 +2178,13 @@ mod tests {
         let journal = tempdir().unwrap();
         let context = context(journal.path());
         let mut log = log(journal.path());
-        let (total, invoked) = policy_run(&context, &mut log, blocked_repair(), |phase| {
-            if phase == "sense_batch" {
-                return failed_phase("sense_batch", "injected");
-            }
-            succeeded_phase(phase)
-        });
+        let (total, _total_day_scoped, invoked) =
+            policy_run(&context, &mut log, blocked_repair(), |phase| {
+                if phase == "sense_batch" {
+                    return failed_phase("sense_batch", "injected");
+                }
+                succeeded_phase(phase)
+            });
         assert_eq!(
             invoked,
             ["sense_batch", "segment_repair", "indexer", "journal_stats"]
