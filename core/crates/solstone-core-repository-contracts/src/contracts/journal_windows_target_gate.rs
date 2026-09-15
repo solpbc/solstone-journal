@@ -192,6 +192,137 @@ fn windows_crosscheck_has_no_journal_archive_exclusion() {
     }));
 }
 
+/// The archive keys the Rust verifier admits, read from its own `selected`
+/// table — the one place that decides which archives exist.
+fn admitted_archive_keys(verifier: &str) -> Vec<String> {
+    let table_at = verifier
+        .find("let selected = [")
+        .expect("the verifier declares its admitted archive table");
+    let table_end = verifier[table_at..]
+        .find("];")
+        .expect("the admitted archive table is closed")
+        + table_at;
+    verifier[table_at..table_end]
+        .lines()
+        .filter_map(|line| {
+            let rest = line.trim().strip_prefix('(')?;
+            let (key, _) = rest.split_once(',')?;
+            Some(key.trim().trim_matches('"').to_ascii_uppercase())
+        })
+        .collect()
+}
+
+/// The archive keys the driver requires, read from its own loop.
+fn required_archive_keys(host: &str) -> Vec<String> {
+    host.lines()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("for receipt_key in ")?
+                .strip_suffix("; do")
+                .map(|keys| {
+                    keys.split_whitespace()
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                })
+        })
+        .expect("the driver enumerates the archive identities it requires")
+}
+
+/// The FFmpeg toolchain bootstrap is bound the way every other receipt here is:
+/// run once by the gate, emitted once by the thing that does the work, required
+/// once by the driver.
+///
+/// It needed its own test because the bootstrap is not a `run_platform_receipt`
+/// child — the marker comes from a PowerShell staging script rather than a Rust
+/// receipt target — so the loop below cannot reach it. ⛔ The gap this closes is
+/// real and was found the hard way: the receipts landed on `main` with nothing
+/// asserting the three-way binding, because the enumeration in this file only
+/// asks whether what it lists is present and is blind to the gate growing.
+///
+/// ⛔ **This test declares no archive list of its own.** Both sides are read
+/// from the files that own them — the verifier's admitted table and the driver's
+/// own loop — so adding an archive is one edit, not three, and the failure this
+/// catches is the two disagreeing.
+#[test]
+fn ffmpeg_toolchain_bootstrap_is_bound_and_precedes_the_gate() {
+    let win_ci = read_repo_file("scripts/win-ci.cmd");
+    let host = read_repo_file("scripts/win-host-ci.sh");
+    let staging = read_repo_file("scripts/win-ci-ffmpeg-tools.ps1");
+    let verifier = read_repo_file("core/crates/solstone-core-distribution/src/ffmpeg_windows.rs");
+
+    for mode in ["-Mode stage", "-Mode assert"] {
+        assert_eq!(
+            win_ci
+                .matches(&format!("scripts\\win-ci-ffmpeg-tools.ps1 {mode}"))
+                .count(),
+            1,
+            "win-ci must invoke the toolchain staging script once in {mode}"
+        );
+    }
+    assert_eq!(
+        staging
+            .matches("JOURNAL_WIN_CI_FFMPEG_TOOLS=executed/pass")
+            .count(),
+        1,
+        "the staging script must emit one canonical pass marker"
+    );
+    assert_eq!(
+        host.lines()
+            .filter(|line| *line == "require_platform_receipt JOURNAL_WIN_CI_FFMPEG_TOOLS")
+            .count(),
+        1,
+        "the driver must require the toolchain pass marker exactly once"
+    );
+    assert_eq!(
+        host.lines()
+            .filter(|line| line.trim() == "sh \"$script_dir/sync-win-ffmpeg-tools.sh\"; then")
+            .count(),
+        1,
+        "the driver must place the pinned archives before the gate runs"
+    );
+
+    // What the verifier admits and what the driver requires are one set, read
+    // from each owner rather than restated here.
+    // Sorted rather than compared in declaration order: reordering either list
+    // is harmless, and a check that reddens on it spends attention it did not
+    // need to. ⚠ Sorted vectors rather than sets, so a key duplicated on one
+    // side still fails.
+    let mut admitted = admitted_archive_keys(&verifier);
+    let mut required = required_archive_keys(&host);
+    assert!(!admitted.is_empty(), "the verifier admits no archives");
+    admitted.sort();
+    required.sort();
+    assert_eq!(
+        admitted, required,
+        "every archive the verifier admits must be an identity the driver requires, and no other"
+    );
+    assert_eq!(
+        staging
+            .matches("\"JOURNAL_WIN_CI_FFMPEG_TOOL_\"+$tool.key.ToUpperInvariant()")
+            .count(),
+        1,
+        "the staging script must emit the archive identities from one place"
+    );
+
+    // Ordering: the toolchain is staged and proved before anything the gate
+    // compiles, and long before the final acknowledgement.
+    let stage = win_ci
+        .find("scripts\\win-ci-ffmpeg-tools.ps1 -Mode stage")
+        .expect("win-ci stages the toolchain");
+    let assert_mode = win_ci
+        .find("scripts\\win-ci-ffmpeg-tools.ps1 -Mode assert")
+        .expect("win-ci proves the staged toolchain");
+    let first_receipt = win_ci
+        .find("call :run_platform_receipt")
+        .expect("win-ci runs launch-preparation receipts");
+    let acknowledgement = win_ci
+        .find("=== JOURNAL_WIN_CI_OK:")
+        .expect("win-ci emits its final acknowledgement");
+    assert!(stage < assert_mode);
+    assert!(assert_mode < first_receipt);
+    assert!(first_receipt < acknowledgement);
+}
+
 #[test]
 fn native_launch_preparation_receipts_are_source_bound_and_exactly_once() {
     let win_ci = read_repo_file("scripts/win-ci.cmd");
