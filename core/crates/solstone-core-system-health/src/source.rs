@@ -126,12 +126,13 @@ pub fn day_is_complete_with(
             return Ok(false);
         }
         let coverage = coverage.map_err(|error| HealthError::Source(error.clone()))?;
-        // A day is complete when its raw markers are published and nothing is
-        // still owed on it.  ⛔ Not `is_current()`: every day older than the
-        // adoption boundary has no daily-unit records at all and therefore reads
-        // `HistoricalUnverified`, which is the correct resting state for untouched
-        // history and not a backlog entry.
-        Ok(!coverage.state.is_owed())
+        // ⚠ `is_current()`, deliberately.  "Complete" here means CERTIFIED, and
+        // the complete path reports a day with hardcoded zeros without consulting
+        // the health source at all -- only defensible for a day that has accepted
+        // unit records.  Admitting unverified history here makes an unreadable
+        // health log read as a clean day.  Keeping unverified history out of the
+        // BACKLOG COUNTS is a different question, answered where those are taken.
+        Ok(coverage.state.is_current())
     }
 }
 

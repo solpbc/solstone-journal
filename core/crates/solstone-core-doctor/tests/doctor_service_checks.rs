@@ -351,6 +351,7 @@ fn run_poison_battery_child(root: &Path) {
             ("service_running", Status::Skip),
             ("journal_sync", Status::Ok),
             ("journal_caught_up", Status::Ok),
+            ("journal_sources_readable", Status::Skip),
             ("task_pace", Status::Skip),
             ("brain", Status::Warn),
             ("capture_health", Status::Skip),
@@ -509,7 +510,7 @@ fn callosum_accepted_then_eof_without_status() {
 }
 
 #[test]
-fn service_running_accepted_silent_warns() {
+fn service_running_accepted_silent_cannot_tell() {
     let (mut context, _root) = context();
     install_linux_unit(&context);
     let script = context.home_dir.join("not-failed.sh");
@@ -528,8 +529,11 @@ fn service_running_accepted_silent_warns() {
         elapsed >= WIRE_STATUS_TIMEOUT,
         "silent service_running must wait out fetch, elapsed={elapsed:?}"
     );
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(row.detail, "service installed but not running");
+    // ⚠ Skip, not Warn. The socket exists and the connection was accepted, so
+    // something IS listening -- only no status frame arrived. Reporting "not
+    // running" about a live service is the defect this arm exists to remove.
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(row.detail, "couldn't get a status — took too long to answer");
     assert!(row.execution_error.is_none());
     assert!(!results_failed(&[row]));
 }
@@ -658,8 +662,11 @@ fn service_command_exit_still_terminates_descendants_holding_output_pipes() {
         !survived,
         "service command descendant held output pipes after its parent exited"
     );
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(row.detail, "service installed but not running");
+    // ⚠ Skip, not Warn. The socket exists and the connection was accepted, so
+    // something IS listening -- only no status frame arrived. Reporting "not
+    // running" about a live service is the defect this arm exists to remove.
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(row.detail, "couldn't get a status — took too long to answer");
     assert!(row.execution_error.is_none());
 }
 
@@ -719,8 +726,11 @@ fn service_timeout_terminates_the_owned_descendant_group() {
         !survived,
         "service probe descendant survived its owned process-group timeout"
     );
-    assert_eq!(row.status, Status::Warn);
-    assert_eq!(row.detail, "service installed but not running");
+    // ⚠ Skip, not Warn. The socket exists and the connection was accepted, so
+    // something IS listening -- only no status frame arrived. Reporting "not
+    // running" about a live service is the defect this arm exists to remove.
+    assert_eq!(row.status, Status::Skip);
+    assert_eq!(row.detail, "couldn't get a status — took too long to answer");
     assert!(row.execution_error.is_none());
 }
 
