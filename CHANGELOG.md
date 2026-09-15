@@ -44,6 +44,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - details your journal remembers about people could be updated without the passages behind them. those source passages now take priority, and a malformed memory entry stops the whole update before anyone's memory is partly changed.
 - support reports opened from an error now keep the page, error code, and recent error text from that failure, even if you move elsewhere before sending.
 - long or structured text sent to a local model now gets progressively shorter working copies if the model still says it is too large, instead of stopping after the first size error.
+
+## [2.0.3] - 2026-09-12
+
+### Fixed
+
 - on apple silicon, local transcription no longer gets turned away because available-memory readings dip below a fixed threshold.
 - journal health no longer reports false long gaps or places activity in the wrong hour when your local clock differs from utc.
 
@@ -64,7 +69,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on linux, text that is too long for a local model now gets a shorter working copy instead of stopping immediately. the original journal text stays intact, and work that still cannot fit reports why.
 - on apple silicon macs, local transcription can start when there is enough memory. the journal had treated the memory check as unavailable. transcription also follows your saved choice of where it runs.
 
-## [2.0.0] - 2026-08-18
+## [2.0.0] - 2026-09-10
 
 ### Changed
 

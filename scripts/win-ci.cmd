@@ -14,42 +14,7 @@
 setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
-:: The vendored FFmpeg build's `sh`/`make`-driven configure needs a POSIX
-:: shell, GNU make and an x86 assembler that this box does not carry ambiently
-:: (core\distribution\builder-inputs.toml's own comment: "the native host has
-:: MSVC, but deliberately does not carry MSYS2/GNU make, NASM ... as ambient
-:: build state"). `C:\sol\msys2-root\usr\bin` (the full msys2-base bin/, plus
-:: `make.exe`, matching [ffmpeg_windows_msys2_base] and [ffmpeg_windows_make])
-:: and `C:\sol\nasm-3.02` ([ffmpeg_windows_nasm]) are box-staged copies of
-:: those exact pinned inputs, sha256-verified against builder-inputs.toml at
-:: staging time. The directory shape matters: msys-2.0.dll resolves its own
-:: POSIX root (for `/tmp`, `/bin/sh` shebang lookups, etc.) from its own
-:: location two levels up, so the staged tree keeps the real
-:: `<root>\usr\bin\` layout (plus a `<root>\bin` junction and a `<root>\tmp`
-:: directory) rather than a flat bin-only folder -- a flat folder measurably
-:: fails FFmpeg's own configure sanity check ("bad interpreter: No such file
-:: or directory" resolving a generated script's `#!/bin/sh`).
-::
-:: `bindgen` also needs libclang to read FFmpeg's headers once the static libs
-:: are built; `C:\sol\llvm\bin\libclang.dll` is the `bin/libclang.dll` member
-:: of the pinned `[ffmpeg_windows_llvm]` archive (sha256-verified against
-:: builder-inputs.toml at staging time), not a full LLVM install -- bindgen
-:: only needs the one shared library, and its own `LIBCLANG_PATH` env var
-:: (below) is how it's told where to find it.
-::
-:: None of this is wired into `build.rs` as the controlled fetch-and-mount
-:: driver builder-inputs.toml's own comments describe (nothing there
-:: references "nasm", "make", "msys2", or "libclang"/"LIBCLANG" at all) --
-:: this PATH/env addition is the interim substitute until that driver exists.
-:: Nothing here ships on this box's persistent PATH or environment (only
-:: `Git\cmd` does; registry env changes made through an SSH session are not
-:: picked up by a later SSH session on this box -- see windows-build-box.md's
-:: signing gotcha 5 for the same finding with `setx`), so a cache-miss FFmpeg
-:: vendor build fails "Failed to find 'sh.exe'" / "nasm not found" / "make ...
-:: program not found" / "Unable to find libclang" unless this run supplies
-:: all four itself.
-set "PATH=%USERPROFILE%\.cargo\bin;C:\sol\msys2-root\usr\bin;C:\sol\nasm-3.02;%PATH%"
-set "LIBCLANG_PATH=C:\sol\llvm\bin"
+set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
 
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
@@ -73,6 +38,38 @@ set "VSINSTALL="
 for /f "usebackq tokens=*" %%i in (`"%VSWHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set "VSINSTALL=%%i"
 if not defined VSINSTALL ( echo ERROR: VS Build Tools with VC.Tools.x86.x64 not found & exit /b 1 )
 call "%VSINSTALL%\VC\Auxiliary\Build\vcvarsall.bat" x64 >nul || ( echo ERROR: vcvarsall failed & exit /b 1 )
+
+:: The vendored FFmpeg build's `sh`/`make`-driven configure needs a POSIX
+:: shell, GNU make and an x86 assembler, and `bindgen` needs libclang to read
+:: FFmpeg's headers; this box carries none of the four ambiently
+:: (core\distribution\builder-inputs.toml's own comment: "the native host has
+:: MSVC, but deliberately does not carry MSYS2/GNU make, NASM ... as ambient
+:: build state"). Exactly one step of this gate compiles FFmpeg -- the
+:: runtime-component receipt near the end -- so a cache-miss run without them
+:: fails after the whole gate has already run. Staging happens here instead.
+::
+:: The four pinned archives are fetched and sha256-verified on the driver host
+:: by `solstone-distribution acquire ffmpeg-windows-tools` and transferred to
+:: this box, the same inputs the controlled producer carries; acquisition does
+:: not run on Windows. The bootstrap below re-verifies them against this
+:: checkout's own pin table, stages them the way
+:: core\distribution\windows-produce.ps1 does, and proves in this run's own
+:: environment that sh, make and nasm resolve to the staged copies while cl and
+:: link still resolve to the host toolchain. Nothing is
+:: written to this box's persistent PATH: registry environment changes made
+:: through an SSH session are not picked up by a later SSH session here.
+echo === cargo build --locked (distribution recorder for the FFmpeg toolchain bootstrap) ===
+cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-distribution --bin solstone-distribution || exit /b 1
+:: This default must agree with scripts/sync-win-ffmpeg-tools.sh's
+:: WIN_FFMPEG_INPUT_ROOT, which is where the driver places the archives.
+if not defined JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT set "JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT=%USERPROFILE%\sj-ffmpeg-tools"
+if not defined JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT set "JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT=%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%\inputs"
+set "JOURNAL_WIN_CI_FFMPEG_ENV=core\target\journal-win-ci-ffmpeg-environment-%RANDOM%%RANDOM%.cmd"
+echo === staging the pinned FFmpeg build toolchain ===
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode stage -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" -InputRoot "%JOURNAL_WIN_CI_FFMPEG_INPUT_ROOT%" -Recorder "%CD%\core\target\debug\solstone-distribution.exe" -EnvironmentScript "%CD%\%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: pinned FFmpeg build toolchain staging failed & exit /b 1 )
+call "%JOURNAL_WIN_CI_FFMPEG_ENV%" || ( echo ERROR: staged FFmpeg build toolchain environment could not be applied & exit /b 1 )
+del /q "%JOURNAL_WIN_CI_FFMPEG_ENV%" >nul 2>&1
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win-ci-ffmpeg-tools.ps1 -Mode assert -RepositoryRoot "%CD%" -ToolsRoot "%JOURNAL_WIN_CI_FFMPEG_TOOLS_ROOT%" || ( echo ERROR: staged FFmpeg build toolchain did not verify in this run's environment & exit /b 1 )
 
 echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
