@@ -351,12 +351,7 @@ fn synthetic_decode_covers_pipeline_contracts_without_native_media() {
         },
     );
 
-    run_decoded(
-        options,
-        &factory,
-        decoded(&[1, 2, 3]),
-    )
-    .expect("synthetic pipeline succeeds");
+    run_decoded(options, &factory, decoded(&[1, 2, 3])).expect("synthetic pipeline succeeds");
 
     let rows = test.rows();
     assert_eq!(rows[0]["_solstone_processing"]["state"], "analyzed");
@@ -828,12 +823,7 @@ fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
     )]);
     let mut initial_options = test.options(false, Vec::new());
     initial_options.category_overrides = code_overrides.clone();
-    run_decoded(
-        initial_options,
-        &initial,
-        decoded(&[1, 2, 3]),
-    )
-    .expect("initial artifact");
+    run_decoded(initial_options, &initial, decoded(&[1, 2, 3])).expect("initial artifact");
 
     let mut rows = test.rows();
     let mut header = rows.remove(0);
@@ -855,12 +845,7 @@ fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
     let reentry = ScriptedFactory::new(default_response);
     let mut reentry_options = test.options(false, Vec::new());
     reentry_options.category_overrides = code_overrides.clone();
-    run_decoded(
-        reentry_options,
-        &reentry,
-        decoded(&[1, 2, 3]),
-    )
-    .expect("reentry fills gaps");
+    run_decoded(reentry_options, &reentry, decoded(&[1, 2, 3])).expect("reentry fills gaps");
     let requests = reentry.requests();
     assert!(
         phase_requests(&requests, "observe.describe.frame")
@@ -890,8 +875,7 @@ fn synthetic_decode_reenters_gaps_without_rewriting_clean_raw_rows() {
     let redo = ScriptedFactory::new(default_response);
     let mut redo_options = test.options(true, Vec::new());
     redo_options.category_overrides = code_overrides;
-    run_decoded(redo_options, &redo, decoded(&[1, 2, 3]))
-        .expect("redo starts a fresh run");
+    run_decoded(redo_options, &redo, decoded(&[1, 2, 3])).expect("redo starts a fresh run");
     assert_eq!(
         phase_requests(&redo.requests(), "observe.describe.frame").len(),
         3
