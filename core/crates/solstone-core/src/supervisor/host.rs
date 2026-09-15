@@ -229,16 +229,25 @@ fn format_lifecycle_recovery_copy(
         #[cfg(not(target_os = "macos"))]
         let stop = "systemctl --user stop solstone.service";
         copy.push_str(&format!(
-            "\nthis can be a record left behind by an earlier start. to clear it, stop the \
-             journal, set that record aside, and start again:\n\
+            "\nthis can be a record left behind by an earlier start. to clear it, open a \
+             terminal and run these three lines:\n\
              \x20   {stop}\n\
              \x20   mv {} {}.set-aside\n\
              \x20   journal start\n",
             records.display(),
             records.display()
         ));
+    } else {
+        // ⚠ Every sibling refusal in this family ends in something to try. These
+        // three arms have no ledger to clear, so without this they would be the
+        // only ones that hand the owner nothing at all.
+        copy.push_str("\ntry starting it again.\n");
     }
-    copy.push_str("\nyour journal itself is untouched. none of this holds your memories.\n");
+    // ⛔ NOT "your journal itself is untouched" -- the sibling copy can say that
+    // because it removes files OUTSIDE the journal. This one names a path inside
+    // it, so that sentence would be read literally and be false. What is true,
+    // and what the owner is actually asking, is the second half.
+    copy.push_str("\nnone of this holds your memories.\n");
     copy
 }
 
@@ -874,5 +883,82 @@ mod tests {
                 .1;
             assert_eq!(after_details, before_details);
         }
+    }
+
+    /// ⛔ A FALSIFICATION test for the refusal copy, not a snapshot of it.
+    ///
+    /// Two properties, each of which an ordinary edit breaks silently:
+    ///   1. every variant hands the owner something to try. The recovery block
+    ///      is gated to the one cause it actually fixes, so without a fallback
+    ///      the other three end on a bare diagnosis -- the only refusals in
+    ///      this family that would.
+    ///   2. only that gated cause names the ledger path, and no arm claims the
+    ///      journal is "untouched" while printing a path inside it.
+    #[test]
+    fn every_lifecycle_recovery_copy_ends_in_something_the_owner_can_do() {
+        use super::runtime::ParentLossCoordinatorBootstrapFailure as Failure;
+
+        const ALL: [Failure; 4] = [
+            Failure::Launch,
+            Failure::IdentityEstablishment,
+            Failure::InitialAdmissionHandshake,
+            Failure::CoordinatorRetirementUnverified,
+        ];
+        // ⛔ Do not collapse this to `_ => {}`. It exists only so that adding a
+        // fifth variant fails to COMPILE until it is added to ALL above, rather
+        // than shipping an arm whose owner copy nobody ever read.
+        match ALL[0] {
+            Failure::Launch
+            | Failure::IdentityEstablishment
+            | Failure::InitialAdmissionHandshake
+            | Failure::CoordinatorRetirementUnverified => {}
+        }
+
+        let journal = std::path::Path::new("/home/owner/journal");
+        for reason in ALL {
+            let copy = super::format_lifecycle_recovery_copy(journal, reason);
+
+            assert!(
+                copy.contains("journal start") || copy.contains("try starting it again"),
+                "{reason:?} leaves the owner with nothing to try:\n{copy}"
+            );
+            assert!(
+                !copy.contains("untouched"),
+                "{reason:?} calls the journal untouched while naming a path inside it:\n{copy}"
+            );
+
+            assert_eq!(
+                copy.contains("health/parent-loss"),
+                reason == Failure::InitialAdmissionHandshake,
+                "{reason:?} may name the parent-loss records only if it is the cause that reads \
+                 them -- every other arm sends the owner to move a directory that is not the \
+                 problem:\n{copy}"
+            );
+        }
+    }
+
+    /// The stop has to precede the `mv`. This refusal exits TEMPFAIL under a
+    /// `Restart=on-failure` unit, so a set-aside performed while the service is
+    /// still cycling is re-created by the next start before the owner finishes
+    /// typing -- and the copy reads as simply not working.
+    #[test]
+    fn admission_recovery_copy_stops_the_service_before_setting_the_record_aside() {
+        let copy = super::format_lifecycle_recovery_copy(
+            std::path::Path::new("/home/owner/journal"),
+            super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
+        );
+
+        let stop = copy
+            .find("stop solstone.service")
+            .or_else(|| copy.find("bootout"))
+            .expect("the recovery copy names a platform stop command");
+        let set_aside = copy
+            .find("mv ")
+            .expect("the recovery copy names the set-aside");
+
+        assert!(
+            stop < set_aside,
+            "the stop must come before the set-aside:\n{copy}"
+        );
     }
 }
