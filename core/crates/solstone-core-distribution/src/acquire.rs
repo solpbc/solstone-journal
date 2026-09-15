@@ -883,6 +883,14 @@ mod tests {
         assert_eq!(calls.get(), 3);
     }
 
+    /// Schema shape only.
+    ///
+    /// ⛔ No pinned version, filename, URL, digest or byte size is asserted
+    /// here. Those are build inputs owned by whoever moves a pin, and every
+    /// one of them is verified for real at fetch time against this same table
+    /// — `fetch_verified` refuses bytes whose digest or length disagrees. A
+    /// test that keeps its own copy of a pin adds no protection and fires only
+    /// when someone legitimately bumps one.
     #[test]
     fn builder_inputs_parse_from_the_committed_file() {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -891,56 +899,33 @@ mod tests {
             .expect("repo")
             .to_path_buf();
         let inputs = load_builder_inputs(&root).expect("committed builder-inputs");
-        assert_eq!(inputs.ffmpeg.sha256.len(), 64);
-        assert!(inputs.ffmpeg.url.starts_with("https://github.com/"));
         let ffmpeg_tools = windows_ffmpeg_toolchain_inputs(&root).expect("FFmpeg Windows tools");
-        assert_eq!(ffmpeg_tools.msys2_base.version, "2026-06-11");
-        assert_eq!(
-            ffmpeg_tools.msys2_base.filename,
-            "msys2-base-x86_64-20260611.tar.xz"
-        );
-        assert_eq!(ffmpeg_tools.make.version, "4.4.1-3");
-        assert_eq!(ffmpeg_tools.nasm.version, "3.02");
-        assert_eq!(ffmpeg_tools.llvm.version, "22.1.6");
+        for input in [
+            &inputs.ffmpeg,
+            &inputs.zig,
+            &inputs.cmake_windows_x86_64.input,
+            &inputs.python_windows_x86_64.input,
+            &inputs.rust_std_aarch64_gnu,
+            &inputs.rust_std_aarch64_musl,
+            &inputs.rust_std_x86_64_musl,
+        ] {
+            assert!(!input.filename.is_empty());
+            assert!(input.url.starts_with("https://"));
+            assert_eq!(input.sha256.len(), 64);
+            assert_ne!(input.size, 0);
+        }
         for tool in [
             &ffmpeg_tools.msys2_base,
             &ffmpeg_tools.make,
             &ffmpeg_tools.nasm,
             &ffmpeg_tools.llvm,
         ] {
+            assert!(!tool.version.is_empty());
+            assert!(!tool.filename.is_empty());
             assert!(tool.url.starts_with("https://"));
             assert_eq!(tool.sha256.len(), 64);
             assert_ne!(tool.size, 0);
         }
-        assert!(inputs.zig.url.starts_with("https://ziglang.org/"));
-        assert_eq!(inputs.cmake_windows_x86_64.version, "3.31.12");
-        assert_eq!(
-            inputs.cmake_windows_x86_64.input.filename,
-            "cmake-3.31.12-windows-x86_64.zip"
-        );
-        assert_eq!(
-            inputs.cmake_windows_x86_64.input.url,
-            "https://cmake.org/files/v3.31/cmake-3.31.12-windows-x86_64.zip"
-        );
-        assert_eq!(
-            inputs.cmake_windows_x86_64.input.sha256,
-            "0c4baa40f28b3f8225eb3fdf6946c987b4fe901403b4eaf2fbbd9378100aaa0c"
-        );
-        assert_eq!(inputs.cmake_windows_x86_64.input.size, 46_666_397);
-        assert_eq!(inputs.python_windows_x86_64.version, "3.12.10");
-        assert_eq!(
-            inputs.python_windows_x86_64.input.filename,
-            "python-3.12.10-embed-amd64.zip"
-        );
-        assert_eq!(
-            inputs.python_windows_x86_64.input.url,
-            "https://www.python.org/ftp/python/3.12.10/python-3.12.10-embed-amd64.zip"
-        );
-        assert_eq!(
-            inputs.python_windows_x86_64.input.sha256,
-            "4acbed6dd1c744b0376e3b1cf57ce906f9dc9e95e68824584c8099a63025a3c3"
-        );
-        assert_eq!(inputs.python_windows_x86_64.input.size, 11_133_606);
     }
 
     #[test]

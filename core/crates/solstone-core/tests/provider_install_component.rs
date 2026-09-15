@@ -11,7 +11,10 @@ use solstone_core_local::install::{lease, status};
 
 const HOLDER: &str = env!("CARGO_BIN_EXE_solstone-core-install-lease-holder");
 const CORE: &str = env!("CARGO_BIN_EXE_solstone-core");
-const EXPECTED_WESPEAKER: &str = "5ef208a9da1453335308a6b6f4e6dfbd7e183a38b604de0a57664f45d257fe94";
+// ⛔ Not a copy of the digest: repinning the model would then mean editing this
+// test too. What the asset gate owes is that it names the digest it expects,
+// whatever that pin currently is.
+use solstone_core_transcribe::WESPEAKER_RESNET34_SHA256 as EXPECTED_WESPEAKER;
 
 fn wait_for_file(path: &Path) {
     let deadline = Instant::now() + Duration::from_secs(5);

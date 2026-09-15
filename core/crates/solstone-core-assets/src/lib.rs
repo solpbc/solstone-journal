@@ -1233,15 +1233,19 @@ mod tests {
             .iter()
             .filter(|artifact| artifact.unit == "parakeet-coreml")
             .collect::<Vec<_>>();
-        assert_eq!(rows.len(), 23);
+        assert!(!rows.is_empty());
 
+        // The invariants are uniqueness and a single shared revision across the
+        // unit. ⛔ Not the row count and not the revision itself: both move
+        // whenever the model is legitimately repinned.
         let filenames = rows
             .iter()
             .map(|artifact| artifact.filename)
             .collect::<BTreeSet<_>>();
-        assert_eq!(filenames.len(), 23);
+        assert_eq!(filenames.len(), rows.len());
+        let revision = rows[0].version;
         for artifact in rows {
-            assert_eq!(artifact.version, "aed02740059203c4a87495924f685de3722ae9ce");
+            assert_eq!(artifact.version, revision);
             assert_eq!(artifact.platform, Some(Platform::MacosArm64));
             assert_eq!(artifact.artifact_key, None);
             assert_eq!(artifact.backend, None);

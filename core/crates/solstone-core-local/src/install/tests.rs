@@ -2110,11 +2110,12 @@ fn registry_binds_existing_pins_and_the_parakeet_model_pin() {
         }
     }
 
-    let expected = "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757";
+    // ⛔ No copy of the digest: asserting `pins::PARAKEET_MODEL.3` equals a
+    // literal only restates the pin. What the resolver owes is that it returns
+    // exactly that pin's row.
     let row = resolve("parakeet-model", None, None);
     assert_eq!(row.len(), 1);
-    assert_eq!(row[0].sha256, expected);
-    assert_eq!(pins::PARAKEET_MODEL.3, expected);
+    assert_eq!(row[0].sha256, pins::PARAKEET_MODEL.3);
 
     for (key, _, _, _) in pins::CUDA_ARTIFACTS {
         assert_eq!(
