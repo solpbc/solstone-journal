@@ -350,7 +350,7 @@ fn storage_ops_body_diagnostics_and_reprocess_unreachable_are_preserved() {
     assert_eq!(reachable.stdout, b"");
     assert_eq!(
         text(reachable.stderr),
-        "supervisor not reachable - start it (journal start), then retry\n"
+        "supervisor not reachable - start it (journal up), then retry\n"
     );
 }
 

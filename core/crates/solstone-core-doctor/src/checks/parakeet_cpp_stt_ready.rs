@@ -7,7 +7,9 @@ use crate::{
 };
 const INSTALL: &str =
     "parakeet-cpp artifacts are not installed — fetch them with: journal install-provider parakeet";
-const START: &str = "parakeet-server is not reachable — start the journal service: journal start";
+// ⛔ This named the service and then gave the FOREGROUND command, in one
+// sentence. `journal up` is the documented alias for `journal service start`.
+const START: &str = "parakeet-server is not reachable — start the journal service: journal up";
 pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
     if context.platform != crate::vocabulary::Platform::Linux {
         return Ok(make_result(

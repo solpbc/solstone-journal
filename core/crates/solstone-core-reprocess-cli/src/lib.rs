@@ -14,7 +14,11 @@ use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_segment::{PathOrDay, day_path, iter_segments, touch_stream_health_marker};
 use solstone_core_system_health::{FilesystemSegmentSource, day_is_complete, scan_day};
 
-const UNREACHABLE_MESSAGE: &str = "supervisor not reachable - start it (journal start), then retry";
+// ⛔ `journal up`, not `journal start`. `journal start` runs the supervisor
+// in the FOREGROUND (SKILL.md: "starts the supervisor runtime only"), so an
+// owner who follows it gets a process tied to that terminal and loses intake
+// when they close it. `journal up` is the alias for `journal service start`.
+const UNREACHABLE_MESSAGE: &str = "supervisor not reachable - start it (journal up), then retry";
 const THROUGH_REQUIRES_FROM_SCRATCH: &str = "--through requires --from-scratch";
 const THROUGH_BEFORE_START: &str = "--through must be on or after the start day";
 const HELP_FIXTURE: &str =
