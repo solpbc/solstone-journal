@@ -206,68 +206,84 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
 
 /// Owner copy for a start that could not establish its lifecycle authority.
 ///
-/// ⛔ The recovery block is gated to the ONE cause it actually fixes. Only
-/// `InitialAdmissionHandshake` reads the parent-loss records; the other three
-/// are launch, identity and stop-confirmation failures that never touch them,
-/// and offering the same `mv` for those leaves the owner re-running into an
-/// identical error with a stray directory beside their journal.
-///
-/// ⚠ The two arms close differently on purpose. "untouched" is only true where
-/// nothing inside the journal was named, and the gated arm prints a path under
-/// `health/` -- there the reassurance has to be about that record instead.
+/// Shape follows the sibling refusals: headline, then what to do, then the
+/// reassurance, and the technical `details:` label LAST
+/// (`installation_context::installation_recovery_copy`,
+/// `system_health::sync_copy`). The owner's second line has to be help.
 fn format_lifecycle_recovery_copy(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
 ) -> String {
-    let mut copy = format!("this start could not continue.\n\ndetails: {reason}\n");
-    if matches!(
+    let records = journal.join("health/parent-loss");
+    // ⛔ The variant is necessary but NOT sufficient, on both halves.
+    //
+    // Only `InitialAdmissionHandshake` reads these records; offering the same
+    // `mv` for a launch, identity or stop-confirmation failure leaves the owner
+    // re-running into an identical error with a stray directory beside their
+    // journal.
+    //
+    // ⚠ And the walkthrough is only honest if the records are actually there.
+    // Nothing downstream checks, so without `exists` an owner whose start
+    // failed for some other reason is handed `mv: No such file or directory`
+    // on top of a journal that will not start.
+    let offer_recovery = matches!(
         reason,
         runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
-    ) {
-        let records = journal.join("health/parent-loss");
+    ) && records.exists();
+
+    let mut copy = String::from("this start could not continue.\n");
+
+    if offer_recovery {
         // ⚠ A fixed `.set-aside` destination silently NESTS on a second run:
         // once `parent-loss.set-aside` exists, `mv parent-loss
         // parent-loss.set-aside` puts the record *inside* it and reports
-        // nothing. Stamping the destination keeps every refusal's third line
-        // new, so a repeat either works or fails out loud.
+        // nothing. Stamping it keeps every refusal's destination new, so a
+        // repeat either works or fails out loud.
         let set_aside = format!(
             "{}.set-aside-{}",
             records.display(),
             chrono::Local::now().format("%Y%m%d-%H%M%S")
         );
         // ⚠ The stop comes first and is not optional: this refusal exits
-        // TEMPFAIL and the installed unit restarts on failure, so without it the
-        // service is starting again every few seconds while the owner types.
-        #[cfg(target_os = "macos")]
-        let stop = "launchctl bootout gui/$(id -u)/org.solpbc.solstone";
-        #[cfg(not(target_os = "macos"))]
-        let stop = "systemctl --user stop solstone.service";
-        // ⛔ `journal up`, never `journal start`. `journal start` runs the
-        // supervisor in the FOREGROUND and does not touch the service, so it
-        // would leave the owner holding a process tied to that terminal with
-        // the unit line 1 just stopped still down. `journal up` is the alias
-        // for `journal service start`, and the inverse of the stop above.
+        // TEMPFAIL and the installed unit restarts on failure, so without it
+        // the service is starting again every few seconds while the owner
+        // types.
+        //
+        // ⛔ `journal down` / `journal up` -- not the raw platform commands,
+        // and never `journal start`. Worst first: `launchctl bootout` UNLOADS
+        // the job while `journal up` is `launchctl kickstart` (`service.rs`),
+        // which then cannot find it, so that pair simply did not work on
+        // macOS. `journal start` runs the supervisor in the FOREGROUND and
+        // never touches the service, leaving a process tied to the owner's
+        // terminal with the unit still down. And these two are the documented
+        // owner-facing aliases for service stop/start, identical on both
+        // platforms, so the recipe needs no shell substitution and no cfg.
         copy.push_str(&format!(
             "\nan earlier start may have left a record behind. to move it aside, open a \
              terminal and run these three lines:\n\
-             \x20   {stop}\n\
+             \x20   journal down\n\
              \x20   mv {} {set_aside}\n\
-             \x20   journal up\n\
-             \nnone of this holds your memories.\n",
+             \x20   journal up\n",
             records.display()
         ));
     } else {
-        // ⚠ This is the settled close for the family --
+        // ⚠ The settled close for this family --
         // ADMISSION_WAIT_{TERMINAL,ACTIVE,UNVERIFIABLE}_COPY all end on exactly
         // "wait a moment, then try again." The wait is load-bearing on
         // `CoordinatorRetirementUnverified`, where retrying at once re-enters
         // the race that produced the refusal.
-        //
-        // ⛔ No demonstrative in the closing line here: these arms print no
-        // path, so "none of this holds your memories" would point at nothing
-        // and its most available reading is the opposite of the intent.
-        copy.push_str("\nwait a moment, then try again.\n\nyour journal is untouched.\n");
+        copy.push_str("\nwait a moment, then try again.\n");
     }
+
+    // ⛔ "your memories", NOT "your journal is untouched". Every one of these
+    // paths may have written bookkeeping under `health/`, and
+    // `CoordinatorRetirementUnverified` is returned precisely when a helper
+    // that may still be RUNNING could not be confirmed stopped -- so the one
+    // arm named for its lack of confirmation is the one that would be
+    // asserting a confirmed fact about the journal. Memories are what the
+    // owner is actually asking about, and the claim is true on all four arms.
+    copy.push_str("\nyour memories are untouched.\n");
+    copy.push_str(&format!("\ndetails: {reason}\n"));
     copy
 }
 
@@ -907,15 +923,16 @@ mod tests {
 
     /// ⛔ A FALSIFICATION test for the refusal copy, not a snapshot of it.
     ///
-    /// Four properties, each of which an ordinary edit breaks silently:
+    /// The properties, each of which an ordinary edit breaks silently:
     ///   1. every variant hands the owner something to try. The recovery block
-    ///      is gated to the one cause it actually fixes, so without a fallback
-    ///      the other three end on a bare diagnosis -- the only refusals in
-    ///      this family that would.
+    ///      is gated, so without a fallback the other arms would end on a bare
+    ///      diagnosis -- the only refusals in this family that would.
     ///   2. no arm sends the owner to `journal start`, which starts the
     ///      supervisor in the foreground rather than the service.
     ///   3. only the gated cause names the ledger path.
-    ///   4. "untouched" appears only where no path inside the journal does.
+    ///   4. every arm closes on "your memories", never on a claim that the
+    ///      journal is untouched.
+    ///   5. `details:` stays last, as the sibling refusals have it.
     #[test]
     fn every_lifecycle_recovery_copy_ends_in_something_the_owner_can_do() {
         use super::runtime::ParentLossCoordinatorBootstrapFailure as Failure;
@@ -936,7 +953,10 @@ mod tests {
             | Failure::CoordinatorRetirementUnverified => {}
         }
 
-        let journal = std::path::Path::new("/home/owner/journal");
+        let home = tempdir().expect("tempdir");
+        let journal = home.path();
+        std::fs::create_dir_all(journal.join("health/parent-loss")).expect("records");
+
         for reason in ALL {
             let copy = super::format_lifecycle_recovery_copy(journal, reason);
             let gated = reason == Failure::InitialAdmissionHandshake;
@@ -961,16 +981,48 @@ mod tests {
                  the problem:\n{copy}"
             );
 
-            // ⚠ The asymmetry is the point. Claiming the journal is untouched
-            // while printing a path under `health/` is read against the `mv`
-            // directly above it, and is false there.
-            assert_eq!(
-                copy.contains("untouched"),
-                !gated,
-                "{reason:?} must reassure about the record it named, not about the journal it \
-                 just told the owner to reach into:\n{copy}"
+            // ⚠ `CoordinatorRetirementUnverified` is returned when a helper
+            // that may still be RUNNING could not be confirmed stopped, so an
+            // "untouched" claim is exactly what that arm cannot make. The
+            // reassurance has to be about memories on every arm.
+            assert!(
+                copy.contains("your memories are untouched."),
+                "{reason:?} must close on the owner's memories:\n{copy}"
+            );
+            assert!(
+                !copy.contains("your journal is untouched"),
+                "{reason:?} asserts a confirmed fact about the journal that these paths cannot \
+                 confirm:\n{copy}"
+            );
+
+            let details = copy.find("details:").expect("every arm carries details");
+            assert!(
+                copy[details..].trim_end().lines().count() == 1,
+                "details: is the last line, as the sibling refusals have it:\n{copy}"
             );
         }
+    }
+
+    /// ⚠ The variant alone does not mean the records are there. Nothing
+    /// downstream checks, so an unconditioned walkthrough hands an owner whose
+    /// start failed for another reason `mv: No such file or directory` on top
+    /// of a journal that will not start.
+    #[test]
+    fn recovery_is_not_offered_when_the_records_are_not_there() {
+        let home = tempdir().expect("tempdir");
+        let copy = super::format_lifecycle_recovery_copy(
+            home.path(),
+            super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
+        );
+
+        assert!(
+            !copy.contains("mv "),
+            "the walkthrough was offered for records that are not there:\n{copy}"
+        );
+        assert!(
+            copy.contains("wait a moment, then try again."),
+            "an owner with no records to move still needs a next step:\n{copy}"
+        );
     }
 
     /// The stop has to precede the `mv`. This refusal exits TEMPFAIL under a
@@ -979,15 +1031,16 @@ mod tests {
     /// typing -- and the copy reads as simply not working.
     #[test]
     fn admission_recovery_copy_stops_the_service_before_setting_the_record_aside() {
+        let home = tempdir().expect("tempdir");
+        std::fs::create_dir_all(home.path().join("health/parent-loss")).expect("records");
         let copy = super::format_lifecycle_recovery_copy(
-            std::path::Path::new("/home/owner/journal"),
+            home.path(),
             super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
         );
 
         let stop = copy
-            .find("stop solstone.service")
-            .or_else(|| copy.find("bootout"))
-            .expect("the recovery copy names a platform stop command");
+            .find("journal down")
+            .expect("the recovery copy names the owner-facing stop");
         let set_aside = copy
             .find("mv ")
             .expect("the recovery copy names the set-aside");
@@ -1004,8 +1057,10 @@ mod tests {
     /// somewhere new and a repeat cannot nest.
     #[test]
     fn admission_recovery_set_aside_destination_cannot_nest_on_a_second_run() {
+        let home = tempdir().expect("tempdir");
+        std::fs::create_dir_all(home.path().join("health/parent-loss")).expect("records");
         let copy = super::format_lifecycle_recovery_copy(
-            std::path::Path::new("/home/owner/journal"),
+            home.path(),
             super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
         );
 

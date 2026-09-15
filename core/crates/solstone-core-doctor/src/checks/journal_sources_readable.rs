@@ -11,7 +11,7 @@
 
 use crate::{
     context::CheckContext,
-    vocabulary::{Check, RunnerResult, Status, make_result},
+    vocabulary::{Check, RunnerResult, Status, make_result, truncate},
 };
 use serde_json::Value;
 
@@ -109,14 +109,23 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         })
         && age.num_hours() > MAX_AGE_HOURS
     {
+        // ⛔ Warn, not Skip. `output.rs` renders only Fail and Warn without
+        // `--verbose`, so a Skip here is invisible on a plain `journal doctor`
+        // -- and stale statistics are the one cannot-tell that means this
+        // check has quietly STOPPED protecting the owner, which is the exact
+        // failure class it was added for. `journal_caught_up` routes its own
+        // cannot-tell the same way.
+        //
+        // ⚠ The action does not promise that re-running doctor refreshes
+        // these; nothing an owner types does. The daily lifecycle writes them.
         return Ok(make_result(
             check,
-            Status::Skip,
+            Status::Warn,
             format!(
                 "couldn't check — the statistics are {} hours old",
                 age.num_hours()
             ),
-            None::<String>,
+            Some("the journal refreshes these daily; check the health logs if this persists"),
         ));
     }
 
@@ -129,29 +138,38 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            "no unreadable days recorded",
+            "the last scan found no unreadable days",
             None::<String>,
         ));
     }
 
     let mut parts = Vec::new();
+    // ⛔ Tracks whether the message actually NAMED a file. The fold-failed
+    // branch never does, and an `evidence_unreadable_days` cause can be a
+    // pathless validation error, so a fix line that says "the file named
+    // above" is round 1's defect moved one hop: it points at something the
+    // owner cannot see.
+    let mut named_a_file = false;
     if !unreadable.is_empty() {
         // Carry the cause.  ⛔ Do not send the owner elsewhere for a reason this
         // line is already holding: the verbose flag unfilters ok and skipped
         // rows, it does not surface a per-day reason.
         let mut line = format!(
-            "{} day(s) hold a file the journal cannot read ({})",
+            "{} day(s) hold a file that couldn't be read ({})",
             unreadable.len(),
             listed(&unreadable)
         );
+        // ⚠ `cause` is an internal error string of unbounded length. Bound it
+        // the way every sibling check bounds owner-visible detail.
         if let Some(cause) = first_cause(document.get("evidence_unreadable_days")) {
-            line.push_str(&format!(": {cause}"));
+            line.push_str(&format!(": {}", truncate(&cause, 400)));
+            named_a_file = true;
         }
         parts.push(line);
     }
     if !fold_failed.is_empty() {
         parts.push(format!(
-            "{} day(s) are missing part of their record ({})",
+            "{} day(s) didn't finish processing ({})",
             fold_failed.len(),
             listed(&fold_failed)
         ));
@@ -160,6 +178,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         check,
         Status::Warn,
         parts.join("; "),
-        Some("repair or remove the file named above, then run journal reprocess <day>"),
+        Some(if named_a_file {
+            "repair or remove the file named above, then run journal reprocess <day>"
+        } else {
+            "run journal reprocess <day>"
+        }),
     ))
 }

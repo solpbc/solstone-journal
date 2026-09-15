@@ -2786,3 +2786,80 @@ fn unretryable_transcribe_input_ac4_fixture_reports_backlog_view_complete() {
     assert_eq!(view.pending_days, 0);
     assert_eq!(view.stuck_days, 0);
 }
+
+/// ⛔ Stale statistics are a Warn, not a Skip.
+///
+/// `output::render` shows only Fail and Warn without `--verbose`, so a Skip
+/// here is invisible on a plain `journal doctor` -- and this is the one
+/// cannot-tell that means the check has quietly stopped protecting the owner,
+/// which is the failure class it exists to catch. `journal_caught_up` routes
+/// its own cannot-tell the same way.
+#[test]
+fn stale_statistics_reach_the_owner_instead_of_being_skipped() {
+    let context = fixture();
+    fs::create_dir_all(&context.journal_path).unwrap();
+    let generated = context.now - chrono::Duration::hours(48);
+    fs::write(
+        context.journal_path.join("stats.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "generated_at": generated.to_rfc3339(),
+            "evidence_unreadable_days": [],
+            "segment_fold_failed_days": [],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let result = crate::checks::journal_sources_readable::run(
+        &context,
+        registry::lookup(Battery::Journal, "journal_sources_readable")
+            .unwrap()
+            .check,
+    )
+    .unwrap();
+
+    assert_eq!(result.status, Status::Warn);
+    assert!(
+        result.fix.is_some(),
+        "a cannot-tell the owner can see needs something to do about it"
+    );
+}
+
+/// ⚠ The fix line may only say "the file named above" when a file was actually
+/// named. The fold-failed branch never names one, so an unconditional fix line
+/// points the owner at something they cannot see.
+#[test]
+fn the_fix_line_names_a_file_only_when_one_was_named() {
+    let context = fixture();
+    fs::create_dir_all(&context.journal_path).unwrap();
+    fs::write(
+        context.journal_path.join("stats.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "generated_at": context.now.to_rfc3339(),
+            "evidence_unreadable_days": [],
+            "segment_fold_failed_days": ["20251231"],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let result = crate::checks::journal_sources_readable::run(
+        &context,
+        registry::lookup(Battery::Journal, "journal_sources_readable")
+            .unwrap()
+            .check,
+    )
+    .unwrap();
+
+    assert_eq!(result.status, Status::Warn);
+    assert!(
+        !result
+            .fix
+            .as_deref()
+            .unwrap_or_default()
+            .contains("named above"),
+        "no file was named in {:?}, so the fix must not point at one: {:?}",
+        result.detail,
+        result.fix
+    );
+}
