@@ -81,6 +81,21 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     };
+    // ⛔ A document written before this record existed cannot carry the field,
+    // so an absent list means "this document predates the record", never
+    // "there is nothing to record". Keying on the field's PRESENCE rather than
+    // on a schema number states the property directly and needs no second
+    // source of truth for the version. Measured on a live host: an older
+    // document made this check report a confident clean while five days were
+    // unreadable.
+    if document.get("evidence_unreadable_days").is_none() {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "couldn't check — the statistics predate this version",
+            None::<String>,
+        ));
+    }
     // Stale is a third kind of cannot-tell.  A document from last week parses
     // cleanly and would otherwise report a confident ok about days it never saw.
     if let Some(age) = document
