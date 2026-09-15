@@ -380,14 +380,15 @@ fn run(
     if selected.is_empty() {
         return base("no_op", Some("nothing_to_restore"), scope, day);
     }
-    let mut listed = Vec::new();
+    // A segment key is a time of day, so `(stream, key)` is unique only within
+    // one day; every selected day is still checked before the first restore.
     let days: BTreeSet<String> = selected.iter().map(|segment| segment.day.clone()).collect();
     for restore_day in &days {
-        listed.extend(iter_segments(journal, PathOrDay::Day(restore_day)).unwrap_or_default());
-    }
-    if let Err(error) = check_record_identities(&listed) {
-        return base("refused", Some("segment_identity"), scope, day)
-            .with_reason_detail(error.to_string());
+        let listed = iter_segments(journal, PathOrDay::Day(restore_day)).unwrap_or_default();
+        if let Err(error) = check_record_identities(&listed) {
+            return base("refused", Some("segment_identity"), scope, day)
+                .with_reason_detail(format!("day {restore_day}: {error}"));
+        }
     }
     let expected = selected
         .iter()
@@ -1150,6 +1151,78 @@ mod tests {
         );
 
         assert_eq!(result.status, "ok");
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    fn seed_offloaded_segment(journal: &Path, day: &str, dir: &str) {
+        fs::create_dir_all(journal.join(format!("chronicle/{day}/{dir}"))).unwrap();
+        let file = OffloadFile {
+            name: "small.webm".into(),
+            bytes: 8,
+            sha256: digest(b"small"),
+        };
+        append_offload_event(journal, day, "_default", dir, "snapshot", &[file], 1).unwrap();
+        upsert_offload(
+            journal,
+            &Target {
+                day: day.into(),
+                stream: "_default".into(),
+                dir: dir.into(),
+            },
+            vec!["small.webm".into()],
+            8,
+            "restic-snapshot:snapshot".into(),
+            chrono::DateTime::<chrono::Utc>::from_timestamp(1, 0).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn same_key_on_two_days_is_not_a_restore_identity_refusal() {
+        let journal = tempfile::tempdir().unwrap();
+        seed_offloaded_segment(journal.path(), "20260112", "120000_012");
+        seed_offloaded_segment(journal.path(), "20260113", "120000_012");
+        let runner = empty_runner();
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_all_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+        );
+
+        assert_ne!(
+            result.reason.as_deref(),
+            Some("segment_identity"),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn two_directories_sharing_one_key_on_one_day_refuse_restore() {
+        let journal = tempfile::tempdir().unwrap();
+        seed_offloaded_segment(journal.path(), "20260112", "120000_012");
+        seed_offloaded_segment(journal.path(), "20260112", "120000_012_copy");
+        let runner = empty_runner();
+        let http = Http;
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_offload_day(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            "20260112",
+        );
+
+        assert_eq!(result.status, "refused");
+        assert_eq!(result.reason.as_deref(), Some("segment_identity"));
+        let detail = result.reason_detail.expect("identity detail");
+        assert!(detail.contains("day 20260112"), "{detail}");
+        assert!(
+            detail.contains("multiple segments share stream"),
+            "{detail}"
+        );
         assert!(runner.calls.borrow().is_empty());
     }
 

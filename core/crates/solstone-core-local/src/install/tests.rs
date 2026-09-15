@@ -1120,20 +1120,32 @@ fn canonical_fingerprint_vectors_match_fixture() {
 }
 
 #[test]
-fn local_target_fingerprint_matches_python_vulkan_reference() {
-    // Captured with:
-    // python3 -c 'from solstone.think.providers import local_install,local_cuda;\
-    // local_cuda.resolve_local_backend=lambda p: local_cuda.BackendChoice("vulkan","no NVIDIA GPU detected");\
-    // print(local_install.target_fingerprint())'
-    // on the current reference tree, for x86_64-unknown-linux-gnu and LOCAL_MODEL.
-    let expected_json = r#"{"backend":"vulkan","backend_reason":"no NVIDIA GPU detected","model_pin":{"filename":"Qwen3.5-4B-Q4_K_M.gguf","mmproj_filename":"mmproj-F16.gguf","mmproj_sha256":"cd88edcf8d031894960bb0c9c5b9b7e1fea6ebee02b9f7ce925a00d12891f864","model_id":"local/qwen3.5-4b","repo":"unsloth/Qwen3.5-4B-GGUF","revision":"main","sha256":"00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4","unit":"local-model"},"provider":"local","runtime":"llama.cpp","runtime_pin":{"artifact_key":"x86_64-unknown-linux-gnu","binary_name":"llama-server","filename":"llama-b10068-bin-ubuntu-vulkan-x64.tar.gz","release_tag":"b10068","sha256":"713641920dce6c8efb953ebc9ffa309977e200cec5e182e6ad0e8b086203cdc3","unit":"llama-server-vulkan"}}"#;
-    let mut input = serde_json::from_str::<serde_json::Map<String, Value>>(expected_json).unwrap();
-    input.remove("provider");
+fn local_fingerprint_supplies_provider_and_backend_then_canonicalises() {
+    // Canonicalisation itself is covered by the 18 named vectors in
+    // `canonical_fingerprint_vectors_match_fixture`. What only this path owns
+    // is that `local_fingerprint` inserts `provider` and the resolved
+    // `backend` into the map before canonicalising, and that the digest is
+    // taken over exactly the bytes it reports.
+    //
+    // ⛔ The payload is synthetic on purpose. The predecessor here carried a
+    // real model and runtime pin inside its fixture, so repinning either one
+    // meant editing a test that was never about pins, and its digest literal
+    // was just sha256 of the string on the line above it.
+    let mut input = serde_json::Map::new();
+    input.insert("runtime".to_owned(), json!("llama.cpp"));
+    input.insert("backend".to_owned(), json!("vulkan"));
+
     let actual = fingerprint::local_fingerprint(input).unwrap();
-    assert_eq!(actual["target_fingerprint_json"], expected_json);
+    let canonical = actual["target_fingerprint_json"]
+        .as_str()
+        .expect("canonical json");
+    assert_eq!(
+        canonical,
+        r#"{"backend":"vulkan","provider":"local","runtime":"llama.cpp"}"#
+    );
     assert_eq!(
         actual["target_fingerprint_sha256"],
-        "73b5c7de3b796917a5b8cc80b00ba0eef57daef790f1aafb7e64abcd4c9770e2"
+        fingerprint::sha256(canonical)
     );
 }
 
@@ -2110,11 +2122,12 @@ fn registry_binds_existing_pins_and_the_parakeet_model_pin() {
         }
     }
 
-    let expected = "4d69a4a6683f4f2d952bad794c1357ca6eb628027695b4699c5a9ad4cd07d757";
+    // ⛔ No copy of the digest: asserting `pins::PARAKEET_MODEL.3` equals a
+    // literal only restates the pin. What the resolver owes is that it returns
+    // exactly that pin's row.
     let row = resolve("parakeet-model", None, None);
     assert_eq!(row.len(), 1);
-    assert_eq!(row[0].sha256, expected);
-    assert_eq!(pins::PARAKEET_MODEL.3, expected);
+    assert_eq!(row[0].sha256, pins::PARAKEET_MODEL.3);
 
     for (key, _, _, _) in pins::CUDA_ARTIFACTS {
         assert_eq!(

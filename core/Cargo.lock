@@ -3993,6 +3993,7 @@ dependencies = [
  "solstone-core-assets",
  "solstone-core-brain",
  "solstone-core-callosum",
+ "solstone-core-ingest",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",

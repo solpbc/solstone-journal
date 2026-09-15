@@ -72,6 +72,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "client_binding",
     "client_delivery_stall",
     "client_ingest_health",
+    "device_day_listing",
     "client_transport_refusal",
     "orphan_segment_pdf",
     "default_stt_ready",
@@ -229,6 +230,65 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
     activity.insert(name.to_owned(), entry);
     fs::write(&activity_path, serde_json::to_vec(&activity).unwrap()).unwrap();
 }
+const DEVICE_DAY_LISTING_CID: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+/// A chain-advanced device stream bound to `(cid, "")`, the shape the ingest
+/// routes read back for a linked device's manifest.
+fn write_bound_device_stream(context: &CheckContext, name: &str, cid: &str) {
+    let path = context.journal_path.join(format!("streams/{name}.json"));
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        path,
+        serde_json::json!({
+            "name": name,
+            "kind": "observer",
+            "host": null,
+            "platform": null,
+            "created_at": 1,
+            "last_day": null,
+            "last_segment": null,
+            "seq": 1,
+            "cid": cid,
+            "source": "",
+        })
+        .to_string(),
+    )
+    .unwrap();
+}
+
+/// A segment in the bound stream whose durable ingest row names a different
+/// segment than the directory it sits in: the manifest refuses the whole day.
+fn write_mismatched_device_event(context: &CheckContext, stream: &str, cid: &str) {
+    let day = context.now.format("%Y%m%d").to_string();
+    let segment = context
+        .journal_path
+        .join("chronicle")
+        .join(&day)
+        .join(stream)
+        .join("120000_60");
+    fs::create_dir_all(&segment).unwrap();
+    let event = solstone_core_callosum::DeviceIngestEvent {
+        record_type: "device_ingest".to_owned(),
+        record_version: 1,
+        outcome: "ok".to_owned(),
+        protocol_version: 3,
+        cid: cid.to_owned(),
+        source: String::new(),
+        stream: stream.to_owned(),
+        day: day.clone(),
+        segment: "999999_1".to_owned(),
+        files: vec![],
+        meta: serde_json::Map::new(),
+        extra: serde_json::Map::new(),
+    };
+    solstone_core_callosum::append_durable_event(
+        &segment,
+        &solstone_core_callosum::DurableEvent::DeviceIngest(event),
+    )
+    .unwrap();
+}
+
 fn write_unassessed_client(context: &CheckContext, name: &str, last_seen: i64) {
     write_client_fixture(
         context,
@@ -629,6 +689,12 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 );
             }
         }
+        "device_day_listing" => {
+            write_bound_device_stream(&context, "desk_01", DEVICE_DAY_LISTING_CID);
+            if !ok {
+                write_mismatched_device_event(&context, "desk_01", DEVICE_DAY_LISTING_CID);
+            }
+        }
         "client_ingest_health" => {
             write_unassessed_client(&context, "phone", context.now.timestamp_millis() - 1);
             if !ok {
@@ -720,6 +786,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "client_binding"
                     | "client_delivery_stall"
                     | "client_ingest_health"
+                    | "device_day_listing"
                     | "client_transport_refusal"
                     | "orphan_segment_pdf"
                     | "default_stt_ready"
@@ -744,6 +811,7 @@ fn check_severity_table_matches_reference() {
         ("client_binding", Severity::Advisory),
         ("client_delivery_stall", Severity::Advisory),
         ("client_ingest_health", Severity::Advisory),
+        ("device_day_listing", Severity::Advisory),
         ("client_transport_refusal", Severity::Advisory),
         ("orphan_segment_pdf", Severity::Advisory),
         ("default_stt_ready", Severity::Advisory),
@@ -776,6 +844,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
         ("client_binding", SecondBranch::DifferentDetail),
         ("client_delivery_stall", SecondBranch::DifferentStatus),
         ("client_ingest_health", SecondBranch::DifferentStatus),
+        ("device_day_listing", SecondBranch::DifferentStatus),
         ("client_transport_refusal", SecondBranch::DifferentStatus),
         ("orphan_segment_pdf", SecondBranch::DifferentStatus),
         ("default_stt_ready", SecondBranch::DifferentStatus),

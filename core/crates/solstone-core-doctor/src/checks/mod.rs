@@ -9,6 +9,7 @@ pub mod client_transport_refusal;
 pub mod common;
 pub mod config_dir_readable;
 pub mod default_stt_ready;
+pub mod device_day_listing;
 pub mod disk_space;
 pub mod journal_caught_up;
 pub mod journal_dir_writable;

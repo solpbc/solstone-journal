@@ -282,15 +282,18 @@ fn listed_segments_by_day(
     for day in days {
         by_day.push((day.clone(), iter_segments(journal, PathOrDay::Day(day))?));
     }
-    let listed = by_day
-        .iter()
-        .flat_map(|(_, segments)| segments.iter())
-        .collect::<Vec<_>>();
-    solstone_core_journal_io::check_record_identities(listed).map_err(|error| {
-        TransferError::Unrepresentable {
-            reason: error.to_string(),
-        }
-    })?;
+    // A segment key is a time of day, so `(stream, key)` is unique only within
+    // one day: the same key on two days names two records on the wire, where
+    // `day` rides in the ingest metadata. Every selected day is still checked
+    // before the first send, so an earlier day cannot commit ahead of a later
+    // day's failure.
+    for (day, segments) in &by_day {
+        solstone_core_journal_io::check_record_identities(segments).map_err(|error| {
+            TransferError::Unrepresentable {
+                reason: format!("day {day}: {error}"),
+            }
+        })?;
+    }
     Ok(by_day)
 }
 
@@ -1060,6 +1063,45 @@ mod tests {
         );
         assert_eq!(result.sent, 0);
         assert_eq!(result.failed, 0);
+    }
+
+    #[test]
+    fn same_key_on_two_different_days_is_not_a_duplicate() {
+        let journal = tempfile::tempdir().unwrap();
+        for day in ["20260101", "20260102"] {
+            let segment = journal.path().join(format!("chronicle/{day}/120000_60"));
+            fs::create_dir_all(&segment).unwrap();
+            fs::write(segment.join("audio.jsonl"), "{}\n").unwrap();
+        }
+
+        let by_day = listed_segments_by_day(
+            journal.path(),
+            &["20260101".to_owned(), "20260102".to_owned()],
+        )
+        .expect("a segment key is scoped to its day");
+        assert_eq!(by_day.len(), 2);
+        assert!(by_day.iter().all(|(_, segments)| segments.len() == 1));
+    }
+
+    #[test]
+    fn two_directories_sharing_one_parsed_key_on_one_day_still_refuse() {
+        let journal = tempfile::tempdir().unwrap();
+        for name in ["120000_60", "120000_60_copy"] {
+            let segment = journal.path().join(format!("chronicle/20260101/{name}"));
+            fs::create_dir_all(&segment).unwrap();
+            fs::write(segment.join("audio.jsonl"), "{}\n").unwrap();
+        }
+
+        let error = listed_segments_by_day(journal.path(), &["20260101".to_owned()]).unwrap_err();
+        match error {
+            TransferError::Unrepresentable { reason } => {
+                assert!(
+                    reason.contains("multiple segments share stream"),
+                    "{reason}"
+                );
+            }
+            other => panic!("expected Unrepresentable, got {other:?}"),
+        }
     }
 
     #[test]

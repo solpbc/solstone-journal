@@ -642,6 +642,32 @@ pub fn lookup_stream_state(
         }))
 }
 
+/// One stream record that carries a complete `(cid, source)` binding.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StreamBindingRecord {
+    pub name: String,
+    pub cid: String,
+    pub source: String,
+    /// `0` is a reservation that has not yet been chain-advanced.
+    pub seq: u64,
+}
+
+/// Every stream record bound to a `(cid, source)`. Read-only: never allocates,
+/// reserves, or writes. Unattributed records are not bindings and are skipped.
+pub fn list_stream_bindings(journal: &Path) -> Result<Vec<StreamBindingRecord>, SegmentError> {
+    Ok(read_registry_records(journal)?
+        .into_iter()
+        .filter_map(|(name, record)| {
+            Some(StreamBindingRecord {
+                name,
+                cid: record.cid?,
+                source: record.source?,
+                seq: record.seq,
+            })
+        })
+        .collect())
+}
+
 /// Whether any stream record is missing a complete `(cid, source)` binding.
 pub fn has_unattributed_stream_record(journal: &Path) -> Result<bool, SegmentError> {
     Ok(read_registry_records(journal)?

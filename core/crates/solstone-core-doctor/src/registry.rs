@@ -91,6 +91,9 @@ fn client_delivery(c: &CheckContext) -> RunnerResult {
 fn client_ingest(c: &CheckContext) -> RunnerResult {
     checks::client_ingest_health::run(c, CHECK_CLIENT_INGEST)
 }
+fn device_day_listing(c: &CheckContext) -> RunnerResult {
+    checks::device_day_listing::run(c, CHECK_DEVICE_DAY_LISTING)
+}
 fn client_transport_refusal(c: &CheckContext) -> RunnerResult {
     checks::client_transport_refusal::run(c, CHECK_CLIENT_TRANSPORT_REFUSAL)
 }
@@ -197,6 +200,11 @@ const CHECK_CLIENT_DELIVERY: Check = Check {
 };
 const CHECK_CLIENT_INGEST: Check = Check {
     name: "client_ingest_health",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_DEVICE_DAY_LISTING: Check = Check {
+    name: "device_day_listing",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -314,6 +322,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_CLIENT_INGEST,
         runner: client_ingest,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_DEVICE_DAY_LISTING,
+        runner: device_day_listing,
         deferred: None,
     },
     RegistryEntry {

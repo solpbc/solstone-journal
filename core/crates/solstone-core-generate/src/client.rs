@@ -277,11 +277,22 @@ impl Drop for ChildGuard {
     }
 }
 
+/// The sibling executable's file name, carrying this platform's suffix.
+///
+/// ⚠ `Path::is_file()` does not append `.exe` the way `CreateProcess` does, so an
+/// extensionless join resolves nothing on Windows: the installed payload ships
+/// `solstone-core.exe`. That made every one-shot generate fail with
+/// `missing sibling executable`, which the convey shell surfaces as a 500 — so an
+/// owner on Windows could not save a provider key or validate a model at all.
+fn sibling_file_name() -> String {
+    format!("solstone-core{}", env::consts::EXE_SUFFIX)
+}
+
 fn resolve_sibling_executable(current: &Path) -> Result<PathBuf, ClientError> {
     let parent = current
         .parent()
         .ok_or_else(|| ClientError::Resolve("current executable has no parent".to_owned()))?;
-    let path = parent.join("solstone-core");
+    let path = parent.join(sibling_file_name());
     if Path::new(&path).is_file() {
         Ok(path)
     } else {
@@ -832,7 +843,7 @@ mod tests {
     fn resolve_sibling_executable_selects_regular_sibling_file() {
         let temp = TempDir::new();
         let current = temp.path.join("journal");
-        let sibling = temp.path.join("solstone-core");
+        let sibling = temp.path.join(sibling_file_name());
         fs::write(&current, "journal executable").expect("write current executable fixture");
         fs::write(&sibling, "solstone-core executable").expect("write sibling executable fixture");
 
@@ -852,6 +863,38 @@ mod tests {
             resolve_sibling_executable(&current),
             Err(ClientError::Resolve(_))
         ));
+    }
+
+    /// The installed Windows payload ships `solstone-core.exe`; an extensionless
+    /// lookup finds nothing there, and the failure surfaces to the owner as a 500
+    /// from the thinking settings rather than as a missing file.
+    #[test]
+    fn sibling_file_name_carries_the_platform_executable_suffix() {
+        assert_eq!(
+            sibling_file_name(),
+            format!("solstone-core{}", std::env::consts::EXE_SUFFIX)
+        );
+        assert!(sibling_file_name().starts_with("solstone-core"));
+        #[cfg(windows)]
+        assert_eq!(sibling_file_name(), "solstone-core.exe");
+        #[cfg(not(windows))]
+        assert_eq!(sibling_file_name(), "solstone-core");
+    }
+
+    /// An extensionless sibling beside the current executable is not a match on a
+    /// platform that requires a suffix — this is the exact shape that shipped.
+    #[test]
+    fn resolve_sibling_executable_requires_the_suffixed_name() {
+        let temp = TempDir::new();
+        let current = temp.path.join("journal");
+        fs::write(&current, "journal executable").expect("write current executable fixture");
+        fs::write(temp.path.join("solstone-core"), "extensionless").expect("write decoy");
+        let resolved = resolve_sibling_executable(&current);
+        if std::env::consts::EXE_SUFFIX.is_empty() {
+            assert!(resolved.is_ok());
+        } else {
+            assert!(matches!(resolved, Err(ClientError::Resolve(_))));
+        }
     }
 
     #[test]

@@ -318,22 +318,10 @@ fn storage_ops_body_diagnostics_and_reprocess_unreachable_are_preserved() {
         )
     );
 
-    // A chosen thinking engine is a precondition this fixture must satisfy on
-    // its own: `no_thinking_engine_chosen` is a cheap local-config guard that
-    // fires before the transport attempt for every reprocess flavor
-    // (`4721f1638`, unit-proven by `no_thinking_engine_refuses_all_flavors_without_send`
-    // in solstone-core-reprocess-cli), so an unconfigured fixture cannot reach
-    // the transport layer this assertion means to exercise.
-    fs::create_dir_all(journal.path().join("config")).unwrap();
-    fs::write(
-        journal.path().join("config/journal.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "providers": {"active": {"provider": "test"}}
-        }))
-        .unwrap(),
-    )
-    .unwrap();
-
+    // A journal with no model chosen is refused before reachability is consulted,
+    // which is what `reprocess` reporting "queued" for a journal that will not act
+    // was changed to stop doing. Both arms stay covered: the precheck here, and the
+    // reachability message below once a model exists.
     let reprocess = run_journal(
         journal.path(),
         &["reprocess", "20250101", "--from-scratch"],
@@ -343,6 +331,25 @@ fn storage_ops_body_diagnostics_and_reprocess_unreachable_are_preserved() {
     assert_eq!(reprocess.stdout, b"");
     assert_eq!(
         text(reprocess.stderr),
+        "no model is chosen yet. choose one in thinking, then retry\n"
+    );
+
+    let config = journal.path().join("config/journal.json");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(
+        &config,
+        br#"{"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}"#,
+    )
+    .expect("chosen model");
+    let reachable = run_journal(
+        journal.path(),
+        &["reprocess", "20250101", "--from-scratch"],
+        false,
+    );
+    assert_eq!(reachable.status.code(), Some(1));
+    assert_eq!(reachable.stdout, b"");
+    assert_eq!(
+        text(reachable.stderr),
         "supervisor not reachable - start it (journal start), then retry\n"
     );
 }
