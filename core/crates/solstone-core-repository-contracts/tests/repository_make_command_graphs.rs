@@ -1755,6 +1755,14 @@ fn windows_transport_fixture(name: &str) -> TempDir {
         include_str!("../../../../scripts/win-host-ci.sh"),
     );
     write_executable(&scripts.join("flock"), "#!/bin/sh\nexit 0\n");
+    // The driver stages the pinned FFmpeg toolchain before the gate, and the real
+    // script builds and runs `solstone-distribution acquire` against the workspace --
+    // which this fixture repository does not carry. Stub it the way `flock` is
+    // stubbed, but have it record that it ran so the call site stays covered.
+    write_executable(
+        &scripts.join("sync-win-ffmpeg-tools.sh"),
+        "#!/bin/sh\nprintf '%s\\n' \"$WIN_REMOTE_HOST\" > \"$(dirname \"$0\")/../ffmpeg-tools-sync.stamp\"\nexit 0\n",
+    );
     fs::create_dir(temp.path.join("core")).expect("create fixture core directory");
     fs::write(temp.path.join("core/Cargo.lock"), b"version = 4\n")
         .expect("write fixture Cargo.lock");
@@ -1769,6 +1777,7 @@ fn windows_transport_fixture(name: &str) -> TempDir {
             "scripts/sync-win-host.sh",
             "scripts/win-host-ci.sh",
             "scripts/flock",
+            "scripts/sync-win-ffmpeg-tools.sh",
         ][..],
         &["commit", "-q", "-m", "fixture"][..],
     ] {
@@ -1796,7 +1805,24 @@ fn write_transport_scp_shim(temp: &TempDir) -> (PathBuf, PathBuf) {
     (shim, log)
 }
 
-const VALID_NATIVE_RECEIPTS: [(&str, &str); 26] = [
+const VALID_NATIVE_RECEIPTS: [(&str, &str); 31] = [
+    ("JOURNAL_WIN_CI_FFMPEG_TOOLS", "executed/pass"),
+    (
+        "JOURNAL_WIN_CI_FFMPEG_TOOL_MSYS2_BASE",
+        "msys2-base.sfx.exe sha256=1111111111111111111111111111111111111111111111111111111111111111 size=1",
+    ),
+    (
+        "JOURNAL_WIN_CI_FFMPEG_TOOL_MAKE",
+        "make.zip sha256=2222222222222222222222222222222222222222222222222222222222222222 size=2",
+    ),
+    (
+        "JOURNAL_WIN_CI_FFMPEG_TOOL_NASM",
+        "nasm.zip sha256=3333333333333333333333333333333333333333333333333333333333333333 size=3",
+    ),
+    (
+        "JOURNAL_WIN_CI_FFMPEG_TOOL_LLVM",
+        "llvm.tar.xz sha256=4444444444444444444444444444444444444444444444444444444444444444 size=4",
+    ),
     ("JOURNAL_WIN_CI_RUNTIME_COMPONENTS", "executed/pass"),
     (
         "JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION",
@@ -2342,6 +2368,12 @@ fn windows_native_driver_requires_all_source_originated_receipt_pairs() {
             let forwarded = fs::read_to_string(&ssh_log).expect("read native receipt SSH command");
             assert!(forwarded.contains("$env:SOLSTONE_JOURNAL_WIN_REFS_ROOT = 'C:\\refs'"));
             assert!(!forwarded.contains("JOURNAL_WIN_CI_REQUIRE_REFS_PUBLICATION"));
+            assert_eq!(
+                fs::read_to_string(temp.path.join("ffmpeg-tools-sync.stamp"))
+                    .expect("driver must stage the FFmpeg toolchain before the gate")
+                    .trim(),
+                "fake@example.invalid"
+            );
         }
     }
 }
