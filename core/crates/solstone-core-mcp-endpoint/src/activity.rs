@@ -225,6 +225,20 @@ fn matches(entry: &ActivityEntry, query: &ActivityQuery) -> bool {
 /// around its record's real time ([`segment_sort_key`]), so a burst straddling
 /// a page boundary can still be split a second out of clock order. Within a
 /// page the order is the true one.
+///
+/// ⛔ **Left as a documented bound, not fixed: the drift is attempt-bounded,
+/// not step-bounded, so a lookahead cannot be sized correctly.** The
+/// deconflicting walk retries up to `MAX_SEGMENT_ATTEMPTS` (128, and
+/// `solstone-core-mcp-audit`'s own caller retries the whole allocation up to
+/// another 128 times) — each retry a fresh ±1 coin flip on the *current*
+/// candidate, not the original one — so the worst case a page boundary would
+/// have to look past is only bounded by that retry ceiling, not by "a few
+/// seconds." A correct fix needs either a lookahead deep enough to cover that
+/// ceiling (which would mean re-examining most of a busy day on every page) or
+/// a cursor that is no longer a plain coordinate, and the second option is the
+/// resumability this function is required to keep. The single-collision case
+/// this file measures (3 of 8 consecutive records, ±1 second) is the common
+/// shape; nothing here should be read as bounding the worst case to it.
 pub fn read_activity(
     journal_root: &Path,
     query: &ActivityQuery,
