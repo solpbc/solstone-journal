@@ -633,7 +633,9 @@ fn journal_scoped_prerequisite_failure_names_the_prerequisite_not_a_day() {
     assert!(
         result
             .stderr
-            .starts_with("Error loading daily talent configuration:"),
+            // ⛔ Not "talent". This string reaches an owner on `journal
+            // journal-stats` stderr, so the word is a canon defect there.
+            .starts_with("Error loading the journal's daily configuration:"),
         "{}",
         result.stderr
     );

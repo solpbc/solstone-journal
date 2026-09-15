@@ -107,7 +107,13 @@ fn run(
         system_talent_root,
         apps_root,
     )
-    .map_err(|message| format!("Error loading daily talent configuration: {message}"))?;
+    // ⛔ Not "talent" -- this string reaches an owner. `run_cli` puts a failed
+    // `run` straight onto stderr, and `journal journal-stats` is a command the
+    // doctor's own fix line now tells owners to run, so a bare "talent" here is
+    // a canon defect (`system-anatomy.md` § owner-facing vocabulary).
+    // ⚠ `{message}` is still an upstream `String` and is NOT bounded for
+    // vocabulary; that class is the subject of the VPE memo filed alongside.
+    .map_err(|message| format!("Error loading the journal's daily configuration: {message}"))?;
     let mut scans = BTreeMap::new();
     let mut diagnostics = Vec::new();
     let mut evidence_unreadable_days = Vec::new();
