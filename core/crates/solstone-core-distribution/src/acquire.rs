@@ -11,6 +11,7 @@ use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde::Serialize;
@@ -289,6 +290,43 @@ pub(crate) fn windows_ffmpeg_toolchain_inputs(
     })
 }
 
+/// A pinned, sha256-verified builder input has one legitimate origin per the
+/// pin table; a transient gateway error from that origin (a GitHub 504, a
+/// dropped connection) is upstream flakiness, not evidence the pin is wrong.
+/// `ArchiveError::OriginUnavailable` covers both flavors (a bad HTTP status
+/// and a transport failure — see `download_verified_url`); every other
+/// variant (digest mismatch, host refused, redirect limit, ...) is
+/// deterministic and retrying it would just delay the same failure.
+const ACQUIRE_RETRY_ATTEMPTS: u8 = 4;
+
+/// Retries `op` up to `attempts` times (minimum 1), pausing between attempts
+/// only when `should_retry` accepts the error. Backoff matches the 250ms x
+/// attempt-index cadence `solstone-core-artifact-download` already uses for
+/// transport retries.
+fn retry_transient<T, E>(
+    attempts: u8,
+    should_retry: impl Fn(&E) -> bool,
+    sleep: impl Fn(Duration),
+    mut op: impl FnMut() -> Result<T, E>,
+) -> Result<T, E> {
+    let attempts = attempts.max(1);
+    let mut last = None;
+    for attempt in 0..attempts {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                let will_retry = attempt + 1 < attempts && should_retry(&error);
+                last = Some(error);
+                if !will_retry {
+                    break;
+                }
+                sleep(Duration::from_millis(250 * u64::from(attempt + 1)));
+            }
+        }
+    }
+    Err(last.expect("attempts is at least 1, so the loop runs and sets last"))
+}
+
 fn fetch_verified(
     url: &str,
     sha256: &str,
@@ -297,13 +335,25 @@ fn fetch_verified(
 ) -> Result<bool, AcquireError> {
     #[cfg(not(windows))]
     {
-        Ok(ensure_verified_url(
-            url,
-            sha256,
-            size,
-            dest,
-            &BUILDER_INPUT_DOWNLOAD_POLICY,
-            |_, _| {},
+        Ok(retry_transient(
+            ACQUIRE_RETRY_ATTEMPTS,
+            |error| {
+                matches!(
+                    error,
+                    solstone_core_artifact_download::ArchiveError::OriginUnavailable { .. }
+                )
+            },
+            std::thread::sleep,
+            || {
+                ensure_verified_url(
+                    url,
+                    sha256,
+                    size,
+                    dest,
+                    &BUILDER_INPUT_DOWNLOAD_POLICY,
+                    |_, _| {},
+                )
+            },
         )?)
     }
     #[cfg(windows)]
@@ -771,6 +821,64 @@ struct ArchiveReceipt {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
+
+    #[test]
+    fn retry_transient_retries_until_success_within_the_limit() {
+        let calls = Cell::new(0_u8);
+        let delays = RefCell::new(Vec::new());
+        let result = retry_transient(
+            ACQUIRE_RETRY_ATTEMPTS,
+            |error: &&str| *error == "transient",
+            |duration| delays.borrow_mut().push(duration),
+            || {
+                calls.set(calls.get() + 1);
+                if calls.get() < 3 {
+                    Err("transient")
+                } else {
+                    Ok(())
+                }
+            },
+        );
+        assert_eq!(result, Ok(()));
+        assert_eq!(calls.get(), 3);
+        assert_eq!(
+            *delays.borrow(),
+            vec![Duration::from_millis(250), Duration::from_millis(500)]
+        );
+    }
+
+    #[test]
+    fn retry_transient_does_not_retry_a_non_retryable_error() {
+        let calls = Cell::new(0_u8);
+        let result: Result<(), &str> = retry_transient(
+            ACQUIRE_RETRY_ATTEMPTS,
+            |error: &&str| *error == "transient",
+            |_| panic!("must not back off before a non-retryable error"),
+            || {
+                calls.set(calls.get() + 1);
+                Err("fatal")
+            },
+        );
+        assert_eq!(result, Err("fatal"));
+        assert_eq!(calls.get(), 1);
+    }
+
+    #[test]
+    fn retry_transient_gives_up_after_the_final_attempt() {
+        let calls = Cell::new(0_u8);
+        let result: Result<(), &str> = retry_transient(
+            3,
+            |error: &&str| *error == "transient",
+            |_| {},
+            || {
+                calls.set(calls.get() + 1);
+                Err("transient")
+            },
+        );
+        assert_eq!(result, Err("transient"));
+        assert_eq!(calls.get(), 3);
+    }
 
     #[test]
     fn builder_inputs_parse_from_the_committed_file() {
