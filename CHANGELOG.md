@@ -4,6 +4,13 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- `journal transfer send`, sending to a journal you have already paired with, no longer refuses a range of days when two different days each hold a segment that started at the same time and ran the same length. two segments on the same day sharing a start and length are still refused, and the message now names the day.
+- media offload to your backup, and restoring media from it, no longer halt for the same reason.
+
 ## [2.0.6] - 2026-09-15
 
 ### Added
