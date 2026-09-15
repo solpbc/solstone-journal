@@ -111,7 +111,16 @@ pub fn truncate(text: &str, limit: usize) -> String {
     if text.len() <= limit {
         text
     } else {
-        format!("{}...", &text[..limit - 3])
+        // ⛔ `limit` is a BYTE index and these strings carry owner-chosen
+        // filesystem paths, so the cut lands inside a multi-byte character on
+        // any non-ASCII path and slicing there panics. There is no
+        // `catch_unwind` in this crate, so that aborts the whole doctor run
+        // rather than failing one check. Walk back to a boundary.
+        let mut end = limit - 3;
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}...", &text[..end])
     }
 }
 pub type RunnerResult = Result<CheckResult, ExecutionError>;
@@ -179,5 +188,32 @@ pub fn status_label(result: &CheckResult) -> String {
         "ERROR".into()
     } else {
         format!("{:?}", result.status).to_uppercase()
+    }
+}
+
+#[cfg(test)]
+mod truncate_tests {
+    use super::truncate;
+
+    /// ⛔ A non-ASCII journal path is enough to abort the whole doctor run.
+    /// Eight call sites feed this, and the checks now carry owner-chosen paths.
+    #[test]
+    fn a_multibyte_path_is_cut_without_panicking() {
+        let path = format!("/home/owner/journal/{}", "\u{65e5}".repeat(200));
+        assert!(
+            !path.is_char_boundary(397),
+            "the fixture must straddle the cut"
+        );
+
+        let out = truncate(&path, 400);
+
+        assert!(out.ends_with("..."));
+        assert!(out.len() <= 400);
+        assert!(path.starts_with(out.trim_end_matches('.')));
+    }
+
+    #[test]
+    fn ascii_text_is_unchanged_below_the_limit() {
+        assert_eq!(truncate("a short line", 400), "a short line");
     }
 }
