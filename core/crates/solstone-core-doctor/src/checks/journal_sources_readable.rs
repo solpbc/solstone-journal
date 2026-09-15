@@ -34,14 +34,14 @@ fn day_names(value: Option<&Value>, key: Option<&str>) -> Vec<String> {
 
 /// The first recorded cause, so the owner is handed the file to look at rather
 /// than sent somewhere else to find it.
-fn first_cause(value: Option<&Value>) -> Option<String> {
+fn first_cause(value: Option<&Value>) -> Option<(String, String)> {
     let Some(Value::Array(rows)) = value else {
         return None;
     };
-    rows.first()
-        .and_then(|row| row.get("cause"))
-        .and_then(Value::as_str)
-        .map(str::to_owned)
+    let row = rows.first()?;
+    let cause = row.get("cause").and_then(Value::as_str)?;
+    let day = row.get("day").and_then(Value::as_str).unwrap_or("that day");
+    Some((day.to_owned(), cause.to_owned()))
 }
 
 fn listed(days: &[String]) -> String {
@@ -88,14 +88,6 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     // source of truth for the version. Measured on a live host: an older
     // document made this check report a confident clean while five days were
     // unreadable.
-    if document.get("evidence_unreadable_days").is_none() {
-        return Ok(make_result(
-            check,
-            Status::Skip,
-            "couldn't check — the statistics predate this version",
-            None::<String>,
-        ));
-    }
     // Stale is a third kind of cannot-tell.  A document from last week parses
     // cleanly and would otherwise report a confident ok about days it never saw.
     if let Some(age) = document
@@ -125,10 +117,18 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 "couldn't check — the statistics are {} hours old",
                 age.num_hours()
             ),
-            Some("the journal refreshes these daily; check the health logs if this persists"),
+            Some("run journal journal-stats; check the health logs if it persists"),
         ));
     }
 
+    if document.get("evidence_unreadable_days").is_none() {
+        return Ok(make_result(
+            check,
+            Status::Skip,
+            "couldn't check — the statistics predate this version",
+            None::<String>,
+        ));
+    }
     let unreadable = day_names(document.get("evidence_unreadable_days"), Some("day"));
     let fold_failed = day_names(document.get("segment_fold_failed_days"), None);
     if unreadable.is_empty() && fold_failed.is_empty() {
@@ -161,9 +161,20 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         );
         // ⚠ `cause` is an internal error string of unbounded length. Bound it
         // the way every sibling check bounds owner-visible detail.
-        if let Some(cause) = first_cause(document.get("evidence_unreadable_days")) {
-            line.push_str(&format!(": {}", truncate(&cause, 400)));
-            named_a_file = true;
+        //
+        // ⛔ Carry the DAY with it. Only the first cause is shown while the
+        // line lists every affected day, so without its own day an owner
+        // repairs one file, re-runs, sees the same warning and reads it as the
+        // repair having failed rather than as days still outstanding.
+        if let Some((day, cause)) = first_cause(document.get("evidence_unreadable_days")) {
+            let cause = truncate(&cause, 400);
+            // ⛔ Only claim a file was named when the cause actually names a
+            // path. A day key that parses as 8 digits but is not a calendar
+            // date renders "invalid day 20260230; expected YYYYMMDD", and a
+            // `Validation` cause carries a bare message -- a fix line saying
+            // "the file named above" then points at nothing the owner can see.
+            named_a_file = cause.contains(std::path::MAIN_SEPARATOR);
+            line.push_str(&format!(": {day}: {cause}"));
         }
         parts.push(line);
     }
@@ -179,9 +190,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         Status::Warn,
         parts.join("; "),
         Some(if named_a_file {
-            "repair or remove the file named above, then run journal reprocess <day>"
+            "repair the file named above, then run journal reprocess <day> for each listed day \
+             that has already ended"
         } else {
-            "run journal reprocess <day>"
+            "run journal reprocess <day> for each listed day that has already ended"
         }),
     ))
 }

@@ -2863,3 +2863,85 @@ fn the_fix_line_names_a_file_only_when_one_was_named() {
         result.fix
     );
 }
+
+/// ⛔ Age is judged BEFORE the field-presence skip.
+///
+/// A document that both predates the field and is weeks old hit the predate
+/// arm first, returned Skip, and rendered nothing on a plain `journal doctor`
+/// -- the silent clean this check was added to close, reappearing through the
+/// arm ordering.
+#[test]
+fn a_document_that_is_both_stale_and_pre_field_still_reaches_the_owner() {
+    let context = fixture();
+    fs::create_dir_all(&context.journal_path).unwrap();
+    let generated = context.now - chrono::Duration::hours(72);
+    fs::write(
+        context.journal_path.join("stats.json"),
+        // ⚠ No `evidence_unreadable_days` key at all: this is the shape a
+        // document written before the field existed has.
+        serde_json::to_vec(&serde_json::json!({ "generated_at": generated.to_rfc3339() })).unwrap(),
+    )
+    .unwrap();
+
+    let result = crate::checks::journal_sources_readable::run(
+        &context,
+        registry::lookup(Battery::Journal, "journal_sources_readable")
+            .unwrap()
+            .check,
+    )
+    .unwrap();
+
+    assert_eq!(
+        result.status,
+        Status::Warn,
+        "a stale pre-field document must not render as a silent skip: {:?}",
+        result.detail
+    );
+}
+
+/// ⚠ The fix line may only say "the file named above" when the cause actually
+/// names a path. A day key that is 8 digits but not a calendar date renders
+/// "invalid day ...", which names no file.
+#[test]
+fn a_pathless_cause_does_not_promise_a_file() {
+    let context = fixture();
+    fs::create_dir_all(&context.journal_path).unwrap();
+    fs::write(
+        context.journal_path.join("stats.json"),
+        serde_json::to_vec(&serde_json::json!({
+            "generated_at": context.now.to_rfc3339(),
+            "evidence_unreadable_days": [
+                { "day": "20260230", "cause": "invalid day 20260230; expected YYYYMMDD calendar date" }
+            ],
+            "segment_fold_failed_days": [],
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    let result = crate::checks::journal_sources_readable::run(
+        &context,
+        registry::lookup(Battery::Journal, "journal_sources_readable")
+            .unwrap()
+            .check,
+    )
+    .unwrap();
+
+    assert_eq!(result.status, Status::Warn);
+    assert!(
+        !result
+            .fix
+            .as_deref()
+            .unwrap_or_default()
+            .contains("named above"),
+        "the cause names no file, so the fix must not point at one: {:?}",
+        result.fix
+    );
+    // ⛔ And the day rides with the cause, so an owner who repairs one of
+    // several days does not read the surviving warning as a failed repair.
+    assert!(
+        result.detail.contains("20260230:"),
+        "the shown cause must carry its own day: {:?}",
+        result.detail
+    );
+}
