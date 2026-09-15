@@ -318,6 +318,10 @@ fn storage_ops_body_diagnostics_and_reprocess_unreachable_are_preserved() {
         )
     );
 
+    // A journal with no model chosen is refused before reachability is consulted,
+    // which is what `reprocess` reporting "queued" for a journal that will not act
+    // was changed to stop doing. Both arms stay covered: the precheck here, and the
+    // reachability message below once a model exists.
     let reprocess = run_journal(
         journal.path(),
         &["reprocess", "20250101", "--from-scratch"],
@@ -327,6 +331,25 @@ fn storage_ops_body_diagnostics_and_reprocess_unreachable_are_preserved() {
     assert_eq!(reprocess.stdout, b"");
     assert_eq!(
         text(reprocess.stderr),
+        "no model is chosen yet. choose one in thinking, then retry\n"
+    );
+
+    let config = journal.path().join("config/journal.json");
+    fs::create_dir_all(config.parent().unwrap()).unwrap();
+    fs::write(
+        &config,
+        br#"{"providers":{"active":{"provider":"local","model":"local/qwen3.5-4b"}}}"#,
+    )
+    .expect("chosen model");
+    let reachable = run_journal(
+        journal.path(),
+        &["reprocess", "20250101", "--from-scratch"],
+        false,
+    );
+    assert_eq!(reachable.status.code(), Some(1));
+    assert_eq!(reachable.stdout, b"");
+    assert_eq!(
+        text(reachable.stderr),
         "supervisor not reachable - start it (journal start), then retry\n"
     );
 }
