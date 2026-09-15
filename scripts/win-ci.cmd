@@ -14,7 +14,42 @@
 setlocal enableextensions
 cd /d "%~dp0.." || exit /b 1
 
-set "PATH=%USERPROFILE%\.cargo\bin;%PATH%"
+:: The vendored FFmpeg build's `sh`/`make`-driven configure needs a POSIX
+:: shell, GNU make and an x86 assembler that this box does not carry ambiently
+:: (core\distribution\builder-inputs.toml's own comment: "the native host has
+:: MSVC, but deliberately does not carry MSYS2/GNU make, NASM ... as ambient
+:: build state"). `C:\sol\msys2-root\usr\bin` (the full msys2-base bin/, plus
+:: `make.exe`, matching [ffmpeg_windows_msys2_base] and [ffmpeg_windows_make])
+:: and `C:\sol\nasm-3.02` ([ffmpeg_windows_nasm]) are box-staged copies of
+:: those exact pinned inputs, sha256-verified against builder-inputs.toml at
+:: staging time. The directory shape matters: msys-2.0.dll resolves its own
+:: POSIX root (for `/tmp`, `/bin/sh` shebang lookups, etc.) from its own
+:: location two levels up, so the staged tree keeps the real
+:: `<root>\usr\bin\` layout (plus a `<root>\bin` junction and a `<root>\tmp`
+:: directory) rather than a flat bin-only folder -- a flat folder measurably
+:: fails FFmpeg's own configure sanity check ("bad interpreter: No such file
+:: or directory" resolving a generated script's `#!/bin/sh`).
+::
+:: `bindgen` also needs libclang to read FFmpeg's headers once the static libs
+:: are built; `C:\sol\llvm\bin\libclang.dll` is the `bin/libclang.dll` member
+:: of the pinned `[ffmpeg_windows_llvm]` archive (sha256-verified against
+:: builder-inputs.toml at staging time), not a full LLVM install -- bindgen
+:: only needs the one shared library, and its own `LIBCLANG_PATH` env var
+:: (below) is how it's told where to find it.
+::
+:: None of this is wired into `build.rs` as the controlled fetch-and-mount
+:: driver builder-inputs.toml's own comments describe (nothing there
+:: references "nasm", "make", "msys2", or "libclang"/"LIBCLANG" at all) --
+:: this PATH/env addition is the interim substitute until that driver exists.
+:: Nothing here ships on this box's persistent PATH or environment (only
+:: `Git\cmd` does; registry env changes made through an SSH session are not
+:: picked up by a later SSH session on this box -- see windows-build-box.md's
+:: signing gotcha 5 for the same finding with `setx`), so a cache-miss FFmpeg
+:: vendor build fails "Failed to find 'sh.exe'" / "nasm not found" / "make ...
+:: program not found" / "Unable to find libclang" unless this run supplies
+:: all four itself.
+set "PATH=%USERPROFILE%\.cargo\bin;C:\sol\msys2-root\usr\bin;C:\sol\nasm-3.02;%PATH%"
+set "LIBCLANG_PATH=C:\sol\llvm\bin"
 
 if not defined EXPECTED_JOURNAL_COMMIT ( echo ERROR: EXPECTED_JOURNAL_COMMIT is required; rerun through win-host-ci & exit /b 1 )
 if not defined EXPECTED_JOURNAL_CARGO_LOCK_SHA256 ( echo ERROR: EXPECTED_JOURNAL_CARGO_LOCK_SHA256 is required; rerun through win-host-ci & exit /b 1 )
