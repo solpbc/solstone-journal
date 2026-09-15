@@ -29,6 +29,7 @@ use solstone_core_sol_link::client_status::{
     ClientActivityState, ClientAssessment, ClientCaptureState, ClientInspection,
     ConnectionFreshness, SourceDelivery, inspect_clients_at, rollup_client_capture_states,
 };
+use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, resolve_owner_tier};
 use solstone_core_system_health::{FilesystemHealthLogSource, TerminalEvent, read_terminal_states};
 
 use crate::HomeContext;
@@ -1320,6 +1321,17 @@ fn brain_action(state: &str, reason: Option<&str>) -> Value {
         json!({"label":"open thinking","href":"/app/thinking/#main"})
     } else {
         Value::Null
+    }
+}
+
+/// Resolve the owner-voice tier for the journal root, degrading gracefully on error.
+pub fn resolve_owner_voice_tier(context: &HomeContext) -> Option<OwnerTierOutcome> {
+    match resolve_owner_tier(context.journal_root()) {
+        Ok(outcome) => Some(outcome),
+        Err(error) => {
+            log::error!("failed to resolve owner tier for pulse: {error}");
+            None
+        }
     }
 }
 

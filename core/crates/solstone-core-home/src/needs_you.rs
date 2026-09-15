@@ -1,9 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Pure needs-you classification.
-
 use serde_json::{Value, json};
+use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
+use solstone_core_speaker_resolve::owner_contamination_screen::{
+    ContaminationScreen, classify_tier,
+};
+use solstone_core_speaker_resolve::owner_provisional::{OwnerTierOutcome, OwnerTierReason};
+
+pub const SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED: &str = "owner_voice:not_established";
+pub const SOURCE_ID_OWNER_VOICE_DAMAGED: &str = "owner_voice:damaged";
+
+const COPY_OWNER_VOICE_NOT_ESTABLISHED: &str = "your voice isn't established yet.";
+const COPY_OWNER_VOICE_DAMAGED: &str = "your owner voiceprint reference is damaged.";
+const SPEAKERS_APP_HREF: &str = "/app/speakers/";
 
 pub fn classify_needs_you(attention: &Value, pulse_needs: &[Value]) -> Vec<Value> {
     let mut items = Vec::new();
@@ -211,9 +221,71 @@ fn display_text(item: &Value) -> String {
         .to_owned()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OwnerVoiceClass {
+    NotEstablished,
+    Damaged,
+}
+
+fn classify_owner_tier_reason(reason: OwnerTierReason) -> OwnerVoiceClass {
+    match reason {
+        OwnerTierReason::ConfirmedAbsent
+        | OwnerTierReason::VoiceprintsAbsent
+        | OwnerTierReason::BelowRowFloor
+        | OwnerTierReason::BelowEmbeddingFloor => OwnerVoiceClass::NotEstablished,
+        OwnerTierReason::ConfirmedUnreadable
+        | OwnerTierReason::ConfirmedIncomplete
+        | OwnerTierReason::ConfirmedZeroNorm
+        | OwnerTierReason::VoiceprintsUnreadable
+        | OwnerTierReason::ProvisionalZeroNorm => OwnerVoiceClass::Damaged,
+    }
+}
+
+/// Classify a resolved owner tier into an actionable needs-you item, if required.
+pub fn classify_owner_voice_needs(outcome: OwnerTierOutcome) -> Option<Value> {
+    match classify_tier(outcome) {
+        Ok(_) => None,
+        Err(ContaminationScreen::Indeterminate { reason }) => {
+            if reason == OWNER_IDENTITY_INVALID_REASON {
+                return None;
+            }
+            let tier_reason = OwnerTierReason::ALL
+                .into_iter()
+                .find(|candidate| candidate.wire_str() == reason)?;
+            match classify_owner_tier_reason(tier_reason) {
+                OwnerVoiceClass::NotEstablished => Some(route_item(
+                    COPY_OWNER_VOICE_NOT_ESTABLISHED,
+                    SPEAKERS_APP_HREF,
+                    SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED,
+                )),
+                OwnerVoiceClass::Damaged => Some(route_item(
+                    COPY_OWNER_VOICE_DAMAGED,
+                    SPEAKERS_APP_HREF,
+                    SOURCE_ID_OWNER_VOICE_DAMAGED,
+                )),
+            }
+        }
+        Err(ContaminationScreen::Contaminated { .. } | ContaminationScreen::Clear { .. }) => None,
+    }
+}
+
+fn route_item(text: &str, href: &str, source_id: &str) -> Value {
+    json!({
+        "text": text,
+        "kind": "route",
+        "payload": {
+            "href": href,
+        },
+        "disabled": false,
+        "reason": "",
+        "source_id": source_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
+    use solstone_core_speaker_resolve::owner_centroid::OwnerCentroid;
 
     use super::*;
 
@@ -364,5 +436,91 @@ mod tests {
                 "the solstone app on one of your devices is having trouble adding default to your journal."
             )
         );
+    }
+
+    #[test]
+    fn owner_voice_needs_exhaustive_tier_reason_mapping() {
+        let expected = [
+            OwnerVoiceClass::NotEstablished,
+            OwnerVoiceClass::Damaged,
+            OwnerVoiceClass::Damaged,
+            OwnerVoiceClass::Damaged,
+            OwnerVoiceClass::NotEstablished,
+            OwnerVoiceClass::Damaged,
+            OwnerVoiceClass::NotEstablished,
+            OwnerVoiceClass::NotEstablished,
+            OwnerVoiceClass::Damaged,
+        ];
+        assert_eq!(
+            OwnerTierReason::ALL.map(classify_owner_tier_reason),
+            expected,
+            "every OwnerTierReason variant must be deliberately mapped to an owner voice class"
+        );
+    }
+
+    #[test]
+    fn owner_voice_needs_healthy_and_identity_invalid_yield_none() {
+        let centroid = OwnerCentroid {
+            centroid: vec![0.0; 256],
+            threshold: 0.55,
+            margin: None,
+            cluster_size: 5,
+            last_refreshed_at: None,
+            created_at: Some("2026-08-14T22:00:00Z".to_owned()),
+            evidence_tier: Some("confirmed".to_owned()),
+            evidence_hash: None,
+            evidence_intra_cosine_p25: Some(0.52),
+        };
+        assert_eq!(
+            classify_owner_voice_needs(OwnerTierOutcome::Confirmed(centroid)),
+            None
+        );
+        assert_eq!(
+            classify_owner_voice_needs(OwnerTierOutcome::Provisional(vec![0.0; 256])),
+            None
+        );
+        assert_eq!(
+            classify_owner_voice_needs(OwnerTierOutcome::IdentityInvalid),
+            None
+        );
+    }
+
+    #[test]
+    fn owner_voice_needs_routes_to_speakers_with_expected_source_ids() {
+        for reason in [
+            OwnerTierReason::ConfirmedAbsent,
+            OwnerTierReason::VoiceprintsAbsent,
+            OwnerTierReason::BelowRowFloor,
+            OwnerTierReason::BelowEmbeddingFloor,
+        ] {
+            let item = classify_owner_voice_needs(OwnerTierOutcome::None(reason))
+                .expect("not established reason yields item");
+            assert_eq!(item["kind"], "route");
+            assert_eq!(item["payload"]["href"], "/app/speakers/");
+            assert_eq!(item["disabled"], false);
+            assert_eq!(item["reason"], "");
+            assert_eq!(item["source_id"], SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED);
+            assert_eq!(
+                needs_dedup_key(&item),
+                SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED
+            );
+        }
+
+        for reason in [
+            OwnerTierReason::ConfirmedUnreadable,
+            OwnerTierReason::ConfirmedIncomplete,
+            OwnerTierReason::ConfirmedZeroNorm,
+            OwnerTierReason::VoiceprintsUnreadable,
+            OwnerTierReason::ProvisionalZeroNorm,
+        ] {
+            let item = classify_owner_voice_needs(OwnerTierOutcome::None(reason))
+                .expect("damaged reason yields item");
+            assert_eq!(item["kind"], "route");
+            assert_eq!(item["payload"]["href"], "/app/speakers/");
+            assert_eq!(item["disabled"], false);
+            assert_eq!(item["reason"], "");
+            assert_eq!(item["source_id"], SOURCE_ID_OWNER_VOICE_DAMAGED);
+            assert_eq!(needs_dedup_key(&item), SOURCE_ID_OWNER_VOICE_DAMAGED);
+        }
     }
 }

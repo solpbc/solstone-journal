@@ -18,7 +18,7 @@ use crate::formatting::{
     format_newsletter_summary, format_processing_summary, relative_time,
 };
 use crate::health_glance::build_health_glance;
-use crate::needs_you::{classify_needs_you, needs_dedup_key};
+use crate::needs_you::{classify_needs_you, classify_owner_voice_needs, needs_dedup_key};
 use crate::readers::{
     briefing_freshness, briefing_lateness_state, briefing_needs_items, collect_activities,
     collect_anticipated_activities, collect_top_activities_yesterday, compute_briefing_phase,
@@ -26,7 +26,8 @@ use crate::readers::{
     load_backlog_source, load_briefing, load_connections_network, load_flow_md,
     load_latest_weekly_reflection, load_pulse_narrative, load_stats, load_yesterday_stats,
     newsletter_attempts_from_think_logs, overnight_window_passed, read_steward_health,
-    read_steward_summary, render_briefing_sections, resolve_attention, summarize_pipeline_day,
+    read_steward_summary, render_briefing_sections, resolve_attention, resolve_owner_voice_tier,
+    summarize_pipeline_day,
 };
 
 const FIRST_WEEK_FRAMING: &str = "most of what your journal keeps becomes useful after about a week, once your journal has enough of your days in it to show patterns. for now, here's what's already happening:";
@@ -153,7 +154,15 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
             deduped_pulse_needs.push(need.clone());
         }
     }
-    let needs_you_items = classify_needs_you(&attention, &deduped_pulse_needs);
+    let mut needs_you_items = classify_needs_you(&attention, &deduped_pulse_needs);
+    if let Some(outcome) = resolve_owner_voice_tier(context)
+        && let Some(voice_item) = classify_owner_voice_needs(outcome)
+    {
+        let key = needs_dedup_key(&voice_item);
+        if needs_keys.insert(key) {
+            needs_you_items.push(voice_item);
+        }
+    }
     let needs_count = needs_you_items.len();
     let needs_summary = if needs_count == 0 {
         String::new()
@@ -1320,5 +1329,107 @@ mod tests {
                 .collect::<Vec<_>>();
         entries.sort();
         entries
+    }
+
+    fn seed_principal(root: &Path) {
+        let entity_dir = root.join("entities/principal");
+        fs::create_dir_all(&entity_dir).expect("create principal directory");
+        fs::write(
+            entity_dir.join("entity.json"),
+            json!({"id":"principal","name":"Principal","type":"Person","is_principal":true})
+                .to_string(),
+        )
+        .expect("write principal identity");
+    }
+
+    #[test]
+    fn pulse_includes_not_established_owner_voice_item_when_admitted_without_centroid() {
+        let root = TempDir::new().unwrap();
+        seed_principal(root.path());
+        let context = utc_context(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
+        );
+        let payload = pulse_payload(&context);
+        let items = payload["needs_you_items"]
+            .as_array()
+            .expect("needs_you_items array");
+        let item = items
+            .iter()
+            .find(|item| {
+                item.get("source_id").and_then(Value::as_str)
+                    == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED)
+            })
+            .expect("not established item present");
+        assert_eq!(item["kind"], "route");
+        assert_eq!(item["payload"]["href"], "/app/speakers/");
+        assert_eq!(item["disabled"], false);
+        assert!(!items.iter().any(|item| {
+            item.get("source_id").and_then(Value::as_str)
+                == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_DAMAGED)
+        }));
+    }
+
+    #[test]
+    fn pulse_includes_damaged_owner_voice_item_when_admitted_with_corrupt_centroid() {
+        let root = TempDir::new().unwrap();
+        seed_principal(root.path());
+        fs::write(
+            root.path().join("entities/principal/owner_centroid.npz"),
+            b"not an archive",
+        )
+        .expect("write corrupt centroid");
+        let context = utc_context(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
+        );
+        let payload = pulse_payload(&context);
+        let items = payload["needs_you_items"]
+            .as_array()
+            .expect("needs_you_items array");
+        let item = items
+            .iter()
+            .find(|item| {
+                item.get("source_id").and_then(Value::as_str)
+                    == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_DAMAGED)
+            })
+            .expect("damaged item present");
+        assert_eq!(item["kind"], "route");
+        assert_eq!(item["payload"]["href"], "/app/speakers/");
+        assert_eq!(item["disabled"], false);
+        assert!(!items.iter().any(|item| {
+            item.get("source_id").and_then(Value::as_str)
+                == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED)
+        }));
+    }
+
+    #[test]
+    fn pulse_omits_owner_voice_item_when_healthy_confirmed() {
+        let root = TempDir::new().unwrap();
+        seed_principal(root.path());
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            root.path(),
+            "principal",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid: vec![1.0; 256],
+                cluster_size: 5,
+                timestamp: "2026-08-14T22:00:00Z".to_owned(),
+                evidence_tier: "confirmed".to_owned(),
+            },
+        )
+        .expect("write owner centroid");
+        let context = utc_context(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 12, 0, 0).unwrap(),
+        );
+        let payload = pulse_payload(&context);
+        let items = payload["needs_you_items"]
+            .as_array()
+            .expect("needs_you_items array");
+        assert!(!items.iter().any(|item| {
+            let source_id = item.get("source_id").and_then(Value::as_str);
+            source_id == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_NOT_ESTABLISHED)
+                || source_id == Some(crate::needs_you::SOURCE_ID_OWNER_VOICE_DAMAGED)
+        }));
     }
 }

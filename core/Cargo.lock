@@ -4207,6 +4207,7 @@ name = "solstone-core-home"
 version = "2.0.6"
 dependencies = [
  "chrono",
+ "log",
  "serde",
  "serde_json",
  "solstone-core-brain",
@@ -4217,6 +4218,7 @@ dependencies = [
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-sol-link",
+ "solstone-core-speaker-resolve",
  "solstone-core-system-health",
  "solstone-core-thinking",
  "tempfile",
