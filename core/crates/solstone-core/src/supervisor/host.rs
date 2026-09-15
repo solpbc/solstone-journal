@@ -204,30 +204,42 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
     }
 }
 
-/// Owner copy for a lifecycle generation nothing can resolve.
+/// Owner copy for a start that could not establish its lifecycle authority.
 ///
-/// ⛔ The refusal itself is correct -- an unresolved generation may still own
-/// admitted services -- but until this existed the owner was shown a nested
-/// debug string and no way forward, and the only recovery on record was a
-/// directory somebody had renamed by hand once before.
+/// ⛔ The recovery block is gated to the ONE cause it actually fixes. Only
+/// `InitialAdmissionHandshake` reads the parent-loss records; the other three
+/// are launch, identity and stop-confirmation failures that never touch them,
+/// and offering the same `mv` for those leaves the owner re-running into an
+/// identical error with a stray directory beside their journal.
 fn format_lifecycle_recovery_copy(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
 ) -> String {
-    let ledger = journal.join("health/parent-loss");
-    format!(
-        "the journal is holding a lifecycle generation it cannot resolve, so it will not start.\n\
-         \n\
-         details: {reason}\n\
-         \n\
-         to recover, set that bookkeeping aside and start again:\n\
-         \x20   mv {} {}.set-aside\n\
-         \x20   journal start\n\
-         \n\
-         your journal itself is untouched. none of this holds your memories.\n",
-        ledger.display(),
-        ledger.display()
-    )
+    let mut copy = format!("this start could not continue.\n\ndetails: {reason}\n");
+    if matches!(
+        reason,
+        runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
+    ) {
+        let records = journal.join("health/parent-loss");
+        // ⚠ The stop comes first and is not optional: this refusal exits
+        // TEMPFAIL and the installed unit restarts on failure, so without it the
+        // service is starting again every few seconds while the owner types.
+        #[cfg(target_os = "macos")]
+        let stop = "launchctl bootout gui/$(id -u)/org.solpbc.solstone";
+        #[cfg(not(target_os = "macos"))]
+        let stop = "systemctl --user stop solstone.service";
+        copy.push_str(&format!(
+            "\nthis can be a record left behind by an earlier start. to clear it, stop the \
+             journal, set that record aside, and start again:\n\
+             \x20   {stop}\n\
+             \x20   mv {} {}.set-aside\n\
+             \x20   journal start\n",
+            records.display(),
+            records.display()
+        ));
+    }
+    copy.push_str("\nyour journal itself is untouched. none of this holds your memories.\n");
+    copy
 }
 
 /// Run the complete Rust-owned supervisor lifecycle inside the caller's Tokio

@@ -98,15 +98,19 @@ pub(crate) enum ParentLossCoordinatorBootstrapFailure {
 impl std::fmt::Display for ParentLossCoordinatorBootstrapFailure {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Launch => formatter.write_str("coordinator launch failed"),
+            // ⚠ These reach the owner on a refusal screen. ⛔ No backstage
+            // process name and no term of art: "coordinator", "exact" and
+            // "retirement" all read as a garbled string to the person whose
+            // journal will not start.
+            Self::Launch => formatter.write_str("a helper process could not be started"),
             Self::IdentityEstablishment => {
-                formatter.write_str("coordinator exact identity establishment failed")
+                formatter.write_str("a helper process could not be identified")
             }
             Self::InitialAdmissionHandshake => {
-                formatter.write_str("coordinator initial-admission handshake failed")
+                formatter.write_str("a helper process did not answer in time")
             }
             Self::CoordinatorRetirementUnverified => {
-                formatter.write_str("coordinator exact retirement could not be verified")
+                formatter.write_str("a helper process could not be confirmed stopped")
             }
         }
     }
