@@ -297,13 +297,16 @@ pub(crate) fn windows_ffmpeg_toolchain_inputs(
 /// and a transport failure — see `download_verified_url`); every other
 /// variant (digest mismatch, host refused, redirect limit, ...) is
 /// deterministic and retrying it would just delay the same failure.
-const ACQUIRE_RETRY_ATTEMPTS: u8 = 4;
+///
+/// Shared by every builder-input fetch in this crate, not just this file's
+/// own `fetch_verified` — see `onnx_runtime::fetch_origin`.
+pub(crate) const ACQUIRE_RETRY_ATTEMPTS: u8 = 4;
 
 /// Retries `op` up to `attempts` times (minimum 1), pausing between attempts
 /// only when `should_retry` accepts the error. Backoff matches the 250ms x
 /// attempt-index cadence `solstone-core-artifact-download` already uses for
 /// transport retries.
-fn retry_transient<T, E>(
+pub(crate) fn retry_transient<T, E>(
     attempts: u8,
     should_retry: impl Fn(&E) -> bool,
     sleep: impl Fn(Duration),
