@@ -317,9 +317,8 @@ mod tests {
     // Windows link graph -- see `population.metadata_feature_scope` in
     // `windows-rust-sources.json`) could red ordinary, non-Windows journal
     // dev. Two lodes landing unrelated Rust features hit exactly that
-    // tonight. Folding this into a deliberate Windows-release-playbook step
-    // (VPE owns it; see the memo this same session filed) rather than
-    // reworking it into new automation. Run explicitly with
+    // tonight. It is a deliberate pre-release step in the Windows release
+    // procedure now, rather than new automation. Run it explicitly with
     // `cargo test -p solstone-core-distribution --lib -- --ignored
     // committed_rust_notices_match_workspace_lock` before cutting a Windows
     // release.
