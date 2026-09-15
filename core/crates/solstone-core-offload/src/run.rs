@@ -343,21 +343,22 @@ fn run_offload_body(
         .into_keys()
         .collect::<Vec<_>>();
     days.sort();
-    let mut listed = Vec::new();
+    // A segment key is a time of day, so `(stream, key)` is unique only within
+    // one day; every day is still checked before the first release.
     for day in &days {
-        listed.extend(iter_segments(journal, PathOrDay::Day(day)).unwrap_or_default());
-    }
-    if let Err(error) = check_record_identities(&listed) {
-        return stall(
-            OFFLOAD_STALL_SEGMENT_IDENTITY,
-            dry_run,
-            vec![],
-            0,
-            0,
-            files_already_marked,
-            bytes_already_marked,
-        )
-        .with_reason_detail(error.to_string());
+        let listed = iter_segments(journal, PathOrDay::Day(day)).unwrap_or_default();
+        if let Err(error) = check_record_identities(&listed) {
+            return stall(
+                OFFLOAD_STALL_SEGMENT_IDENTITY,
+                dry_run,
+                vec![],
+                0,
+                0,
+                files_already_marked,
+                bytes_already_marked,
+            )
+            .with_reason_detail(format!("day {day}: {error}"));
+        }
     }
     let (mut audit, mut audit_recording_failure): (Option<PruneAuditWriter>, Option<String>) =
         if dry_run {
@@ -1569,6 +1570,76 @@ mod tests {
         assert_eq!(result.reason.as_deref(), Some("segment_identity"));
         let detail = result.reason_detail.expect("identity detail");
         assert!(detail.contains("not UTF-8 representable"), "{detail}");
+        assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn same_key_on_two_days_does_not_stall_offload() {
+        let journal = tempfile::tempdir().unwrap();
+        for day in ["20260101", "20260102"] {
+            let raw = journal
+                .path()
+                .join(format!("chronicle/{day}/010000_001/raw.webm"));
+            fs::create_dir_all(raw.parent().unwrap()).unwrap();
+            fs::write(&raw, b"raw-bytes").unwrap();
+            write_eligible_sidecar(&raw);
+        }
+        configure_offload(journal.path(), 100, Some(1));
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock { now: 100 };
+        let maintenance = Maintenance;
+
+        let result = run_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            true,
+        );
+
+        assert_ne!(
+            result.reason.as_deref(),
+            Some("segment_identity"),
+            "{result:?}"
+        );
+    }
+
+    #[test]
+    fn two_directories_sharing_one_key_on_one_day_stall_offload() {
+        let journal = tempfile::tempdir().unwrap();
+        for name in ["010000_001", "010000_001_copy"] {
+            let raw = journal
+                .path()
+                .join(format!("chronicle/20260101/{name}/raw.webm"));
+            fs::create_dir_all(raw.parent().unwrap()).unwrap();
+            fs::write(&raw, b"raw-bytes").unwrap();
+            write_eligible_sidecar(&raw);
+        }
+        configure_offload(journal.path(), 100, Some(1));
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock { now: 100 };
+        let maintenance = Maintenance;
+
+        let result = run_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            true,
+        );
+
+        assert_eq!(result.status, "stalled");
+        assert_eq!(result.reason.as_deref(), Some("segment_identity"));
+        let detail = result.reason_detail.expect("identity detail");
+        assert!(detail.contains("day 20260101"), "{detail}");
+        assert!(
+            detail.contains("multiple segments share stream"),
+            "{detail}"
+        );
         assert!(runner.calls.borrow().is_empty());
     }
 

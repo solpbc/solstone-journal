@@ -120,6 +120,53 @@ fn make_ci_full_explicit_cloud_selector_invokes_only_cloud_runner_once() {
 }
 
 #[test]
+fn make_ci_full_windows_invokes_only_windows_runner_once() {
+    let temp = TempDir::new("ci-full-windows-selector");
+    let root = &temp.path;
+    let system = if cfg!(target_os = "macos") {
+        "Darwin"
+    } else {
+        "Linux"
+    };
+    let arch = String::from_utf8(
+        Command::new("/usr/bin/uname")
+            .arg("-m")
+            .output()
+            .expect("inspect fixture host architecture")
+            .stdout,
+    )
+    .expect("host architecture is UTF-8");
+    write_host_makefile(root, system, arch.trim());
+
+    let shims = root.join("shims");
+    let windows_log = root.join("windows.log");
+    fs::create_dir(&shims).expect("create Windows-selector shim directory");
+    write_executable(
+        &shims.join("extro-windows-ci"),
+        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_WINDOWS_LOG\"\n",
+    );
+
+    let mut command = Command::new("make");
+    command
+        .arg("ci-full-windows")
+        .current_dir(root)
+        .env("PATH", fixture_path(&shims))
+        .env("SOLSTONE_WINDOWS_LOG", &windows_log)
+        .env_remove("HOPPER_LID");
+    let output = command.output().expect("run Windows-selector fixture");
+    assert!(
+        output.status.success(),
+        "make ci-full-windows failed:\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(&windows_log).expect("Windows runner invocation log"),
+        format!("run --source {}\n", root.display())
+    );
+}
+
+#[test]
 fn make_clean_reclaims_default_and_configured_cargo_targets() {
     let temp = TempDir::new("make-clean-cargo-targets");
     let root = &temp.path;
