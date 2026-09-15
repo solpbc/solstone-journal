@@ -291,6 +291,42 @@ impl ParentLossLedger {
         read_json_optional(&self.active_path())
     }
 
+    /// Preserve a pointer we cannot parse, so healing is recoverable evidence
+    /// rather than a silent delete. Mirrors the `parent-loss.wedged-*` shape an
+    /// operator already produces by hand.
+    fn set_aside_active_pointer(&self, active_path: &Path) -> Result<(), ParentLossLedgerError> {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs())
+            .unwrap_or_default();
+        let aside = active_path.with_extension(format!("wedged-{stamp}.json"));
+        fs::rename(active_path, aside)?;
+        Ok(())
+    }
+
+    /// The highest generation with a directory on disk, so a healed ledger never
+    /// reissues a number an existing generation already owns.
+    fn highest_recorded_generation(&self) -> Result<ParentLossGeneration, ParentLossLedgerError> {
+        let generations = self.root_path().join("generations");
+        let entries = match fs::read_dir(&generations) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+            Err(error) => return Err(error.into()),
+        };
+        let mut highest = 0;
+        for entry in entries {
+            let entry = entry?;
+            if let Some(value) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<ParentLossGeneration>().ok())
+            {
+                highest = highest.max(value);
+            }
+        }
+        Ok(highest)
+    }
+
     /// Reserve exactly one successor.  This never writes a transient pointer:
     /// no durable reservation means clean first-use retry; any returned error
     /// after a successful write leaves the confirmed pointer in place.
@@ -302,49 +338,81 @@ impl ParentLossLedger {
         fs::create_dir_all(self.root_path())?;
         let active_path = self.active_path();
         let _lock = lifecycle_lock(&active_path)?;
-        let next = match read_json_optional::<ActiveGeneration>(&active_path)? {
-            None => 1,
-            Some(active) => match self.outcome_for_active(&active)? {
-                ParentLossReaderOutcome::Completed { generation, .. }
-                | ParentLossReaderOutcome::RetiredExpected { generation }
-                | ParentLossReaderOutcome::CancelledBeforeAdmission { generation } => {
-                    generation + 1
+        // ⛔ The active pointer is bookkeeping, not an authority. When it cannot
+        // be parsed there is no coordinator to prove anything about and nothing
+        // that can ever advance it, so the only alternatives are "start over" and
+        // "this journal never boots again". The damaged pointer is set aside
+        // rather than deleted, and the successor is allocated above every
+        // generation already on disk so numbering stays monotonic.
+        // ⚠ Honest about the trade: unlike the liveness escape below, this one
+        // is not proven safe against a live peer -- a corrupt pointer cannot
+        // prove anything. It is taken because an unbootable journal is the worse
+        // failure, and because the supervisor's own singleton guards sit above
+        // this ledger.
+        let pointer = match read_json_optional::<ActiveGeneration>(&active_path) {
+            Ok(pointer) => pointer,
+            Err(ParentLossLedgerError::Json(_)) => {
+                self.set_aside_active_pointer(&active_path)?;
+                None
+            }
+            Err(error) => return Err(error),
+        };
+        let floor = self.highest_recorded_generation()?;
+        let next = match pointer {
+            None => floor + 1,
+            Some(active) => {
+                // Computed before the match so the guard below reads one fact
+                // rather than re-deriving it per arm.
+                let coordinator_gone = coordinator_is_provably_gone(&active);
+                match self.outcome_for_active(&active)? {
+                    ParentLossReaderOutcome::Completed { generation, .. }
+                    | ParentLossReaderOutcome::RetiredExpected { generation }
+                    | ParentLossReaderOutcome::CancelledBeforeAdmission { generation } => {
+                        generation.max(floor) + 1
+                    }
+                    // 🔴 A sealed `Unresolved` generation whose COORDINATOR IS PROVABLY
+                    // GONE must not brick the journal.
+                    //
+                    // Measured on the founder's machine 2026-08-31: one shutdown where a
+                    // single service missed the 15s retirement deadline sealed generation
+                    // 7 `unresolved{retirement_deadline_exceeded}`. Every boot afterwards
+                    // failed "coordinator initial-admission handshake failed" -- 8 systemd
+                    // attempts, then `start-limit-hit`. The journal was unbootable and
+                    // stayed that way, and ⛔ rolling the binary back did NOT help,
+                    // because the wedge is in journal state rather than in the build.
+                    //
+                    // 🔒 The liveness test is what keeps this safe, and it is the property
+                    // the existing `..._blocks_successor` tests actually protect: in every
+                    // one of them the coordinator is still ALIVE and still holds its
+                    // process lease, so a successor must be refused. Here it is dead, the
+                    // generation is sealed, and nothing can ever advance it.
+                    //
+                    // ⚠ `Unverifiable` deliberately does NOT qualify -- only a coordinator
+                    // we can positively prove exited unblocks. When we cannot tell, we
+                    // still refuse, because that is the case where a live peer might be
+                    // sharing the journal.
+                    // ⛔ NOT extended to OPEN generations, deliberately. This
+                    // escape belongs to `Unresolved` because that is a SEALED
+                    // disposition -- the generation is closed and only its result
+                    // is unknown. An open generation whose coordinator is merely
+                    // dead has its own named outcome (`CoordinatorNotLive`) and
+                    // is refused on purpose: services admitted under it may never
+                    // have been retired, and advancing past it abandons them
+                    // silently. Sealing such a generation as abandoned is the
+                    // right repair, and it is scoped to its own change.
+                    ParentLossReaderOutcome::Unresolved { generation, .. } if coordinator_gone => {
+                        generation.max(floor) + 1
+                    }
+                    ParentLossReaderOutcome::BootstrapRecoveryRequired { reason, .. } => {
+                        return Err(ParentLossLedgerError::RecoveryRequired(reason));
+                    }
+                    _ => {
+                        return Err(ParentLossLedgerError::RecoveryRequired(
+                            BootstrapRecoveryReason::ActiveCoordinator,
+                        ));
+                    }
                 }
-                // 🔴 A sealed `Unresolved` generation whose COORDINATOR IS PROVABLY
-                // GONE must not brick the journal.
-                //
-                // Measured on the founder's machine 2026-08-31: one shutdown where a
-                // single service missed the 15s retirement deadline sealed generation
-                // 7 `unresolved{retirement_deadline_exceeded}`. Every boot afterwards
-                // failed "coordinator initial-admission handshake failed" -- 8 systemd
-                // attempts, then `start-limit-hit`. The journal was unbootable and
-                // stayed that way, and ⛔ rolling the binary back did NOT help,
-                // because the wedge is in journal state rather than in the build.
-                //
-                // 🔒 The liveness test is what keeps this safe, and it is the property
-                // the existing `..._blocks_successor` tests actually protect: in every
-                // one of them the coordinator is still ALIVE and still holds its
-                // process lease, so a successor must be refused. Here it is dead, the
-                // generation is sealed, and nothing can ever advance it.
-                //
-                // ⚠ `Unverifiable` deliberately does NOT qualify -- only a coordinator
-                // we can positively prove exited unblocks. When we cannot tell, we
-                // still refuse, because that is the case where a live peer might be
-                // sharing the journal.
-                ParentLossReaderOutcome::Unresolved { generation, .. }
-                    if coordinator_is_provably_gone(&active) =>
-                {
-                    generation + 1
-                }
-                ParentLossReaderOutcome::BootstrapRecoveryRequired { reason, .. } => {
-                    return Err(ParentLossLedgerError::RecoveryRequired(reason));
-                }
-                _ => {
-                    return Err(ParentLossLedgerError::RecoveryRequired(
-                        BootstrapRecoveryReason::ActiveCoordinator,
-                    ));
-                }
-            },
+            }
         };
         let mut enabled: Vec<_> = enabled.into_iter().collect();
         enabled.sort();
@@ -1661,6 +1729,36 @@ mod tests {
         assert!(
             ledger.reserve_generation(instance(11, 3), []).is_err(),
             "an unsealed generation must not be advanced past"
+        );
+    }
+
+    /// An active pointer nobody can parse is bookkeeping, not an authority.
+    #[test]
+    fn an_unparseable_active_pointer_heals_and_never_reissues_a_recorded_generation() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, active, _coordinator) = ready_generation(&directory, []);
+        std::fs::write(ledger.active_path(), b"{ this is not json").expect("corrupt the pointer");
+
+        let successor = ledger
+            .reserve_generation(instance(12, 4), [])
+            .expect("a corrupt pointer must not brick the journal");
+
+        assert!(
+            successor.generation > active.generation,
+            "a healed ledger must not reissue a generation already on disk"
+        );
+        assert!(
+            !ledger.active_path().exists()
+                || read_json_optional::<ActiveGeneration>(&ledger.active_path()).is_ok(),
+            "the healed pointer must be readable"
+        );
+        let set_aside = std::fs::read_dir(ledger.root_path())
+            .expect("ledger root")
+            .filter_map(Result::ok)
+            .any(|entry| entry.file_name().to_string_lossy().contains("wedged-"));
+        assert!(
+            set_aside,
+            "the damaged pointer must be preserved, not deleted"
         );
     }
 

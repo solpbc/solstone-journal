@@ -118,6 +118,9 @@ pub enum SupervisorBootRefusal {
     /// installation-generation acquisition. Distinct from `_generation`
     /// (installation-binding) and the parent-loss lifecycle generation.
     SpeakersAnalyzeGeneration(String),
+    /// Pre-formatted, terminal-safe owner copy for a lifecycle bookkeeping
+    /// generation that cannot be resolved and therefore blocks every boot.
+    LifecycleRecovery(String),
     /// The retired-alias convergence pass could not safely inspect the journal.
     LegacyLogCleanup(String),
 }
@@ -199,6 +202,32 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
         }
         error => SupervisorBootRefusal::Lifecycle(LifecycleBootError::Failed(error.to_string())),
     }
+}
+
+/// Owner copy for a lifecycle generation nothing can resolve.
+///
+/// ⛔ The refusal itself is correct -- an unresolved generation may still own
+/// admitted services -- but until this existed the owner was shown a nested
+/// debug string and no way forward, and the only recovery on record was a
+/// directory somebody had renamed by hand once before.
+fn format_lifecycle_recovery_copy(
+    journal: &Path,
+    reason: runtime::ParentLossCoordinatorBootstrapFailure,
+) -> String {
+    let ledger = journal.join("health/parent-loss");
+    format!(
+        "the journal is holding a lifecycle generation it cannot resolve, so it will not start.\n\
+         \n\
+         details: {reason}\n\
+         \n\
+         to recover, set that bookkeeping aside and start again:\n\
+         \x20   mv {} {}.set-aside\n\
+         \x20   journal start\n\
+         \n\
+         your journal itself is untouched. none of this holds your memories.\n",
+        ledger.display(),
+        ledger.display()
+    )
 }
 
 /// Run the complete Rust-owned supervisor lifecycle inside the caller's Tokio
@@ -323,6 +352,13 @@ pub async fn run_hosted(
         Err(runtime::RuntimeBootError::AdmissionWaitTerminal) => {
             return SupervisorHostOutcome::Refused {
                 reason: SupervisorBootRefusal::AdmissionWaitTerminal,
+            };
+        }
+        Err(runtime::RuntimeBootError::BootstrapRecoveryRequired(reason)) => {
+            return SupervisorHostOutcome::Refused {
+                reason: SupervisorBootRefusal::LifecycleRecovery(format_lifecycle_recovery_copy(
+                    journal, reason,
+                )),
             };
         }
         Err(error) => {

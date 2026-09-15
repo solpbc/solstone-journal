@@ -307,13 +307,22 @@ struct Adoption {
 
 fn day_is_adopted(journal: &Path, day: &str) -> Result<bool, String> {
     let path = journal.join("health/daily-adoption.json");
+    // ⛔ Adoption is bookkeeping -- the accepted unit records are the sole result
+    // authority (see `Adoption`). A file we cannot parse must read as "this day
+    // was never adopted", not as an error: erroring here makes EVERY day's
+    // coverage unreadable, which stops daily processing entirely and makes the
+    // backlog, the doctor and reprocess all fail, for a file the next
+    // reconciliation pass rebuilds on its own.
     let state: Adoption = match std::fs::read(&path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("daily adoption: {e}"))?,
+        Ok(bytes) => match serde_json::from_slice(&bytes) {
+            Ok(state) => state,
+            Err(_) => return Ok(false),
+        },
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e.to_string()),
     };
     if state.version != 1 {
-        return Err("unsupported daily adoption version".to_owned());
+        return Ok(false);
     }
     Ok(state.adopted.contains(day))
 }
@@ -335,8 +344,18 @@ pub fn register_daily_day(journal: &Path, day: &str, now: DateTime<Utc>) -> Resu
 
 fn load_adoption(path: &Path, today: &str) -> Result<Adoption, String> {
     let date = chrono::NaiveDate::parse_from_str(today, "%Y%m%d").map_err(|e| e.to_string())?;
+    // A pointer we cannot parse is rebuilt from the same defaults an absent one
+    // gets.  ⚠ The cost of rebuilding is at most one redundant reconciliation
+    // pass; the cost of refusing is that no day is ever processed again.
+    let fresh = || Adoption {
+        version: 1,
+        first_closed_day: (date - chrono::Duration::days(7))
+            .format("%Y%m%d")
+            .to_string(),
+        ..Adoption::default()
+    };
     let state: Adoption = match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("daily adoption: {e}"))?,
+        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| fresh()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Adoption {
             version: 1,
             first_closed_day: (date - chrono::Duration::days(7))
@@ -347,7 +366,7 @@ fn load_adoption(path: &Path, today: &str) -> Result<Adoption, String> {
         Err(e) => return Err(e.to_string()),
     };
     if state.version != 1 {
-        return Err("unsupported daily adoption version".to_owned());
+        return Ok(fresh());
     }
     Ok(state)
 }

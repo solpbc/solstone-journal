@@ -1059,8 +1059,16 @@ fn read_entries(journal: &Path) -> Result<Map<String, Value>, CatchupError> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
         Err(source) => return Err(CatchupError::Io { path, source }),
     };
-    let value: Value = serde_json::from_slice(&bytes)
-        .map_err(|error| CatchupError::State(format!("invalid JSON: {error}")))?;
+    // ⛔ Retry bookkeeping, not an authority: attempts, backoff watermarks and
+    // timestamps, all re-derivable from the next run. A file we cannot parse
+    // must read as empty so the next write REBUILDS it -- erroring here makes
+    // `update_catchup_state` bail without writing, so every outcome is dropped
+    // silently, backoff never advances, and days re-run forever with nothing
+    // recorded. Losing the history costs one early retry per day; keeping the
+    // error costs the whole ledger, permanently.
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return Ok(Map::new());
+    };
     strict_catchup_entries(&value)
 }
 
