@@ -377,8 +377,9 @@ fn post_json_rpc(
         Ok(request) => request,
         Err(response) => return json_rpc_response(*response),
     };
+    let mut session_id = None;
     if matches!(json_request.method.as_str(), "tools/list" | "tools/call") {
-        let session_id = match request.header("mcp-session-id") {
+        session_id = match request.header("mcp-session-id") {
             Ok(session_id) => session_id,
             Err(_) => {
                 return json_rpc_response(session_error_response(
@@ -406,15 +407,41 @@ fn post_json_rpc(
         },
         Ok(McpMethod::ToolsList) => {
             let decision = permissions::evaluate_connection_read(journal_root, &verified.id);
-            json_rpc_response(JsonRpcResponse::success(
-                json_request.id.as_ref(),
-                crate::registry::advertised_tools_list(&decision),
-            ))
+            let generation = decision_generation(&decision);
+            let tools = crate::registry::advertised_tools_list(journal_root, &decision);
+            // Remember which grant these schemas describe, so the next call can
+            // tell the client its cached list is out of date.
+            if let Some(session_id) = session_id {
+                sessions.record_advertised_generation(session_id, generation);
+            }
+            json_rpc_response(JsonRpcResponse::success(json_request.id.as_ref(), tools))
         }
         Ok(McpMethod::ToolsCall(tool_name)) => {
-            execute_tool_call(&json_request, tool_name, verified, journal_root)
+            let tools_list_changed = session_id.is_some_and(|session_id| {
+                sessions.tools_list_is_stale(
+                    session_id,
+                    decision_generation(&permissions::evaluate_connection_read(
+                        journal_root,
+                        &verified.id,
+                    )),
+                )
+            });
+            execute_tool_call(
+                &json_request,
+                tool_name,
+                verified,
+                journal_root,
+                tools_list_changed,
+            )
         }
         Err(response) => json_rpc_response(*response),
+    }
+}
+
+fn decision_generation(decision: &permissions::PermissionDecision) -> Option<u64> {
+    match decision {
+        permissions::PermissionDecision::Snapshot(snapshot) => Some(snapshot.generation),
+        permissions::PermissionDecision::Denied { .. } => None,
     }
 }
 
@@ -423,10 +450,12 @@ fn execute_tool_call(
     tool_name: crate::jsonrpc::ToolName,
     verified: &VerifiedToken,
     journal_root: &std::path::Path,
+    tools_list_changed: bool,
 ) -> HttpResponse {
-    // Refused vs served records are identical apart from timestamps — deliberate deferral to the later activity-log increment, not an oversight.
-    // The shared dispatcher keeps this denial path identical for wire and probe.
-    match dispatch_authenticated_tool_call(
+    // ⚠ On the wire every refusal stays closed and indistinguishable. The
+    // owner's log is where a refusal is told apart from a served call, and the
+    // shared dispatcher keeps this denial path identical for wire and probe.
+    let response = match dispatch_authenticated_tool_call(
         journal_root,
         DispatchPrincipal {
             connection: &verified.id,
@@ -436,24 +465,23 @@ fn execute_tool_call(
         tool_arguments(request),
         chrono::Utc::now(),
     ) {
-        Ok(result) => json_rpc_response(JsonRpcResponse::success(
-            request.id.as_ref(),
-            tool_result(result),
-        )),
-        Err(DispatchError::InvalidInput) => {
-            json_rpc_response(JsonRpcResponse::invalid_params(request.id.as_ref()))
+        Ok(result) => JsonRpcResponse::success(request.id.as_ref(), tool_result(result)),
+        Err(DispatchError::InvalidInput) => JsonRpcResponse::invalid_params(request.id.as_ref()),
+        Err(DispatchError::PermissionDenied(reason)) => {
+            JsonRpcResponse::permission_denied(request.id.as_ref(), reason)
         }
-        Err(DispatchError::PermissionDenied(reason)) => json_rpc_response(
-            JsonRpcResponse::permission_denied(request.id.as_ref(), reason),
-        ),
-        Err(DispatchError::Tool(crate::tools::ToolError::AuditUnavailable)) => json_rpc_response(
-            JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed"),
-        ),
-        Err(DispatchError::Tool(error)) => json_rpc_response(JsonRpcResponse::tool_error(
-            request.id.as_ref(),
-            error.reason(),
-        )),
-    }
+        Err(DispatchError::Tool(crate::tools::ToolError::AuditUnavailable)) => {
+            JsonRpcResponse::internal_error(request.id.as_ref(), "MCP audit publication failed")
+        }
+        Err(DispatchError::Tool(error)) => {
+            JsonRpcResponse::tool_error(request.id.as_ref(), error.reason())
+        }
+    };
+    json_rpc_response(if tools_list_changed {
+        response.with_tools_list_changed()
+    } else {
+        response
+    })
 }
 
 fn session_error_response(id: Option<&serde_json::Value>, error: SessionError) -> JsonRpcResponse {
@@ -1310,7 +1338,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn admitted_search_and_fetch_calls_each_publish_one_closed_audit_record() {
+    async fn admitted_search_and_fetch_calls_each_publish_an_admission_and_an_outcome() {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
         seed_indexed_note(server.journal.path());
@@ -1363,29 +1391,60 @@ mod tests {
         client.shutdown().await.expect("client closes TLS");
         drop(client);
 
-        let records = fs::read_dir(server.journal.path().join("chronicle"))
+        let segments = fs::read_dir(server.journal.path().join("chronicle"))
             .expect("audit day exists")
             .filter_map(|day| fs::read_dir(day.ok()?.path().join("mcp.agent")).ok())
             .flatten()
-            .map(|entry| {
-                entry
-                    .expect("audit segment")
-                    .path()
-                    .join("interaction.json")
-            })
+            .map(|entry| entry.expect("audit segment").path())
             .collect::<Vec<_>>();
-        assert_eq!(records.len(), 2);
-        let mut names = records
+        assert_eq!(segments.len(), 2);
+        let mut names = segments
             .iter()
-            .map(|record| {
-                let record: Value =
-                    serde_json::from_slice(&fs::read(record).expect("audit record"))
-                        .expect("audit record is JSON");
-                assert_eq!(record.as_object().expect("record object").len(), 3);
-                record["tool_name"]
-                    .as_str()
-                    .expect("closed tool name")
-                    .to_owned()
+            .map(|segment| {
+                let record: Value = serde_json::from_slice(
+                    &fs::read(segment.join("interaction.json")).expect("audit record"),
+                )
+                .expect("audit record is JSON");
+                // The admission is closed at schema 2: identity, time, tool,
+                // connection and the request — ⛔ no results and no response.
+                assert_eq!(record.as_object().expect("record object").len(), 6);
+                assert_eq!(record["schema"], 2);
+                assert!(record["connection"].as_str().is_some());
+                // 🔒 The query is recorded. It is the owner's right to know what
+                // was asked of their own memory.
+                let arguments = &record["request"]["arguments"];
+                let outcome: Value = serde_json::from_slice(
+                    &fs::read(segment.join("outcome.json")).expect("outcome sibling"),
+                )
+                .expect("outcome is JSON");
+                assert_eq!(outcome["outcome"], "served");
+                // ⛔ The shape of the result, never the result: a reference and
+                // a digest, with no journal text anywhere in the record.
+                assert_eq!(outcome["result"]["count"], 1);
+                assert_eq!(outcome["result"]["targets"].as_array().unwrap().len(), 1);
+                assert_eq!(
+                    outcome["result"]["digest"].as_str().expect("digest").len(),
+                    64
+                );
+                let serialized = format!("{record}{outcome}");
+                assert!(
+                    !serialized.contains("MCP fixture search needle"),
+                    "the audit record carried journal content"
+                );
+                let tool = record["tool_name"].as_str().expect("closed tool name");
+                if tool == "search" {
+                    assert_eq!(arguments["query"], "needle");
+                    assert_eq!(arguments["limit"], 1);
+                } else {
+                    // ⛔ The opaque reference itself is never recorded: it is a
+                    // process-local capability whose bytes tell an owner nothing.
+                    assert_eq!(
+                        arguments["reference"].as_str().expect("fingerprint").len(),
+                        16
+                    );
+                    assert_ne!(arguments["reference"], reference);
+                }
+                tool.to_owned()
             })
             .collect::<Vec<_>>();
         names.sort();
@@ -1439,6 +1498,289 @@ mod tests {
         assert_eq!(probe, wire["result"]["structuredContent"]);
         client.shutdown().await.unwrap();
         drop(client);
+        server.stop().await;
+    }
+
+    fn seed_two_facets(journal: &Path) -> (String, String) {
+        let alpha = "123e4567-e89b-42d3-a456-426614174000";
+        let beta = "123e4567-e89b-42d3-a456-426614174001";
+        for (name, id, title) in [("alpha", alpha, "Alpha"), ("beta", beta, "Beta")] {
+            let directory = journal.join("facets").join(name);
+            fs::create_dir_all(&directory).expect("fixture facet directory");
+            fs::write(
+                directory.join("facet.json"),
+                json!({"id": id, "title": title, "description": "fixture"}).to_string(),
+            )
+            .expect("fixture facet declaration");
+        }
+        (alpha.to_owned(), beta.to_owned())
+    }
+
+    fn advertised_facets(list: &Value, tool: &str) -> Vec<String> {
+        list["result"]["tools"]
+            .as_array()
+            .expect("tool list")
+            .iter()
+            .find(|entry| entry["name"] == tool)
+            .expect("tool is advertised")["inputSchema"]["properties"]["facet"]["enum"]
+            .as_array()
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|value| value.as_str().expect("facet id").to_owned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn a_connections_tool_schema_enumerates_only_the_facets_it_can_use() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        let (alpha, beta) = seed_two_facets(server.journal.path());
+        let token = server.create_token("schema-agent");
+        let verified = TokenStore::open(server.journal.path())
+            .verify(&token.token)
+            .expect("verifies token");
+        let mut client = connect_tls(server.address, client_config).await;
+
+        // Whole-journal: both facets, because both are already reachable
+        // through `list_facets` with this grant.
+        let wide = post_json(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}),
+        )
+        .await;
+        let mut wide_facets = advertised_facets(&wide, "search");
+        wide_facets.sort();
+        assert_eq!(wide_facets, [alpha.clone(), beta.clone()]);
+
+        // Narrow to one facet: the schema names that one and not the other.
+        crate::permissions::PermissionStore::open(server.journal.path())
+            .set_permission(
+                &verified.id,
+                crate::permissions::ReadPermission {
+                    categories: vec!["transcripts".to_owned()],
+                    scope: crate::permissions::ReadScope::Facets {
+                        ids: vec![alpha.clone()],
+                    },
+                },
+            )
+            .expect("fixture narrows the grant");
+        let narrow = post_json(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+        )
+        .await;
+        assert_eq!(
+            advertised_facets(&narrow, "search"),
+            std::slice::from_ref(&alpha)
+        );
+        // The category axis narrows with it, and the entity tools vanish.
+        let names = narrow["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            [
+                "list_facets",
+                "search",
+                "fetch",
+                "list_transcripts",
+                "get_transcript"
+            ]
+        );
+        assert_eq!(
+            narrow["result"]["tools"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|tool| tool["name"] == "search")
+                .unwrap()["inputSchema"]["properties"]["category"]["enum"],
+            json!(["transcripts"])
+        );
+        // ⛔ Discovery still carries no journal content: identifiers, not titles.
+        assert!(!narrow.to_string().contains("Alpha"));
+        assert!(!narrow.to_string().contains(&beta));
+
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
+        server.stop().await;
+    }
+
+    #[tokio::test]
+    async fn narrowing_a_grant_mid_session_tells_the_client_its_tool_list_changed() {
+        let (server_config, client_config) = tls_configs();
+        let server = ServerHarness::start(server_config).await;
+        seed_indexed_note(server.journal.path());
+        let (alpha, _) = seed_two_facets(server.journal.path());
+        let token = server.create_token("stale-schema-agent");
+        let verified = TokenStore::open(server.journal.path())
+            .verify(&token.token)
+            .expect("verifies token");
+        let mut client = connect_tls(server.address, client_config).await;
+
+        let (_, headers) = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        let session = session_id(&headers);
+        let list = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 7);
+
+        // Control: while the grant has not moved, nothing is flagged.
+        let fresh = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                "params": {"name": "search", "arguments": {"query": "needle"}},
+            }),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert!(fresh["result"]["_meta"].is_null());
+
+        crate::permissions::PermissionStore::open(server.journal.path())
+            .set_permission(
+                &verified.id,
+                crate::permissions::ReadPermission {
+                    categories: vec!["transcripts".to_owned()],
+                    scope: crate::permissions::ReadScope::Facets {
+                        ids: vec![alpha.clone()],
+                    },
+                },
+            )
+            .expect("fixture narrows the grant");
+
+        // The client is still holding the wide schema. Its next call names a
+        // facet it can no longer use — the exact confusion directive 3 exists
+        // to remove — and the refusal now says the tool list moved.
+        let refused = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                "params": {
+                    "name": "search",
+                    "arguments": {"query": "needle", "facet": "123e4567-e89b-42d3-a456-426614174001"},
+                },
+            }),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert_eq!(refused["error"]["code"], -32001);
+        // ⚠ The reason itself stays closed — the owner's log is where the two
+        // refusals differ — while the staleness hint is about this connection's
+        // own grant, which it could re-derive from `tools/list` anyway.
+        assert_eq!(refused["error"]["data"]["reason"], "no_permission");
+        assert_eq!(refused["error"]["data"]["tools_list_changed"], true);
+
+        // A success after the change carries the same hint out of band, in
+        // `_meta`, leaving `structuredContent` untouched.
+        let served = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                "params": {"name": "list_facets", "arguments": {}},
+            }),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert_eq!(served["result"]["_meta"]["tools_list_changed"], true);
+        assert!(served["result"]["structuredContent"]["facets"].is_array());
+        assert!(served["result"]["structuredContent"].get("_meta").is_none());
+
+        // Re-listing clears it: the client now holds the current schema.
+        post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 6, "method": "tools/list"}),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await;
+        let after = post_json_with_headers(
+            &mut client,
+            &token.token,
+            json!({
+                "jsonrpc": "2.0", "id": 7, "method": "tools/call",
+                "params": {"name": "list_facets", "arguments": {}},
+            }),
+            &[("Mcp-Session-Id", &session)],
+        )
+        .await
+        .0;
+        assert!(after["result"]["_meta"].is_null());
+
+        // ⚠ The mirror case, which a single `Option` would silently miss: a
+        // session served an EMPTY list while it had no permission is holding a
+        // stale schema the moment one is granted.
+        let unpermissioned = server.create_unpermissioned_token("late-grant-agent");
+        let (_, unpermissioned_headers) = post_json_with_headers(
+            &mut client,
+            &unpermissioned.token,
+            json!({"jsonrpc": "2.0", "id": 9, "method": "initialize"}),
+            &[],
+        )
+        .await;
+        let late_session = session_id(&unpermissioned_headers);
+        let empty = post_json_with_headers(
+            &mut client,
+            &unpermissioned.token,
+            json!({"jsonrpc": "2.0", "id": 10, "method": "tools/list"}),
+            &[("Mcp-Session-Id", &late_session)],
+        )
+        .await
+        .0;
+        assert_eq!(empty["result"]["tools"], json!([]));
+        let late_verified = TokenStore::open(server.journal.path())
+            .verify(&unpermissioned.token)
+            .expect("verifies token");
+        server.grant_permission(&late_verified.id);
+        let granted = post_json_with_headers(
+            &mut client,
+            &unpermissioned.token,
+            json!({
+                "jsonrpc": "2.0", "id": 11, "method": "tools/call",
+                "params": {"name": "list_facets", "arguments": {}},
+            }),
+            &[("Mcp-Session-Id", &late_session)],
+        )
+        .await
+        .0;
+        assert_eq!(granted["result"]["_meta"]["tools_list_changed"], true);
+
+        // ⛔ `listChanged` stays unadvertised: there is no server→client stream
+        // to deliver `notifications/tools/list_changed` over at this revision.
+        let initialize = post_json(
+            &mut client,
+            &token.token,
+            json!({"jsonrpc": "2.0", "id": 8, "method": "initialize"}),
+        )
+        .await;
+        assert_eq!(initialize["result"]["capabilities"], json!({"tools": {}}));
+
+        drop(client);
+        wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
     }
 
@@ -2414,6 +2756,7 @@ mod tests {
         )
         .await;
         let allowed_tools = crate::registry::advertised_tools_list(
+            server.journal.path(),
             &crate::permissions::evaluate_connection_read(server.journal.path(), &verified.id),
         );
         assert_eq!(list_after["result"]["tools"], allowed_tools["tools"]);

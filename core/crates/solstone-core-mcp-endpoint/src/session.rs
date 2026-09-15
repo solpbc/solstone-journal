@@ -27,6 +27,24 @@ struct SessionRecord {
     token_id: String,
     created_at: Instant,
     last_used: Instant,
+    /// The grant generation whose tool list this session was last served.
+    ///
+    /// 🔑 This is the state half of `notifications/tools/list_changed`, and it
+    /// is the half that has to exist before the notification can: a client
+    /// caches schemas, so the server needs to know which grant the cached
+    /// schemas describe. ⚠ At this revision there is no server→client channel
+    /// to deliver a notification over — `GET /mcp` is 405, there is no SSE
+    /// stream — so the one consumer is the in-band staleness signal on the
+    /// next call. ⛔ `listChanged` is therefore not advertised in `initialize`:
+    /// advertising a notification we cannot send would be worse than silence.
+    ///
+    /// ⚠ **Two nested options, and collapsing them is a real miss.** The outer
+    /// `None` means this session has never been served a tool list, so it has
+    /// nothing cached to be wrong about. `Some(None)` means it *was* served one
+    /// while it had no enforceable permission — an empty list — and a grant
+    /// appearing afterwards leaves it holding exactly the stale schema directive
+    /// 3 exists to remove.
+    advertised_generation: Option<Option<u64>>,
 }
 
 /// A reason session creation or ownership validation was rejected.
@@ -98,6 +116,7 @@ impl SessionTable {
                 token_id: token_id.to_owned(),
                 created_at: now,
                 last_used: now,
+                advertised_generation: None,
             },
         );
         Ok(session_id)
@@ -118,6 +137,38 @@ impl SessionTable {
         debug_assert!(session.created_at <= now);
         session.last_used = now;
         Ok(())
+    }
+
+    /// Remember which grant generation this session's tool list described.
+    ///
+    /// Best effort: a session that has expired between the list and this call
+    /// simply has nothing to remember.
+    pub(crate) fn record_advertised_generation(&self, session_id: &str, generation: Option<u64>) {
+        if let Ok(mut sessions) = self.sessions.lock()
+            && let Some(session) = sessions.get_mut(session_id)
+        {
+            session.advertised_generation = Some(generation);
+        }
+    }
+
+    /// Whether this session holds a tool list that no longer describes its grant.
+    ///
+    /// ⚠ A session that has never listed tools is not stale — it has nothing
+    /// cached to be wrong about — so this answers false rather than true.
+    /// ✅ Telling a connection that its own grant moved discloses nothing: it
+    /// could establish the same fact by calling `tools/list` again, and the
+    /// change was the owner's own deliberate act.
+    pub(crate) fn tools_list_is_stale(
+        &self,
+        session_id: &str,
+        live_generation: Option<u64>,
+    ) -> bool {
+        let advertised = self.sessions.lock().ok().and_then(|sessions| {
+            sessions
+                .get(session_id)
+                .map(|session| session.advertised_generation)
+        });
+        matches!(advertised, Some(Some(advertised)) if advertised != live_generation)
     }
 
     /// Delete one session only after its bearer-token ownership is verified.
@@ -176,6 +227,32 @@ mod tests {
     use crate::tokens::{RandomSource, RandomSourceError};
 
     use super::{MAX_SESSIONS, MAX_SESSIONS_PER_PRINCIPAL, SessionError, SessionTable};
+
+    #[tokio::test]
+    async fn a_session_that_never_listed_tools_is_not_stale_but_one_served_an_empty_list_is() {
+        let sessions = SessionTable::new();
+        let session = sessions.create("token-1").expect("session is created");
+
+        // Never listed: nothing cached, so nothing to be wrong about.
+        assert!(!sessions.tools_list_is_stale(&session, Some(7)));
+        assert!(!sessions.tools_list_is_stale(&session, None));
+
+        // Listed under a real grant.
+        sessions.record_advertised_generation(&session, Some(7));
+        assert!(!sessions.tools_list_is_stale(&session, Some(7)));
+        assert!(sessions.tools_list_is_stale(&session, Some(8)));
+        assert!(sessions.tools_list_is_stale(&session, None));
+
+        // \u26a0 Listed while it had no permission at all \u2014 an EMPTY list. A grant
+        // appearing afterwards leaves it holding exactly the stale schema
+        // directive 3 exists to remove, and a single `Option` would miss it.
+        sessions.record_advertised_generation(&session, None);
+        assert!(!sessions.tools_list_is_stale(&session, None));
+        assert!(sessions.tools_list_is_stale(&session, Some(1)));
+
+        // An unknown session is never stale.
+        assert!(!sessions.tools_list_is_stale("no-such-session", Some(1)));
+    }
 
     struct SequentialRandom(AtomicUsize);
 

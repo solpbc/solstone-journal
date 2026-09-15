@@ -67,12 +67,18 @@ impl ToolError {
 }
 
 /// Keep audit publication as a mandatory predecessor of native tool execution.
-pub(crate) fn execute_after_audit<T, E>(
-    audit: impl FnOnce() -> Result<(), E>,
+///
+/// The admission's own value — its coordinates — comes back alongside the
+/// execution result so the outcome sibling can be published against the same
+/// segment, ⚠ including when the execution fails. The execution result is
+/// returned rather than propagated for exactly that reason: an errored call
+/// still owes the owner a record of how it ended.
+pub(crate) fn execute_after_audit<A, T, E>(
+    audit: impl FnOnce() -> Result<A, E>,
     executor: impl FnOnce() -> Result<T, E>,
-) -> Result<T, E> {
-    audit()?;
-    executor()
+) -> Result<(A, Result<T, E>), E> {
+    let admitted = audit()?;
+    Ok((admitted, executor()))
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -85,13 +91,27 @@ mod tests {
     fn audit_failure_prevents_native_execution() {
         let invoked = Cell::new(false);
         let result = execute_after_audit(
-            || Err(ToolError::AuditUnavailable),
+            || Err::<(), _>(ToolError::AuditUnavailable),
             || {
                 invoked.set(true);
                 Ok(())
             },
         );
-        assert_eq!(result, Err(ToolError::AuditUnavailable));
+        assert_eq!(result.err(), Some(ToolError::AuditUnavailable));
         assert!(!invoked.get());
+    }
+
+    #[test]
+    fn an_admitted_call_that_fails_still_hands_back_its_admission() {
+        // ⚠ The failure path is where the owner's record is easiest to lose:
+        // a `?` here would drop the coordinates the outcome has to be written
+        // against, and the call would read as uncertain instead of errored.
+        let (admitted, executed) = execute_after_audit(
+            || Ok::<_, ToolError>("coordinates"),
+            || Err::<(), _>(ToolError::IndexAbsent),
+        )
+        .expect("admission succeeded");
+        assert_eq!(admitted, "coordinates");
+        assert_eq!(executed.err(), Some(ToolError::IndexAbsent));
     }
 }

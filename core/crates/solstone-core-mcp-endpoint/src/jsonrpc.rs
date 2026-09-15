@@ -131,6 +131,32 @@ impl JsonRpcResponse {
         }
     }
 
+    /// Mark a response whose client is holding a tool list that no longer
+    /// describes its grant.
+    ///
+    /// 🔑 This is consequence 2 designed in rather than bolted on: `tools/list`
+    /// became stateful the moment a schema named a connection's facets, so the
+    /// signal rides the response the client is already reading. ✅ `_meta` on a
+    /// success is MCP's own out-of-band channel and leaves `structuredContent`
+    /// untouched; on an error it joins `data` beside the closed refusal reason.
+    /// ⚠ When a server→client stream exists, `notifications/tools/list_changed`
+    /// becomes the second consumer of the same session state — ⛔ not a second
+    /// mechanism.
+    pub(crate) fn with_tools_list_changed(mut self) -> Self {
+        if let Some(result) = self.result.as_mut().and_then(Value::as_object_mut) {
+            result.insert("_meta".to_owned(), json!({ "tools_list_changed": true }));
+        }
+        if let Some(error) = self.error.as_mut() {
+            match error.data.as_mut().and_then(Value::as_object_mut) {
+                Some(data) => {
+                    data.insert("tools_list_changed".to_owned(), Value::Bool(true));
+                }
+                None => error.data = Some(json!({ "tools_list_changed": true })),
+            }
+        }
+        self
+    }
+
     pub(crate) fn to_bytes(&self) -> Result<Vec<u8>, serde_json::Error> {
         serde_json::to_vec(self)
     }
@@ -277,17 +303,24 @@ mod tests {
 
     #[test]
     fn tool_registry_is_a_closed_scoped_vocabulary() {
-        let result = advertised_tools_list(&PermissionDecision::Snapshot(ConnectionReadSnapshot {
-            categories: [
-                solstone_core_indexer_query::AdmittedCategory::Transcripts,
-                solstone_core_indexer_query::AdmittedCategory::Entities,
-                solstone_core_indexer_query::AdmittedCategory::Facets,
-            ]
-            .into_iter()
-            .collect::<BTreeSet<_>>(),
-            scope: ConnectionScope::WholeJournal,
-            generation: 1,
-        }));
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-mcp-jsonrpc-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let result = advertised_tools_list(
+            journal.path(),
+            &PermissionDecision::Snapshot(ConnectionReadSnapshot {
+                categories: [
+                    solstone_core_indexer_query::AdmittedCategory::Transcripts,
+                    solstone_core_indexer_query::AdmittedCategory::Entities,
+                    solstone_core_indexer_query::AdmittedCategory::Facets,
+                ]
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+                scope: ConnectionScope::WholeJournal,
+                generation: 1,
+            }),
+        );
         let names = result["tools"]
             .as_array()
             .unwrap()

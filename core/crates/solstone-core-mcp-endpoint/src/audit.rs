@@ -10,7 +10,8 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_mcp_audit::{
-    AuditCoordinates, AuditWriteError, ToolName, write_interaction_record,
+    Admission, AuditCoordinates, AuditWriteError, Outcome, ResultShape, write_interaction_record,
+    write_outcome_record,
 };
 
 const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
@@ -19,12 +20,28 @@ const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 pub(crate) fn write_admitted_interaction(
     journal_root: &Path,
     now: DateTime<Utc>,
-    agent_identity: &str,
-    tool_name: ToolName,
+    admission: &Admission<'_>,
 ) -> Result<AuditCoordinates, AuditWriteError> {
-    let coordinates = write_interaction_record(journal_root, now, agent_identity, tool_name)?;
+    let coordinates = write_interaction_record(journal_root, now, admission)?;
     emit_observed(journal_root, &coordinates);
     Ok(coordinates)
+}
+
+/// Publish the outcome sibling of an admission already on disk.
+///
+/// ⚠ This is the release gate for a read: a prepared response whose outcome
+/// cannot be recorded is refused rather than served, because an owner asking
+/// "what did this connection see?" must not be answered by a record that says
+/// only that something was asked.
+pub(crate) fn write_outcome(
+    journal_root: &Path,
+    coordinates: &AuditCoordinates,
+    now: DateTime<Utc>,
+    outcome: Outcome,
+    reason: Option<&str>,
+    result: Option<ResultShape>,
+) -> Result<(), AuditWriteError> {
+    write_outcome_record(journal_root, coordinates, now, outcome, reason, result)
 }
 
 fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
@@ -51,7 +68,7 @@ mod tests {
 
     use chrono::{TimeZone, Utc};
     use serde_json::json;
-    use solstone_core_mcp_audit::ToolName;
+    use solstone_core_mcp_audit::{Admission, ToolName};
 
     use super::write_admitted_interaction;
 
@@ -75,8 +92,17 @@ mod tests {
         });
         let now = Utc.with_ymd_and_hms(2026, 8, 31, 12, 34, 56).unwrap();
 
-        write_admitted_interaction(journal.path(), now, "operator", ToolName::Search)
-            .expect("audit record writes");
+        write_admitted_interaction(
+            journal.path(),
+            now,
+            &Admission {
+                connection: "operator",
+                agent_identity: "operator",
+                tool_name: ToolName::Search,
+                arguments: serde_json::Map::new(),
+            },
+        )
+        .expect("audit record writes");
 
         assert_eq!(
             serde_json::from_str::<serde_json::Value>(&received.join().expect("listener joins"))

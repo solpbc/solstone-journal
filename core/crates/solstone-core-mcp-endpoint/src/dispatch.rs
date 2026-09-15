@@ -9,7 +9,7 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
-use serde_json::{Value, json};
+use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_indexer_query::{
     AdmittedCategory, ConnectionBoundary, ConnectionScope, ConnectionSearchRequest,
@@ -18,13 +18,15 @@ use solstone_core_indexer_query::{
 use solstone_core_indexer_store::classification::{FacetDeclarationSet, classify_source};
 use solstone_core_journal_io::paths::{PathOrDay, iter_segments};
 
+use solstone_core_mcp_audit::{Admission, AuditCoordinates, Outcome, result_shape};
+
 use crate::audit;
 use crate::permissions::{ConnectionReadSnapshot, PermissionDecision, evaluate_connection_read};
 use crate::references::{
     CursorReference, EntityReference, EntryReference, ReferenceCodec, ReferenceKind,
     ReferenceTarget, SegmentReference,
 };
-use crate::registry::{ToolEntry, find_tool, snapshot_allows};
+use crate::registry::{ToolEntry, category_token, find_tool, snapshot_allows};
 use crate::tools::{
     ToolError, ValidatedFetch, ValidatedGetEntity, ValidatedGetTranscript, ValidatedListEntities,
     ValidatedListFacets, ValidatedListTranscripts, ValidatedSearch, ValidatedTool,
@@ -37,6 +39,27 @@ const MAX_INDEXED_ENTRY_BYTES: u64 = 64 * 1024;
 const MAX_SNIPPET_CHARS: usize = 800;
 
 static REFERENCES: OnceLock<ReferenceCodec> = OnceLock::new();
+
+/// A prepared response together with the owner coordinates it was built from.
+///
+/// ⚠ Those coordinates are deliberately absent from `value`: an agent-visible
+/// response carries no path, chunk index, row id or stream (increment B), while
+/// the owner's log carries exactly those. One prepared value, two audiences.
+pub(crate) struct Prepared {
+    value: Value,
+    count: usize,
+    targets: Vec<String>,
+}
+
+impl Prepared {
+    fn new(value: Value, count: usize, targets: Vec<String>) -> Self {
+        Self {
+            value,
+            count,
+            targets,
+        }
+    }
+}
 
 /// The authenticated connection identity supplied by either wire or probe.
 #[derive(Clone, Copy)]
@@ -97,35 +120,271 @@ pub(crate) fn dispatch_authenticated_tool_call(
     now: DateTime<Utc>,
 ) -> Result<Value, DispatchError> {
     let entry = find_tool(tool_name);
+    // ⚠ Validation precedes admission, unchanged: malformed protocol traffic
+    // stays outside the per-agent tool trail, and only a syntactically valid
+    // known tool call earns a record.
     let validated = validate(entry, arguments)?;
+    let recorded = recorded_arguments(&validated);
 
     let snapshot = match evaluate_connection_read(journal_root, principal.connection) {
         PermissionDecision::Snapshot(snapshot) => snapshot,
         PermissionDecision::Denied { reason } => {
-            // Refused vs served records are identical apart from timestamps — deliberate deferral to the later activity-log increment, not an oversight.
-            audit_call(journal_root, now, principal.agent_identity, entry)?;
+            let coordinates = audit_call(journal_root, now, principal, entry, recorded)?;
+            record_outcome(
+                journal_root,
+                &coordinates,
+                now,
+                Outcome::Refused,
+                Some(owner_denial_reason(reason)),
+                None,
+            );
             return Err(DispatchError::PermissionDenied(reason));
         }
     };
 
-    if !snapshot_allows(&snapshot, entry) || !arguments_within_scope(&snapshot, &validated) {
-        // Missing categories are permission denials and are still durable audit events.
-        audit_call(journal_root, now, principal.agent_identity, entry)?;
+    if let Some(refusal) = scope_refusal(&snapshot, entry, &validated) {
+        // Missing categories are permission denials and are still durable audit
+        // events — now ones an owner can tell apart from a served call.
+        let coordinates = audit_call(journal_root, now, principal, entry, recorded)?;
+        record_outcome(
+            journal_root,
+            &coordinates,
+            now,
+            Outcome::Refused,
+            Some(&refusal),
+            None,
+        );
         return Err(DispatchError::PermissionDenied("no_permission"));
     }
 
-    let prepared = execute_after_audit(
-        || audit_call(journal_root, now, principal.agent_identity, entry),
+    let (coordinates, executed) = execute_after_audit(
+        || audit_call(journal_root, now, principal, entry, recorded),
         || execute_validated(journal_root, principal, &snapshot, validated),
     )?;
+
+    let prepared = match executed {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            record_outcome(
+                journal_root,
+                &coordinates,
+                now,
+                Outcome::Error,
+                Some(owner_error_reason(error)),
+                None,
+            );
+            return Err(error);
+        }
+    };
 
     // A grant can be narrowed while a bounded read is in flight. Do not release
     // any prepared bytes after that change.
     if !permission_generation_is_current(journal_root, principal.connection, &snapshot) {
+        record_outcome(
+            journal_root,
+            &coordinates,
+            now,
+            Outcome::Refused,
+            Some("this connection's permission changed while the response was being prepared"),
+            None,
+        );
         return Err(DispatchError::PermissionDenied("no_permission"));
     }
 
-    Ok(prepared)
+    // 🔑 The digest is what makes replay a checkable claim rather than an
+    // assumed one: re-fetch the named targets, compare, and a difference means
+    // the journal actually moved. See `content_digest` for why it cannot be
+    // taken over the released bytes.
+    let shape = result_shape(
+        prepared.count,
+        prepared.targets,
+        content_digest(&prepared.value),
+    );
+    let outcome = if prepared.count == 0 {
+        Outcome::Empty
+    } else {
+        Outcome::Served
+    };
+    // ⚠ The outcome record gates release. A prepared response whose outcome
+    // cannot be recorded is refused rather than served: that widens fail-closed,
+    // ⛔ it does not relax it. The admission stays, so the call reads uncertain.
+    audit::write_outcome(journal_root, &coordinates, now, outcome, None, Some(shape))
+        .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))?;
+
+    Ok(prepared.value)
+}
+
+/// Record a terminal outcome for a call that is already failing.
+///
+/// ⚠ Best effort, deliberately: the call's result is decided, and a second
+/// failure here can only degrade the owner's reading from `refused` or `error`
+/// to `uncertain`. ⛔ It can never turn a refusal into a release — that
+/// direction is the one guarded by `?` at the serving gate.
+fn record_outcome(
+    journal_root: &Path,
+    coordinates: &AuditCoordinates,
+    now: DateTime<Utc>,
+    outcome: Outcome,
+    reason: Option<&str>,
+    result: Option<solstone_core_mcp_audit::ResultShape>,
+) {
+    let _ = audit::write_outcome(journal_root, coordinates, now, outcome, reason, result);
+}
+
+/// The owner-visible reason a call was refused, or `None` when it is allowed.
+///
+/// 🔑 These strings reach the owner's log and nothing else. On the wire every
+/// one of them renders as the same closed `no_permission`, which is the
+/// asymmetry this design turns on: the same fact is deliberately hidden from
+/// the agent and deliberately visible to the owner, and ⛔ fixing one must not
+/// weaken the other.
+fn scope_refusal(
+    snapshot: &ConnectionReadSnapshot,
+    entry: &ToolEntry,
+    request: &ValidatedTool,
+) -> Option<String> {
+    if !snapshot_allows(snapshot, entry) {
+        let missing = entry
+            .requires
+            .read
+            .iter()
+            .filter(|category| !snapshot.categories.contains(category))
+            .map(category_token)
+            .collect::<Vec<_>>()
+            .join(" and ");
+        return Some(format!(
+            "this connection does not have the {missing} category"
+        ));
+    }
+    if !arguments_within_scope(snapshot, request) {
+        return Some(
+            "the request named a category or facet outside this connection's permission".to_owned(),
+        );
+    }
+    None
+}
+
+fn owner_denial_reason(reason: &'static str) -> &'static str {
+    match reason {
+        "unenforceable" => {
+            "the stored permission for this connection could not be enforced by this build"
+        }
+        _ => "this connection has no read permission",
+    }
+}
+
+/// ⛔ **No failure reason may contain an outcome word.** `served`, `empty`,
+/// `refused`, `error` and `uncertain` are the five values an owner filters on,
+/// so a reason reading *"the connection's permission refused the request"* on
+/// the `error` path means `--outcome refused` does not return the row whose own
+/// text says refused: the surface that exists to say how a request ended
+/// disagrees with itself about the ending.
+///
+/// ⚠ The two non-tool arms are unreachable from the one call site: an executor
+/// returns only [`ToolError`], because invalid input is rejected before
+/// admission and permission is decided above. They are kept exhaustive and
+/// worded accurately rather than left to imply a path that does not exist.
+///
+/// ⛔ **Never name the journal's derived index as "the journal index".**
+/// `cmo/brand/system-anatomy.md` puts "the index" on the journal's never-list by
+/// name, and this is the failure the ban exists for: an owner reading *"the
+/// journal index is empty"* reads it as **their journal** being empty, when a
+/// full journal with an unbuilt search index reports exactly that. ✅ Name the
+/// mechanism — the search index — and leave the journal out of the compound.
+fn owner_error_reason(error: DispatchError) -> &'static str {
+    match error {
+        DispatchError::Tool(ToolError::IndexAbsent) => "the search index does not exist",
+        DispatchError::Tool(ToolError::IndexUnreadable) => "the search index could not be read",
+        DispatchError::Tool(ToolError::IndexLocked) => "the search index was locked",
+        DispatchError::Tool(ToolError::EmptyIndex) => "the search index is empty",
+        DispatchError::Tool(ToolError::NotIndexed) => "the requested material is not indexed",
+        DispatchError::Tool(ToolError::FileUnreadable) => "a journal file could not be read",
+        DispatchError::Tool(ToolError::ReferenceNotFound) => {
+            "the reference did not resolve to anything this connection may read"
+        }
+        DispatchError::Tool(ToolError::AuditUnavailable) => "the audit record could not be written",
+        DispatchError::Tool(ToolError::InvalidInput) | DispatchError::InvalidInput => {
+            "the request's arguments were not valid for this tool"
+        }
+        DispatchError::PermissionDenied(_) => {
+            "the request was outside this connection's permission"
+        }
+    }
+}
+
+/// What the owner's log records about the request itself.
+///
+/// 🔒 Directive 1: the query and arguments are recorded. What was asked of an
+/// owner's memory is the owner's right to know, not a privacy trade-off.
+fn recorded_arguments(validated: &ValidatedTool) -> Map<String, Value> {
+    let mut arguments = Map::new();
+    match validated {
+        ValidatedTool::ListFacets(request) => {
+            arguments.insert("limit".to_owned(), request.limit.into());
+        }
+        ValidatedTool::Search(request) => {
+            arguments.insert("query".to_owned(), request.query.clone().into());
+            arguments.insert("limit".to_owned(), request.limit.into());
+            insert_present(&mut arguments, "day", request.day.as_deref());
+            insert_present(&mut arguments, "day_from", request.day_from.as_deref());
+            insert_present(&mut arguments, "day_to", request.day_to.as_deref());
+            insert_present(&mut arguments, "facet", request.facet_id.as_deref());
+            if let Some(category) = request.category {
+                arguments.insert("category".to_owned(), category_token(&category).into());
+            }
+            if let Some(cursor) = request.cursor.as_deref() {
+                arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
+            }
+        }
+        ValidatedTool::Fetch(request) => {
+            arguments.insert(
+                "reference".to_owned(),
+                reference_fingerprint(&request.reference).into(),
+            );
+        }
+        ValidatedTool::ListTranscripts(request) => {
+            arguments.insert("limit".to_owned(), request.limit.into());
+            insert_present(&mut arguments, "day", request.day.as_deref());
+            insert_present(&mut arguments, "facet", request.facet_id.as_deref());
+        }
+        ValidatedTool::GetTranscript(request) => {
+            arguments.insert(
+                "reference".to_owned(),
+                reference_fingerprint(&request.reference).into(),
+            );
+            if let Some(cursor) = request.cursor.as_deref() {
+                arguments.insert("cursor".to_owned(), reference_fingerprint(cursor).into());
+            }
+        }
+        ValidatedTool::ListEntities(request) => {
+            arguments.insert("limit".to_owned(), request.limit.into());
+            insert_present(&mut arguments, "facet", request.facet_id.as_deref());
+        }
+        ValidatedTool::GetEntity(request) => {
+            arguments.insert(
+                "reference".to_owned(),
+                reference_fingerprint(&request.reference).into(),
+            );
+        }
+    }
+    arguments
+}
+
+fn insert_present(arguments: &mut Map<String, Value>, key: &str, value: Option<&str>) {
+    if let Some(value) = value {
+        arguments.insert(key.to_owned(), value.into());
+    }
+}
+
+/// A short, stable stand-in for an opaque reference argument.
+///
+/// ⛔ The token itself is never recorded. It is an encrypted, process-local
+/// capability bound to one connection and grant generation, so its bytes tell
+/// an owner nothing and stop meaning anything at the next restart. ✅ The
+/// fingerprint distinguishes two calls, and the outcome record names the target
+/// the reference resolved to, in the owner's own coordinates.
+fn reference_fingerprint(token: &str) -> String {
+    digest(token).chars().take(16).collect()
 }
 
 pub(crate) fn permission_generation_is_current(
@@ -172,12 +431,21 @@ fn validate(entry: &ToolEntry, arguments: Option<&Value>) -> Result<ValidatedToo
 fn audit_call(
     journal_root: &Path,
     now: DateTime<Utc>,
-    agent_identity: &str,
+    principal: DispatchPrincipal<'_>,
     entry: &ToolEntry,
-) -> Result<(), DispatchError> {
-    audit::write_admitted_interaction(journal_root, now, agent_identity, entry.audit_name)
-        .map(|_| ())
-        .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))
+    arguments: Map<String, Value>,
+) -> Result<AuditCoordinates, DispatchError> {
+    audit::write_admitted_interaction(
+        journal_root,
+        now,
+        &Admission {
+            connection: principal.connection,
+            agent_identity: principal.agent_identity,
+            tool_name: entry.audit_name,
+            arguments,
+        },
+    )
+    .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))
 }
 
 fn execute_validated(
@@ -185,7 +453,7 @@ fn execute_validated(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     validated: ValidatedTool,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     match validated {
         ValidatedTool::ListFacets(request) => list_facets(journal_root, snapshot, request),
         ValidatedTool::Search(request) => search(journal_root, principal, snapshot, request),
@@ -241,14 +509,6 @@ fn boundary(
         .expect("closed admitted categories construct a boundary")
 }
 
-fn category_token(category: &AdmittedCategory) -> &'static str {
-    match category {
-        AdmittedCategory::Transcripts => "transcripts",
-        AdmittedCategory::Entities => "entities",
-        AdmittedCategory::Facets => "facets",
-    }
-}
-
 fn live_allows(
     journal_root: &Path,
     boundary: &ConnectionBoundary,
@@ -271,7 +531,7 @@ fn search(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedSearch,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let boundary = boundary(snapshot, request.category, request.facet_id.as_deref());
     let query_hash = digest_json(&json!({
         "query": request.query,
@@ -296,6 +556,9 @@ fn search(
         })
         .transpose()?;
     let mut results = Vec::new();
+    // The owner's coordinates for each hit released. ⚠ These never enter
+    // `results`: the wire response carries no path or chunk index.
+    let mut targets = Vec::new();
     let mut examined = 0_usize;
     let mut live_dropped = false;
     let mut index_coverage_complete = true;
@@ -351,6 +614,7 @@ fn search(
                 live_dropped = true;
                 continue;
             }
+            targets.push(format!("{}#{}", hit.metadata.path, hit.metadata.idx));
             let reference = codec()
                 .mint(
                     principal.connection,
@@ -408,16 +672,21 @@ fn search(
         .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
     let live_examination_complete =
         examined < MAX_SEARCH_EXAMINED_ROWS && !(live_dropped && results.len() < request.limit);
-    Ok(json!({
-        "results": results,
-        "next_cursor": next_cursor,
-        "coverage": {
-            "index_classification_complete": index_coverage_complete,
-            "live_examination_complete": live_examination_complete,
-            "transcript_index": "Raw transcript JSONL is not covered by index search.",
-        },
-        "degraded": degraded,
-    }))
+    let count = results.len();
+    Ok(Prepared::new(
+        json!({
+            "results": results,
+            "next_cursor": next_cursor,
+            "coverage": {
+                "index_classification_complete": index_coverage_complete,
+                "live_examination_complete": live_examination_complete,
+                "transcript_index": "Raw transcript JSONL is not covered by index search.",
+            },
+            "degraded": degraded,
+        }),
+        count,
+        targets,
+    ))
 }
 
 fn resolve_search_cursor(
@@ -480,7 +749,7 @@ fn fetch(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedFetch,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let ReferenceTarget::Entry(entry) = codec()
         .resolve(
             &request.reference,
@@ -508,25 +777,31 @@ fn fetch(
     else {
         return Err(DispatchError::Tool(ToolError::ReferenceNotFound));
     };
-    Ok(
+    let target = format!("{}#{}", entry.path, entry.idx);
+    Ok(Prepared::new(
         json!({"title": format!("Indexed journal entry — {}", entry.day), "date": entry.day, "text": text}),
-    )
+        1,
+        vec![target],
+    ))
 }
 
 fn list_facets(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedListFacets,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let include_details = snapshot.categories.contains(&AdmittedCategory::Facets);
     let facets = available_facets(journal_root, snapshot)?;
+    let mut targets = Vec::new();
     let values = facets.into_iter().take(request.limit).map(|(id, name, declaration)| {
         let title = declaration.as_ref().map_or_else(|| name.clone(), |value| if value.title.is_empty() { name.clone() } else { value.title.clone() });
+        targets.push(format!("facet:{id}"));
         if include_details {
             json!({"id": id, "name": title, "description": declaration.as_ref().map(|item| item.description.clone()).unwrap_or_default()})
         } else { json!({"id": id, "name": title}) }
     }).collect::<Vec<_>>();
-    Ok(json!({"facets": values}))
+    let count = values.len();
+    Ok(Prepared::new(json!({"facets": values}), count, targets))
 }
 
 fn list_entities(
@@ -534,9 +809,10 @@ fn list_entities(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedListEntities,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let facets = available_facets(journal_root, snapshot)?;
     let mut entities = Vec::new();
+    let mut targets = Vec::new();
     for (facet_id, facet_dir, _) in facets {
         if request.facet_id.as_deref().is_some_and(|id| id != facet_id) {
             continue;
@@ -562,10 +838,12 @@ fn list_entities(
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+            targets.push(format!("facet:{facet_id}/entity:{}", item.entity_id));
             entities.push(json!({"name": entity_name(&item.identity), "reference": reference}));
         }
     }
-    Ok(json!({"entities": entities}))
+    let count = entities.len();
+    Ok(Prepared::new(json!({"entities": entities}), count, targets))
 }
 
 fn get_entity(
@@ -573,7 +851,7 @@ fn get_entity(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetEntity,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let ReferenceTarget::Entity(reference) = codec()
         .resolve(
             &request.reference,
@@ -597,7 +875,15 @@ fn get_entity(
             .into_iter()
             .find(|item| item.entity_id == reference.entity_id)
             .ok_or(DispatchError::Tool(ToolError::ReferenceNotFound))?;
-    Ok(json!({"name": entity_name(&item.identity)}))
+    let target = format!(
+        "facet:{}/entity:{}",
+        reference.facet_id, reference.entity_id
+    );
+    Ok(Prepared::new(
+        json!({"name": entity_name(&item.identity)}),
+        1,
+        vec![target],
+    ))
 }
 
 fn list_transcripts(
@@ -605,7 +891,7 @@ fn list_transcripts(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedListTranscripts,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let boundary = boundary(
         snapshot,
         Some(AdmittedCategory::Transcripts),
@@ -613,6 +899,7 @@ fn list_transcripts(
     );
     let chronicle = journal_root.join("chronicle");
     let mut segments = Vec::new();
+    let mut targets = Vec::new();
     for day in fs::read_dir(&chronicle)
         .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
         .filter_map(Result::ok)
@@ -652,10 +939,16 @@ fn list_transcripts(
                     }),
                 )
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))?;
+            targets.push(format!("{day}/{}/{}", identity.stream, identity.name));
             segments.push(json!({"title": format!("Transcript segment — {}", day), "date": day, "reference": reference}));
         }
     }
-    Ok(json!({"transcripts": segments}))
+    let count = segments.len();
+    Ok(Prepared::new(
+        json!({"transcripts": segments}),
+        count,
+        targets,
+    ))
 }
 
 fn get_transcript(
@@ -663,7 +956,7 @@ fn get_transcript(
     principal: DispatchPrincipal<'_>,
     snapshot: &ConnectionReadSnapshot,
     request: ValidatedGetTranscript,
-) -> Result<Value, DispatchError> {
+) -> Result<Prepared, DispatchError> {
     let ReferenceTarget::Segment(reference) = codec()
         .resolve(
             &request.reference,
@@ -754,9 +1047,21 @@ fn get_transcript(
                 .map_err(|_| DispatchError::Tool(ToolError::ReferenceNotFound))
         })
         .transpose()?;
-    Ok(
-        json!({"entries": page.entries.into_iter().map(|item| item.text).collect::<Vec<_>>(), "next_cursor": next_cursor }),
-    )
+    let target = format!(
+        "{}/{}/{}",
+        reference.day, reference.stream, reference.segment
+    );
+    let entries = page
+        .entries
+        .into_iter()
+        .map(|item| item.text)
+        .collect::<Vec<_>>();
+    let count = entries.len();
+    Ok(Prepared::new(
+        json!({"entries": entries, "next_cursor": next_cursor }),
+        count,
+        vec![target],
+    ))
 }
 
 /// An admitted segment-derived path used only to classify the segment's live
@@ -765,7 +1070,14 @@ fn segment_assignment_probe_path(day: &str, stream: &str, segment: &str) -> Stri
     format!("{day}/{stream}/{segment}/talents/transcript.md")
 }
 
-fn available_facets(
+/// The facets this connection may reach, resolved from the live journal.
+///
+/// 🔑 The registry generates a connection's tool schemas through **this**
+/// function, the same resolution `list_facets` performs, so discovery names
+/// only what the connection can already fetch. ⛔ Resolving facets separately
+/// for the schema would make `tools/list` a content read that never passes the
+/// tool authorization path.
+pub(crate) fn available_facets(
     journal_root: &Path,
     snapshot: &ConnectionReadSnapshot,
 ) -> Result<
@@ -823,6 +1135,47 @@ fn snippet(value: &str) -> String {
 }
 fn digest(value: &str) -> String {
     format!("{:x}", Sha256::digest(value.as_bytes()))
+}
+
+/// SHA-256 over the content a call served, with the ephemeral envelope removed.
+///
+/// 🔴 **The obvious digest — over the prepared bytes exactly as released —
+/// cannot do the job the founder's directive asks of it, and it fails green.**
+/// Those bytes embed opaque references, which are AES-GCM tokens minted with a
+/// fresh nonce on every call, so an identical replay of identical content
+/// produces a different digest *every* time. Measured on a real journal: the
+/// same `search` replayed against an unchanged corpus recorded `5cdb11ce…`
+/// and then `dc800021…`. Nothing errors; the owner is simply told their
+/// journal changed, always.
+///
+/// ✅ So the digest covers what was served — titles, dates, snippets, text,
+/// names, coverage — with `reference` and `next_cursor` excluded, and object
+/// keys sorted so a later field reordering does not silently invalidate every
+/// record already written. ⚠ It is therefore a digest of the **content**, not
+/// a fingerprint of the exact bytes on the wire; the targets beside it say
+/// which records that content came from.
+fn content_digest(value: &Value) -> String {
+    digest(&canonical_content(value).to_string())
+}
+
+fn canonical_content(value: &Value) -> Value {
+    match value {
+        Value::Object(fields) => {
+            let mut keys = fields
+                .iter()
+                .map(|(key, _)| key.as_str())
+                .filter(|key| !matches!(*key, "reference" | "next_cursor"))
+                .collect::<Vec<_>>();
+            keys.sort_unstable();
+            let mut canonical = Map::new();
+            for key in keys {
+                canonical.insert(key.to_owned(), canonical_content(&fields[key]));
+            }
+            Value::Object(canonical)
+        }
+        Value::Array(items) => Value::Array(items.iter().map(canonical_content).collect()),
+        other => other.clone(),
+    }
 }
 fn digest_json(value: &Value) -> String {
     digest(&serde_json::to_string(value).expect("JSON value serializes"))

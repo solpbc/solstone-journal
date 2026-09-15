@@ -675,23 +675,24 @@ pub const SPL_HELP: &str = concat!(
 
 /// The parse-error usage for `journal mcp`.
 pub const MCP_USAGE: &str =
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,probe} ...\n";
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,activity,probe} ...\n";
 
 /// `journal mcp --help`.
 pub const MCP_HELP: &str = concat!(
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,probe} ...\n",
+    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,activity,probe} ...\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
     "\n",
     "subcommands:\n",
-    "  service               Run the hosted MCP service\n",
+    "  service               Run the MCP endpoint\n",
     "  status                Show MCP endpoint status\n",
     "  token                 Manage MCP bearer tokens\n",
     "  pairing               Manage the local owner pairing code\n",
     "  oauth                 Manage registered OAuth clients\n",
     "  permission            Manage connection read permissions\n",
-    "  probe                 Invoke one MCP read without opening a listener\n",
+    "  activity              Show what connections asked for and how each request ended\n",
+    "  probe                 Invoke one MCP read without opening a port\n",
 );
 
 pub const BACKFILL_FACET_IDS_USAGE: &str = "usage: journal backfill-facet-ids [-h] [--commit]\n";
@@ -1300,7 +1301,20 @@ pub enum McpCommand {
     Pairing(McpPairingCommand),
     Oauth(McpOauthCommand),
     Permission(McpPermissionCommand),
+    Activity(McpActivityCommand),
     Probe(McpProbeCommand),
+}
+
+/// An owner's filter over recorded agent activity.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct McpActivityCommand {
+    pub target: Option<McpTarget>,
+    pub tool: Option<String>,
+    pub outcome: Option<String>,
+    pub day_from: Option<String>,
+    pub day_to: Option<String>,
+    pub limit: usize,
+    pub json: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -3941,7 +3955,7 @@ fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
 fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
         return Err(McpUsageError(
-            "the following arguments are required: service, status, token, pairing, oauth, permission, probe"
+            "the following arguments are required: service, status, token, pairing, oauth, permission, activity, probe"
                 .to_owned(),
         ));
     };
@@ -3952,6 +3966,7 @@ fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
         Some("pairing") => parse_mcp_pairing(rest).map(McpCommand::Pairing),
         Some("oauth") => parse_mcp_oauth(rest).map(McpCommand::Oauth),
         Some("permission") => parse_mcp_permission(rest).map(McpCommand::Permission),
+        Some("activity") => parse_mcp_activity(rest).map(McpCommand::Activity),
         Some("probe") => parse_mcp_probe(rest).map(McpCommand::Probe),
         _ => Err(McpUsageError(format!(
             "invalid MCP command: {}",
@@ -4048,6 +4063,88 @@ fn parse_mcp_permission_set(args: &[OsString]) -> Result<McpPermissionCommand, M
         categories,
         facets,
     })
+}
+
+const DEFAULT_ACTIVITY_LIMIT: usize = 20;
+
+fn parse_mcp_activity(args: &[OsString]) -> Result<McpActivityCommand, McpUsageError> {
+    let mut target_args = Vec::new();
+    let mut command = McpActivityCommand {
+        limit: DEFAULT_ACTIVITY_LIMIT,
+        ..McpActivityCommand::default()
+    };
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        let (flag, inline) = match arg.to_str() {
+            Some(value) => match value.split_once('=') {
+                Some((flag, inline)) => (flag.to_owned(), Some(inline.to_owned())),
+                None => (value.to_owned(), None),
+            },
+            None => {
+                target_args.push(arg.clone());
+                continue;
+            }
+        };
+        let mut take = |name: &str| -> Result<String, McpUsageError> {
+            match inline.clone() {
+                Some(value) if !value.is_empty() => Ok(value),
+                Some(_) => Err(McpUsageError(format!("{name} must be nonempty"))),
+                None => iter
+                    .next()
+                    .and_then(|value| value.to_str().map(str::to_owned))
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| McpUsageError(format!("expected argument after {name}"))),
+            }
+        };
+        match flag.as_str() {
+            "--tool" => command.tool = Some(take("--tool")?),
+            "--outcome" => command.outcome = Some(take("--outcome")?),
+            "--day-from" => command.day_from = Some(validate_day(&take("--day-from")?)?),
+            "--day-to" => command.day_to = Some(validate_day(&take("--day-to")?)?),
+            "--limit" => {
+                let value = take("--limit")?;
+                command.limit = value
+                    .parse::<usize>()
+                    .ok()
+                    .filter(|limit| (1..=1000).contains(limit))
+                    .ok_or_else(|| {
+                        McpUsageError("--limit must be between 1 and 1000".to_owned())
+                    })?;
+            }
+            "--json" => command.json = true,
+            // The connection-target flags belong to `parse_mcp_target`, which
+            // reads them from the leftovers. Both the `--flag value` and the
+            // `--flag=value` forms pass through untouched.
+            "--token" | "--oauth" | "--created" => target_args.push(arg.clone()),
+            // ⚠ Every other unrecognized flag stops here rather than falling
+            // through to the target: `--tools search` would otherwise be
+            // reported as a bad connection target rather than as the typo it is.
+            other if other.starts_with("--") => {
+                return Err(McpUsageError(format!(
+                    "unknown option {other}; accepted: --token, --oauth, --created, --tool, \
+                     --outcome, --day-from, --day-to, --limit, --json"
+                )));
+            }
+            _ => target_args.push(arg.clone()),
+        }
+    }
+    if !target_args.is_empty() {
+        command.target = Some(parse_mcp_target(&target_args)?);
+    }
+    Ok(command)
+}
+
+/// ⚠ A day bound is compared as bytes against an eight-digit chronicle
+/// directory name, so anything else silently compares wrong rather than
+/// failing. Reject it here instead.
+fn validate_day(value: &str) -> Result<String, McpUsageError> {
+    if value.len() == 8 && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        Ok(value.to_owned())
+    } else {
+        Err(McpUsageError(format!(
+            "day must be eight digits (YYYYMMDD), got {value:?}"
+        )))
+    }
 }
 
 fn parse_mcp_probe(args: &[OsString]) -> Result<McpProbeCommand, McpUsageError> {
@@ -5433,6 +5530,71 @@ mod tests {
 
     fn args(values: &[&str]) -> Vec<OsString> {
         values.iter().map(OsString::from).collect()
+    }
+
+    #[test]
+    fn mcp_activity_parses_its_filters_and_passes_target_flags_through() {
+        // ⚠ The connection-target flags are read by `parse_mcp_target` from the
+        // leftovers, so a stricter unknown-flag guard has to let exactly those
+        // three past — rejecting them produced an error that listed `--token`
+        // as accepted while refusing it.
+        for target in [
+            vec!["mcp", "activity", "--token", "probe"],
+            vec!["mcp", "activity", "--token=probe"],
+        ] {
+            let Ok(Command::Mcp(McpCommand::Activity(command))) = evaluate_args(&args(&target))
+            else {
+                panic!("{target:?} parses as an activity command");
+            };
+            assert_eq!(
+                command.target,
+                Some(McpTarget::Token {
+                    label: "probe".to_owned()
+                })
+            );
+            assert_eq!(command.limit, DEFAULT_ACTIVITY_LIMIT);
+        }
+
+        let Ok(Command::Mcp(McpCommand::Activity(command))) = evaluate_args(&args(&[
+            "mcp",
+            "activity",
+            "--tool",
+            "search",
+            "--outcome",
+            "refused",
+            "--day-from",
+            "20260901",
+            "--day-to=20260915",
+            "--limit",
+            "5",
+            "--json",
+        ])) else {
+            panic!("the full filter set parses");
+        };
+        assert_eq!(command.tool.as_deref(), Some("search"));
+        assert_eq!(command.outcome.as_deref(), Some("refused"));
+        assert_eq!(command.day_from.as_deref(), Some("20260901"));
+        assert_eq!(command.day_to.as_deref(), Some("20260915"));
+        assert_eq!(command.limit, 5);
+        assert!(command.json);
+        assert_eq!(command.target, None);
+    }
+
+    #[test]
+    fn mcp_activity_refuses_a_mistyped_flag_a_bad_day_and_an_out_of_range_limit() {
+        for bad in [
+            vec!["mcp", "activity", "--tools", "search"],
+            vec!["mcp", "activity", "--day-from", "2026-09-01"],
+            vec!["mcp", "activity", "--day-to", "202609"],
+            vec!["mcp", "activity", "--limit", "0"],
+            vec!["mcp", "activity", "--limit", "1001"],
+            vec!["mcp", "activity", "--limit", "many"],
+        ] {
+            assert!(
+                matches!(evaluate_args(&args(&bad)), Ok(Command::McpUsage(_))),
+                "{bad:?} must be refused rather than silently reinterpreted"
+            );
+        }
     }
 
     #[test]
@@ -9075,9 +9237,23 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["mcp"])),
             Ok(Command::McpUsage(McpUsageError(
-                "the following arguments are required: service, status, token, pairing, oauth, permission, probe"
+                "the following arguments are required: service, status, token, pairing, oauth, permission, activity, probe"
                     .to_owned()
             )))
+        );
+        // The activity grammar parses without the endpoint feature too; only
+        // its implementation is gated.
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "activity", "--outcome", "refused"])),
+            Ok(Command::Mcp(McpCommand::Activity(McpActivityCommand {
+                target: None,
+                tool: None,
+                outcome: Some("refused".to_owned()),
+                day_from: None,
+                day_to: None,
+                limit: DEFAULT_ACTIVITY_LIMIT,
+                json: false,
+            })))
         );
         assert_eq!(
             evaluate_args(&args(&["mcp", "pairing"])),
