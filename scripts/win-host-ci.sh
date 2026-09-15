@@ -142,6 +142,20 @@ else
   exit "$sync_status"
 fi
 
+# The pinned FFmpeg build toolchain is transferred before the gate runs: the
+# box has no ambient sh/make/nasm/libclang and cannot acquire them itself.
+if WIN_REMOTE_HOST="${WIN_REMOTE_HOST:-}" \
+  GIT="$GIT" \
+  SCP="$SCP" \
+  SSH="$SSH" \
+  sh "$script_dir/sync-win-ffmpeg-tools.sh"; then
+  :
+else
+  tools_status=$?
+  echo "ERROR: win-host-ci: FFmpeg build toolchain sync failed" >&2
+  exit "$tools_status"
+fi
+
 binding_valid=1
 if [ -f "$WIN_CI_BINDING_FILE" ]; then
   binding_line_count=$(awk 'END { print NR + 0 }' "$WIN_CI_BINDING_FILE")
@@ -252,6 +266,22 @@ require_platform_receipt() {
     exit 1
   fi
 }
+require_ffmpeg_tool_receipts() {
+  for receipt_key in MSYS2_BASE MAKE NASM LLVM; do
+    key_count=$(printf '%s\n' "$normalized_output" |
+      awk -v key="JOURNAL_WIN_CI_FFMPEG_TOOL_$receipt_key" 'index($0, key "=") == 1 { count++ } END { print count + 0 }')
+    digest_count=$(printf '%s\n' "$normalized_output" |
+      awk -v key="JOURNAL_WIN_CI_FFMPEG_TOOL_$receipt_key" 'index($0, key "=") == 1 && $0 ~ / sha256=[0-9a-f]{64} size=[0-9]+$/ { count++ } END { print count + 0 }')
+    key_position=$(printf '%s\n' "$normalized_output" |
+      awk -v key="JOURNAL_WIN_CI_FFMPEG_TOOL_$receipt_key" 'index($0, key "=") == 1 { print NR }')
+    if [ "$key_count" -ne 1 ] || [ "$digest_count" -ne 1 ] || [ "$key_position" -ge "$ok_line" ]; then
+      echo "ERROR: win-host-ci: JOURNAL_WIN_CI_FFMPEG_TOOL_$receipt_key requires exactly one staged archive identity before JOURNAL_WIN_CI_OK" >&2
+      exit 1
+    fi
+  done
+}
+require_platform_receipt JOURNAL_WIN_CI_FFMPEG_TOOLS
+require_ffmpeg_tool_receipts
 require_platform_receipt JOURNAL_WIN_CI_LAUNCH_ENVIRONMENT_PREPARATION
 require_platform_receipt JOURNAL_WIN_CI_LAUNCH_PATH_PREPARATION
 require_platform_receipt JOURNAL_WIN_CI_JOB_LIST_NO_HANDLE_INHERITANCE
@@ -382,4 +412,4 @@ if [ "$refs_publication" -eq 1 ]; then
   fi
 fi
 
-echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence backup_evidence=$expected_backup_evidence ordinary_owner_evidence=passed runtime_components=executed/pass launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"
+echo "JOURNAL_WIN_HOST_CI_VERIFIED commit=$snapshot_sha cargo_lock_sha256=$cargo_lock_sha256 cloud_sync_evidence=$expected_cloud_evidence backup_evidence=$expected_backup_evidence ordinary_owner_evidence=passed ffmpeg_build_toolchain=executed/pass runtime_components=executed/pass launch_environment_preparation=executed/pass launch_path_preparation=executed/pass job_list_no_handle_inheritance=executed/pass job_process_owner=executed/pass job_last_handle_negative=executed/pass managed_process_facade=executed/pass windows_payload=executed/pass windows_create_only=executed/pass windows_create_only_protocol=executed/pass windows_install_file=executed/pass windows_install_file_protocol=executed/pass windows_oplog_namespace=executed/pass windows_oplog_liveness=executed/pass ntfs_publication=executed/pass refs_publication=executed/pass ntfs_cortex_use=executed/pass refs_cortex_use=executed/pass ntfs_operational_log_discovery=executed/pass refs_operational_log_discovery=executed/pass ntfs_stale_heartbeat_cleanup=executed/pass refs_stale_heartbeat_cleanup=executed/pass"

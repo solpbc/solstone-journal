@@ -41,6 +41,7 @@ pub const FFMPEG_WINDOWS_BUILD_EVIDENCE_LABEL: &str =
     "provenance/windows-x86_64/ffmpeg-build-evidence.json";
 pub const FFMPEG_WINDOWS_BUILD_EVIDENCE_SCHEMA_V1: &str =
     "solstone.ffmpeg-windows-build-evidence.v1";
+pub const FFMPEG_WINDOWS_TOOLS_SCHEMA_V1: &str = "solstone.ffmpeg-windows-tools.v1";
 
 const FFMPEG_WINDOWS_OUTPUT_TREE_ENTRIES: usize = 3;
 const FFMPEG_WINDOWS_OUTPUT_LIMIT: usize = 3 * 1024 * 1024 * 1024;
@@ -56,6 +57,33 @@ const FFMPEG_RETAINED_IMPORT_PREFIXES: &[&str] = &[
     "swscale",
     "ffmpeg",
 ];
+
+/// One pinned FFmpeg Windows build tool archive, verified present and
+/// byte-identical under a staging input root. `key` is the
+/// `builder-inputs.toml` table suffix, so a caller selects an archive by
+/// identity instead of re-deriving its filename.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FfmpegWindowsToolInput {
+    pub key: String,
+    pub version: String,
+    pub filename: String,
+    pub sha256: String,
+    pub size: u64,
+    pub path: String,
+}
+
+/// The four verified tool archives plus a fingerprint over their pinned
+/// identities. A staging caller names its extracted tools root after the
+/// fingerprint, so moving any pin produces a different root rather than
+/// silently reusing tools that no longer match the checkout.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FfmpegWindowsToolSet {
+    pub schema: String,
+    pub fingerprint: String,
+    pub tools: Vec<FfmpegWindowsToolInput>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -146,7 +174,7 @@ impl From<std::io::Error> for FfmpegWindowsError {
 }
 
 pub fn usage() -> &'static str {
-    "usage: solstone-distribution ffmpeg-windows <verify-inputs|record|verify> [FLAG]"
+    "usage: solstone-distribution ffmpeg-windows <verify-inputs|verify-tools|record|verify> [FLAG]"
 }
 
 pub fn run_cli(args: &[String]) -> Result<String, FfmpegWindowsError> {
@@ -188,6 +216,14 @@ pub fn run_cli(args: &[String]) -> Result<String, FfmpegWindowsError> {
                 "FFMPEG_WINDOWS_INPUTS_OK source_sha256={} source_size={} llvm_sha256={}",
                 inputs.source_archive.sha256, inputs.source_archive.size, inputs.llvm.sha256
             ))
+        }
+        "verify-tools" => {
+            let repo_root = repository_root()?;
+            let input_root = required_path(&flags, "--input-root")?;
+            require_only(&flags, &["--input-root"])?;
+            let tools = verify_windows_ffmpeg_tools(&repo_root, &input_root)?;
+            serde_json::to_string(&tools)
+                .map_err(|source| FfmpegWindowsError::new(source.to_string()))
         }
         "record" => {
             let repo_root = repository_root()?;
@@ -420,6 +456,69 @@ struct FfmpegWindowsInputs {
     make: InputIdentityEntry,
     nasm: InputIdentityEntry,
     llvm: InputIdentityEntry,
+}
+
+/// Verifies the four pinned FFmpeg Windows build tools staged under
+/// `input_root` against the checkout's own `builder-inputs.toml`.
+///
+/// The controlled producer already fetches and verifies these archives on the
+/// driver host (`acquire ffmpeg-windows-tools`) and re-verifies them inside
+/// the build slot; this is the same identity check reached by a staging caller
+/// that has the archives but not the producer's source archive. Acquisition
+/// stays on the driver — `acquire` refuses to run on Windows — so an absent
+/// archive is reported as a transfer that has not happened rather than as a
+/// fetch this process could perform.
+pub fn verify_windows_ffmpeg_tools(
+    repo_root: &Path,
+    input_root: &Path,
+) -> Result<FfmpegWindowsToolSet, FfmpegWindowsError> {
+    let tools = acquire::windows_ffmpeg_toolchain_inputs(repo_root)
+        .map_err(|source| FfmpegWindowsError::new(source.to_string()))?;
+    let selected = [
+        ("msys2_base", &tools.msys2_base),
+        ("make", &tools.make),
+        ("nasm", &tools.nasm),
+        ("llvm", &tools.llvm),
+    ];
+    let mut verified = Vec::with_capacity(selected.len());
+    for (key, input) in selected {
+        let path = input_root.join(&input.filename);
+        if !path.is_file() {
+            return Err(FfmpegWindowsError::new(format!(
+                "pinned FFmpeg Windows tool {} is absent from {}; acquire it on the driver host with `solstone-distribution acquire ffmpeg-windows-tools` and transfer the archive",
+                input.filename,
+                input_root.display()
+            )));
+        }
+        inspect_tool(&path, input, &format!("tools/{key}"))?;
+        verified.push(FfmpegWindowsToolInput {
+            key: key.to_owned(),
+            version: input.version.clone(),
+            filename: input.filename.clone(),
+            sha256: input.sha256.clone(),
+            size: input.size,
+            path: path.to_string_lossy().into_owned(),
+        });
+    }
+    Ok(FfmpegWindowsToolSet {
+        schema: FFMPEG_WINDOWS_TOOLS_SCHEMA_V1.to_owned(),
+        fingerprint: windows_ffmpeg_tools_fingerprint(&verified),
+        tools: verified,
+    })
+}
+
+/// Fingerprints the pinned identities, not the staged bytes: it is derived
+/// from `builder-inputs.toml` alone so a caller can name a destination before
+/// any archive is present, and it changes whenever a pin moves.
+fn windows_ffmpeg_tools_fingerprint(tools: &[FfmpegWindowsToolInput]) -> String {
+    let mut material = String::new();
+    for tool in tools {
+        material.push_str(&tool.key);
+        material.push('\n');
+        material.push_str(&tool.sha256);
+        material.push('\n');
+    }
+    sha256_hex(material.as_bytes())[..16].to_owned()
 }
 
 fn inspect_inputs(
@@ -757,6 +856,69 @@ mod tests {
         });
         let info = pe::parse_pe(&system).expect("fixture PE");
         reject_ffmpeg_dynamic_imports(&info).expect("system import");
+    }
+
+    #[test]
+    fn staged_tool_verification_names_the_absent_archive_and_refuses_changed_bytes() {
+        let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repo")
+            .to_path_buf();
+        let pinned = acquire::windows_ffmpeg_toolchain_inputs(&repo).expect("pinned tools");
+        let staging = tempfile::tempdir().expect("staging root");
+
+        let absent = verify_windows_ffmpeg_tools(&repo, staging.path())
+            .expect_err("an empty staging root cannot satisfy the pins");
+        assert!(absent.to_string().contains(&pinned.msys2_base.filename));
+        assert!(
+            absent.to_string().contains("acquire ffmpeg-windows-tools"),
+            "an absent archive must name the driver-host acquisition: {absent}"
+        );
+
+        for input in [&pinned.msys2_base, &pinned.make, &pinned.nasm, &pinned.llvm] {
+            fs::write(
+                staging.path().join(&input.filename),
+                b"not the pinned archive",
+            )
+            .expect("staged placeholder");
+        }
+        let changed = verify_windows_ffmpeg_tools(&repo, staging.path())
+            .expect_err("placeholder bytes cannot match a pinned identity");
+        assert!(
+            changed.to_string().contains(&pinned.msys2_base.filename),
+            "a changed archive must name itself: {changed}"
+        );
+        assert!(
+            !changed.to_string().contains("is absent from"),
+            "the changed-bytes refusal must come from the identity check, not the presence check: {changed}"
+        );
+    }
+
+    #[test]
+    fn staged_tool_fingerprint_is_pin_derived_and_moves_with_a_pin() {
+        let base = |sha: &str| FfmpegWindowsToolInput {
+            key: "msys2_base".to_owned(),
+            version: "1".to_owned(),
+            filename: "msys2.tar.xz".to_owned(),
+            sha256: sha.to_owned(),
+            size: 1,
+            path: "unused".to_owned(),
+        };
+        let original = [base(&"a".repeat(64))];
+        let fingerprint = windows_ffmpeg_tools_fingerprint(&original);
+        assert_eq!(fingerprint.len(), 16);
+        assert!(fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit()));
+        assert_eq!(fingerprint, windows_ffmpeg_tools_fingerprint(&original));
+        let moved = [base(&"b".repeat(64))];
+        assert_ne!(fingerprint, windows_ffmpeg_tools_fingerprint(&moved));
+        let mut relocated = original.clone();
+        relocated[0].path = "somewhere-else".to_owned();
+        assert_eq!(
+            fingerprint,
+            windows_ffmpeg_tools_fingerprint(&relocated),
+            "the fingerprint binds pinned identity, never where an archive happens to sit"
+        );
     }
 
     #[test]

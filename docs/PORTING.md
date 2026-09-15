@@ -95,7 +95,12 @@ as `WIN_REMOTE_HOST=user@host SOLSTONE_JOURNAL_WIN_OWNER_ACCOUNT=account make wi
 It transfers an exact, source-bound Git snapshot, verifies the workspace lockfile
 digest on the Windows checkout, runs the ordinary-owner journal inventory control
 through an interactive limited-token scheduled task, and can opt into Cloud Files
-and the ReFS enumeration/revalidation/archive matrix. ReFS claimed-removal remains
+and the ReFS enumeration/revalidation/archive matrix. It also carries its own
+FFmpeg build toolchain: the build host has MSVC but deliberately no ambient
+MSYS2 shell, GNU make, NASM or libclang, and `solstone-distribution acquire
+ffmpeg-windows-tools` cannot run there, so the driver acquires the four pinned
+archives and transfers them and the gate stages them under the same pins the
+controlled producer uses. ReFS claimed-removal remains
 unrun/skipped and unsupported. Do not treat this transport gate as evidence for
 Callosum, packaging, installation, signing, or smoke tests.
 
