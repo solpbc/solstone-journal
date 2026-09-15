@@ -23,6 +23,9 @@ pub mod schedule;
 pub mod status_wire;
 pub mod stt_backend_choice;
 
+#[cfg(any(unix, windows))]
+pub use solstone_core_journal_config::no_thinking_engine_chosen;
+
 /// Task-service tokens shared with the native journal process census.
 pub const TASK_VERB_TOKENS: [&str; 7] = [
     "think",

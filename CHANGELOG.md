@@ -20,6 +20,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - unless you've set processing to deferred, work interrupted by a restart now resumes the next time your journal starts, instead of waiting until the next day.
 - `journal doctor` now identifies audio that cannot be transcribed, instead of leaving it in a retry loop that cannot succeed.
+- reprocessing a past day no longer says the work is queued when no model is chosen, or when this copy of the journal is following another machine.
 
 ## [2.0.5] - 2026-09-14
 

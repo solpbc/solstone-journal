@@ -328,6 +328,16 @@ async fn ac14_reprocess_response_shapes() {
             "reprocess_past_only",
         ),
         (
+            solstone_core_reprocess_cli::DayOutcome::NoThinkingEngine,
+            StatusCode::BAD_REQUEST,
+            "reprocess_no_thinking_engine",
+        ),
+        (
+            solstone_core_reprocess_cli::DayOutcome::Remote,
+            StatusCode::BAD_REQUEST,
+            "reprocess_remote",
+        ),
+        (
             solstone_core_reprocess_cli::DayOutcome::Unreachable,
             StatusCode::SERVICE_UNAVAILABLE,
             "reprocess_unreachable",
@@ -344,7 +354,44 @@ async fn ac14_reprocess_response_shapes() {
             serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
                 .unwrap();
         assert_eq!(body["reason_code"], reason);
+        assert_ne!(body.get("status"), Some(&json!("queued")));
     }
+}
+
+#[tokio::test]
+async fn reprocess_with_no_engine_returns_bad_request_without_transport() {
+    let root = crate::test_support::root();
+    let day = "20260101";
+    let now = chrono::Utc.with_ymd_and_hms(2026, 1, 3, 12, 0, 0).unwrap();
+    let segment = root.path().join(format!("chronicle/{day}/090000_60"));
+    std::fs::create_dir_all(&segment).unwrap();
+    std::fs::write(segment.join("audio.jsonl"), "raw\n").unwrap();
+
+    let calls = std::cell::Cell::new(0);
+    let response = crate::actions::reprocess_with(
+        root.path(),
+        day,
+        solstone_core_reprocess_cli::Flavor::FromScratch,
+        now,
+        chrono_tz::UTC,
+        |_| {
+            calls.set(calls.get() + 1);
+            true
+        },
+    );
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body: Value =
+        serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap()).unwrap();
+    assert_eq!(body["reason_code"], "reprocess_no_thinking_engine");
+    assert_ne!(body.get("status"), Some(&json!("queued")));
+    assert_eq!(calls.get(), 0);
+}
+
+#[test]
+fn health_js_includes_already_complete_and_current_degraded_status_tokens() {
+    let script = include_str!("../assets/static/health.js");
+    assert!(script.contains("result.status === 'already_complete'"));
+    assert!(script.contains("result.status === 'current_degraded'"));
 }
 
 #[tokio::test]
@@ -634,11 +681,19 @@ async fn ac10_and_ac11_log_reads_are_whole_and_safely_classified() {
 #[tokio::test]
 async fn ac14_and_ac15_reprocess_handler_seam_submits_despite_backoff() {
     let root = crate::test_support::root();
+    let config_dir = root.path().join("config");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join("journal.json"),
+        serde_json::to_vec(&json!({"providers":{"active":{"provider":"test"}}})).unwrap(),
+    )
+    .unwrap();
     let day = "20260101";
     let now = chrono::Utc.with_ymd_and_hms(2026, 1, 3, 12, 0, 0).unwrap();
     let segment = root.path().join(format!("chronicle/{day}/090000_60"));
     std::fs::create_dir_all(&segment).unwrap();
     std::fs::write(segment.join("audio.jsonl"), "raw\n").unwrap();
+
     let health = root.path().join(format!("chronicle/{day}/health"));
     std::fs::create_dir_all(&health).unwrap();
     std::fs::write(health.join("stream.updated"), "").unwrap();

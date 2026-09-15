@@ -35,7 +35,7 @@ pub use path::get_journal_config_path;
 pub use read::read_journal_config_bound;
 pub use read::{
     ConfigLoadError, JournalConfigMutationBase, JournalConfigRead, load_mutation_base,
-    read_journal_config,
+    no_thinking_engine_chosen, read_journal_config,
 };
 
 #[cfg(test)]

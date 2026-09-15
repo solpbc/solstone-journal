@@ -60,6 +60,8 @@ pub enum DayOutcome {
     Submitted(Flavor),
     AlreadyComplete,
     CurrentDegraded,
+    NoThinkingEngine,
+    Remote,
     Unreachable,
     Failed(String),
 }
@@ -118,6 +120,9 @@ where
             ));
         }
         if !parsed.yes {
+            if solstone_core_system::no_thinking_engine_chosen(journal_path) {
+                return render_day_outcome(&parsed.day, DayOutcome::NoThinkingEngine);
+            }
             return success(range_plan(&days));
         }
         return run_from_scratch_range(journal_path, &days, now, zone, &mut transport);
@@ -242,6 +247,12 @@ where
     if !has_data {
         return DayOutcome::NoData;
     }
+    if solstone_core_system::no_thinking_engine_chosen(journal) {
+        return DayOutcome::NoThinkingEngine;
+    }
+    if flavor != Flavor::FromScratch && is_remote_supervisor(journal) {
+        return DayOutcome::Remote;
+    }
     if flavor == Flavor::FromScratch {
         return if transport(&request_envelope(day)) {
             DayOutcome::Submitted(flavor)
@@ -283,6 +294,20 @@ where
     }
 }
 
+fn is_remote_supervisor(journal: &Path) -> bool {
+    let ready_path = journal.join("health/supervisor.ready");
+    let Ok(bytes) = std::fs::read(ready_path) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+        return false;
+    };
+    value
+        .get("remote")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
     match outcome {
         DayOutcome::Malformed => failure("expected day in YYYYMMDD format"),
@@ -305,6 +330,12 @@ fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
         DayOutcome::CurrentDegraded => success(format!(
             "day {day}: some daily processing is still unresolved. use --from-scratch to retry.\n"
         )),
+        DayOutcome::NoThinkingEngine => {
+            failure("no model is chosen yet. choose one in thinking, then retry")
+        }
+        DayOutcome::Remote => {
+            failure("this journal is following another machine. reprocess it there.")
+        }
         DayOutcome::Unreachable => failure(UNREACHABLE_MESSAGE),
         DayOutcome::Failed(error) => failure(&format!("reprocess failed: {error}")),
     }
@@ -566,6 +597,27 @@ mod tests {
         }
     }
 
+    fn write_test_provider(root: &Path) {
+        let config_dir = root.join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        let config_path = config_dir.join("journal.json");
+        let mut map: serde_json::Map<String, serde_json::Value> = if config_path.is_file() {
+            let bytes = fs::read(&config_path).unwrap();
+            serde_json::from_slice(&bytes).unwrap_or_default()
+        } else {
+            serde_json::Map::new()
+        };
+        map.insert(
+            "providers".into(),
+            serde_json::json!({
+                "active": {
+                    "provider": "test"
+                }
+            }),
+        );
+        fs::write(config_path, serde_json::to_vec(&map).unwrap()).unwrap();
+    }
+
     #[test]
     fn writers_reach_every_repair_and_drain_projection() {
         use solstone_core_system::catchup::{
@@ -683,6 +735,7 @@ mod tests {
         for flag in ["-v", "--verbose", "-d", "--debug"] {
             for flavor in [None, Some("--from-scratch"), Some("--mark-updated")] {
                 let root = TempDir::new().unwrap();
+                write_test_provider(root.path());
                 fs::write(
                     segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
                     "{}\n",
@@ -727,6 +780,7 @@ mod tests {
     #[test]
     fn from_scratch_emits_literal_framed_request() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
             "{}\n",
@@ -753,6 +807,7 @@ mod tests {
     #[test]
     fn mark_updated_touches_before_failed_transport() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
             "{}\n",
@@ -781,6 +836,7 @@ mod tests {
     #[test]
     fn legacy_daily_marker_does_not_suppress_unverified_work() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
             "{}\n",
@@ -828,7 +884,15 @@ mod tests {
         fs::create_dir_all(root.path().join("config")).unwrap();
         fs::write(
             root.path().join("config/journal.json"),
-            serde_json::to_vec(&serde_json::json!({"talent_overrides":overrides})).unwrap(),
+            serde_json::to_vec(&serde_json::json!({
+                "talent_overrides": overrides,
+                "providers": {
+                    "active": {
+                        "provider": "test"
+                    }
+                }
+            }))
+            .unwrap(),
         )
         .unwrap();
         let health = root.path().join("chronicle").join(DAY).join("health");
@@ -897,6 +961,7 @@ mod tests {
     #[test]
     fn range_preview_and_divergent_scan_count_send_nothing() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         // This decorated name passes iter_segments but scan_day rejects its full basename.
         segment(root.path(), DAY, "x-090000_60");
         // This canonical key has no modality files, so scan_day drops it as empty.
@@ -922,6 +987,7 @@ mod tests {
     #[test]
     fn empty_day_directory_is_no_data_singly_and_skipped_in_range() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         fs::create_dir_all(root.path().join("chronicle").join("20251231")).unwrap();
         let single = run_cli_with(
             &words(&["20251231"]),
@@ -959,6 +1025,7 @@ mod tests {
     #[test]
     fn range_partial_failure_counts_only_data_days() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         for day in ["20251230", "20251231", "20260101"] {
             fs::write(
                 segment(root.path(), day, "090000_60").join("audio.jsonl"),
@@ -995,6 +1062,7 @@ mod tests {
     #[test]
     fn range_yes_queues_data_days_oldest_first() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         let range_now = Utc.with_ymd_and_hms(2026, 1, 4, 12, 0, 0).unwrap();
         for day in ["20251230", DAY, "20260103"] {
             fs::create_dir_all(root.path().join("chronicle").join(day)).unwrap();
@@ -1038,6 +1106,7 @@ mod tests {
     #[test]
     fn process_now_submits_despite_matching_future_retry_for_both_kinds() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
             "raw\n",
@@ -1091,6 +1160,7 @@ mod tests {
     #[test]
     fn process_now_submits_despite_garbage_catchup_state() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         fs::write(
             segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
             "raw\n",
@@ -1148,6 +1218,7 @@ mod tests {
     #[test]
     fn invalid_calendar_day_and_drain_shape_are_distinct() {
         let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
         let invalid = run_cli_with(
             &words(&["20260231"]),
             root.path(),
@@ -1180,5 +1251,238 @@ mod tests {
             sent,
             "{\"tract\":\"supervisor\",\"event\":\"drain\",\"day\":\"20260101\"}\n"
         );
+    }
+
+    #[test]
+    fn no_thinking_engine_refuses_all_flavors_without_send() {
+        let root = TempDir::new().unwrap();
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "raw\n",
+        )
+        .unwrap();
+
+        // 1. Missing config
+        for flavor in [Flavor::ProcessNow, Flavor::FromScratch, Flavor::MarkUpdated] {
+            let mut calls = 0;
+            let outcome =
+                reprocess_day_with(root.path(), DAY, flavor, now(), chrono_tz::UTC, |_| {
+                    calls += 1;
+                    true
+                });
+            assert!(matches!(outcome, DayOutcome::NoThinkingEngine));
+            assert_eq!(calls, 0);
+        }
+
+        // Marker must not be touched
+        let marker = root
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("health/stream.updated");
+        assert!(!marker.exists());
+
+        // 2. Empty provider string
+        let config_dir = root.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_vec(&json!({"providers":{"active":{"provider":"   "}}})).unwrap(),
+        )
+        .unwrap();
+        for flavor in [Flavor::ProcessNow, Flavor::FromScratch, Flavor::MarkUpdated] {
+            let mut calls = 0;
+            let outcome =
+                reprocess_day_with(root.path(), DAY, flavor, now(), chrono_tz::UTC, |_| {
+                    calls += 1;
+                    true
+                });
+            assert!(matches!(outcome, DayOutcome::NoThinkingEngine));
+            assert_eq!(calls, 0);
+        }
+    }
+
+    #[test]
+    fn remote_supervisor_refuses_drain_flavors_but_allows_from_scratch() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "raw\n",
+        )
+        .unwrap();
+        let health_dir = root.path().join("health");
+        fs::create_dir_all(&health_dir).unwrap();
+        fs::write(
+            health_dir.join("supervisor.ready"),
+            serde_json::to_vec(&json!({"remote": true})).unwrap(),
+        )
+        .unwrap();
+
+        let mut calls = 0;
+        let process_now = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::ProcessNow,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(process_now, DayOutcome::Remote));
+        assert_eq!(calls, 0);
+
+        let mark_updated = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::MarkUpdated,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(mark_updated, DayOutcome::Remote));
+        assert_eq!(calls, 0);
+
+        let from_scratch = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::FromScratch,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(
+            from_scratch,
+            DayOutcome::Submitted(Flavor::FromScratch)
+        ));
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn remote_supervisor_absent_or_false_marker_falls_through_to_send() {
+        let root = TempDir::new().unwrap();
+        write_test_provider(root.path());
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "raw\n",
+        )
+        .unwrap();
+        let health = root.path().join("chronicle").join(DAY).join("health");
+        fs::create_dir_all(&health).unwrap();
+        fs::write(health.join("stream.updated"), "").unwrap();
+
+        // 1. Absent supervisor.ready
+        let mut calls = 0;
+        let outcome = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::ProcessNow,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(outcome, DayOutcome::Submitted(Flavor::ProcessNow)));
+        assert_eq!(calls, 1);
+
+        // 2. "remote": false
+        let health_dir = root.path().join("health");
+        fs::create_dir_all(&health_dir).unwrap();
+        fs::write(
+            health_dir.join("supervisor.ready"),
+            serde_json::to_vec(&json!({"remote": false})).unwrap(),
+        )
+        .unwrap();
+        let mut calls = 0;
+        let outcome = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::ProcessNow,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(outcome, DayOutcome::Submitted(Flavor::ProcessNow)));
+        assert_eq!(calls, 1);
+
+        // 3. Corrupted json
+        fs::write(health_dir.join("supervisor.ready"), b"not valid json").unwrap();
+        let mut calls = 0;
+        let outcome = reprocess_day_with(
+            root.path(),
+            DAY,
+            Flavor::ProcessNow,
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert!(matches!(outcome, DayOutcome::Submitted(Flavor::ProcessNow)));
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn range_preview_with_no_engine_refuses_and_does_not_preview_queued() {
+        let root = TempDir::new().unwrap();
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+        let mut calls = 0;
+        let result = run_cli_with(
+            &words(&[DAY, "--through", DAY, "--from-scratch"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert_eq!(calls, 0);
+        assert_eq!(result.exit_code, 1);
+        assert!(!result.stdout.contains("will be queued"));
+        assert!(!result.stderr.contains("will be queued"));
+    }
+
+    #[test]
+    fn range_execution_with_no_engine_refuses_first_day_and_sends_nothing() {
+        let root = TempDir::new().unwrap();
+        fs::write(
+            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
+            "{}\n",
+        )
+        .unwrap();
+        let mut calls = 0;
+        let result = run_cli_with(
+            &words(&[DAY, "--through", DAY, "--from-scratch", "--yes"]),
+            root.path(),
+            now(),
+            chrono_tz::UTC,
+            |_| {
+                calls += 1;
+                true
+            },
+        );
+        assert_eq!(calls, 0);
+        assert_eq!(result.exit_code, 1);
+        assert!(!result.stdout.contains("queued from-scratch reprocess"));
+        assert!(!result.stderr.contains("queued from-scratch reprocess"));
     }
 }

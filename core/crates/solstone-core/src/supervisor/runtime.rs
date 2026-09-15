@@ -1762,10 +1762,19 @@ pub(crate) async fn boot_and_tick(
         return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
     }
     #[cfg(not(windows))]
-    let ready_extra = serde_json::Map::new();
+    let ready_extra = {
+        let mut extra = serde_json::Map::new();
+        if remote {
+            extra.insert("remote".into(), serde_json::Value::Bool(true));
+        }
+        extra
+    };
     #[cfg(windows)]
     let ready_extra = {
         let mut extra = serde_json::Map::new();
+        if remote {
+            extra.insert("remote".into(), serde_json::Value::Bool(true));
+        }
         if let Some(root) = installed_task {
             if root.journal() != state.journal.as_path() {
                 let startup = RuntimeBootError::Startup("installed root journal mismatch".into());
@@ -1780,6 +1789,7 @@ pub(crate) async fn boot_and_tick(
         }
         extra
     };
+
     if let Err(error) = lifecycle.signal_ready(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

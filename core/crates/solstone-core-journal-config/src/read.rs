@@ -122,6 +122,23 @@ pub fn load_mutation_base(
     }
 }
 
+/// Whether the journal has no valid thinking provider configured in `config/journal.json`.
+pub fn no_thinking_engine_chosen(journal: &Path) -> bool {
+    let Ok(read) = read_journal_config(journal) else {
+        return true;
+    };
+    let Some(config) = read.config else {
+        return true;
+    };
+    !config
+        .get("providers")
+        .and_then(Value::as_object)
+        .and_then(|providers| providers.get("active").and_then(Value::as_object))
+        .and_then(|active| active.get("provider"))
+        .and_then(Value::as_str)
+        .is_some_and(|provider| !provider.trim().is_empty())
+}
+
 fn read_config_path(path: &Path) -> Result<JournalConfigRead, ConfigLoadError> {
     let bytes = match read_bytes(path) {
         Ok(bytes) => Some(bytes),
@@ -334,5 +351,40 @@ mod bound_tests {
         );
         assert_eq!(fired, 2);
         assert!(matches!(result, Err(ConfigLoadError::Corrupt { .. })));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    fn write_config(root: &std::path::Path, bytes: &[u8]) {
+        let config = root.join("config");
+        fs::create_dir_all(&config).unwrap();
+        fs::write(config.join("journal.json"), bytes).unwrap();
+    }
+
+    #[test]
+    fn no_thinking_engine_chosen_detects_absent_empty_and_valid_providers() {
+        let temp = TempDir::new();
+        assert!(no_thinking_engine_chosen(temp.path()));
+
+        write_config(temp.path(), br#"{"providers":{}}"#);
+        assert!(no_thinking_engine_chosen(temp.path()));
+
+        write_config(
+            temp.path(),
+            br#"{"providers":{"active":{"provider":"   "}}}"#,
+        );
+        assert!(no_thinking_engine_chosen(temp.path()));
+
+        write_config(
+            temp.path(),
+            br#"{"providers":{"active":{"provider":"anthropic"}}}"#,
+        );
+        assert!(!no_thinking_engine_chosen(temp.path()));
     }
 }

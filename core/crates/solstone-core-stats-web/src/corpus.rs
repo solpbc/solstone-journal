@@ -450,3 +450,10 @@ fn matches(path: &str, pattern: &str) -> bool {
             .zip(pattern)
             .all(|(value, expected)| expected == "*" || value == &expected)
 }
+
+#[test]
+fn dashboard_js_includes_already_complete_and_current_degraded_status_tokens() {
+    let script = include_str!("../assets/static/dashboard.js");
+    assert!(script.contains("result.status === 'already_complete'"));
+    assert!(script.contains("result.status === 'current_degraded'"));
+}

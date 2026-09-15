@@ -21,16 +21,7 @@ pub(crate) fn processing_is_deferred(journal: &Path) -> bool {
 }
 
 pub(crate) fn no_thinking_engine_chosen(journal: &Path) -> bool {
-    let Some(config) = read_config(journal) else {
-        return true;
-    };
-    !config
-        .get("providers")
-        .and_then(Value::as_object)
-        .and_then(|providers| providers.get("active").and_then(Value::as_object))
-        .and_then(|active| active.get("provider"))
-        .and_then(Value::as_str)
-        .is_some_and(|provider| !provider.trim().is_empty())
+    solstone_core_journal_config::no_thinking_engine_chosen(journal)
 }
 
 fn read_config(journal: &Path) -> Option<serde_json::Map<String, Value>> {
