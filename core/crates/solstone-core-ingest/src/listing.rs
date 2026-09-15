@@ -52,7 +52,7 @@ pub(crate) struct DayListing {
     pub(crate) segments: Vec<ListingSegment>,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) enum ListingError {
     AmbiguousName,
     JournalRead,

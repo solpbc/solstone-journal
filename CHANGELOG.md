@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `journal doctor` now reports a day that a linked device cannot sync because your journal cannot read that day, naming the day and the device's stream. until now the device showed itself offline and the journal kept no note of it.
+
 ### Fixed
 
 - `journal transfer send`, sending to a journal you have already paired with, no longer refuses a range of days when two different days each hold a segment that started at the same time and ran the same length. two segments on the same day sharing a start and length are still refused, and the message now names the day.

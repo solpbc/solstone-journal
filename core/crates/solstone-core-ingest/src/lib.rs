@@ -24,6 +24,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod health;
 mod listing;
 mod model;
 mod read_routes;
@@ -31,4 +32,5 @@ mod router;
 mod stream_identity;
 mod validation;
 
+pub use health::{DeviceDayFault, device_day_listing_faults};
 pub use router::api_router;

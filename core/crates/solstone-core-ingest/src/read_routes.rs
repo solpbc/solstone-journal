@@ -11,6 +11,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_segment::{list_days, lookup_stream_state};
 
+use crate::health::day_read_reason;
 use crate::listing::{DayListing, ListingError, ListingFile, merge_day_listing, native_events};
 use crate::model::ReasonCode;
 use crate::router::{IngestState, refusal};
@@ -50,7 +51,14 @@ pub async fn ingest_manifest(
         ) {
             Ok(listing) => listing,
             Err(error) => {
-                result.insert(day, json!({"error": day_read_reason(error).as_str()}));
+                // A device told this refuses the whole day and reports itself offline,
+                // so the journal says so too; nothing else on this side records it.
+                let reason = day_read_reason(error);
+                log::warn!(
+                    "device_manifest_day_unreadable day={day} reason={}",
+                    reason.as_str()
+                );
+                result.insert(day, json!({"error": reason.as_str()}));
                 continue;
             }
         };
@@ -83,7 +91,7 @@ pub async fn ingest_manifest_day(
         &day,
     ) {
         Ok(listing) => listing,
-        Err(error) => return day_refusal(error),
+        Err(error) => return day_refusal(&day, error),
     };
     let segments = listing
         .segments
@@ -115,7 +123,7 @@ pub async fn ingest_segments(
         &day,
     ) {
         Ok(listing) => listing,
-        Err(error) => return day_refusal(error),
+        Err(error) => return day_refusal(&day, error),
     };
     let items = listing
         .segments
@@ -217,15 +225,12 @@ fn files_value(files: &[ListingFile]) -> Value {
     )
 }
 
-fn day_refusal(error: ListingError) -> Response {
+fn day_refusal(day: &str, error: ListingError) -> Response {
+    log::warn!(
+        "device_manifest_day_unreadable day={day} reason={}",
+        day_read_reason(error).as_str()
+    );
     listing_refusal(error)
-}
-
-fn day_read_reason(error: ListingError) -> ReasonCode {
-    match error {
-        ListingError::AmbiguousName => ReasonCode::AmbiguousSegmentFileName,
-        ListingError::JournalRead => ReasonCode::JournalReadFailed,
-    }
 }
 
 fn listing_refusal(error: ListingError) -> Response {
