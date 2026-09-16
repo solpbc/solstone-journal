@@ -113,8 +113,20 @@ fn write_and_sync(path: &Path, mut file: fs::File, contents: &[u8]) -> Result<()
 }
 
 fn append_record_no_follow(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
+    // A newly created file's directory entry is made durable too, as `append_record`
+    // does. `symlink_metadata` does not follow the leaf, so a link is not "new".
+    #[cfg(unix)]
+    let is_new = matches!(
+        fs::symlink_metadata(path),
+        Err(error) if error.kind() == io::ErrorKind::NotFound
+    );
     let file = open_no_follow(path).map_err(|source| io_error(path, source))?;
-    write_and_sync(path, file, contents)
+    write_and_sync(path, file, contents)?;
+    #[cfg(unix)]
+    if is_new {
+        fsync_dir(parent_dir(path));
+    }
+    Ok(())
 }
 
 fn append_record(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
