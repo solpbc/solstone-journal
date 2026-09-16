@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockError, LockOptions, mutate_journal_config,
 };
-use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
+use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
 
 use crate::{
     http::{
@@ -403,6 +403,15 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             mode.as_str().unwrap_or_default()
         ));
     }
+
+    if let Some(mode) = request.get("empty_audio")
+        && !matches!(mode.as_str(), Some("keep" | "processed"))
+    {
+        return invalid_config_value(format!(
+            "Invalid mode: {}",
+            mode.as_str().unwrap_or_default()
+        ));
+    }
     if let Some(days) = request.get("raw_media_days")
         && !days.is_null()
         && (!days.is_i64() || days.as_i64().is_some_and(|days| days < 1))
@@ -457,12 +466,21 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
             .get("retention")
             .cloned()
             .unwrap_or_else(|| json!({}));
+        let mut changed = Map::new();
+        if request.get("empty_audio").is_some()
+            && let Some(transcribe) = config.get_mut("transcribe").and_then(Value::as_object_mut)
+            && let Some(old_preserve) = transcribe.remove("preserve_all")
+        {
+            changed.insert(
+                "transcribe.preserve_all".to_owned(),
+                json!({"old": old_preserve, "new": Value::Null}),
+            );
+        }
         let retention = config
             .entry("retention".to_owned())
             .or_insert_with(|| json!({}))
             .as_object_mut()
             .expect("retention object");
-        let mut changed = Map::new();
         for field in ["raw_media", "raw_media_days"] {
             if let Some(value) = request.get(field) {
                 if retention.get(field) != Some(value) {
@@ -474,6 +492,16 @@ pub async fn update(journal_root: PathBuf, lock_options: LockOptions, body: Byte
                 retention.insert(field.to_owned(), value.clone());
             }
         }
+        if let Some(value) = request.get("empty_audio") {
+            if retention.get("empty_audio") != Some(value) {
+                changed.insert(
+                    "empty_audio".to_owned(),
+                    json!({"old": retention.get("empty_audio"), "new": value}),
+                );
+            }
+            retention.insert("empty_audio".to_owned(), value.clone());
+        }
+
         if let Some(value) = &per_stream {
             let value = Value::Object(value.clone());
             if old.get("per_stream") != Some(&value) {
@@ -555,12 +583,7 @@ pub async fn purge(journal_root: PathBuf, body: Bytes) -> Response {
         .expect("session gate handled corrupt config")
         .config
         .unwrap_or_default();
-    let policy = policy_from_retention(
-        config
-            .get("retention")
-            .and_then(Value::as_object)
-            .unwrap_or(&Map::new()),
-    );
+    let policy = policy_from_journal_config(&config);
     let before = match retention_executor::marks(journal_root.clone()).await {
         Ok(value) => value,
         Err(error) => {

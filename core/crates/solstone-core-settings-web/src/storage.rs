@@ -8,6 +8,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::{Map, Value, json};
+use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
 
 use crate::http::json_response;
 
@@ -33,7 +34,17 @@ pub async fn get(journal_root: PathBuf) -> Response {
 
 pub async fn get_config(journal_root: PathBuf) -> Response {
     match read_config(&journal_root) {
-        Ok(config) => json_response(config_payload(&journal_root, &config)),
+        Ok(config) => {
+            let keep_empty_audio = policy_from_journal_config(&config)
+                .empty_audio_rule
+                .period
+                .is_none();
+            let mut payload = config_payload(&journal_root, &config);
+            if let Some(retention) = payload.get_mut("retention").and_then(Value::as_object_mut) {
+                retention.insert("keep_empty_audio".to_owned(), json!(keep_empty_audio));
+            }
+            json_response(payload)
+        }
         Err(detail) => read_failed(
             "storage_config_failed",
             "storage settings couldn't be read.",
@@ -98,11 +109,7 @@ fn storage_warnings(
     disk_percent: Option<f64>,
 ) -> Vec<Value> {
     let retention = retention.cloned().unwrap_or_default();
-    let keep_mode = retention
-        .get("raw_media")
-        .and_then(Value::as_str)
-        .unwrap_or("keep")
-        == "keep";
+    let keep_mode = !policy_would_release(&policy_from_journal_config(config));
     let nudge = " your journal is set to always retain original media, so nothing is added to the list automatically.";
     let mut warnings = Vec::new();
     let disk_threshold = retention
@@ -234,8 +241,14 @@ mod tests {
         fs::create_dir(root.join("config")).unwrap();
         fs::write(root.join("config/journal.json"), r#"{"retention":{"raw_media":"days","raw_media_days":14,"per_stream":{"phone":{"raw_media":"days"}},"journal_logs":{"enabled":false,"days":9}}}"#).unwrap();
         let before = fs::read(root.join("config/journal.json")).unwrap();
-        let config = body(super::get_config(root.to_owned()).await).await;
+        let mut config = body(super::get_config(root.to_owned()).await).await;
         let full = body(super::get(root.to_owned()).await).await;
+        assert_eq!(config["retention"]["keep_empty_audio"], false);
+        assert!(full["retention"].get("keep_empty_audio").is_none());
+        config["retention"]
+            .as_object_mut()
+            .unwrap()
+            .remove("keep_empty_audio");
         assert_eq!(config["retention"], full["retention"]);
         assert_eq!(config["streams"], full["streams"]);
         assert!(config.get("summary").is_none());
@@ -252,6 +265,75 @@ mod tests {
             "storage_measurement_failed"
         );
         assert_eq!(fs::read(root.join("config/journal.json")).unwrap(), before);
+    }
+
+    #[tokio::test]
+    async fn get_config_projects_keep_empty_audio_correctly() {
+        // 1. legacy true + stored processed -> true
+        {
+            let temporary = TempDir::new().unwrap();
+            let root = temporary.path();
+            fs::create_dir(root.join("config")).unwrap();
+            let conf = json!({
+                "retention": {"raw_media": "keep", "empty_audio": "processed"},
+                "transcribe": {"preserve_all": true}
+            });
+            fs::write(
+                root.join("config/journal.json"),
+                serde_json::to_string(&conf).unwrap(),
+            )
+            .unwrap();
+            let response = body(super::get_config(root.to_owned()).await).await;
+            assert_eq!(response["retention"]["keep_empty_audio"], true);
+        }
+        // 2. no legacy + stored processed -> false
+        {
+            let temporary = TempDir::new().unwrap();
+            let root = temporary.path();
+            fs::create_dir(root.join("config")).unwrap();
+            let conf = json!({
+                "retention": {"raw_media": "keep", "empty_audio": "processed"}
+            });
+            fs::write(
+                root.join("config/journal.json"),
+                serde_json::to_string(&conf).unwrap(),
+            )
+            .unwrap();
+            let response = body(super::get_config(root.to_owned()).await).await;
+            assert_eq!(response["retention"]["keep_empty_audio"], false);
+        }
+        // 3. no legacy + stored keep -> true
+        {
+            let temporary = TempDir::new().unwrap();
+            let root = temporary.path();
+            fs::create_dir(root.join("config")).unwrap();
+            let conf = json!({
+                "retention": {"raw_media": "keep", "empty_audio": "keep"}
+            });
+            fs::write(
+                root.join("config/journal.json"),
+                serde_json::to_string(&conf).unwrap(),
+            )
+            .unwrap();
+            let response = body(super::get_config(root.to_owned()).await).await;
+            assert_eq!(response["retention"]["keep_empty_audio"], true);
+        }
+        // 4. no retention at all -> false
+        {
+            let temporary = TempDir::new().unwrap();
+            let root = temporary.path();
+            fs::create_dir(root.join("config")).unwrap();
+            let conf = json!({
+                "setup": {"completed_at": 1_700_000_000_000_i64}
+            });
+            fs::write(
+                root.join("config/journal.json"),
+                serde_json::to_string(&conf).unwrap(),
+            )
+            .unwrap();
+            let response = body(super::get_config(root.to_owned()).await).await;
+            assert_eq!(response["retention"]["keep_empty_audio"], false);
+        }
     }
 
     #[tokio::test]
@@ -306,5 +388,67 @@ mod tests {
         fs::write(directory.join("good.json"), r#"{"name":"good"}"#).expect("valid stream");
         fs::write(directory.join("broken.json"), "not JSON").expect("invalid stream");
         assert_eq!(streams(temporary.path()), vec![json!({"name": "good"})]);
+    }
+
+    #[test]
+    fn storage_warnings_nudge_depends_on_would_release() {
+        let summary = solstone_core_retention::StorageSummary {
+            raw_media_bytes: 2 * 1024_u64.pow(3),
+            ..Default::default()
+        };
+        let nudge = "your journal is set to always retain original media";
+
+        // 1. raw_media: "keep", empty_audio absent -> releases empty audio -> would_release is true -> NO nudge
+        let config1: Map<String, Value> = serde_json::from_value(json!({
+            "retention": {"raw_media": "keep", "storage_warning_raw_media_gb": 1}
+        }))
+        .unwrap();
+        let w1 = storage_warnings(
+            &summary,
+            config1.get("retention").and_then(Value::as_object),
+            &config1,
+            None,
+        );
+        assert!(!w1[0]["message"].as_str().unwrap().contains(nudge));
+
+        // 2. raw_media: "keep", empty_audio: "keep" -> would_release is false -> NUDGE present
+        let config2: Map<String, Value> = serde_json::from_value(json!({
+            "retention": {"raw_media": "keep", "empty_audio": "keep", "storage_warning_raw_media_gb": 1}
+        }))
+        .unwrap();
+        let w2 = storage_warnings(
+            &summary,
+            config2.get("retention").and_then(Value::as_object),
+            &config2,
+            None,
+        );
+        assert!(w2[0]["message"].as_str().unwrap().contains(nudge));
+
+        // 3. raw_media: "keep", transcribe.preserve_all: true -> would_release is false -> NUDGE present
+        let config3: Map<String, Value> = serde_json::from_value(json!({
+            "retention": {"raw_media": "keep", "storage_warning_raw_media_gb": 1},
+            "transcribe": {"preserve_all": true}
+        }))
+        .unwrap();
+        let w3 = storage_warnings(
+            &summary,
+            config3.get("retention").and_then(Value::as_object),
+            &config3,
+            None,
+        );
+        assert!(w3[0]["message"].as_str().unwrap().contains(nudge));
+
+        // 4. raw_media: "days" -> would_release is true -> NO nudge
+        let config4: Map<String, Value> = serde_json::from_value(json!({
+            "retention": {"raw_media": "days", "raw_media_days": 7, "storage_warning_raw_media_gb": 1}
+        }))
+        .unwrap();
+        let w4 = storage_warnings(
+            &summary,
+            config4.get("retention").and_then(Value::as_object),
+            &config4,
+            None,
+        );
+        assert!(!w4[0]["message"].as_str().unwrap().contains(nudge));
     }
 }

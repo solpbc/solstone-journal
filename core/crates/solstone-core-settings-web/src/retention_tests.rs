@@ -860,3 +860,168 @@ fn ac6_fractional_minimum_age_rounds_up() {
     );
     assert_eq!(policy.minimum_age.0, 8);
 }
+
+#[test]
+fn ac5a_update_empty_audio_migrates_preserve_all_and_logs_action() {
+    let root = root_from_config(&json!({
+        "setup": {"completed_at": 1_700_000_000_000_i64},
+        "retention": {
+            "raw_media": "keep",
+            "empty_audio": "processed"
+        },
+        "transcribe": {
+            "preserve_all": false,
+            "backend": "parakeet"
+        }
+    }));
+    let (status, _body) = run_async(send(
+        crate::test_support::shell_router(root.path()),
+        "PUT",
+        "/app/settings/api/storage",
+        Some(&json!({"empty_audio": "keep"})),
+    ));
+    assert_eq!(status, StatusCode::OK);
+    let config: Value = serde_json::from_slice(
+        &fs::read(root.path().join("config/journal.json")).expect("config after"),
+    )
+    .expect("config JSON");
+    assert_eq!(config["retention"]["empty_audio"], "keep");
+    assert!(
+        config
+            .get("transcribe")
+            .and_then(|t| t.get("preserve_all"))
+            .is_none()
+    );
+    assert_eq!(config["transcribe"]["backend"], "parakeet");
+
+    let day = Local::now().format("%Y%m%d").to_string();
+    let action_log_path = root.path().join(format!("config/actions/{day}.jsonl"));
+    let log_content = fs::read_to_string(action_log_path).expect("action log");
+    let last_line = log_content.lines().last().expect("log line");
+    let entry: Value = serde_json::from_str(last_line).expect("action log json");
+    assert_eq!(entry["action"], "retention_update");
+    let changed = entry["params"]["changed_fields"].as_object().unwrap();
+    let changed_keys: std::collections::BTreeSet<_> = changed.keys().cloned().collect();
+    let expected_keys: std::collections::BTreeSet<_> = [
+        "empty_audio".to_owned(),
+        "transcribe.preserve_all".to_owned(),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(changed_keys, expected_keys);
+    assert_eq!(
+        changed["empty_audio"],
+        json!({"old": "processed", "new": "keep"})
+    );
+    assert_eq!(
+        changed["transcribe.preserve_all"],
+        json!({"old": false, "new": Value::Null})
+    );
+}
+
+#[test]
+fn ac5b_update_empty_audio_removes_preserve_all_even_if_empty_audio_unchanged() {
+    let root = root_from_config(&json!({
+        "setup": {"completed_at": 1_700_000_000_000_i64},
+        "retention": {
+            "raw_media": "keep",
+            "empty_audio": "processed"
+        },
+        "transcribe": {
+            "preserve_all": true
+        }
+    }));
+    let (status, _body) = run_async(send(
+        crate::test_support::shell_router(root.path()),
+        "PUT",
+        "/app/settings/api/storage",
+        Some(&json!({"empty_audio": "processed"})),
+    ));
+    assert_eq!(status, StatusCode::OK);
+    let config: Value = serde_json::from_slice(
+        &fs::read(root.path().join("config/journal.json")).expect("config after"),
+    )
+    .expect("config JSON");
+    assert_eq!(config["retention"]["empty_audio"], "processed");
+    assert!(
+        config
+            .get("transcribe")
+            .and_then(|t| t.get("preserve_all"))
+            .is_none()
+    );
+
+    let day = Local::now().format("%Y%m%d").to_string();
+    let action_log_path = root.path().join(format!("config/actions/{day}.jsonl"));
+    let log_content = fs::read_to_string(action_log_path).expect("action log");
+    let last_line = log_content.lines().last().expect("log line");
+    let entry: Value = serde_json::from_str(last_line).expect("action log json");
+    assert_eq!(entry["action"], "retention_update");
+    assert!(
+        entry["params"]["changed_fields"]
+            .get("empty_audio")
+            .is_none()
+    );
+    assert_eq!(
+        entry["params"]["changed_fields"]["transcribe.preserve_all"],
+        json!({"old": true, "new": Value::Null})
+    );
+
+    let (get_status, get_body) = run_async(send(
+        crate::test_support::shell_router(root.path()),
+        "GET",
+        "/app/settings/api/storage/config",
+        None,
+    ));
+    assert_eq!(get_status, StatusCode::OK);
+    assert_eq!(get_body["retention"]["keep_empty_audio"], false);
+}
+
+#[test]
+fn ac5c_update_rejects_invalid_empty_audio_values_and_preserves_file_bytes() {
+    let initial_config = json!({
+        "setup": {"completed_at": 1_700_000_000_000_i64},
+        "retention": {"raw_media": "keep"}
+    });
+    let root = root_from_config(&initial_config);
+    let initial_bytes = fs::read(root.path().join("config/journal.json")).expect("initial bytes");
+
+    for invalid_value in [json!("days"), json!(1), json!("never")] {
+        let (status, body) = run_async(send(
+            crate::test_support::shell_router(root.path()),
+            "PUT",
+            "/app/settings/api/storage",
+            Some(&json!({"empty_audio": invalid_value})),
+        ));
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "invalid_config_value");
+        let current_bytes =
+            fs::read(root.path().join("config/journal.json")).expect("current bytes");
+        assert_eq!(current_bytes, initial_bytes);
+    }
+}
+
+#[test]
+fn ac5d_update_raw_media_keep_on_legacy_preserve_all_leaves_preserve_all() {
+    let root = root_from_config(&json!({
+        "setup": {"completed_at": 1_700_000_000_000_i64},
+        "retention": {
+            "raw_media": "processed"
+        },
+        "transcribe": {
+            "preserve_all": true
+        }
+    }));
+    let (status, _body) = run_async(send(
+        crate::test_support::shell_router(root.path()),
+        "PUT",
+        "/app/settings/api/storage",
+        Some(&json!({"raw_media": "keep"})),
+    ));
+    assert_eq!(status, StatusCode::OK);
+    let config: Value = serde_json::from_slice(
+        &fs::read(root.path().join("config/journal.json")).expect("config after"),
+    )
+    .expect("config JSON");
+    assert_eq!(config["retention"]["raw_media"], "keep");
+    assert_eq!(config["transcribe"]["preserve_all"], true);
+}
