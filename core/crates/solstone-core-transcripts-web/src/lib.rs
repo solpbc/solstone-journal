@@ -23,6 +23,7 @@ mod calendar;
 mod day;
 mod deferred;
 mod delete;
+mod media_removal;
 mod reprocess;
 mod segment;
 mod segment_media;

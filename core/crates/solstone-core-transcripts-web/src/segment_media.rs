@@ -14,6 +14,7 @@ pub(crate) struct SegmentMedia {
     pub(crate) has_raw_present: BTreeMap<String, bool>,
     pub(crate) has_raw_reference: BTreeMap<String, bool>,
     pub(crate) has_raw_file: BTreeMap<String, bool>,
+    pub(crate) missing_referenced_files: BTreeMap<String, BTreeSet<String>>,
     counted: BTreeSet<PathBuf>,
 }
 
@@ -59,6 +60,10 @@ impl SegmentMedia {
         self.has_raw_reference.insert("audio".into(), true);
         let path = dir.join(raw);
         if !path.is_file() {
+            self.missing_referenced_files
+                .entry("audio".into())
+                .or_default()
+                .insert(raw.to_owned());
             return;
         }
         self.has_raw_present.insert("audio".into(), true);
@@ -79,6 +84,10 @@ impl SegmentMedia {
         self.has_raw_reference.insert("screen".into(), true);
         let path = dir.join(raw);
         if !path.is_file() {
+            self.missing_referenced_files
+                .entry("screen".into())
+                .or_default()
+                .insert(raw.to_owned());
             return None;
         }
         self.has_raw_present.insert("screen".into(), true);
@@ -94,6 +103,13 @@ impl SegmentMedia {
     }
     pub(crate) fn purged(&self, modality: &str) -> bool {
         self.has_raw_reference[modality] && !self.has_raw_file[modality]
+    }
+    pub(crate) fn media_removal(&self, dir: &Path) -> crate::media_removal::MediaRemoval {
+        let purged = BTreeMap::from([
+            ("audio".to_owned(), self.purged("audio")),
+            ("screen".to_owned(), self.purged("screen")),
+        ]);
+        crate::media_removal::compute_media_removal(dir, &purged, &self.missing_referenced_files)
     }
     fn count(&mut self, modality: &str, path: &Path) {
         let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());

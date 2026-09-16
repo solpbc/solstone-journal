@@ -232,6 +232,7 @@ fn prepare_segment(
             "audio": media.purged("audio"),
             "screen": media.purged("screen"),
         },
+        "media_removal": media.media_removal(&dir),
         "data_state": data_state,
         "signals": signals(&dir),
         "transcripts_copy": copy_payload(),
@@ -776,5 +777,328 @@ mod tests {
         .unwrap();
 
         assert_eq!(value.get("reason_code"), None);
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_policy_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw.flac\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "you deleted this segment's original audio after your retention settings marked it"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_offload_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw.flac\",\"class\":\"offload_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "you deleted this segment's original audio after your backup copied it"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_owner_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw.flac\",\"class\":\"owner_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "you deleted this segment's original audio"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_no_record_audio() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "this segment's original audio is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_two_referenced_audio_mixed_classes_yields_no_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("mic_audio.jsonl"),
+            "{\"raw\":\"mic_raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw.flac\",\"class\":\"policy_raw_release\"}\n{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"mic_raw.flac\",\"class\":\"offload_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "this segment's original audio is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_policy_record_naming_stray_present_unreferenced_file_yields_no_record()
+     {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(segment_dir.join("stray.flac"), b"stray audio content").unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"stray.flac\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "this segment's original audio is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_two_referenced_files_only_one_recorded_yields_no_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw1.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("mic_audio.jsonl"),
+            "{\"raw\":\"raw2.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw1.flac\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "this segment's original audio is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_file_present_stale_record_is_not_purged() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(segment_dir.join("raw.flac"), b"present audio").unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw.flac\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], false);
+        assert_eq!(value["media_removal"]["audio"], serde_json::Value::Null);
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_screen_policy() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("screen.jsonl"),
+            "{\"raw\":\"screen.webm\"}\n{\"timestamp\":1700000000000,\"source\":\"screen.webm\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"screen.webm\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["screen"], true);
+        assert_eq!(
+            value["media_removal"]["screen"],
+            "you deleted this segment's original screen media after your retention settings marked it"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_policy_audio_and_missing_screen_no_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"raw.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("screen.jsonl"),
+            "{\"raw\":\"screen.webm\"}\n{\"timestamp\":1700000000000,\"source\":\"screen.webm\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"raw.flac\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(value["media_purged"]["screen"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "you deleted this segment's original audio after your retention settings marked it"
+        );
+        assert_eq!(
+            value["media_removal"]["screen"],
+            "this segment's original screen media is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn prepare_segment_media_removal_referenced_subpath_with_basename_record_yields_no_record() {
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        let segment_dir = root.join("chronicle/20260101/field/120000_60");
+        std::fs::create_dir_all(&segment_dir).unwrap();
+        std::fs::write(
+            segment_dir.join("audio.jsonl"),
+            "{\"raw\":\"sub/mic_audio.flac\"}\n{\"start\":\"0.0\",\"speaker\":\"1\",\"text\":\"hello\"}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            segment_dir.join("events.jsonl"),
+            "{\"tract\":\"retention\",\"event\":\"original_deleted\",\"name\":\"mic_audio.flac\",\"class\":\"policy_raw_release\"}\n",
+        )
+        .unwrap();
+
+        let value =
+            super::prepare_segment(root, "20260101", "field", "120000_60", chrono::Utc::now())
+                .unwrap();
+
+        assert_eq!(value["media_purged"]["audio"], true);
+        assert_eq!(
+            value["media_removal"]["audio"],
+            "this segment's original audio is no longer in your journal"
+        );
     }
 }

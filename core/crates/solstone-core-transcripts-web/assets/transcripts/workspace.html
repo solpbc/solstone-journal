@@ -4196,7 +4196,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     if (state === 'purged') {
       return window.SurfaceState.empty({
         icon,
-        heading: 'Original media removed per retention policy',
+        heading: data.media_removal[modality],
         desc: ''
       });
     }
@@ -5159,8 +5159,11 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     const audioPurged = data.media_purged?.audio && !data.audio_file && showAudio;
     const screenPurged = data.media_purged?.screen && showScreen && chunks.some(c => c.type === 'screen');
-    if (audioPurged || screenPurged) {
-      html += '<div class="tr-purge-notice" role="presentation">Original media removed per retention policy</div>';
+    if (audioPurged) {
+      html += `<div class="tr-purge-notice" role="presentation">${escapeHtml(data.media_removal.audio)}</div>`;
+    }
+    if (screenPurged) {
+      html += `<div class="tr-purge-notice" role="presentation">${escapeHtml(data.media_removal.screen)}</div>`;
     }
 
     // Render items (chunks or groups)

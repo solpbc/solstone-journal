@@ -475,6 +475,7 @@ mod tests {
                     "image_files".into(),
                     "md_files".into(),
                     "media_purged".into(),
+                    "media_removal".into(),
                     "media_sizes".into(),
                     "segment_key".into(),
                     "signals".into(),
@@ -509,6 +510,41 @@ mod tests {
                 // `reason_code` is operator-emitted for diagnostics and has no frontend reader in workspace.html yet.
                 if !expected.as_object().unwrap().contains_key("reason_code") {
                     actual.as_object_mut().unwrap().remove("reason_code");
+                }
+                if !expected.as_object().unwrap().contains_key("media_removal") {
+                    let audio_purged = actual["media_purged"]["audio"].as_bool().unwrap_or(false);
+                    let screen_purged = actual["media_purged"]["screen"].as_bool().unwrap_or(false);
+                    if audio_purged {
+                        assert_eq!(
+                            actual["media_removal"]["audio"],
+                            "this segment's original audio is no longer in your journal",
+                            "{}",
+                            case["path"]
+                        );
+                    } else {
+                        assert_eq!(
+                            actual["media_removal"]["audio"],
+                            Value::Null,
+                            "{}",
+                            case["path"]
+                        );
+                    }
+                    if screen_purged {
+                        assert_eq!(
+                            actual["media_removal"]["screen"],
+                            "this segment's original screen media is no longer in your journal",
+                            "{}",
+                            case["path"]
+                        );
+                    } else {
+                        assert_eq!(
+                            actual["media_removal"]["screen"],
+                            Value::Null,
+                            "{}",
+                            case["path"]
+                        );
+                    }
+                    actual.as_object_mut().unwrap().remove("media_removal");
                 }
             }
             assert_eq!(actual, expected, "{}", case["path"]);
