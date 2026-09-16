@@ -22,7 +22,7 @@ const Dashboard = (function() {
 
   // Warm replacement for the prior cool blue (#2171b5) used by the input and
   // audio series — gold, from --gold in tokens.css (X-12).
-  const WARM_INPUT_COLOR = '#FFCF33';
+  const WARM_INPUT_COLOR = '#FFCC33';
 
   // Warm categorical base (gold -> orange -> coral/danger -> warm plum ->
   // olive/success -> ink-soft), derived from the brand tokens, replacing the
@@ -30,7 +30,7 @@ const Dashboard = (function() {
   // Hex values mirror --gold, --orange, --danger, --success and --ink-soft in
   // tokens.css; "warm plum" has no existing token, so it is a hand-picked
   // warm-hued fill between the coral and olive anchors.
-  const WARM_CATEGORICAL_BASE = ['#FFCF33', '#E8913A', '#9F2D2D', '#6B3A46', '#3F9D6A', '#5B5246'];
+  const WARM_CATEGORICAL_BASE = ['#FFCC33', '#E8913A', '#9F2D2D', '#6B3A46', '#3F9D6A', '#5B5246'];
 
   // Orange sequential ramp for the heatmap, replacing the prior cool
   // rgba(102,126,234,…) indigo (X-12). RGB of --orange (#E8913A).
