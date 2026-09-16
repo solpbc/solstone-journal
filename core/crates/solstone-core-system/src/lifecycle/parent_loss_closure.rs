@@ -557,7 +557,6 @@ pub(crate) fn unix_seconds() -> u64 {
 mod tests {
     use std::collections::{HashMap, HashSet};
     use std::path::Path;
-    use std::process::{Child, Command, Stdio};
     use std::sync::{Arc, Mutex};
 
     use tempfile::TempDir;
@@ -770,26 +769,6 @@ mod tests {
             .expect("closure recorded")
     }
 
-    fn spawn_child(ignore_sigterm: bool) -> (Child, ProcessInstance) {
-        let script = if ignore_sigterm {
-            "trap '' TERM; sleep 60"
-        } else {
-            "sleep 60"
-        };
-        let child = Command::new("sh")
-            .args(["-c", script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn child");
-        let instance = match SystemProcessInstanceSource.inspect(child.id()) {
-            InspectResult::Present { instance, .. } => instance,
-            other => panic!("own child must be inspectable: {other:?}"),
-        };
-        (child, instance)
-    }
-
     #[test]
     fn an_open_generation_whose_authorities_are_gone_is_closed_and_the_successor_boots() {
         let directory = TempDir::new().expect("temporary root");
@@ -925,88 +904,6 @@ mod tests {
                 BootstrapRecoveryReason::SupervisorLive
             ))
         ));
-    }
-
-    /// A real child, still running against the journal when both authorities
-    /// are gone, is retired with an exact signal before the successor exists.
-    #[test]
-    fn a_live_admitted_child_is_retired_exactly() {
-        let directory = TempDir::new().expect("temporary root");
-        let (ledger, active) = open_generation(&directory);
-        let (mut child, child_instance) = spawn_child(false);
-        admit(
-            directory.path(),
-            active.generation,
-            "sense-live",
-            Some(HostedServiceKind::Sense),
-            Some(child_instance),
-        );
-        let lease = lease(&ledger);
-
-        let successor = ledger
-            .reserve_generation_closing_abandoned(
-                instance(11, 3),
-                [],
-                &lease,
-                &authority(
-                    &SystemProcessInstanceSource,
-                    &SystemAdmissionRetirer,
-                    Duration::from_secs(5),
-                ),
-            )
-            .expect("a live child is retired, not a reason to refuse");
-
-        assert_eq!(successor.generation, active.generation + 1);
-        let status = child.wait().expect("child reaped");
-        assert!(!status.success(), "the child was signalled: {status}");
-        assert_eq!(
-            SystemProcessInstanceSource.observe(&child_instance),
-            InstanceVerdict::NotSameOrExited
-        );
-        let closure = closure_of(&ledger, active.generation);
-        assert_eq!(
-            closure.admissions[0].finding,
-            AdmissionFinding::Retired { escalated: false }
-        );
-    }
-
-    #[test]
-    fn a_child_that_ignores_sigterm_is_escalated() {
-        let directory = TempDir::new().expect("temporary root");
-        let (ledger, active) = open_generation(&directory);
-        let (mut child, child_instance) = spawn_child(true);
-        // The trap is installed by the shell before `sleep` runs; give it the
-        // moment it needs so the SIGTERM lands on an ignoring process.
-        thread::sleep(Duration::from_millis(200));
-        admit(
-            directory.path(),
-            active.generation,
-            "cortex-stubborn",
-            Some(HostedServiceKind::Cortex),
-            Some(child_instance),
-        );
-        let lease = lease(&ledger);
-
-        ledger
-            .reserve_generation_closing_abandoned(
-                instance(11, 3),
-                [],
-                &lease,
-                &authority(
-                    &SystemProcessInstanceSource,
-                    &SystemAdmissionRetirer,
-                    Duration::from_secs(4),
-                ),
-            )
-            .expect("a stubborn child is escalated, not a reason to refuse");
-
-        let status = child.wait().expect("child reaped");
-        assert!(!status.success());
-        let closure = closure_of(&ledger, active.generation);
-        assert_eq!(
-            closure.admissions[0].finding,
-            AdmissionFinding::Retired { escalated: true }
-        );
     }
 
     /// 🔒 Safety over convergence: a process that survives SIGKILL within the

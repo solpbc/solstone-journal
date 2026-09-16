@@ -1280,3 +1280,174 @@ fn ac37_failed_log_compaction_preserves_original_bytes() {
     assert!(compact_log_if_oversized(&log, 16).is_err());
     assert_eq!(fs::read(&log).expect("original"), original);
 }
+
+/// The abandoned-generation closer against REAL children: a process still
+/// running against the journal when both lifecycle authorities are gone is
+/// retired with an exact signal before the successor exists, and one that
+/// ignores SIGTERM is escalated. These live here rather than beside the
+/// closer's unit tests because the routine unit harness must not spawn.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+mod abandoned_generation_closer {
+    use std::process::{Child, Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use solstone_core_system::lifecycle::{
+        AdmissionFinding, AdmissionIdentity, AdmissionIntent, AdmissionResult,
+        AdmissionResultState, ClosingAuthority, HostedServiceKind, ParentLossLedger,
+        SystemAdmissionRetirer, acknowledge_parent_loss_admission,
+        write_parent_loss_admission_intent, write_parent_loss_admission_result,
+    };
+    use solstone_core_system::process::{
+        InspectResult, InstanceVerdict, ProcessBirth, ProcessInstance, ProcessInstanceSource,
+        SystemProcessInstanceSource,
+    };
+
+    fn instance(pid: u32, birth: u64) -> ProcessInstance {
+        ProcessInstance {
+            pid,
+            birth: ProcessBirth::linux(birth, 1, 100),
+        }
+    }
+
+    fn spawn_child(ignore_sigterm: bool) -> (Child, ProcessInstance) {
+        let script = if ignore_sigterm {
+            "trap '' TERM; sleep 60"
+        } else {
+            "sleep 60"
+        };
+        let child = Command::new("sh")
+            .args(["-c", script])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn child");
+        let instance = match SystemProcessInstanceSource.inspect(child.id()) {
+            InspectResult::Present { instance, .. } => instance,
+            other => panic!("own child must be inspectable: {other:?}"),
+        };
+        (child, instance)
+    }
+
+    /// An admitting generation whose supervisor and coordinator are
+    /// synthetic identities nothing on this host can match, with one real
+    /// admitted child.
+    fn abandoned_generation_with(
+        bed: &super::Bed,
+        child_instance: ProcessInstance,
+        launch_id: &str,
+    ) -> (ParentLossLedger, u64) {
+        let ledger = ParentLossLedger::open(&bed.root).expect("ledger");
+        let active = ledger
+            .reserve_generation(instance(10, 1), [HostedServiceKind::Sense])
+            .expect("reserve generation");
+        ledger.initialize_record(&active).expect("record");
+        let coordinator = instance(20, 2);
+        ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .expect("coordinator identity");
+        ledger
+            .mark_admitting(active.generation, coordinator)
+            .expect("admitting state");
+        write_parent_loss_admission_intent(
+            &bed.root,
+            &AdmissionIntent::new(
+                active.generation,
+                launch_id,
+                Some(HostedServiceKind::Sense),
+                None,
+            ),
+        )
+        .expect("intent");
+        let identity = AdmissionIdentity {
+            generation: active.generation,
+            launch_id: launch_id.to_owned(),
+            instance: child_instance,
+            uid: nix::unistd::getuid().as_raw(),
+            parent_launch_id: None,
+        };
+        acknowledge_parent_loss_admission(&bed.root, identity.clone()).expect("ack");
+        write_parent_loss_admission_result(
+            &bed.root,
+            active.generation,
+            launch_id,
+            &AdmissionResult {
+                schema: 1,
+                identity: Some(identity),
+                state: AdmissionResultState::Admitted,
+            },
+        )
+        .expect("result");
+        (ledger, active.generation)
+    }
+
+    fn close_with_budget(ledger: &ParentLossLedger, budget: Duration) -> u64 {
+        let lease = ledger
+            .acquire_coordinator_lease()
+            .expect("lease acquisition")
+            .expect("lease free");
+        let authority = ClosingAuthority {
+            closed_by: instance(30, 3),
+            source: &SystemProcessInstanceSource,
+            retirer: &SystemAdmissionRetirer,
+            deadline: Instant::now() + budget,
+        };
+        ledger
+            .reserve_generation_closing_abandoned(instance(11, 3), [], &lease, &authority)
+            .expect("a live child is retired, not a reason to refuse")
+            .generation
+    }
+
+    fn finding(ledger: &ParentLossLedger, generation: u64) -> AdmissionFinding {
+        ledger
+            .record(generation)
+            .expect("record readable")
+            .expect("record exists")
+            .closure
+            .expect("closure recorded")
+            .admissions[0]
+            .finding
+    }
+
+    #[test]
+    fn a_live_admitted_child_is_retired_exactly() {
+        let bed = super::Bed::new("closer-retires-live-child");
+        let (mut child, child_instance) = spawn_child(false);
+        let (ledger, generation) = abandoned_generation_with(&bed, child_instance, "sense-live");
+
+        let successor = close_with_budget(&ledger, Duration::from_secs(5));
+
+        assert_eq!(successor, generation + 1);
+        let status = child.wait().expect("child reaped");
+        assert!(!status.success(), "the child was signalled: {status}");
+        assert_eq!(
+            SystemProcessInstanceSource.observe(&child_instance),
+            InstanceVerdict::NotSameOrExited
+        );
+        assert_eq!(
+            finding(&ledger, generation),
+            AdmissionFinding::Retired { escalated: false }
+        );
+    }
+
+    #[test]
+    fn a_child_that_ignores_sigterm_is_escalated() {
+        let bed = super::Bed::new("closer-escalates-stubborn-child");
+        let (mut child, child_instance) = spawn_child(true);
+        // The trap is installed by the shell before `sleep` runs; give it the
+        // moment it needs so the SIGTERM lands on an ignoring process.
+        thread::sleep(Duration::from_millis(200));
+        let (ledger, generation) =
+            abandoned_generation_with(&bed, child_instance, "cortex-stubborn");
+
+        close_with_budget(&ledger, Duration::from_secs(4));
+
+        let status = child.wait().expect("child reaped");
+        assert!(!status.success());
+        assert_eq!(
+            finding(&ledger, generation),
+            AdmissionFinding::Retired { escalated: true }
+        );
+    }
+}
