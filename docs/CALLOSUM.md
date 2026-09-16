@@ -165,8 +165,9 @@ and remote-network boundary, not a defense against malware already running as th
 **Consumer:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (built-in listener)
 **Purpose:** Navigate the browser to a URL path. Workspace-local facet selection stays in that workspace's URL/query contract.
 
-### `retention` - Storage retention and media removal events
-**Source:** `solstone-core-retention` (raw-original deletion door)
+### `retention` - Raw-original deletion records
+**Source:** `solstone-core-retention` (`door.rs`, `release_raw`)
+**Purpose:** Record why the journal deleted a raw original, so the transcripts page names a cause only from a record and never from a missing file.
 **Events:** `original_deleted`
 **Key fields:**
 - `name` (string): The filename within the segment directory (e.g., `"audio.flac"`, `"screen.webm"`)
@@ -176,7 +177,7 @@ and remote-network boundary, not a defense against malware already running as th
 - Durable-only: written to `chronicle/**/<seg>/events.jsonl` by the deletion door after a confirmed unlink
 - Never broadcast on the live bus
 - Not in `core/fixtures/callosum_registry.json`
-- Supervisor allowlist stays `observe` | `think` | `activity` (this tract is not logged)
+- The supervisor does not log this tract (its event-log allowlist is `observe` | `think` | `activity`); the retention crate writes these rows itself
 
 ---
 
