@@ -89,6 +89,17 @@ fn revoked_body() -> Value {
     })
 }
 
+/// A ledger that cannot be read revokes nobody: the device is told to retry, never that it
+/// was revoked. The paired-device door makes the same split (46 versus 49).
+fn unavailable_body() -> Value {
+    json!({
+        "error": "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.",
+        "reason": "service_busy",
+        "reason_code": "service_busy",
+        "detail": "paired device authorization unavailable",
+    })
+}
+
 fn authorization_path(fixture: &Fixture) -> PathBuf {
     fixture.root.join("link/authorized_clients.json")
 }
@@ -207,15 +218,23 @@ async fn ac3_authorization_postures_refuse_except_for_a_listed_device() {
     ));
     let app = authorized_router(fixture.root.clone(), receiver).into_inner();
 
-    for posture in [
-        DiskPosture::Missing,
-        DiskPosture::Unreadable,
-        DiskPosture::Malformed,
+    for (posture, expected_status, expected_body) in [
+        (DiskPosture::Missing, StatusCode::FORBIDDEN, revoked_body()),
+        (
+            DiskPosture::Unreadable,
+            StatusCode::SERVICE_UNAVAILABLE,
+            unavailable_body(),
+        ),
+        (
+            DiskPosture::Malformed,
+            StatusCode::SERVICE_UNAVAILABLE,
+            unavailable_body(),
+        ),
     ] {
         induce_posture(&fixture, posture);
         let (status, body) = request(app.clone(), "/api/system/status", Some(listed.clone())).await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body, revoked_body());
+        assert_eq!(status, expected_status);
+        assert_eq!(body, expected_body);
     }
 
     induce_posture(&fixture, DiskPosture::Present);
@@ -280,12 +299,12 @@ async fn ac6_gate_rejects_non_regular_ledger_without_blocking() {
         "normal ledger read must not emit the timeout warning"
     );
 
-    induce_posture(&fixture, DiskPosture::Missing);
+    induce_posture(&fixture, DiskPosture::Unreadable);
     let (_, expected_body) =
         request_bytes(app.clone(), "/api/system/status", Some(listed.clone())).await;
     assert_eq!(
-        serde_json::from_slice::<Value>(&expected_body).expect("revoked baseline JSON"),
-        revoked_body()
+        serde_json::from_slice::<Value>(&expected_body).expect("unavailable baseline JSON"),
+        unavailable_body()
     );
     fixture.warm_authorization_to_present();
 
@@ -299,7 +318,7 @@ async fn ac6_gate_rejects_non_regular_ledger_without_blocking() {
         started.elapsed() < Duration::from_secs(1),
         "non-regular ledger must be rejected before it can block"
     );
-    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(
         body, expected_body,
         "non-regular ledger refusal body is byte-identical"
@@ -324,8 +343,8 @@ async fn ac7_gate_reads_every_matched_request_without_posture_memoization() {
     for (posture, expected) in [
         (DiskPosture::Present, StatusCode::OK),
         (DiskPosture::Missing, StatusCode::FORBIDDEN),
-        (DiskPosture::Unreadable, StatusCode::FORBIDDEN),
-        (DiskPosture::Malformed, StatusCode::FORBIDDEN),
+        (DiskPosture::Unreadable, StatusCode::SERVICE_UNAVAILABLE),
+        (DiskPosture::Malformed, StatusCode::SERVICE_UNAVAILABLE),
     ] {
         induce_posture(&fixture, posture);
         let before = reads.reads();
@@ -371,19 +390,28 @@ async fn ac8_unmatched_path_keeps_the_shell_fallback() {
 
 #[tokio::test]
 async fn ac9_refusal_body_has_the_reference_shape() {
-    let fixture = Fixture::established(1);
-    induce_posture(&fixture, DiskPosture::Malformed);
-    let (_, receiver) = watch::channel(posture(&fixture));
-    let (status, body) = request(
-        authorized_router(fixture.root.clone(), receiver).into_inner(),
-        "/api/system/status",
-        Some(linked_device(&fixture, 0)),
-    )
-    .await;
+    for (disk, expected_status, expected_body) in [
+        (DiskPosture::Missing, StatusCode::FORBIDDEN, revoked_body()),
+        (
+            DiskPosture::Malformed,
+            StatusCode::SERVICE_UNAVAILABLE,
+            unavailable_body(),
+        ),
+    ] {
+        let fixture = Fixture::established(1);
+        induce_posture(&fixture, disk);
+        let (_, receiver) = watch::channel(posture(&fixture));
+        let (status, body) = request(
+            authorized_router(fixture.root.clone(), receiver).into_inner(),
+            "/api/system/status",
+            Some(linked_device(&fixture, 0)),
+        )
+        .await;
 
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
-    assert_eq!(body.as_object().expect("object").len(), 4);
+        assert_eq!(status, expected_status);
+        assert_eq!(body, expected_body);
+        assert_eq!(body.as_object().expect("object").len(), 4);
+    }
 }
 
 #[tokio::test]
@@ -398,8 +426,8 @@ async fn ac12_every_composed_shell_route_is_gated() {
     )
     .await;
 
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body, unavailable_body());
 }
 
 #[tokio::test]
@@ -445,7 +473,7 @@ async fn ac17_route_layer_gates_a_405_without_converting_a_strict_slash_404() {
 }
 
 #[tokio::test]
-async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it() {
+async fn ac1_unreadable_answers_unavailable_on_an_open_carrier_then_ac2_revocation_closes_it() {
     let fixture = Fixture::established(1);
     let (authorization_sender, authorization_receiver) = watch::channel(posture(&fixture));
     // The gate reads the ledger per request, so a separately built router is an
@@ -482,7 +510,7 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
     let refused = tokio::time::timeout(Duration::from_secs(3), async {
         loop {
             let response = get_over_carrier(&mut carrier, &mut decoder, &mut dialer, path).await;
-            if response.status == 403 {
+            if response.status == 503 {
                 return response;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
@@ -491,16 +519,16 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
     .await
     .expect("unreadable posture reaches the shared authorization gate");
     assert_eq!(
-        serde_json::from_slice::<Value>(&refused.body).expect("403 body JSON"),
-        revoked_body()
+        serde_json::from_slice::<Value>(&refused.body).expect("503 body JSON"),
+        unavailable_body()
     );
 
     tokio::time::sleep(Duration::from_millis(700)).await;
     let held = get_over_carrier(&mut carrier, &mut decoder, &mut dialer, path).await;
-    assert_eq!(held.status, 403, "unreadable posture keeps carrier open");
+    assert_eq!(held.status, 503, "unreadable posture keeps carrier open");
     assert_eq!(
-        serde_json::from_slice::<Value>(&held.body).expect("403 body JSON"),
-        revoked_body()
+        serde_json::from_slice::<Value>(&held.body).expect("503 body JSON"),
+        unavailable_body()
     );
 
     fs::remove_dir(&authorization_path).expect("unreadable directory removes");
@@ -531,8 +559,8 @@ async fn ac1_unreadable_refuses_on_an_open_carrier_then_ac2_revocation_closes_it
         Some(linked_device(&fixture, 0)),
     )
     .await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body, revoked_body());
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body, unavailable_body());
 
     fixture.warm_authorization_to_present();
     let recovered = tokio::time::timeout(

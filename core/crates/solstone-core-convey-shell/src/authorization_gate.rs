@@ -221,8 +221,54 @@ fn is_exempt(path: &str) -> bool {
         })
 }
 
-fn is_authorized(posture: &AuthorizedClientsRead, cid: &LinkedDeviceCid) -> bool {
-    matches!(posture, AuthorizedClientsRead::Present(entries) if entries.iter().any(|entry| entry.fingerprint == cid.as_str()))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GateRefusal {
+    /// The ledger was read and does not list this device, or does not exist.
+    Revoked,
+    /// The ledger could not be read, so this request cannot be authorized now.
+    Unavailable,
+}
+
+/// Mirror the paired-device door: a device the ledger does not list is revoked
+/// (the door's access denied), while a ledger that cannot be read authorizes
+/// nobody but revokes nobody either (the door's certificate unknown), so a
+/// client retries rather than discarding its pairing.
+fn posture_refusal(posture: &AuthorizedClientsRead, cid: &LinkedDeviceCid) -> Option<GateRefusal> {
+    match posture {
+        AuthorizedClientsRead::Present(entries)
+            if entries
+                .iter()
+                .any(|entry| entry.fingerprint == cid.as_str()) =>
+        {
+            None
+        }
+        AuthorizedClientsRead::Present(_) | AuthorizedClientsRead::Missing => {
+            Some(GateRefusal::Revoked)
+        }
+        AuthorizedClientsRead::Unreadable
+        | AuthorizedClientsRead::Malformed
+        | AuthorizedClientsRead::DuplicateCid => Some(GateRefusal::Unavailable),
+    }
+}
+
+fn refusal_response(refusal: GateRefusal) -> Response {
+    match refusal {
+        GateRefusal::Revoked => pl_revoked_response(),
+        GateRefusal::Unavailable => authorization_unavailable_response(),
+    }
+}
+
+fn authorization_unavailable_response() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(AuthorizationRefusal {
+            error: "your journal couldn't check which devices are paired with it. if this keeps happening, run `journal doctor --verbose` on the computer your journal runs on.",
+            reason: "service_busy",
+            reason_code: "service_busy",
+            detail: "paired device authorization unavailable",
+        }),
+    )
+        .into_response()
 }
 
 fn pl_revoked_response() -> Response {
@@ -270,15 +316,15 @@ async fn require_authorization(
         Ok(Ok(posture)) => posture,
         Err(_) => {
             log::warn!("paired-device authorization read timed out after 1000 ms");
-            return pl_revoked_response();
+            return authorization_unavailable_response();
         }
         Ok(Err(error)) => {
             log::warn!("paired-device authorization read task failed: {error}");
-            return pl_revoked_response();
+            return authorization_unavailable_response();
         }
     };
-    if !is_authorized(&posture, cid) {
-        return pl_revoked_response();
+    if let Some(refusal) = posture_refusal(&posture, cid) {
+        return refusal_response(refusal);
     }
     next.run(request).await
 }
@@ -303,6 +349,55 @@ mod tests {
         AUTHORIZATION_GATE_EXEMPTIONS, AuthorizationExemption, AuthorizationGateState,
         authorized_router_with_router, require_authorization,
     };
+
+    // Falsified by refusing every non-listed posture as revoked: a ledger the journal
+    // cannot read would tell a still-paired device it was revoked.
+    #[test]
+    fn only_a_readable_ledger_without_the_device_is_a_revocation() {
+        use solstone_core_convey_http::identity::LinkedDeviceCid;
+
+        use super::{GateRefusal, posture_refusal};
+
+        let listed = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+        let cid = LinkedDeviceCid::try_from(listed).expect("listed CID");
+        let entry = |fingerprint: &str| solstone_core_sol_link::ledger::ClientEntry {
+            fingerprint: fingerprint.to_owned(),
+            device_label: "phone".to_owned(),
+            paired_at: "2026-09-16T00:00:00Z".to_owned(),
+            instance_id: "instance".to_owned(),
+            role: solstone_core_sol_link::ledger::ClientRole::default(),
+            network: None,
+            client_label: "phone".to_owned(),
+            label_ordinal: 1,
+            kind: "cert".to_owned(),
+            platform: None,
+        };
+        let other = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+
+        let listed_posture = AuthorizedClientsRead::Present(vec![entry(other), entry(listed)]);
+        assert_eq!(posture_refusal(&listed_posture, &cid), None);
+        for unlisted in [
+            AuthorizedClientsRead::Present(Vec::new()),
+            AuthorizedClientsRead::Present(vec![entry(other)]),
+        ] {
+            assert_eq!(posture_refusal(&unlisted, &cid), Some(GateRefusal::Revoked));
+        }
+        assert_eq!(
+            posture_refusal(&AuthorizedClientsRead::Missing, &cid),
+            Some(GateRefusal::Revoked)
+        );
+        for posture in [
+            AuthorizedClientsRead::Unreadable,
+            AuthorizedClientsRead::Malformed,
+            AuthorizedClientsRead::DuplicateCid,
+        ] {
+            assert_eq!(
+                posture_refusal(&posture, &cid),
+                Some(GateRefusal::Unavailable),
+                "{posture:?}"
+            );
+        }
+    }
 
     #[test]
     fn exemption_inventory_is_named_and_closed() {

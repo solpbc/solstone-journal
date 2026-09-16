@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- a connected device could be told it had been unpaired when your journal couldn't read its own list of paired devices. the device is now told your journal couldn't check, not that it was unpaired.
 - a day could stop finishing and keep retrying forever when a recurring person or thing could not be matched to the one already in your journal, for instance because one name carried punctuation or an accent the other did not. names that differ that way now match, and a day held up by one of them finishes on its own once you install.
 - a new memory about someone is no longer skipped just because it repeats one you already have for a different day or a different relationship. only an exact repeat (same words, same day, same relationship) is treated as one.
 
