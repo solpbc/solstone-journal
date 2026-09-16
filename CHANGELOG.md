@@ -4,6 +4,12 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- a day could stop finishing and keep retrying forever when a recurring person or thing could not be matched to the one already in your journal, for instance because one name carried punctuation or an accent the other did not. names that differ that way now match, and a day held up by one of them finishes on its own once you install.
+
 ## [2.0.7] - 2026-09-15
 
 ### Added

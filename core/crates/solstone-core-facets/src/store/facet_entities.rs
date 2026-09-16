@@ -336,6 +336,10 @@ pub fn review_promotion_snapshot(root: &Path, facet: &str, name: &str) -> Result
     let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
     let query = normalize_resolution_query(name);
+    // The freeze has to cover every namespace the promotion resolves against,
+    // or it reports no change over the one it cannot see.  `prepare_review_promotion`
+    // consults the display name and then the minted id, so both are captured here.
+    let slug = entity_slug(name);
     let groups = read_identity_group_map(root).map_err(|e| e.to_string())?;
     let mut identities = Vec::new();
     for directories in groups.groups.values() {
@@ -345,7 +349,7 @@ pub fn review_promotion_snapshot(root: &Path, facet: &str, name: &str) -> Result
             else {
                 continue;
             };
-            if identity_name(identity.value()) == query {
+            if identity_name(identity.value()) == query || identity.entity_id() == slug {
                 identities.push(json!({"directory":directory,"identity":identity.value()}));
             }
         }
@@ -353,7 +357,9 @@ pub fn review_promotion_snapshot(root: &Path, facet: &str, name: &str) -> Result
     identities.sort_by_key(Value::to_string);
     let mut links = Vec::new();
     for entity in list_scoped_facet_entities(root, facet, true, true).map_err(|e| e.to_string())? {
-        if identity_name(&entity.identity) == query || entity.relationship_dir == entity_slug(name)
+        if identity_name(&entity.identity) == query
+            || entity.relationship_dir == slug
+            || entity.entity_id == slug
         {
             links.push(
                 json!({"directory":entity.relationship_dir,"relationship":entity.relationship}),
@@ -376,11 +382,25 @@ pub fn prepare_review_promotion(
     let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
     let facet_id = super::declaration::facet_write_identity(root, facet)?;
     let query = normalize_resolution_query(name);
+    // A promotion resolves against two namespaces that do not agree.  A display
+    // name is matched after `normalize_resolution_query`, which preserves
+    // punctuation, while the id a promotion mints comes from `entity_slug`,
+    // which collapses it.  Consulting the name alone left a punctuated identity
+    // unmatchable by name and uncreatable by id at the same time: a promotion
+    // that could never succeed, and nothing stopped it being retried, so its day
+    // never closed.  The id namespace is consulted as well, after the name, so
+    // an exact name match still decides first.
+    let slug = entity_slug(name);
     let scoped = list_scoped_facet_entities(root, facet, true, true).map_err(|e| e.to_string())?;
     let existing = scoped
         .iter()
-        .find(|entity| identity_name(&entity.identity) == query);
-    let mut relationship_dir = entity_slug(name);
+        .find(|entity| identity_name(&entity.identity) == query)
+        .or_else(|| {
+            scoped
+                .iter()
+                .find(|entity| !slug.is_empty() && entity.entity_id == slug)
+        });
+    let mut relationship_dir = slug.clone();
     let mut before_link = None;
     let now = now_iso();
     let (entity_id, mut identity) = if let Some(existing) = existing {
@@ -410,41 +430,50 @@ pub fn prepare_review_promotion(
                 }
             }
         }
-        if matches.len() > 1 {
-            return Err(format!(
-                "conflict: promotion {name:?} matches {} identities by name",
-                matches.len()
-            ));
-        }
-        if let Some(found) = matches.pop() {
-            found
+        let found = if matches.len() > 1 {
+            // The id namespace disambiguates the name namespace too.  The store
+            // has minted `_2`/`_3` suffixes for same-named identities, so at
+            // most one of them holds the id this name derives, and that one is
+            // the identity every other reader resolves the name to.  Refusing
+            // on the count alone left whole duplicate families permanently
+            // unpromotable; refusing when no member holds the id keeps the
+            // ambiguity refusal where it is still the honest answer.
+            let Some(index) = matches.iter().position(|(id, _)| *id == slug) else {
+                return Err(format!(
+                    "conflict: promotion {name:?} matches {} identities by name",
+                    matches.len()
+                ));
+            };
+            Some(matches.swap_remove(index))
         } else {
-            let id = entity_slug(name);
-            // Name the collision.  `entity_slug` collapses punctuation that
-            // `normalize_resolution_query` preserves, so a name can be
-            // unmatchable by name and uncreatable by id at the same time --
-            // and without the two spellings in the message there is nothing an
-            // owner can act on.
-            let resolved = read_identity_map(root).map_err(|e| e.to_string())?.resolved;
-            if id.is_empty() {
+            matches.pop()
+        };
+        if let Some(found) = found {
+            found
+        } else if slug.is_empty() {
+            return Err(format!(
+                "conflict: promotion {name:?} has no usable entity id"
+            ));
+        } else if let Some(directories) = groups.groups.get(&slug) {
+            // The id namespace already holds this promotion.  `entity_slug` is
+            // the key the store's own identity map is keyed on, so an id match
+            // is an identity match -- the same tier review eligibility already
+            // treats as high confidence before any name reaches here.  Adopt
+            // the group's winner, the directory `read_identity_map` resolves
+            // the id to; its collision losers stay lost.  Refusing here is what
+            // made the identity uncreatable, and the refusal was permanent.
+            let directory = directories.first().ok_or("malformed identity group")?;
+            let Some(owner) = read_entity_identity(root, directory).map_err(|e| e.to_string())?
+            else {
                 return Err(format!(
-                    "conflict: promotion {name:?} has no usable entity id"
+                    "conflict: promotion {name:?} derives entity id {slug:?}, whose identity {directory:?} cannot be read"
                 ));
-            }
-            if let Some(owner_dir) = resolved.get(&id) {
-                let owner_name = read_entity_identity(root, owner_dir)
-                    .ok()
-                    .flatten()
-                    .map(|identity| identity_display_name(identity.value()).to_owned())
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or_else(|| owner_dir.clone());
-                return Err(format!(
-                    "conflict: promotion {name:?} derives entity id {id:?}, which already belongs to {owner_name:?}"
-                ));
-            }
+            };
+            (owner.entity_id().to_owned(), owner.value().clone())
+        } else {
             (
-                id.clone(),
-                json!({"id":id,"name":name,"type":entity_type,"created_at":now}),
+                slug.clone(),
+                json!({"id":slug,"name":name,"type":entity_type,"created_at":now}),
             )
         }
     };

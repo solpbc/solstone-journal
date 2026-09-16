@@ -358,3 +358,283 @@ fn aka_does_not_conflict_with_a_blocked_entitys_name() {
     )
     .unwrap();
 }
+
+/// Write one entity directory carrying a full identity document.
+fn write_identity(root: &std::path::Path, dir: &str, identity: serde_json::Value) {
+    write_journal_entity(root, dir, identity.get("id").and_then(|v| v.as_str()));
+    fs::write(
+        root.join(format!("entities/{dir}/entity.json")),
+        serde_json::to_vec(&identity).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn promotion_resolves_a_punctuated_identity_through_the_id_namespace() {
+    // The reported wedge: the stored display name carries punctuation that
+    // `normalize_resolution_query` preserves and `entity_slug` collapses, so
+    // the plainly-phrased promotion matched no name and minted an id that was
+    // already taken -- unmatchable and uncreatable at once, for good.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    // The premise, asserted rather than assumed: both spellings derive one id,
+    // and only one of them matches by name.
+    assert_eq!(
+        solstone_core_entity_matching::entity_slug("`make ci`"),
+        solstone_core_entity_matching::entity_slug("make ci")
+    );
+    assert_ne!(
+        solstone_core_entity_matching::normalize_resolution_query("`make ci`"),
+        solstone_core_entity_matching::normalize_resolution_query("make ci")
+    );
+    write_identity(
+        temporary.path(),
+        "make_ci",
+        json!({"id":"make_ci","name":"`make ci`","type":"Thing"}),
+    );
+    let promotion = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "make ci",
+        "The repository gate",
+        &["the gate".to_owned()],
+    )
+    .unwrap();
+    assert_eq!(promotion.attachment.entity_id, "make_ci");
+    assert_eq!(promotion.attachment.relationship_dir, "make_ci");
+    assert!(promotion.attachment.before.is_none());
+    // Adoption, not creation: no identity is minted, and the alias the
+    // promotion carries lands on the stored document with its name intact.
+    assert!(promotion.identity.is_none(), "{:?}", promotion.identity);
+    let aliases = promotion.aliases.expect("alias change");
+    assert_eq!(aliases.entity_dir, "make_ci");
+    assert_eq!(
+        aliases
+            .before
+            .as_ref()
+            .and_then(|before| before.get("name")),
+        Some(&json!("`make ci`"))
+    );
+    assert_eq!(aliases.after["aka"], json!(["the gate"]));
+}
+
+#[test]
+fn promotion_reuses_a_punctuated_link_already_attached_to_the_facet() {
+    // Same mismatch one scope in: resolving the facet's own entities by name
+    // alone missed the link and the promotion died on the relationship
+    // directory it was about to need.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    write_identity(
+        temporary.path(),
+        "make_ci",
+        json!({"id":"make_ci","name":"`make ci`","type":"Thing"}),
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "scope",
+        "make_ci",
+        json!({"entity_id":"make_ci","description":"before"}),
+    );
+    let promotion = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "make ci",
+        "The repository gate",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(promotion.attachment.entity_id, "make_ci");
+    assert_eq!(
+        promotion
+            .attachment
+            .before
+            .as_ref()
+            .and_then(|b| b.get("description")),
+        Some(&json!("before"))
+    );
+}
+
+#[test]
+fn promotion_prefers_a_name_match_over_an_id_match() {
+    // Ordering is the guard against the id namespace swallowing a real name:
+    // the display name decides, and the id is only consulted when it cannot.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    write_identity(
+        temporary.path(),
+        "make_ci",
+        json!({"id":"make_ci","name":"`make ci`","type":"Thing"}),
+    );
+    write_identity(
+        temporary.path(),
+        "other_dir",
+        json!({"id":"other_id","name":"Make CI","type":"Thing"}),
+    );
+    let promotion = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "make ci",
+        "The repository gate",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(promotion.attachment.entity_id, "other_id");
+}
+
+#[test]
+fn promotion_still_refuses_a_blocked_identity_reached_through_the_id_namespace() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    write_identity(
+        temporary.path(),
+        "make_ci",
+        json!({"id":"make_ci","name":"`make ci`","type":"Thing","blocked":true}),
+    );
+    let error = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "make ci",
+        "The repository gate",
+        &[],
+    )
+    .unwrap_err();
+    assert!(error.starts_with("conflict:"), "{error}");
+    assert!(error.contains("blocked"), "{error}");
+}
+
+#[test]
+fn promotion_still_mints_an_identity_no_namespace_holds() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    write_identity(
+        temporary.path(),
+        "make_ci",
+        json!({"id":"make_ci","name":"`make ci`","type":"Thing"}),
+    );
+    let promotion = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "Grace Hopper",
+        "Engineer",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(promotion.attachment.entity_id, "grace_hopper");
+    assert_eq!(
+        promotion
+            .identity
+            .as_ref()
+            .and_then(|change| change.before.clone()),
+        None
+    );
+}
+
+#[test]
+fn promotion_snapshot_covers_the_id_namespace_the_promotion_resolves_against() {
+    // A freeze that cannot see the namespace the resolution reads reports no
+    // change over exactly the state that decides the outcome.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    let before = crate::review_promotion_snapshot(temporary.path(), "scope", "make ci").unwrap();
+    write_identity(
+        temporary.path(),
+        "make_ci",
+        json!({"id":"make_ci","name":"`make ci`","type":"Thing"}),
+    );
+    let after = crate::review_promotion_snapshot(temporary.path(), "scope", "make ci").unwrap();
+    assert_ne!(before, after);
+    assert_eq!(after["identities"][0]["directory"], json!("make_ci"));
+}
+
+#[test]
+fn promotion_disambiguates_a_duplicate_name_family_by_the_id_it_derives() {
+    // The store minted `_2`/`_3` suffixes for same-named identities, so the
+    // name alone counts several and the id names exactly one.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for dir in [
+        "weekly_reflection_3",
+        "weekly_reflection",
+        "weekly_reflection_2",
+    ] {
+        write_identity(
+            temporary.path(),
+            dir,
+            json!({"id":dir,"name":"Weekly Reflection","type":"Thing"}),
+        );
+    }
+    let promotion = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "Weekly Reflection",
+        "A recurring review",
+        &[],
+    )
+    .unwrap();
+    assert_eq!(promotion.attachment.entity_id, "weekly_reflection");
+}
+
+#[test]
+fn promotion_still_refuses_a_duplicate_name_family_no_member_can_claim() {
+    // Ambiguity stays refused where it is still the honest answer: no member
+    // of the family holds the id the promoted name derives.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for dir in ["weekly_reflection_2", "weekly_reflection_3"] {
+        write_identity(
+            temporary.path(),
+            dir,
+            json!({"id":dir,"name":"Weekly Reflection","type":"Thing"}),
+        );
+    }
+    let error = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "Weekly Reflection",
+        "A recurring review",
+        &[],
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "conflict: promotion \"Weekly Reflection\" matches 2 identities by name"
+    );
+}
+
+#[test]
+fn promotion_still_refuses_a_shared_name_held_by_an_identity_map_collision_loser() {
+    // The boundary the duplicate-family tie-break did NOT move, pinned because
+    // narrowing the ambiguity refusal is what makes this one load-bearing: two
+    // directories claiming one id are a collision, not a family, and the loser
+    // carrying the same display name is refused before any tie-break runs.
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for dir in ["alpha_dir", "beta_dir"] {
+        write_identity(
+            temporary.path(),
+            dir,
+            json!({"id":"weekly_reflection","name":"Weekly Reflection","type":"Thing"}),
+        );
+    }
+    let error = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Thing",
+        "Weekly Reflection",
+        "A recurring review",
+        &[],
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "conflict: promotion \"Weekly Reflection\" matches \"beta_dir\", which lost its identity-map group"
+    );
+}
