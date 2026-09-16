@@ -170,6 +170,20 @@ fn inspect_from_linux_stat(stat: &str, btime: u64, clk_tck: u64, uid: u32) -> In
     }
 }
 
+/// Whether a failed `/proc/<pid>/...` read means the process no longer exists.
+///
+/// ⚠ There are two answers, and a census must accept both. Opening the file
+/// after the process was reaped fails with `ENOENT`. Opening it while the
+/// process still exists and then reading it after the process was reaped fails
+/// with `ESRCH`, which the standard library reports as an uncategorized error
+/// rather than `NotFound`. Treating `ESRCH` as a read failure makes an ordinary
+/// exit race on a busy machine mark the whole census incomplete, exactly as a
+/// missing `NotFound` arm did before.
+#[cfg(any(target_os = "linux", test))]
+fn process_gone_during_read(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::NotFound || error.raw_os_error() == Some(libc::ESRCH)
+}
+
 /// Why a `/proc/<pid>/status` uid read did not produce a uid.
 ///
 /// ⚠ The distinction is load-bearing. `linux_uid` used to collapse every failure
@@ -196,7 +210,7 @@ fn linux_uid(pid: u32) -> UidRead {
 #[cfg(any(target_os = "linux", test))]
 fn classify_uid_read(result: std::io::Result<String>) -> UidRead {
     match result {
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => UidRead::Gone,
+        Err(error) if process_gone_during_read(&error) => UidRead::Gone,
         Err(_) => UidRead::Unreadable,
         Ok(text) => text
             .lines()
@@ -259,7 +273,7 @@ fn census_linux() -> InstanceCensus {
             continue;
         };
         match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) if process_gone_during_read(&error) => continue,
             Err(_) => {
                 complete = false;
                 continue;
@@ -864,6 +878,24 @@ mod tests {
         assert!(parse_linux_stat("1 (comm").is_none());
     }
 
+    /// The census `stat` read and the `status` read share one answer for a
+    /// vanished process, including the `ESRCH` a reap after open produces.
+    #[test]
+    fn a_read_failure_from_a_reaped_process_is_gone_not_a_read_failure() {
+        let reaped_after_open = std::io::Error::from_raw_os_error(libc::ESRCH);
+        assert_ne!(reaped_after_open.kind(), std::io::ErrorKind::NotFound);
+        assert!(process_gone_during_read(&reaped_after_open));
+        assert!(process_gone_during_read(&std::io::Error::from(
+            std::io::ErrorKind::NotFound
+        )));
+        assert!(!process_gone_during_read(
+            &std::io::Error::from_raw_os_error(libc::EACCES)
+        ));
+        assert!(!process_gone_during_read(
+            &std::io::Error::from_raw_os_error(libc::EIO)
+        ));
+    }
+
     /// A process that exits mid-census is GONE, never UNREADABLE.
     ///
     /// ⚠ This is the distinction the census depends on. Collapsing both into one
@@ -876,6 +908,11 @@ mod tests {
     fn a_process_that_exits_mid_census_is_gone_not_an_incomplete_census() {
         assert!(matches!(
             classify_uid_read(Err(std::io::Error::from(std::io::ErrorKind::NotFound))),
+            UidRead::Gone
+        ));
+        // Reaped after the file was opened: the kernel answers ESRCH, not ENOENT.
+        assert!(matches!(
+            classify_uid_read(Err(std::io::Error::from_raw_os_error(libc::ESRCH))),
             UidRead::Gone
         ));
         // A real read failure still makes the census incomplete.

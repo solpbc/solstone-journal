@@ -210,10 +210,11 @@ fn ac14_all_named_graceful_windows_allow_graceful_termination() {
         ("service-window", SERVICE_SHUTDOWN_TIMEOUT),
     ] {
         let mut process = bed.spawn(reference, &["sleep"]);
-        assert!(matches!(
-            process.terminate(timeout),
-            Ok(TerminationOutcome::Graceful { .. })
-        ));
+        let outcome = process.terminate(timeout);
+        assert!(
+            matches!(outcome, Ok(TerminationOutcome::Graceful { .. })),
+            "{reference}: {outcome:?}"
+        );
         process.cleanup();
     }
 }
