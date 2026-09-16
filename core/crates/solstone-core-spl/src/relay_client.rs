@@ -28,6 +28,8 @@ pub(crate) const LISTEN_PING_INTERVAL: Duration = Duration::from_secs(30);
 pub(crate) const LISTEN_PING_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 /// The continuously acknowledged duration required before resetting reconnect backoff.
 pub(crate) const LISTEN_ACK_STABILITY_WINDOW: Duration = Duration::from_secs(60);
+/// The longest a finished tunnel reads on while the relay answers its close.
+pub(crate) const TUNNEL_CLOSE_DRAIN: Duration = Duration::from_secs(2);
 
 use crate::relay_websocket::ListenEvent;
 use crate::{
@@ -457,7 +459,13 @@ impl RelayClient {
             }
         }
 
+        // The tunnel is finished; its admission slot is free before the close.
+        admission.release();
         let _ = writer.close().await;
+        // A dialer may still be uploading when the journal ends the tunnel, for
+        // instance right after refusing it. Read on until the relay answers the
+        // close, so the refusal already sent is not lost to an aborted socket.
+        buffered.drain_until_closed(TUNNEL_CLOSE_DRAIN).await;
     }
 
     fn begin_listen_attempt(&self) {
@@ -1393,6 +1401,72 @@ mod tests {
         assert_eq!(tail[1].0, "health");
         assert_eq!(tail[2], ("disconnect".to_owned(), serde_json::json!({})));
         assert_eq!(tail[3].0, "health");
+        running.abort();
+        let _ = running.await;
+        Ok(())
+    }
+
+    // Falsified by dropping the tunnel as soon as its write half closes: the relay is still
+    // sending the dialer's upload, the socket is aborted, and the refusal written just before
+    // can be lost on the way to the dialer.
+    #[tokio::test]
+    async fn a_finished_tunnel_reads_on_until_the_relay_closes() -> Result<(), String> {
+        let connector = FakeConnector::new();
+        let mut listen = connector.push_socket();
+        let tunnel = connector.push_socket();
+        let (peer_sender, mut peer_receiver) = oneshot::channel();
+        let emitter = Arc::new(Emitter::default());
+        let emission: Arc<dyn CallosumEmit> = emitter.clone();
+        let client = RelayClient::new_with_connector(
+            client_config(dummy_addr(), "known-service-token"),
+            emission,
+            Arc::new(Dialer::new(peer_sender)),
+            connector,
+        );
+        let running = {
+            let client = client.clone();
+            tokio::spawn(async move { client.run().await })
+        };
+        let tunnel_closed = |events: &[(String, serde_json::Value)]| {
+            events.iter().any(|(name, _)| name == "tunnel_close")
+        };
+
+        timeout(Duration::from_secs(1), listen.answer_one_ping())
+            .await
+            .map_err(|_| "listen ping was not observed".to_owned())?
+            .map_err(|_| "listen ping sender dropped".to_owned())?;
+        listen.push_message(&b"{\"type\":\"incoming\",\"tunnel_id\":\"tls\"}"[..]);
+        tunnel.push_message(Bytes::from_static(&[0x16, 0x03, 0x01, 0x00]));
+        let peer = timeout(Duration::from_secs(2), &mut peer_receiver)
+            .await
+            .map_err(|_| "loopback dial timed out".to_owned())?
+            .map_err(|_| "loopback dial was dropped".to_owned())?;
+
+        // The journal refuses and hangs up while the dialer is still uploading.
+        drop(peer);
+        timeout(Duration::from_secs(2), async {
+            while !tunnel.is_closed() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .map_err(|_| "the tunnel never closed its write half".to_owned())?;
+        tunnel.push_message(Bytes::from_static(b"upload"));
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        if tunnel_closed(&emitter.snapshot()) {
+            return Err("the tunnel was dropped before the relay closed".to_owned());
+        }
+
+        tunnel.close_read();
+        timeout(Duration::from_secs(1), async {
+            while !tunnel_closed(&emitter.snapshot()) {
+                emitter.changed.notified().await;
+            }
+        })
+        .await
+        .map_err(|_| "the tunnel did not end after the relay closed".to_owned())?;
+
+        client.stop().await;
         running.abort();
         let _ = running.await;
         Ok(())

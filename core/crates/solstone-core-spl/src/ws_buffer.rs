@@ -67,6 +67,19 @@ impl<S: WsByteSource> BufferedWsReader<S> {
         self.buffer.split().freeze()
     }
 
+    /// Read and discard frames until the peer closes, for at most `deadline`.
+    ///
+    /// Call this after closing the write half. Dropping a socket that still has
+    /// unread incoming data aborts it, and an abort can lose the last frames
+    /// this side sent, such as a journal's refusal the dialer has not read yet.
+    pub async fn drain_until_closed(&mut self, deadline: Duration) {
+        self.buffer.clear();
+        let _ = tokio::time::timeout(deadline, async {
+            while let Ok(Some(_)) = self.source.next_message().await {}
+        })
+        .await;
+    }
+
     async fn fill(&mut self, n: usize) -> Result<(), WsBufferError> {
         while self.buffer.len() < n {
             self.receive().await?;
@@ -156,6 +169,30 @@ mod tests {
     async fn closed_stream_is_not_a_short_success() {
         let mut reader = BufferedWsReader::new(Frames::new(&[b"ab"]));
         assert_eq!(reader.read_exactly(3).await, Err(WsBufferError::Closed));
+    }
+
+    #[tokio::test]
+    async fn draining_reads_to_the_peers_close() {
+        let mut reader = BufferedWsReader::new(Frames::new(&[b"upload", b"more upload"]));
+        reader.drain_until_closed(Duration::from_secs(5)).await;
+        assert!(reader.source.0.is_empty());
+        assert!(reader.drain_buffer().is_empty());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn draining_gives_up_at_its_deadline() {
+        struct Stalled;
+        impl WsByteSource for Stalled {
+            fn next_message(
+                &mut self,
+            ) -> impl Future<Output = Result<Option<Bytes>, WsClosed>> + Send {
+                std::future::pending()
+            }
+        }
+        let mut reader = BufferedWsReader::new(Stalled);
+        let started = Instant::now();
+        reader.drain_until_closed(Duration::from_secs(2)).await;
+        assert_eq!(started.elapsed(), Duration::from_secs(2));
     }
 
     #[tokio::test]
