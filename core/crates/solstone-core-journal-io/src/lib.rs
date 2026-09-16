@@ -70,6 +70,8 @@ pub(crate) mod test_support;
 #[cfg(any(unix, windows))]
 pub use append::append_jsonl;
 #[cfg(any(unix, windows))]
+pub use append::append_jsonl_no_follow;
+#[cfg(any(unix, windows))]
 pub use append::append_text;
 #[cfg(any(unix, windows))]
 pub use atomic::install_file;

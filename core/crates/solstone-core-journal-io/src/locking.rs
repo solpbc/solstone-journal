@@ -1510,7 +1510,7 @@ fn lock_entry_identity_windows(file: &impl AsHandle) -> io::Result<LockEntryIden
 }
 
 #[cfg(windows)]
-fn attribute_tag_windows(file: &impl AsHandle) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
+pub(crate) fn attribute_tag_windows(file: &impl AsHandle) -> io::Result<FILE_ATTRIBUTE_TAG_INFO> {
     let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
     // SAFETY: `info` is writable for its exact buffer size and `file` is a retained
     // handle valid for GetFileInformationByHandleEx.
@@ -1529,7 +1529,7 @@ fn attribute_tag_windows(file: &impl AsHandle) -> io::Result<FILE_ATTRIBUTE_TAG_
 }
 
 #[cfg(windows)]
-fn is_reparse_point_windows(attributes: FILE_ATTRIBUTE_TAG_INFO) -> bool {
+pub(crate) fn is_reparse_point_windows(attributes: FILE_ATTRIBUTE_TAG_INFO) -> bool {
     attributes.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
 }
 

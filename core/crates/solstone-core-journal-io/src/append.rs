@@ -47,16 +47,55 @@ pub fn append_jsonl<T: Serialize>(path: impl AsRef<Path>, record: &T) -> Result<
     append_record(path, &contents)
 }
 
-fn append_record(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
-    let parent = parent_dir(path);
-    fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
-    #[cfg(unix)]
-    let is_new = !path.exists();
-    let mut file = OpenOptions::new()
+#[cfg(unix)]
+use std::os::unix::fs::OpenOptionsExt;
+
+/// Serialize and append one newline-terminated JSON record through a single raw write,
+/// refusing symlink traversal and refusing to create missing parent directories.
+#[cfg(any(unix, windows))]
+pub fn append_jsonl_no_follow<T: Serialize>(
+    path: impl AsRef<Path>,
+    record: &T,
+) -> Result<(), AppendError> {
+    let path = path.as_ref();
+    let mut contents = serde_json::to_vec(record)
+        .map_err(|source| io_error(path, io::Error::new(io::ErrorKind::InvalidData, source)))?;
+    contents.push(b'\n');
+    append_record_no_follow(path, &contents)
+}
+
+#[cfg(unix)]
+fn open_no_follow(path: &Path) -> io::Result<fs::File> {
+    OpenOptions::new()
         .append(true)
         .create(true)
+        .custom_flags(nix::libc::O_NOFOLLOW)
         .open(path)
-        .map_err(|source| io_error(path, source))?;
+}
+
+#[cfg(windows)]
+fn open_no_follow(path: &Path) -> io::Result<fs::File> {
+    use windows_sys::Win32::Storage::FileSystem::{
+        FILE_APPEND_DATA, FILE_ATTRIBUTE_NORMAL, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_READ_ATTRIBUTES, OPEN_ALWAYS, SYNCHRONIZE,
+    };
+    let file = crate::locking::open_windows_path(
+        path,
+        FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        OPEN_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
+    )?;
+    let attributes = crate::locking::attribute_tag_windows(&file)?;
+    if crate::locking::is_reparse_point_windows(attributes) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "refusing to append through a Windows reparse point",
+        ));
+    }
+    Ok(file)
+}
+
+fn write_and_sync(path: &Path, mut file: fs::File, contents: &[u8]) -> Result<(), AppendError> {
     let written = file
         .write(contents)
         .map_err(|source| io_error(path, source))?;
@@ -70,6 +109,25 @@ fn append_record(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
         ));
     }
     sync_file(&file).map_err(|source| io_error(path, source))?;
+    Ok(())
+}
+
+fn append_record_no_follow(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
+    let file = open_no_follow(path).map_err(|source| io_error(path, source))?;
+    write_and_sync(path, file, contents)
+}
+
+fn append_record(path: &Path, contents: &[u8]) -> Result<(), AppendError> {
+    let parent = parent_dir(path);
+    fs::create_dir_all(parent).map_err(|source| io_error(path, source))?;
+    #[cfg(unix)]
+    let is_new = !path.exists();
+    let file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .map_err(|source| io_error(path, source))?;
+    write_and_sync(path, file, contents)?;
     #[cfg(unix)]
     if is_new {
         fsync_dir(parent);
@@ -164,5 +222,109 @@ mod tests {
         append_text(&path, "first").unwrap();
         assert!(path.parent().unwrap().is_dir());
         assert_eq!(fs::read(&path).unwrap(), b"first\n");
+    }
+
+    #[test]
+    fn append_jsonl_no_follow_appends_records_in_order() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        append_jsonl_no_follow(&path, &serde_json::json!({"first": true})).unwrap();
+        append_jsonl_no_follow(&path, &serde_json::json!({"second": 2})).unwrap();
+        let contents = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            contents.lines().collect::<Vec<_>>(),
+            vec![r#"{"first":true}"#, r#"{"second":2}"#]
+        );
+        assert!(contents.ends_with('\n'));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_jsonl_no_follow_refuses_symlinked_leaf_on_unix() {
+        let temporary = TempDir::new();
+        let target = temporary.path().join("target.jsonl");
+        let link = temporary.path().join("link.jsonl");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        let error =
+            append_jsonl_no_follow(&link, &serde_json::json!({"blocked": true})).unwrap_err();
+        assert!(matches!(error, AppendError::Io { .. }));
+        assert!(!target.exists() || fs::read(&target).unwrap().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn append_jsonl_no_follow_refuses_missing_parent_and_creates_nothing_on_unix() {
+        let temporary = TempDir::new();
+        let missing_parent = temporary.path().join("missing_dir");
+        let path = missing_parent.join("records.jsonl");
+
+        let error =
+            append_jsonl_no_follow(&path, &serde_json::json!({"blocked": true})).unwrap_err();
+        assert!(matches!(error, AppendError::Io { .. }));
+        assert!(!missing_parent.exists());
+        assert!(!path.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn append_jsonl_no_follow_accumulates_records_in_order_on_windows() {
+        let temporary = TempDir::new();
+        let path = temporary.path().join("records.jsonl");
+        append_jsonl_no_follow(&path, &serde_json::json!({"first": 1})).unwrap();
+        append_jsonl_no_follow(&path, &serde_json::json!({"second": 2})).unwrap();
+        let contents = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            contents.lines().collect::<Vec<_>>(),
+            vec![r#"{"first":1}"#, r#"{"second":2}"#]
+        );
+        assert!(contents.ends_with('\n'));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn append_jsonl_no_follow_refuses_symlinked_leaf_on_windows() {
+        let temporary = TempDir::new();
+        let target = temporary.path().join("target.jsonl");
+        fs::write(&target, b"").unwrap();
+        let link = temporary.path().join("link.jsonl");
+        if std::os::windows::fs::symlink_file(&target, &link).is_err() {
+            return;
+        }
+
+        let error =
+            append_jsonl_no_follow(&link, &serde_json::json!({"blocked": true})).unwrap_err();
+        assert!(matches!(error, AppendError::Io { .. }));
+        assert!(fs::read(&target).unwrap().is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn append_jsonl_no_follow_refuses_dangling_symlink_on_windows() {
+        let temporary = TempDir::new();
+        let target = temporary.path().join("nonexistent_target.jsonl");
+        let link = temporary.path().join("link.jsonl");
+        if std::os::windows::fs::symlink_file(&target, &link).is_err() {
+            return;
+        }
+
+        let error =
+            append_jsonl_no_follow(&link, &serde_json::json!({"blocked": true})).unwrap_err();
+        assert!(matches!(error, AppendError::Io { .. }));
+        assert!(!target.exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn append_jsonl_no_follow_refuses_missing_parent_and_creates_nothing_on_windows() {
+        let temporary = TempDir::new();
+        let missing_parent = temporary.path().join("missing_dir");
+        let path = missing_parent.join("records.jsonl");
+
+        let error =
+            append_jsonl_no_follow(&path, &serde_json::json!({"blocked": true})).unwrap_err();
+        assert!(matches!(error, AppendError::Io { .. }));
+        assert!(!missing_parent.exists());
+        assert!(!path.exists());
     }
 }
