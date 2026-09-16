@@ -45,6 +45,7 @@ use crate::class::{classify, partition_empty_audio};
 use crate::content::{HandlerRegistry, MediaClassifier};
 use crate::door::{EvidenceTally, release_raw};
 use crate::eligibility::{Blocker, FoundContent, ProvenRaw, RawRelease, resolve};
+use crate::original_deletion::RawReleaseClass;
 use crate::policy::{Eligibility, Policy};
 use crate::receipt::{Outcome, Target};
 use crate::scan::scan_segment;
@@ -325,11 +326,11 @@ fn take_side(
 /// ⛔ No `#[must_use]` here, and none is needed: the returned tuple already carries
 /// it from [`Outcome`], so discarding this receipt is a compile error either way.
 /// Verified by control, not assumed.
-pub fn execute(journal: &Path, plan: &Plan) -> (Outcome, EvidenceTally) {
+pub fn execute(journal: &Path, plan: &Plan, at: DateTime<Utc>) -> (Outcome, EvidenceTally) {
     let proven: Vec<ProvenRaw> = plan
         .candidates
         .iter()
         .flat_map(|candidate| candidate.proven.iter().cloned())
         .collect();
-    release_raw(journal, &proven)
+    release_raw(journal, &proven, RawReleaseClass::Owner, at)
 }

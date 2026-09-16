@@ -59,6 +59,7 @@ pub mod logs;
 pub mod marks;
 pub mod notify;
 pub mod oplog_retention;
+pub mod original_deletion;
 pub mod policy;
 pub mod receipt;
 pub mod remove_marked;
@@ -81,6 +82,7 @@ pub use oplog_retention::{
     OplogRetentionKept, OplogRetentionPlan, OplogRetentionTarget, RetainedOplog,
     plan_oplog_retention,
 };
+pub use original_deletion::{RawReleaseClass, recorded_original_deletions};
 pub use policy::{Anchor, Days, Eligibility, Policy, Rule, SegmentAge};
 pub use receipt::{
     NotRemoved, Outcome, PostCommitFailure, RemovedPath, RunHalt, Target, TargetOutcome,

@@ -24,6 +24,9 @@
 
 use std::path::Path;
 
+use chrono::{DateTime, Utc};
+use serde_json::Value;
+use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_io::atomic::atomic_replace;
 use solstone_core_journal_io::entry::{Removed, remove_file, rename_within, sync_dir};
 use solstone_core_journal_io::operational_log::{
@@ -39,7 +42,9 @@ use solstone_core_journal_io::{
 };
 
 use crate::eligibility::{Evidence, ProvenRaw};
+use crate::layout;
 use crate::notify::{IndexNotify, NotifyError, PruneCounts};
+use crate::original_deletion::RawReleaseClass;
 use crate::receipt::{
     NotRemoved, Outcome, PostCommitFailure, RemovedPath, RunHalt, Target, TargetOutcome,
 };
@@ -72,11 +77,17 @@ pub struct EvidenceTally {
 /// One [`TargetOutcome`] per segment, in first-seen order. A file that fails is a
 /// row on its segment; ⛔ it never aborts the run and never becomes a run-level
 /// halt, because one file cannot be allowed to discard a sibling's result.
-pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTally) {
+pub fn release_raw(
+    journal: &Path,
+    proven: &[ProvenRaw],
+    class: RawReleaseClass,
+    at: DateTime<Utc>,
+) -> (Outcome, EvidenceTally) {
     let mut outcome = Outcome {
         targets: Vec::new(),
         halted: None,
     };
+    let mut marker_failures: Vec<bool> = Vec::new();
     let mut tally = EvidenceTally::default();
 
     for item in proven {
@@ -100,6 +111,7 @@ pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTa
                     not_removed: Vec::new(),
                     post_commit_failure: None,
                 });
+                marker_failures.push(false);
                 outcome.targets.len().saturating_sub(1)
             }
         };
@@ -125,11 +137,49 @@ pub fn release_raw(journal: &Path, proven: &[ProvenRaw]) -> (Outcome, EvidenceTa
                     continue;
                 }
                 row.removed.push(RemovedPath::confirmed(rel));
-                dirty_removed_day(journal, row);
+                if dirty_removed_day(journal, row)
+                    && let Some(flag) = marker_failures.get_mut(index)
+                {
+                    *flag = true;
+                }
                 match item.evidence() {
                     Evidence::Record => tally.on_record = tally.on_record.saturating_add(1),
                     Evidence::LegacyRows => {
                         tally.on_legacy_rows = tally.on_legacy_rows.saturating_add(1);
+                    }
+                }
+
+                let record_result = (|| -> Result<(), ()> {
+                    let resolved_dir =
+                        contained_path(journal, &item.segment_rel()).map_err(|_| ())?;
+                    let mut extra = serde_json::Map::new();
+                    extra.insert("name".to_owned(), Value::String(item.name().to_owned()));
+                    extra.insert("class".to_owned(), Value::String(class.tag().to_owned()));
+                    let envelope = CallosumEnvelope {
+                        tract: "retention".to_owned(),
+                        event: "original_deleted".to_owned(),
+                        ts: Some(at.timestamp_millis()),
+                        extra,
+                    };
+                    append_durable_event(&resolved_dir, &DurableEvent::Callosum(envelope))
+                        .map_err(|_| ())?;
+                    Ok(())
+                })();
+
+                if record_result.is_err() {
+                    let is_marker_failure = marker_failures.get(index).copied().unwrap_or(false);
+                    if row.post_commit_failure.is_none() || is_marker_failure {
+                        let entry = layout::content_rel(
+                            &row.target.day,
+                            &row.target.stream,
+                            &row.target.dir,
+                            "events.jsonl",
+                        );
+                        let reason = "original media was deleted from this segment, but the record of how couldn't be written, so this segment's page won't name a reason.".to_owned();
+                        row.post_commit_failure = Some(PostCommitFailure { entry, reason });
+                        if let Some(flag) = marker_failures.get_mut(index) {
+                            *flag = false;
+                        }
                     }
                 }
             }
@@ -607,8 +657,10 @@ fn remove_one(
     )
 }
 
-fn dirty_removed_day(journal: &Path, row: &mut TargetOutcome) {
-    if let Err(error) = bump_stream_marker(journal, &row.target.day) {
+fn dirty_removed_day(journal: &Path, row: &mut TargetOutcome) -> bool {
+    if row.post_commit_failure.is_none()
+        && let Err(error) = bump_stream_marker(journal, &row.target.day)
+    {
         let path = health_marker_path(journal, &row.target.day, HealthMarkerKind::Stream);
         let relative = path
             .strip_prefix(journal)
@@ -621,7 +673,9 @@ fn dirty_removed_day(journal: &Path, row: &mut TargetOutcome) {
                 "the retention mutation completed, but the day could not be queued for follow-up processing: {error}"
             ),
         });
+        return true;
     }
+    false
 }
 
 /// Steps 3 to 6, from a staged directory. Shared with the recovery pass.
@@ -876,6 +930,10 @@ mod tests {
         matches!(name.extension().as_deref(), Some("flac" | "mp4" | "wav"))
     }
 
+    fn test_at() -> DateTime<Utc> {
+        DateTime::from_timestamp_millis(1_772_614_800_000).unwrap()
+    }
+
     fn proof(day: &str, stream: &str, dir: &str, name: &str, size: u64) -> ProvenRaw {
         let classifier: &dyn MediaClassifier = &media_only;
         ProvenRaw::for_test(classifier, day, stream, dir, name, size).unwrap()
@@ -894,6 +952,8 @@ mod tests {
         let (outcome, tally) = release_raw(
             &bed.root,
             &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Owner,
+            test_at(),
         );
 
         assert!(outcome.halted.is_none());
@@ -936,6 +996,8 @@ mod tests {
                 proof("20260805", "field.audio", "070000_17", "dir.flac", 4),
                 proof("20260805", "field.audio", "070000_17", "absent.flac", 4),
             ],
+            RawReleaseClass::Owner,
+            test_at(),
         );
 
         assert_eq!(outcome.targets.len(), 1, "one segment, one row");
@@ -963,6 +1025,8 @@ mod tests {
                 "gone.flac",
                 4,
             )],
+            RawReleaseClass::Owner,
+            test_at(),
         );
         assert!(outcome.targets[0].removed.is_empty());
         assert_eq!(outcome.targets[0].not_removed.len(), 1);
@@ -982,6 +1046,8 @@ mod tests {
                 proof("20260805", "field.audio", "070100_17", "a.flac", 1),
                 proof("20260805", "field.audio", "070000_17", "a.flac", 1),
             ],
+            RawReleaseClass::Owner,
+            test_at(),
         );
         assert_eq!(outcome.targets.len(), 2);
         assert_eq!(outcome.targets[0].target.dir, "070100_17");
@@ -995,10 +1061,10 @@ mod tests {
         fs::write(segment.join("a.flac"), b"x").unwrap();
         let set = [proof("20260805", "field.audio", "070000_17", "a.flac", 1)];
 
-        let (first, _) = release_raw(&bed.root, &set);
+        let (first, _) = release_raw(&bed.root, &set, RawReleaseClass::Owner, test_at());
         assert_eq!(first.targets[0].removed.len(), 1);
 
-        let (second, tally) = release_raw(&bed.root, &set);
+        let (second, tally) = release_raw(&bed.root, &set, RawReleaseClass::Owner, test_at());
         assert!(second.targets[0].removed.is_empty(), "idempotent");
         assert_eq!(second.targets[0].not_removed.len(), 1);
         assert_eq!(tally.on_record, 0);
@@ -1017,6 +1083,8 @@ mod tests {
                 proof("20260805", "field.audio", "070000_17", "a.flac", 1),
                 proof("20260805", "field.audio", "070000_17", "b.wav", 1),
             ],
+            RawReleaseClass::Owner,
+            test_at(),
         );
         let minted: Vec<&str> = outcome.removed_paths().map(RemovedPath::as_str).collect();
         assert_eq!(minted.len(), 2);
@@ -1039,6 +1107,8 @@ mod tests {
         let (outcome, _) = release_raw(
             &bed.root,
             &[proof("20260805", "field.audio", "070000_17", "dir.flac", 1)],
+            RawReleaseClass::Owner,
+            test_at(),
         );
         let reason = &outcome.targets[0].not_removed[0].reason;
         assert!(!reason.contains(&bed.root.display().to_string()));
@@ -1050,6 +1120,272 @@ mod tests {
             .contains(&reason.as_str()),
             "got {reason}"
         );
+    }
+
+    #[test]
+    fn ac1_two_proven_files_one_segment_policy_records_events_and_round_trips() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio1").unwrap();
+        fs::write(segment.join("b.flac"), b"audio2").unwrap();
+
+        let at = test_at();
+        let (outcome, tally) = release_raw(
+            &bed.root,
+            &[
+                proof("20260805", "field.audio", "070000_17", "a.flac", 6),
+                proof("20260805", "field.audio", "070000_17", "b.flac", 6),
+            ],
+            RawReleaseClass::Policy,
+            at,
+        );
+
+        assert!(outcome.halted.is_none());
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 2);
+        assert!(outcome.targets[0].not_removed.is_empty());
+        assert_eq!(tally.on_record, 2);
+
+        let events_path = segment.join("events.jsonl");
+        assert!(events_path.is_file());
+        let lines: Vec<String> = fs::read_to_string(&events_path)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(lines.len(), 2);
+
+        let first: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(first["tract"], "retention");
+        assert_eq!(first["event"], "original_deleted");
+        assert_eq!(first["ts"], at.timestamp_millis());
+        assert_eq!(first["name"], "a.flac");
+        assert_eq!(first["class"], "policy_raw_release");
+
+        let second: serde_json::Value = serde_json::from_str(&lines[1]).unwrap();
+        assert_eq!(second["tract"], "retention");
+        assert_eq!(second["event"], "original_deleted");
+        assert_eq!(second["ts"], at.timestamp_millis());
+        assert_eq!(second["name"], "b.flac");
+        assert_eq!(second["class"], "policy_raw_release");
+
+        let deletions = crate::original_deletion::recorded_original_deletions(&segment);
+        assert_eq!(deletions.len(), 2);
+        assert_eq!(deletions.get("a.flac"), Some(&RawReleaseClass::Policy));
+        assert_eq!(deletions.get("b.flac"), Some(&RawReleaseClass::Policy));
+
+        let summary = solstone_core_callosum::read_durable_events(&segment).unwrap();
+        assert_eq!(summary.unparseable, 0);
+        assert_eq!(summary.unrecognized, 0);
+    }
+
+    #[test]
+    fn ac1_twin_already_absent_and_unlink_fail_add_no_row() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::create_dir_all(segment.join("dir.flac")).unwrap();
+
+        let (outcome, tally) = release_raw(
+            &bed.root,
+            &[
+                proof("20260805", "field.audio", "070000_17", "absent.flac", 5),
+                proof("20260805", "field.audio", "070000_17", "dir.flac", 5),
+            ],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert_eq!(outcome.targets[0].removed.len(), 0);
+        assert_eq!(outcome.targets[0].not_removed.len(), 2);
+        assert_eq!(tally.on_record, 0);
+
+        let events_path = segment.join("events.jsonl");
+        assert!(!events_path.exists());
+    }
+
+    #[test]
+    fn ac1_record_failure_on_directory_collision() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio").unwrap();
+        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+
+        let (outcome, tally) = release_raw(
+            &bed.root,
+            &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert!(!segment.join("a.flac").exists());
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert!(outcome.targets[0].not_removed.is_empty());
+        assert_eq!(tally.on_record, 1);
+        assert!(outcome.halted.is_none());
+
+        let failure = outcome.targets[0].post_commit_failure.as_ref().unwrap();
+        assert!(failure.entry.ends_with("events.jsonl"));
+        assert_eq!(
+            failure.reason,
+            "original media was deleted from this segment, but the record of how couldn't be written, so this segment's page won't name a reason."
+        );
+    }
+
+    #[test]
+    fn ac1_priority_twin_marker_and_events_collision() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio").unwrap();
+        // Day's stream marker is a directory
+        let marker_path = health_marker_path(&bed.root, "20260805", HealthMarkerKind::Stream);
+        fs::create_dir_all(&marker_path).unwrap();
+        // events.jsonl is also a directory
+        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        let failure = outcome.targets[0].post_commit_failure.as_ref().unwrap();
+        assert!(failure.entry.ends_with("events.jsonl"));
+        assert_eq!(
+            failure.reason,
+            "original media was deleted from this segment, but the record of how couldn't be written, so this segment's page won't name a reason."
+        );
+    }
+
+    #[test]
+    fn ac1_marker_only_failure() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio").unwrap();
+        // Day's stream marker is a directory
+        let marker_path = health_marker_path(&bed.root, "20260805", HealthMarkerKind::Stream);
+        fs::create_dir_all(&marker_path).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        let failure = outcome.targets[0].post_commit_failure.as_ref().unwrap();
+        assert!(!failure.entry.ends_with("events.jsonl"));
+        assert!(failure.entry.contains("health"));
+    }
+
+    #[test]
+    fn ac1_second_confirmed_file_while_events_is_directory() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio1").unwrap();
+        fs::write(segment.join("b.flac"), b"audio2").unwrap();
+        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[
+                proof("20260805", "field.audio", "070000_17", "a.flac", 5),
+                proof("20260805", "field.audio", "070000_17", "b.flac", 5),
+            ],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert_eq!(outcome.targets[0].removed.len(), 2);
+        let failure = outcome.targets[0].post_commit_failure.as_ref().unwrap();
+        assert!(failure.entry.ends_with("events.jsonl"));
+        assert_eq!(
+            failure.reason,
+            "original media was deleted from this segment, but the record of how couldn't be written, so this segment's page won't name a reason."
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac1_events_symlink_resolving_outside_journal() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio").unwrap();
+
+        let external_temp = tempfile::tempdir().unwrap();
+        let external_target = external_temp.path().join("outside_events.jsonl");
+        std::os::unix::fs::symlink(&external_target, segment.join("events.jsonl")).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert!(!segment.join("a.flac").exists());
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert!(!external_target.exists() || fs::read(&external_target).unwrap().is_empty());
+        assert!(outcome.targets[0].post_commit_failure.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac1_twin_dangling_symlink_to_outside_path() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio").unwrap();
+
+        let external_temp = tempfile::tempdir().unwrap();
+        let external_target = external_temp.path().join("nonexistent.jsonl");
+        std::os::unix::fs::symlink(&external_target, segment.join("events.jsonl")).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert!(!segment.join("a.flac").exists());
+        assert!(!external_target.exists());
+        assert!(outcome.targets[0].post_commit_failure.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn ac1_twin_symlink_to_sibling_segment() {
+        let bed = Bed::new();
+        let segment1 = bed.segment("20260805", "field.audio", "070000_17");
+        let segment2 = bed.segment("20260805", "field.audio", "070100_17");
+        fs::write(segment1.join("a.flac"), b"audio").unwrap();
+
+        let sibling_events = segment2.join("events.jsonl");
+        fs::write(&sibling_events, b"").unwrap();
+        std::os::unix::fs::symlink(&sibling_events, segment1.join("events.jsonl")).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[proof("20260805", "field.audio", "070000_17", "a.flac", 5)],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert!(!segment1.join("a.flac").exists());
+        assert!(outcome.targets[0].post_commit_failure.is_some());
+        assert!(fs::read(&sibling_events).unwrap().is_empty());
+        assert!(crate::original_deletion::recorded_original_deletions(&segment2).is_empty());
+
+        // Put matching policy row in sibling's log
+        let row = r#"{"tract":"retention","event":"original_deleted","ts":1000,"name":"a.flac","class":"policy_raw_release"}"#;
+        fs::write(&sibling_events, format!("{row}\n")).unwrap();
+        assert_eq!(
+            crate::original_deletion::recorded_original_deletions(&segment2).len(),
+            1
+        );
+
+        // Reader on segment1 (linking segment) must be empty because events.jsonl is a symlink
+        assert!(crate::original_deletion::recorded_original_deletions(&segment1).is_empty());
     }
 
     // ---- remove_segments -------------------------------------------------

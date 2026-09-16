@@ -1788,6 +1788,66 @@ fn sweep_execute_still_releases_an_armed_proven_segment() {
     assert!(!segment.join("audio.flac").exists());
     assert_eq!(body["detail"]["executed"], true);
     assert!(body.get("outcome").is_some());
+
+    let events_path = segment.join("events.jsonl");
+    assert!(events_path.is_file());
+    let lines: Vec<String> = fs::read_to_string(&events_path)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(lines.len(), 1);
+    let row: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+    assert_eq!(row["tract"], "retention");
+    assert_eq!(row["event"], "original_deleted");
+    assert_eq!(row["name"], "audio.flac");
+    assert_eq!(row["class"], "owner_raw_release");
+}
+
+#[test]
+fn release_raw_records_owner_event_in_events_jsonl() {
+    let bed = Bed::new("release-raw-smoke");
+    let segment = bed.proven_segment(
+        "20260701",
+        "field.audio",
+        "070000_17",
+        "2026-07-01T00:00:00Z",
+    );
+    let output = bed.run(
+        "release-raw",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--segment",
+            "20260701/field.audio/070000_17",
+            "--at",
+            "2026-08-06T12:00:00Z",
+        ],
+    );
+    let body = receipt(&output);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(!segment.join("audio.flac").exists());
+    assert_eq!(body["outcome"]["targets"].as_array().unwrap().len(), 1);
+
+    let events_path = segment.join("events.jsonl");
+    assert!(events_path.is_file());
+    let lines: Vec<String> = fs::read_to_string(&events_path)
+        .unwrap()
+        .lines()
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(lines.len(), 1);
+    let row: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+    assert_eq!(row["tract"], "retention");
+    assert_eq!(row["event"], "original_deleted");
+    assert_eq!(row["name"], "audio.flac");
+    assert_eq!(row["class"], "owner_raw_release");
+    assert_eq!(
+        row["ts"],
+        DateTime::parse_from_rfc3339("2026-08-06T12:00:00Z")
+            .unwrap()
+            .timestamp_millis()
+    );
 }
 
 #[test]

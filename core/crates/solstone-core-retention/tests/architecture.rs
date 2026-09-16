@@ -44,6 +44,10 @@ const SOURCES: &[(&str, &str)] = &[
     ("marks", include_str!("../src/marks.rs")),
     ("notify", include_str!("../src/notify.rs")),
     ("oplog_retention", include_str!("../src/oplog_retention.rs")),
+    (
+        "original_deletion",
+        include_str!("../src/original_deletion.rs"),
+    ),
     ("policy", include_str!("../src/policy.rs")),
     ("receipt", include_str!("../src/receipt.rs")),
     ("remove_marked", include_str!("../src/remove_marked.rs")),

@@ -215,6 +215,12 @@ impl PreflightMarks {
     pub(crate) fn as_slice(&self) -> &[(MarkId, Mark)] {
         &self.0
     }
+
+    #[cfg(test)]
+    #[must_use]
+    pub fn new_for_test(marks: Vec<(MarkId, Mark)>) -> Self {
+        Self(marks)
+    }
 }
 
 /// Construct and upsert an offload proposal after the caller has scanned and

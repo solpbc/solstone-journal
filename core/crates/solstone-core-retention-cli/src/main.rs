@@ -60,6 +60,7 @@ use solstone_core_retention::marks::{
     reconcile_recovered, record_failure, resolve_offload, upsert_offload,
 };
 use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
+use solstone_core_retention::original_deletion::RawReleaseClass;
 use solstone_core_retention::policy::Policy;
 use solstone_core_retention::receipt::{Outcome, Target};
 use solstone_core_retention::remove_marked::remove_marked;
@@ -417,7 +418,7 @@ fn run_release_raw(args: &Args) -> ExitCode {
         }
     }
 
-    let (outcome, tally) = release_raw(&journal, &proven);
+    let (outcome, tally) = release_raw(&journal, &proven, RawReleaseClass::Owner, at);
     // Raw-file release has no `.removing_` rename, so door::release_raw cannot
     // currently produce a staged row. Keep this defensive registration path for a
     // future door change, and preserve the completed outcome if its register write fails.
@@ -813,7 +814,7 @@ fn run_sweep(args: &Args) -> ExitCode {
             EXIT_OK,
         );
     }
-    let (outcome, tally) = execute_sweep(&journal, &plan);
+    let (outcome, tally) = execute_sweep(&journal, &plan, now);
     finish(
         &journal,
         outcome,

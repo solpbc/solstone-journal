@@ -15,9 +15,10 @@ use crate::content::{ClosedHandlerSet, JournalMedia};
 use crate::door::release_raw;
 use crate::eligibility::{Blocker, FoundContent, ProvenRaw, RawRelease, resolve};
 use crate::marks::{
-    Failure, Mark, MarkId, PreflightMarks, load as load_marks, record_failure,
+    Failure, Mark, MarkId, PreflightMarks, RemovalClass, load as load_marks, record_failure,
     resolve as resolve_mark,
 };
+use crate::original_deletion::RawReleaseClass;
 use crate::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 use crate::scan::scan_segment;
 use crate::{Eligibility, Policy};
@@ -98,6 +99,36 @@ fn remove_one(
         if register.marks.get(id) != Some(mark) {
             return Ok(refused(mark, NO_LONGER_ON_REMOVAL_LIST));
         }
+        let raw_class = match mark.class {
+            RemovalClass::PolicyRawRelease => RawReleaseClass::Policy,
+            RemovalClass::OffloadRawRelease => RawReleaseClass::Offload,
+            RemovalClass::OwnerRawRelease | RemovalClass::OwnerSegmentRemoval => {
+                let reason =
+                    "this mark is not an original-media deletion that can be approved from the removal list"
+                        .to_owned();
+                let not_removed = mark
+                    .proposal
+                    .names
+                    .iter()
+                    .map(|name| NotRemoved {
+                        entry: crate::layout::content_rel(
+                            &target.day,
+                            &target.stream,
+                            &target.dir,
+                            name,
+                        ),
+                        reason: reason.clone(),
+                        staged: None,
+                    })
+                    .collect();
+                return Ok(TargetOutcome {
+                    target: target.clone(),
+                    removed: Vec::new(),
+                    not_removed,
+                    post_commit_failure: None,
+                });
+            }
+        };
         let found = scan_segment(&journal.join(&live), &ClosedHandlerSet, &JournalMedia);
         let found_names = found
             .iter()
@@ -129,7 +160,7 @@ fn remove_one(
             .into_iter()
             .filter(|item| desired.contains(item.name()))
             .collect::<Vec<_>>();
-        let (partial, _) = release_raw(journal, &ready);
+        let (partial, _) = release_raw(journal, &ready, raw_class, context.now);
         let mut row = partial.targets.into_iter().next().unwrap_or(TargetOutcome {
             target: target.clone(),
             removed: Vec::new(),
@@ -562,5 +593,141 @@ mod tests {
                 .ends_with("audio.flac")
         );
         assert_eq!(outcome.targets[0].not_removed[0].reason, KEPT_FOREVER);
+    }
+
+    #[test]
+    fn ac3_a_policy_approval_writes_policy_record_in_events_jsonl() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = target();
+        let segment = seed_empty_audio(journal.path(), &target);
+        let audio = segment.join("audio.flac");
+        let policy = keep_journal_product_policy();
+        let (outcome, register_errors) =
+            approve(journal.path(), vec!["audio.flac".to_owned()], &policy);
+
+        assert!(!audio.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+
+        let events_path = segment.join("events.jsonl");
+        assert!(events_path.is_file());
+        let lines: Vec<String> = fs::read_to_string(&events_path)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(lines.len(), 1);
+        let row: serde_json::Value = serde_json::from_str(&lines[0]).unwrap();
+        assert_eq!(row["tract"], "retention");
+        assert_eq!(row["event"], "original_deleted");
+        assert_eq!(row["name"], "audio.flac");
+        assert_eq!(row["class"], "policy_raw_release");
+    }
+
+    #[test]
+    fn ac3_b_offload_raw_release_records_offload_class_in_events_jsonl() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = target();
+        let segment = seed_empty_audio(journal.path(), &target);
+        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let register = crate::marks::upsert_offload(
+            journal.path(),
+            &target,
+            vec!["audio.flac".to_owned()],
+            100,
+            "backup offloaded".to_owned(),
+            now,
+        )
+        .unwrap();
+
+        let id = MarkId::derive(
+            RemovalClass::OffloadRawRelease,
+            &target,
+            &["audio.flac".to_owned()],
+        );
+        let mark = register.marks.get(&id).unwrap().clone();
+        let preflight = PreflightMarks::new_for_test(vec![(id, mark)]);
+        let policy = keep_journal_product_policy();
+        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
+        let mut register_errors = Vec::new();
+        let outcome = remove_marked(
+            journal.path(),
+            &preflight,
+            &policy,
+            today,
+            now,
+            &mut register_errors,
+        );
+
+        assert_eq!(outcome.targets.len(), 1);
+        assert_eq!(outcome.targets[0].removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].removed[0].as_str(),
+            "chronicle/20260701/field.audio/070000_17/audio.flac"
+        );
+        assert!(!segment.join("audio.flac").exists());
+
+        let events_path = segment.join("events.jsonl");
+        assert!(events_path.exists());
+        let content = fs::read_to_string(&events_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 1);
+        let row: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(row["tract"], "retention");
+        assert_eq!(row["event"], "original_deleted");
+        assert_eq!(row["name"], "audio.flac");
+        assert_eq!(row["class"], "offload_raw_release");
+        assert_eq!(row["ts"], now.timestamp_millis());
+    }
+
+    #[test]
+    fn ac3_e_non_raw_release_mark_is_refused_with_exact_copy_and_does_not_unlink() {
+        let journal = tempfile::tempdir().unwrap();
+        let target = target();
+        let segment = seed_empty_audio(journal.path(), &target);
+        let audio = segment.join("audio.flac");
+        let proposal = Proposal {
+            bytes: 1,
+            reason: "non raw mark".to_owned(),
+            names: vec!["audio.flac".to_owned()],
+        };
+        let id = MarkId::derive(RemovalClass::OwnerRawRelease, &target, &proposal.names);
+        let mark = Mark {
+            id: id.clone(),
+            class: RemovalClass::OwnerRawRelease,
+            target: target.clone(),
+            marked_at: "2026-08-06T00:00:00Z".to_owned(),
+            proposal: proposal.clone(),
+            state: crate::marks::MarkState::Marked,
+        };
+        let mut reg = crate::marks::Register::empty();
+        reg.marks.insert(id.clone(), mark.clone());
+        let reg_path = journal.path().join("health/retention-marks.json");
+        fs::create_dir_all(reg_path.parent().unwrap()).unwrap();
+        fs::write(&reg_path, serde_json::to_string(&reg).unwrap()).unwrap();
+
+        let preflight = PreflightMarks::new_for_test(vec![(id, mark)]);
+        let policy = keep_journal_product_policy();
+        let today = NaiveDate::from_ymd_opt(2026, 8, 6).unwrap();
+        let now = Utc.with_ymd_and_hms(2026, 8, 6, 0, 0, 0).single().unwrap();
+        let mut register_errors = Vec::new();
+        let outcome = remove_marked(
+            journal.path(),
+            &preflight,
+            &policy,
+            today,
+            now,
+            &mut register_errors,
+        );
+
+        assert!(audio.exists());
+        assert!(register_errors.is_empty());
+        assert_eq!(outcome.targets[0].removed, Vec::new());
+        assert_eq!(outcome.targets[0].not_removed.len(), 1);
+        assert_eq!(
+            outcome.targets[0].not_removed[0].reason,
+            "this mark is not an original-media deletion that can be approved from the removal list"
+        );
+        assert!(!segment.join("events.jsonl").exists());
     }
 }
