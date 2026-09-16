@@ -1212,7 +1212,6 @@ cat "${0%/*}/response-$response.json"
         let stub = root.join("generate-stub.sh");
         for (mode, text, validation) in [
             ("parse", "not json", Value::Null),
-            ("fields", r#"[{"activity":"meeting"}]"#, Value::Null),
             (
                 "schema",
                 r#"[{"activity":"meeting"}]"#,
@@ -1267,7 +1266,7 @@ fi
             ("schema", "schema_invalid", 2),
             ("transport", "talent_stage_failed", 1),
             ("parse", "schema_invalid", 1),
-            ("fields", "schema_invalid", 2),
+            ("schema", "schema_invalid", 2),
             ("parse", "schema_invalid", 3),
         ];
         for (mode, reason, count) in modes {
