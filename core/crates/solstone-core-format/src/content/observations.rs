@@ -6,10 +6,14 @@ use serde_json::Value;
 use super::{JsonObject, ProducedChunks, display_value, json_truthy, recorded_chunk};
 
 pub(super) fn render(rel: &str, records: &[JsonObject]) -> ProducedChunks {
+    let live_records: Vec<_> = records
+        .iter()
+        .filter(|record| !json_truthy(record.get("retired")))
+        .collect();
     ProducedChunks {
-        chunks: records.iter().map(render_record).collect(),
+        chunks: live_records.iter().copied().map(render_record).collect(),
         agent_override: Some("observation".to_string()),
-        header: Some(observation_header(rel, records.len())),
+        header: Some(observation_header(rel, live_records.len())),
         error: None,
         warnings: Vec::new(),
     }

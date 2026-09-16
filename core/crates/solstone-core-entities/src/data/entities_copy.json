@@ -20,6 +20,7 @@
   "ENT_CARDS_EMPTY": "no entities in this facet yet. star anything below you want to keep, or add one yourself.",
   "ENT_OBS_EMPTY": "nothing with {name} yet.",
   "ENT_OBS_LOAD_FAILED": "these moments couldn't be loaded. try again →",
+  "ENT_OBS_DISCLOSURE": "showing the {n} most recent of {total} moments",
   "ENT_TRUST_HEADING": "identity trust",
   "ENT_TRUST_MERGE_LABEL": "merge into",
   "ENT_TRUST_MERGE_ACTION": "preview merge",

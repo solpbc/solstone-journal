@@ -28,6 +28,7 @@ use solstone_core_journal_io::path_lexists;
 use solstone_core_journal_io::read_bytes;
 use solstone_core_journal_io::read_json;
 use solstone_core_journal_io::read_jsonl;
+use solstone_core_journal_io::read_text;
 use solstone_core_journal_io::restore_snapshot;
 use solstone_core_journal_io::write_json;
 use solstone_core_journal_io::write_jsonl;
@@ -38,6 +39,10 @@ use crate::{
 };
 
 use super::lifecycle::resolve_entity_dir;
+use super::observations::{
+    IncomingObservationRow, ObservationChange, ObservationParseSource, ParsedObservations,
+    apply_observation_change, parse_observation_file,
+};
 
 use super::merge_payload::{
     MergePayloadError, list_entity_merge_payload_ids, move_entity_merge_payload,
@@ -579,6 +584,7 @@ pub(crate) fn merge_observation_relations(
         if facet.kind != DirEntryKind::Directory {
             continue;
         }
+        let facet_name = facet.name.to_string_lossy();
         let entities = facet.path.join("entities");
         for entity in list_dir_entries(&entities)
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?
@@ -586,40 +592,46 @@ pub(crate) fn merge_observation_relations(
             if entity.kind != DirEntryKind::Directory {
                 continue;
             }
+            let entity_dir = entity.name.to_string_lossy();
             let path = entity.path.join("observations.jsonl");
             if !path_lexists(&path).map_err(|error| EntityMergeError::Refused(error.to_string()))? {
                 continue;
             }
-            let mut rows: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Raise)
+            let text = read_text(&path, String::new())
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let parsed = parse_observation_file(&text, ObservationParseSource::Path(&path))
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
             let relative_path = super::merge_rollback::journal_relative(
                 path.strip_prefix(journal)
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?,
             )?;
-            let mut changed = false;
-            for (row_index, row) in rows.iter_mut().enumerate() {
-                if let Some(relation) = row.get_mut("relation").and_then(Value::as_object_mut)
+            for (row_index, row) in parsed.full_rows.iter().enumerate() {
+                if let Some(relation) = row.relation.as_ref().and_then(Value::as_object)
                     && relation.get("target_entity_id").and_then(Value::as_str) == Some(source_id)
                 {
-                    relation.insert(
-                        "target_entity_id".to_owned(),
-                        Value::String(target_id.to_owned()),
-                    );
+                    capture_rollback_file(&mut rollback, journal, &path)?;
+                    apply_observation_change(
+                        journal,
+                        &facet_name,
+                        &entity_dir,
+                        ObservationChange::EditInPlace {
+                            full_set_index: row_index,
+                            rewrite: json!({
+                                "target_entity_id": target_id,
+                            }),
+                        },
+                    )
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+
                     stats.rows_rewritten += 1;
                     stats.entries.push(json!({
                         "path": relative_path.clone(),
                         "row_index": row_index,
                         "target_before": source_id,
                     }));
-                    changed = true;
+                    inject_failure(injector, "observation relation remap", artifact_index)?;
+                    artifact_index += 1;
                 }
-            }
-            if changed {
-                capture_rollback_file(&mut rollback, journal, &path)?;
-                write_jsonl(&path, rows, AtomicWriteOptions::default())
-                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-                inject_failure(injector, "observation relation remap", artifact_index)?;
-                artifact_index += 1;
             }
         }
     }
@@ -988,9 +1000,18 @@ pub(crate) fn merge_facets(
         let source: Value = read_json(&source_rel, Value::Null, MalformedPolicy::Raise)
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
         let source_obs_path = source_rel.parent().unwrap().join("observations.jsonl");
-        let source_obs: Vec<Value> =
-            read_jsonl(&source_obs_path, Vec::new(), MalformedPolicy::Raise)
+        let source_parsed = if path_lexists(&source_obs_path)
+            .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+        {
+            let text = read_text(&source_obs_path, String::new())
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            parse_observation_file(&text, ObservationParseSource::Path(&source_obs_path))
+                .map_err(|error| EntityMergeError::Refused(error.to_string()))?
+        } else {
+            ParsedObservations {
+                full_rows: Vec::new(),
+            }
+        };
         if target_dir.as_deref() == Some(source_dir.as_str()) || target_dir.is_none() {
             if let Some(rollback) = rollback.as_deref_mut() {
                 rollback.capture(journal, &format!("facets/{facet}/entities/{source_dir}"))?;
@@ -1043,9 +1064,25 @@ pub(crate) fn merge_facets(
         let target_obs_path = target_rel.parent().unwrap().join("observations.jsonl");
         let target_observations_existed = path_lexists(&target_obs_path)
             .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        let target_obs: Vec<Value> =
-            read_jsonl(&target_obs_path, Vec::new(), MalformedPolicy::Raise)
+        let (target_parsed, target_obs_rows_before) = if target_observations_existed {
+            let text = read_text(&target_obs_path, String::new())
                 .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let parsed =
+                parse_observation_file(&text, ObservationParseSource::Path(&target_obs_path))
+                    .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            let raw_lines = text
+                .lines()
+                .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+                .collect::<Vec<Value>>();
+            (parsed, raw_lines)
+        } else {
+            (
+                ParsedObservations {
+                    full_rows: Vec::new(),
+                },
+                Vec::new(),
+            )
+        };
         merge_facet_scalars(&source, &mut target);
         write_json(
             &target_rel,
@@ -1059,16 +1096,38 @@ pub(crate) fn merge_facets(
         .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
         inject_failure(injector, "facets", artifact_index)?;
         artifact_index += 1;
-        let merged_observations = dedupe_observations(&source_obs, &target_obs);
-        stats.observations_appended += merged_observations.len().saturating_sub(target_obs.len());
-        write_jsonl(
-            target_obs_path,
-            merged_observations,
-            AtomicWriteOptions::default(),
-        )
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
-        inject_failure(injector, "facets", artifact_index)?;
-        artifact_index += 1;
+
+        let mut keepers = Vec::new();
+        for s in &source_parsed.full_rows {
+            let already_in_target = target_parsed
+                .full_rows
+                .iter()
+                .any(|t| t.content == s.content && t.observed_at == s.observed_at);
+            if !already_in_target {
+                keepers.push(IncomingObservationRow {
+                    content: s.content.clone(),
+                    observed_at: s.observed_at,
+                    source_day: s.source_day.clone(),
+                    relation: s.relation.clone(),
+                });
+            }
+        }
+        if !keepers.is_empty() {
+            stats.observations_appended += keepers.len();
+            apply_observation_change(
+                journal,
+                &facet,
+                &target_dir,
+                ObservationChange::AppendMany {
+                    rows: keepers,
+                    actor: "import",
+                },
+            )
+            .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
+            inject_failure(injector, "facets", artifact_index)?;
+            artifact_index += 1;
+        }
+
         stats.merged_count += 1;
         stats.touched_facets.push(facet.clone());
         stats
@@ -1081,7 +1140,7 @@ pub(crate) fn merge_facets(
             "target_dir": target_dir,
             "source_entity_id": source_id,
             "target_before": target_before,
-            "target_observations_before": target_obs,
+            "target_observations_before": target_obs_rows_before,
             "target_observations_existed": target_observations_existed,
         }));
     }
@@ -1541,24 +1600,7 @@ pub(crate) fn dedupe_emails(target_values: &[String], source_values: &[String]) 
         .cloned()
         .collect()
 }
-pub(crate) fn dedupe_observations(source: &[Value], target: &[Value]) -> Vec<Value> {
-    let mut seen = HashSet::new();
-    let mut result = Vec::new();
-    for value in target.iter().chain(source) {
-        let key = (
-            value
-                .get("content")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned(),
-            value.get("observed_at").cloned().unwrap_or(Value::Null),
-        );
-        if seen.insert(key) {
-            result.push(value.clone());
-        }
-    }
-    result
-}
+
 fn values(value: &Value, field: &str) -> Vec<String> {
     value
         .get(field)

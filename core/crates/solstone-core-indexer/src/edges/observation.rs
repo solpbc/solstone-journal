@@ -23,6 +23,9 @@ pub(crate) fn extract_observation_edges(
     let mut rows = Vec::new();
 
     for observation in entries {
+        if super::json_truthy(observation.get("retired")) {
+            continue;
+        }
         let Some(Value::Object(relation)) = observation.get("relation") else {
             continue;
         };

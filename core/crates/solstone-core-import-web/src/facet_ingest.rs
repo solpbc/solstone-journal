@@ -8,8 +8,13 @@ use std::{fs, path::Path};
 use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::Digest;
+use solstone_core_facets::{
+    IncomingObservationRow, ObservationChange, ObservationParseSource, ParsedObservations,
+    apply_observation_change, parse_observation_file,
+};
 use solstone_core_journal_io::{
     AtomicWriteOptions, append_jsonl as append_json_line, atomic_replace, contained_path,
+    path_lexists, read_text,
 };
 
 #[cfg(test)]
@@ -210,25 +215,62 @@ pub(crate) fn merge_entity_relationship(
 }
 
 pub(crate) fn merge_observations(
-    target: &Path,
+    journal_root: &Path,
+    facet: &str,
+    entity_dir: &str,
     bytes: &[u8],
     new_facet: bool,
 ) -> Result<MergeResult, String> {
-    let source = parse_jsonl(bytes)?;
-    let mut merged = if new_facet {
-        Vec::new()
+    let source_text = std::str::from_utf8(bytes).map_err(|error| error.to_string())?;
+    let source_parsed =
+        parse_observation_file(source_text, ObservationParseSource::CapturedSnapshot)
+            .map_err(|error| error.to_string())?;
+
+    let dest_path = contained_path(
+        journal_root,
+        &format!("facets/{facet}/entities/{entity_dir}/observations.jsonl"),
+    )
+    .map_err(|error| error.to_string())?;
+
+    let dest_parsed = if path_lexists(&dest_path).map_err(|error| error.to_string())? {
+        let dest_text = read_text(&dest_path, String::new()).map_err(|error| error.to_string())?;
+        parse_observation_file(&dest_text, ObservationParseSource::Path(&dest_path))
+            .map_err(|error| error.to_string())?
     } else {
-        parse_jsonl(&fs::read(target).unwrap_or_default())?
+        ParsedObservations {
+            full_rows: Vec::new(),
+        }
     };
-    for item in source {
-        if !merged.iter().any(|owner| {
-            owner.get("content") == item.get("content")
-                && owner.get("observed_at") == item.get("observed_at")
-        }) {
-            merged.push(item);
+
+    let mut keepers = Vec::new();
+    for s in &source_parsed.full_rows {
+        let already_in_dest = dest_parsed
+            .full_rows
+            .iter()
+            .any(|d| d.content == s.content && d.observed_at == s.observed_at);
+        if !already_in_dest {
+            keepers.push(IncomingObservationRow {
+                content: s.content.clone(),
+                observed_at: s.observed_at,
+                source_day: s.source_day.clone(),
+                relation: s.relation.clone(),
+            });
         }
     }
-    write_bytes(target, &serialize_jsonl(&merged))?;
+
+    if !keepers.is_empty() {
+        apply_observation_change(
+            journal_root,
+            facet,
+            entity_dir,
+            ObservationChange::AppendMany {
+                rows: keepers,
+                actor: "import",
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    }
+
     Ok(MergeResult {
         status: "written",
         reason: if new_facet {
@@ -546,7 +588,10 @@ pub(crate) fn process_facet(
                     merge_facet_json(&target, &bytes, new_facet, &staged, facet, &relative)
                 }
                 "entity_relationship" => merge_entity_relationship(&target, &bytes, new_facet),
-                "entity_observations" => merge_observations(&target, &bytes, new_facet),
+                "entity_observations" => {
+                    let entity_dir = relative.split('/').nth(1).unwrap_or("");
+                    merge_observations(roots.ambient, facet, entity_dir, &bytes, new_facet)
+                }
                 "detected_entities" => merge_detected_entities(&target, &bytes, new_facet),
                 "activity_config" => merge_activity_config(&target, &bytes, new_facet),
                 "activity_records" => merge_activity_records(&target, &bytes, new_facet),
@@ -780,23 +825,46 @@ mod tests {
     }
 
     #[test]
-    fn observations_merge_dedupes_owner_history_but_new_facet_discards_it() {
+    fn observations_merge_dedupes_owner_history_and_new_facet_unions_it() {
         let temp = TempDir::new().unwrap();
-        let target = temp.path().join("entities/ada/observations.jsonl");
+        let journal = temp.path();
+        let target = journal.join("facets/work/entities/ada/observations.jsonl");
         fs::create_dir_all(target.parent().unwrap()).unwrap();
         fs::write(&target, "{\"content\":\"owner\",\"observed_at\":1}\n").unwrap();
-        merge_observations(&target, b"{\"content\":\"owner\",\"observed_at\":1}\n{\"content\":\"source\",\"observed_at\":2}\n", false).unwrap();
+        merge_observations(
+            journal,
+            "work",
+            "ada",
+            b"{\"content\":\"owner\",\"observed_at\":1}\n{\"content\":\"source\",\"observed_at\":2}\n",
+            false,
+        )
+        .unwrap();
         assert_eq!(fs::read_to_string(&target).unwrap().lines().count(), 2);
         merge_observations(
-            &target,
-            b"{\"content\":\"source\",\"observed_at\":2}\n",
+            journal,
+            "work",
+            "ada",
+            b"{\"content\":\"source3\",\"observed_at\":3}\n",
             true,
         )
         .unwrap();
-        assert_eq!(
-            fs::read_to_string(&target).unwrap(),
-            "{\"content\":\"source\",\"observed_at\":2}"
+        assert_eq!(fs::read_to_string(&target).unwrap().lines().count(), 3);
+    }
+
+    #[test]
+    fn observations_merge_fails_on_unreadable_dest_directory() {
+        let temp = TempDir::new().unwrap();
+        let journal = temp.path();
+        let target = journal.join("facets/work/entities/ada/observations.jsonl");
+        fs::create_dir_all(&target).unwrap();
+        let result = merge_observations(
+            journal,
+            "work",
+            "ada",
+            b"{\"content\":\"source\",\"observed_at\":1}\n",
+            false,
         );
+        assert!(result.is_err());
     }
 
     #[test]

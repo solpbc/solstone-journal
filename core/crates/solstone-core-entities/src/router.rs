@@ -1009,9 +1009,12 @@ async fn facet_route(
         let mut attached = Vec::new();
         for entity in entities {
             let mut value = entity.identity;
-            let observations =
-                solstone_core_facets::load_observations(&root, &f, &entity.relationship_dir)
-                    .unwrap_or_default();
+            let count_val =
+                match solstone_core_facets::count_observations(&root, &f, &entity.relationship_dir)
+                {
+                    Ok(count) => json!(count),
+                    Err(_) => Value::Null,
+                };
             let voiceprint =
                 solstone_core_entity::entity_memory_path(&root, &entity.entity_id, false)
                     .map(|path| path.join("voiceprints.npz").exists())
@@ -1019,7 +1022,7 @@ async fn facet_route(
             let object = value
                 .as_object_mut()
                 .expect("identity reader returns objects");
-            object.insert("observation_count".to_owned(), json!(observations.len()));
+            object.insert("observation_count".to_owned(), count_val);
             object.insert("has_voiceprint".to_owned(), json!(voiceprint));
             let snapshot = serde_json::Value::Object(object.clone());
             object.insert(
@@ -2084,7 +2087,7 @@ fn assemble_journal_entity_records(
                 .map(|entity_dir| (entity_dir.to_owned(), index))
         })
         .collect();
-    let mut aggregates = HashMap::<String, (usize, i64)>::new();
+    let mut aggregates = HashMap::<String, (usize, bool, i64)>::new();
     for facet_dir in solstone_core_facets::list_facet_directories(root)? {
         let declaration = match solstone_core_facets::read_facet_declaration(root, &facet_dir) {
             Ok(Some(declaration)) => declaration,
@@ -2109,11 +2112,15 @@ fn assemble_journal_entity_records(
             let Some(&record_index) = record_indexes.get(&scoped.entity_dir) else {
                 continue;
             };
-            let observation_count = solstone_core_facets::count_observations(
+            let count_res = solstone_core_facets::count_observations(
                 root,
                 &facet_dir,
                 &scoped.relationship_dir,
-            )?;
+            );
+            let observation_count = match count_res {
+                Ok(count) => json!(count),
+                Err(_) => Value::Null,
+            };
             let relationship = &scoped.relationship;
             let activity_ts = solstone_core_entity::entity_last_active_ts(relationship);
             let mut facet = json!({
@@ -2136,9 +2143,14 @@ fn assemble_journal_entity_records(
                     .expect("facet record is an object")
                     .insert("detached".to_owned(), Value::Bool(true));
             } else {
-                let aggregate = aggregates.entry(scoped.entity_dir.clone()).or_default();
-                aggregate.0 += observation_count;
-                aggregate.1 = aggregate.1.max(activity_ts);
+                let aggregate = aggregates
+                    .entry(scoped.entity_dir.clone())
+                    .or_insert((0, false, 0));
+                match count_res {
+                    Ok(count) => aggregate.0 += count,
+                    Err(_) => aggregate.1 = true,
+                }
+                aggregate.2 = aggregate.2.max(activity_ts);
             }
             records[record_index]
                 .get_mut("facets")
@@ -2149,8 +2161,8 @@ fn assemble_journal_entity_records(
     }
     for record in &mut records {
         let entity_dir = record["id"].as_str().expect("entity record has id");
-        let (observation_count, activity_ts) =
-            aggregates.get(entity_dir).copied().unwrap_or_default();
+        let (observation_count, observation_err, activity_ts) =
+            aggregates.get(entity_dir).copied().unwrap_or((0, false, 0));
         let facets = record["facets"]
             .as_array_mut()
             .expect("entity record has facets");
@@ -2159,7 +2171,11 @@ fn assemble_journal_entity_records(
         let object = record.as_object_mut().expect("entity record is an object");
         object.insert(
             "total_observation_count".to_owned(),
-            json!(observation_count),
+            if observation_err {
+                Value::Null
+            } else {
+                json!(observation_count)
+            },
         );
         object.insert("last_active_ts".to_owned(), json!(activity_ts));
         object.insert(
@@ -3154,16 +3170,76 @@ async fn observations_route(
         return refusal(ReasonCode::MissingRequiredField, "name is required");
     };
     let name = name.to_owned();
+    let limit = match q.get("limit") {
+        Some(s) => match s.parse::<usize>() {
+            Ok(n) if n <= 200 => n,
+            _ => {
+                return refusal(
+                    ReasonCode::InvalidRequestValue,
+                    "limit must be between 0 and 200",
+                );
+            }
+        },
+        None => 50,
+    };
+    let offset = match q.get("offset") {
+        Some(s) => match s.parse::<usize>() {
+            Ok(n) => Some(n),
+            _ => {
+                return refusal(
+                    ReasonCode::InvalidRequestValue,
+                    "offset must be a non-negative integer",
+                );
+            }
+        },
+        None => None,
+    };
+    let after_id = match q.get("after_id") {
+        Some(s) => match s.parse::<u64>() {
+            Ok(n) if n > 0 => Some(n),
+            _ => {
+                return refusal(
+                    ReasonCode::InvalidRequestValue,
+                    "after_id must be a positive integer",
+                );
+            }
+        },
+        None => None,
+    };
+    if offset.is_some() && after_id.is_some() {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "after_id and offset cannot be used together",
+        );
+    }
+    let order = match q.get("order").map(|s| s.as_str()) {
+        Some("oldest") => solstone_core_facets::ObservationReadOrder::Oldest,
+        _ => solstone_core_facets::ObservationReadOrder::Newest,
+    };
+    let read_query = solstone_core_facets::ObservationReadQuery {
+        offset,
+        limit,
+        after_id,
+        order,
+    };
     match solstone_core_serving::seam::run_blocking(move || {
         let entity_dir = facet_observation_entity_dir(&root, &facet, &name)
             .map_err(|error| error.to_string())?;
-        solstone_core_facets::load_observations(&root, &facet, &entity_dir)
+        solstone_core_facets::read_live_observations(&root, &facet, &entity_dir, read_query)
             .map_err(|error| error.to_string())
     })
     .await
     {
-        Ok(Ok(v)) => Json(json!({"total":v.len(),"items":v})).into_response(),
-        _ => refusal(ReasonCode::EntityOperationFailed, "observation read failed"),
+        Ok(Ok(page)) => Json(json!({
+            "total": page.total,
+            "offset": page.offset,
+            "limit": page.limit,
+            "has_more": page.has_more,
+            "items": page.items,
+        }))
+        .into_response(),
+        Ok(Err(error)) => refusal(ReasonCode::EntityOperationFailed, &error),
+        Err(error) => refusal(ReasonCode::EntityOperationFailed, error.to_string()),
     }
 }
 
@@ -3690,28 +3766,25 @@ async fn observe_route(
     })
     .await
     {
-        Ok(Ok((observations, count))) => Json(json!({
-            "success":true,
-            "result":{"observations":observations,"count":count}
+        Ok(Ok((observations, count, already_present))) => Json(json!({
+            "success": true,
+            "added": !already_present,
+            "count": count,
+            "items": observations,
+            "result": {
+                "observations": observations,
+                "count": count,
+                "already_present": already_present
+            }
         }))
         .into_response(),
+        Ok(Err(e)) if e.is_lock_timeout() => refusal(ReasonCode::EntityBusy, "entity busy"),
         Ok(Err(solstone_core_facets::ObservationWriteError::EmptyContent)) => refusal(
             ReasonCode::InvalidRequestValue,
             "observation content cannot be empty",
         ),
-        Ok(Err(solstone_core_facets::ObservationWriteError::TrustLock(
-            solstone_core_facets::FacetTrustLockError::Lock(
-                solstone_core_entity::LockError::Timeout(_),
-            ),
-        )))
-        | Ok(Err(solstone_core_facets::ObservationWriteError::Write(
-            solstone_core_facets::FacetWriteError::TrustLock(
-                solstone_core_facets::FacetTrustLockError::Lock(
-                    solstone_core_entity::LockError::Timeout(_),
-                ),
-            ),
-        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
-        _ => refusal(ReasonCode::EntityOperationFailed, "observation add failed"),
+        Ok(Err(e)) => refusal(ReasonCode::EntityOperationFailed, e.to_string()),
+        Err(e) => refusal(ReasonCode::EntityOperationFailed, e.to_string()),
     }
 }
 
@@ -3966,31 +4039,67 @@ async fn entity_detail_route(
         let rows = solstone_core_facets::list_scoped_facet_entities(&root, &facet, true, true)
             .map_err(|error| error.to_string())?;
         if let Some(row) = rows.into_iter().find(|row| row.entity_id == id) {
-            let observations =
-                solstone_core_facets::load_observations(&root, &facet, &row.relationship_dir)
-                    .unwrap_or_default();
+            let obs_result = solstone_core_facets::read_live_observations(
+                &root,
+                &facet,
+                &row.relationship_dir,
+                solstone_core_facets::ObservationReadQuery {
+                    limit: 50,
+                    order: solstone_core_facets::ObservationReadOrder::Newest,
+                    ..Default::default()
+                },
+            );
             let mut entity = row.identity;
             let voiceprint = solstone_core_entity::entity_memory_path(&root, &row.entity_id, false)
                 .map(|path| path.join("voiceprints.npz").exists())
                 .unwrap_or(false);
             let object = entity.as_object_mut().expect("identity reader returns objects");
-            object.insert("observation_count".to_owned(), json!(observations.len()));
-            object.insert("has_voiceprint".to_owned(), json!(voiceprint));
-            let snapshot = serde_json::Value::Object(object.clone());
-            object.insert("last_active_ts".to_owned(), json!(solstone_core_entity::entity_last_active_ts(&snapshot)));
-            object.insert("last_active_day".to_owned(), json!(solstone_core_entity::entity_last_active_day(&snapshot)));
-            return Ok::<_, String>(Some((entity, observations)));
+            match obs_result {
+                Ok(page) => {
+                    object.insert("observation_count".to_owned(), json!(page.total));
+                    object.insert("has_voiceprint".to_owned(), json!(voiceprint));
+                    let snapshot = serde_json::Value::Object(object.clone());
+                    object.insert("last_active_ts".to_owned(), json!(solstone_core_entity::entity_last_active_ts(&snapshot)));
+                    object.insert("last_active_day".to_owned(), json!(solstone_core_entity::entity_last_active_day(&snapshot)));
+                    return Ok::<_, String>(Some((entity, Some(page.items), Some(page.total), Some(page.has_more), None)));
+                }
+                Err(err) => {
+                    object.insert("observation_count".to_owned(), Value::Null);
+                    object.insert("has_voiceprint".to_owned(), json!(voiceprint));
+                    let snapshot = serde_json::Value::Object(object.clone());
+                    object.insert("last_active_ts".to_owned(), json!(solstone_core_entity::entity_last_active_ts(&snapshot)));
+                    object.insert("last_active_day".to_owned(), json!(solstone_core_entity::entity_last_active_day(&snapshot)));
+                    return Ok::<_, String>(Some((entity, None, None, None, Some(err.to_string()))));
+                }
+            }
         }
         let identity = solstone_core_entity::read_entity_identity(&root, &id).map_err(|error| error.to_string())?;
         Ok(identity.map(|identity| {
             let value = identity.value();
-            (json!({"id":id,"name":value.get("name").cloned().unwrap_or_default(),"type":value.get("type").cloned().unwrap_or_default(),"aka":value.get("aka").cloned().unwrap_or_else(||json!([])),"is_principal":value.get("is_principal").cloned().unwrap_or_else(||json!(false)),"needs_attachment":true,"observation_count":0,"has_voiceprint":false}), Vec::new())
+            (
+                json!({"id":id,"name":value.get("name").cloned().unwrap_or_default(),"type":value.get("type").cloned().unwrap_or_default(),"aka":value.get("aka").cloned().unwrap_or_else(||json!([])),"is_principal":value.get("is_principal").cloned().unwrap_or_else(||json!(false)),"needs_attachment":true,"observation_count":0,"has_voiceprint":false}),
+                Some(Vec::new()),
+                Some(0),
+                Some(false),
+                None,
+            )
         }))
     })
     .await
     {
-        Ok(Ok(Some((entity, observations)))) => {
-            Json(json!({"entity":entity,"observations":observations})).into_response()
+        Ok(Ok(Some((entity, observations, total, has_more, observation_error)))) => {
+            let mut response = json!({
+                "entity": entity,
+            });
+            if let Some(obs) = observations {
+                response["observations"] = json!(obs);
+                response["total"] = json!(total.unwrap_or(0));
+                response["has_more"] = json!(has_more.unwrap_or(false));
+            }
+            if let Some(err) = observation_error {
+                response["observation_error"] = json!(err);
+            }
+            Json(response).into_response()
         }
         Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "entity not found"),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity read failed"),

@@ -403,11 +403,13 @@ mod tests {
             "Discussed preferences",
         )
         .unwrap();
-        solstone_core_facets::save_observations(
+        solstone_core_facets::add_observation(
             &context.journal,
             "work",
             "ada",
-            &[json!({"content":"Prefers concise updates", "observed_at":1})],
+            "Prefers concise updates",
+            None,
+            None,
         )
         .unwrap();
         let prepared = PreparedTalent {
@@ -555,8 +557,15 @@ mod tests {
                 "2"
             );
             assert_eq!(
-                solstone_core_facets::load_observations(&context.journal, "work", "ada").unwrap()
-                    [0]["content"],
+                solstone_core_facets::read_live_observations(
+                    &context.journal,
+                    "work",
+                    "ada",
+                    Default::default()
+                )
+                .unwrap()
+                .items[0]
+                    .content,
                 "Prefers concise weekly updates"
             );
         }
@@ -589,11 +598,13 @@ mod tests {
                     "Discussed preferences",
                 )
                 .unwrap();
-                solstone_core_facets::save_observations(
+                solstone_core_facets::add_observation(
                     &context.journal,
                     "work",
                     "grace",
-                    &[json!({"content":"Prefers concise updates", "observed_at":1})],
+                    "Prefers concise updates",
+                    None,
+                    None,
                 )
                 .unwrap();
             }
@@ -617,11 +628,13 @@ mod tests {
             let response = json!({"response":output.to_string()});
             record.generated_result = Some(response.clone());
             save_daily_unit_record(&context.journal, &record).unwrap();
-            solstone_core_facets::save_observations(
+            solstone_core_facets::add_observation(
                 &context.journal,
                 "work",
                 changed_entity,
-                &[json!({"content":"Owner correction", "observed_at":2})],
+                "Owner correction",
+                None,
+                None,
             )
             .unwrap();
             let before = solstone_core_facets::read_facet_entity_observations(
@@ -700,6 +713,13 @@ mod tests {
                     solstone_core_facets::facet_write_identity(&context.journal, "work").unwrap(),
                     old_facet_id,
                 );
+                std::fs::write(
+                    context
+                        .journal
+                        .join("facets/work/entities/ada/observations.jsonl"),
+                    before.as_deref().unwrap_or_default(),
+                )
+                .unwrap();
             }
             assert_eq!(
                 solstone_core_facets::read_facet_entity_observations(

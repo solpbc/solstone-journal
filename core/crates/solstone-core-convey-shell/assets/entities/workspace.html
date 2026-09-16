@@ -2545,6 +2545,9 @@ function beginDetailObservationOpen() {
     entity: null,
     observations: [],
     observationsReady: false,
+    hasMore: false,
+    totalCount: 0,
+    loadingAll: false,
     mode: 'default',
     range: null,
     gridData: null,
@@ -2712,11 +2715,55 @@ function clearObservationGridRange() {
   }
 }
 
+async function fetchAllDetailObservations() {
+  const entity = detailObservationState.entity || currentDetailEntity;
+  if (!entity || !entity.name || detailObservationState.loadingAll) return;
+  detailObservationState.loadingAll = true;
+  const currentToken = detailObservationState.token;
+  try {
+    let all = [...detailObservationState.observations];
+    let hasMore = detailObservationState.hasMore;
+    while (hasMore) {
+      const last = all[all.length - 1];
+      const afterId = last && last.id ? last.id : null;
+      let url = `api/${encodeURIComponent(currentFacet)}/observations?name=${encodeURIComponent(entity.name)}&limit=200`;
+      if (afterId) {
+        url += `&after_id=${encodeURIComponent(afterId)}`;
+      }
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('failed to load observations');
+      const data = await res.json();
+      if (!detailObservationTokenCurrent(currentToken)) return;
+      const items = Array.isArray(data.items) ? data.items : [];
+      if (items.length === 0) break;
+      all.push(...items);
+      hasMore = Boolean(data.has_more);
+    }
+    if (!detailObservationTokenCurrent(currentToken)) return;
+    detailObservationState.observations = all;
+    detailObservationState.hasMore = false;
+    detailObservationState.mode = 'all';
+    detailObservationState.range = null;
+    renderObservationGridControls();
+    renderDetailObservationsForState();
+  } catch (err) {
+    console.error('Failed to load all observations:', err);
+  } finally {
+    if (detailObservationTokenCurrent(currentToken)) {
+      detailObservationState.loadingAll = false;
+    }
+  }
+}
+
 function showAllDetailObservations() {
-  detailObservationState.mode = 'all';
-  detailObservationState.range = null;
-  renderObservationGridControls();
-  renderDetailObservationsForState();
+  if (detailObservationState.hasMore) {
+    fetchAllDetailObservations();
+  } else {
+    detailObservationState.mode = 'all';
+    detailObservationState.range = null;
+    renderObservationGridControls();
+    renderDetailObservationsForState();
+  }
 }
 
 function observationsForDetailState() {
@@ -2808,24 +2855,54 @@ function renderDetailObservationsForState() {
   const entity = detailObservationState.entity || currentDetailEntity || {};
   const rows = observationsForDetailState();
   const options = {};
+  const totalCount = detailObservationState.totalCount || Number(entity.observation_count) || detailObservationState.observations.length;
+
   if (
-    detailObservationState.gridData &&
     detailObservationState.mode === 'default' &&
     detailObservationState.defaultDay
   ) {
     options.heading = entityGridFormat(ENT_COPY.ENT_GRID_DEFAULT_DAY, {
       day: formatDateShort(detailObservationState.defaultDay) || detailObservationState.defaultDay,
     });
+  }
+
+  const hasMore = Boolean(detailObservationState.hasMore || detailObservationState.observations_has_more);
+  const isDefaultDay = detailObservationState.mode === 'default' && detailObservationState.defaultDay;
+
+  if (hasMore) {
+    const n = detailObservationState.observations.length;
+    const footerContainer = document.createElement('div');
+    footerContainer.className = 'entity-observation-disclosure-container';
+    const disclosure = document.createElement('span');
+    disclosure.className = 'entity-observation-disclosure-text';
+    disclosure.textContent = entityGridFormat(ENT_COPY.ENT_OBS_DISCLOSURE, {
+      n: n.toLocaleString(),
+      total: totalCount.toLocaleString(),
+    });
+    footerContainer.appendChild(disclosure);
+    footerContainer.appendChild(document.createTextNode(' '));
     const showAllButton = document.createElement('button');
     showAllButton.type = 'button';
     showAllButton.className = 'entity-observation-show-all';
     showAllButton.textContent = entityGridFormat(ENT_COPY.ENT_GRID_SHOW_ALL, {
-      n: detailObservationState.observations.length,
-      observation_unit: entityObservationUnit(detailObservationState.observations.length),
+      n: totalCount.toLocaleString(),
+      observation_unit: entityObservationUnit(totalCount),
+    });
+    showAllButton.onclick = showAllDetailObservations;
+    footerContainer.appendChild(showAllButton);
+    options.footer = footerContainer;
+  } else if (isDefaultDay) {
+    const showAllButton = document.createElement('button');
+    showAllButton.type = 'button';
+    showAllButton.className = 'entity-observation-show-all';
+    showAllButton.textContent = entityGridFormat(ENT_COPY.ENT_GRID_SHOW_ALL, {
+      n: totalCount.toLocaleString(),
+      observation_unit: entityObservationUnit(totalCount),
     });
     showAllButton.onclick = showAllDetailObservations;
     options.footer = showAllButton;
   }
+
   renderObservationList(entity, rows, options);
 }
 
@@ -3664,7 +3741,7 @@ function showFacetDetailView(entityId) {
         throw new Error(data.error);
       }
       currentDetailEntity = data.entity;
-      renderDetailView(data.entity, data.observations);
+      renderDetailView(data.entity, data.observations, data);
     })
     .catch(error => {
       if (!detailObservationTokenCurrent(openToken)) return;
@@ -4741,7 +4818,7 @@ async function cancelJournalEntityDelete(pendingId, notificationId) {
   }
 }
 
-function renderDetailView(entity, observations) {
+function renderDetailView(entity, observations, detailData) {
   const isDetached = entity.detached === true;
   const needsAttachment = entity.needs_attachment === true;
   const detailView = document.getElementById('entity-detail-view');
@@ -4820,7 +4897,13 @@ function renderDetailView(entity, observations) {
   detailObservationState.entity = entity;
   detailObservationState.observations = Array.isArray(observations) ? observations : [];
   detailObservationState.observationsReady = true;
-  renderObservationList(entity, detailObservationState.observations);
+  detailObservationState.hasMore = Boolean(detailData && detailData.has_more);
+  detailObservationState.totalCount = Number(
+    (detailData && detailData.total) ||
+    (entity && entity.observation_count) ||
+    detailObservationState.observations.length
+  );
+  renderDetailObservationsForState();
   if (detailObservationState.gridData) {
     renderObservationDayGridForState();
   }

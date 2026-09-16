@@ -1329,11 +1329,13 @@ fi
             "Discussed preferences",
         )
         .unwrap();
-        solstone_core_facets::save_observations(
+        solstone_core_facets::add_observation(
             root,
             "work",
             "ada",
-            &[json!({"content":"Prefers concise updates","observed_at":1})],
+            "Prefers concise updates",
+            None,
+            None,
         )
         .unwrap();
         let owner_path = root.join("facets/work/entities/ada/observations.jsonl");

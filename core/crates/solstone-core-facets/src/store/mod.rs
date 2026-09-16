@@ -62,7 +62,7 @@ pub use detected_entity_activity::{
 };
 pub use error::{
     FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetRenameError, FacetStoreError,
-    FacetWriteError, ObservationLookupError, ObservationWriteError,
+    FacetWriteError,
 };
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
 pub use facet_entities::{
@@ -99,15 +99,18 @@ pub use news::{
     write_news_file,
 };
 pub use observations::{
-    ObservationEntityResolution, ObservationLookup, ObservationOperationCounts,
-    PreparedObservationBatch, add_observation, count_observations, load_observations,
-    load_observations_for_query, load_observations_strict, observation_day_counts,
-    prepare_observation_batch, publish_observation_batch, read_facet_entity_observations,
-    record_observation_ops, record_observation_ops_strict, resolve_observation_entity_dir,
-    save_observations, validate_observation_operations, write_facet_entity_observations,
+    HistoryEntry, IncomingObservationRow, ObservationChange, ObservationEntityResolution,
+    ObservationErrorSource, ObservationLookup, ObservationLookupError, ObservationOperationCounts,
+    ObservationPage, ObservationPageItem, ObservationParseSource, ObservationReadOrder,
+    ObservationReadQuery, ObservationRow, ObservationStoreError, ObservationSummary,
+    ObservationWriteError, ObservationWriteOutcome, ParsedObservations, PreparedObservationBatch,
+    Retired, add_observation, apply_observation_change, count_observations,
+    load_observations_for_query, normalize_observation_content, observation_day_counts,
+    observation_summary, parse_observation_file, prepare_observation_batch,
+    publish_observation_batch, read_facet_entity_observations, read_live_observations,
+    record_observation_ops_strict, resolve_observation_entity_dir, serialize_observation_rows,
+    validate_observation_operations, write_facet_entity_observations,
 };
-#[cfg(all(test, feature = "full-tests"))]
-pub(crate) use observations::{retry_add_for_test, retry_record_for_test};
 pub use recent_names::{
     extract_spoken_names, is_speakable, load_all_attached_entities, load_recent_entity_names,
 };

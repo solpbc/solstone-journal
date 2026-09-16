@@ -36,6 +36,7 @@ use super::merge_payload::{
     snapshot_from_payload,
 };
 use super::merge_rollback::MergeRollback;
+use super::observations::{ObservationChange, ObservationRow, apply_observation_change};
 
 type FailureInjector = dyn Fn(&str, usize) -> bool;
 
@@ -677,21 +678,52 @@ fn undo_facets(
                 let observations_path = format!("{directory}/observations.jsonl");
                 rollback.capture(journal, &observations_path)?;
                 if observations_existed {
-                    let destination = contained_path(journal, &observations_path)
-                        .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
-                    write_jsonl(
-                        destination,
-                        observations_before.to_vec(),
-                        AtomicWriteOptions::default(),
+                    let rows: Vec<ObservationRow> = observations_before
+                        .iter()
+                        .map(|val| {
+                            let mut row: ObservationRow = serde_json::from_value(val.clone())
+                                .unwrap_or_else(|_| ObservationRow {
+                                    id: val.get("id").and_then(Value::as_u64).unwrap_or(0),
+                                    content: val
+                                        .get("content")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("")
+                                        .to_string(),
+                                    observed_at: val
+                                        .get("observed_at")
+                                        .and_then(Value::as_i64)
+                                        .unwrap_or(0),
+                                    source_day: val
+                                        .get("source_day")
+                                        .and_then(Value::as_str)
+                                        .map(str::to_owned),
+                                    relation: val.get("relation").cloned(),
+                                    by: val.get("by").and_then(Value::as_str).map(str::to_owned),
+                                    history: Vec::new(),
+                                    retired: None,
+                                    raw_json: None,
+                                });
+                            if let Some(obj) = val.as_object() {
+                                row.raw_json = Some(obj.clone());
+                            }
+                            row
+                        })
+                        .collect();
+                    apply_observation_change(
+                        journal,
+                        facet,
+                        recorded_dir,
+                        ObservationChange::ReplaceFullSet { rows },
                     )
                     .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
                 } else {
-                    restore_snapshot(
+                    apply_observation_change(
                         journal,
-                        &JournalSnapshot::Missing {
-                            path: observations_path,
-                        },
-                    )?;
+                        facet,
+                        recorded_dir,
+                        ObservationChange::RemoveFile,
+                    )
+                    .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
                 }
                 inject_failure(injector, "facets", artifact_index)?;
                 artifact_index += 1;
@@ -747,30 +779,28 @@ fn undo_observation_relations(
                     "merge payload observation relation entry is missing target_before".to_owned(),
                 )
             })?;
-        let destination = contained_path(journal, path)
+        let parts: Vec<&str> = path.split('/').collect();
+        if parts.len() == 5
+            && parts[0] == "facets"
+            && parts[2] == "entities"
+            && parts[4] == "observations.jsonl"
+        {
+            let facet = parts[1];
+            let entity_dir = parts[3];
+            rollback.capture(journal, path)?;
+            apply_observation_change(
+                journal,
+                facet,
+                entity_dir,
+                ObservationChange::EditInPlace {
+                    full_set_index: row_index,
+                    rewrite: serde_json::json!({
+                        "target_entity_id": target_before,
+                    }),
+                },
+            )
             .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
-        let mut rows: Vec<Value> = solstone_core_journal_io::read_jsonl(
-            &destination,
-            Vec::new(),
-            solstone_core_journal_io::MalformedPolicy::Raise,
-        )
-        .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
-        let relation = rows
-            .get_mut(row_index)
-            .and_then(|row| row.get_mut("relation"))
-            .and_then(Value::as_object_mut)
-            .ok_or_else(|| {
-                EntityUndoError::Refused(format!(
-                    "merge payload observation relation row is missing: {path}:{row_index}"
-                ))
-            })?;
-        relation.insert(
-            "target_entity_id".to_owned(),
-            Value::String(target_before.to_owned()),
-        );
-        rollback.capture(journal, path)?;
-        write_jsonl(destination, rows, AtomicWriteOptions::default())
-            .map_err(|error| EntityUndoError::Refused(error.to_string()))?;
+        }
         inject_failure(injector, "observations", artifact_index)?;
     }
     Ok(())

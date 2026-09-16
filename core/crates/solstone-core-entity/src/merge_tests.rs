@@ -6,7 +6,7 @@
 use super::store::merge::commit_entity_merge_with_injector as commit_entity_merge_with_injector_with_encoder;
 use super::store::merge::merge_facets;
 use super::store::merge::merge_voiceprints as merge_voiceprints_with_encoder;
-use super::store::merge::{dedupe_akas, dedupe_emails, dedupe_observations};
+use super::store::merge::{dedupe_akas, dedupe_emails};
 use super::store::merge_payload::{list_entity_merge_payload_ids, load_entity_merge_payload};
 use super::store::voiceprints::{read_voiceprints_npz, write_voiceprints_npz};
 use crate::{
@@ -986,7 +986,7 @@ fn dedup_does_not_collapse_whitespace_padded_variants() {
 #[test]
 fn observation_dedup_prefers_target_entries() {
     assert_eq!(
-        dedupe_observations(
+        crate::archive_dedupe_observations(
             &[json!({"content":"one","observed_at":"x"})],
             &[json!({"content":"one","observed_at":"x"})]
         ),

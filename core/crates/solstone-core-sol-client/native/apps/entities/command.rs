@@ -883,7 +883,11 @@ pub fn overview(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[("--facet", Some("-f"))], &[]) {
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--facet", Some("-f")), ("--limit", None)],
+        &[("--oldest", None), ("--all", None), ("--json", None)],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -899,26 +903,106 @@ pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let resolved_name = string_field(&resolved, "name").unwrap_or_default();
-    let body = match request_json(
-        ctx,
-        HttpMethod::Get,
-        &format!("/app/entities/api/{facet}/observations"),
-        vec![QueryParam::single("name", &resolved_name)],
-        None,
-    ) {
-        Ok(body) => body,
-        Err(error) => return entity_error(error, Some(&resolved_name), None),
+    let oldest = parsed.bool_value("--oldest").unwrap_or(false);
+    let all = parsed.bool_value("--all").unwrap_or(false);
+    let json_output = parsed.bool_value("--json").unwrap_or(false);
+
+    let (total, items) = if all {
+        let mut all_items = Vec::new();
+        let mut offset = 0;
+        let mut total;
+        loop {
+            let mut query = vec![
+                QueryParam::single("name", &resolved_name),
+                QueryParam::single("limit", "200"),
+                QueryParam::single("offset", offset.to_string()),
+            ];
+            if oldest {
+                query.push(QueryParam::single("order", "oldest"));
+            }
+            let body = match request_json(
+                ctx,
+                HttpMethod::Get,
+                &format!("/app/entities/api/{facet}/observations"),
+                query,
+                None,
+            ) {
+                Ok(body) => body,
+                Err(error) => return observation_error(error, &resolved_name),
+            };
+            total = integer_field(&body, "total").unwrap_or(0);
+            let items = array_field(&body, "items");
+            let count = items.len();
+            all_items.extend(items);
+            if count == 0 || all_items.len() >= total {
+                break;
+            }
+            offset += count;
+        }
+        (total, all_items)
+    } else {
+        let limit_str = parsed.value("--limit").unwrap_or("50");
+        let mut query = vec![
+            QueryParam::single("name", &resolved_name),
+            QueryParam::single("limit", limit_str),
+        ];
+        if oldest {
+            query.push(QueryParam::single("order", "oldest"));
+        }
+        let body = match request_json(
+            ctx,
+            HttpMethod::Get,
+            &format!("/app/entities/api/{facet}/observations"),
+            query,
+            None,
+        ) {
+            Ok(body) => body,
+            Err(error) => return observation_error(error, &resolved_name),
+        };
+        let total = integer_field(&body, "total").unwrap_or(0);
+        let items = array_field(&body, "items");
+        (total, items)
     };
-    let obs = array_field(&body, "items");
-    if obs.is_empty() {
-        return stdout_line(format!("No observations for '{resolved_name}'."));
+
+    if json_output {
+        return stdout_line(json_pretty_ascii(&json!({
+            "total": total,
+            "items": items,
+        })));
     }
-    let mut lines = vec![format!("{} observations for '{resolved_name}':", obs.len())];
-    for (index, observation) in obs.iter().enumerate() {
+
+    if items.is_empty() {
+        return stdout_line(format!("nothing with {resolved_name} yet."));
+    }
+
+    let order_str = if oldest {
+        "oldest first"
+    } else {
+        "newest first"
+    };
+    let mut lines = Vec::new();
+    if total == 1 {
+        lines.push(format!(
+            "1 moment for '{resolved_name}' in '{facet}', {order_str}:"
+        ));
+    } else {
+        lines.push(format!(
+            "{total} moments for '{resolved_name}' in '{facet}', {order_str}:"
+        ));
+    }
+    for (index, observation) in items.iter().enumerate() {
         lines.push(format!(
             "  {}. {}",
             index + 1,
             value_or_default(observation.get("content"), "")
+        ));
+    }
+    if items.len() < total {
+        lines.push(format!(
+            "showing the {} most recent of {} moments for '{}'. add --all to see every one.",
+            items.len(),
+            total,
+            resolved_name
         ));
     }
     stdout(lines)
@@ -961,9 +1045,50 @@ pub fn observe(ctx: CommandContext<'_>) -> CommandOutput {
             "entity": entity,
         })),
     ) {
-        Ok(_body) => stdout_line(format!("Observation added to '{resolved_name}'.")),
-        Err(error) => entity_error(error, Some(&resolved_name), None),
+        Ok(body) => {
+            let result = body.get("result");
+            let already_present = result
+                .and_then(|r| r.get("already_present"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if already_present {
+                stdout_line(format!(
+                    "your journal already holds that moment for '{resolved_name}'. nothing was added."
+                ))
+            } else {
+                let count = result
+                    .and_then(|r| r.get("count"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(1);
+                if count == 1 {
+                    stdout_line(format!(
+                        "added. 1 moment for '{resolved_name}' in '{facet}'."
+                    ))
+                } else {
+                    stdout_line(format!(
+                        "added. {count} moments for '{resolved_name}' in '{facet}'."
+                    ))
+                }
+            }
+        }
+        Err(error) => observation_error(error, &resolved_name),
     }
+}
+
+fn observation_error(error: ClientError, name: &str) -> CommandOutput {
+    if let Some(detail) = error.detail()
+        && detail.contains("line ")
+        && let Some(line_str) = detail
+            .split("line ")
+            .nth(1)
+            .and_then(|s| s.split(|c: char| !c.is_ascii_digit()).next())
+            .filter(|s| !s.is_empty())
+    {
+        return stderr(format!(
+            "couldn't read the moments saved for '{name}': line {line_str} of the file isn't valid. nothing was changed."
+        ));
+    }
+    entity_error(error, Some(name), None)
 }
 
 #[must_use]
@@ -1725,6 +1850,10 @@ fn array_field(value: &Value, key: &str) -> Vec<Value> {
 
 fn string_field(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_string)
+}
+
+fn integer_field(value: &Value, key: &str) -> Option<usize> {
+    value.get(key).and_then(Value::as_u64).map(|n| n as usize)
 }
 
 fn value_or_empty(value: Option<&Value>) -> String {

@@ -3,19 +3,23 @@
 
 //! Safe movement of facet-scoped entity directories.
 
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
-use solstone_core_journal_io::{AtomicWriteOptions, write_text};
 
 use crate::hold_facet_trust_lock;
 
-use super::error::{FacetEntityWriteError, FacetWriteError};
+use super::error::FacetEntityWriteError;
 use super::facet_entities::list_scoped_facet_entities;
 use super::identity::read_facet_entity_link;
+use super::observations::{
+    IncomingObservationRow, ObservationChange, ObservationParseSource, ParsedObservations,
+    apply_observation_change, parse_observation_file,
+};
+use super::paths::facet_entity_observations_path;
 use super::write::save_facet_entity_link;
 
 /// Outcome of moving one facet-scoped entity directory.
@@ -120,7 +124,7 @@ pub fn move_facet_entity(
         let source_file = source.join(&relative);
         let destination_file = destination.join(&relative);
         if relative == Path::new("observations.jsonl") && destination_file.exists() {
-            merge_observations(&source_file, &destination_file)?;
+            merge_facet_move_observations(journal_root, from_facet, to_facet, &entity_dir)?;
             continue;
         }
         if destination_file.exists() {
@@ -167,43 +171,61 @@ fn preflight_move_conflicts(
     Ok(())
 }
 
-fn merge_observations(source: &Path, destination: &Path) -> Result<(), FacetEntityWriteError> {
-    let mut lines = fs::read_to_string(destination)?
-        .lines()
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    let mut keys = lines
-        .iter()
-        .map(|line| observation_key(line))
-        .collect::<BTreeSet<_>>();
-    for line in fs::read_to_string(source)?.lines() {
-        if keys.insert(observation_key(line)) {
-            lines.push(line.to_owned());
-        }
+fn merge_facet_move_observations(
+    journal_root: &Path,
+    from_facet: &str,
+    to_facet: &str,
+    entity_dir: &str,
+) -> Result<(), FacetEntityWriteError> {
+    let source_path = facet_entity_observations_path(journal_root, from_facet, entity_dir)
+        .map_err(FacetEntityWriteError::FacetStore)?;
+    if !source_path.exists() {
+        return Ok(());
     }
-    write_text(
-        destination,
-        &(lines.join("\n") + if lines.is_empty() { "" } else { "\n" }),
-        AtomicWriteOptions::default(),
-    )
-    .map_err(FacetWriteError::ContentWrite)?;
-    Ok(())
-}
+    let source_text = fs::read_to_string(&source_path)?;
+    let source_parsed =
+        parse_observation_file(&source_text, ObservationParseSource::Path(&source_path))?;
 
-fn observation_key(line: &str) -> String {
-    serde_json::from_str::<Value>(line)
-        .ok()
-        .and_then(|value| {
-            Some(format!(
-                "{}\u{1f}{}",
-                value.get("content")?.as_str()?,
-                value
-                    .get("observed_at")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-            ))
+    let dest_path = facet_entity_observations_path(journal_root, to_facet, entity_dir)
+        .map_err(FacetEntityWriteError::FacetStore)?;
+    let dest_parsed = if dest_path.exists() {
+        let dest_text = fs::read_to_string(&dest_path)?;
+        parse_observation_file(&dest_text, ObservationParseSource::Path(&dest_path))?
+    } else {
+        ParsedObservations {
+            full_rows: Vec::new(),
+        }
+    };
+
+    let existing_contents: HashSet<String> = dest_parsed
+        .full_rows
+        .into_iter()
+        .map(|row| row.content)
+        .collect();
+
+    let rows_to_append: Vec<IncomingObservationRow> = source_parsed
+        .full_rows
+        .into_iter()
+        .filter(|row| !existing_contents.contains(&row.content))
+        .map(|row| IncomingObservationRow {
+            content: row.content,
+            observed_at: row.observed_at,
+            source_day: row.source_day,
+            relation: row.relation,
         })
-        .unwrap_or_else(|| line.to_owned())
+        .collect();
+
+    apply_observation_change(
+        journal_root,
+        to_facet,
+        entity_dir,
+        ObservationChange::AppendMany {
+            rows: rows_to_append,
+            actor: "import",
+        },
+    )?;
+
+    Ok(())
 }
 
 fn reconcile_relationship(

@@ -10,7 +10,7 @@ use serde_json::{Map, Value, json};
 use solstone_core_entity::{
     load_all_journal_entities, read_journal_principal, save_entity_identity,
 };
-use solstone_core_facets::{save_facet_entity_link, save_observations};
+use solstone_core_facets::{add_observation, save_facet_entity_link};
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, EntityDispositionKind, PrincipalAdoption, RetryDisposition,
     SegmentDispositionKind, merge_journal_archive,
@@ -381,11 +381,13 @@ fn existing_facet_merges_entity_links_and_observations() {
         &source_fields,
     )
     .unwrap();
-    save_observations(
+    add_observation(
         &source,
         "work",
         "from-archive",
-        &[json!({"content":"from archive", "observed_at":"2026-08-11"})],
+        "from archive",
+        Some("2026-08-11"),
+        None,
     )
     .unwrap();
     let archive = archive_from(&source, &tree.path);

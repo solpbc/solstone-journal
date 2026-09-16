@@ -665,14 +665,11 @@ mod tests {
     #[test]
     fn observation_batch_recovers_drop_without_reinterpreting_shifted_indices() {
         let root = fixture();
-        solstone_core_facets::save_observations(
+        solstone_core_facets::write_facet_entity_observations(
             root.path(),
             "work",
             "ada",
-            &[
-                json!({"content":"Works at Acme", "observed_at":1}),
-                json!({"content":"Works at Acme part-time", "observed_at":2}),
-            ],
+            "{\"content\":\"Works at Acme\", \"observed_at\":1}\n{\"content\":\"Works at Acme part-time\", \"observed_at\":2}\n",
         )
         .unwrap();
         let batch = solstone_core_facets::prepare_observation_batch(
@@ -691,11 +688,16 @@ mod tests {
         );
         solstone_core_facets::publish_observation_batch(root.path(), &batch, false, || Ok(()))
             .unwrap();
-        let rows = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
-        assert_eq!(
-            rows,
-            [json!({"content":"Works at Acme part-time", "observed_at":2})]
-        );
+        let rows = solstone_core_facets::read_live_observations(
+            root.path(),
+            "work",
+            "ada",
+            Default::default(),
+        )
+        .unwrap()
+        .items;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].content, "Works at Acme part-time");
     }
 
     #[test]
@@ -730,11 +732,13 @@ mod tests {
                 .join("facets/work/entities/ada/observations.jsonl")
                 .exists()
         );
-        solstone_core_facets::save_observations(
+        solstone_core_facets::add_observation(
             root.path(),
             "work",
             "ada",
-            &[json!({"content":"Prefers concise updates", "observed_at":1})],
+            "Prefers concise updates",
+            None,
+            None,
         )
         .unwrap();
         let update = solstone_core_facets::prepare_observation_batch(root.path(), "work", "ada", &[json!({"op":"update", "target_index":0, "target_quote":"Prefers concise updates", "content":"Prefers concise updates; monthly"})], Some("20260910")).unwrap();
@@ -744,16 +748,27 @@ mod tests {
             ))
             .is_err()
         );
-        let owner = vec![json!({"content":"Prefers concise updates; weekly", "observed_at":99})];
-        solstone_core_facets::save_observations(root.path(), "work", "ada", &owner).unwrap();
+        solstone_core_facets::write_facet_entity_observations(
+            root.path(),
+            "work",
+            "ada",
+            "{\"content\":\"Prefers concise updates; weekly\", \"observed_at\":99}\n",
+        )
+        .unwrap();
         assert!(
             solstone_core_facets::publish_observation_batch(root.path(), &update, false, || Ok(()))
                 .is_err()
         );
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            owner
-        );
+        let rows = solstone_core_facets::read_live_observations(
+            root.path(),
+            "work",
+            "ada",
+            Default::default(),
+        )
+        .unwrap()
+        .items;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].content, "Prefers concise updates; weekly");
     }
 
     #[test]
@@ -1037,8 +1052,13 @@ mod tests {
     #[test]
     fn observer_quote_preserving_edit_during_generation_is_not_adopted() {
         let root = fixture();
-        let before = vec![json!({"content":"Prefers concise updates", "observed_at":1})];
-        solstone_core_facets::save_observations(root.path(), "work", "ada", &before).unwrap();
+        solstone_core_facets::write_facet_entity_observations(
+            root.path(),
+            "work",
+            "ada",
+            "{\"content\":\"Prefers concise updates\", \"observed_at\":1}\n",
+        )
+        .unwrap();
         let prior =
             solstone_core_facets::read_facet_entity_observations(root.path(), "work", "ada")
                 .unwrap();
@@ -1058,8 +1078,13 @@ mod tests {
             json!({"work":solstone_core_facets::facet_write_identity(root.path(), "work").unwrap()}),
         );
         prepared.config.insert("_daily_observer_resolution".into(), json!({"entities":[{"id":"ada", "name":"Ada", "aka":[], "emails":[], "blocked":false}], "choices":[]}));
-        let owner = vec![json!({"content":"Prefers concise updates; weekly", "observed_at":2})];
-        solstone_core_facets::save_observations(root.path(), "work", "ada", &owner).unwrap();
+        solstone_core_facets::write_facet_entity_observations(
+            root.path(),
+            "work",
+            "ada",
+            "{\"content\":\"Prefers concise updates; weekly\", \"observed_at\":2}\n",
+        )
+        .unwrap();
         let context = ExecutionContext {
             journal: root.path().into(),
         };
@@ -1077,10 +1102,16 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(failure.phase, "conflict");
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            owner
-        );
+        let rows = solstone_core_facets::read_live_observations(
+            root.path(),
+            "work",
+            "ada",
+            Default::default(),
+        )
+        .unwrap()
+        .items;
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].content, "Prefers concise updates; weekly");
     }
 
     #[test]
@@ -1504,8 +1535,18 @@ mod tests {
         set_relation_test_alias(root.path(), "beta", &["Grace"]);
         solstone_core_facets::publish_observation_batch(root.path(), &batches[0], true, || Ok(()))
             .unwrap();
-        let rows = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
-        assert_eq!(rows[0]["relation"]["target_entity_id"], "alpha");
+        let rows = solstone_core_facets::read_live_observations(
+            root.path(),
+            "work",
+            "ada",
+            Default::default(),
+        )
+        .unwrap()
+        .items;
+        assert_eq!(
+            rows[0].relation.as_ref().unwrap()["target_entity_id"],
+            "alpha"
+        );
         assert!(
             !root
                 .path()

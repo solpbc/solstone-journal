@@ -8,10 +8,10 @@ use std::io::Read;
 
 use serde_json::json;
 
-use crate::move_facet_entity;
 use crate::store_tests::{
     TempDir, create_test_facet, relationship_value, write_facet_relationship,
 };
+use crate::{move_facet_entity, read_live_observations};
 
 #[test]
 fn move_merge_publishes_complete_observations_without_truncating_an_open_reader() {
@@ -31,9 +31,13 @@ fn move_merge_publishes_complete_observations_without_truncating_an_open_reader(
     let destination = temporary
         .path()
         .join("facets/to/entities/subject/observations.jsonl");
-    let original = "{\"content\":\"retained\"}\nunknown preserved line\n";
+    let original = "{\"id\":1,\"content\":\"retained\",\"observed_at\":1000}\n";
     fs::write(&destination, original).unwrap();
-    fs::write(&source, "{\"content\":\"added\"}\n").unwrap();
+    fs::write(
+        &source,
+        "{\"id\":1,\"content\":\"added\",\"observed_at\":2000}\n",
+    )
+    .unwrap();
     let mut old_reader = fs::File::open(&destination).unwrap();
 
     move_facet_entity(temporary.path(), "subject", "from", "to", true).unwrap();
@@ -44,10 +48,19 @@ fn move_merge_publishes_complete_observations_without_truncating_an_open_reader(
         old_contents, original,
         "publication must not truncate the previous inode"
     );
-    assert_eq!(
-        fs::read_to_string(&destination).unwrap(),
-        format!("{original}{{\"content\":\"added\"}}\n")
-    );
+    let page = read_live_observations(
+        temporary.path(),
+        "to",
+        "subject",
+        crate::ObservationReadQuery {
+            order: crate::ObservationReadOrder::Oldest,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.items[0].content, "retained");
+    assert_eq!(page.items[1].content, "added");
 }
 
 #[test]
@@ -232,7 +245,7 @@ fn observation_writer_waits_for_entity_merge_and_retains_both_changes() {
     )
     .unwrap();
     drop(merge_guard);
-    let (observations, _) = done_rx
+    let (observations, ..) = done_rx
         .recv_timeout(Duration::from_secs(2))
         .unwrap()
         .unwrap();
@@ -301,7 +314,7 @@ fn merge_undo_relinks_without_losing_later_observations() {
         serde_json::Value::Null,
     )
     .unwrap();
-    let (rows, _) =
+    let (rows, ..) =
         crate::add_observation(temporary.path(), "work", "source", "after undo", None, None)
             .unwrap();
     for content in ["original memory", "new owner memory", "after undo"] {

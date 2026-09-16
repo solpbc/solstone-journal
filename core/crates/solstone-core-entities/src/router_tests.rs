@@ -134,7 +134,7 @@ fn seed_divergent_observation(root: &Path) {
     write_raw(
         root,
         "facets/work/entities/rel-c/observations.jsonl",
-        br#"{"content":"seen","source_day":"20260810"}
+        br#"{"id":1,"content":"seen","source_day":"20260810"}
 "#,
     );
 }
@@ -2014,25 +2014,25 @@ fn journal_assembly_fixture() -> Journal {
         b"not json",
     );
     for (facet, relationship_dir, observations) in [
-        ("work", "ada_lovelace", b"{}\n{}\n".as_slice()),
+        ("work", "ada_lovelace", b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n".as_slice()),
         (
             "personal",
             "ada_lovelace",
-            b"{}\n{}\n{}\n{}\n{}\n".as_slice(),
+            b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n{\"id\":3,\"content\":\"c\",\"source_day\":\"20260101\"}\n{\"id\":4,\"content\":\"d\",\"source_day\":\"20260101\"}\n{\"id\":5,\"content\":\"e\",\"source_day\":\"20260101\"}\n".as_slice(),
         ),
         (
             "broken_facet",
             "ada_lovelace",
-            b"{}\n{}\n{}\n{}\n{}\n{}\n{}\n".as_slice(),
+            b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n{\"id\":3,\"content\":\"c\",\"source_day\":\"20260101\"}\n{\"id\":4,\"content\":\"d\",\"source_day\":\"20260101\"}\n{\"id\":5,\"content\":\"e\",\"source_day\":\"20260101\"}\n{\"id\":6,\"content\":\"f\",\"source_day\":\"20260101\"}\n{\"id\":7,\"content\":\"g\",\"source_day\":\"20260101\"}\n".as_slice(),
         ),
-        ("work", "margaret_hamilton", b"{}\n{}\n{}\n{}\n".as_slice()),
-        ("work", "control_kathryn", b"{}\n{}\n{}\n".as_slice()),
-        ("work", "katherine_johnson", b"{}\n{}\n{}\n".as_slice()),
-        ("work", "line_probe", b"{}\nnot json\n{}\n".as_slice()),
+        ("work", "margaret_hamilton", b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n{\"id\":3,\"content\":\"c\",\"source_day\":\"20260101\"}\n{\"id\":4,\"content\":\"d\",\"source_day\":\"20260101\"}\n".as_slice()),
+        ("work", "control_kathryn", b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n{\"id\":3,\"content\":\"c\",\"source_day\":\"20260101\"}\n".as_slice()),
+        ("work", "katherine_johnson", b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n{\"id\":3,\"content\":\"c\",\"source_day\":\"20260101\"}\n".as_slice()),
+        ("work", "line_probe", b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n".as_slice()),
         (
             "nofacetjson",
             "grace_hopper",
-            b"{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n".as_slice(),
+            b"{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260101\"}\n{\"id\":3,\"content\":\"c\",\"source_day\":\"20260101\"}\n{\"id\":4,\"content\":\"d\",\"source_day\":\"20260101\"}\n{\"id\":5,\"content\":\"e\",\"source_day\":\"20260101\"}\n{\"id\":6,\"content\":\"f\",\"source_day\":\"20260101\"}\n{\"id\":7,\"content\":\"g\",\"source_day\":\"20260101\"}\n{\"id\":8,\"content\":\"h\",\"source_day\":\"20260101\"}\n{\"id\":9,\"content\":\"i\",\"source_day\":\"20260101\"}\n".as_slice(),
         ),
     ] {
         write_raw(
@@ -2587,10 +2587,10 @@ async fn entity_detail_enriches_attached_entity() {
     let j = Journal::new();
     seed_entity(j.path(), "a", "Alice");
     seed_facet_entity(j.path(), "work", "a");
-    write(
+    write_raw(
         j.path(),
         "facets/work/entities/a/observations.jsonl",
-        json!({"source_day":"20260101","content":"hi"}),
+        b"{\"id\":1,\"source_day\":\"20260101\",\"content\":\"hi\"}\n",
     );
     fs::write(j.path().join("entities/a/voiceprints.npz"), b"x").unwrap();
     let (_, v) = call(j.path(), "/app/entities/api/work/entity/a").await;
@@ -2624,7 +2624,7 @@ async fn grid_returns_day_maps_and_coverage() {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(
         path,
-        "{\"source_day\":\"20260101\"}\n{\"source_day\":\"20260103\"}\n",
+        "{\"id\":1,\"content\":\"a\",\"source_day\":\"20260101\"}\n{\"id\":2,\"content\":\"b\",\"source_day\":\"20260103\"}\n",
     )
     .unwrap();
     let (_, v) = call(j.path(), "/app/entities/api/work/entity/a/grid").await;
@@ -2961,7 +2961,7 @@ async fn observations_query_uses_the_stored_facet_directory_after_a_rename() {
     fs::write(
         j.path()
             .join("facets/work/entities/alice/observations.jsonl"),
-        "{\"content\":\"existing\"}\n",
+        "{\"id\":1,\"content\":\"existing\",\"source_day\":\"20260101\"}\n",
     )
     .unwrap();
 
@@ -3012,10 +3012,9 @@ async fn entity_detail_loads_observations_from_the_relationship_dir() {
     seed_divergent_observation(j.path());
     let (_, v) = call(j.path(), "/app/entities/api/work/entity/id-a").await;
     assert_eq!(v["entity"]["observation_count"], 1);
-    assert_eq!(
-        v["observations"],
-        json!([{"content":"seen","source_day":"20260810"}])
-    );
+    assert_eq!(v["observations"][0]["content"], "seen");
+    assert_eq!(v["observations"][0]["source_day"], "20260810");
+    assert_eq!(v["observations"][0]["id"], 1);
 }
 
 #[tokio::test]
@@ -6348,11 +6347,18 @@ async fn collection_routes_remain_items_and_total() {
         assert!(body["items"].is_array(), "{route}: items");
         assert!(body["total"].is_number(), "{route}: total");
         let keys: BTreeSet<_> = body.as_object().unwrap().keys().cloned().collect();
-        assert_eq!(
-            keys,
-            BTreeSet::from(["items".to_owned(), "total".to_owned()]),
-            "{route}: keys"
-        );
+        let expected_keys = if route == "observations" {
+            BTreeSet::from([
+                "has_more".to_owned(),
+                "items".to_owned(),
+                "limit".to_owned(),
+                "offset".to_owned(),
+                "total".to_owned(),
+            ])
+        } else {
+            BTreeSet::from(["items".to_owned(), "total".to_owned()])
+        };
+        assert_eq!(keys, expected_keys, "{route}: keys");
     }
 }
 
@@ -6534,4 +6540,99 @@ async fn resource_mutation_routes_omit_success() {
         assert_eq!(status, 200, "curation-dismiss: status");
         assert_no_success_envelope("curation-dismiss", &body);
     }
+}
+
+#[tokio::test]
+async fn observations_pagination_over_200_rows() {
+    let j = Journal::new();
+    seed_entity(j.path(), "bob", "Bob");
+    seed_facet_entity(j.path(), "work", "bob");
+
+    let path = j.path().join("facets/work/entities/bob/observations.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+
+    // >200 live rows, at least 3 pages of 50.
+    // Interleave legacy rows (no id) and explicit-id rows so ascending id != file order.
+    let mut content = String::new();
+    for i in 1..=210 {
+        if i % 3 == 0 {
+            content.push_str(&format!(
+                "{{\"id\":{},\"content\":\"observation {i}\",\"observed_at\":{i}}}\n",
+                i * 10
+            ));
+        } else if i % 3 == 1 {
+            content.push_str(&format!(
+                "{{\"content\":\"observation {i}\",\"observed_at\":{i}}}\n"
+            ));
+        } else {
+            content.push_str(&format!(
+                "{{\"id\":{},\"content\":\"observation {i}\",\"observed_at\":{i}}}\n",
+                i
+            ));
+        }
+    }
+    fs::write(path, content).unwrap();
+
+    // Default: 50 newest
+    let (status, body) = call(j.path(), "/app/entities/api/work/observations?name=Bob").await;
+    assert_eq!(status, 200);
+    assert_eq!(body["total"], 210);
+    let items = body["items"].as_array().unwrap();
+    assert_eq!(items.len(), 50);
+    assert_eq!(items[0]["content"], "observation 210");
+    assert_eq!(items[49]["content"], "observation 161");
+
+    // Walk all pages using after_id (newest first)
+    let mut all_walked_contents = Vec::new();
+    let mut after_id: Option<u64> = None;
+    let mut pages_count = 0;
+
+    loop {
+        let uri = match after_id {
+            Some(id) => {
+                format!("/app/entities/api/work/observations?name=Bob&limit=50&after_id={id}")
+            }
+            None => "/app/entities/api/work/observations?name=Bob&limit=50".to_string(),
+        };
+        let (status, body) = call(j.path(), &uri).await;
+        assert_eq!(status, 200);
+        assert_eq!(body["total"], 210);
+
+        let items = body["items"].as_array().unwrap();
+        if items.is_empty() {
+            break;
+        }
+        pages_count += 1;
+
+        for item in items {
+            all_walked_contents.push(item["content"].as_str().unwrap().to_string());
+        }
+
+        let has_more = body["has_more"].as_bool().unwrap();
+        if !has_more {
+            break;
+        }
+        let last_id = items.last().unwrap()["id"].as_u64().unwrap();
+        after_id = Some(last_id);
+    }
+
+    // Must have at least 3 pages of 50 (210 items: 50 + 50 + 50 + 50 + 10 = 5 pages)
+    assert!(pages_count >= 3);
+    assert_eq!(all_walked_contents.len(), 210);
+
+    // Newest first: observation 210 down to observation 1, skip-free without duplicates
+    let expected_contents: Vec<String> = (1..=210)
+        .rev()
+        .map(|i| format!("observation {i}"))
+        .collect();
+    assert_eq!(all_walked_contents, expected_contents);
+
+    // Limit > 200 refused
+    let (status, body) = call(
+        j.path(),
+        "/app/entities/api/work/observations?name=Bob&limit=201",
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(body["reason_code"], "invalid_request_value");
 }

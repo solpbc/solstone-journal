@@ -391,8 +391,13 @@ fn preflight_observation_snapshots(
                     entity_id.to_owned()
                 }
             };
-        solstone_core_facets::load_observations_strict(journal, facet, &relationship_dir)
-            .map_err(|error| error.to_string())?;
+        solstone_core_facets::read_live_observations(
+            journal,
+            facet,
+            &relationship_dir,
+            solstone_core_facets::ObservationReadQuery::default(),
+        )
+        .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -1128,9 +1133,18 @@ fn render_entity_packet(
         }
     }
     lines.extend([String::new(), "Current observations:".to_owned()]);
-    let observations =
-        solstone_core_facets::load_observations_strict(journal, facet, &entity.relationship_dir)
-            .map_err(|error| error.to_string())?;
+    let page = solstone_core_facets::read_live_observations(
+        journal,
+        facet,
+        &entity.relationship_dir,
+        solstone_core_facets::ObservationReadQuery {
+            order: solstone_core_facets::ObservationReadOrder::Oldest,
+            limit: 200,
+            ..Default::default()
+        },
+    )
+    .map_err(|error| error.to_string())?;
+    let observations = page.items;
     if observations.is_empty() {
         lines.push("No current observations.".to_owned());
     } else {
@@ -1324,16 +1338,16 @@ fn assemble_observer_context(
 
 // Keep the identifying quote distinct from both the full content and provenance.
 // The writer still verifies it against the current observation at this index.
-fn observation_context(index: usize, observation: &Value) -> Option<String> {
-    let content = observation.get("content")?.as_str()?.trim();
+fn observation_context(
+    index: usize,
+    observation: &solstone_core_facets::ObservationPageItem,
+) -> Option<String> {
+    let content = observation.content.trim();
     if content.is_empty() {
         return None;
     }
     let quote: String = content.chars().take(200).collect();
-    let source = observation
-        .get("source_day")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown");
+    let source = observation.source_day.as_deref().unwrap_or("unknown");
     Some(format!(
         "{index}. target_quote: {}\n   source_day: {}\n   content: {}",
         json!(quote),
@@ -1347,6 +1361,33 @@ mod tests {
     use super::*;
 
     const DAY: &str = "20260101";
+
+    fn read_test_observations(journal: &Path, facet: &str, entity_dir: &str) -> Vec<Value> {
+        let page = solstone_core_facets::read_live_observations(
+            journal,
+            facet,
+            entity_dir,
+            solstone_core_facets::ObservationReadQuery {
+                order: solstone_core_facets::ObservationReadOrder::Oldest,
+                limit: 200,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        page.items
+            .into_iter()
+            .map(|item| {
+                json!({
+                    "id": item.id,
+                    "content": item.content,
+                    "observed_at": item.observed_at,
+                    "source_day": item.source_day,
+                    "relation": item.relation,
+                    "by": item.by,
+                })
+            })
+            .collect()
+    }
 
     fn attach(root: &Path, name: &str) {
         solstone_core_facets::attach_or_reactivate_entity(root, "work", "Person", name, "")
@@ -1675,7 +1716,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let before = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let before = read_test_observations(root.path(), "work", "ada");
         assert_eq!(before[0]["content"], "Updated durable fact.");
 
         apply_result(
@@ -1691,10 +1732,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            before
-        );
+        assert_eq!(read_test_observations(root.path(), "work", "ada"), before);
         let outcome: Value = serde_json::from_slice(
             &fs::read(
                 root.path()
@@ -1719,7 +1757,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let original = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let original = read_test_observations(root.path(), "work", "ada");
         apply_result(
             root.path(),
             &json!({"entities":[{"entity_id":"ada","operations":[
@@ -1732,10 +1770,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            original
-        );
+        assert_eq!(read_test_observations(root.path(), "work", "ada"), original);
         let outcome_path = root
             .path()
             .join("facets/work/entities/20260101_observer_outcome.json");
@@ -1755,10 +1790,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            original
-        );
+        assert_eq!(read_test_observations(root.path(), "work", "ada"), original);
         let outcome: Value = serde_json::from_slice(&fs::read(outcome_path).unwrap()).unwrap();
         assert_eq!(outcome["keep"], 1);
         assert_eq!(outcome["skipped"], 1);
@@ -1850,11 +1882,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada")
-                .unwrap()
-                .is_empty()
-        );
+        assert!(read_test_observations(root.path(), "work", "ada").is_empty());
         assert_eq!(fs::read_to_string(grace_path).unwrap(), "{}\n");
         let outcome: Value = serde_json::from_slice(
             &fs::read(
@@ -2068,8 +2096,7 @@ mod tests {
         let _state = build(&mut prepared, &context).unwrap();
 
         // Apply test (Criterion 9: operation naming attached/excluded entity writes nothing, count excluded)
-        let before_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let before_obs = read_test_observations(root.path(), "work", "ada");
         apply_result(
             root.path(),
             &json!({"entities":[{"entity_id":"ada","operations":[{"op":"add","content":"Should not persist"}]}]}).to_string(),
@@ -2079,8 +2106,7 @@ mod tests {
             &assembly.exclusions,
         )
         .unwrap();
-        let after_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let after_obs = read_test_observations(root.path(), "work", "ada");
         assert_eq!(after_obs, before_obs);
 
         let outcome: Value = serde_json::from_slice(
@@ -2105,9 +2131,15 @@ mod tests {
             "Short observation.".to_owned(),
             "é😀\n\"quoted\" ".repeat(80),
         ] {
-            let rendered =
-                observation_context(3, &json!({"content":content, "source_day":"20260712"}))
-                    .unwrap();
+            let item = solstone_core_facets::ObservationPageItem {
+                id: 1,
+                content: content.clone(),
+                observed_at: 0,
+                source_day: Some("20260712".to_owned()),
+                relation: None,
+                by: None,
+            };
+            let rendered = observation_context(3, &item).unwrap();
             let mut lines = rendered.lines();
             let quote: String = serde_json::from_str(
                 lines
@@ -2127,7 +2159,15 @@ mod tests {
             assert_eq!(full, content.trim());
             assert!(lines.next().is_none());
         }
-        assert!(observation_context(0, &json!({"content":"  "})).is_none());
+        let empty_item = solstone_core_facets::ObservationPageItem {
+            id: 1,
+            content: "  ".to_owned(),
+            observed_at: 0,
+            source_day: None,
+            relation: None,
+            by: None,
+        };
+        assert!(observation_context(0, &empty_item).is_none());
     }
 
     #[test]
@@ -2148,8 +2188,15 @@ mod tests {
             .unwrap();
         };
         apply(json!({"op":"add","content":content}));
-        let original = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
-        let rendered = observation_context(0, &original[0]).unwrap();
+        let original = read_test_observations(root.path(), "work", "ada");
+        let page = solstone_core_facets::read_live_observations(
+            root.path(),
+            "work",
+            "ada",
+            solstone_core_facets::ObservationReadQuery::default(),
+        )
+        .unwrap();
+        let rendered = observation_context(0, &page.items[0]).unwrap();
         let quote: String = serde_json::from_str(
             rendered
                 .lines()
@@ -2169,21 +2216,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(outcome["keep"], 1);
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            original
-        );
+        assert_eq!(read_test_observations(root.path(), "work", "ada"), original);
         apply(
             json!({"op":"update","target_index":0,"target_quote":"does not match","content":"Wrong."}),
         );
-        assert_eq!(
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap(),
-            original
-        );
+        assert_eq!(read_test_observations(root.path(), "work", "ada"), original);
         apply(
             json!({"op":"update","target_index":0,"target_quote":quote,"content":"Updated fact."}),
         );
-        let updated = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let updated = read_test_observations(root.path(), "work", "ada");
         assert_eq!(updated[0]["content"], "Updated fact.");
     }
 
@@ -2333,8 +2374,7 @@ mod tests {
             &[],
         )
         .unwrap();
-        let observations =
-            solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let observations = read_test_observations(root.path(), "work", "ada");
         assert_eq!(observations[0]["content"], "Prefers concise updates.");
         let sidecar: Value = serde_json::from_str(
             &fs::read_to_string(
@@ -2377,14 +2417,9 @@ mod tests {
             &[],
         )
         .unwrap();
-        let observations =
-            solstone_core_facets::load_observations(root.path(), "work", "legacy-ada").unwrap();
+        let observations = read_test_observations(root.path(), "work", "legacy-ada");
         assert_eq!(observations[0]["content"], "from apply");
-        assert!(
-            solstone_core_facets::load_observations(root.path(), "work", "effective-ada")
-                .unwrap()
-                .is_empty()
-        );
+        assert!(read_test_observations(root.path(), "work", "effective-ada").is_empty());
     }
 
     #[test]
@@ -2672,14 +2707,11 @@ mod tests {
         )
         .unwrap();
 
-        let p0_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "person_0").unwrap();
+        let p0_obs = read_test_observations(root.path(), "work", "person_0");
         assert!(!p0_obs.iter().any(|o| o["content"] == "Excluded write"));
-        let p1_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "person_1").unwrap();
+        let p1_obs = read_test_observations(root.path(), "work", "person_1");
         assert!(p1_obs.iter().any(|o| o["content"] == "Served write"));
-        let p6_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "person_6").unwrap();
+        let p6_obs = read_test_observations(root.path(), "work", "person_6");
         assert!(p6_obs.is_empty());
 
         let outcome: Value = serde_json::from_slice(
@@ -2741,7 +2773,7 @@ mod tests {
         )
         .unwrap();
 
-        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let ada_obs = read_test_observations(root.path(), "work", "ada");
         assert_eq!(ada_obs[0]["content"], "Valid Ada observation");
         assert_eq!(fs::read_to_string(grace_path).unwrap(), "{}\n");
 
@@ -2784,7 +2816,14 @@ mod tests {
         )
         .unwrap();
 
-        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let ada_obs = solstone_core_facets::read_live_observations(
+            root.path(),
+            "work",
+            "ada",
+            Default::default(),
+        )
+        .unwrap()
+        .items;
         assert!(ada_obs.is_empty());
 
         let outcome: Value = serde_json::from_slice(
@@ -2898,10 +2937,9 @@ mod tests {
         };
         crate::writers::apply(plan, &exec_context).unwrap();
 
-        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let ada_obs = read_test_observations(root.path(), "work", "ada");
         assert_eq!(ada_obs[0]["content"], "Ada durable note");
-        let grace_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "grace").unwrap();
+        let grace_obs = read_test_observations(root.path(), "work", "grace");
         assert!(
             !grace_obs
                 .iter()
@@ -2969,8 +3007,7 @@ mod tests {
         let plan = commit(parsed, &prepared, &state).unwrap();
         crate::writers::apply(plan, &context).unwrap();
 
-        let p6_obs =
-            solstone_core_facets::load_observations(root.path(), "work", "person_6").unwrap();
+        let p6_obs = read_test_observations(root.path(), "work", "person_6");
         assert!(p6_obs.is_empty());
 
         let outcome: Value = serde_json::from_slice(
@@ -3043,7 +3080,7 @@ mod tests {
         )
         .unwrap();
 
-        let ada_obs = solstone_core_facets::load_observations(root.path(), "work", "ada").unwrap();
+        let ada_obs = read_test_observations(root.path(), "work", "ada");
         assert_eq!(ada_obs[0]["content"], "Collaborates with Grace.");
         let rel = &ada_obs[0]["relation"];
         assert_eq!(rel["kind"], "works-with");

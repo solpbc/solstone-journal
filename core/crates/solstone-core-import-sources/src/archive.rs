@@ -3,7 +3,7 @@
 
 //! Safe, journal-root-explicit merge of a portable journal archive.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::fs::{self, File};
 use std::io::{self, Read, Write};
 use std::path::{Component, Path, PathBuf};
@@ -15,14 +15,15 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
     AmbiguityObservation, EntityResolutionOutcome, archive_dedupe_akas, archive_dedupe_emails,
-    archive_dedupe_observations, hold_entity_trust_lock, load_all_journal_entities,
-    read_journal_principal, record_ambiguity_observation,
-    record_entity_resolution_from_name_evidence, rewrite_identity_map_cache,
+    hold_entity_trust_lock, load_all_journal_entities, read_journal_principal,
+    record_ambiguity_observation, record_entity_resolution_from_name_evidence,
+    rewrite_identity_map_cache,
 };
 use solstone_core_entity_matching::normalize_resolution_query;
 use solstone_core_facets::{
-    hold_facet_trust_lock, load_observations, read_activity_file, read_facet_entity_link,
-    read_log_file, read_news_file,
+    ObservationParseSource, ParsedObservations, hold_facet_trust_lock, parse_observation_file,
+    read_activity_file, read_facet_entity_link, read_facet_entity_observations, read_log_file,
+    read_news_file, serialize_observation_rows,
 };
 use solstone_core_import::ImportPreview;
 use solstone_core_journal_io::{
@@ -1804,23 +1805,64 @@ fn merge_facet_relationships(
         })?;
         match (source_link, target_link) {
             (Some(source_link), Some(target_link)) => {
-                let source_observations =
-                    load_observations(source, facet, &entity_dir).map_err(|error| {
-                        ImportSourcesError::FacetMerge {
-                            facet: facet.to_owned(),
-                            detail: error.to_string(),
-                        }
+                let source_obs_text = read_facet_entity_observations(source, facet, &entity_dir)
+                    .map_err(|error| ImportSourcesError::FacetMerge {
+                        facet: facet.to_owned(),
+                        detail: error.to_string(),
                     })?;
-                let target_observations =
-                    load_observations(target, facet, &entity_dir).map_err(|error| {
-                        ImportSourcesError::FacetMerge {
-                            facet: facet.to_owned(),
-                            detail: error.to_string(),
-                        }
+                let target_obs_text = read_facet_entity_observations(target, facet, &entity_dir)
+                    .map_err(|error| ImportSourcesError::FacetMerge {
+                        facet: facet.to_owned(),
+                        detail: error.to_string(),
                     })?;
-                let observations =
-                    archive_dedupe_observations(&source_observations, &target_observations);
-                if observations != target_observations {
+                let source_parsed = match &source_obs_text {
+                    Some(text) => parse_observation_file(
+                        text,
+                        ObservationParseSource::Path(Path::new("observations.jsonl")),
+                    )
+                    .map_err(|error| ImportSourcesError::FacetMerge {
+                        facet: facet.to_owned(),
+                        detail: error.to_string(),
+                    })?,
+                    None => ParsedObservations {
+                        full_rows: Vec::new(),
+                    },
+                };
+                let target_parsed = match &target_obs_text {
+                    Some(text) => parse_observation_file(
+                        text,
+                        ObservationParseSource::Path(Path::new("observations.jsonl")),
+                    )
+                    .map_err(|error| ImportSourcesError::FacetMerge {
+                        facet: facet.to_owned(),
+                        detail: error.to_string(),
+                    })?,
+                    None => ParsedObservations {
+                        full_rows: Vec::new(),
+                    },
+                };
+
+                let mut merged_rows = target_parsed.full_rows;
+                let existing_contents: HashSet<String> =
+                    merged_rows.iter().map(|r| r.content.clone()).collect();
+                let mut max_id = merged_rows.iter().map(|r| r.id).max().unwrap_or(0);
+                let mut changed = false;
+
+                for row in source_parsed.full_rows {
+                    if !existing_contents.contains(&row.content) {
+                        max_id += 1;
+                        let mut new_row = row;
+                        new_row.id = max_id;
+                        if new_row.by.is_none() {
+                            new_row.by = Some("import".to_owned());
+                        }
+                        merged_rows.push(new_row);
+                        changed = true;
+                    }
+                }
+
+                if changed {
+                    let serialized = serialize_observation_rows(&merged_rows);
                     state.decision(
                         "prepared",
                         "facets",
@@ -1828,11 +1870,7 @@ fn merge_facet_relationships(
                     )?;
                     let relative =
                         format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
-                    stage_bytes(
-                        state,
-                        &relative,
-                        observations_jsonl(&observations).as_bytes(),
-                    )?;
+                    stage_bytes(state, &relative, serialized.as_bytes())?;
                     state.facet_units.push(PublishUnit::File { relative });
                     state.decision(
                         "committed",
@@ -1859,22 +1897,27 @@ fn merge_facet_relationships(
                 state.facet_units.push(PublishUnit::File {
                     relative: link_relative,
                 });
-                let source_observations =
-                    load_observations(source, facet, &entity_dir).map_err(|error| {
-                        ImportSourcesError::FacetMerge {
-                            facet: facet.to_owned(),
-                            detail: error.to_string(),
-                        }
+                let source_obs_text = read_facet_entity_observations(source, facet, &entity_dir)
+                    .map_err(|error| ImportSourcesError::FacetMerge {
+                        facet: facet.to_owned(),
+                        detail: error.to_string(),
                     })?;
-                if !source_observations.is_empty() {
-                    let relative =
-                        format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
-                    stage_bytes(
-                        state,
-                        &relative,
-                        observations_jsonl(&source_observations).as_bytes(),
-                    )?;
-                    state.facet_units.push(PublishUnit::File { relative });
+                if let Some(ref text) = source_obs_text {
+                    let source_parsed = parse_observation_file(
+                        text,
+                        ObservationParseSource::Path(Path::new("observations.jsonl")),
+                    )
+                    .map_err(|error| ImportSourcesError::FacetMerge {
+                        facet: facet.to_owned(),
+                        detail: error.to_string(),
+                    })?;
+                    if !source_parsed.full_rows.is_empty() {
+                        let serialized = serialize_observation_rows(&source_parsed.full_rows);
+                        let relative =
+                            format!("facets/{facet}/entities/{entity_dir}/observations.jsonl");
+                        stage_bytes(state, &relative, serialized.as_bytes())?;
+                        state.facet_units.push(PublishUnit::File { relative });
+                    }
                 }
                 state.decision(
                     "committed",
@@ -2068,15 +2111,6 @@ fn stage_bytes(state: &MergeState, relative: &str, bytes: &[u8]) -> Result<(), I
         path: path.clone(),
         detail: error.to_string(),
     })
-}
-
-fn observations_jsonl(observations: &[Value]) -> String {
-    let mut content = String::new();
-    for observation in observations {
-        content.push_str(&serde_json::to_string(observation).expect("Value serializes"));
-        content.push('\n');
-    }
-    content
 }
 
 fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), ImportSourcesError> {

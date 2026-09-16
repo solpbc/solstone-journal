@@ -11,7 +11,7 @@ use std::path::Path;
 use serde_json::Value;
 use solstone_core_facets::{
     ScopedFacetEntity, list_facet_directories, list_scoped_facet_entities_tolerant,
-    load_observations, read_facet_declaration,
+    observation_summary, read_facet_declaration,
 };
 use solstone_core_journal_config::{is_path_shaped_name, read_journal_config};
 
@@ -309,20 +309,9 @@ fn observation_signal(
     facet_dir: &str,
     entity: &ScopedFacetEntity,
 ) -> (usize, Option<i64>) {
-    let observations =
-        load_observations(journal_root, facet_dir, &entity.relationship_dir).unwrap_or_default();
-    let max_observed_at = observations.iter().filter_map(parse_observed_at).max();
-    (observations.len(), max_observed_at)
-}
-
-fn parse_observed_at(observation: &Value) -> Option<i64> {
-    match observation.get("observed_at") {
-        Some(Value::Number(value)) => value
-            .as_i64()
-            .or_else(|| value.as_f64().map(|value| value as i64)),
-        Some(Value::String(value)) => value.parse().ok(),
-        _ => None,
-    }
+    observation_summary(journal_root, facet_dir, &entity.relationship_dir)
+        .map(|summary| (summary.count as usize, summary.latest_observed_at))
+        .unwrap_or((0, None))
 }
 
 fn identity_field(identity: &Value, key: &str) -> String {
@@ -435,7 +424,12 @@ mod tests {
 
     fn observation_lines(count: usize, observed_at: i64) -> String {
         (0..count)
-            .map(|_| format!(r#"{{"content":"x","observed_at":{observed_at}}}"#))
+            .map(|index| {
+                format!(
+                    r#"{{"id":{},"content":"x_{index}","observed_at":{observed_at}}}"#,
+                    index + 1
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n")
     }

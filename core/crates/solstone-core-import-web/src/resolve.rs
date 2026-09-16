@@ -13,10 +13,16 @@ use axum::{
 };
 use serde_json::{Map, Value, json};
 use solstone_core_entity_matching::entity_slug;
+use solstone_core_facets::{
+    IncomingObservationRow, ObservationChange, ObservationParseSource, ParsedObservations,
+    apply_observation_change, parse_observation_file,
+};
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockOptions, mutate_journal_config,
 };
-use solstone_core_journal_io::{AtomicWriteOptions, append_jsonl, atomic_replace, contained_path};
+use solstone_core_journal_io::{
+    AtomicWriteOptions, append_jsonl, atomic_replace, contained_path, read_text,
+};
 
 use crate::{
     AppState,
@@ -550,7 +556,99 @@ pub(crate) async fn facet(
                     );
                 }
             }
-            "entity_observations" | "detected_entities" | "activity_records" => {
+            "entity_observations" => {
+                let source_parsed = match parse_observation_file(
+                    source_data,
+                    ObservationParseSource::CapturedSnapshot,
+                ) {
+                    Ok(parsed) => parsed,
+                    Err(err) => {
+                        return error(
+                            StatusCode::BAD_REQUEST,
+                            "one of those values couldn't be used.",
+                            "invalid_request_value",
+                            err.to_string(),
+                        );
+                    }
+                };
+                let dest_parsed = if target.exists() {
+                    let dest_text = match read_text(&target, String::new()) {
+                        Ok(text) => text,
+                        Err(err) => {
+                            return error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "that import couldn't be saved.",
+                                "import_metadata_failed",
+                                err.to_string(),
+                            );
+                        }
+                    };
+                    match parse_observation_file(&dest_text, ObservationParseSource::Path(&target))
+                    {
+                        Ok(parsed) => parsed,
+                        Err(err) => {
+                            return error(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "that import couldn't be saved.",
+                                "import_metadata_failed",
+                                err.to_string(),
+                            );
+                        }
+                    }
+                } else {
+                    ParsedObservations {
+                        full_rows: Vec::new(),
+                    }
+                };
+                let mut keepers = Vec::new();
+                for s in &source_parsed.full_rows {
+                    let already_in_dest = dest_parsed
+                        .full_rows
+                        .iter()
+                        .any(|d| d.content == s.content && d.observed_at == s.observed_at);
+                    if !already_in_dest {
+                        let mut row_rel = s.relation.clone();
+                        if let Some(rel) = row_rel.as_mut().and_then(Value::as_object_mut)
+                            && rel.get("target_entity_id").and_then(Value::as_str)
+                                == Some(source_entity_id)
+                        {
+                            rel.insert(
+                                "target_entity_id".to_owned(),
+                                Value::String(target_entity_id.to_owned()),
+                            );
+                        }
+                        keepers.push(IncomingObservationRow {
+                            content: s.content.clone(),
+                            observed_at: s.observed_at,
+                            source_day: s.source_day.clone(),
+                            relation: row_rel,
+                        });
+                    }
+                }
+                if !keepers.is_empty() {
+                    let target_entity_dir = target_relative
+                        .split('/')
+                        .nth(1)
+                        .unwrap_or(target_entity_id);
+                    if let Err(detail) = apply_observation_change(
+                        &app.root,
+                        facet_name,
+                        target_entity_dir,
+                        ObservationChange::AppendMany {
+                            rows: keepers,
+                            actor: "import",
+                        },
+                    ) {
+                        return error(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "that import couldn't be saved.",
+                            "import_metadata_failed",
+                            detail.to_string(),
+                        );
+                    }
+                }
+            }
+            "detected_entities" | "activity_records" => {
                 let source = parse_jsonl(source_data).map_err(|detail| {
                     error(
                         StatusCode::BAD_REQUEST,
@@ -567,14 +665,7 @@ pub(crate) async fn facet(
                     .unwrap_or_default();
                 for mut item in source {
                     remap_item_ids(&mut item, source_entity_id, target_entity_id);
-                    let duplicate = if file_type == "entity_observations" {
-                        owner.iter().any(|old| {
-                            old.get("content") == item.get("content")
-                                && old.get("observed_at") == item.get("observed_at")
-                        })
-                    } else {
-                        owner.iter().any(|old| old.get("id") == item.get("id"))
-                    };
+                    let duplicate = owner.iter().any(|old| old.get("id") == item.get("id"));
                     if !duplicate {
                         owner.push(item);
                     }

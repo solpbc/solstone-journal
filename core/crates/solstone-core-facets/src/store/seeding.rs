@@ -20,10 +20,14 @@ use solstone_core_entity_matching::{EntityNameCandidate, entity_slug, find_entit
 
 use super::declaration::read_facet_declaration;
 use super::error::{
-    FacetEntityWriteError, FacetStoreError, FacetWriteError, ObservationWriteError,
+    FacetEntityWriteError, FacetStoreError, FacetWriteError, ObservationStoreError,
+    ObservationWriteError,
 };
 use super::facet_entities::list_scoped_facet_entities;
-use super::observations::{add_observation, load_observations};
+use super::observations::{
+    ObservationChange, ObservationReadQuery, ObservationWriteOutcome, apply_observation_change,
+    read_live_observations,
+};
 use super::write::{create_facet, save_facet_entity_link};
 
 const FUZZY_THRESHOLD: f64 = 90.0;
@@ -175,6 +179,12 @@ impl From<ObservationWriteError> for SeedEntitiesError {
     }
 }
 
+impl From<ObservationStoreError> for SeedEntitiesError {
+    fn from(error: ObservationStoreError) -> Self {
+        Self::ObservationWrite(ObservationWriteError::Read(error))
+    }
+}
+
 /// Resolve or create imported entities, retaining per-item recoverable outcomes.
 pub fn seed_entities(
     journal_root: &Path,
@@ -313,16 +323,19 @@ pub fn seed_entities(
         }
         let relationship_dir =
             ensure_facet_relationship(journal_root, facet_dir, &entity_id, name)?;
-        let mut existing_contents: HashSet<String> =
-            load_observations(journal_root, facet_dir, &relationship_dir)?
-                .into_iter()
-                .filter_map(|observation| {
-                    observation
-                        .get("content")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                })
-                .collect();
+        let mut existing_contents: HashSet<String> = read_live_observations(
+            journal_root,
+            facet_dir,
+            &relationship_dir,
+            ObservationReadQuery {
+                limit: 200,
+                ..Default::default()
+            },
+        )?
+        .items
+        .into_iter()
+        .map(|item| item.content)
+        .collect();
         let mut added_count = 0;
         for (observation_index, content) in input.observations.iter().enumerate() {
             if existing_contents.contains(content) {
@@ -335,10 +348,14 @@ pub fn seed_entities(
                 content,
                 Some(day),
             ) {
-                Ok(_) => {
+                Ok(ObservationWriteOutcome::Appended { .. }) => {
                     existing_contents.insert(content.clone());
                     added_count += 1;
                 }
+                Ok(ObservationWriteOutcome::AlreadyPresent { .. }) => {
+                    existing_contents.insert(content.clone());
+                }
+                Ok(_) => {}
                 Err(error) if error.is_lock_timeout() => {
                     results.push(SeedEntityItemResult {
                         input_index,
@@ -472,12 +489,12 @@ fn ensure_facet(journal_root: &Path, facet_dir: &str) -> Result<(), SeedEntities
     Ok(())
 }
 
-fn ensure_facet_relationship(
+pub(crate) fn ensure_facet_relationship(
     journal_root: &Path,
     facet_dir: &str,
     entity_id: &str,
     name: &str,
-) -> Result<String, SeedEntitiesError> {
+) -> Result<String, FacetEntityWriteError> {
     if let Some(entity) = list_scoped_facet_entities(journal_root, facet_dir, true, true)?
         .into_iter()
         .find(|entity| entity.entity_id == entity_id)
@@ -561,18 +578,21 @@ fn add_seed_observation(
     entity_dir: &str,
     content: &str,
     source_day: Option<&str>,
-) -> Result<(Vec<Value>, usize), ObservationWriteError> {
+) -> Result<ObservationWriteOutcome, ObservationWriteError> {
     #[cfg(all(test, feature = "full-tests"))]
     if take_forced_observation_timeout() {
         return Err(forced_observation_timeout());
     }
-    add_observation(
+    apply_observation_change(
         journal_root,
         facet_dir,
         entity_dir,
-        content,
-        source_day,
-        None,
+        ObservationChange::Append {
+            content: content.to_owned(),
+            source_day: source_day.map(str::to_owned),
+            relation: None,
+            actor: "import",
+        },
     )
 }
 
@@ -798,9 +818,15 @@ mod tests {
         seed_entities(temporary.path(), "work", "20260806", &[observed]).unwrap();
 
         assert_eq!(
-            load_observations(temporary.path(), "work", "observed_person")
-                .unwrap()
-                .len(),
+            read_live_observations(
+                temporary.path(),
+                "work",
+                "observed_person",
+                ObservationReadQuery::default()
+            )
+            .unwrap()
+            .items
+            .len(),
             1
         );
     }
@@ -834,15 +860,27 @@ mod tests {
         assert_eq!(relationships[0].entity_id, "alice");
         assert_eq!(relationships[0].relationship_dir, "legacy-alice-label");
         assert_eq!(
-            load_observations(temporary.path(), "work", "legacy-alice-label")
-                .unwrap()
-                .len(),
+            read_live_observations(
+                temporary.path(),
+                "work",
+                "legacy-alice-label",
+                ObservationReadQuery::default()
+            )
+            .unwrap()
+            .items
+            .len(),
             1
         );
         assert!(
-            load_observations(temporary.path(), "work", "alice_chen")
-                .unwrap()
-                .is_empty()
+            read_live_observations(
+                temporary.path(),
+                "work",
+                "alice_chen",
+                ObservationReadQuery::default()
+            )
+            .unwrap()
+            .items
+            .is_empty()
         );
     }
 

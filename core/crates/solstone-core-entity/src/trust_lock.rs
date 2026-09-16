@@ -16,6 +16,7 @@ use solstone_core_journal_io::{FileLock, LockError, LockOptions, contained_path,
 use solstone_core_journal_io::PathError;
 
 const TRUST_LOCK_RELATIVE_PATH: &str = "health/locks/entity-trust";
+const FACET_TRUST_LOCK_RELATIVE_PATH: &str = "health/locks/facet-trust";
 
 /// Failure while acquiring the entity trust-operation lock.
 #[derive(Debug)]
@@ -56,6 +57,43 @@ impl From<LockError> for EntityTrustLockError {
     }
 }
 
+/// Failure while acquiring the facet trust-operation lock.
+#[derive(Debug)]
+pub enum FacetTrustLockError {
+    Path(PathError),
+    Lock(LockError),
+}
+
+impl fmt::Display for FacetTrustLockError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Path(error) => error.fmt(formatter),
+            Self::Lock(error) => error.fmt(formatter),
+        }
+    }
+}
+
+impl Error for FacetTrustLockError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Path(error) => Some(error),
+            Self::Lock(error) => Some(error),
+        }
+    }
+}
+
+impl From<PathError> for FacetTrustLockError {
+    fn from(error: PathError) -> Self {
+        Self::Path(error)
+    }
+}
+
+impl From<LockError> for FacetTrustLockError {
+    fn from(error: LockError) -> Self {
+        Self::Lock(error)
+    }
+}
+
 /// A held entity trust-operation lock.
 ///
 /// Dropping the guard releases one nesting level. The guard is deliberately not
@@ -63,6 +101,14 @@ impl From<LockError> for EntityTrustLockError {
 #[derive(Debug)]
 pub struct EntityTrustLock {
     lock_path: PathBuf,
+    _not_send: PhantomData<*const ()>,
+}
+
+/// A held facet trust-operation lock.
+#[derive(Debug)]
+pub struct FacetTrustLock {
+    lock_path: PathBuf,
+    _entity: EntityTrustLock,
     _not_send: PhantomData<*const ()>,
 }
 
@@ -177,6 +223,90 @@ pub fn hold_entity_trust_lock_raw_for_test(
     Ok(hold_lock(&lock_path, LockOptions::default())?)
 }
 
+/// Hold the journal-wide facet trust-operation lock.
+pub fn hold_facet_trust_lock(journal_root: &Path) -> Result<FacetTrustLock, FacetTrustLockError> {
+    hold_facet_trust_lock_with_options(journal_root, LockOptions::default())
+}
+
+pub fn hold_facet_trust_lock_with_options(
+    journal_root: &Path,
+    options: LockOptions,
+) -> Result<FacetTrustLock, FacetTrustLockError> {
+    let entity = hold_entity_trust_lock(journal_root).map_err(|error| match error {
+        EntityTrustLockError::Path(error) => FacetTrustLockError::Path(error),
+        EntityTrustLockError::Lock(error) => FacetTrustLockError::Lock(error),
+    })?;
+    let lock_path = contained_path(journal_root, FACET_TRUST_LOCK_RELATIVE_PATH)?;
+    let owner = thread::current().id();
+    let coordinator = coordinator();
+    let mut state = lock_state(coordinator);
+    loop {
+        match state.get_mut(&lock_path) {
+            Some(TrustLockState::Held {
+                owner: held_owner,
+                depth,
+                ..
+            }) if *held_owner == owner => {
+                *depth += 1;
+                return Ok(FacetTrustLock::new(lock_path, entity));
+            }
+            Some(TrustLockState::Acquiring {
+                owner: acquiring_owner,
+            }) if *acquiring_owner == owner => {
+                unreachable!("a facet trust lock cannot reenter while acquiring")
+            }
+            Some(_) => state = wait_for_state(coordinator, state),
+            None => {
+                state.insert(lock_path.clone(), TrustLockState::Acquiring { owner });
+                break;
+            }
+        }
+    }
+    drop(state);
+
+    match hold_lock(&lock_path, options) {
+        Ok(lock) => {
+            let mut state = lock_state(coordinator);
+            let previous = state.insert(
+                lock_path.clone(),
+                TrustLockState::Held {
+                    owner,
+                    depth: 1,
+                    _lock: lock,
+                },
+            );
+            debug_assert!(matches!(
+                previous,
+                Some(TrustLockState::Acquiring {
+                    owner: acquiring_owner
+                }) if acquiring_owner == owner
+            ));
+            coordinator.available.notify_all();
+            Ok(FacetTrustLock::new(lock_path, entity))
+        }
+        Err(error) => {
+            let mut state = lock_state(coordinator);
+            let previous = state.remove(&lock_path);
+            debug_assert!(matches!(
+                previous,
+                Some(TrustLockState::Acquiring {
+                    owner: acquiring_owner
+                }) if acquiring_owner == owner
+            ));
+            coordinator.available.notify_all();
+            Err(error.into())
+        }
+    }
+}
+
+/// Acquire the raw facet trust-lock file directly.
+pub fn hold_facet_trust_lock_raw_for_test(
+    journal_root: &Path,
+) -> Result<FileLock, FacetTrustLockError> {
+    let lock_path = contained_path(journal_root, FACET_TRUST_LOCK_RELATIVE_PATH)?;
+    Ok(hold_lock(&lock_path, LockOptions::default())?)
+}
+
 impl EntityTrustLock {
     fn new(lock_path: PathBuf) -> Self {
         Self {
@@ -187,6 +317,40 @@ impl EntityTrustLock {
 }
 
 impl Drop for EntityTrustLock {
+    fn drop(&mut self) {
+        let coordinator = coordinator();
+        let owner = thread::current().id();
+        let mut state = lock_state(coordinator);
+        let release = match state.get_mut(&self.lock_path) {
+            Some(TrustLockState::Held {
+                owner: held_owner,
+                depth,
+                ..
+            }) if *held_owner == owner => {
+                debug_assert!(*depth > 0);
+                *depth -= 1;
+                *depth == 0
+            }
+            _ => return,
+        };
+        if release {
+            state.remove(&self.lock_path);
+            coordinator.available.notify_all();
+        }
+    }
+}
+
+impl FacetTrustLock {
+    fn new(lock_path: PathBuf, entity: EntityTrustLock) -> Self {
+        Self {
+            lock_path,
+            _entity: entity,
+            _not_send: PhantomData,
+        }
+    }
+}
+
+impl Drop for FacetTrustLock {
     fn drop(&mut self) {
         let coordinator = coordinator();
         let owner = thread::current().id();

@@ -192,7 +192,7 @@ mod tests {
                 .as_object()
                 .expect("copy is object")
                 .len(),
-            78
+            79
         );
         assert_eq!(
             state["attendance_kinds"],

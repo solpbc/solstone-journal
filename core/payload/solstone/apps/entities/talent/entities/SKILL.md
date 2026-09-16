@@ -182,15 +182,19 @@ solstone call entities aka "Federal Aviation Administration" "FAA" -f work
 ## observations
 
 ```bash
-solstone call entities observations ENTITY [-f FACET]
+solstone call entities observations ENTITY [-f FACET] [--oldest] [--limit N] [--offset N] [--after-id ID] [--all] [--json]
 ```
 
 List durable observations for an attached entity.
 
 - `ENTITY`: entity id, name, or alias.
 - `-f, --facet`: facet name (default: `SOL_FACET` env).
-
-Output is numbered for quick review.
+- `--oldest`: order oldest first (default: newest first).
+- `--limit`: maximum observations to return (default: 50, max: 200).
+- `--offset`: skip the specified number of observations.
+- `--after-id`: fetch observations following this observation id.
+- `--all`: show all observations across pagination boundaries.
+- `--json`: return the raw JSON payload.
 
 Example:
 
@@ -201,7 +205,7 @@ solstone call entities observations "Alicia Chen" -f work
 ## observe
 
 ```bash
-solstone call entities observe ENTITY CONTENT [-f FACET] [--source-day DAY]
+solstone call entities observe ENTITY CONTENT [-f FACET] [--source-day DAY] [--observed-at TS] [--json]
 ```
 
 Add a durable observation to an attached entity.
@@ -210,10 +214,8 @@ Add a durable observation to an attached entity.
 - `CONTENT`: observation text.
 - `-f, --facet`: facet name (default: `SOL_FACET` env).
 - `--source-day`: optional day (`YYYYMMDD`) when this was observed.
-
-Behavior notes:
-
-- Observation number is auto-calculated by the CLI.
+- `--observed-at`: optional timestamp (RFC 3339) when this was observed.
+- `--json`: return the raw JSON payload.
 
 ### Observation Quality Guidance
 
