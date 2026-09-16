@@ -33,8 +33,8 @@ $observer_context
 
 For each suggestion, emit exactly one decision:
 
-- `replace`: Use when an existing observation is wrong, imprecise, or superseded by the suggestion. The target row is rewritten in place and its previous state is pushed to history. Provide `target_id` and the exact `target_quote` (up to 300 characters) matching the observation being replaced.
-- `add`: Use when the suggestion represents a genuinely new durable fact that changed in the world or was not previously known. Older observations remain in place. The store automatically rejects exact duplicate content (across live and retired rows).
+- `replace`: Use only when an existing observation was wrong or imprecise and the suggestion corrects it. Never for a fact that has since changed in the world — a changed fact is an `add`, and the older observation stays as the record of how things were. The target row is rewritten in place and its previous state is pushed to history. Provide `target_id` and the exact `target_quote` (up to 300 characters) matching the observation being replaced.
+- `add`: Use when the suggestion is a durable fact not previously known, or a fact that changed in the world (a relationship that evolved, a role that moved). Older observations remain in place. The store automatically rejects exact duplicate content (across live and retired rows).
 - `skip`: Use when an existing observation already covers the suggested fact or the suggestion is not needed.
 
 ## Rules
