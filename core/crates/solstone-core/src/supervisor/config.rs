@@ -40,7 +40,8 @@ mod tests {
 
     fn journal(name: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "solstone-supervisor-config-{name}-{}",
+            "solstone-supervisor-config-{name}-{}-{}",
+            std::process::id(),
             NEXT_PATH.fetch_add(1, Ordering::Relaxed)
         ));
         fs::create_dir_all(path.join("config")).expect("config directory");

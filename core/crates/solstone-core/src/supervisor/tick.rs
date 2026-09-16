@@ -1957,7 +1957,8 @@ mod tests {
     impl Bed {
         fn new(name: &str) -> Self {
             let root = std::env::temp_dir().join(format!(
-                "solstone-supervisor-tick-{name}-{}",
+                "solstone-supervisor-tick-{name}-{}-{}",
+                std::process::id(),
                 NEXT_PATH.fetch_add(1, Ordering::Relaxed)
             ));
             fs::create_dir_all(&root).expect("temporary journal");
