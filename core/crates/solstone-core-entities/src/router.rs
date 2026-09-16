@@ -3196,11 +3196,11 @@ async fn observations_route(
     };
     let after_id = match q.get("after_id") {
         Some(s) => match s.parse::<u64>() {
-            Ok(n) if n > 0 => Some(n),
-            _ => {
+            Ok(n) => Some(n),
+            Err(_) => {
                 return refusal(
                     ReasonCode::InvalidRequestValue,
-                    "after_id must be a positive integer",
+                    "after_id must be a non-negative integer",
                 );
             }
         },

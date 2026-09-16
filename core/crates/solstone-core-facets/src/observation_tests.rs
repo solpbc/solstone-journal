@@ -756,3 +756,127 @@ fn test_update_c_to_c2_plus_add_new_c_both_exist() {
     assert_eq!(observations[0].content, "C2");
     assert_eq!(observations[1].content, "C");
 }
+
+#[test]
+fn append_materializes_legacy_ids_and_keeps_them_stable() {
+    // The installed base: rows without ids. Their ids are derived on read and
+    // must not shift once a write appends a row after them.
+    let temporary = TempDir::new();
+    let path = temporary
+        .path()
+        .join("facets/work/entities/person/observations.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        concat!(
+            "{\"content\":\"Older legacy fact\",\"observed_at\":1700000000000,\"source_day\":\"20240101\"}\n",
+            "{\"content\":\"Newer legacy fact\",\"observed_at\":1700000001000}\n",
+        ),
+    )
+    .unwrap();
+
+    let before = read_test_observations(temporary.path(), "work", "person").unwrap();
+    let before_ids: Vec<u64> = before.iter().map(|row| row.id).collect();
+    assert_eq!(before_ids, vec![1, 2]);
+
+    let (_, count, _) = add_observation(
+        temporary.path(),
+        "work",
+        "person",
+        "Appended fact",
+        None,
+        None,
+    )
+    .unwrap();
+    assert_eq!(count, 3);
+
+    // Every row on disk now carries an id, and the legacy rows kept theirs.
+    let text = fs::read_to_string(&path).unwrap();
+    let ids: Vec<u64> = text
+        .lines()
+        .map(|line| {
+            serde_json::from_str::<serde_json::Value>(line).unwrap()["id"]
+                .as_u64()
+                .unwrap()
+        })
+        .collect();
+    assert_eq!(ids, vec![1, 2, 3]);
+    let after = read_test_observations(temporary.path(), "work", "person").unwrap();
+    let after_ids: Vec<(u64, String)> = after
+        .iter()
+        .map(|row| (row.id, row.content.clone()))
+        .collect();
+    assert_eq!(
+        after_ids,
+        vec![
+            (1, "Older legacy fact".to_owned()),
+            (2, "Newer legacy fact".to_owned()),
+            (3, "Appended fact".to_owned())
+        ]
+    );
+    // A never-revised legacy row gains only `id`.
+    let first: serde_json::Value = serde_json::from_str(text.lines().next().unwrap()).unwrap();
+    assert_eq!(first["source_day"], "20240101");
+    assert!(first.get("by").is_none());
+    assert!(first.get("history").is_none());
+    assert!(first.get("retired").is_none());
+}
+
+#[test]
+fn after_id_cursor_walks_ascending_ids_skip_free_on_mixed_files() {
+    // Explicit ids, legacy rows (derived above the max), and time order that
+    // agrees with neither: an id cursor still visits every live row exactly once.
+    let temporary = TempDir::new();
+    let path = temporary
+        .path()
+        .join("facets/work/entities/person/observations.jsonl");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(
+        &path,
+        concat!(
+            "{\"id\":10,\"content\":\"ten\",\"observed_at\":5}\n",
+            "{\"content\":\"legacy a\",\"observed_at\":9}\n",
+            "{\"id\":2,\"content\":\"two\",\"observed_at\":1}\n",
+            "{\"content\":\"legacy b\",\"observed_at\":3}\n",
+            "{\"id\":7,\"content\":\"seven\",\"observed_at\":8,\"retired\":{\"at\":8,\"by\":\"model\"}}\n",
+        ),
+    )
+    .unwrap();
+
+    let mut walked: Vec<u64> = Vec::new();
+    let mut after_id = 0;
+    let mut pages = 0;
+    loop {
+        let page = read_live_observations(
+            temporary.path(),
+            "work",
+            "person",
+            ObservationReadQuery {
+                limit: 2,
+                after_id: Some(after_id),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        pages += 1;
+        assert_eq!(page.total, 4, "total counts live rows only");
+        assert_eq!(page.offset, 0, "a cursor page carries no offset");
+        let ids: Vec<u64> = page.items.iter().map(|row| row.id).collect();
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        assert_eq!(ids, sorted, "each page is ascending by id");
+        assert!(ids.iter().all(|id| *id > after_id));
+        walked.extend(ids.iter().copied());
+        match ids.last() {
+            Some(last) if page.has_more => after_id = *last,
+            _ => break,
+        }
+    }
+    assert_eq!(pages, 2);
+    assert_eq!(
+        walked,
+        vec![2, 10, 11, 12],
+        "legacy rows derive above the explicit max"
+    );
+    assert!(!walked.contains(&7), "a retired row is never walked");
+}

@@ -94,6 +94,18 @@ fn journal_tree(journal: &std::path::Path) -> Vec<(String, Vec<u8>)> {
 }
 
 fn comparable_journal_tree(journal: &std::path::Path, target_id: &str) -> Vec<(String, Vec<u8>)> {
+    // An observation file compares by its canonical new-shape bytes: a legacy
+    // file and the same rows written back with their derived ids materialized
+    // are the same observations, and the ids themselves are still compared.
+    fn canonical_observations(bytes: &[u8]) -> Vec<u8> {
+        let text = String::from_utf8_lossy(bytes);
+        let parsed = super::store::observations::parse_observation_file(
+            &text,
+            super::store::observations::ObservationParseSource::CapturedSnapshot,
+        )
+        .expect("test journal observation files parse");
+        super::store::observations::serialize_observation_rows(&parsed.full_rows).into_bytes()
+    }
     fn excluded(relative: &str, target_id: &str) -> bool {
         relative.ends_with(".lock")
             || relative == "indexer/"
@@ -132,7 +144,13 @@ fn comparable_journal_tree(journal: &std::path::Path, target_id: &str) -> Vec<(S
                 files.push((relative_directory, Vec::new()));
                 collect(root, &path, target_id, files);
             } else if entry.file_type().unwrap().is_file() {
-                files.push((relative, fs::read(path).unwrap()));
+                let bytes = fs::read(&path).unwrap();
+                let bytes = if relative.ends_with("observations.jsonl") {
+                    canonical_observations(&bytes)
+                } else {
+                    bytes
+                };
+                files.push((relative, bytes));
             }
         }
     }
@@ -662,7 +680,11 @@ fn undo_restores_target_observations_from_merged_facet() {
         .lines()
         .map(|line| serde_json::from_str::<Value>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(restored, vec![target_observation]);
+    // The restore is written in the new shape: the captured legacy row keeps
+    // the id it projected before the merge, and nothing else about it changes.
+    let mut expected = target_observation.clone();
+    expected["id"] = json!(1);
+    assert_eq!(restored, vec![expected]);
     fs::remove_dir_all(journal).unwrap();
 }
 

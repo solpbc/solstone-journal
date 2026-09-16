@@ -661,9 +661,9 @@ pub fn serialize_observation_rows(rows: &[ObservationRow]) -> String {
     for row in rows {
         let map = if let Some(ref raw) = row.raw_json {
             let mut m = raw.clone();
-            if m.contains_key("id") {
-                m.insert("id".to_string(), Value::Number(row.id.into()));
-            }
+            // Every write materializes the row's id, derived or explicit, so a
+            // legacy row's id cannot shift once anything is appended after it.
+            m.insert("id".to_string(), Value::Number(row.id.into()));
             if m.contains_key("content") || !row.content.is_empty() {
                 m.insert("content".to_string(), Value::String(row.content.clone()));
             }
@@ -954,14 +954,36 @@ pub fn read_live_observations(
     }
 
     let total = live.len();
-    let offset = if let Some(after_id) = query.after_id {
-        live.iter()
-            .position(|r| r.id == after_id)
-            .map(|idx| idx + 1)
-            .unwrap_or(total)
-    } else {
-        query.offset.unwrap_or(0)
-    };
+    if let Some(after_id) = query.after_id {
+        // Cursor pages walk live rows by ascending id, independent of the
+        // requested order: an update keeps its id, an append takes a higher
+        // one, and a retirement removes nothing from the sequence, so a walk
+        // by id skips no row that stays live and repeats none.
+        let mut cursor: Vec<&ObservationRow> =
+            live.iter().copied().filter(|r| r.id > after_id).collect();
+        cursor.sort_by_key(|r| r.id);
+        let has_more = cursor.len() > query.limit;
+        cursor.truncate(query.limit);
+        let items = cursor
+            .iter()
+            .map(|r| ObservationPageItem {
+                id: r.id,
+                content: r.content.clone(),
+                observed_at: r.observed_at,
+                source_day: r.source_day.clone(),
+                relation: r.relation.clone(),
+                by: r.by.clone(),
+            })
+            .collect();
+        return Ok(ObservationPage {
+            total,
+            offset: 0,
+            limit: query.limit,
+            has_more,
+            items,
+        });
+    }
+    let offset = query.offset.unwrap_or(0);
 
     let items = if offset >= total {
         Vec::new()

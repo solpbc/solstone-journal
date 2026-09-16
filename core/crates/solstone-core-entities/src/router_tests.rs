@@ -6582,18 +6582,16 @@ async fn observations_pagination_over_200_rows() {
     assert_eq!(items[0]["content"], "observation 210");
     assert_eq!(items[49]["content"], "observation 161");
 
-    // Walk all pages using after_id (newest first)
+    // Walk all pages by id cursor from the start: ascending id, skip-free,
+    // duplicate-free, regardless of the file's mixed legacy/explicit ids.
     let mut all_walked_contents = Vec::new();
-    let mut after_id: Option<u64> = None;
+    let mut all_walked_ids: Vec<u64> = Vec::new();
+    let mut after_id: u64 = 0;
     let mut pages_count = 0;
 
     loop {
-        let uri = match after_id {
-            Some(id) => {
-                format!("/app/entities/api/work/observations?name=Bob&limit=50&after_id={id}")
-            }
-            None => "/app/entities/api/work/observations?name=Bob&limit=50".to_string(),
-        };
+        let uri =
+            format!("/app/entities/api/work/observations?name=Bob&limit=50&after_id={after_id}");
         let (status, body) = call(j.path(), &uri).await;
         assert_eq!(status, 200);
         assert_eq!(body["total"], 210);
@@ -6606,26 +6604,36 @@ async fn observations_pagination_over_200_rows() {
 
         for item in items {
             all_walked_contents.push(item["content"].as_str().unwrap().to_string());
+            all_walked_ids.push(item["id"].as_u64().unwrap());
         }
 
         let has_more = body["has_more"].as_bool().unwrap();
+        let last_id = items.last().unwrap()["id"].as_u64().unwrap();
+        assert!(last_id > after_id, "cursor must advance");
+        after_id = last_id;
         if !has_more {
             break;
         }
-        let last_id = items.last().unwrap()["id"].as_u64().unwrap();
-        after_id = Some(last_id);
     }
 
-    // Must have at least 3 pages of 50 (210 items: 50 + 50 + 50 + 50 + 10 = 5 pages)
-    assert!(pages_count >= 3);
+    // 210 items at 50 per page is 5 pages
+    assert_eq!(pages_count, 5);
     assert_eq!(all_walked_contents.len(), 210);
 
-    // Newest first: observation 210 down to observation 1, skip-free without duplicates
-    let expected_contents: Vec<String> = (1..=210)
-        .rev()
-        .map(|i| format!("observation {i}"))
-        .collect();
-    assert_eq!(all_walked_contents, expected_contents);
+    // Ascending by id across the whole walk, no repeats, every row exactly once
+    let mut sorted_ids = all_walked_ids.clone();
+    sorted_ids.sort_unstable();
+    sorted_ids.dedup();
+    assert_eq!(
+        all_walked_ids, sorted_ids,
+        "cursor pages are ascending by id and skip-free"
+    );
+    assert_eq!(sorted_ids.len(), 210);
+    let mut walked_set: Vec<String> = all_walked_contents.clone();
+    walked_set.sort();
+    let mut expected_set: Vec<String> = (1..=210).map(|i| format!("observation {i}")).collect();
+    expected_set.sort();
+    assert_eq!(walked_set, expected_set);
 
     // Limit > 200 refused
     let (status, body) = call(

@@ -36,7 +36,9 @@ use super::merge_payload::{
     snapshot_from_payload,
 };
 use super::merge_rollback::MergeRollback;
-use super::observations::{ObservationChange, ObservationRow, apply_observation_change};
+use super::observations::{
+    ObservationChange, ObservationParseSource, apply_observation_change, parse_observation_file,
+};
 
 type FailureInjector = dyn Fn(&str, usize) -> bool;
 
@@ -678,37 +680,21 @@ fn undo_facets(
                 let observations_path = format!("{directory}/observations.jsonl");
                 rollback.capture(journal, &observations_path)?;
                 if observations_existed {
-                    let rows: Vec<ObservationRow> = observations_before
+                    // Re-derive the captured rows through the one parser: a legacy
+                    // row captured without an id gets the same derived id it had
+                    // before the merge (same rows, same file order), and the
+                    // restore is written in the new shape with those ids.
+                    let captured_text = observations_before
                         .iter()
-                        .map(|val| {
-                            let mut row: ObservationRow = serde_json::from_value(val.clone())
-                                .unwrap_or_else(|_| ObservationRow {
-                                    id: val.get("id").and_then(Value::as_u64).unwrap_or(0),
-                                    content: val
-                                        .get("content")
-                                        .and_then(Value::as_str)
-                                        .unwrap_or("")
-                                        .to_string(),
-                                    observed_at: val
-                                        .get("observed_at")
-                                        .and_then(Value::as_i64)
-                                        .unwrap_or(0),
-                                    source_day: val
-                                        .get("source_day")
-                                        .and_then(Value::as_str)
-                                        .map(str::to_owned),
-                                    relation: val.get("relation").cloned(),
-                                    by: val.get("by").and_then(Value::as_str).map(str::to_owned),
-                                    history: Vec::new(),
-                                    retired: None,
-                                    raw_json: None,
-                                });
-                            if let Some(obj) = val.as_object() {
-                                row.raw_json = Some(obj.clone());
-                            }
-                            row
-                        })
-                        .collect();
+                        .map(|val| serde_json::to_string(val).expect("captured row serializes"))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    let rows = parse_observation_file(
+                        &captured_text,
+                        ObservationParseSource::CapturedSnapshot,
+                    )
+                    .map_err(|error| EntityUndoError::Refused(error.to_string()))?
+                    .full_rows;
                     apply_observation_change(
                         journal,
                         facet,

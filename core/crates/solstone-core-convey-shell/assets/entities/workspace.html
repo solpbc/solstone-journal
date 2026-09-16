@@ -2721,25 +2721,35 @@ async function fetchAllDetailObservations() {
   detailObservationState.loadingAll = true;
   const currentToken = detailObservationState.token;
   try {
-    let all = [...detailObservationState.observations];
-    let hasMore = detailObservationState.hasMore;
+    // Walk every live row by id cursor from the start: stable under an
+    // update (id unchanged), an append (higher id) and a retirement (nothing
+    // shifts). Then present newest-first, the same order the embedded page uses.
+    const byId = new Map();
+    let afterId = 0;
+    let hasMore = true;
     while (hasMore) {
-      const last = all[all.length - 1];
-      const afterId = last && last.id ? last.id : null;
-      let url = `api/${encodeURIComponent(currentFacet)}/observations?name=${encodeURIComponent(entity.name)}&limit=200`;
-      if (afterId) {
-        url += `&after_id=${encodeURIComponent(afterId)}`;
-      }
+      const url = `api/${encodeURIComponent(currentFacet)}/observations?name=${encodeURIComponent(entity.name)}&limit=200&after_id=${encodeURIComponent(afterId)}`;
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('failed to load observations');
       const data = await res.json();
       if (!detailObservationTokenCurrent(currentToken)) return;
       const items = Array.isArray(data.items) ? data.items : [];
       if (items.length === 0) break;
-      all.push(...items);
+      for (const item of items) {
+        if (item && typeof item.id === 'number' && !byId.has(item.id)) byId.set(item.id, item);
+      }
+      const last = items[items.length - 1];
+      if (!last || typeof last.id !== 'number' || last.id <= afterId) break;
+      afterId = last.id;
       hasMore = Boolean(data.has_more);
     }
     if (!detailObservationTokenCurrent(currentToken)) return;
+    const all = [...byId.values()].sort((a, b) => {
+      const ta = Number(a.observed_at) || 0;
+      const tb = Number(b.observed_at) || 0;
+      if (tb !== ta) return tb - ta;
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
     detailObservationState.observations = all;
     detailObservationState.hasMore = false;
     detailObservationState.mode = 'all';

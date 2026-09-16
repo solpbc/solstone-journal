@@ -908,18 +908,20 @@ pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
     let json_output = parsed.bool_value("--json").unwrap_or(false);
 
     let (total, items) = if all {
-        let mut all_items = Vec::new();
-        let mut offset = 0;
+        // Walk by id cursor: stable under an update (id unchanged), an append
+        // (higher id) and a retirement (nothing shifts), so no row that stays
+        // live is skipped and none is repeated. Presented in the requested
+        // time order afterwards.
+        let mut all_items: Vec<Value> = Vec::new();
+        let mut seen: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+        let mut after_id: u64 = 0;
         let mut total;
         loop {
-            let mut query = vec![
+            let query = vec![
                 QueryParam::single("name", &resolved_name),
                 QueryParam::single("limit", "200"),
-                QueryParam::single("offset", offset.to_string()),
+                QueryParam::single("after_id", after_id.to_string()),
             ];
-            if oldest {
-                query.push(QueryParam::single("order", "oldest"));
-            }
             let body = match request_json(
                 ctx,
                 HttpMethod::Get,
@@ -932,12 +934,36 @@ pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
             };
             total = integer_field(&body, "total").unwrap_or(0);
             let items = array_field(&body, "items");
-            let count = items.len();
-            all_items.extend(items);
-            if count == 0 || all_items.len() >= total {
-                break;
+            let has_more = body
+                .get("has_more")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let mut last_id = None;
+            for item in items {
+                let id = item.get("id").and_then(Value::as_u64);
+                if let Some(id) = id {
+                    last_id = Some(id);
+                    if !seen.insert(id) {
+                        continue;
+                    }
+                }
+                all_items.push(item);
             }
-            offset += count;
+            match last_id {
+                Some(id) if has_more && id > after_id => after_id = id,
+                _ => break,
+            }
+        }
+        let key = |item: &Value| {
+            (
+                item.get("observed_at").and_then(Value::as_i64).unwrap_or(0),
+                item.get("id").and_then(Value::as_u64).unwrap_or(0),
+            )
+        };
+        if oldest {
+            all_items.sort_by_key(|item| key(item));
+        } else {
+            all_items.sort_by_key(|item| std::cmp::Reverse(key(item)));
         }
         (total, all_items)
     } else {
@@ -990,10 +1016,15 @@ pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
             "{total} moments for '{resolved_name}' in '{facet}', {order_str}:"
         ));
     }
-    for (index, observation) in items.iter().enumerate() {
+    for observation in &items {
+        let id = observation
+            .get("id")
+            .and_then(Value::as_u64)
+            .map(|id| id.to_string())
+            .unwrap_or_default();
         lines.push(format!(
-            "  {}. {}",
-            index + 1,
+            "  #{}  {}",
+            id,
             value_or_default(observation.get("content"), "")
         ));
     }
