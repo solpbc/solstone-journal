@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[cfg(target_os = "linux")]
 use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
@@ -1015,37 +1016,26 @@ pub fn process_owner(pid: u32) -> ProcessOwner {
     }
 }
 
-/// Owner uid of the process at `pid` through `sysctl KERN_PROC_PID`, which
-/// unlike `proc_pidinfo` answers for every user's processes.
+/// Owner uid of the process at `pid` through `/bin/ps`, which answers for
+/// every user's processes where `proc_pidinfo` is `EPERM`. The crate's macOS
+/// census already relies on `/bin/ps` for the same reason.
 #[cfg(target_os = "macos")]
-#[allow(unsafe_code)]
 pub fn process_owner(pid: u32) -> ProcessOwner {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return ProcessOwner::Unknown;
+    let output = match std::process::Command::new("/bin/ps")
+        .args(["-o", "uid=", "-p", &pid.to_string()])
+        .env("LC_ALL", "C")
+        .output()
+    {
+        Ok(output) => output,
+        Err(_) => return ProcessOwner::Unknown,
     };
-    let mut name = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
-    // SAFETY: `info` is a zeroed, properly sized `kinfo_proc`; `length` starts
-    // at its size and the kernel writes at most that many bytes.
-    let mut info: libc::kinfo_proc = unsafe { std::mem::zeroed() };
-    let mut length = std::mem::size_of::<libc::kinfo_proc>();
-    let result = unsafe {
-        libc::sysctl(
-            name.as_mut_ptr(),
-            4,
-            std::ptr::addr_of_mut!(info).cast(),
-            &mut length,
-            std::ptr::null_mut(),
-            0,
-        )
-    };
-    if result != 0 {
-        return ProcessOwner::Unknown;
+    let text = String::from_utf8_lossy(&output.stdout);
+    match text.trim().parse::<u32>() {
+        Ok(uid) => ProcessOwner::Uid(uid),
+        // `ps -p` exits 1 and prints nothing for a pid that does not exist.
+        Err(_) if text.trim().is_empty() && !output.status.success() => ProcessOwner::Absent,
+        Err(_) => ProcessOwner::Unknown,
     }
-    if length == 0 {
-        // The documented "no such process" answer: success with no bytes.
-        return ProcessOwner::Absent;
-    }
-    ProcessOwner::Uid(info.kp_eproc.e_ucred.cr_uid)
 }
 
 #[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
