@@ -1029,9 +1029,11 @@ pub fn observations(ctx: CommandContext<'_>) -> CommandOutput {
         ));
     }
     if items.len() < total {
+        let shown = if oldest { "oldest" } else { "most recent" };
         lines.push(format!(
-            "showing the {} most recent of {} moments for '{}'. add --all to see every one.",
+            "showing the {} {} of {} moments for '{}'. add --all to see every one.",
             items.len(),
+            shown,
             total,
             resolved_name
         ));
