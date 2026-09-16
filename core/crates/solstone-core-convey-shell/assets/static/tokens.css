@@ -45,7 +45,7 @@
 
 :root {
   /* ── brand identity ──────────────────────────────────────────────────── */
-  --gold:        #FFCF33; /* sun rays — decoration only */
+  --gold:        #FFCC33; /* sun rays — decoration only */
   --orange:      #E8913A; /* THE sol orange. DECORATION ONLY (see contrast law) */
   --orange-ink:  #B06A1A; /* large text / UI boundaries; normal text uses orange-text-aa */
   --orange-wash: #FBEFDD; /* soft orange tint — pill / avatar / badge fills */
