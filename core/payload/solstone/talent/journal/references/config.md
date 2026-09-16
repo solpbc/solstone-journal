@@ -54,7 +54,7 @@ The separate `config/convey.json` file stores optional app navigation personaliz
 
 The `retention` block controls when layer 1 raw media (audio files, screen video, screen diffs) becomes eligible for an owner-approved removal proposal, while preserving all layer 2 extracts and layer 3 agent outputs. A mark is a durable, non-destructive proposal; actual removal still requires the owner's approval. Three modes control eligibility for marking:
 
-- `"keep"` – retain raw media indefinitely (the default)
+- `"keep"` – retain raw media indefinitely (the default for `raw_media`; audio with no speech defaults to `"processed"`, see `empty_audio` below)
 - `"days"` – make raw media eligible for marking after `raw_media_days` days, once the segment has finished processing
 - `"processed"` – make raw media eligible for marking as soon as the segment has finished processing
 
@@ -63,6 +63,7 @@ The `retention` block controls when layer 1 raw media (audio files, screen video
   "retention": {
     "raw_media": "days",
     "raw_media_days": 30,
+    "empty_audio": "processed",
     "per_stream": {
       "plaud": {
         "raw_media": "days",
@@ -79,6 +80,8 @@ The `retention` block controls when layer 1 raw media (audio files, screen video
 Fields:
 - `raw_media` (string) – Retention mode: `"keep"`, `"days"`, or `"processed"`. Default: `"keep"`.
 - `raw_media_days` (integer or null) – Number of days before raw media is eligible for marking when mode is `"days"`. Default: `null`; a `days` rule needs a positive value to make media eligible, ignored otherwise.
+- `empty_audio` (string) – Retention mode for audio in which transcription found no speech: `"keep"`, `"days"`, or `"processed"`. This audio follows `empty_audio`, not `raw_media` or `per_stream`, so a journal with `raw_media: "keep"` still marks it for removal by default. Absent means `"processed"`. A stored `transcribe.preserve_all: true` overrides this key and keeps that audio. The "keep audio with no speech" switch in storage settings sets it to `"keep"` or `"processed"`.
+- `empty_audio_days` (integer or null) – Number of days before that audio is eligible for marking when `empty_audio` is `"days"`. Default: `null`; a `days` rule needs a positive value, and without one that audio is kept.
 - `per_stream` (object) – Per-stream overrides keyed by stream name. Each entry supports `raw_media` and `raw_media_days`. Omitted fields inherit from the global retention settings.
 
 "Raw media" means layer 1 original media files only: audio files (`.flac`, `.opus`, `.ogg`, `.m4a`, `.wav`), video files (`.webm`, `.mov`, `.mp4`), and screen diffs (`monitor_*_diff.png`).
@@ -135,7 +138,6 @@ The `transcribe` block configures audio transcription settings for `journal tran
 {
   "transcribe": {
     "backend": "parakeet",
-    "preserve_all": false,
     "confidential_audio": true,
     "parakeet": {
       "model_version": "v3",
@@ -148,7 +150,7 @@ The `transcribe` block configures audio transcription settings for `journal tran
 
 **Top-level fields:**
 - `backend` (string) – STT backend to use: `"parakeet"` (default local processing), `"parakeet-cpp"` (Linux-only local processing via a supervised parakeet.cpp server), or `"confidential"` (operated attested STT when the confidential lane is active). Default: `"parakeet"`.
-- `preserve_all` (boolean) – Keep audio files even when no speech is detected. When `false`, silent audio files are deleted to save disk space. Default: `false`.
+- `preserve_all` (boolean, legacy) – Transcription no longer reads this key. A stored `true` is treated as `retention.empty_audio: "keep"`, whatever `retention.empty_audio` says, and `false` has no effect. Turning the "keep audio with no speech" switch in storage settings on or off removes it. To set this by hand, remove it and set `retention.empty_audio`.
 - `confidential_audio` (boolean) – Allow confidential hosted STT when the confidential lane is active. Absent means `true`; set to `false` to keep STT on local placement.
 
 **Parakeet backend settings** (`transcribe.parakeet`):

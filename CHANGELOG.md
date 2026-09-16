@@ -8,6 +8,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- the "preserve silent audio" switch in transcription settings had no effect, so audio with no speech could still be listed for deletion on your home page, where nothing is deleted until you say so. the switch has moved to storage settings as "keep audio with no speech". when it's on, that audio is no longer added to the list, and anything already listed comes off at the list's next daily rebuild. if you had it on, it stays on.
+- storage settings and first-run setup could say everything was kept, and a storage warning could say nothing was added to the list on its own, while audio with no speech was still being listed. the status lines now say when that audio is listed, and the warning only says nothing is added when that's true.
 - a connected device could be told it had been unpaired when your journal couldn't read its own list of paired devices. the device is now told your journal couldn't check, not that it was unpaired.
 - a day could stop finishing and keep retrying forever when a recurring person or thing could not be matched to the one already in your journal, for instance because one name carried punctuation or an accent the other did not. names that differ that way now match, and a day held up by one of them finishes on its own once you install.
 - a new memory about someone is no longer skipped just because it repeats one you already have for a different day or a different relationship. only an exact repeat (same words, same day, same relationship) is treated as one.
