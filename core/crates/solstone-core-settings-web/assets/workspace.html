@@ -2423,18 +2423,6 @@ button:focus:not(:focus-visible) {
         </p>
       </fieldset>
       <div class="form-help" id="transcribeResourceInfo"></div>
-
-      <!-- Shared settings -->
-      <div class="settings-field" style="margin-top: 1.5em;">
-        <div class="toggle-container" style="justify-content: flex-start; gap: 1em;">
-          <label class="toggle-switch toggle-positive">
-            <input type="checkbox" id="field-transcribe-preserve" data-section="transcribe" data-key="preserve_all">
-            <span class="slider"></span>
-          </label>
-          <label for="field-transcribe-preserve" class="toggle-label" style="cursor: pointer;">preserve silent audio</label>
-        </div>
-        <small>keep audio files even when no speech is detected</small>
-      </div>
       </form>
     </section>
 
@@ -2592,6 +2580,19 @@ button:focus:not(:focus-visible) {
           <span>list originals for removal after processing</span>
         </label>
         <div id="retentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: keep everything.</div>
+      </div>
+
+      <div class="settings-field" id="emptyAudioField">
+        <label>audio with no speech</label>
+        <small>when no speech is found in a piece of audio, this setting decides whether it's kept or listed for removal after processing, whatever you chose for original media, including per-stream overrides. nothing is deleted until you say so.</small>
+        <div class="toggle-container" style="justify-content: flex-start; gap: 1em; margin-top: 0.75em;">
+          <label class="toggle-switch toggle-positive">
+            <input type="checkbox" id="emptyAudioKeep">
+            <span class="slider"></span>
+          </label>
+          <label for="emptyAudioKeep" class="toggle-label" style="cursor: pointer;">keep audio with no speech</label>
+        </div>
+        <div id="emptyAudioStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: list audio with no speech for removal after processing.</div>
       </div>
 
       <div id="streamOverridesMount"></div>
@@ -3347,9 +3348,6 @@ function populateFields(config) {
   // Parakeet.cpp settings (nested)
   const parakeetCpp = transcribe['parakeet-cpp'] || {};
   setValue('field-parakeet-cpp-device', parakeetCpp.device || 'auto');
-
-  // Shared settings
-  document.getElementById('field-transcribe-preserve').checked = transcribe.preserve_all || false;
 
   // Env (API keys) - show status indicators
   // env = journal config status, runtime_env = loaded into process
@@ -4329,7 +4327,10 @@ function setSyncControlsDisabled(disabled) {
   });
 }
 
+let storageControlsDisabled = false;
+
 function setStorageControlsDisabled(disabled) {
+  storageControlsDisabled = disabled;
   document.querySelectorAll('#retentionDaysField .settings-preset-btn').forEach((el) => {
     el.disabled = disabled;
   });
@@ -4348,6 +4349,7 @@ function setStorageControlsDisabled(disabled) {
     const el = document.getElementById(id);
     if (el) el.disabled = disabled;
   });
+  renderEmptyAudio();
 }
 
 function renderTranscribeResourceInfo(resource) {
@@ -5368,24 +5370,120 @@ let storageData = null;
 let storageMeasurement = null;
 let storageMeasurementRefresh = false;
 
-function deriveRetention(daysValue, dontRetain) {
-  if (dontRetain) return { mode: 'processed', days: null, statusText: 'currently: list originals for removal after processing.' };
+const emptyAudio = {
+  known: false,
+  kept: false,
+  busy: false,
+  requested: false,
+  generation: 0,
+};
+
+function renderEmptyAudio() {
+  const toggle = document.getElementById('emptyAudioKeep');
+  const status = document.getElementById('emptyAudioStatus');
+  if (!toggle || !status) return;
+  toggle.checked = emptyAudio.known && emptyAudio.kept;
+  toggle.disabled = emptyAudio.busy || !emptyAudio.known || storageControlsDisabled;
+  toggle.setAttribute('aria-disabled', toggle.disabled ? 'true' : 'false');
+  if (!emptyAudio.known) {
+    status.textContent = "couldn't confirm which choice is saved. reload the page to check.";
+  } else {
+    status.textContent = emptyAudio.kept
+      ? 'currently: keep audio with no speech.'
+      : 'currently: list audio with no speech for removal after processing.';
+  }
+  updateRetentionUI();
+}
+
+async function saveEmptyAudioConfig() {
+  const el = document.getElementById('emptyAudioField');
+  const errorHost = prepareFieldErrorHost(el);
+  const gen = emptyAudio.generation;
+  const requested = emptyAudio.requested;
+  let confirmed = false;
+
+  try {
+    const result = await window.saveControl({
+      el,
+      errorHost,
+      revertOnError: false,
+      readValue: () => null,
+      writeValue: () => {},
+      fetchArgs: ['api/storage', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ empty_audio: requested ? 'keep' : 'processed' }),
+      }],
+    });
+
+    const expected = requested ? 'keep' : 'processed';
+    if (result && result.success === true && result.retention && result.retention.empty_audio === expected) {
+      confirmed = true;
+    }
+  } catch (_) {
+    // Failure (network error, ApiError, 500 status, etc.)
+  } finally {
+    if (gen === emptyAudio.generation) {
+      emptyAudio.generation++;
+      if (confirmed) {
+        emptyAudio.kept = requested;
+        emptyAudio.known = true;
+        if (el) showFieldStatus(el, 'saved');
+      } else {
+        emptyAudio.known = false;
+      }
+      emptyAudio.busy = false;
+      renderEmptyAudio();
+      void measureStorage();
+    }
+  }
+}
+
+function deriveRetention(daysValue, dontRetain, keepEmptyAudio) {
+  if (dontRetain) {
+    return {
+      mode: 'processed',
+      days: null,
+      statusText: keepEmptyAudio
+        ? 'currently: list originals for removal after processing, except audio with no speech.'
+        : 'currently: list originals for removal after processing.',
+    };
+  }
   const n = parseInt(daysValue, 10);
-  if (Number.isFinite(n) && n >= 1) return { mode: 'days', days: n, statusText: `currently: list originals for removal after ${n} days.` };
-  return { mode: 'keep', days: null, statusText: 'currently: keep everything.' };
+  if (Number.isFinite(n) && n >= 1) {
+    const unit = n === 1 ? 'day' : 'days';
+    return {
+      mode: 'days',
+      days: n,
+      statusText: keepEmptyAudio
+        ? `currently: list originals for removal after ${n} ${unit}, except audio with no speech.`
+        : `currently: list originals for removal after ${n} ${unit}, and audio with no speech after processing.`,
+    };
+  }
+  return {
+    mode: 'keep',
+    days: null,
+    statusText: keepEmptyAudio
+      ? 'currently: keep everything.'
+      : 'currently: keep everything except audio with no speech.',
+  };
 }
 
 async function loadStorage() {
+  const snapshot = emptyAudio.generation;
   try {
     storageData = await window.apiJson('api/storage/config');
     setLoadState('storageLoadState');
-    setStorageControlsDisabled(false);
     storageLoadedOnce = true;
-    populateStorage(storageData);
+    populateStorage(storageData, snapshot);
+    setStorageControlsDisabled(false);
     void measureStorage();
     document.getElementById("storageSettingsForm").hidden = false;
     document.getElementById("storageSettingsForm").inert = false;
   } catch (err) {
+    if (!storageLoadedOnce) {
+      emptyAudio.known = false;
+    }
     setStorageControlsDisabled(true);
     setLoadState('storageLoadState', storageLoadedOnce
       ? renderRefreshLoadState("couldn't refresh storage settings. showing last known state.", err?.serverMessage)
@@ -5463,9 +5561,9 @@ function populateStorageMeasurement(data) {
 
 }
 
-function populateStorage(data) {
-  const mode = data.retention.raw_media || 'keep';
-  const days = data.retention.raw_media_days;
+function populateStorage(data, snapshot) {
+  const mode = data.retention?.raw_media || 'keep';
+  const days = data.retention?.raw_media_days;
   const daysInput = document.getElementById('retentionDaysInput');
   const dontRetainCheckbox = document.getElementById('retentionDontRetain');
   if (mode === 'days' && Number.isFinite(days) && days >= 1) {
@@ -5478,11 +5576,15 @@ function populateStorage(data) {
     daysInput.value = '';
     dontRetainCheckbox.checked = false;
   }
-  updateRetentionUI();
-  populateLogRetention(data.retention.journal_logs || {});
 
-  // Populate per-stream overrides
-  populateStreamOverrides(data.streams, data.retention.per_stream || {});
+  if (!emptyAudio.busy && (snapshot === undefined || snapshot === emptyAudio.generation)) {
+    emptyAudio.known = true;
+    emptyAudio.kept = data?.retention?.keep_empty_audio === true;
+  }
+  renderEmptyAudio();
+
+  populateLogRetention(data.retention?.journal_logs || {});
+  populateStreamOverrides(data.streams || [], data.retention?.per_stream || {});
 }
 
 function updateRetentionUI() {
@@ -5491,24 +5593,29 @@ function updateRetentionUI() {
   const dontRetainCheckbox = document.getElementById('retentionDontRetain');
   const presetButtons = document.querySelectorAll('#retentionDaysField .settings-preset-btn');
   const statusEl = document.getElementById('retentionStatus');
-  const disabled = dontRetainCheckbox.checked;
+  if (!daysInput || !dontRetainCheckbox || !statusEl || !daysField) return;
 
-  if (disabled) {
+  const dontRetain = dontRetainCheckbox.checked;
+
+  if (dontRetain) {
     daysInput.value = '';
   }
 
-  const { statusText } = deriveRetention(daysInput.value, disabled);
+  const keepEmptyAudio = emptyAudio.known && emptyAudio.kept;
+  const { statusText } = deriveRetention(daysInput.value, dontRetain, keepEmptyAudio);
   statusEl.textContent = statusText;
-  daysField.classList.toggle('is-disabled', disabled);
-  daysInput.disabled = disabled;
-  daysInput.setAttribute('aria-disabled', disabled ? 'true' : 'false');
 
-  const activeDays = disabled ? null : parseInt(daysInput.value, 10);
+  const daysControlsDisabled = dontRetain || storageControlsDisabled;
+  daysField.classList.toggle('is-disabled', daysControlsDisabled);
+  daysInput.disabled = daysControlsDisabled;
+  daysInput.setAttribute('aria-disabled', daysControlsDisabled ? 'true' : 'false');
+
+  const activeDays = dontRetain ? null : parseInt(daysInput.value, 10);
   presetButtons.forEach(btn => {
     const isActive = Number.isFinite(activeDays) && parseInt(btn.dataset.days, 10) === activeDays;
     btn.classList.toggle('active', isActive);
-    btn.disabled = disabled;
-    btn.setAttribute('aria-disabled', disabled ? 'true' : 'false');
+    btn.disabled = daysControlsDisabled;
+    btn.setAttribute('aria-disabled', daysControlsDisabled ? 'true' : 'false');
   });
 }
 
@@ -5730,6 +5837,19 @@ function setupStorageListeners() {
     updateRetentionUI();
     saveRetentionConfig({});
   });
+  const emptyKeep = document.getElementById('emptyAudioKeep');
+  if (emptyKeep) {
+    emptyKeep.addEventListener('change', () => {
+      if (emptyAudio.busy || !emptyAudio.known || storageControlsDisabled) {
+        renderEmptyAudio();
+        return;
+      }
+      emptyAudio.busy = true;
+      emptyAudio.requested = !emptyAudio.kept;
+      renderEmptyAudio();
+      saveEmptyAudioConfig();
+    });
+  }
   document.querySelectorAll('#logRetentionDaysField .settings-preset-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.getElementById('logRetentionDaysInput').value = btn.dataset.days;

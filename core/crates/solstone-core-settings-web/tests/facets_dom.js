@@ -214,6 +214,54 @@ class Element {
   }
   focus() { this.ownerDocument.activeElement = this; }
   select() {}
+  insertAdjacentHTML(position, text) {
+    const temp = new Element('template', this.ownerDocument);
+    parseHtml(text, temp);
+    const nodes = [...temp.children];
+    if (position === 'beforeend') {
+      for (const node of nodes) this.appendChild(node);
+    } else if (position === 'afterbegin') {
+      for (let i = nodes.length - 1; i >= 0; i--) this.insertBefore(nodes[i], this.children[0]);
+    } else if (position === 'beforebegin') {
+      if (this.parentElement) {
+        for (const node of nodes) this.parentElement.insertBefore(node, this);
+      }
+    } else if (position === 'afterend') {
+      if (this.parentElement) {
+        const next = this.nextElementSibling;
+        for (const node of nodes) this.parentElement.insertBefore(node, next);
+      }
+    }
+  }
+  get nextElementSibling() {
+    if (!this.parentElement) return null;
+    const idx = this.parentElement.children.indexOf(this);
+    return this.parentElement.children[idx + 1] || null;
+  }
+}
+
+class HTMLInputElement extends Element {}
+class HTMLSelectElement extends Element {}
+class HTMLButtonElement extends Element {}
+class HTMLParagraphElement extends Element {}
+class HTMLSpanElement extends Element {}
+class HTMLAnchorElement extends Element {}
+class HTMLTextAreaElement extends Element {}
+
+class Headers {
+  constructor(init = {}) {
+    this.map = new Map();
+    if (init instanceof Headers) {
+      for (const [k, v] of init.map.entries()) this.map.set(k.toLowerCase(), v);
+    } else if (Array.isArray(init)) {
+      for (const [k, v] of init) this.map.set(String(k).toLowerCase(), String(v));
+    } else if (typeof init === 'object' && init !== null) {
+      for (const [k, v] of Object.entries(init)) this.map.set(k.toLowerCase(), String(v));
+    }
+  }
+  get(name) { return this.map.get(name.toLowerCase()) || null; }
+  set(name, value) { this.map.set(name.toLowerCase(), String(value)); }
+  has(name) { return this.map.has(name.toLowerCase()); }
 }
 
 class Document {
@@ -228,7 +276,17 @@ class Document {
   }
   get cookie() { return ''; }
   set cookie(value) { this.cookieWrites.push(String(value)); }
-  createElement(tagName) { return new Element(tagName, this); }
+  createElement(tagName) {
+    const tag = tagName.toUpperCase();
+    if (tag === 'INPUT') return new HTMLInputElement(tagName, this);
+    if (tag === 'SELECT') return new HTMLSelectElement(tagName, this);
+    if (tag === 'BUTTON') return new HTMLButtonElement(tagName, this);
+    if (tag === 'P') return new HTMLParagraphElement(tagName, this);
+    if (tag === 'SPAN') return new HTMLSpanElement(tagName, this);
+    if (tag === 'A') return new HTMLAnchorElement(tagName, this);
+    if (tag === 'TEXTAREA') return new HTMLTextAreaElement(tagName, this);
+    return new Element(tagName, this);
+  }
   getElementById(id) { return this.querySelector('#' + id); }
   querySelector(selector) {
     if (selector === 'body') return this.body;
@@ -253,7 +311,15 @@ function event(type, options = {}) {
 }
 
 function response(body, status = 200) {
-  return { ok: status >= 200 && status < 300, status, async json() { return body; } };
+  const textBody = typeof body === 'string' ? body : JSON.stringify(body);
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? 'OK' : 'Error',
+    headers: new Headers({ 'content-type': 'application/json' }),
+    async json() { return typeof body === 'string' ? JSON.parse(body) : body; },
+    async text() { return textBody; },
+  };
 }
 
 function slugify(title) {
@@ -287,8 +353,18 @@ function createHarness() {
   const window = {
     document,
     Element,
+    HTMLInputElement,
+    HTMLSelectElement,
+    HTMLButtonElement,
+    HTMLParagraphElement,
+    HTMLSpanElement,
+    HTMLAnchorElement,
+    HTMLTextAreaElement,
+    Headers,
     AppServices: { escapeHtml(value) { return String(value); } },
     SurfaceState: { loading() { return ''; }, error() { return ''; } },
+    CONVEY_COPY: { RELOAD_HINT: 'please reload' },
+    logError() {},
     location: { href: '/app/settings/', pathname: '/app/settings/', hash: '' },
     history: {
       pushState(_state, _title, next) {
@@ -343,22 +419,59 @@ function createHarness() {
         return response({ success: true, facet, config: { ...config } });
       }
     }
+    if (method === 'GET' && (requestUrl === 'api/storage/config' || requestUrl.endsWith('/api/storage/config'))) {
+      return response({
+        retention: {
+          raw_media: 'keep',
+          raw_media_days: null,
+          keep_empty_audio: false,
+          per_stream: {},
+          journal_logs: { enabled: true, days: 30 },
+        },
+        streams: [],
+      });
+    }
+    if (method === 'GET' && (requestUrl === 'api/storage' || requestUrl.endsWith('/api/storage'))) {
+      return response({
+        summary: {
+          raw_media_human: '0 B',
+          derived_human: '0 B',
+          total_segments: 0,
+          segments_with_raw: 0,
+          segments_purged: 0,
+        },
+        warnings: [],
+      });
+    }
+    if (method === 'PUT' && (requestUrl === 'api/storage' || requestUrl.endsWith('/api/storage'))) {
+      return response({ success: true });
+    }
     return response({ error: 'unexpected request ' + method + ' ' + requestUrl }, 404);
   }
 
   window.fetch = fetchMock;
-  window.apiJson = async (url, options) => {
-    const result = await fetchMock(url, options);
-    const body = await result.json();
-    if (!result.ok) throw new Error(body.error || 'request failed');
-    return body;
-  };
   window.window = window;
   const context = vm.createContext({
-    window, document, Element, console, URL, fetch: fetchMock, setTimeout, clearTimeout,
+    window,
+    document,
+    Element,
+    HTMLInputElement,
+    HTMLSelectElement,
+    HTMLButtonElement,
+    HTMLParagraphElement,
+    HTMLSpanElement,
+    HTMLAnchorElement,
+    HTMLTextAreaElement,
+    Headers,
+    console,
+    URL,
+    fetch: fetchMock,
+    setTimeout,
+    clearTimeout,
     history: window.history,
     requestAnimationFrame: window.requestAnimationFrame,
   });
+  vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'api.js'), 'utf8'), context, { filename: 'api.js' });
   vm.runInContext(fs.readFileSync(path.join(crateDir, 'assets', 'settings.js'), 'utf8'), context, { filename: 'settings.js' });
   vm.runInContext(fs.readFileSync(path.join(crateDir, '..', 'solstone-core-convey-shell', 'assets', 'static', 'date_format.js'), 'utf8'), context, { filename: 'date_format.js' });
   vm.runInContext(scriptMatch[1], context, { filename: 'workspace.html' });
@@ -816,6 +929,262 @@ async function testCase(name, fn) {
       assert.strictEqual(replacement.textContent, '');
       assert.strictEqual(await run(h, 'storageMeasurement'), null);
     }
+  });
+
+  await testCase('AC8 storage retention UI renders empty audio toggle and reflects keep_empty_audio state', async () => {
+    {
+      const h = createHarness();
+      h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+      h.context.fetch = async (url, opts) => {
+        const u = String(url);
+        if (u.includes('api/storage/config')) {
+          return response({
+            retention: { raw_media: 'days', raw_media_days: 30, keep_empty_audio: true, per_stream: {}, journal_logs: {} },
+            streams: [],
+          });
+        }
+        if (u.includes('api/storage')) return response({ summary: {}, warnings: [] });
+        return response({});
+      };
+      await run(h, 'loadStorage()');
+      const toggle = h.document.getElementById('emptyAudioKeep');
+      const status = h.document.getElementById('emptyAudioStatus');
+      const retentionStatus = h.document.getElementById('retentionStatus');
+      assert.strictEqual(toggle.checked, true);
+      assert.strictEqual(status.textContent, 'currently: keep audio with no speech.');
+      assert.strictEqual(retentionStatus.textContent, 'currently: list originals for removal after 30 days, except audio with no speech.');
+    }
+
+    {
+      const h = createHarness();
+      h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+      h.context.fetch = async (url, opts) => {
+        const u = String(url);
+        if (u.includes('api/storage/config')) {
+          return response({
+            retention: { raw_media: 'keep', raw_media_days: null, keep_empty_audio: false, per_stream: {}, journal_logs: {} },
+            streams: [],
+          });
+        }
+        if (u.includes('api/storage')) return response({ summary: {}, warnings: [] });
+        return response({});
+      };
+      await run(h, 'loadStorage()');
+      const toggle = h.document.getElementById('emptyAudioKeep');
+      const status = h.document.getElementById('emptyAudioStatus');
+      const retentionStatus = h.document.getElementById('retentionStatus');
+      assert.strictEqual(toggle.checked, false);
+      assert.strictEqual(status.textContent, 'currently: list audio with no speech for removal after processing.');
+      assert.strictEqual(retentionStatus.textContent, 'currently: keep everything except audio with no speech.');
+    }
+  });
+
+  await testCase('AC8 storage retention UI toggling silent audio fires PUT with empty_audio payload', async () => {
+    const h = createHarness();
+    h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+    const recordedRequests = [];
+    const recordedPuts = [];
+    h.context.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const m = String(opts.method || 'GET').toUpperCase();
+      recordedRequests.push({ url: u, method: m });
+      if (u.includes('api/storage/config')) {
+        return response({
+          retention: { raw_media: 'days', raw_media_days: 14, keep_empty_audio: false, per_stream: {}, journal_logs: {} },
+          streams: [],
+        });
+      }
+      if (u.includes('api/storage') && m === 'PUT') {
+        const body = JSON.parse(opts.body || '{}');
+        recordedPuts.push(body);
+        return response({ success: true, retention: { empty_audio: body.empty_audio } });
+      }
+      if (u.includes('api/storage')) return response({ summary: {}, warnings: [] });
+      return response({});
+    };
+
+    await run(h, 'loadStorage()');
+    await run(h, 'setupStorageListeners()');
+    assert.strictEqual(recordedRequests[0].method, 'GET');
+    assert.strictEqual(recordedRequests[0].url, 'api/storage/config');
+    assert.strictEqual(recordedPuts.length, 0);
+
+    const toggle = h.document.getElementById('emptyAudioKeep');
+    assert.strictEqual(toggle.checked, false);
+
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 0));
+    assert.strictEqual(recordedPuts.length, 1);
+    assert.deepStrictEqual(recordedPuts[0], { empty_audio: 'keep' });
+    assert.strictEqual(toggle.checked, true);
+    assert.strictEqual(h.document.getElementById('emptyAudioStatus').textContent, 'currently: keep audio with no speech.');
+    assert.strictEqual(h.document.getElementById('retentionStatus').textContent, 'currently: list originals for removal after 14 days, except audio with no speech.');
+
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 0));
+    assert.strictEqual(recordedPuts.length, 2);
+    assert.deepStrictEqual(recordedPuts[1], { empty_audio: 'processed' });
+    assert.strictEqual(toggle.checked, false);
+    assert.strictEqual(h.document.getElementById('emptyAudioStatus').textContent, 'currently: list audio with no speech for removal after processing.');
+    assert.strictEqual(h.document.getElementById('retentionStatus').textContent, 'currently: list originals for removal after 14 days, and audio with no speech after processing.');
+  });
+
+  await testCase('AC8 storage retention UI error rollbacks toggle and status text', async () => {
+    const h = createHarness();
+    h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+    h.context.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const m = String(opts.method || 'GET').toUpperCase();
+      if (u.includes('api/storage/config')) {
+        return response({
+          retention: { raw_media: 'days', raw_media_days: 7, keep_empty_audio: false, per_stream: {}, journal_logs: {} },
+          streams: [],
+        });
+      }
+      if (u.includes('api/storage') && m === 'PUT') {
+        return response({ error: 'failed to persist' }, 500);
+      }
+      if (u.includes('api/storage')) return response({ summary: {}, warnings: [] });
+      return response({});
+    };
+
+    await run(h, 'loadStorage()');
+    await run(h, 'setupStorageListeners()');
+    const toggle = h.document.getElementById('emptyAudioKeep');
+    assert.strictEqual(toggle.checked, false);
+
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 0));
+    assert.strictEqual(toggle.checked, false);
+    assert.strictEqual(toggle.disabled, true);
+    assert.strictEqual(h.document.getElementById('emptyAudioStatus').textContent, "couldn't confirm which choice is saved. reload the page to check.");
+    assert.strictEqual(h.document.getElementById('retentionStatus').textContent, 'currently: list originals for removal after 7 days, and audio with no speech after processing.');
+  });
+
+  await testCase('AC8 storage retention UI resolved-but-unconfirmed response marks unknown', async () => {
+    const h = createHarness();
+    h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+    h.context.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const m = String(opts.method || 'GET').toUpperCase();
+      if (u.includes('api/storage/config')) {
+        return response({
+          retention: { raw_media: 'days', raw_media_days: 7, keep_empty_audio: false, per_stream: {}, journal_logs: {} },
+          streams: [],
+        });
+      }
+      if (u.includes('api/storage') && m === 'PUT') {
+        return response({ success: true }); // missing retention.empty_audio
+      }
+      if (u.includes('api/storage')) return response({ summary: {}, warnings: [] });
+      return response({});
+    };
+
+    await run(h, 'loadStorage()');
+    await run(h, 'setupStorageListeners()');
+    const toggle = h.document.getElementById('emptyAudioKeep');
+    assert.strictEqual(toggle.checked, false);
+
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    await new Promise(r => setTimeout(r, 0));
+    assert.strictEqual(toggle.checked, false);
+    assert.strictEqual(toggle.disabled, true);
+    assert.strictEqual(h.document.getElementById('emptyAudioStatus').textContent, "couldn't confirm which choice is saved. reload the page to check.");
+    assert.strictEqual(h.document.getElementById('retentionStatus').textContent, 'currently: list originals for removal after 7 days, and audio with no speech after processing.');
+  });
+
+  await testCase('AC8 storage retention UI serialization guard prevents concurrent PUT and resets DOM', async () => {
+    const h = createHarness();
+    h.window.SettingsRender.buildStreamOverridesDrawerProps = () => null;
+    let puts = 0;
+    h.context.fetch = async (url, opts = {}) => {
+      const u = String(url);
+      const m = String(opts.method || 'GET').toUpperCase();
+      if (u.includes('api/storage/config')) {
+        return response({
+          retention: { raw_media: 'days', raw_media_days: 7, keep_empty_audio: false, per_stream: {}, journal_logs: {} },
+          streams: [],
+        });
+      }
+      if (u.includes('api/storage') && m === 'PUT') {
+        puts++;
+        return new Promise(() => {});
+      }
+      return response({});
+    };
+
+    await run(h, 'loadStorage()');
+    await run(h, 'setupStorageListeners()');
+    const toggle = h.document.getElementById('emptyAudioKeep');
+    assert.strictEqual(toggle.checked, false);
+
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    assert.strictEqual(puts, 1);
+    assert.strictEqual(toggle.checked, false);
+    assert.strictEqual(toggle.disabled, true);
+
+    toggle.dispatchEvent(event('change', { bubbles: true }));
+    assert.strictEqual(puts, 1);
+    assert.strictEqual(toggle.checked, false);
+  });
+
+  await testCase('AC8 deriveRetention status string combinations', async () => {
+    const h = createHarness();
+    assert.strictEqual(await run(h, 'deriveRetention("", false, false).statusText'), 'currently: keep everything except audio with no speech.');
+    assert.strictEqual(await run(h, 'deriveRetention("", false, true).statusText'), 'currently: keep everything.');
+    assert.strictEqual(await run(h, 'deriveRetention("1", false, false).statusText'), 'currently: list originals for removal after 1 day, and audio with no speech after processing.');
+    assert.strictEqual(await run(h, 'deriveRetention("1", false, true).statusText'), 'currently: list originals for removal after 1 day, except audio with no speech.');
+    assert.strictEqual(await run(h, 'deriveRetention("30", false, false).statusText'), 'currently: list originals for removal after 30 days, and audio with no speech after processing.');
+    assert.strictEqual(await run(h, 'deriveRetention("30", false, true).statusText'), 'currently: list originals for removal after 30 days, except audio with no speech.');
+    assert.strictEqual(await run(h, 'deriveRetention("", true, false).statusText'), 'currently: list originals for removal after processing.');
+    assert.strictEqual(await run(h, 'deriveRetention("", true, true).statusText'), 'currently: list originals for removal after processing, except audio with no speech.');
+  });
+
+  await testCase('api.js harness self-test of 200 onSuccess and 500 envelope reject via saveControl', async () => {
+    const h = createHarness();
+    h.context.fetch = async (url, opts) => {
+      const u = String(url);
+      const m = opts && opts.method ? opts.method : 'GET';
+      if (u.includes('save_success') && m === 'PUT') return response({ success: true, value: 'persisted' }, 200);
+      if (u.includes('save_error') && m === 'PUT') return response({ error: 'failed to persist', reason_code: 'server_error' }, 500);
+      return response({});
+    };
+    const el = h.document.getElementById('emptyAudioField');
+    let successFired = false;
+    let successData = null;
+    const res = await run(h, `
+      (async () => {
+        let resultData = null;
+        await window.saveControl({
+          el: document.getElementById('emptyAudioField'),
+          readValue: () => null,
+          writeValue: () => {},
+          fetchArgs: ['save_success', { method: 'PUT' }],
+          onSuccess: (res) => { resultData = res; }
+        });
+        return resultData;
+      })()
+    `);
+    assert.strictEqual(res.success, true);
+    assert.strictEqual(res.value, 'persisted');
+
+    let rejected = false;
+    try {
+      await run(h, `
+        window.saveControl({
+          el: document.getElementById('emptyAudioField'),
+          readValue: () => null,
+          writeValue: () => {},
+          fetchArgs: ['save_error', { method: 'PUT' }]
+        })
+      `);
+    } catch (err) {
+      rejected = true;
+      assert.strictEqual(err.status, 500);
+      assert.strictEqual(err.serverMessage, 'failed to persist');
+      assert.strictEqual(err.reasonCode, 'server_error');
+    }
+    assert.strictEqual(rejected, true, '500 error envelope must reject with ApiError through saveControl');
   });
 
   process.stdout.write('DOM CASES: ' + cases + ' passed\n', () => process.exit(0));

@@ -265,7 +265,7 @@
 
     <section class="init-section" id="section-observed-media">
       <h3>your original media (audio, video, screen frames)</h3>
-      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also list it for removal after a set number of days, or list originals for removal after processing. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
+      <p class="section-hint">by default, your journal keeps your original media so you can access it again later. you can also list it for removal after a set number of days, or list originals for removal after processing. audio with no speech has its own switch in storage settings, and by default it's listed for removal after processing. nothing is deleted until you say so. <a href="https://solpbc.org/privacy#recording-laws" target="_blank" rel="noopener">recording-consent laws</a> may apply in your jurisdiction.</p>
       <div class="field-group">
         <div class="retention-options">
           <label class="retention-option">
@@ -556,10 +556,11 @@
       if (mode === 'processed') return { mode, days: null, statusText: 'currently: list originals for removal after processing.' };
       if (mode === 'days') {
         const n = parseInt(daysValue, 10);
-        if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: list originals for removal after ${n} days.` };
-        return { mode, days: null, statusText: 'currently: keep. set a positive number of days.' };
+        const unit = n === 1 ? 'day' : 'days';
+        if (Number.isFinite(n) && n >= 1) return { mode, days: n, statusText: `currently: list originals for removal after ${n} ${unit}, and audio with no speech after processing.` };
+        return { mode, days: null, statusText: 'currently: keep everything except audio with no speech. set a positive number of days.' };
       }
-      return { mode: 'keep', days: null, statusText: 'currently: keep everything.' };
+      return { mode: 'keep', days: null, statusText: 'currently: keep everything except audio with no speech.' };
     }
 
     function updateRetentionUI() {
