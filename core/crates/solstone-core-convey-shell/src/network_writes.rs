@@ -27,7 +27,7 @@ use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsRead, ClientActivity, ClientEntry, DeviceActivityRead,
     SourceRecord, read_authorized_clients, read_device_activity,
 };
-use solstone_core_sol_link::pairing::addresses::is_usable_ipv4;
+use solstone_core_sol_link::pairing::addresses::{is_allowed_direct_ipv4, is_usable_ipv4};
 use solstone_core_sol_link::service_identity::{ServiceIdentity, load_or_create_service_identity};
 use solstone_core_spl::{EnrollError, disable_spl, enable_spl_with, enroll_home};
 use solstone_core_thinking::confidential::{
@@ -553,36 +553,36 @@ fn copy(name: &str) -> String {
         .unwrap_or_default()
 }
 fn validate_home_address(value: &str, expected_port: u16) -> Result<String, String> {
+    let invalid_copy =
+        || copy("HOME_ADDRESS_INVALID").replace("{port}", &expected_port.to_string());
     let cleaned = value.trim();
     if cleaned.is_empty() || cleaned.contains("://") || cleaned.contains('/') {
-        return Err(copy("HOME_ADDRESS_INVALID"));
+        return Err(invalid_copy());
     }
     let Some((host, port)) = cleaned.rsplit_once(':') else {
         return Err(if looks_hostname(cleaned) {
             copy("HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
         } else {
-            copy("HOME_ADDRESS_INVALID")
+            invalid_copy()
         });
     };
     if host.is_empty() || port.is_empty() {
         return Err(if looks_hostname(cleaned) {
             copy("HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
         } else {
-            copy("HOME_ADDRESS_INVALID")
+            invalid_copy()
         });
     }
     let ipv4 = host.parse::<Ipv4Addr>().map_err(|_| {
         if looks_hostname(host) {
             copy("HOME_ADDRESS_HOSTNAME_UNSUPPORTED")
         } else {
-            copy("HOME_ADDRESS_INVALID")
+            invalid_copy()
         }
     })?;
-    let port = port
-        .parse::<u16>()
-        .map_err(|_| copy("HOME_ADDRESS_INVALID"))?;
-    if port != expected_port || !is_usable_ipv4(ipv4) {
-        return Err(copy("HOME_ADDRESS_INVALID"));
+    let port = port.parse::<u16>().map_err(|_| invalid_copy())?;
+    if port != expected_port || !is_usable_ipv4(ipv4) || !is_allowed_direct_ipv4(ipv4) {
+        return Err(invalid_copy());
     }
     Ok(format!("{ipv4}:{port}"))
 }

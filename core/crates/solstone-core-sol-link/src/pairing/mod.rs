@@ -22,12 +22,113 @@ use crate::ledger::{AuthorizationLedger, AuthorizedClientsMutationError, ClientE
 use crate::pairing_identity::validate_ceremony_pairing_identity;
 
 use self::addresses::{
-    AddressError, PairLinkEncodeError, PairingSnapshot, RawInterfaceSource, RouteIpv4Source,
-    SystemInterfaceSource, SystemRouteIpv4Source, encode_configured_home_pair_link,
-    encode_pair_link, encode_relay_pair_link, resolve_pair_link_candidates, snapshot_from_sources,
+    AddressError, DiagnosticKind, DiscoveryContext, PairLinkEncodeError, PairingSnapshot,
+    RawInterfaceSource, RouteIpv4Source, SystemInterfaceSource, SystemRouteIpv4Source,
+    build_pair_start_diagnostic, discover_sources, encode_configured_home_pair_link,
+    encode_pair_link, encode_relay_pair_link, resolve_pair_link_candidates,
 };
 use self::attestation::{AttestationError, mint_home_attestation};
 use self::nonces::{NONCE_TTL_SECONDS, Nonce, NonceStore, NonceStoreError};
+
+/// State of the configured home address in `config/journal.json` for diagnostics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ConfiguredHomeState {
+    None,
+    WrongPort,
+    NotIpv4HostPort,
+    ConfigUnreadable,
+}
+
+impl ConfiguredHomeState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::WrongPort => "wrong_port",
+            Self::NotIpv4HostPort => "not_ipv4_host_port",
+            Self::ConfigUnreadable => "config_unreadable",
+        }
+    }
+}
+
+/// The result of reading the configured home address and its diagnostic state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConfiguredHomeDecision {
+    pub address: Option<Ipv4Addr>,
+    pub state: ConfiguredHomeState,
+}
+
+impl ConfiguredHomeDecision {
+    pub const NONE: Self = Self {
+        address: None,
+        state: ConfiguredHomeState::None,
+    };
+}
+
+/// Read the configured home address and classify its state for diagnostics.
+pub fn read_configured_home(journal_root: &Path) -> ConfiguredHomeDecision {
+    let read = match solstone_core_journal_config::read_journal_config(journal_root) {
+        Ok(read) => read,
+        Err(_) => {
+            return ConfiguredHomeDecision {
+                address: None,
+                state: ConfiguredHomeState::ConfigUnreadable,
+            };
+        }
+    };
+    let Some(config) = read.config.as_ref() else {
+        return ConfiguredHomeDecision::NONE;
+    };
+    let Some(pairing) = config.get("pairing").and_then(Value::as_object) else {
+        return ConfiguredHomeDecision::NONE;
+    };
+    let Some(raw_address) = pairing.get("home_address") else {
+        return ConfiguredHomeDecision::NONE;
+    };
+    let Some(address_str) = raw_address.as_str() else {
+        return ConfiguredHomeDecision {
+            address: None,
+            state: ConfiguredHomeState::NotIpv4HostPort,
+        };
+    };
+    let Some((host, port)) = address_str.rsplit_once(':') else {
+        return ConfiguredHomeDecision {
+            address: None,
+            state: ConfiguredHomeState::NotIpv4HostPort,
+        };
+    };
+    let Ok(expected_port) = solstone_core_journal_config::direct_door_port_from_config(config)
+    else {
+        return ConfiguredHomeDecision::NONE;
+    };
+    let Ok(parsed_port) = port.parse::<u16>() else {
+        return ConfiguredHomeDecision {
+            address: None,
+            state: ConfiguredHomeState::NotIpv4HostPort,
+        };
+    };
+    let Ok(parsed_ip) = host.parse::<Ipv4Addr>() else {
+        return ConfiguredHomeDecision {
+            address: None,
+            state: ConfiguredHomeState::NotIpv4HostPort,
+        };
+    };
+    if parsed_port != expected_port {
+        return ConfiguredHomeDecision {
+            address: None,
+            state: ConfiguredHomeState::WrongPort,
+        };
+    }
+    ConfiguredHomeDecision {
+        address: Some(parsed_ip),
+        state: ConfiguredHomeState::None,
+    }
+}
+
+/// Result of detailed source minting, carrying the outcome and any emitted diagnostic.
+pub struct MintOutcome {
+    pub result: Result<MintResponse, PairingError>,
+    pub diagnostic: Option<String>,
+}
 
 /// Input accepted by the owner-only pair-start handler.
 #[derive(Clone, Debug)]
@@ -38,7 +139,7 @@ pub struct MintRequest {
     /// persistent read that could write later in this operation.
     pub same_machine: Option<bool>,
     pub hardened_loopback: bool,
-    pub configured_home: Option<Ipv4Addr>,
+    pub configured_home: ConfiguredHomeDecision,
 }
 
 /// Pair-start's exact success body.
@@ -244,16 +345,17 @@ pub fn mint_pairing(
     request: &MintRequest,
     now: i64,
 ) -> Result<MintResponse, PairingError> {
-    if request.same_machine == Some(true) || request.configured_home.is_some() {
+    if request.same_machine == Some(true) || request.configured_home.address.is_some() {
         return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
     }
-    mint_pairing_from_sources(
+    mint_pairing_from_sources_detailed(
         journal_root,
         request,
         now,
         &SystemInterfaceSource,
         &SystemRouteIpv4Source,
     )
+    .result
 }
 
 /// Mint through level-B producers. Tests inject raw interface data and route
@@ -265,11 +367,61 @@ pub fn mint_pairing_from_sources(
     interfaces: &impl RawInterfaceSource,
     route: &impl RouteIpv4Source,
 ) -> Result<MintResponse, PairingError> {
+    mint_pairing_from_sources_detailed(journal_root, request, now, interfaces, route).result
+}
+
+/// Mint through level-B producers returning both the result and any diagnostic
+/// emitted during the attempt.
+pub fn mint_pairing_from_sources_detailed(
+    journal_root: &Path,
+    request: &MintRequest,
+    now: i64,
+    interfaces: &impl RawInterfaceSource,
+    route: &impl RouteIpv4Source,
+) -> MintOutcome {
     if request.same_machine == Some(true) {
-        return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
+        return MintOutcome {
+            result: mint_pairing_from_snapshot(
+                journal_root,
+                request,
+                now,
+                &PairingSnapshot::default(),
+            ),
+            diagnostic: None,
+        };
     }
-    let snapshot = snapshot_from_sources(interfaces, route).map_err(PairingError::Address)?;
-    mint_pairing_from_snapshot(journal_root, request, now, &snapshot)
+    let discovery = match discover_sources(interfaces, route) {
+        Ok(discovery) => discovery,
+        Err(err) => {
+            // Service logger default filter is warn; this diagnostic is emitted at WARN.
+            let diag = build_pair_start_diagnostic(
+                DiagnosticKind::EnumerationError,
+                request.configured_home.state.as_str(),
+                &[],
+                None,
+                &[],
+                Some(&err),
+                true,
+            );
+            log::warn!("{diag}");
+            return MintOutcome {
+                result: Err(PairingError::Address(err)),
+                diagnostic: Some(diag),
+            };
+        }
+    };
+    let context = DiscoveryContext {
+        raw_interfaces: &discovery.raw_interfaces,
+        route: discovery.route,
+    };
+    let (result, diagnostic) = mint_pairing_from_snapshot_with_context(
+        journal_root,
+        request,
+        now,
+        &discovery.snapshot,
+        Some(&context),
+    );
+    MintOutcome { result, diagnostic }
 }
 
 /// Mint through level-A's explicit snapshot seam.
@@ -279,67 +431,141 @@ pub fn mint_pairing_from_snapshot(
     now: i64,
     snapshot: &PairingSnapshot,
 ) -> Result<MintResponse, PairingError> {
-    validate_mint_request(request)?;
+    mint_pairing_from_snapshot_with_context(journal_root, request, now, snapshot, None).0
+}
+
+fn mint_pairing_from_snapshot_with_context(
+    journal_root: &Path,
+    request: &MintRequest,
+    now: i64,
+    snapshot: &PairingSnapshot,
+    context: Option<&DiscoveryContext<'_>>,
+) -> (Result<MintResponse, PairingError>, Option<String>) {
+    if let Err(err) = validate_mint_request(request) {
+        return (Err(err), None);
+    }
     let same_machine = request.same_machine.expect("validated above");
     if same_machine && !request.hardened_loopback {
-        return Err(PairingError::PairingRequestInvalid(
-            "same-machine pairing requires a hardened loopback request",
-        ));
+        return (
+            Err(PairingError::PairingRequestInvalid(
+                "same-machine pairing requires a hardened loopback request",
+            )),
+            None,
+        );
     }
     // Read only: loading this identity never creates or rewrites CA material.
-    let identity = load_committed_identity(journal_root)
-        .map_err(PairingError::CommittedIdentityUnavailable)?;
+    let identity = match load_committed_identity(journal_root) {
+        Ok(identity) => identity,
+        Err(err) => return (Err(PairingError::CommittedIdentityUnavailable(err)), None),
+    };
     let ca_fingerprint = spl_core::ca::sha256_hex(identity.certificate_der());
     let digest = sha256_bytes(identity.certificate_der());
     let mut ca_fp_prefix = [0_u8; 16];
     ca_fp_prefix.copy_from_slice(&digest[..16]);
-    let nonce = random_nonce()?;
-    let nonce_bytes = nonce_bytes(&nonce)?;
-    let port = solstone_core_journal_config::read_direct_door_port(journal_root)
-        .map_err(|_| PairingError::JournalConfig)?;
+    let nonce = match random_nonce() {
+        Ok(nonce) => nonce,
+        Err(err) => return (Err(err), None),
+    };
+    let nonce_bytes = match nonce_bytes(&nonce) {
+        Ok(bytes) => bytes,
+        Err(err) => return (Err(err), None),
+    };
+    let port = match solstone_core_journal_config::read_direct_door_port(journal_root) {
+        Ok(port) => port,
+        Err(_) => return (Err(PairingError::JournalConfig), None),
+    };
+    let mut diagnostic = None;
     let pair_link = if same_machine {
         // Same-host pairing bypasses configured-home and all discovery, exactly
         // as the reference's loopback branch does.
         encode_configured_home_pair_link(Ipv4Addr::LOCALHOST, nonce_bytes, ca_fp_prefix, port)
     } else {
-        match request.configured_home {
+        match request.configured_home.address {
             Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix, port),
             None => {
                 let candidates =
                     resolve_pair_link_candidates(&snapshot.endpoints, snapshot.route_ipv4);
-                encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix, port).map_err(|error| {
-                    match error {
-                        PairLinkEncodeError::CandidateCount(_)
-                        | PairLinkEncodeError::DisallowedAddress => {
-                            PairingError::PairingRequestInvalid(
+                match encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix, port) {
+                    Ok(link) => link,
+                    Err(PairLinkEncodeError::CandidateCount(0)) => {
+                        if let Some(ctx) = context {
+                            // Service logger default filter is warn; this diagnostic is emitted at WARN.
+                            let diag = build_pair_start_diagnostic(
+                                DiagnosticKind::NoCandidates,
+                                request.configured_home.state.as_str(),
+                                ctx.raw_interfaces,
+                                ctx.route,
+                                &candidates,
+                                None,
+                                false,
+                            );
+                            log::warn!("{diag}");
+                            diagnostic = Some(diag);
+                        }
+                        return (
+                            Err(PairingError::PairingRequestInvalid(
                                 "no usable local address is available for pairing",
-                            )
-                        }
-                        error @ PairLinkEncodeError::RelayOriginLength(_) => {
-                            PairingError::PairLink(error)
-                        }
+                            )),
+                            diagnostic,
+                        );
                     }
-                })?
+                    Err(PairLinkEncodeError::CandidateCount(_)) => {
+                        return (
+                            Err(PairingError::PairingRequestInvalid(
+                                "no usable local address is available for pairing",
+                            )),
+                            None,
+                        );
+                    }
+                    Err(PairLinkEncodeError::DisallowedAddress) => {
+                        if let Some(ctx) = context {
+                            // Service logger default filter is warn; this diagnostic is emitted at WARN.
+                            let diag = build_pair_start_diagnostic(
+                                DiagnosticKind::DisallowedAddress,
+                                request.configured_home.state.as_str(),
+                                ctx.raw_interfaces,
+                                ctx.route,
+                                &candidates,
+                                None,
+                                false,
+                            );
+                            log::warn!("{diag}");
+                            diagnostic = Some(diag);
+                        }
+                        return (
+                            Err(PairingError::PairingRequestInvalid(
+                                "no usable local address is available for pairing",
+                            )),
+                            diagnostic,
+                        );
+                    }
+                    Err(error @ PairLinkEncodeError::RelayOriginLength(_)) => {
+                        return (Err(PairingError::PairLink(error)), None);
+                    }
+                }
             }
         }
     };
     // The nonce is persisted last: every refusal above writes nothing.
-    NonceStore::new(journal_root)
-        .add(
-            nonce.clone(),
-            request.device_label.clone(),
-            request.role.clone(),
-            same_machine,
-            now,
-        )
-        .map_err(PairingError::NonceStore)?;
-    Ok(MintResponse {
-        nonce,
-        pair_link,
-        expires_in: NONCE_TTL_SECONDS,
-        device_label: request.device_label.clone(),
-        ca_fingerprint,
-    })
+    if let Err(err) = NonceStore::new(journal_root).add(
+        nonce.clone(),
+        request.device_label.clone(),
+        request.role.clone(),
+        same_machine,
+        now,
+    ) {
+        return (Err(PairingError::NonceStore(err)), None);
+    }
+    (
+        Ok(MintResponse {
+            nonce,
+            pair_link,
+            expires_in: NONCE_TTL_SECONDS,
+            device_label: request.device_label.clone(),
+            ca_fingerprint,
+        }),
+        None,
+    )
 }
 
 /// Prepare an unpersisted v06 relay pair-link and its local nonce authority.
@@ -596,9 +822,10 @@ fn valid_sender_instance_id(value: &str) -> bool {
 #[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::fs;
+    use std::io;
     use std::net::{IpAddr, Ipv4Addr};
     use std::path::Path;
-    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Arc, Barrier, mpsc};
     use std::thread;
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -669,7 +896,7 @@ mod tests {
             role: "phone".into(),
             same_machine: Some(false),
             hardened_loopback: false,
-            configured_home: None,
+            configured_home: ConfiguredHomeDecision::NONE,
         }
     }
 
@@ -866,7 +1093,10 @@ mod tests {
         let request = MintRequest {
             same_machine: Some(true),
             hardened_loopback: true,
-            configured_home: Some(Ipv4Addr::new(192, 168, 1, 7)),
+            configured_home: ConfiguredHomeDecision {
+                address: Some(Ipv4Addr::new(192, 168, 1, 7)),
+                state: ConfiguredHomeState::None,
+            },
             ..request()
         };
 
@@ -948,16 +1178,63 @@ mod tests {
         assert!(mint_pairing_from_snapshot(temporary.path(), &request(), 1, &snapshot).is_ok());
     }
 
-    struct Raw(Vec<RawInterfaceAddress>);
-    impl RawInterfaceSource for Raw {
-        fn enumerate(&self) -> Result<Vec<RawInterfaceAddress>, AddressError> {
-            Ok(self.0.clone())
+    struct Raw {
+        interfaces: Result<Vec<RawInterfaceAddress>, AddressError>,
+        calls: Arc<AtomicUsize>,
+    }
+    impl Raw {
+        fn success(interfaces: Vec<RawInterfaceAddress>) -> (Self, Arc<AtomicUsize>) {
+            let calls = Arc::new(AtomicUsize::new(0));
+            (
+                Self {
+                    interfaces: Ok(interfaces),
+                    calls: Arc::clone(&calls),
+                },
+                calls,
+            )
+        }
+        fn failure(err: AddressError) -> (Self, Arc<AtomicUsize>) {
+            let calls = Arc::new(AtomicUsize::new(0));
+            (
+                Self {
+                    interfaces: Err(err),
+                    calls: Arc::clone(&calls),
+                },
+                calls,
+            )
         }
     }
-    struct Route(Option<Ipv4Addr>);
+    impl RawInterfaceSource for Raw {
+        fn enumerate(&self) -> Result<Vec<RawInterfaceAddress>, AddressError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            match &self.interfaces {
+                Ok(interfaces) => Ok(interfaces.clone()),
+                Err(AddressError::Enumeration(io_err)) => Err(AddressError::Enumeration(
+                    io::Error::new(io_err.kind(), io_err.to_string()),
+                )),
+            }
+        }
+    }
+    struct Route {
+        route: Option<Ipv4Addr>,
+        calls: Arc<AtomicUsize>,
+    }
+    impl Route {
+        fn new(route: Option<Ipv4Addr>) -> (Self, Arc<AtomicUsize>) {
+            let calls = Arc::new(AtomicUsize::new(0));
+            (
+                Self {
+                    route,
+                    calls: Arc::clone(&calls),
+                },
+                calls,
+            )
+        }
+    }
     impl RouteIpv4Source for Route {
         fn route_ipv4(&self) -> Option<Ipv4Addr> {
-            self.0
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            self.route
         }
     }
 
@@ -965,15 +1242,10 @@ mod tests {
     fn production_source_path_uses_the_real_classifier_and_route_probe_seam() {
         let temporary = TempDir::new();
         identity(temporary.path());
-        let raw = Raw(vec![]);
-        let response = mint_pairing_from_sources(
-            temporary.path(),
-            &request(),
-            1,
-            &raw,
-            &Route(Some(Ipv4Addr::new(10, 0, 0, 2))),
-        )
-        .expect("mint");
+        let (raw, _) = Raw::success(vec![]);
+        let (route, _) = Route::new(Some(Ipv4Addr::new(10, 0, 0, 2)));
+        let response =
+            mint_pairing_from_sources(temporary.path(), &request(), 1, &raw, &route).expect("mint");
         let link = spl_core::pairlink::parse(&response.pair_link).expect("link parses");
         let spl_core::pairlink::ParsedPairLink::Direct(link) = link else {
             panic!("production path emits direct link");
@@ -1587,5 +1859,210 @@ mod tests {
     #[test]
     fn cross_nonce_direct_relay_both_commit() {
         cross_nonce_both_commit(false, true);
+    }
+
+    #[test]
+    fn pair_start_diagnostics_emitted_on_address_refusals_and_source_errors() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+
+        // Case (a): docker0 dropped, eth0 dropped, en0 admitted ULA, no route.
+        let raw_a = vec![
+            RawInterfaceAddress {
+                interface: "docker0".into(),
+                address: IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1)),
+            },
+            RawInterfaceAddress {
+                interface: "eth0".into(),
+                address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9)),
+            },
+            RawInterfaceAddress {
+                interface: "en0".into(),
+                address: "fd00::1".parse().expect("ULA"),
+            },
+        ];
+        let (raw_source_a, raw_calls_a) = Raw::success(raw_a.clone());
+        let (route_source_a, route_calls_a) = Route::new(None);
+        let outcome_a = mint_pairing_from_sources_detailed(
+            temporary.path(),
+            &request(),
+            1,
+            &raw_source_a,
+            &route_source_a,
+        );
+        assert_eq!(raw_calls_a.load(Ordering::SeqCst), 1);
+        assert_eq!(route_calls_a.load(Ordering::SeqCst), 1);
+        let err_a = outcome_a.result.unwrap_err();
+        assert_eq!(err_a.status(), 400);
+        assert_eq!(err_a.reason(), "pairing_request_invalid");
+        assert_eq!(
+            err_a.detail(),
+            Some("no usable local address is available for pairing")
+        );
+        let diag_a = outcome_a
+            .diagnostic
+            .expect("diagnostic emitted for case (a)");
+        assert_eq!(
+            diag_a,
+            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:203.0.113.9:dropped,en0:fd00::1:ula] route=none candidates=[]"
+        );
+
+        // Case (b): eth0 dropped, route 203.0.113.9.
+        let raw_b = vec![RawInterfaceAddress {
+            interface: "eth0".into(),
+            address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9)),
+        }];
+        let (raw_source_b, raw_calls_b) = Raw::success(raw_b);
+        let (route_source_b, route_calls_b) = Route::new(Some(Ipv4Addr::new(203, 0, 113, 9)));
+        let outcome_b = mint_pairing_from_sources_detailed(
+            temporary.path(),
+            &request(),
+            1,
+            &raw_source_b,
+            &route_source_b,
+        );
+        assert_eq!(raw_calls_b.load(Ordering::SeqCst), 1);
+        assert_eq!(route_calls_b.load(Ordering::SeqCst), 1);
+        let err_b = outcome_b.result.unwrap_err();
+        assert_eq!(err_b.status(), 400);
+        assert_eq!(err_b.reason(), "pairing_request_invalid");
+        assert_eq!(
+            err_b.detail(),
+            Some("no usable local address is available for pairing")
+        );
+        let diag_b = outcome_b
+            .diagnostic
+            .expect("diagnostic emitted for case (b)");
+        assert_eq!(
+            diag_b,
+            "pair-start address failed: kind=disallowed_address saved_home=none interfaces=[eth0:203.0.113.9:dropped] route=203.0.113.9 candidates=[203.0.113.9]"
+        );
+
+        // Case (c): interface enumeration error.
+        let (raw_source_c, raw_calls_c) = Raw::failure(AddressError::Enumeration(
+            io::Error::other("permission denied"),
+        ));
+        let (route_source_c, route_calls_c) = Route::new(None);
+        let outcome_c = mint_pairing_from_sources_detailed(
+            temporary.path(),
+            &request(),
+            1,
+            &raw_source_c,
+            &route_source_c,
+        );
+        assert_eq!(raw_calls_c.load(Ordering::SeqCst), 1);
+        assert_eq!(route_calls_c.load(Ordering::SeqCst), 0);
+        let err_c = outcome_c.result.unwrap_err();
+        assert_eq!(err_c.status(), 500);
+        assert_eq!(err_c.reason(), "internal_error");
+        assert_eq!(err_c.detail(), None);
+        let diag_c = outcome_c
+            .diagnostic
+            .expect("diagnostic emitted for case (c)");
+        assert_eq!(
+            diag_c,
+            "pair-start address failed: kind=enumeration_error saved_home=none interfaces=[] route=not_probed candidates=[] error=\"could not enumerate local interfaces: permission denied\""
+        );
+
+        // Negative twin 1: invalid role with case (a) raw inputs produces no diagnostic.
+        let (raw_source_neg, raw_calls_neg) = Raw::success(raw_a);
+        let (route_source_neg, route_calls_neg) = Route::new(None);
+        let neg_request = MintRequest {
+            role: "admin".into(),
+            ..request()
+        };
+        let outcome_neg = mint_pairing_from_sources_detailed(
+            temporary.path(),
+            &neg_request,
+            1,
+            &raw_source_neg,
+            &route_source_neg,
+        );
+        assert!(outcome_neg.diagnostic.is_none());
+        assert_eq!(raw_calls_neg.load(Ordering::SeqCst), 1);
+        assert_eq!(route_calls_neg.load(Ordering::SeqCst), 1);
+        let err_neg = outcome_neg.result.unwrap_err();
+        assert_eq!(err_neg.status(), 400);
+        assert_eq!(err_neg.reason(), "pairing_request_invalid");
+        assert_eq!(err_neg.detail(), Some("role is invalid"));
+
+        // Negative twin 2: successful mint produces no diagnostic.
+        let (raw_ok, _) = Raw::success(vec![]);
+        let (route_ok, _) = Route::new(Some(Ipv4Addr::new(10, 0, 0, 2)));
+        let outcome_ok =
+            mint_pairing_from_sources_detailed(temporary.path(), &request(), 1, &raw_ok, &route_ok);
+        assert!(outcome_ok.diagnostic.is_none());
+        assert!(outcome_ok.result.is_ok());
+    }
+
+    #[test]
+    fn pair_start_diagnostics_reflect_configured_home_state_accurately() {
+        let cases = [
+            (None, ConfiguredHomeState::None, "none"),
+            (
+                Some(r#"{"pairing":{"home_address":"10.0.0.2:9000","direct_port":7657}}"#),
+                ConfiguredHomeState::WrongPort,
+                "wrong_port",
+            ),
+            (
+                Some(r#"{"pairing":{"home_address":"home.example:7657"}}"#),
+                ConfiguredHomeState::NotIpv4HostPort,
+                "not_ipv4_host_port",
+            ),
+            (
+                Some(r#"{"pairing":{"home_address":12345}}"#),
+                ConfiguredHomeState::NotIpv4HostPort,
+                "not_ipv4_host_port",
+            ),
+        ];
+
+        for (config_content, expected_state, expected_token) in cases {
+            let temporary = TempDir::new();
+            identity(temporary.path());
+            if let Some(content) = config_content {
+                fs::create_dir_all(temporary.path().join("config")).expect("config dir");
+                fs::write(temporary.path().join("config/journal.json"), content)
+                    .expect("config write");
+            }
+            let decision = read_configured_home(temporary.path());
+            assert_eq!(decision.state, expected_state);
+
+            let req = MintRequest {
+                configured_home: decision,
+                ..request()
+            };
+            let (raw, _) = Raw::success(vec![]);
+            let (route, _) = Route::new(None);
+            let outcome =
+                mint_pairing_from_sources_detailed(temporary.path(), &req, 1, &raw, &route);
+            let diag = outcome.diagnostic.expect("diagnostic for refusal");
+            assert!(
+                diag.contains(&format!("saved_home={expected_token}")),
+                "expected saved_home={expected_token} in diag: {diag}"
+            );
+        }
+
+        // Test config_unreadable state classification and diagnostic formatting
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        fs::create_dir_all(temporary.path().join("config")).expect("config dir");
+        fs::write(temporary.path().join("config/journal.json"), b"corrupt").expect("config write");
+        let decision = read_configured_home(temporary.path());
+        assert_eq!(decision.state, ConfiguredHomeState::ConfigUnreadable);
+
+        fs::remove_file(temporary.path().join("config/journal.json"))
+            .expect("remove corrupt config");
+        let req = MintRequest {
+            configured_home: decision,
+            ..request()
+        };
+        let (raw, _) = Raw::success(vec![]);
+        let (route, _) = Route::new(None);
+        let outcome = mint_pairing_from_sources_detailed(temporary.path(), &req, 1, &raw, &route);
+        let diag = outcome.diagnostic.expect("diagnostic for refusal");
+        assert!(
+            diag.contains("saved_home=config_unreadable"),
+            "expected saved_home=config_unreadable in diag: {diag}"
+        );
     }
 }

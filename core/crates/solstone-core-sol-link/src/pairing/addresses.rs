@@ -99,14 +99,47 @@ impl RouteIpv4Source for SystemRouteIpv4Source {
     }
 }
 
+/// The level-B discovery result retaining raw enumeration records alongside
+/// the classified snapshot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscoveryResult {
+    pub snapshot: PairingSnapshot,
+    pub raw_interfaces: Vec<RawInterfaceAddress>,
+    pub route: Option<Ipv4Addr>,
+}
+
+/// Sibling context passed to snapshot minting to support address diagnostics
+/// without re-enumeration or re-probing.
+#[derive(Clone, Copy, Debug)]
+pub struct DiscoveryContext<'a> {
+    pub raw_interfaces: &'a [RawInterfaceAddress],
+    pub route: Option<Ipv4Addr>,
+}
+
 /// Construct a snapshot through the level-B production seams.
 pub fn snapshot_from_sources(
     interfaces: &impl RawInterfaceSource,
     route: &impl RouteIpv4Source,
 ) -> Result<PairingSnapshot, AddressError> {
-    Ok(PairingSnapshot {
-        endpoints: classify_interface_addresses(&interfaces.enumerate()?),
-        route_ipv4: route.route_ipv4(),
+    discover_sources(interfaces, route).map(|result| result.snapshot)
+}
+
+/// Perform discovery through the level-B production seams, retaining the raw
+/// interface records for diagnostics without re-enumeration.
+pub fn discover_sources(
+    interfaces: &impl RawInterfaceSource,
+    route: &impl RouteIpv4Source,
+) -> Result<DiscoveryResult, AddressError> {
+    let raw_interfaces = interfaces.enumerate()?;
+    let endpoints = classify_interface_addresses(&raw_interfaces);
+    let route = route.route_ipv4();
+    Ok(DiscoveryResult {
+        snapshot: PairingSnapshot {
+            endpoints,
+            route_ipv4: route,
+        },
+        raw_interfaces,
+        route,
     })
 }
 
@@ -346,7 +379,8 @@ fn is_ula(address: Ipv6Addr) -> bool {
     (address.octets()[0] & 0xfe) == 0xfc
 }
 
-fn is_allowed_direct_ipv4(address: Ipv4Addr) -> bool {
+/// Whether an IPv4 address is in the allow-list of direct pairing candidates.
+pub fn is_allowed_direct_ipv4(address: Ipv4Addr) -> bool {
     let value = u32::from(address);
     [
         (0x0a00_0000, 0x0aff_ffff),
@@ -358,6 +392,113 @@ fn is_allowed_direct_ipv4(address: Ipv4Addr) -> bool {
     ]
     .iter()
     .any(|(low, high)| (*low..=*high).contains(&value))
+}
+
+/// The failure kind category for a pair-start address diagnostic line.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiagnosticKind {
+    NoCandidates,
+    DisallowedAddress,
+    EnumerationError,
+}
+
+impl DiagnosticKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::NoCandidates => "no_candidates",
+            Self::DisallowedAddress => "disallowed_address",
+            Self::EnumerationError => "enumeration_error",
+        }
+    }
+}
+
+/// Determine the single outcome tag for a raw interface record without altering
+/// the classifier's admit/drop decision.
+pub fn classify_outcome(raw: &RawInterfaceAddress) -> &'static str {
+    match classify_one(raw) {
+        Some(endpoint) => match endpoint.scope {
+            EndpointScope::Lan => "lan",
+            EndpointScope::Ula => "ula",
+            EndpointScope::Vpn => "vpn",
+        },
+        None => "dropped",
+    }
+}
+
+/// Escape control characters and cap the interface name at 32 UTF-8 bytes.
+pub fn escape_interface_name(name: &str) -> String {
+    let mut end = name.len().min(32);
+    while end > 0 && !name.is_char_boundary(end) {
+        end -= 1;
+    }
+    let truncated = &name[..end];
+    let mut escaped = String::with_capacity(truncated.len());
+    for c in truncated.chars() {
+        match c {
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            '\\' => escaped.push_str("\\\\"),
+            c if c.is_ascii_control() => {
+                escaped.push_str(&format!("\\x{:02x}", c as u8));
+            }
+            c => escaped.push(c),
+        }
+    }
+    escaped
+}
+
+/// Build the structured pair-start address failure diagnostic line.
+pub fn build_pair_start_diagnostic(
+    kind: DiagnosticKind,
+    saved_home: &str,
+    raw_interfaces: &[RawInterfaceAddress],
+    route: Option<Ipv4Addr>,
+    candidates: &[Ipv4Addr],
+    enumeration_error: Option<&AddressError>,
+    route_not_probed: bool,
+) -> String {
+    let mut out = String::new();
+    out.push_str("pair-start address failed: kind=");
+    out.push_str(kind.as_str());
+    out.push_str(" saved_home=");
+    out.push_str(saved_home);
+    out.push_str(" interfaces=[");
+    let cap = raw_interfaces.len().min(32);
+    for (i, entry) in raw_interfaces[..cap].iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&escape_interface_name(&entry.interface));
+        out.push(':');
+        out.push_str(&entry.address.to_string());
+        out.push(':');
+        out.push_str(classify_outcome(entry));
+    }
+    out.push(']');
+    if raw_interfaces.len() > 32 {
+        out.push_str(&format!(" remainder={}", raw_interfaces.len() - 32));
+    }
+    out.push_str(" route=");
+    if route_not_probed {
+        out.push_str("not_probed");
+    } else if let Some(ip) = route {
+        out.push_str(&ip.to_string());
+    } else {
+        out.push_str("none");
+    }
+    out.push_str(" candidates=[");
+    for (i, cand) in candidates.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&cand.to_string());
+    }
+    out.push(']');
+    if let Some(err) = enumeration_error {
+        out.push_str(&format!(" error=\"{err}\""));
+    }
+    out
 }
 
 fn encode_unchecked_pair_link(
@@ -663,6 +804,101 @@ mod tests {
             encode_relay_pair_link([0; 8], [0; 16], &oversized),
             Err(PairLinkEncodeError::RelayOriginLength(256))
         );
+    }
+
+    #[test]
+    fn diagnostic_builder_formats_tokens_and_handles_escapes_and_remainders() {
+        let raw = vec![
+            RawInterfaceAddress {
+                interface: "docker0".into(),
+                address: IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1)),
+            },
+            RawInterfaceAddress {
+                interface: "eth0".into(),
+                address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9)),
+            },
+            RawInterfaceAddress {
+                interface: "en0".into(),
+                address: "fd00::1".parse().expect("ula"),
+            },
+        ];
+        let line = build_pair_start_diagnostic(
+            DiagnosticKind::NoCandidates,
+            "none",
+            &raw,
+            None,
+            &[],
+            None,
+            false,
+        );
+        assert_eq!(
+            line,
+            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:203.0.113.9:dropped,en0:fd00::1:ula] route=none candidates=[]"
+        );
+
+        let err = AddressError::Enumeration(io::Error::other("permission denied"));
+        let err_line = build_pair_start_diagnostic(
+            DiagnosticKind::EnumerationError,
+            "config_unreadable",
+            &[],
+            None,
+            &[],
+            Some(&err),
+            true,
+        );
+        assert!(err_line.contains("kind=enumeration_error"));
+        assert!(err_line.contains("saved_home=config_unreadable"));
+        assert!(err_line.contains("route=not_probed"));
+        assert!(
+            err_line.contains("error=\"could not enumerate local interfaces: permission denied\"")
+        );
+
+        // 40 dropped records -> exactly 32 address entries + remainder 8
+        let forty_dropped: Vec<RawInterfaceAddress> = (0..40)
+            .map(|i| RawInterfaceAddress {
+                interface: format!("docker{i}"),
+                address: IpAddr::V4(Ipv4Addr::new(172, 17, 0, 1)),
+            })
+            .collect();
+        let forty_line = build_pair_start_diagnostic(
+            DiagnosticKind::NoCandidates,
+            "none",
+            &forty_dropped,
+            None,
+            &[],
+            None,
+            false,
+        );
+        assert!(forty_line.contains("remainder=8"));
+        assert!(forty_line.contains("interfaces=[docker0:172.17.0.1:dropped,"));
+        assert!(forty_line.contains("docker31:172.17.0.1:dropped]"));
+        assert!(!forty_line.contains("docker32:"));
+
+        // Interface name escaping and 32-byte limit
+        assert_eq!(
+            escape_interface_name("eth0\nweird\r\t\\"),
+            "eth0\\nweird\\r\\t\\\\"
+        );
+        assert_eq!(escape_interface_name("eth\x00zero"), "eth\\x00zero");
+        let long_name = "a".repeat(40);
+        assert_eq!(escape_interface_name(&long_name), "a".repeat(32));
+
+        // Builder newline via builder: line contains escaped \n sequence and no raw newline
+        let newline_records = vec![RawInterfaceAddress {
+            interface: "eth0\nweird".into(),
+            address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9)),
+        }];
+        let newline_line = build_pair_start_diagnostic(
+            DiagnosticKind::NoCandidates,
+            "none",
+            &newline_records,
+            None,
+            &[],
+            None,
+            false,
+        );
+        assert!(newline_line.contains("eth0\\nweird:203.0.113.9:dropped"));
+        assert!(!newline_line.contains('\n'));
     }
 
     fn hex(bytes: &[u8]) -> String {

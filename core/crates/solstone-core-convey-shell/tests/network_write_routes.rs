@@ -288,6 +288,134 @@ async fn host_address_refusals_and_identical_write_are_exact() {
 }
 
 #[tokio::test]
+async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() {
+    let root = journal();
+    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let config_bytes = fs::read(manifest_dir.join("assets/pairing_config.json"))
+        .expect("load pairing_config.json");
+    let config_json: Value =
+        serde_json::from_slice(&config_bytes).expect("parse pairing_config.json");
+    let template = config_json["HOME_ADDRESS_INVALID"]
+        .as_str()
+        .expect("HOME_ADDRESS_INVALID string");
+    assert!(!template.is_empty());
+    assert!(template.contains("{port}"));
+
+    let expected_7657 = template.replace("{port}", "7657");
+    assert!(!expected_7657.contains("{port}"));
+
+    // AC8: Each invalid input hits the invalid copy branch at default port 7657
+    for invalid_input in [
+        "http://10.0.0.2:7657",
+        "10.0.0.2",
+        ":7657",
+        "10.0.0.2:",
+        "1.2.3:7657",
+        "10.0.0.2:99999",
+        "10.0.0.2:7658",
+        "127.0.0.1:7657",
+        "203.0.113.9:7657",
+    ] {
+        let (status, rejected) = post(
+            &root,
+            "/app/network/host-address",
+            Body::from(format!(r#"{{"home_address":"{invalid_input}"}}"#)),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "invalid input should fail: {invalid_input}"
+        );
+        assert_eq!(rejected["reason_code"], "invalid_config_value");
+        let detail = rejected["detail"].as_str().expect("detail is string");
+        assert_eq!(detail, expected_7657);
+        assert!(!detail.contains("{port}"));
+    }
+
+    // AC6: Exact boundary list at default port 7657
+    // Refused (400 invalid_config_value)
+    for refused_ip in [
+        "203.0.113.9",
+        "11.0.0.0",
+        "100.63.255.255",
+        "100.128.0.0",
+        "172.15.255.255",
+        "172.32.0.1",
+        "192.169.0.0",
+        "127.0.0.1",
+        "169.254.1.1",
+    ] {
+        let (status, rej) = post(
+            &root,
+            "/app/network/host-address",
+            Body::from(format!(r#"{{"home_address":"{refused_ip}:7657"}}"#)),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "refused boundary IP should fail: {refused_ip}:7657"
+        );
+        assert_eq!(rej["reason_code"], "invalid_config_value");
+    }
+
+    // Accepted (200)
+    for accepted_ip in [
+        "10.0.0.2",
+        "172.16.0.0",
+        "172.31.255.255",
+        "192.168.1.20",
+        "100.64.0.0",
+        "100.127.255.255",
+    ] {
+        let payload = format!("{accepted_ip}:7657");
+        let (status, body) = post(
+            &root,
+            "/app/network/host-address",
+            Body::from(format!(r#"{{"home_address":"{payload}"}}"#)),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "accepted boundary IP should succeed: {payload}"
+        );
+        assert_eq!(body, json!({"ok": true, "home_address": payload}));
+    }
+
+    // Custom port 9000: detail equals template filled with 9000 and does NOT contain 7657
+    let path = root.join("config/journal.json");
+    let mut config: Value =
+        serde_json::from_slice(&fs::read(&path).expect("config reads")).unwrap();
+    config
+        .as_object_mut()
+        .expect("object")
+        .insert("pairing".to_owned(), json!({"direct_port": 9000}));
+    fs::write(
+        &path,
+        serde_json::to_vec(&config).expect("config serializes"),
+    )
+    .expect("config writes");
+
+    let expected_9000 = template.replace("{port}", "9000");
+    let (status, rejected_custom) = post(
+        &root,
+        "/app/network/host-address",
+        Body::from(r#"{"home_address":"203.0.113.9:9000"}"#),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(rejected_custom["reason_code"], "invalid_config_value");
+    let custom_detail = rejected_custom["detail"].as_str().expect("string");
+    assert_eq!(custom_detail, expected_9000);
+    assert!(!custom_detail.contains("7657"));
+    assert!(!custom_detail.contains("{port}"));
+
+    let _ = fs::remove_dir_all(root);
+}
+
+#[tokio::test]
 async fn enable_refuses_only_fully_enabled_and_has_exact_acceptance_shape() {
     let root = journal();
     fs::write(

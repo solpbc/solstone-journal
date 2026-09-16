@@ -3,7 +3,6 @@
 
 //! Native network read routes and direct device-pairing handlers.
 
-use std::net::Ipv4Addr;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -29,13 +28,14 @@ use solstone_core_sol_link::pairing::addresses::{
 use solstone_core_sol_link::pairing::nonces::{NonceStore, relay_pairing_nonce_open};
 use solstone_core_sol_link::pairing::{
     CeremonyRequest, MintRequest, PairingError, complete_pairing, mint_pairing, pair_response_json,
+    read_configured_home,
 };
 
 use crate::door::PairingAdmission;
 use crate::network_status::{identity, local_endpoints, private_link, status};
 use crate::network_writes;
 use crate::pair_window_manager::PairWindowManager;
-use solstone_core_journal_config::{direct_door_port_from_config, read_direct_door_port};
+use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_thinking::confidential::OperationRegistry;
 
 use crate::{JournalRoot, asset_response, assets};
@@ -193,7 +193,7 @@ pub(crate) async fn pair_start(
         role: role.to_owned(),
         same_machine,
         hardened_loopback: hardened_loopback(&basis, &headers),
-        configured_home: configured_home(&root.0),
+        configured_home: read_configured_home(&root.0),
     };
     let minted = if uses_relay_pairing(&root.0, &request) {
         let Some(Extension(pair_windows)) = pair_windows else {
@@ -747,17 +747,6 @@ pub(crate) fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> boo
             .all(|name| !headers.contains_key(*name))
 }
 
-fn configured_home(journal_root: &std::path::Path) -> Option<Ipv4Addr> {
-    let read = solstone_core_journal_config::read_journal_config(journal_root).ok()?;
-    let config = read.config.as_ref()?;
-    let address = config.get("pairing")?.get("home_address")?.as_str()?;
-    let (host, port) = address.rsplit_once(':')?;
-    let expected = direct_door_port_from_config(config).ok()?;
-    (port.parse::<u16>().ok() == Some(expected))
-        .then(|| host.parse().ok())
-        .flatten()
-}
-
 fn pairing_refusal(error: PairingError) -> Response {
     let (reason, status) = match &error {
         PairingError::Certificate(_) => ("pairing_key_invalid", StatusCode::BAD_REQUEST),
@@ -801,6 +790,7 @@ mod pairing_contract_vectors;
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::net::Ipv4Addr;
     use std::path::Path;
 
     use crate::authorization_gate::DoorRouter;
@@ -810,6 +800,7 @@ mod tests {
     use axum::{Extension, Router};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier};
     use solstone_core_sol_link::ca::{generate_ca, jid_from_spki};
+    use solstone_core_sol_link::pairing::ConfiguredHomeDecision;
     use tower::ServiceExt;
 
     use super::*;
@@ -1163,7 +1154,7 @@ mod tests {
             role: "observer".to_owned(),
             same_machine: Some(false),
             hardened_loopback: false,
-            configured_home: None,
+            configured_home: ConfiguredHomeDecision::NONE,
         };
 
         fs::write(
@@ -1194,7 +1185,7 @@ mod tests {
         )
         .expect("custom port config");
         assert_eq!(
-            configured_home(temporary.path()),
+            read_configured_home(temporary.path()).address,
             Some(Ipv4Addr::new(10, 0, 0, 2))
         );
         fs::write(
@@ -1202,7 +1193,7 @@ mod tests {
             r#"{"pairing":{"home_address":"10.0.0.2:7657","direct_port":9000}}"#,
         )
         .expect("mismatched port config");
-        assert_eq!(configured_home(temporary.path()), None);
+        assert_eq!(read_configured_home(temporary.path()).address, None);
     }
 
     #[tokio::test]
