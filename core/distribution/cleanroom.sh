@@ -438,7 +438,7 @@ talent_orchestration_rung() {
 		>"$journal/config/journal.json"
 	export SOLSTONE_JOURNAL=$journal
 	export SOL_SKIP_SUPERVISOR_CHECK=1
-	[ ! -e "$journal/chronicle/$target_day/talents/daily_schedule.json" ] \
+	[ ! -e "$journal/chronicle/$day/talents/daily_schedule.json" ] \
 		|| refuse "orchestration daily_schedule output was pre-seeded"
 	[ ! -e "$journal/config/schedules.json" ] \
 		|| refuse "orchestration schedule metadata was pre-seeded"
@@ -455,13 +455,10 @@ talent_orchestration_rung() {
 			cat "$journal/reprocess.out" "$journal/reprocess.err" >&2 || true
 			refuse "supervisor daily reprocess request was not accepted"
 		}
+	# The maintenance-window talent is scoped to today; the named past-day
+	# reprocess is complete only when its versioned daily marker is published.
 	attempt=0
-	while :; do
-		set -- "$journal"/talents/daily_schedule/*.jsonl
-		if [ "$#" -eq 1 ] && [ -f "$1" ] \
-			&& grep -F '"event":"finish"' "$1" >/dev/null 2>&1; then
-			break
-		fi
+	while [ ! -s "$journal/chronicle/$target_day/health/daily.updated" ]; do
 		attempt=$((attempt + 1))
 		if ! kill -0 "$SUPERVISOR_PID" 2>/dev/null || [ "$attempt" -ge 120 ]; then
 			cat "$journal/supervisor.log" "$journal/generation.err" \
@@ -472,9 +469,9 @@ talent_orchestration_rung() {
 	done
 	stop_supervisor
 	stop_server
-	[ -f "$journal/chronicle/$target_day/talents/daily_schedule.json" ] \
+	[ -f "$journal/chronicle/$day/talents/daily_schedule.json" ] \
 		|| refuse "orchestration daily_schedule output missing"
-	daily=$(tr -d '[:space:]' <"$journal/chronicle/$target_day/talents/daily_schedule.json")
+	daily=$(tr -d '[:space:]' <"$journal/chronicle/$day/talents/daily_schedule.json")
 	[ "$daily" = '{"primary":"03:00","fallback":"04:00"}' ] \
 		|| refuse "orchestration daily_schedule output mismatch: $daily"
 	grep -F '"daily_time": "03:00"' "$journal/config/schedules.json" >/dev/null \
