@@ -25,8 +25,6 @@ pub enum JournalStatsError {
         #[source]
         source: io::Error,
     },
-    #[error("invalid talent configuration {path}: {message}")]
-    TalentConfig { path: PathBuf, message: String },
     #[error("stats validation failed: {0}")]
     Validation(String),
 }

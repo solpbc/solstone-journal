@@ -2,7 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 use std::{
-    fs,
+    fs, io,
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
@@ -463,9 +463,9 @@ struct FailingWriter;
 
 impl DayCacheWriter for FailingWriter {
     fn write_day_cache(&self, path: &Path, _payload: &DayScan) -> Result<(), JournalStatsError> {
-        Err(JournalStatsError::TalentConfig {
+        Err(JournalStatsError::Io {
             path: path.to_path_buf(),
-            message: "forced writer failure".to_owned(),
+            source: io::Error::new(io::ErrorKind::Other, "forced writer failure"),
         })
     }
 }
