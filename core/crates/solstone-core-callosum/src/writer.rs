@@ -5,7 +5,7 @@ use std::error::Error;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use solstone_core_journal_io::{AppendError, append_jsonl};
+use solstone_core_journal_io::{AppendError, append_jsonl_no_follow};
 
 use crate::DurableEvent;
 
@@ -44,9 +44,8 @@ impl Error for CallosumWriteError {
 
 /// Append one recognized event row to an existing segment's `events.jsonl`.
 ///
-/// This checks the segment directory before delegating to journal-io because
-/// journal-io's append primitive creates missing parents. A concurrent delete
-/// after this check remains an accepted race for this write path.
+/// Refuses missing parent directories and refuses symlinked leaves without
+/// creating missing paths. Missing segment directories are refused up front.
 pub fn append_durable_event(
     segment_path: &Path,
     event: &DurableEvent,
@@ -58,8 +57,8 @@ pub fn append_durable_event(
     }
     let path = segment_path.join(EVENTS_FILE);
     match event {
-        DurableEvent::Callosum(event) => append_jsonl(path, event),
-        DurableEvent::DeviceIngest(event) => append_jsonl(path, event),
+        DurableEvent::Callosum(event) => append_jsonl_no_follow(path, event),
+        DurableEvent::DeviceIngest(event) => append_jsonl_no_follow(path, event),
     }
     .map_err(CallosumWriteError::Append)
 }
