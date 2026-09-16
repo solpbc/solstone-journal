@@ -4,16 +4,20 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.7] - 2026-09-15
 
 ### Added
 
-- `journal doctor` now reports a day that a linked device cannot sync because your journal cannot read that day, naming the day and the device's stream. until now the device showed itself offline and the journal kept no note of it.
+- `journal doctor` now reports when a linked device cannot sync a recent day because that day in your journal cannot be read, naming the day and linked device. the device can appear offline; until this release, the journal kept no note of why.
+
+### Changed
+
+- an entity now opens with its 50 most recent moments and tells you when older ones are available. choose show all to load the rest.
 
 ### Fixed
 
-- `journal transfer send`, sending to a journal you have already paired with, no longer refuses a range of days when two different days each hold a segment that started at the same time and ran the same length. two segments on the same day sharing a start and length are still refused, and the message now names the day.
-- media offload to your backup, and restoring media from it, no longer halt for the same reason.
+- transfers to a journal you have already paired with are no longer refused just because recordings from one source on different days share the same start time and length. two recordings from one source on the same day with the same start time and length are still refused, and the message names the day.
+- moving recordings and pictures to your backup, and restoring them, now handles the same cross-day case.
 
 ## [2.0.6] - 2026-09-15
 
