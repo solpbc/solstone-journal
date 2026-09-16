@@ -412,6 +412,25 @@ mod tests {
             None,
         )
         .unwrap();
+        let sugg_dir = context.journal.join("facets/work/entities");
+        std::fs::create_dir_all(&sugg_dir).unwrap();
+        std::fs::write(
+            sugg_dir.join("20260910_observer_suggestions.json"),
+            json!({
+                "facet": "work",
+                "day": "20260910",
+                "entities": [
+                    {
+                        "entity_id": "ada",
+                        "suggestions": [
+                            {"content": "Prefers concise updates"}
+                        ]
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
         let prepared = PreparedTalent {
             name: "entities:entity_observer".into(),
             config: json!({"day":"20260910", "facet":"work", "type":"generate", "prompt":"$observer_context", "model":"test-model", "provider":"test", "hook":{"pre":"entities:entity_observer", "post":"entities:entity_observer"}}).as_object().unwrap().clone(),
@@ -420,8 +439,8 @@ mod tests {
         (context, prepared, identity)
     }
 
-    fn observer_output(index: usize, quote: &str, content: &str) -> String {
-        json!({"entities":[{"entity_id":"ada", "operations":[{"op":"update", "target_index":index, "target_quote":quote, "content":content}]}]}).to_string()
+    fn observer_output(id: u64, quote: &str, content: &str) -> String {
+        json!({"entities":[{"entity_id":"ada", "decisions":[{"op":"replace", "target_id":id, "target_quote":quote, "content":content}]}]}).to_string()
     }
 
     fn observer_request(token: &str) -> Map<String, Value> {
@@ -430,145 +449,131 @@ mod tests {
 
     #[test]
     fn invalid_frozen_observer_reference_regenerates_and_preserves_prior_acceptance() {
-        for (index, quote) in [
-            (0, "\"Prefers concise updates\""),
-            (99, "Prefers concise updates"),
-        ] {
-            let root = tempfile::tempdir().unwrap();
-            let (context, prepared, identity) = observer_fixture(root.path());
-            let keep = observer_output(0, "Prefers concise updates", "Prefers concise updates");
-            let good = observer_output(
-                0,
-                "Prefers concise updates",
-                "Prefers concise weekly updates",
-            );
-            let stub = crate::test_support::sequenced_one_shot_stub(
-                root.path(),
-                &[
-                    crate::test_support::generated_response_value(&keep, Value::Null),
-                    crate::test_support::generated_response_value(&good, Value::Null),
-                ],
-            );
-            let generate = OneShotClient::at_path(stub.clone());
-            let cogitate = CogitateOneShotClient::at_path(root.path().join("no-cogitate"));
-            let mut record = DailyUnitRecord::new(identity.clone(), "E1", "C");
-            let packet = crate::daily_prepare::freeze(prepared.clone(), &context).unwrap();
-            record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
-            record.frozen_packet = Some(packet);
-            record.lock_token = Some("first".into());
-            save_daily_unit_record(&context.journal, &record).unwrap();
-            let first = execute(
-                observer_request("first"),
-                &context,
-                &generate,
-                &cogitate,
-                &mut Vec::new(),
-            );
-            assert!(
-                matches!(first, RuntimeOutcome::Finished { .. }),
-                "{first:?}"
-            );
-            let prior = load_daily_unit_record(&context.journal, &identity)
-                .unwrap()
-                .unwrap()
-                .accepted
+        let root = tempfile::tempdir().unwrap();
+        let (context, prepared, identity) = observer_fixture(root.path());
+        let keep = observer_output(1, "Prefers concise updates", "Prefers concise updates");
+        let good = observer_output(
+            1,
+            "Prefers concise updates",
+            "Prefers concise weekly updates",
+        );
+        let stub = crate::test_support::sequenced_one_shot_stub(
+            root.path(),
+            &[
+                crate::test_support::generated_response_value(&keep, Value::Null),
+                crate::test_support::generated_response_value(&good, Value::Null),
+            ],
+        );
+        let generate = OneShotClient::at_path(stub.clone());
+        let cogitate = CogitateOneShotClient::at_path(root.path().join("no-cogitate"));
+        let mut record = DailyUnitRecord::new(identity.clone(), "E1", "C");
+        let packet = crate::daily_prepare::freeze(prepared.clone(), &context).unwrap();
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+        record.frozen_packet = Some(packet);
+        record.lock_token = Some("first".into());
+        save_daily_unit_record(&context.journal, &record).unwrap();
+        let first = execute(
+            observer_request("first"),
+            &context,
+            &generate,
+            &cogitate,
+            &mut Vec::new(),
+        );
+        assert!(
+            matches!(first, RuntimeOutcome::Finished { .. }),
+            "{first:?}"
+        );
+        let prior = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap()
+            .accepted
+            .unwrap();
+        let before =
+            solstone_core_facets::read_facet_entity_observations(&context.journal, "work", "ada")
                 .unwrap();
-            let before = solstone_core_facets::read_facet_entity_observations(
+        let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
+        let mut record = DailyUnitRecord::new(identity.clone(), "E2", "C");
+        record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
+        record.frozen_packet = Some(packet.clone());
+        record.lock_token = Some("bad".into());
+        record.use_id = Some("bad".into());
+        record.accepted = Some(prior.clone());
+        record.generated_result = Some(json!({"response":"{invalid_json"}));
+        save_daily_unit_record(&context.journal, &record).unwrap();
+        let bad = execute(
+            observer_request("bad"),
+            &context,
+            &OneShotClient::at_path(root.path().join("no-model")),
+            &cogitate,
+            &mut Vec::new(),
+        );
+        let RuntimeOutcome::StageFailed(error) = bad else {
+            panic!("{bad:?}")
+        };
+        assert_eq!(error.phase, "parse", "{error:?}");
+        let failed = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(failed.reason_code.as_deref(), Some("schema_invalid"));
+        assert!(failed.generated_result.is_none());
+        assert!(failed.action_plan.is_none());
+        assert!(failed.receipts.is_empty());
+        assert_eq!(
+            serde_json::to_value(&failed.accepted).unwrap(),
+            serde_json::to_value(Some(&prior)).unwrap()
+        );
+        assert_eq!(
+            solstone_core_facets::read_facet_entity_observations(&context.journal, "work", "ada")
+                .unwrap(),
+            before
+        );
+        assert_eq!(
+            fs::read_to_string(stub.with_extension("sh.count"))
+                .unwrap()
+                .trim(),
+            "1"
+        );
+        with_daily_unit_authority(&context.journal, &identity, |authority| {
+            let current = authority.record_mut().as_mut().unwrap();
+            current.lock_token = Some("retry".into());
+            current.use_id = Some("retry".into());
+            authority.checkpoint()
+        })
+        .unwrap();
+        let retry = execute(
+            observer_request("retry"),
+            &context,
+            &generate,
+            &cogitate,
+            &mut Vec::new(),
+        );
+        assert!(
+            matches!(retry, RuntimeOutcome::Finished { .. }),
+            "{retry:?}"
+        );
+        let accepted = load_daily_unit_record(&context.journal, &identity)
+            .unwrap()
+            .unwrap();
+        assert!(accepted.is_reusable_for("E2", "C"));
+        assert_eq!(accepted.frozen_packet.as_ref(), Some(&packet));
+        assert_eq!(
+            fs::read_to_string(stub.with_extension("sh.count"))
+                .unwrap()
+                .trim(),
+            "2"
+        );
+        assert_eq!(
+            solstone_core_facets::read_live_observations(
                 &context.journal,
                 "work",
                 "ada",
+                Default::default()
             )
-            .unwrap();
-            let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
-            let mut record = DailyUnitRecord::new(identity.clone(), "E2", "C");
-            record.packet_digest = Some(crate::daily_prepare::packet_digest(&packet));
-            record.frozen_packet = Some(packet.clone());
-            record.lock_token = Some("bad".into());
-            record.use_id = Some("bad".into());
-            record.accepted = Some(prior.clone());
-            record.generated_result = Some(
-                json!({"response":observer_output(index, quote, "Prefers concise weekly updates")}),
-            );
-            save_daily_unit_record(&context.journal, &record).unwrap();
-            let bad = execute(
-                observer_request("bad"),
-                &context,
-                &OneShotClient::at_path(root.path().join("no-model")),
-                &cogitate,
-                &mut Vec::new(),
-            );
-            let RuntimeOutcome::StageFailed(error) = bad else {
-                panic!("{bad:?}")
-            };
-            assert_eq!(error.phase, "parse", "{error:?}");
-            let failed = load_daily_unit_record(&context.journal, &identity)
-                .unwrap()
-                .unwrap();
-            assert_eq!(failed.reason_code.as_deref(), Some("schema_invalid"));
-            assert!(failed.generated_result.is_none());
-            assert!(failed.action_plan.is_none());
-            assert!(failed.receipts.is_empty());
-            assert_eq!(
-                serde_json::to_value(&failed.accepted).unwrap(),
-                serde_json::to_value(Some(&prior)).unwrap()
-            );
-            assert_eq!(
-                solstone_core_facets::read_facet_entity_observations(
-                    &context.journal,
-                    "work",
-                    "ada"
-                )
-                .unwrap(),
-                before
-            );
-            assert_eq!(
-                fs::read_to_string(stub.with_extension("sh.count"))
-                    .unwrap()
-                    .trim(),
-                "1"
-            );
-            with_daily_unit_authority(&context.journal, &identity, |authority| {
-                let current = authority.record_mut().as_mut().unwrap();
-                current.lock_token = Some("retry".into());
-                current.use_id = Some("retry".into());
-                authority.checkpoint()
-            })
-            .unwrap();
-            let retry = execute(
-                observer_request("retry"),
-                &context,
-                &generate,
-                &cogitate,
-                &mut Vec::new(),
-            );
-            assert!(
-                matches!(retry, RuntimeOutcome::Finished { .. }),
-                "{retry:?}"
-            );
-            let accepted = load_daily_unit_record(&context.journal, &identity)
-                .unwrap()
-                .unwrap();
-            assert!(accepted.is_reusable_for("E2", "C"));
-            assert_eq!(accepted.frozen_packet.as_ref(), Some(&packet));
-            assert_eq!(
-                fs::read_to_string(stub.with_extension("sh.count"))
-                    .unwrap()
-                    .trim(),
-                "2"
-            );
-            assert_eq!(
-                solstone_core_facets::read_live_observations(
-                    &context.journal,
-                    "work",
-                    "ada",
-                    Default::default()
-                )
-                .unwrap()
-                .items[0]
-                    .content,
-                "Prefers concise weekly updates"
-            );
-        }
+            .unwrap()
+            .items[0]
+                .content,
+            "Prefers concise weekly updates"
+        );
     }
 
     #[test]
@@ -607,6 +612,28 @@ mod tests {
                     None,
                 )
                 .unwrap();
+                let sugg_path = context
+                    .journal
+                    .join("facets/work/entities/20260910_observer_suggestions.json");
+                std::fs::write(
+                    &sugg_path,
+                    json!({
+                        "facet": "work",
+                        "day": "20260910",
+                        "entities": [
+                            {
+                                "entity_id": "ada",
+                                "suggestions": [{"content": "Prefers concise updates"}]
+                            },
+                            {
+                                "entity_id": "grace",
+                                "suggestions": [{"content": "Prefers concise updates"}]
+                            }
+                        ]
+                    })
+                    .to_string(),
+                )
+                .unwrap();
             }
             let packet = crate::daily_prepare::freeze(prepared, &context).unwrap();
             let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
@@ -614,7 +641,7 @@ mod tests {
             record.frozen_packet = Some(packet);
             record.lock_token = Some("attempt".into());
             let mut output: Value = serde_json::from_str(&observer_output(
-                0,
+                1,
                 quote,
                 "Prefers concise monthly updates",
             ))
@@ -622,7 +649,8 @@ mod tests {
             if changed_entity == "grace" {
                 let mut later = output["entities"][0].clone();
                 later["entity_id"] = json!("grace");
-                later["operations"][0]["target_quote"] = json!("Prefers concise updates");
+                later["decisions"][0]["target_id"] = json!(1);
+                later["decisions"][0]["target_quote"] = json!("Prefers concise updates");
                 output["entities"].as_array_mut().unwrap().push(later);
             }
             let response = json!({"response":output.to_string()});
@@ -697,7 +725,7 @@ mod tests {
             record.frozen_packet = Some(packet);
             record.lock_token = Some("attempt".into());
             let response = json!({"response":observer_output(
-                0, "\"Prefers concise updates\"", "Must not replace owner memory",
+                1, "\"Prefers concise updates\"", "Must not replace owner memory",
             )});
             record.generated_result = Some(response.clone());
             save_daily_unit_record(&context.journal, &record).unwrap();

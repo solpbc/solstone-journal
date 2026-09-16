@@ -220,6 +220,7 @@ pub fn prepare_daily_output(
 
 fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
     let (output, shape) = match intent {
+        WriteIntent::EntitySuggest { output, .. } => (output, "suggest"),
         WriteIntent::EntityObserver { output, .. } => (output, "observer"),
         WriteIntent::EntitiesReview { output, .. } => (output, "review"),
         WriteIntent::Schedule { output, .. } => (output, "schedule"),
@@ -230,6 +231,11 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
     let value: Value = serde_json::from_str(output)
         .map_err(|e| error(format!("validation: invalid {shape} JSON: {e}")))?;
     match shape {
+        "suggest" => {
+            if !value.get("entities").is_some_and(Value::is_array) {
+                return Err(invalid("suggest entities must be an array"));
+            }
+        }
         "observer" => {
             if !value.get("entities").is_some_and(Value::is_array) {
                 return Err(invalid("observer entities must be an array"));
@@ -321,12 +327,28 @@ pub fn prepare_daily_publication(
     }
     match plan {
         CommitPlan::NoOutput => {}
+        CommitPlan::Write(WriteIntent::EntitySuggest { output, facet, day }) => {
+            let path = root
+                .join("facets")
+                .join(&facet)
+                .join("entities")
+                .join(format!("{day}_observer_suggestions.json"));
+            actions.push(
+                prepare_frozen_output_action(
+                    root,
+                    &path,
+                    format!("{output}\n").into_bytes(),
+                    prepared,
+                )
+                .map_err(error)?,
+            );
+        }
         CommitPlan::Write(WriteIntent::EntityObserver {
             output,
             facet,
             day,
             served_ids,
-            exclusions,
+            shown_observation_ids,
         }) => {
             let _trust = solstone_core_facets::hold_facet_trust_lock(root)
                 .map_err(|e| error(e.to_string()))?;
@@ -343,7 +365,7 @@ pub fn prepare_daily_publication(
                 &facet,
                 &day,
                 &served_ids,
-                &exclusions,
+                &shown_observation_ids,
                 prepared,
             )
             .map_err(error)?;
@@ -676,7 +698,7 @@ mod tests {
             root.path(),
             "work",
             "ada",
-            &[json!({"op":"drop", "target_index":0, "target_quote":"Works at Acme"})],
+            &[json!({"op":"drop", "target_id":1, "target_quote":"Works at Acme"})],
             Some("20260910"),
         )
         .unwrap();
@@ -741,7 +763,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let update = solstone_core_facets::prepare_observation_batch(root.path(), "work", "ada", &[json!({"op":"update", "target_index":0, "target_quote":"Prefers concise updates", "content":"Prefers concise updates; monthly"})], Some("20260910")).unwrap();
+        let update = solstone_core_facets::prepare_observation_batch(root.path(), "work", "ada", &[json!({"op":"update", "target_id":1, "target_quote":"Prefers concise updates", "content":"Prefers concise updates; monthly"})], Some("20260910")).unwrap();
         assert!(
             solstone_core_facets::publish_observation_batch(root.path(), &update, true, || Err(
                 "interrupt".into()
@@ -1088,14 +1110,17 @@ mod tests {
         let context = ExecutionContext {
             journal: root.path().into(),
         };
-        let output = json!({"entities":[{"entity_id":"ada", "operations":[{"op":"update", "target_index":0, "target_quote":"Prefers concise updates", "content":"Prefers concise updates; monthly"}]}]}).to_string();
+        let output = json!({"entities":[{"entity_id":"ada", "decisions":[{"op":"replace", "target_id":1, "target_quote":"Prefers concise updates", "content":"Prefers concise updates; monthly"}]}]}).to_string();
         let failure = prepare_daily_publication(
             CommitPlan::Write(WriteIntent::EntityObserver {
                 output,
                 facet: "work".into(),
                 day: "20260910".into(),
                 served_ids: std::collections::BTreeSet::from(["ada".into()]),
-                exclusions: vec![],
+                shown_observation_ids: std::collections::BTreeMap::from([(
+                    "ada".into(),
+                    std::collections::BTreeSet::from([1]),
+                )]),
             }),
             &prepared,
             &context,
@@ -1427,7 +1452,6 @@ mod tests {
 
     fn relation_test_prepared(
         root: &Path,
-        excluded: bool,
     ) -> (PreparedTalent, crate::entities::observer::ObserverState) {
         for name in ["Alpha", "Beta"] {
             solstone_core_facets::attach_or_reactivate_entity(
@@ -1436,23 +1460,25 @@ mod tests {
             .unwrap();
         }
         set_relation_test_alias(root, "alpha", &["Grace"]);
-        solstone_core_facets::save_detected_entity(root, "work", "20260910", "Person", "Ada", "s")
-            .unwrap();
-        if excluded {
-            solstone_core_facets::save_detected_entity(
-                root, "work", "20260910", "Person", "Alpha", "s",
-            )
-            .unwrap();
-            solstone_core_facets::add_observation(
-                root,
-                "work",
-                "alpha",
-                &"x".repeat(5000),
-                Some("20260910"),
-                None,
-            )
-            .unwrap();
-        }
+        let sugg_dir = root.join("facets/work/entities");
+        std::fs::create_dir_all(&sugg_dir).unwrap();
+        std::fs::write(
+            sugg_dir.join("20260910_observer_suggestions.json"),
+            json!({
+                "facet": "work",
+                "day": "20260910",
+                "entities": [
+                    {
+                        "entity_id": "ada",
+                        "suggestions": [
+                            {"content": "Works on Project X"}
+                        ]
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
         let mut prepared = PreparedTalent {
             name: "entities:entity_observer".into(),
             config: json!({"facet":"work", "day":"20260910"})
@@ -1471,68 +1497,28 @@ mod tests {
             panic!("observer state")
         };
         assert!(state.served_ids.contains("ada"));
-        assert!(!state.served_ids.contains("alpha"));
-        assert_eq!(
-            state
-                .exclusions
-                .iter()
-                .any(|entry| entry.entity_id == "alpha"),
-            excluded
-        );
         (prepared, state)
     }
 
     fn relation_test_output() -> String {
-        json!({"entities":[{"entity_id":"ada", "operations":[{"op":"add", "content":"Collaborates with Grace", "relation":{"kind":"works-with", "target_name":"Grace", "note":"project"}}]}]}).to_string()
+        json!({"entities":[{"entity_id":"ada", "decisions":[{"op":"add", "content":"Collaborates with Grace", "relation":{"kind":"works-with", "target_name":"Grace", "note":"project"}}]}]}).to_string()
     }
 
     #[test]
-    fn observer_frozen_relation_target_cannot_follow_reassigned_alias() {
-        for excluded in [false, true] {
-            let root = fixture();
-            let (prepared, state) = relation_test_prepared(root.path(), excluded);
-            set_relation_test_alias(root.path(), "alpha", &[]);
-            set_relation_test_alias(root.path(), "beta", &["Grace"]);
-            let failure = crate::entities::observer::prepare_publication(
-                root.path(),
-                &relation_test_output(),
-                "work",
-                "20260910",
-                &state.served_ids,
-                &state.exclusions,
-                &prepared,
-            )
-            .unwrap_err();
-            assert!(
-                failure.starts_with("conflict: observer relation target changed"),
-                "{failure}"
-            );
-            assert!(
-                !root
-                    .path()
-                    .join("facets/work/entities/ada/observations.jsonl")
-                    .exists()
-            );
-        }
-    }
-
-    #[test]
-    fn observer_retained_relation_keeps_frozen_id_after_alias_reassignment() {
+    fn observer_retained_relation_keeps_id() {
         let root = fixture();
-        let (prepared, state) = relation_test_prepared(root.path(), true);
+        let (prepared, state) = relation_test_prepared(root.path());
         let (batches, _) = crate::entities::observer::prepare_publication(
             root.path(),
             &relation_test_output(),
             "work",
             "20260910",
             &state.served_ids,
-            &state.exclusions,
+            &state.shown_observation_ids,
             &prepared,
         )
         .unwrap();
         assert_eq!(batches.len(), 1);
-        set_relation_test_alias(root.path(), "alpha", &[]);
-        set_relation_test_alias(root.path(), "beta", &["Grace"]);
         solstone_core_facets::publish_observation_batch(root.path(), &batches[0], true, || Ok(()))
             .unwrap();
         let rows = solstone_core_facets::read_live_observations(

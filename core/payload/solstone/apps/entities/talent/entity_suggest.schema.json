@@ -13,54 +13,27 @@
         "additionalProperties": false,
         "required": [
           "entity_id",
-          "decisions"
+          "suggestions"
         ],
         "properties": {
           "entity_id": {
             "type": "string",
             "maxLength": 160
           },
-          "decisions": {
+          "suggestions": {
             "type": "array",
-            "maxItems": 20,
+            "maxItems": 3,
             "items": {
               "type": "object",
               "additionalProperties": false,
               "required": [
-                "op",
-                "target_id",
-                "target_quote",
                 "content",
                 "reasoning",
                 "relation"
               ],
               "properties": {
-                "op": {
-                  "type": "string",
-                  "enum": [
-                    "add",
-                    "replace",
-                    "skip"
-                  ]
-                },
-                "target_id": {
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "target_quote": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "maxLength": 300
-                },
                 "content": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
+                  "type": "string",
                   "maxLength": 600
                 },
                 "reasoning": {

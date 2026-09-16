@@ -5,3 +5,4 @@ pub mod describe;
 pub mod detection;
 pub mod observer;
 pub mod review;
+pub mod suggest;

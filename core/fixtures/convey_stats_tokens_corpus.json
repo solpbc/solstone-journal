@@ -310,6 +310,8 @@
             "response.body.generators.entities:entity_describe.path",
             "response.body.generators.entities:entity_observer.mtime",
             "response.body.generators.entities:entity_observer.path",
+            "response.body.generators.entities:entity_suggest.mtime",
+            "response.body.generators.entities:entity_suggest.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.facet_newsletter.mtime",
@@ -484,7 +486,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -499,12 +501,38 @@
                   "multi_facet": true,
                   "output": "json",
                   "path": "<TALENT_PATH>",
-                  "priority": 57,
+                  "priority": 58,
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -1038,6 +1066,8 @@
             "response.body.generators.entities:entity_describe.path",
             "response.body.generators.entities:entity_observer.mtime",
             "response.body.generators.entities:entity_observer.path",
+            "response.body.generators.entities:entity_suggest.mtime",
+            "response.body.generators.entities:entity_suggest.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.facet_newsletter.mtime",
@@ -1213,7 +1243,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -1228,12 +1258,38 @@
                   "multi_facet": true,
                   "output": "json",
                   "path": "<TALENT_PATH>",
-                  "priority": 57,
+                  "priority": 58,
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -1885,6 +1941,8 @@
             "response.body.generators.entities:entity_describe.path",
             "response.body.generators.entities:entity_observer.mtime",
             "response.body.generators.entities:entity_observer.path",
+            "response.body.generators.entities:entity_suggest.mtime",
+            "response.body.generators.entities:entity_suggest.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.facet_newsletter.mtime",
@@ -2060,7 +2118,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -2075,12 +2133,38 @@
                   "multi_facet": true,
                   "output": "json",
                   "path": "<TALENT_PATH>",
-                  "priority": 57,
+                  "priority": 58,
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -2733,6 +2817,8 @@
             "response.body.generators.entities:entity_describe.path",
             "response.body.generators.entities:entity_observer.mtime",
             "response.body.generators.entities:entity_observer.path",
+            "response.body.generators.entities:entity_suggest.mtime",
+            "response.body.generators.entities:entity_suggest.path",
             "response.body.generators.event.mtime",
             "response.body.generators.event.path",
             "response.body.generators.facet_newsletter.mtime",
@@ -2907,7 +2993,7 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "group": "Entities",
                   "hook": {
                     "post": "entities:entity_observer",
@@ -2922,12 +3008,38 @@
                   "multi_facet": true,
                   "output": "json",
                   "path": "<TALENT_PATH>",
-                  "priority": 57,
+                  "priority": 58,
                   "schedule": "daily",
                   "schema": "entity_observer.schema.json",
                   "source": "app",
                   "thinking_budget": 2048,
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {

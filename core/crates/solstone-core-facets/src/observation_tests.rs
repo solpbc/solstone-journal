@@ -117,7 +117,7 @@ fn record_ops_keyed_by_entity_id_update_the_relationship_dir() {
         temporary.path(),
         "work",
         "effective-ada",
-        &[json!({"op":"update","target_index":0,"target_quote":"old","content":"new"})],
+        &[json!({"op":"update","target_id":1,"target_quote":"old","content":"new"})],
         None,
     )
     .unwrap();
@@ -470,7 +470,7 @@ fn quote_less_indexed_operations_are_skipped_and_quoted_operations_use_snapshot_
         temporary.path(),
         "work",
         "person",
-        &[json!({"op":"drop","target_index":0})],
+        &[json!({"op":"drop","target_id":1})],
         None,
     )
     .unwrap();
@@ -488,8 +488,8 @@ fn quote_less_indexed_operations_are_skipped_and_quoted_operations_use_snapshot_
         "work",
         "person",
         &[
-            json!({"op":"drop","target_index":0,"target_quote":"FIRST"}),
-            json!({"op":"update","target_index":2,"target_quote":"third","content":"updated third"}),
+            json!({"op":"drop","target_id":1,"target_quote":"FIRST"}),
+            json!({"op":"update","target_id":3,"target_quote":"third","content":"updated third"}),
             json!({"op":"add","content":"appended"}),
         ],
         Some("20260403"),
@@ -518,7 +518,7 @@ fn dropping_the_last_row_truncates_the_file_without_removing_its_directory() {
         temporary.path(),
         "work",
         "person",
-        &[json!({"op":"drop","target_index":0,"target_quote":"only row"})],
+        &[json!({"op":"drop","target_id":1,"target_quote":"only row"})],
         None,
     )
     .unwrap();
@@ -642,20 +642,16 @@ fn stale_quoted_update_preserves_intervening_owner_edit() {
         &[json!({"content":"Owner Edited C","observed_at":2})],
     );
 
-    // Stale update operation with target_quote "Original C" fails with typed Conflict
+    // Stale update operation with target_quote "Original C" is refused without mutating
     let result = record_observation_ops_strict(
         temporary.path(),
         "work",
         "effective-ada",
-        &[
-            json!({"op":"update","target_index":0,"target_quote":"Original C","content":"Worker C2"}),
-        ],
+        &[json!({"op":"update","target_id":1,"target_quote":"Original C","content":"Worker C2"})],
         Some("20260813"),
-    );
-    assert!(matches!(
-        result,
-        Err(ObservationWriteError::Conflict { .. })
-    ));
+    )
+    .unwrap();
+    assert_eq!(result.refused, 1);
 
     // Owner state is preserved
     let observations = read_test_observations(temporary.path(), "work", "legacy-ada").unwrap();
@@ -707,7 +703,7 @@ fn test_atomic_drop_old_plus_add_same_content_day_with_new_relation() {
         "work",
         "effective-ada",
         &[
-            json!({"op":"drop","target_index":0,"target_quote":"Fact X"}),
+            json!({"op":"drop","target_id":1,"target_quote":"Fact X"}),
             json!({"op":"add","content":"Fact X","relation":{"type":"updated_rel"}}),
         ],
         Some("20260813"),
@@ -742,7 +738,7 @@ fn test_update_c_to_c2_plus_add_new_c_both_exist() {
         "work",
         "effective-ada",
         &[
-            json!({"op":"update","target_index":0,"target_quote":"C","content":"C2"}),
+            json!({"op":"update","target_id":1,"target_quote":"C","content":"C2"}),
             json!({"op":"add","content":"C"}),
         ],
         Some("20260813"),

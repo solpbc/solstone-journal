@@ -942,14 +942,14 @@ mod tests {
 
     fn seed_oracle_case(journal: &Path, line: usize, now_ms: i64) {
         match line {
-            101 | 126 | 138 => {
+            103 | 131 | 143 => {
                 for facet in ["personal", "work"] {
                     let declaration = journal.join("facets").join(facet).join("facet.json");
                     fs::create_dir_all(declaration.parent().unwrap()).unwrap();
                     fs::write(declaration, "{}\n").unwrap();
                 }
             }
-            193 => {
+            198 => {
                 for (key, body) in [
                     ("093000_600", "browser_first.jsonl"),
                     ("141500_900", "browser_second.jsonl"),
@@ -959,7 +959,7 @@ mod tests {
                     fs::write(segment.join(body), "browser content\n").unwrap();
                 }
             }
-            221 => {
+            226 => {
                 let cadence = journal.join("health/cadence.json");
                 fs::create_dir_all(cadence.parent().unwrap()).unwrap();
                 fs::write(
@@ -4117,7 +4117,7 @@ mod tests {
         let blocks = oracle_blocks();
         assert_eq!(
             blocks.iter().map(|(line, _, _)| *line).collect::<Vec<_>>(),
-            vec![20, 42, 54, 66, 70, 82, 89, 95, 101, 126, 138, 193, 221]
+            vec![20, 44, 56, 68, 72, 84, 91, 97, 103, 131, 143, 198, 226]
         );
         assert_eq!(blocks.len(), 13);
         assert!(oracle_dry_run_argv(&["--dry-run"]).is_err());

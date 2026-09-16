@@ -1340,8 +1340,27 @@ fi
         .unwrap();
         let owner_path = root.join("facets/work/entities/ada/observations.jsonl");
         let owner_before = std::fs::read(&owner_path).unwrap();
+        let sugg_dir = root.join("facets/work/entities");
+        std::fs::create_dir_all(&sugg_dir).unwrap();
+        std::fs::write(
+            sugg_dir.join("20260910_observer_suggestions.json"),
+            json!({
+                "facet": "work",
+                "day": "20260910",
+                "entities": [
+                    {
+                        "entity_id": "ada",
+                        "suggestions": [
+                            {"content": "Prefers concise weekly updates"}
+                        ]
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
         std::fs::write(apps.join("entities/talent/entity_observer.md"), r#"{
-"type":"generate","schedule":"daily","priority":57,"multi_facet":true,"output":"json","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"load":{"transcripts":false,"percepts":false,"talents":false}
+"type":"generate","schedule":"daily","priority":58,"multi_facet":true,"output":"json","hook":{"pre":"entities:entity_observer","post":"entities:entity_observer"},"load":{"transcripts":false,"percepts":false,"talents":false}
 }
 $observer_context"#).unwrap();
         let source = root.join("chronicle/20260910/mic/090000_60/note_transcript.md");
@@ -1354,17 +1373,18 @@ $observer_context"#).unwrap();
         let classification = source.parent().unwrap().join("talents");
         std::fs::create_dir_all(&classification).unwrap();
         std::fs::write(classification.join("facets.json"), r#"[{"facet":"work"}]"#).unwrap();
-        for (mode, quote) in [
-            ("bad", "\"Prefers concise updates\""),
-            ("good", "Prefers concise updates"),
-        ] {
-            let output = json!({"entities":[{"entity_id":"ada","operations":[{"op":"update","target_index":0,"target_quote":quote,"content":"Prefers concise weekly updates"}]}]}).to_string();
-            std::fs::write(
-                root.join(format!("response-{mode}.json")),
-                model_response(&output, Value::Null).to_string(),
-            )
-            .unwrap();
-        }
+        let good_output = json!({"entities":[{"entity_id":"ada","decisions":[{"op":"replace","target_id":1,"target_quote":"Prefers concise updates","content":"Prefers concise weekly updates"}]}]}).to_string();
+        std::fs::write(
+            root.join("response-good.json"),
+            model_response(&good_output, Value::Null).to_string(),
+        )
+        .unwrap();
+        let bad_output = json!({"invalid": true}).to_string();
+        std::fs::write(
+            root.join("response-bad.json"),
+            model_response(&bad_output, Value::Null).to_string(),
+        )
+        .unwrap();
         std::fs::write(root.join("response-mode"), "bad").unwrap();
         let calls = root.join("model-calls");
         let stub = root.join("generate-stub.sh");

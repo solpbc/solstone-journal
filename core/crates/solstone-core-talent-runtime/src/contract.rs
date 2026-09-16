@@ -19,6 +19,7 @@ pub enum StageId {
     FacetNewsletter,
     EntityDetection,
     EntitiesReview,
+    EntitySuggest,
     EntityObserver,
     SpeakerAttribution,
 }
@@ -57,6 +58,7 @@ pub enum PrePostState {
     FacetNewsletter(crate::facet_newsletter::FacetNewsletterState),
     EntityDetection(crate::entities::detection::DetectionState),
     EntitiesReview(crate::entities::review::ReviewState),
+    EntitySuggest(crate::entities::suggest::SuggestState),
     EntityObserver(crate::entities::observer::ObserverState),
     SpeakerAttribution(crate::speaker_attribution::SpeakerAttributionState),
 }
@@ -97,7 +99,7 @@ pub struct StageSpec {
     pub output_override: Option<OutputOverrideFn>,
 }
 
-pub const HOOK_TABLE: [HookBinding; 14] = [
+pub const HOOK_TABLE: [HookBinding; 15] = [
     HookBinding {
         hook: "documents",
         stage: StageId::Documents,
@@ -145,6 +147,10 @@ pub const HOOK_TABLE: [HookBinding; 14] = [
     HookBinding {
         hook: "entities:entities_review",
         stage: StageId::EntitiesReview,
+    },
+    HookBinding {
+        hook: "entities:entity_suggest",
+        stage: StageId::EntitySuggest,
     },
     HookBinding {
         hook: "entities:entity_observer",
@@ -291,6 +297,18 @@ pub static ENTITIES_REVIEW: StageSpec = StageSpec {
     writes_as_intent: Some(crate::writers::apply),
     output_override: None,
 };
+pub static ENTITY_SUGGEST: StageSpec = StageSpec {
+    stage: StageId::EntitySuggest,
+    gate: Some(crate::entities::suggest::gate),
+    build: Some(crate::entities::suggest::build),
+    prompt_override: Some(crate::entities::suggest::apply_prompt_override),
+    commit: Some(CommitSpec {
+        parse: crate::entities::suggest::parse,
+        commit: crate::entities::suggest::commit,
+    }),
+    writes_as_intent: Some(crate::writers::apply),
+    output_override: None,
+};
 pub static ENTITY_OBSERVER: StageSpec = StageSpec {
     stage: StageId::EntityObserver,
     gate: Some(crate::entities::observer::gate),
@@ -331,6 +349,7 @@ pub fn resolve_hook(hook: &str) -> Option<&'static StageSpec> {
         StageId::FacetNewsletter => &FACET_NEWSLETTER,
         StageId::EntityDetection => &ENTITY_DETECTION,
         StageId::EntitiesReview => &ENTITIES_REVIEW,
+        StageId::EntitySuggest => &ENTITY_SUGGEST,
         StageId::EntityObserver => &ENTITY_OBSERVER,
         StageId::SpeakerAttribution => &SPEAKER_ATTRIBUTION,
     })

@@ -480,12 +480,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -731,12 +742,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -1233,12 +1255,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -1519,12 +1552,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -2100,12 +2144,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -2386,12 +2441,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -2967,12 +3033,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -3253,12 +3330,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -3833,12 +3921,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {
@@ -4119,12 +4218,23 @@
                 "entities:entity_observer": {
                   "app": "entities",
                   "color": "#004d40",
-                  "description": "extracts durable factoids about attached entities from journal content",
+                  "description": "reconciles proposed entity observations against existing observations",
                   "multi_facet": true,
                   "output_format": "json",
                   "schedule": "daily",
                   "source": "app",
                   "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "multi_facet": true,
+                  "output_format": "json",
+                  "schedule": "daily",
+                  "source": "app",
+                  "title": "entity suggest",
                   "type": "generate"
                 },
                 "event": {

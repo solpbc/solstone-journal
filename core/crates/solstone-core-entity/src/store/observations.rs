@@ -423,10 +423,13 @@ pub enum ObservationLookup {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ObservationOperationCounts {
     pub update: usize,
+    pub replace: usize,
     pub add: usize,
     pub drop: usize,
     pub keep: usize,
+    pub skip: usize,
     pub skipped: usize,
+    pub refused: usize,
 }
 
 /// Prepared two-phase commit batch for entity observations.
@@ -1388,82 +1391,114 @@ pub fn apply_ops_to_parsed(
     let next_id_start = rows.iter().map(|r| r.id).max().unwrap_or(0) + 1;
     let mut next_id = next_id_start;
 
-    // Snapshot of live indices before mutations
-    let snapshot_live_indices: Vec<usize> = rows
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| r.retired.is_none())
-        .map(|(idx, _)| idx)
-        .collect();
-
-    // Pass 1: non-add operations (update, drop, keep)
     for op_val in operations {
         let Some(op_obj) = op_val.as_object() else {
+            counts.refused += 1;
             counts.skipped += 1;
             continue;
         };
         let op_type = op_obj.get("op").and_then(Value::as_str).unwrap_or("");
+
         if op_type == "add" {
+            let content = op_obj
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            if content.is_empty() {
+                counts.refused += 1;
+                counts.skipped += 1;
+                continue;
+            }
+
+            let rel_val = op_obj.get("relation").filter(|v| !v.is_null());
+            let candidate_norm = normalize_observation_content(content);
+
+            // Normalized-content guard against ALL rows (live or retired), matching Append
+            let already_present = rows
+                .iter()
+                .any(|r| normalize_observation_content(&r.content) == candidate_norm);
+
+            if already_present {
+                counts.skip += 1;
+                counts.skipped += 1;
+                continue;
+            }
+
+            rows.push(ObservationRow {
+                id: next_id,
+                content: content.to_owned(),
+                observed_at: now,
+                source_day: source_day.map(str::to_owned),
+                relation: rel_val.cloned(),
+                by: Some("model".to_owned()),
+                history: Vec::new(),
+                retired: None,
+                raw_json: None,
+            });
+            next_id += 1;
+            counts.add += 1;
+            changed = true;
             continue;
         }
 
-        if !matches!(op_type, "update" | "drop" | "keep") {
+        if op_type == "skip" {
+            counts.skip += 1;
             counts.skipped += 1;
             continue;
         }
 
-        let target_index_val = op_obj.get("target_index");
+        if op_type == "keep" {
+            counts.keep += 1;
+            continue;
+        }
+
+        if !matches!(op_type, "replace" | "update" | "drop") {
+            counts.refused += 1;
+            counts.skipped += 1;
+            continue;
+        }
+
+        let target_id_opt = op_obj.get("target_id").and_then(Value::as_u64);
+        let full_idx_opt = if let Some(target_id) = target_id_opt {
+            rows.iter()
+                .position(|r| r.id == target_id && r.retired.is_none())
+        } else {
+            None
+        };
+
         let target_quote_val = op_obj.get("target_quote").and_then(Value::as_str);
 
-        let target_idx_opt = target_index_val
-            .and_then(Value::as_u64)
-            .and_then(|idx| usize::try_from(idx).ok());
-
-        // Positional target index without target quote is skipped
-        let Some(target_quote) = target_quote_val.filter(|q| !q.trim().is_empty()) else {
+        let Some(full_idx) = full_idx_opt else {
+            counts.refused += 1;
             counts.skipped += 1;
             continue;
-        };
-
-        let Some(t_idx) = target_idx_opt else {
-            return Err(ObservationWriteError::Conflict {
-                message: format!(
-                    "target index {:?} out of bounds or missing for target quote {:?}",
-                    target_index_val, target_quote
-                ),
-            });
-        };
-
-        let Some(&full_idx) = snapshot_live_indices.get(t_idx) else {
-            return Err(ObservationWriteError::Conflict {
-                message: format!(
-                    "target index {t_idx} out of bounds for target quote {:?}",
-                    target_quote
-                ),
-            });
         };
 
         let candidate = &rows[full_idx];
-        if !matches_quote(&candidate.content, target_quote) {
-            return Err(ObservationWriteError::Conflict {
-                message: format!(
-                    "target quote {:?} does not match snapshot content {:?}",
-                    target_quote, candidate.content
-                ),
-            });
+        if let Some(target_quote) = target_quote_val {
+            if !target_quote.trim().is_empty() && !matches_quote(&candidate.content, target_quote) {
+                counts.refused += 1;
+                counts.skipped += 1;
+                continue;
+            }
+        } else if op_type != "drop" {
+            counts.refused += 1;
+            counts.skipped += 1;
+            continue;
         }
 
         match op_type {
-            "update" => {
+            "replace" | "update" => {
                 let content = op_obj
                     .get("content")
                     .and_then(Value::as_str)
                     .unwrap_or("")
                     .trim();
                 if content.is_empty() {
-                    return Err(ObservationWriteError::Conflict {
-                        message: "update content cannot be blank".into(),
-                    });
+                    counts.refused += 1;
+                    counts.skipped += 1;
+                    continue;
                 }
                 let target_row = &mut rows[full_idx];
                 let old_history = HistoryEntry {
@@ -1480,74 +1515,21 @@ pub fn apply_ops_to_parsed(
                 if let Some(rel) = op_obj.get("relation").filter(|v| !v.is_null()) {
                     target_row.relation = Some(rel.clone());
                 }
-                target_row.by = Some("talent".to_owned());
+                target_row.by = Some("model".to_owned());
+                counts.replace += 1;
                 counts.update += 1;
                 changed = true;
             }
             "drop" => {
                 rows[full_idx].retired = Some(Retired {
                     at: now,
-                    by: "talent".to_owned(),
+                    by: "model".to_owned(),
                 });
                 counts.drop += 1;
                 changed = true;
             }
-            "keep" => {
-                counts.keep += 1;
-            }
             _ => unreachable!(),
         }
-    }
-
-    // Pass 2: add operations
-    for op_val in operations {
-        let Some(op_obj) = op_val.as_object() else {
-            continue;
-        };
-        if op_obj.get("op").and_then(Value::as_str) != Some("add") {
-            continue;
-        }
-
-        let content = op_obj
-            .get("content")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .trim();
-        if content.is_empty() {
-            counts.skipped += 1;
-            continue;
-        }
-
-        let rel_val = op_obj.get("relation").filter(|v| !v.is_null());
-        let candidate_norm = normalize_observation_content(content);
-        let candidate_day = source_day;
-
-        let already_present = rows.iter().any(|r| {
-            r.retired.is_none()
-                && normalize_observation_content(&r.content) == candidate_norm
-                && r.source_day.as_deref() == candidate_day
-                && r.relation.as_ref() == rel_val
-        });
-
-        if already_present {
-            counts.keep += 1;
-            continue;
-        }
-
-        rows.push(ObservationRow {
-            id: next_id,
-            content: content.to_owned(),
-            observed_at: now,
-            source_day: source_day.map(str::to_owned),
-            relation: rel_val.cloned(),
-            by: Some("talent".to_owned()),
-            history: Vec::new(),
-            retired: None,
-            raw_json: None,
-        });
-        next_id += 1;
-        counts.add += 1;
-        changed = true;
     }
 
     Ok((rows, counts, changed))
@@ -1689,5 +1671,57 @@ mod tests {
             normalize_observation_content(base),
             normalize_observation_content("  prefers   async COMMUNICATION.  ")
         );
+    }
+
+    #[test]
+    fn apply_ops_to_parsed_by_target_id() {
+        let jsonl = "{\"id\":1,\"content\":\"Original fact one\",\"observed_at\":1000}\n{\"id\":2,\"content\":\"Original fact two\",\"observed_at\":2000}\n";
+        let parsed =
+            parse_observation_file(jsonl, ObservationParseSource::CapturedSnapshot).unwrap();
+
+        // 1. Unknown target_id -> refused
+        let ops = vec![
+            json!({"op": "replace", "target_id": 99, "target_quote": "Original", "content": "New content"}),
+        ];
+        let (_rows, counts, changed) =
+            apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.refused, 1);
+        assert!(!changed);
+
+        // 2. Mismatched target_quote -> refused
+        let ops = vec![
+            json!({"op": "replace", "target_id": 1, "target_quote": "Nonexistent quote", "content": "New content"}),
+        ];
+        let (_rows, counts, changed) =
+            apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.refused, 1);
+        assert!(!changed);
+
+        // 3. Valid replace -> replaced, preserves id=1, records history
+        let ops = vec![
+            json!({"op": "replace", "target_id": 1, "target_quote": "Original fact one", "content": "Updated fact one"}),
+        ];
+        let (rows, counts, changed) = apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.replace, 1);
+        assert!(changed);
+        assert_eq!(rows[0].id, 1);
+        assert_eq!(rows[0].content, "Updated fact one");
+        assert_eq!(rows[0].history.len(), 1);
+        assert_eq!(rows[0].history[0].content, "Original fact one");
+
+        // 4. Valid drop -> retired
+        let ops = vec![json!({"op": "drop", "target_id": 2, "target_quote": "Original fact two"})];
+        let (rows, counts, changed) = apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.drop, 1);
+        assert!(changed);
+        assert_eq!(rows[1].id, 2);
+        assert!(rows[1].retired.is_some());
+
+        // 5. Add duplicate -> skipped
+        let ops = vec![json!({"op": "add", "content": "original fact one"})];
+        let (_rows, counts, changed) =
+            apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.skip, 1);
+        assert!(!changed);
     }
 }

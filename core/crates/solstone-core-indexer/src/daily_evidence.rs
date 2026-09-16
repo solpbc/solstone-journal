@@ -22,8 +22,10 @@ const OUTPUTS: &[&str] = &[
     "facet_newsletter",
     "morning_briefing",
     "entities_review",
+    "entity_suggest",
     "entity_observer",
     "_entities_entities_review",
+    "_entities_entity_suggest",
     "_entities_entity_observer",
     "pulse",
 ];
@@ -395,6 +397,7 @@ pub fn daily_hook(name: &str, metadata: &Map<String, Value>) -> Result<String, S
             | "facet_newsletter"
             | "morning_briefing"
             | "entities:entities_review"
+            | "entities:entity_suggest"
             | "entities:entity_observer"
     ) || pre.zip(post).is_some_and(|(a, b)| a != b)
     {
@@ -584,7 +587,21 @@ pub fn compute_daily_evidence_revision(
                 capture_day_projection(journal, &d)?.sources
             });
         }
-        json!({"day":day,"facet":facet,"sources":sources,"upstream":if hook=="morning_briefing" {upstream_evidence(journal,day)?}else{Value::Null}})
+        let suggestions_digest = if hook == "entities:entity_observer" {
+            let sugg_path = journal
+                .join("facets")
+                .join(facet.unwrap_or_default())
+                .join("entities")
+                .join(format!("{day}_observer_suggestions.json"));
+            if let Ok(bytes) = fs::read(&sugg_path) {
+                format!("{:x}", Sha256::digest(&bytes))
+            } else {
+                "missing".to_string()
+            }
+        } else {
+            String::new()
+        };
+        json!({"day":day,"facet":facet,"sources":sources,"suggestions_digest":suggestions_digest,"upstream":if hook=="morning_briefing" {upstream_evidence(journal,day)?}else{Value::Null}})
     };
     Ok((
         digest(&json!({"contract":contract,"evidence":evidence})),

@@ -34,6 +34,8 @@ Priority 56:
 
 Priority 57:
 
+Priority 58:
+
 Total: 3 agents
 Post-phase: journal indexer --rescan
 Post-phase: journal journal-stats
@@ -116,6 +118,9 @@ Priority 56:
   skip entities:entities_review — no activity: personal, work
 
 Priority 57:
+  skip entities:entity_suggest — no activity: personal, work
+
+Priority 58:
   skip entities:entity_observer — no activity: personal, work
 
 Total: 3 agents

@@ -17,6 +17,7 @@ enum FrozenState {
     FacetNewsletter(crate::facet_newsletter::FacetNewsletterState),
     MorningBriefing(crate::morning_briefing::MorningBriefingPreState),
     EntitiesReview(crate::entities::review::ReviewState),
+    EntitySuggest(crate::entities::suggest::SuggestState),
     EntityObserver(crate::entities::observer::ObserverState),
 }
 
@@ -86,7 +87,14 @@ pub fn freeze(
         PrePostState::FacetNewsletter(v) => FrozenState::FacetNewsletter(v),
         PrePostState::MorningBriefing(v) => FrozenState::MorningBriefing(v),
         PrePostState::EntitiesReview(v) => FrozenState::EntitiesReview(v),
-        PrePostState::EntityObserver(v) => FrozenState::EntityObserver(v),
+        PrePostState::EntitySuggest(v) => FrozenState::EntitySuggest(v),
+        PrePostState::EntityObserver(v) => {
+            prepared.config.insert(
+                "_daily_observation_before".to_owned(),
+                Value::Object(v.observation_before.clone()),
+            );
+            FrozenState::EntityObserver(v)
+        }
         _ => {
             return Err(failure(
                 &prepared,
@@ -146,6 +154,9 @@ pub fn thaw(packet: &Value) -> Result<ThawedStage, String> {
         FrozenState::MorningBriefing(v) => (PrePostState::MorningBriefing(v), "morning_briefing"),
         FrozenState::EntitiesReview(v) => {
             (PrePostState::EntitiesReview(v), "entities:entities_review")
+        }
+        FrozenState::EntitySuggest(v) => {
+            (PrePostState::EntitySuggest(v), "entities:entity_suggest")
         }
         FrozenState::EntityObserver(v) => {
             (PrePostState::EntityObserver(v), "entities:entity_observer")
@@ -243,7 +254,10 @@ fn capture_owner_expectations(
                 .map_err(|e| e.to_string())?
         } else if matches!(
             hook,
-            "facet_newsletter" | "entities:entities_review" | "entities:entity_observer"
+            "facet_newsletter"
+                | "entities:entities_review"
+                | "entities:entity_suggest"
+                | "entities:entity_observer"
         ) {
             prepared
                 .config
@@ -279,6 +293,9 @@ fn capture_owner_expectations(
     ) {
         let relative = match hook {
             "facet_newsletter" => Some(format!("facets/{facet}/news/{day}.md")),
+            "entities:entity_suggest" => Some(format!(
+                "facets/{facet}/entities/{day}_observer_suggestions.json"
+            )),
             "entities:entity_observer" => Some(format!(
                 "facets/{facet}/entities/{day}_observer_outcome.json"
             )),

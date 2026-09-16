@@ -69,12 +69,17 @@ pub enum WriteIntent {
         facet: String,
         day: String,
     },
+    EntitySuggest {
+        output: String,
+        facet: String,
+        day: String,
+    },
     EntityObserver {
         output: String,
         facet: String,
         day: String,
         served_ids: std::collections::BTreeSet<String>,
-        exclusions: Vec<crate::entities::observer::EntityBudgetExclusion>,
+        shown_observation_ids: std::collections::BTreeMap<String, std::collections::BTreeSet<u64>>,
     },
     SpeakerAttribution {
         output: String,
@@ -220,12 +225,29 @@ pub fn apply(
                 })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
+        CommitPlan::Write(WriteIntent::EntitySuggest { output, facet, day }) => {
+            let path = context
+                .journal
+                .join("facets")
+                .join(&facet)
+                .join("entities")
+                .join(format!("{day}_observer_suggestions.json"));
+            write_output(path, &format!("{output}\n")).map_err(|e| {
+                StageError::new(
+                    "write-intent",
+                    "entities:entity_suggest",
+                    "entities:entity_suggest",
+                    e.to_string(),
+                )
+            })?;
+            Ok(CommitDisposition::CommittedNoOutput)
+        }
         CommitPlan::Write(WriteIntent::EntityObserver {
             output,
             facet,
             day,
             served_ids,
-            exclusions,
+            shown_observation_ids,
         }) => {
             crate::entities::observer::apply_result(
                 &context.journal,
@@ -233,7 +255,7 @@ pub fn apply(
                 &facet,
                 &day,
                 &served_ids,
-                &exclusions,
+                &shown_observation_ids,
             )
             .map_err(|detail| {
                 StageError::new(
