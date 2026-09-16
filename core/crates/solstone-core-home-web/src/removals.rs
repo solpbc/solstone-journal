@@ -111,6 +111,33 @@ pub async fn approve(
         mark_ids.clone(),
     )
     .await;
+    let post_commit_failure_count = match &call {
+        ClientCall::Completed(Ok(receipt)) => Some(receipt),
+        ClientCall::Completed(Err(retention::ClientError::Refused(refused))) => {
+            Some(refused.receipt_value())
+        }
+        _ => None,
+    }
+    .and_then(|r| r.get("outcome"))
+    .and_then(|o| o.get("targets"))
+    .and_then(|t| t.as_array())
+    .map(|targets| {
+        targets
+            .iter()
+            .filter(|target| {
+                target
+                    .as_object()
+                    .and_then(|obj| obj.get("post_commit_failure"))
+                    .is_some_and(Value::is_object)
+            })
+            .count()
+    })
+    .unwrap_or(0);
+    if post_commit_failure_count > 0 {
+        log::warn!(
+            "removal_approve completed with {post_commit_failure_count} post-commit failure(s)"
+        );
+    }
     let outcome = approve_outcome(call);
     let requested_count = mark_ids.len();
     append_action(
@@ -123,6 +150,7 @@ pub async fn approve(
             "not_removed_count": outcome.not_removed_count,
             "halted": outcome.halted,
             "outcome_state": outcome.state,
+            "post_commit_failure_count": post_commit_failure_count,
         }),
     );
     write_response(outcome.state, requested_count, outcome)

@@ -782,6 +782,11 @@ fn real_executor_approval_releases_only_named_files_and_drops_the_mark() {
             });
         assert_eq!(approved.1["state"], "approve.deleted");
         assert!(!segment.join("audio.flac").exists());
+        let events = fs::read_to_string(segment.join("events.jsonl")).expect("events.jsonl");
+        assert!(events.contains("\"tract\":\"retention\""));
+        assert!(events.contains("\"event\":\"original_deleted\""));
+        assert!(events.contains("\"name\":\"audio.flac\""));
+        assert!(events.contains("\"class\":\"policy_raw_release\""));
         assert_eq!(
             fs::read(segment.join("notes.txt")).expect("other bytes"),
             notes
@@ -803,6 +808,103 @@ fn real_executor_approval_releases_only_named_files_and_drops_the_mark() {
         let listed = run_retention(&PathBuf::from(&binary), &["marks", "--journal", &root]);
         assert_eq!(listed["marks"]["marks"], json!({}));
     }
+}
+
+#[test]
+fn real_executor_approval_with_directory_events_jsonl_succeeds_and_logs_post_commit_failure() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    let segment = seed_segment(harness.root.path());
+    let policy = r#"{"default_rule":{"anchor":"captured","period":1,"priority":0},"enabled":true}"#;
+    let root = harness.root.path().display().to_string();
+    let marked = run_retention(
+        &binary,
+        &[
+            "mark",
+            "--journal",
+            &root,
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            policy,
+        ],
+    );
+    let id = marked["marks"]["marks"]
+        .as_object()
+        .expect("marks")
+        .keys()
+        .next()
+        .expect("mark id")
+        .to_owned();
+
+    // Create events.jsonl as a directory to force post_commit_failure during release
+    fs::create_dir_all(segment.join("events.jsonl")).expect("events directory obstacle");
+
+    let binary = binary.display().to_string();
+    let approved = temp_env::with_vars([("SOLSTONE_RETENTION_BIN", Some(binary.as_str()))], || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/approve", json!({"mark_ids": [id]})),
+        )
+    });
+    assert_eq!(approved.1["state"], "approve.deleted");
+    assert_eq!(approved.1["removed_count"], 1);
+    assert!(!segment.join("audio.flac").exists());
+
+    let actions = action_records(harness.root.path());
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0]["action"], "removal_approve");
+    assert_eq!(actions[0]["params"]["post_commit_failure_count"], 1);
+}
+
+#[test]
+fn real_executor_clean_approval_records_zero_post_commit_failures() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    let segment = seed_segment(harness.root.path());
+    let policy = r#"{"default_rule":{"anchor":"captured","period":1,"priority":0},"enabled":true}"#;
+    let root = harness.root.path().display().to_string();
+    let marked = run_retention(
+        &binary,
+        &[
+            "mark",
+            "--journal",
+            &root,
+            "--today",
+            "2026-08-06",
+            "--now",
+            "2026-08-06T00:00:00Z",
+            "--policy",
+            policy,
+        ],
+    );
+    let id = marked["marks"]["marks"]
+        .as_object()
+        .expect("marks")
+        .keys()
+        .next()
+        .expect("mark id")
+        .to_owned();
+
+    let binary = binary.display().to_string();
+    let approved = temp_env::with_vars([("SOLSTONE_RETENTION_BIN", Some(binary.as_str()))], || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/approve", json!({"mark_ids": [id]})),
+        )
+    });
+    assert_eq!(approved.1["state"], "approve.deleted");
+    assert_eq!(approved.1["removed_count"], 1);
+    assert!(!segment.join("audio.flac").exists());
+
+    let actions = action_records(harness.root.path());
+    assert_eq!(actions.len(), 1);
+    assert_eq!(actions[0]["action"], "removal_approve");
+    assert_eq!(actions[0]["params"]["post_commit_failure_count"], 0);
 }
 
 #[test]
