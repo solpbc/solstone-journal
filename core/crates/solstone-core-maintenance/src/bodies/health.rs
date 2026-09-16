@@ -14,9 +14,9 @@ use solstone_core_retention::door::{compact_log, remove_logs, remove_planned_opl
 use solstone_core_retention::logs::{
     Compaction, EntryKind, Kept, LogPlan, LogPolicy, day_key, plan as plan_logs, plan_compactions,
 };
-use solstone_core_retention::marks::{Proposal, RemovalClass, load, reconcile};
+use solstone_core_retention::marks::{MarkState, Proposal, RemovalClass, load, reconcile};
 use solstone_core_retention::oplog_retention::{OplogRetentionPlan, plan_oplog_retention};
-use solstone_core_retention::policy::{policy_from_retention, policy_would_release};
+use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
 use solstone_core_retention::receipt::Outcome;
 use solstone_core_retention::sweep::plan as plan_sweep;
 
@@ -64,13 +64,20 @@ fn mark_raw(journal: &Path, services: &HealthServices<'_>) -> CliRun {
         Ok(config) => config,
         Err(error) => return mark_unavailable(error),
     };
-    let retention = config
-        .get("retention")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default();
-    let policy = policy_from_retention(&retention);
+    let policy = policy_from_journal_config(&config);
     if !policy_would_release(&policy) {
+        let register = match load(journal) {
+            Ok(register) => register,
+            Err(_) => return mark_refused(),
+        };
+        let has_marked_policy_raw_release = register.marks.values().any(|mark| {
+            matches!(mark.state, MarkState::Marked) && mark.class == RemovalClass::PolicyRawRelease
+        });
+        if has_marked_policy_raw_release
+            && reconcile(journal, RemovalClass::PolicyRawRelease, &[], services.now).is_err()
+        {
+            return mark_refused();
+        }
         return success("mark-raw: your retention settings keep all original media.".to_owned());
     }
 
@@ -485,9 +492,7 @@ fn usage_error(id: &str, args: &[String], detail: &str) -> CliRun {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        policy_from_retention, policy_would_release, positive_config_days, prune_refused, run,
-    };
+    use super::{positive_config_days, prune_refused, run};
     use crate::HealthServices;
     use crate::timezone::HostTimezoneSource;
     use chrono::{FixedOffset, TimeZone, Utc};
@@ -495,7 +500,8 @@ mod tests {
     use solstone_core_journal_io::JournalRoot;
     use solstone_core_journal_io::operational_log::{OplogFormat, create_oplog_at};
     use solstone_core_retention::Target;
-    use solstone_core_retention::marks::load;
+    use solstone_core_retention::marks::{Failure, RemovalClass, load};
+    use solstone_core_retention::policy::{policy_from_journal_config, policy_would_release};
     use solstone_core_retention::receipt::{NotRemoved, Outcome, RunHalt, TargetOutcome};
 
     struct Host;
@@ -516,16 +522,18 @@ mod tests {
 
     #[test]
     fn policy_translation_matches_keep_days_processed_and_stream_overrides() {
-        let retention = object(json!({
-            "raw_media": "days", "raw_media_days": 3,
-            "raw_media_minimum_days": -7,
-            "per_stream": {
-                "keep": {"raw_media": "keep"},
-                "processed": {"raw_media": "processed"},
-                "bad": 1
+        let config = json!({
+            "retention": {
+                "raw_media": "days", "raw_media_days": 3,
+                "raw_media_minimum_days": -7,
+                "per_stream": {
+                    "keep": {"raw_media": "keep"},
+                    "processed": {"raw_media": "processed"},
+                    "bad": 1
+                }
             }
-        }));
-        let policy = policy_from_retention(&retention);
+        });
+        let policy = policy_from_journal_config(&object(config));
         assert_eq!(policy.default_rule.period.unwrap().0, 3);
         assert!(policy.rule_for("keep").period.is_none());
         assert_eq!(policy.rule_for("processed").period.unwrap().0, 0);
@@ -535,9 +543,10 @@ mod tests {
 
     #[test]
     fn invalid_days_keep_and_config_days_reject_bool_and_nonpositive() {
-        let policy = policy_from_retention(&object(
-            json!({"raw_media": "days", "raw_media_days": 0, "empty_audio": "keep"}),
-        ));
+        let config = json!({
+            "retention": {"raw_media": "days", "raw_media_days": 0, "empty_audio": "keep"}
+        });
+        let policy = policy_from_journal_config(&object(config));
         assert!(!policy_would_release(&policy));
         assert_eq!(positive_config_days(&json!(30)), Some(30));
         assert_eq!(positive_config_days(&json!(true)), None);
@@ -863,6 +872,411 @@ mod tests {
             format!("{header}\n{{\"start\":0.0,\"text\":\"hello\"}}\n"),
         )
         .unwrap();
+    }
+
+    fn seed_empty_terminal_on(
+        journal: &std::path::Path,
+        day: &str,
+        stream: &str,
+        dir: &str,
+    ) -> std::path::PathBuf {
+        let segment = journal.join("chronicle").join(day).join(stream).join(dir);
+        std::fs::create_dir_all(&segment).unwrap();
+        let raw = b"raw";
+        std::fs::write(segment.join("audio.flac"), raw).unwrap();
+        let header = json!({
+            "segment": dir,
+            "_solstone_processing": {
+                "schema": "solstone.processing.v1",
+                "state": "empty",
+                "reason_code": "no_decodable_audio",
+                "handler": "transcribe",
+                "attempted_at": "2026-03-01T00:00:00Z",
+                "input_size": raw.len(),
+            }
+        });
+        std::fs::write(segment.join("audio.jsonl"), format!("{header}\n")).unwrap();
+        segment
+    }
+
+    #[test]
+    fn unreleasing_journal_reconciles_existing_marked_raw_release_marks() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "keep", "empty_audio": "keep"}
+            }),
+        );
+        let target = Target {
+            day: "20260301".to_owned(),
+            stream: "field.audio".to_owned(),
+            dir: "070000_17".to_owned(),
+        };
+        let names = vec!["audio.flac".to_owned()];
+        let now = Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap();
+        solstone_core_retention::marks::reconcile(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &[(
+                target,
+                solstone_core_retention::marks::Proposal {
+                    bytes: 100,
+                    reason: "initial mark".to_owned(),
+                    names,
+                },
+            )],
+            now,
+        )
+        .unwrap();
+        let before = load(journal.path()).unwrap();
+        assert_eq!(before.marks.len(), 1);
+
+        let host = Host;
+        let result = run(
+            "health:mark-raw",
+            &[],
+            journal.path(),
+            &HealthServices {
+                now,
+                host_timezone: &host,
+            },
+        );
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stdout,
+            "mark-raw: your retention settings keep all original media.\n"
+        );
+        let after = load(journal.path()).unwrap();
+        assert!(after.marks.is_empty());
+    }
+
+    #[test]
+    fn unreleasing_journal_without_marks_does_not_create_register_file() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "keep", "empty_audio": "keep"}
+            }),
+        );
+        let host = Host;
+        let result = run(
+            "health:mark-raw",
+            &[],
+            journal.path(),
+            &HealthServices {
+                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+                host_timezone: &host,
+            },
+        );
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stdout,
+            "mark-raw: your retention settings keep all original media.\n"
+        );
+        assert!(!journal.path().join("health/retention-marks.json").exists());
+    }
+
+    #[test]
+    fn mark_raw_preserves_empty_audio_when_preserve_all_is_true() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "transcribe": {"preserve_all": true},
+                "retention": {"raw_media": "processed", "empty_audio": "processed"}
+            }),
+        );
+        seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
+
+        let host = Host;
+        let services = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+        let result = run("health:mark-raw", &[], journal.path(), &services);
+        assert_eq!(result.exit_code, 0);
+        let register = load(journal.path()).unwrap();
+        assert_eq!(register.marks.len(), 0);
+    }
+
+    #[test]
+    fn mark_raw_marks_empty_audio_when_preserve_all_is_absent() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "processed", "empty_audio": "processed"}
+            }),
+        );
+        seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
+
+        let host = Host;
+        let services = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+        let result = run("health:mark-raw", &[], journal.path(), &services);
+        assert_eq!(result.exit_code, 0);
+        assert!(result.stdout.contains("new items: 1"));
+        let register = load(journal.path()).unwrap();
+        assert_eq!(register.marks.len(), 1);
+        let mark = register.marks.values().next().unwrap();
+        assert_eq!(mark.proposal.names, vec!["audio.flac"]);
+    }
+
+    #[test]
+    fn unreleasing_journal_with_malformed_register_returns_error_and_preserves_bytes() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "keep", "empty_audio": "keep"}
+            }),
+        );
+        let health_dir = journal.path().join("health");
+        std::fs::create_dir_all(&health_dir).unwrap();
+        let marks_path = health_dir.join("retention-marks.json");
+        let malformed_bytes = b"not valid json {{{";
+        std::fs::write(&marks_path, malformed_bytes).unwrap();
+
+        let host = Host;
+        let result = run(
+            "health:mark-raw",
+            &[],
+            journal.path(),
+            &HealthServices {
+                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+                host_timezone: &host,
+            },
+        );
+        assert_ne!(result.exit_code, 0);
+        let current_bytes = std::fs::read(&marks_path).unwrap();
+        assert_eq!(current_bytes, malformed_bytes);
+    }
+
+    #[test]
+    fn keep_keep_with_no_register_leaves_health_directory_nonexistent() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "keep", "empty_audio": "keep"}
+            }),
+        );
+        let host = Host;
+        let result = run(
+            "health:mark-raw",
+            &[],
+            journal.path(),
+            &HealthServices {
+                now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+                host_timezone: &host,
+            },
+        );
+        assert_eq!(result.exit_code, 0);
+        assert_eq!(
+            result.stdout,
+            "mark-raw: your retention settings keep all original media.\n"
+        );
+        assert!(!journal.path().join("health").exists());
+    }
+
+    #[test]
+    fn keep_keep_reconciles_marked_and_preserves_failed_policy_raw_release_marks() {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "processed", "empty_audio": "processed"}
+            }),
+        );
+        let segment =
+            seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
+
+        let host = Host;
+        let services_day2 = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+        let result1 = run("health:mark-raw", &[], journal.path(), &services_day2);
+        assert_eq!(result1.exit_code, 0);
+        assert!(result1.stdout.contains("new items: 1"));
+
+        let register1 = load(journal.path()).unwrap();
+        assert_eq!(register1.marks.len(), 1);
+
+        let fail_target = Target {
+            day: "20260301".to_owned(),
+            stream: "field.audio".to_owned(),
+            dir: "080000_17".to_owned(),
+        };
+        let fail_names = vec!["audio.flac".to_owned()];
+        let first_mark = register1.marks.values().next().unwrap();
+        solstone_core_retention::marks::reconcile(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &[
+                (first_mark.target.clone(), first_mark.proposal.clone()),
+                (
+                    fail_target.clone(),
+                    solstone_core_retention::marks::Proposal {
+                        bytes: 3,
+                        reason: "fail test".to_owned(),
+                        names: fail_names.clone(),
+                    },
+                ),
+            ],
+            services_day2.now,
+        )
+        .unwrap();
+        solstone_core_retention::marks::record_failure(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &fail_target,
+            &fail_names,
+            Failure {
+                reason: "permission denied".to_owned(),
+                at: String::new(),
+                staged: None,
+            },
+            services_day2.now,
+        )
+        .unwrap();
+
+        let register_with_failed = load(journal.path()).unwrap();
+        assert_eq!(register_with_failed.marks.len(), 2);
+
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "keep", "empty_audio": "keep"}
+            }),
+        );
+
+        let services_day3 = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 3, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+        let result2 = run("health:mark-raw", &[], journal.path(), &services_day3);
+        assert_eq!(result2.exit_code, 0);
+        assert_eq!(
+            result2.stdout,
+            "mark-raw: your retention settings keep all original media.\n"
+        );
+
+        let register2 = load(journal.path()).unwrap();
+        assert_eq!(register2.marks.len(), 1);
+        let remaining = register2.marks.values().next().unwrap();
+        assert_eq!(remaining.target, fail_target);
+        assert!(matches!(
+            remaining.state,
+            solstone_core_retention::marks::MarkState::Failed(_)
+        ));
+        assert!(segment.join("audio.flac").exists());
+    }
+
+    #[test]
+    fn headline_migration_marks_empty_audio_under_releasing_config_then_reconciles_on_preserve_all_config()
+     {
+        let journal = tempfile::tempdir().unwrap();
+        write_config(
+            journal.path(),
+            json!({
+                "retention": {"raw_media": "processed", "empty_audio": "processed"}
+            }),
+        );
+        let segment =
+            seed_empty_terminal_on(journal.path(), "20260301", "field.audio", "070000_17");
+
+        let host = Host;
+        let services_day2 = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 2, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+        let result1 = run("health:mark-raw", &[], journal.path(), &services_day2);
+        assert_eq!(result1.exit_code, 0);
+        assert!(result1.stdout.contains("new items: 1"));
+
+        let register1 = load(journal.path()).unwrap();
+        assert_eq!(register1.marks.len(), 1);
+
+        let fail_target = Target {
+            day: "20260301".to_owned(),
+            stream: "field.audio".to_owned(),
+            dir: "080000_17".to_owned(),
+        };
+        let fail_names = vec!["audio.flac".to_owned()];
+        let first_mark = register1.marks.values().next().unwrap();
+        solstone_core_retention::marks::reconcile(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &[
+                (first_mark.target.clone(), first_mark.proposal.clone()),
+                (
+                    fail_target.clone(),
+                    solstone_core_retention::marks::Proposal {
+                        bytes: 3,
+                        reason: "fail test".to_owned(),
+                        names: fail_names.clone(),
+                    },
+                ),
+            ],
+            services_day2.now,
+        )
+        .unwrap();
+        solstone_core_retention::marks::record_failure(
+            journal.path(),
+            RemovalClass::PolicyRawRelease,
+            &fail_target,
+            &fail_names,
+            Failure {
+                reason: "permission denied".to_owned(),
+                at: String::new(),
+                staged: None,
+            },
+            services_day2.now,
+        )
+        .unwrap();
+
+        let register_with_failed = load(journal.path()).unwrap();
+        assert_eq!(register_with_failed.marks.len(), 2);
+        let has_marked = register_with_failed
+            .marks
+            .values()
+            .any(|m| matches!(m.state, solstone_core_retention::marks::MarkState::Marked));
+        assert!(has_marked, "Marked must be present immediately before run");
+
+        // Headline configuration change: preserve_all true + keep + processed
+        write_config(
+            journal.path(),
+            json!({
+                "transcribe": {"preserve_all": true},
+                "retention": {"raw_media": "keep", "empty_audio": "processed"}
+            }),
+        );
+
+        let services_day3 = HealthServices {
+            now: Utc.with_ymd_and_hms(2026, 3, 3, 1, 0, 0).unwrap(),
+            host_timezone: &host,
+        };
+        let result2 = run("health:mark-raw", &[], journal.path(), &services_day3);
+        assert_eq!(result2.exit_code, 0);
+        assert_eq!(
+            result2.stdout,
+            "mark-raw: your retention settings keep all original media.\n"
+        );
+
+        let register2 = load(journal.path()).unwrap();
+        assert_eq!(register2.marks.len(), 1);
+        let remaining = register2.marks.values().next().unwrap();
+        assert_eq!(remaining.target, fail_target);
+        assert!(matches!(
+            remaining.state,
+            solstone_core_retention::marks::MarkState::Failed(_)
+        ));
+        assert!(segment.join("audio.flac").exists());
     }
 
     fn mark_ids_from_output(output: &str) -> Vec<&str> {

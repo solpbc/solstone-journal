@@ -11,7 +11,7 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::{Local, SecondsFormat};
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 use solstone_core_retention_client as retention;
 
 const LIST_EMPTY: &str = "list.empty";
@@ -262,12 +262,7 @@ fn policy(journal_root: &Path) -> retention::Policy {
         .expect("session gate handled configuration")
         .config
         .unwrap_or_default();
-    retention::policy_from_retention(
-        config
-            .get("retention")
-            .and_then(Value::as_object)
-            .unwrap_or(&Map::new()),
-    )
+    retention::policy_from_journal_config(&config)
 }
 
 async fn call_marks(journal_root: PathBuf) -> ClientCall {

@@ -1059,6 +1059,65 @@ fn product_keep_journal_refuses_when_empty_audio_is_keep() {
     assert!(segment.join("audio.flac").exists());
 }
 
+#[test]
+fn product_keep_journal_refuses_when_empty_audio_is_preserved_via_legacy_key() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    write_keep_journal(harness.root.path(), None);
+    let segment = seed_empty_terminal_on(harness.root.path(), "20260701");
+    let id = mark_empty_audio(&binary, harness.root.path());
+    write_json(
+        harness.root.path(),
+        "config/journal.json",
+        &json!({
+            "setup": {"completed_at": 1_700_000_000_000_i64},
+            "retention": {"raw_media": "keep", "empty_audio": "processed"},
+            "transcribe": {"preserve_all": true}
+        }),
+    );
+    let binary = binary.display().to_string();
+    let refused = temp_env::with_vars([("SOLSTONE_RETENTION_BIN", Some(binary.as_str()))], || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/approve", json!({"mark_ids": [id]})),
+        )
+    });
+    assert_eq!(refused.1["state"], "approve.policy_keeps");
+    assert!(segment.join("audio.flac").exists());
+}
+
+#[test]
+fn product_releasing_journal_refuses_after_start_when_empty_audio_is_preserved_via_legacy_key() {
+    let _guard = EXECUTOR_ENV_LOCK.lock().expect("executor environment lock");
+    let binary = support::retention_binary();
+    let harness = Harness::new();
+    write_keep_journal(harness.root.path(), None);
+    let segment = seed_empty_terminal_on(harness.root.path(), "20260701");
+    let id = mark_empty_audio(&binary, harness.root.path());
+    write_json(
+        harness.root.path(),
+        "config/journal.json",
+        &json!({
+            "setup": {"completed_at": 1_700_000_000_000_i64},
+            "retention": {"raw_media": "processed", "empty_audio": "processed"},
+            "transcribe": {"preserve_all": true}
+        }),
+    );
+    let binary = binary.display().to_string();
+    let refused = temp_env::with_vars([("SOLSTONE_RETENTION_BIN", Some(binary.as_str()))], || {
+        response(
+            harness.router(),
+            request("POST", "/app/home/api/approve", json!({"mark_ids": [id]})),
+        )
+    });
+    assert_eq!(refused.1["state"], "approve.refused_after_start");
+    assert_eq!(refused.1["removed_count"], 0);
+    assert_eq!(refused.1["not_removed_count"], 1);
+    assert_eq!(refused.1["refusals"][0]["name"], "audio.flac");
+    assert!(segment.join("audio.flac").exists());
+}
+
 fn write_retention(root: &Path, retention: Value) {
     write_json(
         root,

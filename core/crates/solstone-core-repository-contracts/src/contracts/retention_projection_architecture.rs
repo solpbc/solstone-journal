@@ -19,6 +19,10 @@ fn source(root: &Path, relative: &str) -> String {
 fn constructs_retention_type(source: &str, type_name: &str) -> bool {
     let construction = format!("{type_name} {{");
     source.match_indices(&construction).any(|(offset, _)| {
+        let prefix = source[..offset].trim_end();
+        if prefix.ends_with("->") || prefix.ends_with("-> retention::") {
+            return false;
+        }
         source[..offset]
             .chars()
             .next_back()
@@ -29,17 +33,30 @@ fn constructs_retention_type(source: &str, type_name: &str) -> bool {
 #[test]
 fn retention_policy_projection_has_one_owner() {
     let root = repository_root();
-    let settings = source(
+    let removals = source(&root, "core/crates/solstone-core-home-web/src/removals.rs");
+    let settings_retention = source(
         &root,
         "core/crates/solstone-core-settings-web/src/retention.rs",
+    );
+    let settings_storage = source(
+        &root,
+        "core/crates/solstone-core-settings-web/src/storage.rs",
     );
     let maintenance = source(
         &root,
         "core/crates/solstone-core-maintenance/src/bodies/health.rs",
     );
 
-    for (name, source) in [("settings", settings), ("maintenance", maintenance)] {
+    let all_four = [
+        ("home-web removals", &removals),
+        ("settings-web retention", &settings_retention),
+        ("settings-web storage", &settings_storage),
+        ("maintenance health", &maintenance),
+    ];
+
+    for (name, source) in all_four {
         for forbidden in [
+            "fn policy_from_journal_config(",
             "fn policy_from_retention(",
             "fn policy_would_release(",
             "fn rule(",
@@ -52,20 +69,27 @@ fn retention_policy_projection_has_one_owner() {
             );
         }
         assert!(
-            !constructs_retention_type(&source, "Policy"),
+            !constructs_retention_type(source, "Policy"),
             "{name} must not construct retention Policy values"
         );
         assert!(
-            !constructs_retention_type(&source, "Rule"),
+            !constructs_retention_type(source, "Rule"),
             "{name} must not construct retention Rule values"
         );
         assert!(
-            source.contains("policy_from_retention("),
+            source.contains("policy_from_journal_config("),
             "{name} must call the retention-owned projection"
         );
+    }
+
+    for (name, source) in [
+        ("home-web removals", &removals),
+        ("settings-web retention", &settings_retention),
+        ("settings-web storage", &settings_storage),
+    ] {
         assert!(
-            source.contains("policy_would_release("),
-            "{name} must call the retention-owned release predicate"
+            !source.contains("policy_from_retention("),
+            "{name} must use policy_from_journal_config, not policy_from_retention"
         );
     }
 }
