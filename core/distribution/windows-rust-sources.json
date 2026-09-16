@@ -25768,7 +25768,8 @@
     "query_utc": "2026-09-16T12:11:43.503653+00:00",
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 484,
+    "source_sha256": "9347eda44a96d9836d0f007100751796b233a90cc54e0bffce07575171911606",
     "windows_notice_package_count": 396
   },
-  "schema": "solstone.windows-rust-notices.v1"
+  "schema": "solstone.windows-rust-notices.v2"
 }

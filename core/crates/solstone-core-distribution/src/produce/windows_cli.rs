@@ -4,6 +4,7 @@
 //! Local Windows production from fixed, typed input paths. Input files provide
 //! no digests, output destinations, trust overrides or new admission authority.
 
+use std::collections::BTreeSet;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
@@ -20,13 +21,139 @@ use super::windows_stage::{AdmittedWindowsNativeInputs, stage_windows_payload};
 
 const USAGE: &str = "produce windows-x86_64 DEST --inputs LOCAL_JSON --logs FRESH_DIRECTORY (absolute paths required)";
 
-fn validate_rust_notices(index: &[u8], notices: &[u8], lock: &str) -> Result<(), String> {
+#[derive(Debug, Deserialize)]
+struct LockPackage {
+    name: String,
+    version: String,
+    source: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct Lock {
+    #[serde(default)]
+    package: Vec<LockPackage>,
+}
+
+/// The digest `population.source` binds to: every external (non-workspace)
+/// `[[package]]` row in `Cargo.lock`, identified the same way the committed
+/// index identifies its own rows (`name@version (source)`). A workspace
+/// member has no `source` and is excluded, so a workspace-internal
+/// dependency edge cannot move this digest -- only an added, removed, or
+/// upgraded external package can.
+fn external_population_sha256(lock: &[u8]) -> Result<String, String> {
+    let text = std::str::from_utf8(lock).map_err(|e| e.to_string())?;
+    let parsed: Lock = toml_edit::de::from_str(text).map_err(|e| e.to_string())?;
+    let mut identities: Vec<String> = parsed
+        .package
+        .into_iter()
+        .filter_map(|package| {
+            package
+                .source
+                .map(|source| format!("{}@{} ({source})", package.name, package.version))
+        })
+        .collect();
+    identities.sort();
+    Ok(crate::digest::sha256_hex(identities.join("\n").as_bytes()))
+}
+
+/// Every path `core/Cargo.toml`'s own `[workspace]` table declares -- as a
+/// `members` entry or an `exclude` entry -- resolved to that path's own
+/// `Cargo.toml` `[package].name`. This is the checkable form of "sol pbc's
+/// own" CLO's 2026-09-16 sign-off requires: excluding a crate from the
+/// workspace build does not disown it, so both lists count.
+fn workspace_owned_crate_names(repo: &Path) -> Result<BTreeSet<String>, String> {
+    let workspace_manifest = repo.join("core/Cargo.toml");
+    let text = std::fs::read_to_string(&workspace_manifest)
+        .map_err(|e| format!("{}: {e}", workspace_manifest.display()))?;
+    let doc: toml_edit::DocumentMut = text
+        .parse()
+        .map_err(|e: toml_edit::TomlError| e.to_string())?;
+    let workspace = doc
+        .get("workspace")
+        .and_then(|item| item.as_table())
+        .ok_or_else(|| format!("{}: no [workspace] table", workspace_manifest.display()))?;
+    let mut declared_paths = Vec::new();
+    for key in ["members", "exclude"] {
+        if let Some(array) = workspace.get(key).and_then(|item| item.as_array()) {
+            declared_paths.extend(
+                array
+                    .iter()
+                    .filter_map(|item| item.as_str().map(str::to_string)),
+            );
+        }
+    }
+    let mut names = BTreeSet::new();
+    for path in declared_paths {
+        let member_manifest = repo.join("core").join(&path).join("Cargo.toml");
+        let member_text = std::fs::read_to_string(&member_manifest)
+            .map_err(|e| format!("{}: {e}", member_manifest.display()))?;
+        let member_doc: toml_edit::DocumentMut = member_text
+            .parse()
+            .map_err(|e: toml_edit::TomlError| e.to_string())?;
+        let name = member_doc
+            .get("package")
+            .and_then(|item| item.get("name"))
+            .and_then(|item| item.as_str())
+            .ok_or_else(|| format!("{}: no [package].name", member_manifest.display()))?;
+        names.insert(name.to_string());
+    }
+    Ok(names)
+}
+
+/// Cargo.lock rows with no `source` that CLO's 2026-09-16 sign-off already
+/// reviewed and accepted as third party despite that: vendored via
+/// `[patch.crates-io]` (`core/Cargo.toml`), which strips `source` the same
+/// way a workspace member's absence does. Adding a name here is itself the
+/// loud, reviewed admission the invariant below requires -- not a silent
+/// pass. `ffmpeg-sys-next`'s redistribution-basis determination is a
+/// separate, open question carried on `clo-50`; it is not a condition on
+/// this check.
+const KNOWN_THIRD_PARTY_NO_SOURCE_EXCEPTIONS: &[&str] = &["ffmpeg-sys-next"];
+
+/// The condition CLO's 2026-09-16 sign-off puts on landing the rebind above:
+/// a Cargo.lock row with no `source` that is not sol pbc's own must not
+/// pass silently. This is a guard on the no-source population, not a
+/// notices change -- it adds no package to `windows-rust-NOTICES.txt` and
+/// leaves `population.source_sha256` untouched.
+fn assert_no_source_population_is_accounted_for(
+    lock: &[u8],
+    owned: &BTreeSet<String>,
+) -> Result<(), String> {
+    let text = std::str::from_utf8(lock).map_err(|e| e.to_string())?;
+    let parsed: Lock = toml_edit::de::from_str(text).map_err(|e| e.to_string())?;
+    let unaccounted: Vec<String> = parsed
+        .package
+        .into_iter()
+        .filter(|package| package.source.is_none())
+        .map(|package| package.name)
+        .filter(|name| {
+            !owned.contains(name)
+                && !KNOWN_THIRD_PARTY_NO_SOURCE_EXCEPTIONS.contains(&name.as_str())
+        })
+        .collect();
+    if !unaccounted.is_empty() {
+        return Err(format!(
+            "Cargo.lock package(s) with no `source` are neither a declared \
+             core/Cargo.toml [workspace] member/exclude nor a named \
+             third-party exception -- not sol pbc's own by the checkable \
+             definition, and must not pass silently: {}",
+            unaccounted.join(", ")
+        ));
+    }
+    Ok(())
+}
+
+fn validate_rust_notices(index: &[u8], notices: &[u8], lock: &[u8]) -> Result<(), String> {
     let index: serde_json::Value = serde_json::from_slice(index).map_err(|e| e.to_string())?;
-    if index["schema"].as_str() != Some("solstone.windows-rust-notices.v1")
-        || index["cargo_lock_sha256"].as_str() != Some(lock)
+    let population_sha256 = external_population_sha256(lock)?;
+    if index["schema"].as_str() != Some("solstone.windows-rust-notices.v2")
+        || index["population"]["source_sha256"].as_str() != Some(&population_sha256)
         || index["notices_sha256"].as_str() != Some(&crate::digest::sha256_hex(notices))
     {
-        return Err("Windows Rust notices do not match the current lock and notice bytes".into());
+        return Err(
+            "Windows Rust notices do not match the current external package population and notice bytes"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -230,6 +357,10 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
         .nth(3)
         .ok_or("missing repository root")?;
     let before = capture_source(repo)?;
+    let lock_bytes = read_bounded(
+        &super::windows_stage::join_components(repo, "core/Cargo.lock"),
+        4 * 1024 * 1024,
+    )?;
     validate_rust_notices(
         &read_bounded(
             &super::windows_stage::join_components(
@@ -245,8 +376,9 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
             ),
             16 * 1024 * 1024,
         )?,
-        &before.lock_sha256,
+        &lock_bytes,
     )?;
+    assert_no_source_population_is_accounted_for(&lock_bytes, &workspace_owned_crate_names(repo)?)?;
     let input_bytes = read_bounded(&args.inputs, 1024 * 1024)?;
     let inputs: LocalInputs = serde_json::from_slice(&input_bytes).map_err(|e| e.to_string())?;
     let native = inputs.admit(repo)?;
@@ -289,9 +421,10 @@ pub fn run_cli(start: &Path, args: &[String]) -> Result<String, String> {
 mod tests {
     use super::*;
 
-    // If this test is red, `core/Cargo.lock` moved and the Windows Rust notices
-    // no longer describe it. The fix is to refresh them: rebuild and republish
-    // the `dependency_source_companion` archive for the new lock, then
+    // If this test is red, the external (non-workspace) Cargo.lock package
+    // population moved and the Windows Rust notices no longer describe it.
+    // The fix is to refresh them: rebuild and republish the
+    // `dependency_source_companion` archive for the new lock, then
     // regenerate the index. `scripts/refresh_windows_rust_notices.py` does
     // this -- see its module docstring -- for the cases where the vendored
     // bytes provably cannot have moved; it refuses with a clear reason when
@@ -300,12 +433,15 @@ mod tests {
     // resolved-graph change that leaves that closure untouched is admitted, on
     // the measurement rather than on assertion.
     //
-    // DO NOT edit `cargo_lock_sha256` on its own. `validate_rust_notices` above
-    // checks only that digest and `notices_sha256`, so editing it turns this
-    // green while `dependency_source_companion` still names an archive keyed to
-    // the OLD lock -- a passing attestation for bytes nobody produced. The
-    // shortcut is reachable, it is one line, and it is the reason this comment
-    // is here rather than in a tracker.
+    // DO NOT hand-edit `population.source_sha256` or `cargo_lock_sha256` on
+    // their own. `validate_rust_notices` above checks `population.source_sha256`
+    // (recomputed from the current lock's external packages) and
+    // `notices_sha256` -- `cargo_lock_sha256` is retained only as the anchor
+    // `dependency_source_companion` is keyed to for the refresh tool's own
+    // `--prior-archive` bookkeeping, and no longer gates this check. Editing
+    // either by hand leaves the companion archive naming or contents stale
+    // for bytes nobody produced. The shortcut is reachable, it is one line,
+    // and it is the reason this comment is here rather than in a tracker.
     //
     // Reached 2026-09-12 by an ordinary dependency pin bump; the bump was
     // reverted rather than the binding weakened.
@@ -313,40 +449,186 @@ mod tests {
     // IGNORED 2026-09-15: this check has zero Windows-specific compilation and
     // was running in the default `--workspace --lib --bins` sweep, so any
     // workspace-internal dependency-edge change anywhere in the ~620-package
-    // lock (this closure is workspace-unified/conservative, not the exact
-    // Windows link graph -- see `population.metadata_feature_scope` in
-    // `windows-rust-sources.json`) could red ordinary, non-Windows journal
-    // dev. Two lodes landing unrelated Rust features hit exactly that
-    // tonight. It is a deliberate pre-release step in the Windows release
-    // procedure now, rather than new automation. Run it explicitly with
-    // `cargo test -p solstone-core-distribution --lib -- --ignored
+    // lock could red ordinary, non-Windows journal dev. It is a deliberate
+    // pre-release step in the Windows release procedure now, rather than new
+    // automation. Run it explicitly with `cargo test -p
+    // solstone-core-distribution --lib -- --ignored
     // committed_rust_notices_match_workspace_lock` before cutting a Windows
     // release.
+    //
+    // REBOUND 2026-09-16: the trigger above was the whole-workspace-lock
+    // digest, so a workspace-internal-only dependency edge (no external
+    // package touched) still reddened it on every workspace build where
+    // someone happened to run the ignored test by hand. The attestation now
+    // binds `population.source_sha256` -- the digest of the complete
+    // Cargo.lock external-source set (`population.source`, 484 packages
+    // today), strictly broader than the Windows notice closure itself
+    // (`population.notices`, 396 packages, "conservative inclusion, not
+    // exact PE link graph" per `population.metadata_feature_scope`) -- so a
+    // workspace-internal edge no longer reds this check, and any added,
+    // removed, or upgraded external package still does.
     #[ignore = "run manually before a Windows release per the release playbook, not on every workspace build (2026-09-15)"]
     #[test]
     fn committed_rust_notices_match_workspace_lock() {
         validate_rust_notices(
             include_bytes!("../../../../distribution/windows-rust-sources.json"),
             include_bytes!("../../../../distribution/windows-rust-NOTICES.txt"),
-            &crate::digest::sha256_hex(include_bytes!("../../../../Cargo.lock")),
+            include_bytes!("../../../../Cargo.lock"),
         )
-        .expect("refresh Windows Rust notices when the workspace lock changes");
+        .expect("refresh Windows Rust notices when the external package population changes");
     }
+
+    // Unlike the ignored test above, this one does not red on an ordinary
+    // workspace-internal dependency edge -- it only reds when a no-`source`
+    // row is neither a declared `core/Cargo.toml` `[workspace]` member/
+    // exclude nor a named exception, which is a structural change to what
+    // the workspace vendors or declares, not routine dependency churn. Runs
+    // in the default `cargo test --lib` sweep.
+    #[test]
+    fn no_source_population_is_accounted_for_at_head() {
+        let repo = Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../../.."));
+        let owned = workspace_owned_crate_names(repo)
+            .expect("resolve core/Cargo.toml's [workspace] members/exclude to crate names");
+        assert_no_source_population_is_accounted_for(
+            include_bytes!("../../../../Cargo.lock"),
+            &owned,
+        )
+        .expect(
+            "Cargo.lock has a no-source package that is neither a declared workspace \
+                 member/exclude nor a named third-party exception (see \
+                 KNOWN_THIRD_PARTY_NO_SOURCE_EXCEPTIONS)",
+        );
+    }
+
+    const LOCK: &[u8] = br#"
+version = 4
+
+[[package]]
+name = "workspace-crate"
+version = "0.1.0"
+dependencies = [
+ "external-crate",
+]
+
+[[package]]
+name = "external-crate"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deadbeef"
+"#;
+
+    // Same external population, a workspace-internal edge added (a second
+    // workspace member, and a dependency edge onto it) -- the exact shape of
+    // the defect this binding fixes: no external `[[package]]` moved.
+    const WORKSPACE_EDGE_MOVED: &[u8] = br#"
+version = 4
+
+[[package]]
+name = "workspace-crate"
+version = "0.1.0"
+dependencies = [
+ "external-crate",
+ "another-workspace-crate",
+]
+
+[[package]]
+name = "another-workspace-crate"
+version = "0.1.0"
+
+[[package]]
+name = "external-crate"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "deadbeef"
+"#;
+
+    // The external package itself moved -- this must still red.
+    const EXTERNAL_PACKAGE_UPGRADED: &[u8] = br#"
+version = 4
+
+[[package]]
+name = "workspace-crate"
+version = "0.1.0"
+dependencies = [
+ "external-crate",
+]
+
+[[package]]
+name = "external-crate"
+version = "1.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cafebabe"
+"#;
 
     #[test]
     fn stale_lock_or_changed_rust_notices_refuse_before_production() {
         let notices = b"original upstream notices";
         let index = serde_json::to_vec(&serde_json::json!({
-            "schema": "solstone.windows-rust-notices.v1",
-            "cargo_lock_sha256": "current-lock",
+            "schema": "solstone.windows-rust-notices.v2",
+            "population": {
+                "source_sha256": external_population_sha256(LOCK).unwrap(),
+            },
             "notices_sha256": crate::digest::sha256_hex(notices),
         }))
         .unwrap();
-        assert!(validate_rust_notices(&index, notices, "current-lock").is_ok());
-        assert!(validate_rust_notices(&index, notices, "changed-lock").is_err());
-        assert!(validate_rust_notices(&index, b"replaced", "current-lock").is_err());
-        assert!(validate_rust_notices(b"{}", notices, "current-lock").is_err());
-        assert!(validate_rust_notices(b"not-json", notices, "current-lock").is_err());
+        assert!(validate_rust_notices(&index, notices, LOCK).is_ok());
+
+        // A workspace-internal-only edge move leaves the external population
+        // -- and therefore the gate -- untouched. Demonstrated, not argued.
+        assert!(validate_rust_notices(&index, notices, WORKSPACE_EDGE_MOVED).is_ok());
+
+        // An external package add/remove/upgrade moves the population digest
+        // and reds, exactly as it should.
+        assert!(validate_rust_notices(&index, notices, EXTERNAL_PACKAGE_UPGRADED).is_err());
+
+        assert!(validate_rust_notices(&index, b"replaced", LOCK).is_err());
+        assert!(validate_rust_notices(b"{}", notices, LOCK).is_err());
+        assert!(validate_rust_notices(b"not-json", notices, LOCK).is_err());
+    }
+
+    const LOCK_UNOWNED_NO_SOURCE: &[u8] = br#"
+version = 4
+
+[[package]]
+name = "workspace-crate"
+version = "0.1.0"
+
+[[package]]
+name = "vendored-third-party"
+version = "1.0.0"
+"#;
+
+    const LOCK_EXCEPTION_NO_SOURCE: &[u8] = br#"
+version = 4
+
+[[package]]
+name = "workspace-crate"
+version = "0.1.0"
+
+[[package]]
+name = "ffmpeg-sys-next"
+version = "9.0.0"
+"#;
+
+    // The invariant CLO's 2026-09-16 sign-off conditions the rebind on: a
+    // no-`source` row that is neither a declared workspace member/exclude
+    // nor a named exception must not pass silently. This is the exact shape
+    // of the gap the sign-off found -- a vendored `[patch.crates-io]`
+    // package loses its `source` the same way a workspace member does.
+    #[test]
+    fn no_source_row_outside_workspace_and_exceptions_reds() {
+        let owned = BTreeSet::from(["workspace-crate".to_string()]);
+        assert!(
+            assert_no_source_population_is_accounted_for(LOCK_UNOWNED_NO_SOURCE, &owned).is_err()
+        );
+    }
+
+    #[test]
+    fn no_source_row_that_is_a_named_exception_is_ok() {
+        let owned = BTreeSet::from(["workspace-crate".to_string()]);
+        assert!(
+            assert_no_source_population_is_accounted_for(LOCK_EXCEPTION_NO_SOURCE, &owned).is_ok()
+        );
     }
 
     fn arguments(root: &Path) -> Vec<String> {

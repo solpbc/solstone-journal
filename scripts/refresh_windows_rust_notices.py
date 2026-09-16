@@ -6,13 +6,16 @@
 
 `produce::windows_cli::tests::committed_rust_notices_match_workspace_lock`
 (`core/crates/solstone-core-distribution/src/produce/windows_cli.rs`) binds
-`core/distribution/windows-rust-sources.json` to the exact `Cargo.lock` it
-describes. Any lock change reds that test until the index, and the ~99 MB
-`dependency_source_companion` vendor-source archive it points at, are
-regenerated for the new lock. This script does that regeneration for the
-one case where it is cheap and safe: the external (non-workspace) dependency
-population is unchanged, so the archive can be rebuilt by copying every
-vendored member across untouched and substituting only `Cargo.lock` itself.
+`core/distribution/windows-rust-sources.json` to `population.source_sha256` --
+a digest of the current lock's external (non-workspace) package set, not the
+whole-lock digest, so a workspace-internal-only dependency edge cannot red it.
+Any change to that external population -- an add, remove, or upgrade -- does
+red it, until the index, and the ~99 MB `dependency_source_companion`
+vendor-source archive it points at, are regenerated for the new lock. This
+script does that regeneration for the one case where it is cheap and safe:
+the external (non-workspace) dependency population is unchanged, so the
+archive can be rebuilt by copying every vendored member across untouched and
+substituting only `Cargo.lock` itself.
 
 It handles two further cases. The first is a **git-source pin move**, where
 the set of external packages is unchanged by `(name, version)` and the rows
@@ -121,6 +124,17 @@ def sha256_file(path: Path) -> str:
 
 def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def external_population_sha256(external: list[dict[str, Any]]) -> str:
+    """The digest `population.source_sha256` binds to: every external
+    (non-workspace) `[[package]]` row, identified the same way the committed
+    index identifies its own rows (`name@version (source)`), sorted and
+    hashed. Must match `windows_cli.rs`'s `external_population_sha256`
+    exactly -- same identity string, same sort, same join.
+    """
+    identities = sorted(f"{p['name']}@{p['version']} ({p['source']})" for p in external)
+    return sha256_bytes("\n".join(identities).encode())
 
 
 def load_index(repo: Path) -> dict[str, Any]:
@@ -876,6 +890,14 @@ def refresh(
 
     old_external = [p for p in old_lock["package"] if p.get("source")]
     new_external = [p for p in new_lock["package"] if p.get("source")]
+
+    if external_population_sha256(old_external) != old["population"]["source_sha256"]:
+        raise RefreshError(
+            "the committed index's population.source_sha256 does not match the "
+            "external package population recovered from --prior-archive's own "
+            "Cargo.lock -- it was edited out of band"
+        )
+
     moved_git = classify_external_delta(old_external, new_external)
 
     workspace_delta = workspace_only_version_delta(
@@ -1108,6 +1130,7 @@ def refresh(
     new_index["population"]["query_utc"] = datetime.datetime.now(
         datetime.timezone.utc
     ).isoformat()
+    new_index["population"]["source_sha256"] = external_population_sha256(new_external)
     new_index["dependency_source_companion"] = {
         "filename": new_archive_path.name,
         "bytes": new_archive_path.stat().st_size,
@@ -1131,6 +1154,7 @@ def refresh(
         "workspace_version_only_changes": workspace_delta,
         "revendored_git_packages": revendored,
         "external_package_count": len(new_external),
+        "external_population_sha256": new_index["population"]["source_sha256"],
         "selected_external_identities": sorted(selected),
         "new_archive": new_index["dependency_source_companion"],
         "vendor_verification": vendor_rows,

@@ -101,6 +101,22 @@ class ExistingDependencyEdges(unittest.TestCase):
         self.assertEqual(self.admit(), ["app", "indexer"])
 
 
+class ExternalPopulationDigest(unittest.TestCase):
+    def test_order_independent(self):
+        a = [package("digest", source=SOURCE), package("indexer", version="2.0.0", source=SOURCE)]
+        b = list(reversed(a))
+        self.assertEqual(
+            refresh.external_population_sha256(a), refresh.external_population_sha256(b)
+        )
+
+    def test_changed_population_changes_digest(self):
+        a = [package("digest", source=SOURCE)]
+        b = [package("digest", version="2.0.0", source=SOURCE)]
+        self.assertNotEqual(
+            refresh.external_population_sha256(a), refresh.external_population_sha256(b)
+        )
+
+
 class GitPinVendorDelta(unittest.TestCase):
     prefix = "vendor/spl-transport-0.1.0/"
 
