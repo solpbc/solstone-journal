@@ -13,6 +13,7 @@ const ALLOWED_REEXPORTS: &[&str] = &[
     "RemovalClass",
     "Target",
     "human_bytes",
+    "policy_from_journal_config",
     "policy_from_retention",
     "policy_would_release",
     "stream_rel",

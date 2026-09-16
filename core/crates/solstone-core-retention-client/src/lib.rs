@@ -30,6 +30,7 @@ pub use solstone_core_retention::marks::MarkState;
 pub use solstone_core_retention::marks::Proposal;
 pub use solstone_core_retention::marks::RemovalClass;
 pub use solstone_core_retention::policy::Policy;
+pub use solstone_core_retention::policy::policy_from_journal_config;
 pub use solstone_core_retention::policy::policy_from_retention;
 pub use solstone_core_retention::policy::policy_would_release;
 pub use solstone_core_retention::summary::human_bytes;

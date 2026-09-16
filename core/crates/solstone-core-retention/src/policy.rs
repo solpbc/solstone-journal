@@ -305,6 +305,28 @@ pub fn policy_from_retention(retention: &Map<String, Value>) -> Policy {
     }
 }
 
+/// Project the full journal configuration into the policy the removal engine evaluates.
+///
+/// When `config["transcribe"]["preserve_all"]` is boolean `true`, empty audio is kept
+/// regardless of stored `empty_audio`. Otherwise, projects from `config["retention"]`.
+pub fn policy_from_journal_config(config: &Map<String, Value>) -> Policy {
+    let mut retention = config
+        .get("retention")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    if config
+        .get("transcribe")
+        .and_then(Value::as_object)
+        .and_then(|transcribe| transcribe.get("preserve_all"))
+        .and_then(Value::as_bool)
+        == Some(true)
+    {
+        retention.insert("empty_audio".to_owned(), Value::String("keep".to_owned()));
+    }
+    policy_from_retention(&retention)
+}
+
 /// Whether at least one configured rule can release raw media.
 pub fn policy_would_release(policy: &Policy) -> bool {
     policy.default_rule.period.is_some()
@@ -952,5 +974,109 @@ mod tests {
             }
             other => panic!("expected TooYoung, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn policy_from_journal_config_projects_matrix_of_preserve_all_and_empty_audio() {
+        let make_config = |preserve_all: Option<Value>, retention_val: Option<Value>| {
+            let mut conf = Map::new();
+            if let Some(r) = retention_val {
+                conf.insert("retention".to_owned(), r);
+            }
+            if let Some(pa) = preserve_all {
+                conf.insert("transcribe".to_owned(), json!({"preserve_all": pa}));
+            }
+            conf
+        };
+
+        let standard_retention = || {
+            json!({
+                "raw_media": "days",
+                "raw_media_days": 14,
+                "per_stream": {
+                    "phone": {"raw_media": "processed"}
+                },
+                "raw_media_minimum_days": 3
+            })
+        };
+
+        let assert_rest_matches = |conf: &Map<String, Value>, policy: &Policy| {
+            let mut retention_obj = conf
+                .get("retention")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            if conf
+                .get("transcribe")
+                .and_then(Value::as_object)
+                .and_then(|transcribe| transcribe.get("preserve_all"))
+                == Some(&Value::Bool(true))
+            {
+                retention_obj.insert("empty_audio".to_owned(), Value::String("keep".to_owned()));
+            }
+            let base_policy = policy_from_retention(&retention_obj);
+            assert_eq!(policy.default_rule, base_policy.default_rule);
+            assert_eq!(policy.per_stream, base_policy.per_stream);
+            assert_eq!(policy.minimum_age, base_policy.minimum_age);
+            assert_eq!(policy.enabled, base_policy.enabled);
+        };
+
+        // 1. preserve_all true + stored empty_audio "processed" -> period.is_none()
+        let mut ret = standard_retention();
+        ret["empty_audio"] = json!("processed");
+        let conf = make_config(Some(json!(true)), Some(ret));
+        let policy = policy_from_journal_config(&conf);
+        assert!(policy.empty_audio_rule.period.is_none());
+        assert_rest_matches(&conf, &policy);
+
+        // 2. preserve_all true + no retention object -> keep
+        let conf = make_config(Some(json!(true)), None);
+        let policy = policy_from_journal_config(&conf);
+        assert!(policy.empty_audio_rule.period.is_none());
+        assert_rest_matches(&conf, &policy);
+
+        // 3. preserve_all false + no empty_audio -> {processed, Some(Days(0))}
+        let conf = make_config(Some(json!(false)), Some(standard_retention()));
+        let policy = policy_from_journal_config(&conf);
+        assert_eq!(policy.empty_audio_rule.anchor, Anchor::Processed);
+        assert_eq!(policy.empty_audio_rule.period, Some(Days(0)));
+        assert_rest_matches(&conf, &policy);
+
+        // 4. preserve_all "true" (string) -> {processed, Some(Days(0))}
+        let conf = make_config(Some(json!("true")), Some(standard_retention()));
+        let policy = policy_from_journal_config(&conf);
+        assert_eq!(policy.empty_audio_rule.anchor, Anchor::Processed);
+        assert_eq!(policy.empty_audio_rule.period, Some(Days(0)));
+        assert_rest_matches(&conf, &policy);
+
+        // 5. stored empty_audio "keep" + no transcribe -> keep
+        let mut ret = standard_retention();
+        ret["empty_audio"] = json!("keep");
+        let conf = make_config(None, Some(ret));
+        let policy = policy_from_journal_config(&conf);
+        assert!(policy.empty_audio_rule.period.is_none());
+        assert_rest_matches(&conf, &policy);
+
+        // 6. preserve_all true + empty_audio "days", empty_audio_days 7 -> keep
+        let mut ret = standard_retention();
+        ret["empty_audio"] = json!("days");
+        ret["empty_audio_days"] = json!(7);
+        let conf = make_config(Some(json!(true)), Some(ret));
+        let policy = policy_from_journal_config(&conf);
+        assert!(policy.empty_audio_rule.period.is_none());
+        assert_rest_matches(&conf, &policy);
+
+        // 7. preserve_all true + non-object retention (e.g. "retention": 1) -> keep
+        let conf = make_config(Some(json!(true)), Some(json!(1)));
+        let policy = policy_from_journal_config(&conf);
+        assert!(policy.empty_audio_rule.period.is_none());
+        assert_rest_matches(&conf, &policy);
+
+        // 8. preserve_all non-boolean number (e.g. 1) -> {processed, Some(Days(0))}
+        let conf = make_config(Some(json!(1)), Some(standard_retention()));
+        let policy = policy_from_journal_config(&conf);
+        assert_eq!(policy.empty_audio_rule.anchor, Anchor::Processed);
+        assert_eq!(policy.empty_audio_rule.period, Some(Days(0)));
+        assert_rest_matches(&conf, &policy);
     }
 }
