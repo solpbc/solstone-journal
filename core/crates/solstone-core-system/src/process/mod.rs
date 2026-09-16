@@ -35,9 +35,9 @@ pub use common::{
     Descendant, DescendantObservationFailure, DescendantTerminationOutcome, Disposition,
     ExecutionState, HostedLaunchProvenance, InspectResult, InstanceCensus, InstanceVerdict,
     KILL_REAP_GRACE, LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessBirth,
-    ProcessInstance, ProcessInstanceSource, ProcessTreeSnapshot, SERVICE_SHUTDOWN_TIMEOUT,
-    SignalKind, SpawnError, SpawnOptions, SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT,
-    TerminationError, TerminationOutcome,
+    ProcessInstance, ProcessInstanceSource, ProcessOwner, ProcessTreeSnapshot,
+    SERVICE_SHUTDOWN_TIMEOUT, SignalKind, SpawnError, SpawnOptions, SystemProcessInstanceSource,
+    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use common::{HostedAdmissionTestFault, set_hosted_admission_test_fault};
@@ -50,6 +50,8 @@ pub(crate) use platform::current_windows_process_instance;
 pub(crate) use platform::hold_while_instance_live;
 #[cfg(target_os = "macos")]
 pub(crate) use platform::macos_sweep_table;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+pub use platform::process_owner;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub(crate) use platform::signal_pid;
 #[cfg(windows)]

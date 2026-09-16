@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
@@ -109,33 +109,68 @@ fn shutdown_app_supervised(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
     )
 }
 
+/// 🔴 One absolute budget for the whole standard shutdown. Every phase below
+/// is capped at its own maximum AND at what is left of this budget, so the
+/// supervisor is out well inside every service manager's kill boundary:
+/// launchd SIGKILLs at 20 s by default and the installed systemd unit at
+/// 30 s. Measured on the reference host 2026-09-15: the old shape (an
+/// unbounded task drain, then each hosted child granted 15 s in turn) overran
+/// the 30 s and the control group was SIGKILLed with the lifecycle still open.
+pub const STANDARD_SHUTDOWN_BUDGET: Duration = Duration::from_secs(15);
 const STANDARD_REAP_TIMEOUT: Duration = Duration::from_secs(3);
-const STANDARD_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
-const STANDARD_BUS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
+const STANDARD_DRAIN_TIMEOUT: Duration = Duration::from_secs(8);
+/// The graceful-retirement acknowledgement the supervisor waits on; the
+/// coordinator polls every 25 ms, so this is slack.
+pub const STANDARD_RETIREMENT_ACK_TIMEOUT: Duration = Duration::from_secs(2);
+/// Kept back from the child-stop phase so the bus still gets a bounded join.
+const STANDARD_BUS_RESERVE: Duration = Duration::from_secs(2);
 
 /// Worst-case wall clock a standard-regime shutdown can spend before the
-/// supervisor process exits: every phase cap, with each hosted child allowed
-/// its full termination grace in turn, since children are stopped one after
-/// another. A controller that waits for the supervisor to exit must allow at
+/// supervisor process exits. A service manager's stop timeout must sit above
+/// this, and a controller that waits for the supervisor to exit must allow at
 /// least this long before calling its cleanup unverified.
-pub const fn standard_shutdown_ceiling(hosted_children: usize) -> Duration {
-    Duration::from_secs(
-        STANDARD_REAP_TIMEOUT.as_secs()
-            + STANDARD_DRAIN_TIMEOUT.as_secs()
-            + crate::process::SERVICE_SHUTDOWN_TIMEOUT.as_secs() * hosted_children as u64
-            + CHILD_STOP_TIMEOUT.as_secs()
-            + STANDARD_BUS_JOIN_TIMEOUT.as_secs(),
-    )
+pub const fn standard_shutdown_ceiling() -> Duration {
+    STANDARD_SHUTDOWN_BUDGET
 }
 
 fn shutdown_standard(driver: &mut dyn ShutdownDriver) -> ShutdownReport {
-    run_shutdown(
-        driver,
-        STANDARD_REAP_TIMEOUT,
-        STANDARD_DRAIN_TIMEOUT,
-        Some(CHILD_STOP_TIMEOUT),
-        STANDARD_BUS_JOIN_TIMEOUT,
-    )
+    shutdown_standard_until(driver, Instant::now() + STANDARD_SHUTDOWN_BUDGET)
+}
+
+/// Every phase gets the smaller of its own cap and what remains of the
+/// budget; the child stop keeps a bus reserve back.
+fn shutdown_standard_until(driver: &mut dyn ShutdownDriver, deadline: Instant) -> ShutdownReport {
+    let remaining = || deadline.saturating_duration_since(Instant::now());
+    let mut report = ShutdownReport::default();
+    report.phases.push(ShutdownPhase::ReapManagedStarted);
+    record_disposition(
+        &mut report,
+        driver.reap_managed(STANDARD_REAP_TIMEOUT.min(remaining())),
+        ShutdownPhase::ReapManagedCompleted,
+    );
+    report.phases.push(ShutdownPhase::ReapManagedCompleted);
+    report.phases.push(ShutdownPhase::DrainTasksStarted);
+    record_disposition(
+        &mut report,
+        driver.drain_tasks(STANDARD_DRAIN_TIMEOUT.min(remaining())),
+        ShutdownPhase::DrainTasksCompleted,
+    );
+    report.phases.push(ShutdownPhase::DrainTasksCompleted);
+    report.phases.push(ShutdownPhase::StopChildrenStarted);
+    record_disposition(
+        &mut report,
+        driver.stop_children(Some(remaining().saturating_sub(STANDARD_BUS_RESERVE))),
+        ShutdownPhase::StopChildrenCompleted,
+    );
+    report.phases.push(ShutdownPhase::StopChildrenCompleted);
+    report.phases.push(ShutdownPhase::JoinBusStarted);
+    record_disposition(
+        &mut report,
+        driver.join_bus(remaining().max(Duration::from_millis(500))),
+        ShutdownPhase::JoinBusCompleted,
+    );
+    report.phases.push(ShutdownPhase::JoinBusCompleted);
+    report
 }
 
 fn shutdown_parent_loss_bounded(driver: &mut dyn ShutdownDriver) -> ShutdownReport {

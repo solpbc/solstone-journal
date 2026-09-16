@@ -81,6 +81,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "vad_runtime_ready",
     "skill_state",
     "unretryable_transcribe_input",
+    "journal_durability",
 ];
 
 const BASELINE_CHECK_NAMES: &[&str] = &[
@@ -767,6 +768,13 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 .unwrap();
             }
         }
+        "journal_durability" => {
+            if !ok {
+                let health = context.journal_path.join("health");
+                fs::create_dir_all(&health).unwrap();
+                fs::write(health.join("catchup-state.wedged-1700000000.json"), b"{").unwrap();
+            }
+        }
         _ => unreachable!("unknown W3C check {name}"),
     }
     result(name, &context)
@@ -795,6 +803,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "vad_runtime_ready"
                     | "skill_state"
                     | "unretryable_transcribe_input"
+                    | "journal_durability"
             ))
             .all(|e| e.deferred.is_none())
     );
@@ -820,6 +829,7 @@ fn check_severity_table_matches_reference() {
         ("vad_runtime_ready", Severity::Blocker),
         ("skill_state", Severity::Advisory),
         ("unretryable_transcribe_input", Severity::Advisory),
+        ("journal_durability", Severity::Advisory),
     ] {
         assert_eq!(
             registry::lookup(Battery::Journal, name)
@@ -859,6 +869,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
             "unretryable_transcribe_input",
             SecondBranch::DifferentStatus,
         ),
+        ("journal_durability", SecondBranch::DifferentStatus),
     ];
     let coverage_names = coverage
         .iter()

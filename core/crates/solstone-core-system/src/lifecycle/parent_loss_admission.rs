@@ -118,6 +118,8 @@ pub enum ParentLossAdmissionError {
     IdentityMismatch,
     #[error("hosted admission launch ID must be a single safe path segment")]
     InvalidLaunchId,
+    #[error("the generation this child was launched under no longer admits")]
+    GenerationClosed,
 }
 
 impl AdmissionIntent {
@@ -204,7 +206,30 @@ pub fn acknowledge_hosted_child_admission(journal: &Path) -> Result<(), ParentLo
             return Err(ParentLossAdmissionError::MissingProvenance);
         }
     };
-    acknowledge_parent_loss_admission(journal, parse_hosted_admission_environment(instance, uid)?)
+    let identity = parse_hosted_admission_environment(instance, uid)?;
+    acknowledge_parent_loss_admission(journal, identity.clone())?;
+    require_generation_still_admitting(journal, identity.generation)
+}
+
+/// After acknowledging, confirm the generation still admits. A launcher that
+/// died mid-launch leaves this child unrecorded; the start that closes the
+/// abandoned generation seals its pointer BEFORE scanning admissions, so an
+/// acknowledgement written after that scan meets a sealed pointer here and
+/// the child does no work against a journal a successor now owns.
+pub(crate) fn require_generation_still_admitting(
+    journal: &Path,
+    generation: ParentLossGeneration,
+) -> Result<(), ParentLossAdmissionError> {
+    let ledger = ParentLossLedger::open(journal)?;
+    let admitting = ledger.active_generation()?.is_some_and(|active| {
+        active.generation == generation
+            && active.phase == super::parent_loss_ledger::ParentLossPhase::Admitting
+    });
+    if admitting {
+        Ok(())
+    } else {
+        Err(ParentLossAdmissionError::GenerationClosed)
+    }
 }
 
 /// Derive a new descendant launch from this process's acknowledged admission.
@@ -278,6 +303,15 @@ pub(crate) fn read_parent_loss_admission_result(
 ) -> Result<Option<AdmissionResult>, ParentLossAdmissionError> {
     validate_launch_id(launch_id)?;
     read_json_optional(&result_path(ledger, generation, launch_id))
+}
+
+pub(crate) fn read_parent_loss_admission_acknowledgement_in(
+    ledger: &ParentLossLedger,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+) -> Result<Option<AdmissionAcknowledgement>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
+    read_json_optional(&ack_path(ledger, generation, launch_id))
 }
 
 pub(crate) fn admission_directory(

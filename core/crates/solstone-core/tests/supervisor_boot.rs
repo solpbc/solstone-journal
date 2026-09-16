@@ -25,7 +25,11 @@ use solstone_core::supervisor::{
 use solstone_core_system::direct_door::{
     DirectDoorOutcome, DirectDoorPublishResult, publish_direct_door,
 };
-use solstone_core_system::lifecycle::{ParentAdmissionFailure, ParentLossLedger};
+use solstone_core_system::lifecycle::{
+    AdmissionFinding, BootstrapRecoveryReason, ParentAdmissionFailure, ParentLossLedger,
+    ParentLossPhase, ParentLossReaderOutcome, ParentLossTerminalDisposition,
+    ParentLossUnresolvedReason, read_parent_loss_outcome,
+};
 use solstone_core_system::process::{
     InstanceCensus, InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
 };
@@ -176,8 +180,31 @@ fn start(journal: &TempJournal) -> SupervisorGuard {
 }
 
 fn start_with_convey_argv(journal: &TempJournal, convey_argv: Option<String>) -> SupervisorGuard {
+    start_with_convey_argv_in(journal, convey_argv, None)
+}
+
+/// Start the supervisor, optionally inside a transient `systemd --user` scope
+/// with `KillMode=control-group` so a `systemctl kill` reaches every process
+/// the run owns, the way an installed unit's stop timeout does.
+/// `systemd-run --scope` execs the command in place, so the returned child is
+/// the supervisor itself.
+fn start_with_convey_argv_in(
+    journal: &TempJournal,
+    convey_argv: Option<String>,
+    systemd_scope_unit: Option<&str>,
+) -> SupervisorGuard {
     let home = super::installation_binding::admit_for(&journal.0);
-    let mut command = Command::new(journal.core_binary());
+    let mut command = match systemd_scope_unit {
+        Some(unit) => {
+            let mut command = Command::new("systemd-run");
+            command
+                .args(["--user", "--scope", "--unit", unit])
+                .args(["-p", "KillMode=control-group", "--quiet", "--"])
+                .arg(journal.core_binary());
+            command
+        }
+        None => Command::new(journal.core_binary()),
+    };
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
@@ -1575,4 +1602,258 @@ fn readiness_publication_failure_clears_heartbeat_and_supervisor_identity() {
         thread::sleep(Duration::from_millis(5));
     }
     panic!("readiness refusal left an app fixture alive");
+}
+
+/// 🔴 The incident, reproduced. On 2026-09-15 a stop overran the service
+/// manager's timeout and the control group was SIGKILLed: the supervisor and
+/// its coordinator died together with the generation still open, and every
+/// later start refused until an operator moved `health/parent-loss` aside.
+///
+/// Kill both authorities at once, mid-admission, with the admitted app
+/// fixtures still running. The next start must boot with no operator action,
+/// the abandoned generation must be closed with every admission proven exited
+/// or retired, and the successor must be its own generation.
+fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&str>) {
+    let journal = TempJournal::new();
+    let socket = journal.0.join("health/callosum.sock");
+    let mut child = start_with_convey_argv_in(&journal, None, systemd_scope_unit);
+    wait_for_socket(&mut child, &socket);
+
+    // Callosum binds before the coordinator bootstraps and before any app is
+    // admitted; wait until the generation is admitting and owns at least one
+    // app fixture, which is the mid-admission shape the incident had.
+    let ledger = ParentLossLedger::open(&journal.0).expect("open parent-loss ledger");
+    let source = SystemProcessInstanceSource;
+    let admitting_deadline = Instant::now() + Duration::from_secs(30);
+    let (active, coordinator, admitted) = loop {
+        if let Some(status) = child.try_wait().expect("supervisor status") {
+            panic!("supervisor exited before admitting: {status}");
+        }
+        let admitting = ledger
+            .active_generation()
+            .expect("read active generation")
+            .filter(|active| active.phase == ParentLossPhase::Admitting)
+            .and_then(|active| active.coordinator.map(|coordinator| (active, coordinator)));
+        if let Some((active, coordinator)) = admitting {
+            let rows = match source.census() {
+                InstanceCensus::Complete(rows) | InstanceCensus::Incomplete(rows) => rows,
+            };
+            let admitted = rows
+                .into_iter()
+                .filter(|row| row.ppid == active.supervisor.pid && row.instance != coordinator)
+                .map(|row| row.instance)
+                .collect::<Vec<_>>();
+            if !admitted.is_empty() {
+                break (active, coordinator, admitted);
+            }
+        }
+        assert!(
+            Instant::now() < admitting_deadline,
+            "the first run never reached admission with an app fixture"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(
+        active.supervisor.pid,
+        child.id(),
+        "the child is the supervisor itself"
+    );
+
+    // Both authorities at once. Under the scope this is the control group;
+    // otherwise two exact SIGKILLs, the coordinator first so it cannot
+    // adjudicate the supervisor's death.
+    match systemd_scope_unit {
+        Some(unit) => {
+            let status = Command::new("systemctl")
+                .args(["--user", "kill", "--signal=KILL", &format!("{unit}.scope")])
+                .status()
+                .expect("systemctl kill runs");
+            assert!(status.success(), "systemctl kill: {status}");
+        }
+        None => {
+            for pid in [coordinator.pid, active.supervisor.pid] {
+                nix::sys::signal::kill(
+                    nix::unistd::Pid::from_raw(i32::try_from(pid).expect("pid fits")),
+                    nix::sys::signal::Signal::SIGKILL,
+                )
+                .expect("SIGKILL");
+            }
+        }
+    }
+    let status = child.wait().expect("supervisor reaped");
+    assert!(!status.success(), "the supervisor was killed: {status}");
+    // One birth-checked `NotSameOrExited` is the proof; a second observation
+    // can land after the pid is reused and read differently.
+    let mut coordinator_gone = false;
+    for _ in 0..400 {
+        if matches!(
+            source.observe(&coordinator),
+            InstanceVerdict::NotSameOrExited
+        ) {
+            coordinator_gone = true;
+            break;
+        }
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(
+        coordinator_gone,
+        "the coordinator must be gone before the second start"
+    );
+    // ⚠ On Linux the app fixtures are deliberately NOT waited for: whether
+    // they are still exiting or already gone when the next start arrives is
+    // the successor's problem, and both shapes must boot. On macOS there is
+    // no parent-death signal and the test fixtures do not watch their parent
+    // the way a hosted service does, so they would hold the speakers-analyze
+    // generation lease they inherited for ever; stop them the way a real
+    // service's parent watcher would have.
+    #[cfg(target_os = "macos")]
+    for instance in &admitted {
+        let _ = nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(i32::try_from(instance.pid).expect("pid fits")),
+            nix::sys::signal::Signal::SIGKILL,
+        );
+    }
+    assert!(
+        matches!(
+            read_parent_loss_outcome(&journal.0).expect("outcome"),
+            ParentLossReaderOutcome::BootstrapRecoveryRequired {
+                reason: BootstrapRecoveryReason::CoordinatorNotLive
+                    | BootstrapRecoveryReason::CoordinatorUnverifiable,
+                ..
+            }
+        ),
+        "this is the wedge shape: an open generation whose coordinator is gone"
+    );
+
+    // The next start. The dead run's heartbeat is still fresh, so admission
+    // waits out its window first; that is ordinary and bounded.
+    let mut second = start(&journal);
+    let deadline = Instant::now() + Duration::from_secs(120);
+    loop {
+        if UnixStream::connect(&socket).is_ok() {
+            break;
+        }
+        if let Some(status) = second.try_wait().expect("second supervisor status") {
+            let mut stderr = String::new();
+            if let Some(mut pipe) = second.stderr.take() {
+                let _ = pipe.read_to_string(&mut stderr);
+            }
+            let sync = fs::read_dir(journal.0.join("health/sync"))
+                .map(|entries| {
+                    entries
+                        .flatten()
+                        .map(|entry| {
+                            let bytes = fs::read(entry.path()).unwrap_or_default();
+                            format!(
+                                "{} ({} bytes): {}",
+                                entry.file_name().to_string_lossy(),
+                                bytes.len(),
+                                String::from_utf8_lossy(&bytes[..bytes.len().min(200)])
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                })
+                .unwrap_or_default();
+            panic!(
+                "the second start refused instead of closing the abandoned generation: {status}\n{stderr}\nhealth/sync:\n{sync}"
+            );
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the second start did not bind Callosum within the admission window"
+        );
+        thread::sleep(Duration::from_millis(20));
+    }
+
+    // As on the first run, the socket comes up before the successor's
+    // coordinator has reserved its generation; wait for the reservation.
+    let successor = loop {
+        if let Some(status) = second.try_wait().expect("second supervisor status") {
+            panic!("the second start exited after binding: {status}");
+        }
+        let reserved = ledger
+            .active_generation()
+            .expect("read successor generation")
+            .filter(|successor| successor.generation != active.generation);
+        if let Some(successor) = reserved {
+            break successor;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the second start bound Callosum but never reserved a successor generation"
+        );
+        thread::sleep(Duration::from_millis(20));
+    };
+    assert_eq!(successor.generation, active.generation + 1);
+    let record = ledger
+        .record(active.generation)
+        .expect("read the abandoned record")
+        .expect("the abandoned record is kept");
+    assert_eq!(
+        record.terminal,
+        Some(ParentLossTerminalDisposition::Unresolved {
+            reason: ParentLossUnresolvedReason::AuthoritiesLost,
+        })
+    );
+    let closure = record.closure.expect("the closure is recorded");
+    assert_eq!(closure.successor_generation, successor.generation);
+    assert!(
+        !closure.admissions.is_empty(),
+        "the closure names what the generation admitted"
+    );
+    // A control-group kill lands mid-launch as often as not: an intent with a
+    // child that died before it acknowledged is the honest
+    // `NeverAcknowledged` finding, and it never served. What may not appear
+    // is a finding that left something live or unnamed.
+    for admission in &closure.admissions {
+        assert!(
+            matches!(
+                admission.finding,
+                AdmissionFinding::Exited
+                    | AdmissionFinding::Retired { .. }
+                    | AdmissionFinding::NeverAcknowledged
+            ),
+            "every admission is proven exited, retired or never admitted: {admission:?}"
+        );
+    }
+    assert!(
+        closure.admissions.iter().any(|admission| matches!(
+            admission.finding,
+            AdmissionFinding::Exited | AdmissionFinding::Retired { .. }
+        )),
+        "at least one admitted process was proven exited or retired: {:?}",
+        closure.admissions
+    );
+    for instance in &admitted {
+        assert!(
+            matches!(source.observe(instance), InstanceVerdict::NotSameOrExited),
+            "no app fixture of the dead generation survives the successor: {instance:?}"
+        );
+    }
+    assert!(
+        ledger.sealed_ledger_path(active.generation).is_file(),
+        "the abandoned generation carries a sealed ledger"
+    );
+
+    let status = second
+        .shutdown_and_wait(Duration::from_secs(60))
+        .expect("second supervisor shuts down");
+    assert!(status.success(), "clean shutdown: {status}");
+}
+
+#[test]
+fn an_abandoned_generation_boots_unattended_after_both_authorities_are_killed() {
+    exercise_abandoned_generation_boots_unattended(None);
+}
+
+/// The same incident under a transient `systemd --user` scope, killed through
+/// the control group exactly as an installed unit's stop timeout does. Needs a
+/// user systemd; run explicitly with `--ignored`.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "needs a running systemd --user manager; run with --ignored"]
+fn an_abandoned_generation_boots_unattended_after_a_control_group_kill() {
+    let unit = format!("solstone-abandoned-generation-{}", std::process::id());
+    exercise_abandoned_generation_boots_unattended(Some(&unit));
 }

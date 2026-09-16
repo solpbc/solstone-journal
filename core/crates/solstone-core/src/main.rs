@@ -316,6 +316,12 @@ fn render_supervisor_host_outcome(outcome: supervisor::SupervisorHostOutcome) ->
             ExitCode::from(EXIT_TEMPFAIL)
         }
         supervisor::SupervisorHostOutcome::Refused {
+            reason: supervisor::SupervisorBootRefusal::AlreadyRunning,
+        } => {
+            eprint!("{}", supervisor::ALREADY_RUNNING_COPY);
+            ExitCode::from(EXIT_TEMPFAIL)
+        }
+        supervisor::SupervisorHostOutcome::Refused {
             reason: supervisor::SupervisorBootRefusal::SpeakersAnalyzeGeneration(message),
         } => {
             eprintln!("{message}");

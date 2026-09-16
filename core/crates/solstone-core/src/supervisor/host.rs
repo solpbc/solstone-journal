@@ -26,6 +26,8 @@ use solstone_core_system::lifecycle::{
     ArtifactClearOutcome, DeclaredParent, LifecycleError, ParentAdmissionFailure, ParentLossReason,
     ParentWatch, ShutdownDisposition, ShutdownOutcome, ShutdownPhase, SyncTickOutcome, WriterId,
 };
+#[cfg(unix)]
+use solstone_core_system::lifecycle::{ParentLossReaderOutcome, read_parent_loss_outcome};
 use solstone_core_system::process::SystemProcessInstanceSource;
 use solstone_core_system_health::format_sync_scan_failure_copy;
 use solstone_core_transcribe::{SpeakersAnalyzeGeneration, SpeakersAnalyzeOwnerRole};
@@ -107,6 +109,9 @@ pub enum LifecycleBootError {
 pub enum SupervisorBootRefusal {
     /// Pre-formatted, terminal-safe owner copy for a sync admission refusal.
     SyncScan(String),
+    /// A supervisor for this journal already holds the singleton lock. Not a
+    /// fault: the copy says so plainly (`ALREADY_RUNNING_COPY`).
+    AlreadyRunning,
     ParentLiveness(ParentAdmissionFailure),
     ParentLostBeforeReadiness(ParentLossReason),
     SiblingBinaryResolution(SiblingBinaryResolutionError),
@@ -166,11 +171,17 @@ struct HostedInstallationBinding {
     writer_id: WriterId,
 }
 
+/// Owner copy for a start that found this journal already running. Exits
+/// TEMPFAIL like its siblings, but there is nothing to retry: the running
+/// one is the journal.
+pub const ALREADY_RUNNING_COPY: &str = "your journal is already running.\n\nthis start stepped aside so the running one is not disturbed. nothing needs doing.\n";
+
 fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
     match error {
         LifecycleError::SyncScan(failure) => {
             SupervisorBootRefusal::SyncScan(format_sync_scan_failure_copy(&failure))
         }
+        LifecycleError::AlreadyRunning => SupervisorBootRefusal::AlreadyRunning,
         #[cfg(unix)]
         LifecycleError::AdmissionWaitTerminal(AdmissionWaitTerminalReason::ActivityRemains) => {
             SupervisorBootRefusal::AdmissionWaitTerminal
@@ -204,117 +215,68 @@ fn lifecycle_boot_refusal(error: LifecycleError) -> SupervisorBootRefusal {
     }
 }
 
-/// Wrap `text` as one total single-quoted shell word.
-///
-/// ⛔ The only character that matters is `'` itself: inside single quotes the
-/// shell treats everything else literally, so the standard closing-reopening
-/// form is both necessary and sufficient. An owner's journal path is arbitrary
-/// and reaches a terminal here, so this is not optional.
-fn shell_single_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\\''"))
-}
-
 /// Owner copy for a start that could not establish its lifecycle authority.
 ///
 /// Shape follows the sibling refusals: headline, then what to do, then the
 /// reassurance, and the technical `details:` label LAST
 /// (`installation_context::installation_recovery_copy`,
 /// `system_health::sync_copy`). The owner's second line has to be help.
+///
+/// ⛔ There is no manual step any more. A generation whose supervisor and
+/// coordinator both exited is closed by the next start on its own
+/// (`lifecycle::parent_loss_closure`), so the walkthrough this copy used to
+/// carry -- `mv health/parent-loss …` -- would set aside the very records that
+/// closure retires from. Every remaining cause converges on a retry: a missed
+/// deadline under load, a coordinator still adjudicating the last run, or a
+/// process from the last run still exiting.
 fn format_lifecycle_recovery_copy(
     journal: &Path,
     reason: runtime::ParentLossCoordinatorBootstrapFailure,
 ) -> String {
-    let records = journal.join("health/parent-loss");
-    // ⛔ `exists` is a guard against naming a path that is not there. It is NOT
-    // evidence that a leftover record is the cause, and must never be read as
-    // such: `reserve_generation` runs `create_dir_all` on this directory on
-    // every boot and nothing in production removes it, so this is true for
-    // every journal that has ever started.
-    //
-    // ⚠ Which is why the walkthrough is offered BELOW the retry rather than
-    // instead of it. `InitialAdmissionHandshake` returns from five production
-    // sites in `bootstrap_parent_loss_coordinator`, and the common one is
-    // simply missing a 3s deadline under load -- an owner in that case needs
-    // "try again", and must not be sent to move lifecycle state out of their
-    // journal as their first act.
-    let offer_recovery = matches!(
-        reason,
-        runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
-    ) && records.exists();
-
     let mut copy = String::from("this start could not continue.\n");
     // ⚠ The settled close for this family --
     // ADMISSION_WAIT_{TERMINAL,ACTIVE,UNVERIFIABLE}_COPY all end on exactly
     // "wait a moment, then try again." The wait is load-bearing on
     // `CoordinatorRetirementUnverified`, where retrying at once re-enters the
     // race that produced the refusal.
-    copy.push_str("\nwait a moment, then try again.\n");
-
-    if offer_recovery {
-        // ⚠ A fixed `.set-aside` destination silently NESTS on a second run:
-        // once `parent-loss.set-aside` exists, `mv parent-loss
-        // parent-loss.set-aside` puts the record *inside* it and reports
-        // nothing. Stamping it keeps every refusal's destination new, so a
-        // repeat either works or fails out loud.
-        //
-        // ⛔ Sanitize and quote. The journal path is owner-chosen (`--journal`,
-        // `SOLSTONE_JOURNAL`, `config.toml`) and only has to be absolute, so it
-        // can hold spaces -- an unquoted `mv` then silently becomes a
-        // four-argument one. Every sibling routes interpolated text through the
-        // sanitizer before it reaches a terminal.
-        let shown = solstone_core_system_health::sanitize_str_for_terminal_bounded(
-            &records.display().to_string(),
-        );
-        let set_aside = format!(
-            "{shown}.set-aside-{}",
-            chrono::Local::now().format("%Y%m%d-%H%M%S")
-        );
-        // ⛔ Single quotes alone are not enough. The sanitizer passes U+0027
-        // through untouched, so a journal under `Sam's journal` closes our
-        // quote mid-path and `mv` re-splits into the wrong arguments. This is
-        // the one escape that makes a single-quoted shell word total.
-        let shown = shell_single_quote(&shown);
-        let set_aside = shell_single_quote(&set_aside);
-        // ⚠ The stop comes first and is not optional: this refusal exits
-        // TEMPFAIL and the installed unit restarts on failure, so without it
-        // the service is starting again every few seconds while the owner
-        // types.
-        //
-        // ⛔ `journal down` / `journal up` -- not the raw platform commands,
-        // and never `journal start`. Worst first: `launchctl bootout` UNLOADS
-        // the job while `journal up` is `launchctl kickstart` (`service.rs`),
-        // which then cannot find it, so that pair simply did not work on
-        // macOS. `journal start` runs the supervisor in the FOREGROUND and
-        // never touches the service, leaving a process tied to the owner's
-        // terminal with the unit still down. And these two are the documented
-        // owner-facing aliases for service stop/start, identical on both
-        // platforms, so the recipe needs no shell substitution and no cfg.
-        copy.push_str(&format!(
-            "\nif it keeps failing, an earlier start may have left a record behind. to move \
-             it aside, open a terminal and run these three lines:\n\
-             \x20   journal down\n\
-             \x20   mv {shown} {set_aside}\n\
-             \x20   journal up\n"
-        ));
+    if last_run_is_still_closing(journal, reason) {
+        copy.push_str("\nthe last run is still shutting down. wait a moment, then try again.\n");
+    } else {
+        copy.push_str("\nwait a moment, then try again.\n");
     }
-
     // ⛔ "your memories", NOT "your journal is untouched". Every one of these
     // paths may have written bookkeeping under `health/`, and
     // `CoordinatorRetirementUnverified` is returned precisely when a helper
     // that may still be RUNNING could not be confirmed stopped -- so the one
     // arm named for its lack of confirmation is the one that would be
     // asserting a confirmed fact about the journal.
-    //
-    // ⚠ The gated arm needs the second clause. That owner has just been shown
-    // a path INSIDE their own journal and asked to move it; "untouched" alone
-    // does not tell them the thing in their hand is safe to move.
-    if offer_recovery {
-        copy.push_str("\nyour memories are untouched; that record holds none of them.\n");
-    } else {
-        copy.push_str("\nyour memories are untouched.\n");
-    }
+    copy.push_str("\nyour memories are untouched.\n");
     copy.push_str(&format!("\ndetails: {reason}\n"));
     copy
+}
+
+/// The one refusal cause the owner can be told more about: the coordinator
+/// did not answer because the previous run's coordinator is still live and
+/// adjudicating, which resolves itself within its retirement deadline. Read
+/// off the ledger, never inferred from the variant alone.
+#[cfg(unix)]
+fn last_run_is_still_closing(
+    journal: &Path,
+    reason: runtime::ParentLossCoordinatorBootstrapFailure,
+) -> bool {
+    reason == runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake
+        && matches!(
+            read_parent_loss_outcome(journal),
+            Ok(ParentLossReaderOutcome::Active { .. })
+        )
+}
+
+#[cfg(not(unix))]
+fn last_run_is_still_closing(
+    _journal: &Path,
+    _reason: runtime::ParentLossCoordinatorBootstrapFailure,
+) -> bool {
+    false
 }
 
 /// Run the complete Rust-owned supervisor lifecycle inside the caller's Tokio
@@ -954,12 +916,14 @@ mod tests {
     /// ⛔ A FALSIFICATION test for the refusal copy, not a snapshot of it.
     ///
     /// The properties, each of which an ordinary edit breaks silently:
-    ///   1. every variant hands the owner something to try. The recovery block
-    ///      is gated, so without a fallback the other arms would end on a bare
-    ///      diagnosis -- the only refusals in this family that would.
+    ///   1. every variant hands the owner something to try, and it is a retry:
+    ///      there is no manual step, so no arm may send the owner to move,
+    ///      rename or delete anything under their journal.
     ///   2. no arm sends the owner to `journal start`, which starts the
     ///      supervisor in the foreground rather than the service.
-    ///   3. only the gated cause names the ledger path.
+    ///   3. no arm names the ledger path: the next start closes an abandoned
+    ///      generation itself, and the old walkthrough set aside the very
+    ///      records that closure retires from.
     ///   4. every arm closes on "your memories", never on a claim that the
     ///      journal is untouched.
     ///   5. `details:` stays last, as the sibling refusals have it.
@@ -989,37 +953,29 @@ mod tests {
 
         for reason in ALL {
             let copy = super::format_lifecycle_recovery_copy(journal, reason);
-            let gated = reason == Failure::InitialAdmissionHandshake;
 
-            // ⛔ EVERY arm, including the gated one. `records.exists()` is
-            // true for every journal that has booted, and the common cause of
-            // this refusal is a missed 3s deadline under load -- so an owner
-            // whose only problem is load must still be told to try again,
-            // rather than being sent to move lifecycle state as a first act.
             assert!(
                 copy.contains("wait a moment, then try again."),
-                "{reason:?} must offer the retry, whatever else it offers:\n{copy}"
+                "{reason:?} must offer the retry:\n{copy}"
             );
-
+            for manual in [
+                "mv ",
+                "rm ",
+                "rename",
+                "move it aside",
+                "health/parent-loss",
+            ] {
+                assert!(
+                    !copy.contains(manual),
+                    "{reason:?} hands the owner a manual step ({manual:?}); an abandoned \
+                     generation is closed by the next start on its own:\n{copy}"
+                );
+            }
             assert!(
                 !copy.contains("journal start"),
                 "{reason:?} sends the owner to `journal start`, which runs the supervisor in the \
-                 foreground and leaves the service it just stopped down. The owner-facing start \
-                 is `journal up`:\n{copy}"
+                 foreground and leaves the service it just stopped down:\n{copy}"
             );
-
-            assert_eq!(
-                copy.contains("health/parent-loss"),
-                gated,
-                "{reason:?} may name the parent-loss records only if it is the cause that reads \
-                 them -- every other arm would send the owner to move a directory that is not \
-                 the problem:\n{copy}"
-            );
-
-            // ⚠ `CoordinatorRetirementUnverified` is returned when a helper
-            // that may still be RUNNING could not be confirmed stopped, so an
-            // "untouched" claim is exactly what that arm cannot make. The
-            // reassurance has to be about memories on every arm.
             assert!(
                 copy.contains("your memories are untouched"),
                 "{reason:?} must close on the owner's memories:\n{copy}"
@@ -1029,7 +985,6 @@ mod tests {
                 "{reason:?} asserts a confirmed fact about the journal that these paths cannot \
                  confirm:\n{copy}"
             );
-
             let details = copy.find("details:").expect("every arm carries details");
             assert!(
                 copy[details..].trim_end().lines().count() == 1,
@@ -1038,146 +993,60 @@ mod tests {
         }
     }
 
-    /// ⚠ The variant alone does not mean the records are there. Nothing
-    /// downstream checks, so an unconditioned walkthrough hands an owner whose
-    /// start failed for another reason `mv: No such file or directory` on top
-    /// of a journal that will not start.
+    /// The "still shutting down" line is read off the ledger, never inferred
+    /// from the variant: a journal with no lifecycle state at all gets the
+    /// plain retry.
     #[test]
-    fn recovery_is_not_offered_when_the_records_are_not_there() {
+    fn a_journal_with_no_lifecycle_state_gets_the_plain_retry() {
         let home = tempdir().expect("tempdir");
         let copy = super::format_lifecycle_recovery_copy(
             home.path(),
             super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
         );
-
         assert!(
-            !copy.contains("mv "),
-            "the walkthrough was offered for records that are not there:\n{copy}"
+            !copy.contains("still shutting down"),
+            "no ledger state means no claim about the last run:\n{copy}"
         );
-        assert!(
-            copy.contains("wait a moment, then try again."),
-            "an owner with no records to move still needs a next step:\n{copy}"
-        );
+        assert!(copy.contains("wait a moment, then try again."));
     }
 
-    /// The stop has to precede the `mv`. This refusal exits TEMPFAIL under a
-    /// `Restart=on-failure` unit, so a set-aside performed while the service is
-    /// still cycling is re-created by the next start before the owner finishes
-    /// typing -- and the copy reads as simply not working.
+    /// A coordinator that is genuinely live -- this test process, so the
+    /// observation is real -- makes the handshake refusal say the last run is
+    /// still shutting down, which is the one thing the owner can act on.
+    #[cfg(unix)]
     #[test]
-    fn admission_recovery_copy_stops_the_service_before_setting_the_record_aside() {
+    fn a_live_coordinator_from_the_last_run_is_named_as_still_shutting_down() {
+        use solstone_core_system::lifecycle::ParentLossLedger;
+        use solstone_core_system::process::{
+            InspectResult, ProcessBirth, ProcessInstance, ProcessInstanceSource,
+            SystemProcessInstanceSource,
+        };
+
         let home = tempdir().expect("tempdir");
-        std::fs::create_dir_all(home.path().join("health/parent-loss")).expect("records");
+        let ledger = ParentLossLedger::open(home.path()).expect("ledger");
+        let supervisor = ProcessInstance {
+            pid: 10,
+            birth: ProcessBirth::linux(1, 1, 100),
+        };
+        let active = ledger
+            .reserve_generation(supervisor, [])
+            .expect("reserve generation");
+        ledger.initialize_record(&active).expect("record");
+        let live_coordinator = match SystemProcessInstanceSource.inspect(std::process::id()) {
+            InspectResult::Present { instance, .. } => instance,
+            _ => panic!("this test process must be observable"),
+        };
+        ledger
+            .persist_coordinator_identity(active.generation, live_coordinator)
+            .expect("coordinator identity");
+
         let copy = super::format_lifecycle_recovery_copy(
             home.path(),
             super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
         );
-
-        let stop = copy
-            .find("journal down")
-            .expect("the recovery copy names the owner-facing stop");
-        let set_aside = copy
-            .find("mv ")
-            .expect("the recovery copy names the set-aside");
-
         assert!(
-            stop < set_aside,
-            "the stop must come before the set-aside:\n{copy}"
-        );
-    }
-
-    /// ⚠ `mv a a.set-aside` moves `a` INSIDE `a.set-aside` once that directory
-    /// exists, silently, which is exactly what an owner running these lines a
-    /// second time does. The destination carries a stamp so every refusal names
-    /// somewhere new and a repeat cannot nest.
-    #[test]
-    fn admission_recovery_set_aside_destination_cannot_nest_on_a_second_run() {
-        let home = tempdir().expect("tempdir");
-        std::fs::create_dir_all(home.path().join("health/parent-loss")).expect("records");
-        let copy = super::format_lifecycle_recovery_copy(
-            home.path(),
-            super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
-        );
-
-        assert!(
-            copy.contains("health/parent-loss.set-aside-"),
-            "the set-aside destination must be stamped:\n{copy}"
-        );
-        assert!(
-            !copy.contains("health/parent-loss.set-aside\n"),
-            "a bare `.set-aside` destination nests on the owner's second run:\n{copy}"
-        );
-    }
-
-    /// ⛔ The walkthrough is offered BELOW the retry, never instead of it, and
-    /// its paths are quoted.
-    ///
-    /// `records.exists()` does not establish that a leftover record is the
-    /// cause -- `reserve_generation` creates that directory on every boot and
-    /// nothing in production removes it. `InitialAdmissionHandshake` also
-    /// returns from five production sites, the common one being a missed 3s
-    /// deadline under load, so leading with the `mv` would route the most
-    /// likely owner away from the one action that works.
-    #[test]
-    fn the_walkthrough_sits_below_the_retry_and_quotes_its_paths() {
-        let home = tempdir().expect("tempdir");
-        std::fs::create_dir_all(home.path().join("health/parent-loss")).expect("records");
-        let copy = super::format_lifecycle_recovery_copy(
-            home.path(),
-            super::runtime::ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake,
-        );
-
-        let retry = copy
-            .find("wait a moment, then try again.")
-            .expect("the gated arm still offers the retry");
-        let walkthrough = copy
-            .find("if it keeps failing")
-            .expect("the walkthrough is conditioned");
-        assert!(
-            retry < walkthrough,
-            "the retry must come first; the walkthrough is the fallback:\n{copy}"
-        );
-
-        // ⛔ Do NOT assert a quote count here. That is what this test did
-        // first, and a path holding an apostrophe satisfies `count == 4` while
-        // being exactly the string that breaks. Assert the escaping instead.
-        let line = copy
-            .lines()
-            .find(|line| line.trim_start().starts_with("mv "))
-            .expect("the mv line");
-        let line = line.trim();
-        assert!(
-            line.starts_with("mv '") && line.ends_with('\''),
-            "both mv paths must be single-quoted: {line}"
-        );
-    }
-}
-
-#[cfg(test)]
-mod shell_quoting_tests {
-    /// ⛔ A journal under `Sam's journal` closed our quote mid-path, and `mv`
-    /// re-split into the wrong arguments -- the copy said "run these three
-    /// lines" and line 2 was not runnable. The sanitizer does not touch
-    /// U+0027, so the escaping has to happen here.
-    #[test]
-    fn an_apostrophe_in_the_path_cannot_break_out_of_the_quoting() {
-        let quoted = super::shell_single_quote("/Users/sam/Sam's journal/health/parent-loss");
-
-        assert_eq!(quoted, "'/Users/sam/Sam'\\''s journal/health/parent-loss'");
-        // ⚠ The property that actually matters: no bare apostrophe survives
-        // to end the quoted word early. `Sam's` appearing intact would mean
-        // exactly that.
-        assert!(
-            !quoted.contains("Sam's"),
-            "a raw apostrophe still closes the word: {quoted}"
-        );
-    }
-
-    #[test]
-    fn an_ordinary_path_is_quoted_without_escapes() {
-        assert_eq!(
-            super::shell_single_quote("/home/owner/journal/health/parent-loss"),
-            "'/home/owner/journal/health/parent-loss'"
+            copy.contains("the last run is still shutting down. wait a moment, then try again."),
+            "a live coordinator must be named as the last run still closing:\n{copy}"
         );
     }
 }

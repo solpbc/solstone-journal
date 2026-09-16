@@ -14,7 +14,9 @@ mod windows_task_readback;
 
 pub use env::build_service_environment;
 pub use plist::render_launchd_plist;
-pub use systemd::render_systemd_unit;
+pub use systemd::{
+    LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS, SERVICE_STOP_TIMEOUT_SECONDS, render_systemd_unit,
+};
 pub use windows_task::{WindowsTaskInput, render_windows_task_xml};
 
 pub use windows_action::{

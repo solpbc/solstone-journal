@@ -83,6 +83,16 @@ const FAST_FIXTURE_PRE_READY_HEARTBEAT_INTERVAL: Duration = Duration::from_milli
 const CALLOSUM_CONNECTION_READY_WINDOW: Duration = Duration::from_secs(2);
 const CALLOSUM_CONNECTION_READY_INTERVAL: Duration = Duration::from_millis(5);
 const PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(3);
+/// How long the supervisor waits for the coordinator's ready marker. A
+/// coordinator that finds an abandoned predecessor retires everything that
+/// generation admitted before it can answer, inside its own retirement
+/// deadline; the poll breaks early when the coordinator exits, so a refusal
+/// still returns in the time it takes.
+#[cfg(unix)]
+const PARENT_LOSS_COORDINATOR_READY_TIMEOUT: Duration = Duration::from_secs(
+    PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT.as_secs()
+        + solstone_core_system::lifecycle::PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE.as_secs(),
+);
 const PARENT_LOSS_CHILD_ADMISSION_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// The typed refusal returned when hosted start cannot establish the sole
@@ -457,8 +467,13 @@ async fn bootstrap_parent_loss_coordinator(
         retire_bootstrap_coordinator(&mut authority, coordinator)?;
         return Err(ParentLossCoordinatorBootstrapFailure::InitialAdmissionHandshake);
     }
-    let deadline = Instant::now() + PARENT_LOSS_COORDINATOR_BOOTSTRAP_TIMEOUT;
+    let deadline = Instant::now() + PARENT_LOSS_COORDINATOR_READY_TIMEOUT;
     while Instant::now() < deadline {
+        // A coordinator that refused has already exited; do not wait out the
+        // retirement allowance for a marker that cannot come.
+        if matches!(authority.poll(), Ok(Some(_))) {
+            break;
+        }
         match ParentLossCoordinator::read_bootstrap_ready(journal) {
             Ok(Some(ready))
                 if ready.coordinator == coordinator.instance

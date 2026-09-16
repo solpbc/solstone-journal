@@ -5,6 +5,17 @@ use std::collections::BTreeMap;
 
 const SERVICE_START_TIMEOUT_SECONDS: u32 = 120;
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
+/// How long systemd lets a stop run before it SIGKILLs the whole control
+/// group. The supervisor's own standard shutdown is budgeted well under it
+/// (`solstone_core_system::lifecycle::STANDARD_SHUTDOWN_BUDGET`; a test in
+/// `solstone-core` pins the margin), so this is the manager's backstop, not
+/// the shape of a normal stop. Left at its installed value on purpose: an
+/// installed unit only changes at the next `journal setup`, and the fix that
+/// reaches every install at once is the supervisor's budget.
+pub const SERVICE_STOP_TIMEOUT_SECONDS: u32 = 30;
+/// launchd's documented default `ExitTimeOut`; the generated plist does not
+/// set one, so the supervisor's budget has to clear this too.
+pub const LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS: u32 = 20;
 
 /// Render the systemd user unit for the Solstone supervisor.
 pub fn render_systemd_unit(
@@ -18,7 +29,7 @@ pub fn render_systemd_unit(
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nTimeoutStartSec={SERVICE_START_TIMEOUT_SECONDS}\nExecStart={} start {}\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec=30\nLimitNOFILE={SERVICE_FILE_DESCRIPTOR_LIMIT}\n{environment_lines}\n\n[Install]\nWantedBy=default.target\n",
+        "[Unit]\nDescription=Solstone Supervisor\nAfter=default.target\nStartLimitIntervalSec=120\nStartLimitBurst=10\n\n[Service]\nType=notify\nTimeoutStartSec={SERVICE_START_TIMEOUT_SECONDS}\nExecStart={} start {}\nRestart=on-failure\nRestartSec=5\nKillMode=control-group\nTimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\nLimitNOFILE={SERVICE_FILE_DESCRIPTOR_LIMIT}\n{environment_lines}\n\n[Install]\nWantedBy=default.target\n",
         render_exec_token(launcher_path),
         render_exec_token(port),
     )

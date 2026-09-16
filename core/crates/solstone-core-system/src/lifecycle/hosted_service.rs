@@ -260,6 +260,11 @@ pub fn admit_hosted_service_parent(
     }
     acknowledge_parent_loss_admission(journal, admission.clone())
         .map_err(HostedServiceAdmissionFailure::Admission)?;
+    // Re-read after acknowledging: a closer that sealed the pointer between
+    // the check above and this acknowledgement must find this service
+    // refusing, not serving (`require_generation_still_admitting`).
+    super::parent_loss_admission::require_generation_still_admitting(journal, admission.generation)
+        .map_err(|_| HostedServiceAdmissionFailure::LifecycleRejected)?;
 
     let watcher = PlatformParentExitWatcher::arm(parent.instance())
         .map_err(|error| HostedServiceAdmissionFailure::Watch(error.into()))?;

@@ -2,6 +2,7 @@
 // Copyright (c) 2026 sol pbc
 
 //! Evidence-bound daily coverage and bounded adoption/reconciliation bookkeeping.
+use crate::durability::{DurabilityClass, DurableRead, read_json_durable};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Local, Utc};
@@ -313,12 +314,17 @@ fn day_is_adopted(journal: &Path, day: &str) -> Result<bool, String> {
     // coverage unreadable, which stops daily processing entirely and makes the
     // backlog, the doctor and reprocess all fail, for a file the next
     // reconciliation pass rebuilds on its own.
-    let state: Adoption = match std::fs::read(&path) {
-        Ok(bytes) => match serde_json::from_slice(&bytes) {
-            Ok(state) => state,
-            Err(_) => return Ok(false),
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+    let state: Adoption = match read_json_durable(&path, DurabilityClass::Wipeable) {
+        Ok(DurableRead::Present(state)) => state,
+        Ok(DurableRead::Absent) => return Ok(false),
+        Ok(DurableRead::SetAside(aside)) => {
+            eprintln!(
+                "daily adoption: {} could not be read and was set aside at {}",
+                path.display(),
+                aside.display()
+            );
+            return Ok(false);
+        }
         Err(e) => return Err(e.to_string()),
     };
     if state.version != 1 {
@@ -354,9 +360,17 @@ fn load_adoption(path: &Path, today: &str) -> Result<Adoption, String> {
             .to_string(),
         ..Adoption::default()
     };
-    let state: Adoption = match std::fs::read(path) {
-        Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|_| fresh()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Adoption {
+    let state: Adoption = match read_json_durable(path, DurabilityClass::Wipeable) {
+        Ok(DurableRead::Present(state)) => state,
+        Ok(DurableRead::SetAside(aside)) => {
+            eprintln!(
+                "daily adoption: {} could not be read and was set aside at {}",
+                path.display(),
+                aside.display()
+            );
+            fresh()
+        }
+        Ok(DurableRead::Absent) => Adoption {
             version: 1,
             first_closed_day: (date - chrono::Duration::days(7))
                 .format("%Y%m%d")

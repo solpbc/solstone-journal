@@ -29,16 +29,12 @@ use crate::resolve_process_journal_path;
 
 const READY_TIMEOUT: Duration = Duration::from_secs(120);
 /// A public stop waits out the supervisor's own worst-case standard shutdown
-/// (every hosted child granted its full grace in turn), then the forwarder's
-/// Job drain and a Scheduler readback, before it may call cleanup unverified.
-/// The former fixed 40 s sat below that ceiling, so a clean shutdown that was
+/// (all hosted children sharing one stop budget), then the forwarder's Job
+/// drain and a Scheduler readback, before it may call cleanup unverified. The
+/// former fixed 40 s sat below that ceiling, so a clean shutdown that was
 /// still in progress was reported as a failed stop.
 const STOP_TIMEOUT: Duration = Duration::from_secs(
-    solstone_core_system::lifecycle::standard_shutdown_ceiling(
-        crate::supervisor::HOSTED_APP_SERVICE_COUNT,
-    )
-    .as_secs()
-        + 15,
+    solstone_core_system::lifecycle::standard_shutdown_ceiling().as_secs() + 15,
 );
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 

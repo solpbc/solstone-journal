@@ -14,9 +14,8 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, FileLease, JournalRoot, LeaseError, LeaseOptions,
-    LockOptions, acquire_file_lease, atomic_replace, hold_lock, open_flat_directory_bound,
-    read_observed_file_bounded,
+    AtomicWriteError, AtomicWriteOptions, JournalRoot, LeaseError, LockOptions, atomic_replace,
+    hold_lock, open_flat_directory_bound, read_observed_file_bounded,
 };
 use thiserror::Error;
 
@@ -25,9 +24,10 @@ use super::parent_loss_admission::{
     ParentLossServiceWitnessDrop, admission_directory, read_parent_loss_admission_intent,
     read_parent_loss_admission_result, witness_path,
 };
+use super::parent_loss_closure::{ClosingAuthority, HeartbeatRetirement, SystemAdmissionRetirer};
 use super::parent_loss_ledger::{
-    ActiveGeneration, BootstrapRecoveryReason, ParentLossGeneration, ParentLossLedger,
-    ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
+    ActiveGeneration, BootstrapRecoveryReason, CoordinatorLease, ParentLossGeneration,
+    ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossTerminalDisposition,
     ParentLossUnresolvedReason,
 };
 use super::state;
@@ -115,7 +115,7 @@ pub enum ParentLossCoordinatorError {
 /// operating system drops this process's advisory lock on exit.
 pub struct ParentLossCoordinator {
     ledger: ParentLossLedger,
-    _lease: Option<FileLease>,
+    _lease: Option<CoordinatorLease>,
     active: ActiveGeneration,
     coordinator: ProcessInstance,
     capability: Vec<u8>,
@@ -123,10 +123,10 @@ pub struct ParentLossCoordinator {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct SealedAdmission {
-    launch_id: String,
-    service: Option<HostedServiceKind>,
-    identity: AdmissionIdentity,
+pub(crate) struct SealedAdmission {
+    pub(crate) launch_id: String,
+    pub(crate) service: Option<HostedServiceKind>,
+    pub(crate) identity: AdmissionIdentity,
 }
 
 /// A witness may establish that a service completed its own shutdown work, but
@@ -154,9 +154,7 @@ impl ParentLossCoordinator {
         bootstrap: CoordinatorBootstrap,
     ) -> Result<(Self, CoordinatorBootstrapReady), CoordinatorBootstrapError> {
         let ledger = ParentLossLedger::open(&bootstrap.journal)?;
-        let Some(lease) =
-            acquire_file_lease(ledger.coordinator_lease_path(), LeaseOptions::default())?
-        else {
+        let Some(lease) = ledger.acquire_coordinator_lease()? else {
             return Err(CoordinatorBootstrapError::Contended);
         };
         let source = SystemProcessInstanceSource;
@@ -166,10 +164,30 @@ impl ParentLossCoordinator {
                 return Err(CoordinatorBootstrapError::SelfUnverifiable);
             }
         };
-        let active = ledger.reserve_generation(bootstrap.supervisor, bootstrap.enabled)?;
+        // Holding the lease is what lets this reservation close a predecessor
+        // whose authorities are gone. Retirement of anything that predecessor
+        // admitted shares the coordinator's one retirement deadline, less the
+        // terminal-write budget; the supervisor's ready-poll allows for it.
+        let authority = ClosingAuthority {
+            closed_by: coordinator,
+            source: &SystemProcessInstanceSource,
+            retirer: &SystemAdmissionRetirer,
+            deadline: Instant::now()
+                + PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE
+                    .saturating_sub(PARENT_LOSS_COORDINATOR_TERMINAL_WRITE_BUDGET),
+        };
+        let active = ledger.reserve_generation_closing_abandoned(
+            bootstrap.supervisor,
+            bootstrap.enabled,
+            &lease,
+            &authority,
+        )?;
         // The following separate writes deliberately preserve the fault seams
         // after reservation confirmation.
-        ledger.initialize_record(&active)?;
+        ledger.initialize_record_with_heartbeat(
+            &active,
+            Some(bootstrap.supervisor_heartbeat_filename.clone()),
+        )?;
         let active = ledger.persist_coordinator_identity(active.generation, coordinator)?;
         let active = ledger.mark_admitting(active.generation, coordinator)?;
         let ready = CoordinatorBootstrapReady {
@@ -653,49 +671,13 @@ impl ParentLossCoordinator {
     /// durably blocking instead of making a replacement wait out its freshness
     /// window or treating another process's heartbeat as ours.
     fn clear_lost_supervisor_heartbeat(&self) -> bool {
-        let Ok(root) = JournalRoot::open(self.ledger.canonical_root()) else {
-            return false;
-        };
-        let health =
-            match open_flat_directory_bound(&root, OsStr::new("health"), root.canonical_path()) {
-                Ok(Some(health)) => health,
-                Ok(None) => return true,
-                Err(_) => return false,
-            };
-        let health_path = root.canonical_path().join("health");
-        let sync = match open_flat_directory_bound(&health, OsStr::new("sync"), &health_path) {
-            Ok(Some(sync)) => sync,
-            Ok(None) => return true,
-            Err(_) => return false,
-        };
-        let name = OsStr::new(&self.supervisor_heartbeat_filename);
-        let observation = match read_observed_file_bounded(&sync, name, MAX_SYNC_HEARTBEAT_BYTES) {
-            Ok(Some(observation)) => observation,
-            Ok(None) => return true,
-            Err(_) => return false,
-        };
-        let Ok((writer_id, run_id)) =
-            super::parse_v2_heartbeat_filename(&self.supervisor_heartbeat_filename)
-        else {
-            return false;
-        };
-        let Ok(heartbeat) = serde_json::from_slice::<HeartbeatV2>(&observation.bytes) else {
-            return false;
-        };
-        if heartbeat.schema != HEARTBEAT_SCHEMA_V2
-            || heartbeat.writer_id != writer_id
-            || heartbeat.run_id != run_id
-            || heartbeat.pid != self.active.supervisor.pid
-        {
-            return false;
-        }
         matches!(
-            state::clear_self_heartbeat(
-                &sync,
+            clear_supervisor_heartbeat(
+                &self.ledger,
                 &self.supervisor_heartbeat_filename,
-                Some(&observation),
+                self.active.supervisor,
             ),
-            Ok(super::SelfHeartbeatRemoval::Removed)
+            HeartbeatRetirement::Removed | HeartbeatRetirement::Absent
         )
     }
 
@@ -732,6 +714,57 @@ impl ParentLossCoordinator {
 
     fn release_clean_lease(&mut self) {
         self._lease.take();
+    }
+}
+
+/// Remove one supervisor's v2 heartbeat, only after a fresh descriptor-bound
+/// observation proves the entry is that exact run's (filename identity and
+/// pid). Shared by the coordinator on a confirmed parent loss and by a
+/// successor closing an abandoned generation. Any ambiguity leaves the file
+/// for the stale-heartbeat collector rather than treating another process's
+/// heartbeat as ours.
+pub(crate) fn clear_supervisor_heartbeat(
+    ledger: &ParentLossLedger,
+    filename: &str,
+    supervisor: ProcessInstance,
+) -> HeartbeatRetirement {
+    let Ok(root) = JournalRoot::open(ledger.canonical_root()) else {
+        return HeartbeatRetirement::NotCleared;
+    };
+    let health = match open_flat_directory_bound(&root, OsStr::new("health"), root.canonical_path())
+    {
+        Ok(Some(health)) => health,
+        Ok(None) => return HeartbeatRetirement::Absent,
+        Err(_) => return HeartbeatRetirement::NotCleared,
+    };
+    let health_path = root.canonical_path().join("health");
+    let sync = match open_flat_directory_bound(&health, OsStr::new("sync"), &health_path) {
+        Ok(Some(sync)) => sync,
+        Ok(None) => return HeartbeatRetirement::Absent,
+        Err(_) => return HeartbeatRetirement::NotCleared,
+    };
+    let name = OsStr::new(filename);
+    let observation = match read_observed_file_bounded(&sync, name, MAX_SYNC_HEARTBEAT_BYTES) {
+        Ok(Some(observation)) => observation,
+        Ok(None) => return HeartbeatRetirement::Absent,
+        Err(_) => return HeartbeatRetirement::NotCleared,
+    };
+    let Ok((writer_id, run_id)) = super::parse_v2_heartbeat_filename(filename) else {
+        return HeartbeatRetirement::NotCleared;
+    };
+    let Ok(heartbeat) = serde_json::from_slice::<HeartbeatV2>(&observation.bytes) else {
+        return HeartbeatRetirement::NotCleared;
+    };
+    if heartbeat.schema != HEARTBEAT_SCHEMA_V2
+        || heartbeat.writer_id != writer_id
+        || heartbeat.run_id != run_id
+        || heartbeat.pid != supervisor.pid
+    {
+        return HeartbeatRetirement::NotCleared;
+    }
+    match state::clear_self_heartbeat(&sync, filename, Some(&observation)) {
+        Ok(super::SelfHeartbeatRemoval::Removed) => HeartbeatRetirement::Removed,
+        _ => HeartbeatRetirement::NotCleared,
     }
 }
 

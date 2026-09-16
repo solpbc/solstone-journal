@@ -9,6 +9,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::durability::{DurabilityClass, DurableRead, read_json_durable};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
@@ -1054,20 +1055,26 @@ pub fn days_with_expired_retry(
 
 fn read_entries(journal: &Path) -> Result<Map<String, Value>, CatchupError> {
     let path = catchup_state_path(journal);
-    let bytes = match fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Map::new()),
-        Err(source) => return Err(CatchupError::Io { path, source }),
-    };
     // ⛔ Retry bookkeeping, not an authority: attempts, backoff watermarks and
     // timestamps, all re-derivable from the next run. A file we cannot parse
     // must read as empty so the next write REBUILDS it -- erroring here makes
     // `update_catchup_state` bail without writing, so every outcome is dropped
     // silently, backoff never advances, and days re-run forever with nothing
     // recorded. Losing the history costs one early retry per day; keeping the
-    // error costs the whole ledger, permanently.
-    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-        return Ok(Map::new());
+    // error costs the whole ledger, permanently. The damaged bytes are set
+    // aside beside the file, where `journal doctor` names them.
+    let value = match read_json_durable::<Value>(&path, DurabilityClass::Wipeable) {
+        Ok(DurableRead::Present(value)) => value,
+        Ok(DurableRead::Absent) => return Ok(Map::new()),
+        Ok(DurableRead::SetAside(aside)) => {
+            eprintln!(
+                "catchup: {} could not be read and was set aside at {}",
+                path.display(),
+                aside.display()
+            );
+            return Ok(Map::new());
+        }
+        Err(source) => return Err(CatchupError::Io { path, source }),
     };
     strict_catchup_entries(&value)
 }

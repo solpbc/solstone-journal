@@ -16,12 +16,16 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    AtomicWriteError, JournalRoot, JournalRootError, JsonWriteOptions, LockError, LockOptions,
-    hold_lock, write_json,
+    AtomicWriteError, FileLease, JournalRoot, JournalRootError, JsonWriteOptions, LeaseError,
+    LeaseOptions, LockError, LockOptions, acquire_file_lease, hold_lock, write_json,
 };
 use thiserror::Error;
 
 use super::HostedServiceKind;
+use super::parent_loss_closure::{
+    AbandonedGeneration, AbandonedGenerationClosure, ClosingAuthority, ClosureOutcome,
+    close_abandoned_generation, load_record_for_closure,
+};
 use crate::process::{
     DescendantObservationFailure, InstanceVerdict, ProcessInstance, ProcessInstanceSource,
     SystemProcessInstanceSource,
@@ -121,6 +125,11 @@ pub enum ParentLossUnresolvedReason {
     MalformedRecord,
     #[error("lifecycle artifact operation failed")]
     ArtifactFailure,
+    /// The supervisor and its coordinator both exited before this generation
+    /// was closed, and the next start closed it. What it found is in the
+    /// record's `closure`.
+    #[error("the supervisor and its lifecycle helper both exited before this run was closed")]
+    AuthoritiesLost,
 }
 
 /// A nonterminal record written at reservation, followed by exactly one
@@ -135,6 +144,15 @@ pub struct ParentLossGenerationRecord {
     /// sealing, including unresolved and graceful retirement.
     pub sealed_ledger_digest: Option<String>,
     pub terminal: Option<ParentLossTerminalDisposition>,
+    /// The supervisor's v2 heartbeat filename for this run, so a successor
+    /// that closes this generation can retire exactly that file. Absent on
+    /// records written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervisor_heartbeat: Option<String>,
+    /// Present only on a generation a successor closed or advanced past
+    /// without a proven retirement. The forensic account; never deleted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub closure: Option<AbandonedGenerationClosure>,
 }
 
 /// Reader/start outcome.  Bootstrap recovery is intentionally not terminal:
@@ -191,7 +209,20 @@ pub enum ParentLossReaderOutcome {
 pub enum BootstrapRecoveryReason {
     ActiveCoordinator,
     CoordinatorMissing,
+    /// The recorded coordinator observed `NotSameOrExited`.
     CoordinatorNotLive,
+    /// The recorded coordinator could not be observed. Kept distinct from
+    /// `CoordinatorNotLive` on purpose: only a lock proof may resolve it.
+    CoordinatorUnverifiable,
+    /// The recorded supervisor of an open generation is still live.
+    SupervisorLive,
+    /// A process the abandoned generation admitted is still live after the
+    /// closer's retirement deadline. Converges once it exits.
+    AbandonedAdmissionLive,
+    /// A pid the abandoned generation admitted cannot be inspected and the
+    /// process table does not prove it belongs to someone else. Refused
+    /// rather than read as death.
+    AbandonedAdmissionUnverifiable,
     ReservationIncomplete,
     RecordMissing,
     RecordMalformed,
@@ -221,6 +252,8 @@ pub enum ParentLossLedgerError {
     Io(#[from] io::Error),
     #[error("parent-loss ledger lock failed: {0}")]
     Lock(#[from] LockError),
+    #[error("parent-loss coordinator lease failed: {0}")]
+    Lease(#[from] LeaseError),
     #[error("parent-loss ledger write failed: {0}")]
     Write(#[from] AtomicWriteError),
     #[error("parent-loss ledger JSON is malformed: {0}")]
@@ -233,6 +266,17 @@ pub enum ParentLossLedgerError {
     StaleCoordinator,
     #[error("active lifecycle generation prevents allocation: {0:?}")]
     RecoveryRequired(BootstrapRecoveryReason),
+}
+
+/// The coordinator's process-lifetime lease on one lifecycle domain.
+///
+/// Holding it is the proof `reserve_generation_closing_abandoned` relies on:
+/// the kernel releases the advisory lock on death of any kind, so a lease that
+/// could be acquired means no coordinator is running. It is retained until a
+/// clean terminal release.
+#[derive(Debug)]
+pub struct CoordinatorLease {
+    _lease: FileLease,
 }
 
 /// Canonical path authority and paths for one Journal lifecycle domain.
@@ -291,16 +335,21 @@ impl ParentLossLedger {
         read_json_optional(&self.active_path())
     }
 
+    /// Take the coordinator lease, or `None` when another coordinator holds it.
+    pub fn acquire_coordinator_lease(
+        &self,
+    ) -> Result<Option<CoordinatorLease>, ParentLossLedgerError> {
+        Ok(
+            acquire_file_lease(self.coordinator_lease_path(), LeaseOptions::default())?
+                .map(|lease| CoordinatorLease { _lease: lease }),
+        )
+    }
+
     /// Preserve a pointer we cannot parse, so healing is recoverable evidence
     /// rather than a silent delete. Mirrors the `parent-loss.wedged-*` shape an
     /// operator already produces by hand.
     fn set_aside_active_pointer(&self, active_path: &Path) -> Result<(), ParentLossLedgerError> {
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_secs())
-            .unwrap_or_default();
-        let aside = active_path.with_extension(format!("wedged-{stamp}.json"));
-        fs::rename(active_path, aside)?;
+        crate::durability::set_aside(active_path)?;
         Ok(())
     }
 
@@ -335,6 +384,35 @@ impl ParentLossLedger {
         supervisor: ProcessInstance,
         enabled: impl IntoIterator<Item = HostedServiceKind>,
     ) -> Result<ActiveGeneration, ParentLossLedgerError> {
+        self.reserve_generation_inner(supervisor, enabled, None)
+    }
+
+    /// Reserve a successor as the coordinator that holds the lease, closing an
+    /// abandoned predecessor on the way.
+    ///
+    /// Where `reserve_generation` refuses a generation whose authorities are
+    /// gone, this closes it: the lease proves no coordinator runs, the
+    /// caller's parent holds the supervisor lock, both recorded identities are
+    /// observed and a `SameLive` still refuses, and every process the
+    /// generation admitted is proven exited or retired before the successor
+    /// is allocated (`parent_loss_closure`). Completed, expected-retired and
+    /// cancelled predecessors advance exactly as before.
+    pub fn reserve_generation_closing_abandoned(
+        &self,
+        supervisor: ProcessInstance,
+        enabled: impl IntoIterator<Item = HostedServiceKind>,
+        lease: &CoordinatorLease,
+        authority: &ClosingAuthority<'_>,
+    ) -> Result<ActiveGeneration, ParentLossLedgerError> {
+        self.reserve_generation_inner(supervisor, enabled, Some((lease, authority)))
+    }
+
+    fn reserve_generation_inner(
+        &self,
+        supervisor: ProcessInstance,
+        enabled: impl IntoIterator<Item = HostedServiceKind>,
+        closing: Option<(&CoordinatorLease, &ClosingAuthority<'_>)>,
+    ) -> Result<ActiveGeneration, ParentLossLedgerError> {
         fs::create_dir_all(self.root_path())?;
         let active_path = self.active_path();
         let _lock = lifecycle_lock(&active_path)?;
@@ -359,12 +437,36 @@ impl ParentLossLedger {
         };
         let floor = self.highest_recorded_generation()?;
         let next = match pointer {
-            None => floor + 1,
+            None => {
+                // A set-aside pointer leaves the generation it named on disk,
+                // possibly open and possibly still owning services. With
+                // closing authority, close the highest one before allocating
+                // above it; without it, the successor is allocated above it as
+                // before.
+                if let Some((_, authority)) = closing
+                    && floor > 0
+                {
+                    self.close_headless_generation(floor, floor + 1, authority)?;
+                }
+                floor + 1
+            }
             Some(active) => {
                 // Computed before the match so the guard below reads one fact
                 // rather than re-deriving it per arm.
                 let coordinator_gone = coordinator_is_provably_gone(&active);
-                match self.outcome_for_active(&active)? {
+                let outcome = match self.outcome_for_active(&active) {
+                    Ok(outcome) => outcome,
+                    // A record we cannot parse is bookkeeping; with closing
+                    // authority the admissions directory is the evidence and
+                    // the record is set aside by the closer.
+                    Err(ParentLossLedgerError::Json(_)) if closing.is_some() => {
+                        ParentLossReaderOutcome::MalformedState {
+                            artifact: "record.json".to_owned(),
+                        }
+                    }
+                    Err(error) => return Err(error),
+                };
+                match outcome {
                     ParentLossReaderOutcome::Completed { generation, .. }
                     | ParentLossReaderOutcome::RetiredExpected { generation }
                     | ParentLossReaderOutcome::CancelledBeforeAdmission { generation } => {
@@ -400,16 +502,39 @@ impl ParentLossLedger {
                     // have been retired, and advancing past it abandons them
                     // silently. Sealing such a generation as abandoned is the
                     // right repair, and it is scoped to its own change.
-                    ParentLossReaderOutcome::Unresolved { generation, .. } if coordinator_gone => {
+                    ParentLossReaderOutcome::Unresolved { generation, .. }
+                        if coordinator_gone && closing.is_none() =>
+                    {
                         generation.max(floor) + 1
                     }
-                    ParentLossReaderOutcome::BootstrapRecoveryRequired { reason, .. } => {
-                        return Err(ParentLossLedgerError::RecoveryRequired(reason));
-                    }
-                    _ => {
+                    // 🔒 A live coordinator is refused on every path. With the
+                    // lease held this can only mean the lease file was
+                    // replaced under a running coordinator; refuse anyway.
+                    ParentLossReaderOutcome::Active { .. } => {
                         return Err(ParentLossLedgerError::RecoveryRequired(
                             BootstrapRecoveryReason::ActiveCoordinator,
                         ));
+                    }
+                    ParentLossReaderOutcome::BootstrapRecoveryRequired { reason, .. }
+                        if closing.is_none() =>
+                    {
+                        return Err(ParentLossLedgerError::RecoveryRequired(reason));
+                    }
+                    _ if closing.is_none() => {
+                        return Err(ParentLossLedgerError::RecoveryRequired(
+                            BootstrapRecoveryReason::ActiveCoordinator,
+                        ));
+                    }
+                    // Everything else -- an open generation whose authorities
+                    // are gone, a sealed `unresolved` whose retirement was
+                    // never proven, and every inconsistent-bookkeeping shape --
+                    // is closed from its admissions directory, or refuses with
+                    // a reason that converges.
+                    outcome => {
+                        let (_, authority) = closing.expect("closing authority checked above");
+                        let next = active.generation.max(floor) + 1;
+                        self.close_active_generation(&active, outcome, next, authority)?;
+                        next
                     }
                 }
             }
@@ -428,6 +553,110 @@ impl ParentLossLedger {
         };
         write_json(&active_path, &active, json_options())?;
         Ok(active)
+    }
+
+    /// Mark the pointer sealed on behalf of a closer, without a coordinator
+    /// identity to authenticate: the caller holds the active lock and the
+    /// coordinator lease. A pointer naming another generation is left alone.
+    pub(crate) fn mark_sealed_for_closure(
+        &self,
+        generation: ParentLossGeneration,
+    ) -> Result<(), ParentLossLedgerError> {
+        let path = self.active_path();
+        let Some(mut active) = read_json_optional::<ActiveGeneration>(&path)? else {
+            return Ok(());
+        };
+        if active.generation != generation || active.phase == ParentLossPhase::Sealed {
+            return Ok(());
+        }
+        active.phase = ParentLossPhase::Sealed;
+        write_json(&path, &active, json_options())?;
+        Ok(())
+    }
+
+    /// Close the generation the active pointer names, under the active lock.
+    fn close_active_generation(
+        &self,
+        active: &ActiveGeneration,
+        outcome: ParentLossReaderOutcome,
+        successor_generation: ParentLossGeneration,
+        authority: &ClosingAuthority<'_>,
+    ) -> Result<(), ParentLossLedgerError> {
+        let (record, set_aside) = load_record_for_closure(self, active.generation)?;
+        let mut notes = Vec::new();
+        match &outcome {
+            ParentLossReaderOutcome::WrongGeneration { actual, .. } => {
+                notes.push(format!("the record named generation {actual}"));
+            }
+            ParentLossReaderOutcome::ConflictingResult { artifact } => {
+                notes.push(format!("{artifact} did not match the terminal record"));
+            }
+            ParentLossReaderOutcome::MissingState { artifact } => {
+                notes.push(format!("{artifact} was missing from a terminal record"));
+            }
+            ParentLossReaderOutcome::PartialWitnessSet {
+                expected, found, ..
+            } => {
+                notes.push(format!(
+                    "a terminal record had witnesses for {found:?} of {expected:?}"
+                ));
+            }
+            ParentLossReaderOutcome::Unresolved { reason, .. } => {
+                notes.push(format!("sealed unresolved before closure: {reason}"));
+            }
+            _ => {}
+        }
+        let coordinator = active
+            .coordinator
+            .or_else(|| record.as_ref().and_then(|record| record.coordinator));
+        let abandoned = AbandonedGeneration {
+            generation: active.generation,
+            supervisor: Some(active.supervisor),
+            coordinator,
+            record,
+            set_aside,
+            notes,
+        };
+        match close_abandoned_generation(self, abandoned, successor_generation, authority)? {
+            ClosureOutcome::Closed => Ok(()),
+            ClosureOutcome::Refused(reason) => Err(ParentLossLedgerError::RecoveryRequired(reason)),
+        }
+    }
+
+    /// Close the highest generation on disk when no pointer names one. Its
+    /// record is the only source of the authorities' identities; without one
+    /// the lock proof stands alone and the admissions are still retired.
+    fn close_headless_generation(
+        &self,
+        generation: ParentLossGeneration,
+        successor_generation: ParentLossGeneration,
+        authority: &ClosingAuthority<'_>,
+    ) -> Result<(), ParentLossLedgerError> {
+        let (record, set_aside) = load_record_for_closure(self, generation)?;
+        if let Some(record) = record.as_ref()
+            && matches!(
+                record.terminal,
+                Some(
+                    ParentLossTerminalDisposition::Completed { .. }
+                        | ParentLossTerminalDisposition::RetiredExpected
+                        | ParentLossTerminalDisposition::CancelledBeforeAdmission
+                )
+            )
+        {
+            return Ok(());
+        }
+        let abandoned = AbandonedGeneration {
+            generation,
+            supervisor: record.as_ref().map(|record| record.supervisor),
+            coordinator: record.as_ref().and_then(|record| record.coordinator),
+            record,
+            set_aside,
+            notes: vec!["the active pointer was set aside; closed from disk".to_owned()],
+        };
+        match close_abandoned_generation(self, abandoned, successor_generation, authority)? {
+            ClosureOutcome::Closed => Ok(()),
+            ClosureOutcome::Refused(reason) => Err(ParentLossLedgerError::RecoveryRequired(reason)),
+        }
     }
 
     pub fn persist_coordinator_identity(
@@ -527,6 +756,16 @@ impl ParentLossLedger {
         &self,
         active: &ActiveGeneration,
     ) -> Result<(), ParentLossLedgerError> {
+        self.initialize_record_with_heartbeat(active, None)
+    }
+
+    /// As `initialize_record`, also recording the supervisor's heartbeat
+    /// filename so a successor closing this generation can retire it exactly.
+    pub fn initialize_record_with_heartbeat(
+        &self,
+        active: &ActiveGeneration,
+        supervisor_heartbeat: Option<String>,
+    ) -> Result<(), ParentLossLedgerError> {
         let path = self.record_path(active.generation);
         fs::create_dir_all(path.parent().expect("generation record parent"))?;
         let _lock = lifecycle_lock(&path)?;
@@ -550,6 +789,8 @@ impl ParentLossLedger {
                 supervisor: active.supervisor,
                 sealed_ledger_digest: None,
                 terminal: None,
+                supervisor_heartbeat,
+                closure: None,
             },
             json_options(),
         )?;
@@ -689,10 +930,16 @@ impl ParentLossLedger {
                     generation: active.generation,
                     phase: active.phase,
                 }),
-                InstanceVerdict::NotSameOrExited | InstanceVerdict::Unverifiable => {
+                InstanceVerdict::NotSameOrExited => {
                     Ok(ParentLossReaderOutcome::BootstrapRecoveryRequired {
                         generation: Some(active.generation),
                         reason: BootstrapRecoveryReason::CoordinatorNotLive,
+                    })
+                }
+                InstanceVerdict::Unverifiable => {
+                    Ok(ParentLossReaderOutcome::BootstrapRecoveryRequired {
+                        generation: Some(active.generation),
+                        reason: BootstrapRecoveryReason::CoordinatorUnverifiable,
                     })
                 }
             },
@@ -852,7 +1099,7 @@ fn lifecycle_lock(
     )?)
 }
 
-fn json_options() -> JsonWriteOptions {
+pub(crate) fn json_options() -> JsonWriteOptions {
     JsonWriteOptions {
         mode: Some(FILE_MODE),
         indent: Some(2),
@@ -860,7 +1107,7 @@ fn json_options() -> JsonWriteOptions {
     }
 }
 
-fn read_json_optional<T: for<'de> Deserialize<'de>>(
+pub(crate) fn read_json_optional<T: for<'de> Deserialize<'de>>(
     path: &Path,
 ) -> Result<Option<T>, ParentLossLedgerError> {
     match fs::read(path) {
@@ -1340,7 +1587,8 @@ mod tests {
         assert!(matches!(
             ledger.outcome_for_active(&active).expect("admission seam"),
             ParentLossReaderOutcome::BootstrapRecoveryRequired {
-                reason: BootstrapRecoveryReason::CoordinatorNotLive,
+                reason: BootstrapRecoveryReason::CoordinatorNotLive
+                    | BootstrapRecoveryReason::CoordinatorUnverifiable,
                 ..
             }
         ));

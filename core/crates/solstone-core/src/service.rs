@@ -25,7 +25,8 @@ use solstone_core_journal_io::{
     DetailedAtomicOutcome, acquire_existing_parent_lock, atomic_replace_detailed,
 };
 use solstone_core_service_unit::{
-    build_service_environment, render_launchd_plist, render_systemd_unit,
+    SERVICE_STOP_TIMEOUT_SECONDS, build_service_environment, render_launchd_plist,
+    render_systemd_unit,
 };
 use solstone_core_setup::legacy_health::upgrade_legacy_supervisor_lock;
 use solstone_core_system::lifecycle::{clear_readiness, wait_ready};
@@ -861,7 +862,11 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
         singleton.get("KillMode").copied(),
         singleton.get("TimeoutStopSec").copied(),
     ) {
-        (Some("control-group"), Some("30")) => true,
+        (Some("control-group"), Some(timeout))
+            if timeout == SERVICE_STOP_TIMEOUT_SECONDS.to_string() =>
+        {
+            true
+        }
         (None, None) => {
             service_type == Some("simple") && systemd_unit_is_legacy_supervisor(exec, launcher)
         }
@@ -2178,6 +2183,26 @@ mod tests {
         }
     }
 
+    /// A service manager must never SIGKILL a supervisor that is still making
+    /// progress through its own bounded shutdown. 2026-09-15: a stop overran
+    /// systemd's 30 s and both lifecycle authorities died. launchd's default
+    /// is tighter still, and the generated plist does not raise it.
+    #[test]
+    fn the_shutdown_budget_clears_every_service_managers_kill_boundary_with_margin() {
+        use solstone_core_service_unit::LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS;
+
+        let ceiling = solstone_core_system::lifecycle::standard_shutdown_ceiling().as_secs();
+        for (manager, timeout) in [
+            ("launchd", u64::from(LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS)),
+            ("systemd", u64::from(SERVICE_STOP_TIMEOUT_SECONDS)),
+        ] {
+            assert!(
+                ceiling + 5 <= timeout,
+                "shutdown ceiling {ceiling}s needs at least 5s under {manager}'s {timeout}s"
+            );
+        }
+    }
+
     #[test]
     fn unavailable_installation_binding_does_not_activate_service_capture() {
         let environment =
@@ -2202,7 +2227,10 @@ mod tests {
         assert!(!systemd_managed(
             systemd
                 .replace("KillMode=control-group\n", "")
-                .replace("TimeoutStopSec=30\n", "")
+                .replace(
+                    &format!("TimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\n"),
+                    ""
+                )
                 .as_bytes(),
             launcher,
         ));

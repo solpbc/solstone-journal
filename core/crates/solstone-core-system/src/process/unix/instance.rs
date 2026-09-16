@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(target_os = "linux")]
 use std::thread;
 #[cfg(target_os = "linux")]
 use std::time::Duration;
 #[cfg(any(target_os = "macos", test))]
 use std::time::Instant;
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use super::super::ProcessOwner;
 use super::super::{
     CensusRow, InspectResult, InstanceCensus, ProcessInstanceSource, SystemProcessInstanceSource,
 };
@@ -995,5 +996,80 @@ mod tests {
         let text =
             "10 1 501 /usr/bin/journal:think extra\nbad 1 501 /bin/x\n11 1 501 /usr/bin/other\n";
         assert!(macos_sweep_table_from_text(text).is_none());
+    }
+}
+
+/// Owner uid of the process at `pid`, through an instrument that answers for
+/// pids `inspect` cannot read. See [`ProcessOwner`].
+#[cfg(target_os = "linux")]
+pub fn process_owner(pid: u32) -> ProcessOwner {
+    use std::os::unix::fs::MetadataExt;
+    // The procfs directory is owned by the process's uid, and `stat` on it
+    // needs no read permission inside it: `hidepid=1` still answers here, and
+    // `hidepid=2` hides the directory, which is `Absent` for a process this
+    // user cannot have started.
+    match std::fs::metadata(format!("/proc/{pid}")) {
+        Ok(metadata) => ProcessOwner::Uid(metadata.uid()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => ProcessOwner::Absent,
+        Err(_) => ProcessOwner::Unknown,
+    }
+}
+
+/// Owner uid of the process at `pid` through `sysctl KERN_PROC_PID`, which
+/// unlike `proc_pidinfo` answers for every user's processes.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+pub fn process_owner(pid: u32) -> ProcessOwner {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return ProcessOwner::Unknown;
+    };
+    let mut name = [libc::CTL_KERN, libc::KERN_PROC, libc::KERN_PROC_PID, pid];
+    // SAFETY: `info` is a zeroed, properly sized `kinfo_proc`; `length` starts
+    // at its size and the kernel writes at most that many bytes.
+    let mut info: libc::kinfo_proc = unsafe { std::mem::zeroed() };
+    let mut length = std::mem::size_of::<libc::kinfo_proc>();
+    let result = unsafe {
+        libc::sysctl(
+            name.as_mut_ptr(),
+            4,
+            std::ptr::addr_of_mut!(info).cast(),
+            &mut length,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if result != 0 {
+        return ProcessOwner::Unknown;
+    }
+    if length == 0 {
+        // The documented "no such process" answer: success with no bytes.
+        return ProcessOwner::Absent;
+    }
+    ProcessOwner::Uid(info.kp_eproc.e_ucred.cr_uid)
+}
+
+#[cfg(all(test, any(target_os = "linux", target_os = "macos")))]
+mod owner_tests {
+    use super::*;
+
+    #[test]
+    fn our_own_process_is_owned_by_our_uid() {
+        assert_eq!(
+            process_owner(std::process::id()),
+            ProcessOwner::Uid(nix::unistd::getuid().as_raw())
+        );
+    }
+
+    #[test]
+    fn pid_one_is_owned_by_root_even_though_inspect_may_not_read_it() {
+        // The whole point of the instrument: it answers for a process
+        // `inspect` may be unable to read.
+        assert_eq!(process_owner(1), ProcessOwner::Uid(0));
+    }
+
+    #[test]
+    fn an_unused_pid_is_absent() {
+        // pid_max is at most 2^22 on Linux and 99999 on macOS.
+        assert_eq!(process_owner(4_194_303), ProcessOwner::Absent);
     }
 }

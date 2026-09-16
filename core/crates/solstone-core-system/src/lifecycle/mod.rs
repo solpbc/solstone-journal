@@ -15,6 +15,8 @@ mod parent;
 #[cfg(unix)]
 mod parent_loss_admission;
 #[cfg(unix)]
+mod parent_loss_closure;
+#[cfg(unix)]
 mod parent_loss_coordinator;
 #[cfg(unix)]
 mod parent_loss_ledger;
@@ -82,6 +84,12 @@ pub use parent_loss_admission::{
     write_parent_loss_admission_result, write_parent_loss_service_witness,
 };
 #[cfg(unix)]
+pub use parent_loss_closure::{
+    AbandonedGenerationClosure, AdmissionClosure, AdmissionFinding, AdmissionRetirer,
+    AuthorityObservation, ClosingAuthority, HeartbeatRetirement, PARENT_LOSS_CLOSURE_SCHEMA_V1,
+    SystemAdmissionRetirer,
+};
+#[cfg(unix)]
 pub use parent_loss_coordinator::{
     CoordinatorBootstrap, CoordinatorBootstrapError, CoordinatorBootstrapReady,
     PARENT_LOSS_COORDINATOR_RETIREMENT_DEADLINE, ParentLossCoordinator, ParentLossCoordinatorError,
@@ -89,7 +97,8 @@ pub use parent_loss_coordinator::{
 };
 #[cfg(unix)]
 pub use parent_loss_ledger::{
-    ActiveGeneration, BootstrapReservation, PARENT_LOSS_LEDGER_SCHEMA_V1, ParentLossGeneration,
+    ActiveGeneration, BootstrapRecoveryReason, BootstrapReservation, CoordinatorLease,
+    PARENT_LOSS_LEDGER_SCHEMA_V1, ParentLossGeneration, ParentLossGenerationRecord,
     ParentLossLedger, ParentLossLedgerError, ParentLossPhase, ParentLossReaderOutcome,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, read_parent_loss_outcome,
 };
@@ -99,8 +108,9 @@ pub use readiness::{readiness_is_valid, wait_ready};
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub use readiness::{readiness_is_valid, wait_ready, wait_ready_with};
 pub use shutdown::{
-    ArtifactClearOutcome, ShutdownDisposition, ShutdownDriver, ShutdownOutcome, ShutdownPhase,
-    ShutdownRegime, ShutdownReport, shutdown, standard_shutdown_ceiling,
+    ArtifactClearOutcome, STANDARD_RETIREMENT_ACK_TIMEOUT, STANDARD_SHUTDOWN_BUDGET,
+    ShutdownDisposition, ShutdownDriver, ShutdownOutcome, ShutdownPhase, ShutdownRegime,
+    ShutdownReport, shutdown, standard_shutdown_ceiling,
 };
 #[cfg(unix)]
 pub use startup::{

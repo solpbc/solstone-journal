@@ -13,6 +13,7 @@ pub mod device_day_listing;
 pub mod disk_space;
 pub mod journal_caught_up;
 pub mod journal_dir_writable;
+pub mod journal_durability;
 pub mod journal_sources_readable;
 pub mod journal_sync;
 pub mod launchd_stale_plist;

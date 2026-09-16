@@ -6,8 +6,10 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use solstone_core_system::lifecycle::{ShutdownDisposition, ShutdownDriver};
-use solstone_core_system::process::SERVICE_SHUTDOWN_TIMEOUT;
+use solstone_core_system::lifecycle::{
+    STANDARD_RETIREMENT_ACK_TIMEOUT, ShutdownDisposition, ShutdownDriver,
+};
+use solstone_core_system::process::{SERVICE_SHUTDOWN_TIMEOUT, TerminationError};
 use solstone_core_system::provider_runtime::{
     ProviderStopCleanupRequest, ReasonCode, RuntimePhase,
 };
@@ -16,8 +18,10 @@ use super::runtime::SupervisorState;
 
 /// The coordinator normally polls every 25 ms. This cap makes graceful
 /// shutdown deterministic when healthy without retaining a supervisor that
-/// needs to exit because its coordinator is wedged or unavailable.
-const PARENT_LOSS_RETIRE_ACK_TIMEOUT: Duration = Duration::from_secs(2);
+/// needs to exit because its coordinator is wedged or unavailable. It is part
+/// of `standard_shutdown_ceiling`, which the service manager's stop timeout
+/// must exceed.
+const PARENT_LOSS_RETIRE_ACK_TIMEOUT: Duration = STANDARD_RETIREMENT_ACK_TIMEOUT;
 
 pub(super) trait BoundedShutdownDiagnosticSink: Send + Sync {
     fn emit(&self, service: &str, message: &str) -> io::Result<()>;
@@ -38,6 +42,8 @@ pub(crate) struct SupervisorShutdownDriver {
     pub runtime: tokio::runtime::Handle,
     parent_loss_bounded: bool,
     diagnostic_sink: Arc<dyn BoundedShutdownDiagnosticSink>,
+    retirement_requested: bool,
+    retirement_request_failed: bool,
 }
 impl ShutdownDriver for SupervisorShutdownDriver {
     fn reap_managed(&mut self, cap: Duration) -> ShutdownDisposition {
@@ -49,20 +55,22 @@ impl ShutdownDriver for SupervisorShutdownDriver {
                 ShutdownDisposition::ForcedAfterGraceTimeout
             };
         }
+        // The graceful-retirement request goes out at shutdown ENTRY, not
+        // after the task drain: hosted services poll for it and take their
+        // own cleanup path as soon as it lands, so their retirement overlaps
+        // the drain instead of starting after it. The acknowledgement is
+        // awaited in `stop_children`.
+        self.request_expected_retirement();
         self.state.reap_managed();
         ShutdownDisposition::Orderly
     }
     fn drain_tasks(&mut self, cap: Duration) -> ShutdownDisposition {
-        if self.parent_loss_bounded {
-            if !self.state.shutdown_started.swap(true, Ordering::AcqRel)
-                && self.state.queue.shutdown_until(Instant::now() + cap).forced
-            {
-                return ShutdownDisposition::ForcedAfterGraceTimeout;
-            }
-            return ShutdownDisposition::Orderly;
-        }
+        // ⚠ One shared budget in every regime. The standard regime used to
+        // call the unbounded `queue.shutdown()`, whose two independent
+        // ten-second windows put the drain alone at two thirds of the unit's
+        // stop timeout before a single child was signalled.
         if !self.state.shutdown_started.swap(true, Ordering::AcqRel)
-            && self.state.queue.shutdown().forced
+            && self.state.queue.shutdown_until(Instant::now() + cap).forced
         {
             return ShutdownDisposition::ForcedAfterGraceTimeout;
         }
@@ -73,34 +81,31 @@ impl ShutdownDriver for SupervisorShutdownDriver {
             return self.stop_children_until(cap);
         }
         let mut disposition = ShutdownDisposition::Orderly;
-        if let Some(coordinator) = self.state.parent_loss_coordinator.as_ref() {
-            match coordinator.write_retire_expected(&self.state.journal) {
-                Ok(()) => match coordinator.wait_for_retire_expected_ack(
-                    &self.state.journal,
-                    PARENT_LOSS_RETIRE_ACK_TIMEOUT,
-                ) {
-                    Ok(true) => {}
-                    Ok(false) => {
-                        // The coordinator remains the sole terminal authority.
-                        // Continue shutdown rather than converting a bounded
-                        // acknowledgement wait into an indefinite supervisor.
-                        log::warn!(
-                            "supervisor: parent-loss retirement acknowledgement timed out; continuing shutdown"
-                        );
-                    }
-                    Err(error) => {
-                        log::warn!(
-                            "supervisor: could not read parent-loss retirement acknowledgement: {error}; continuing shutdown"
-                        );
-                    }
-                },
-                Err(error) => {
-                    // A normal shutdown cannot authorize graceful retirement
-                    // without the coordinator's private-generation material.
+        if !self.retirement_requested {
+            self.request_expected_retirement();
+        }
+        if self.retirement_request_failed {
+            // A normal shutdown cannot authorize graceful retirement without
+            // the coordinator's private-generation material.
+            disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
+        } else if let Some(coordinator) = self.state.parent_loss_coordinator.as_ref() {
+            match coordinator.wait_for_retire_expected_ack(
+                &self.state.journal,
+                PARENT_LOSS_RETIRE_ACK_TIMEOUT.min(cap.unwrap_or(PARENT_LOSS_RETIRE_ACK_TIMEOUT)),
+            ) {
+                Ok(true) => {}
+                Ok(false) => {
+                    // The coordinator remains the sole terminal authority.
+                    // Continue shutdown rather than converting a bounded
+                    // acknowledgement wait into an indefinite supervisor.
                     log::warn!(
-                        "supervisor: could not request expected parent-loss retirement: {error}"
+                        "supervisor: parent-loss retirement acknowledgement timed out; continuing shutdown"
                     );
-                    disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
+                }
+                Err(error) => {
+                    log::warn!(
+                        "supervisor: could not read parent-loss retirement acknowledgement: {error}; continuing shutdown"
+                    );
                 }
             }
         }
@@ -108,23 +113,44 @@ impl ShutdownDriver for SupervisorShutdownDriver {
             app.enabled = false;
             app.restart_at = None;
         }
-        for app in self.state.app_processes.iter_mut().rev() {
-            let Some(process) = app.process.as_mut() else {
-                continue;
-            };
-            if let Err(error) = process.terminate_exact(SERVICE_SHUTDOWN_TIMEOUT) {
-                if matches!(
-                    error,
-                    solstone_core_system::process::TerminationError::ParentGraceTimeout
-                ) {
-                    disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
-                }
-                log::warn!(
-                    "supervisor: failed to terminate {} during shutdown: {error}",
-                    app.service.as_str()
-                );
-            }
-            process.cleanup();
+        // 🔴 Every hosted child is signalled at once and waited for against
+        // ONE deadline. Stopping them in turn, each with its full grace, put
+        // the worst case at 15 s per child; with four hosted children that is
+        // a minute against a 30 s stop timeout, and on 2026-09-15 the service
+        // manager SIGKILLed the control group mid-shutdown for exactly that
+        // reason. Exact termination still revalidates each identity before
+        // every signal, so concurrency changes the schedule, not the proof.
+        let deadline = Instant::now() + cap.unwrap_or(SERVICE_SHUTDOWN_TIMEOUT);
+        let forced = std::thread::scope(|scope| {
+            let stops = self
+                .state
+                .app_processes
+                .iter_mut()
+                .rev()
+                .filter_map(|app| {
+                    let service = app.service.as_str();
+                    let process = app.process.as_mut()?;
+                    Some(scope.spawn(move || {
+                        let result = process.terminate_exact_until(deadline);
+                        process.cleanup();
+                        match result {
+                            Ok(_) => false,
+                            Err(error) => {
+                                log::warn!(
+                                    "supervisor: failed to terminate {service} during shutdown: {error}"
+                                );
+                                matches!(error, TerminationError::ParentGraceTimeout)
+                            }
+                        }
+                    }))
+                })
+                .collect::<Vec<_>>();
+            stops
+                .into_iter()
+                .fold(false, |forced, stop| stop.join().unwrap_or(true) || forced)
+        });
+        if forced {
+            disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
         }
         request_stop(&mut self.state.local.state, &self.state.local.processes);
         request_stop(
@@ -143,29 +169,22 @@ impl ShutdownDriver for SupervisorShutdownDriver {
         disposition
     }
     fn join_bus(&mut self, cap: Duration) -> ShutdownDisposition {
-        if self.parent_loss_bounded {
-            let result = tokio::task::block_in_place(|| {
-                self.runtime.block_on(async {
-                    tokio::time::timeout(cap, async {
-                        self.state.connection.stop().await;
-                        self.state.server.stop().await;
-                    })
-                    .await
-                })
-            });
-            return if result.is_ok() {
-                ShutdownDisposition::Orderly
-            } else {
-                ShutdownDisposition::ForcedAfterGraceTimeout
-            };
-        }
-        tokio::task::block_in_place(|| {
+        // Bounded in every regime; the standard regime used to wait without
+        // limit here, past its own stated five-second cap.
+        let result = tokio::task::block_in_place(|| {
             self.runtime.block_on(async {
-                self.state.connection.stop().await;
-                self.state.server.stop().await;
-            });
+                tokio::time::timeout(cap, async {
+                    self.state.connection.stop().await;
+                    self.state.server.stop().await;
+                })
+                .await
+            })
         });
-        ShutdownDisposition::Orderly
+        if result.is_ok() {
+            ShutdownDisposition::Orderly
+        } else {
+            ShutdownDisposition::ForcedAfterGraceTimeout
+        }
     }
 }
 
@@ -181,6 +200,22 @@ impl SupervisorShutdownDriver {
             runtime,
             parent_loss_bounded,
             diagnostic_sink,
+            retirement_requested: false,
+            retirement_request_failed: false,
+        }
+    }
+
+    /// Write the authenticated graceful-retirement control once. Idempotent.
+    fn request_expected_retirement(&mut self) {
+        if self.retirement_requested {
+            return;
+        }
+        self.retirement_requested = true;
+        if let Some(coordinator) = self.state.parent_loss_coordinator.as_ref()
+            && let Err(error) = coordinator.write_retire_expected(&self.state.journal)
+        {
+            log::warn!("supervisor: could not request expected parent-loss retirement: {error}");
+            self.retirement_request_failed = true;
         }
     }
 

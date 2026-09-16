@@ -362,6 +362,23 @@ pub trait ProcessInstanceSource: Send + Sync {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct SystemProcessInstanceSource;
 
+/// Who owns the process at a pid, read through an instrument that answers for
+/// every pid the kernel will name, not only the ones this user may inspect.
+///
+/// `inspect` goes blind on another user's process (macOS `proc_pidinfo` is
+/// `EPERM` there; a `hidepid` procfs hides it) and reports `Unverifiable`,
+/// which must never be read as death. This is the positive observation that
+/// resolves it: a pid owned by another user cannot be a process this journal's
+/// owner started.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProcessOwner {
+    /// No process has this pid.
+    Absent,
+    Uid(u32),
+    /// The instrument itself failed; treat as unknown, never as absent.
+    Unknown,
+}
+
 /// A descendant's exact identity and provenance observed before signaling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Descendant {
