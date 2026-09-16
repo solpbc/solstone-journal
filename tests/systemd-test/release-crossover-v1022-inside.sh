@@ -11,6 +11,32 @@ log() { printf '[inside:%s] %s\n' "$phase" "$*" >&2; }
 fail() { printf 'failure: %s\n' "$*" >&2; exit 1; }
 assert_payload() { sha256sum -c "$state_dir/payload.sha256"; }
 
+candidate_package() {
+    case "$package_format" in
+        deb) find /artifacts -maxdepth 1 -name 'solstone-journal-*-linux-x86_64.deb' -print | sort -V | tail -1 ;;
+        rpm) find /artifacts -maxdepth 1 -name 'solstone-journal-*-linux-x86_64.rpm' -print | sort -V | tail -1 ;;
+        *) fail "unknown package format: $package_format" ;;
+    esac
+}
+
+candidate_version() {
+    local package
+    package=$(candidate_package)
+    [ -n "$package" ] || fail "candidate .$package_format missing"
+    case "$package_format" in
+        deb) dpkg-deb -f "$package" Version ;;
+        rpm) rpm -qp --qf '%{VERSION}\n' "$package" ;;
+    esac
+}
+
+assert_candidate_version() {
+    local launcher=$1 actual expected
+    expected="journal (solstone) $(candidate_version)"
+    actual=$("$launcher" --version)
+    [ "$actual" = "$expected" ] \
+        || fail "$launcher reported '$actual', expected '$expected' from package metadata"
+}
+
 wait_active() {
     local state=""
     for _ in $(seq 1 60); do
@@ -50,10 +76,10 @@ install_public_v1() {
 
 inspect_and_install_candidate() {
     local package
+    package=$(candidate_package)
+    [ -n "$package" ] || fail "candidate .$package_format missing"
     case "$package_format" in
         deb)
-            package=$(find /artifacts -maxdepth 1 -name 'solstone-journal-*-linux-x86_64.deb' -print | sort -V | tail -1)
-            [ -n "$package" ] || fail "candidate .deb missing"
             dpkg-deb --fsys-tarfile "$package" | tar -tf - | sort > /tmp/deb-data-members
             grep -Eq '^(\./)?usr/bin/journal$' /tmp/deb-data-members
             rm -rf /tmp/deb-control
@@ -76,8 +102,6 @@ inspect_and_install_candidate() {
             sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$package"
             ;;
         rpm)
-            package=$(find /artifacts -maxdepth 1 -name 'solstone-journal-*-linux-x86_64.rpm' -print | sort -V | tail -1)
-            [ -n "$package" ] || fail "candidate .rpm missing"
             rpm -qpl "$package" | grep -Fxq '/usr/bin/journal'
             [ -z "$(rpm -qp --scripts "$package")" ] || fail "rpm contains prohibited scriptlets"
             if rpm -qp --qf '%{SIGPGP:pgpsig}\n%{SIGGPG:pgpsig}\n%{RSAHEADER:pgpsig}\n%{DSAHEADER:pgpsig}\n' "$package" \
@@ -130,7 +154,7 @@ case "$phase" in
         [ "$(command -v journal)" = "$HOME/.local/bin/journal" ] \
             || fail "bare journal does not resolve to the v1 owner path"
         journal --version | grep -F '1.0.22'
-        /usr/bin/journal --version | grep -F '2.0.0'
+        assert_candidate_version /usr/bin/journal
 
         log "near-twin: exact recognition must fail before mutation or backup"
         sed -i 's/Edits will be overwritten/Changes will be overwritten/' "$HOME/.local/bin/journal"
@@ -214,7 +238,7 @@ case "$phase" in
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/journal"
         grep -Fq '# managed-version: 8' "$HOME/.local/bin/solstone"
         [ ! -e "$HOME/.local/bin/sol" ] || fail "v1 sol authority survived crossover"
-        journal --version | grep -F '2.0.0'
+        assert_candidate_version journal
         grep -Fq "ExecStart=$HOME/.local/bin/journal start 5015" \
             "$HOME/.config/systemd/user/solstone.service"
         grep -Fq 'SOLSTONE_INSTALLATION_NAMESPACE=' "$HOME/.config/systemd/user/solstone.service"
@@ -248,7 +272,7 @@ PY
     verify-v2)
         wait_active
         assert_payload
-        journal --version | grep -F '2.0.0'
+        assert_candidate_version journal
         grep -Fq 'native v2 write' "$HOME/journal/facets/reference/news/20260828.md"
         main=$(systemctl --user show solstone.service --property=MainPID --value)
         [ "$main" -gt 1 ] || fail "v2 PID missing after lifecycle transition"
