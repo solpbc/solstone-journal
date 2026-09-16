@@ -165,6 +165,19 @@ and remote-network boundary, not a defense against malware already running as th
 **Consumer:** `core/crates/solstone-core-convey-shell/assets/static/websocket.js` (built-in listener)
 **Purpose:** Navigate the browser to a URL path. Workspace-local facet selection stays in that workspace's URL/query contract.
 
+### `retention` - Storage retention and media removal events
+**Source:** `solstone-core-retention` (raw-original deletion door)
+**Events:** `original_deleted`
+**Key fields:**
+- `name` (string): The filename within the segment directory (e.g., `"audio.flac"`, `"screen.webm"`)
+- `class` (string): Wire cause tag (`"policy_raw_release"`, `"offload_raw_release"`, `"owner_raw_release"`)
+- `ts` (integer): Milliseconds since Unix epoch
+**Semantics:**
+- Durable-only: written to `chronicle/**/<seg>/events.jsonl` by the deletion door after a confirmed unlink
+- Never broadcast on the live bus
+- Not in `core/fixtures/callosum_registry.json`
+- Supervisor allowlist stays `observe` | `think` | `activity` (this tract is not logged)
+
 ---
 
 ## Key Concepts
