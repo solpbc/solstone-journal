@@ -657,9 +657,16 @@ fn remove_one(
     )
 }
 
+/// Bump the day's stream marker, and record a failure in the row's single
+/// `post_commit_failure` slot only when that slot is still empty.
+///
+/// The bump is attempted on every call, even when the slot is already taken, so a
+/// transient marker failure on one file can still be followed by a successful bump
+/// on a later file in the same segment. Returns whether this call filled the slot
+/// with a marker failure.
 fn dirty_removed_day(journal: &Path, row: &mut TargetOutcome) -> bool {
-    if row.post_commit_failure.is_none()
-        && let Err(error) = bump_stream_marker(journal, &row.target.day)
+    if let Err(error) = bump_stream_marker(journal, &row.target.day)
+        && row.post_commit_failure.is_none()
     {
         let path = health_marker_path(journal, &row.target.day, HealthMarkerKind::Stream);
         let relative = path
@@ -1255,6 +1262,51 @@ mod tests {
             failure.reason,
             "original media was deleted from this segment, but the record of how couldn't be written, so this segment's page won't name a reason."
         );
+    }
+
+    #[test]
+    fn marker_is_bumped_for_every_file_after_the_failure_slot_is_taken() {
+        let bed = Bed::new();
+        let segment = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(segment.join("a.flac"), b"audio1").unwrap();
+        fs::write(segment.join("b.flac"), b"audio2").unwrap();
+        // The record append fails for both files, so the row's failure slot is
+        // taken after the first file. The day marker must still be bumped for the
+        // second file.
+        fs::create_dir_all(segment.join("events.jsonl")).unwrap();
+
+        let (outcome, _) = release_raw(
+            &bed.root,
+            &[
+                proof("20260805", "field.audio", "070000_17", "a.flac", 6),
+                proof("20260805", "field.audio", "070000_17", "b.flac", 6),
+            ],
+            RawReleaseClass::Policy,
+            test_at(),
+        );
+
+        assert_eq!(outcome.targets[0].removed.len(), 2);
+        assert!(
+            outcome.targets[0]
+                .post_commit_failure
+                .as_ref()
+                .unwrap()
+                .entry
+                .ends_with("events.jsonl")
+        );
+        let state = solstone_core_journal_io::read_health_marker(
+            &bed.root,
+            "20260805",
+            HealthMarkerKind::Stream,
+        )
+        .unwrap();
+        let generation = match state {
+            solstone_core_journal_io::HealthMarkerState::Versioned { marker, .. } => {
+                marker.generation
+            }
+            other => panic!("expected a versioned stream marker, got {other:?}"),
+        };
+        assert_eq!(generation, 2, "one stream-marker bump per released file");
     }
 
     #[test]
