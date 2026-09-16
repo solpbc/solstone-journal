@@ -259,6 +259,10 @@ fn map_transport_error(error: TransportError) -> LinkJoinPairingError {
         }
         TransportError::TlsAccessDenied => LinkJoinPairingErrorKind::TlsAccessDenied,
         TransportError::TlsCertificateUnknown => LinkJoinPairingErrorKind::TlsCertificateUnknown,
+        // Another refusal, or a peer that is not the journal, reads as a handshake failure.
+        TransportError::TlsRefused | TransportError::UnknownJournal(_) => {
+            LinkJoinPairingErrorKind::Tls
+        }
         TransportError::Crypto(message) => {
             drop(message);
             LinkJoinPairingErrorKind::Crypto

@@ -716,11 +716,11 @@ impl CarrierOpener for SolstoneCarrierOpener {
             {
                 return Err(TransportError::NotPaired);
             }
+            // Certificate unknown (46) means the journal could not read its
+            // pairing records: keep the client and let the bridge retry.
             if matches!(
                 &result,
-                Err(TransportError::NotPaired
-                    | TransportError::TlsAccessDenied
-                    | TransportError::TlsCertificateUnknown)
+                Err(TransportError::NotPaired | TransportError::TlsAccessDenied)
             ) {
                 state.client = None;
                 state.pending = None;
@@ -1100,7 +1100,11 @@ impl StatusTracker {
             } else {
                 "unhealthy".to_string()
             },
-            state: if bridge.carrier_live {
+            // The bridge stops dialing once the journal refuses this device with
+            // access denied, or once other refusals reach its bound.
+            state: if bridge.terminal_reason.is_some() {
+                "unpaired".to_string()
+            } else if bridge.carrier_live {
                 "connected".to_string()
             } else if bridge.listener_active {
                 "disconnected".to_string()
@@ -1945,6 +1949,9 @@ fn map_transport_error_ref(error: &TransportError) -> LinkServeTransportErrorKin
         TransportError::Tls(_) => LinkServeTransportErrorKind::Tls,
         TransportError::TlsAccessDenied => LinkServeTransportErrorKind::TlsAccessDenied,
         TransportError::TlsCertificateUnknown => LinkServeTransportErrorKind::TlsCertificateUnknown,
+        TransportError::TlsRefused | TransportError::UnknownJournal(_) => {
+            LinkServeTransportErrorKind::Tls
+        }
         TransportError::Crypto(_) => LinkServeTransportErrorKind::Crypto,
         TransportError::Mux(_) => LinkServeTransportErrorKind::Mux,
         TransportError::Http(_) => LinkServeTransportErrorKind::Http,
@@ -2214,6 +2221,46 @@ mod tests {
             carrier_live,
             active_requests: 0,
             terminal_reason: None,
+            last_failure: None,
+            refusals: 0,
+        }
+    }
+
+    // SPL session § 7. Falsified by reading only carrier liveness: a device the bridge stopped
+    // for would report "disconnected" and never tell the owner to pair again.
+    #[test]
+    fn a_stopped_bridge_reports_unpaired_and_a_refusal_alone_does_not() {
+        use spl_transport::journal_bridge::{JournalBridgeFailure, JournalBridgeTerminalReason};
+
+        let tracker = StatusTracker::new(Arc::new(FixedStatusClock::new(10.0)));
+        for stop in [
+            JournalBridgeTerminalReason::TlsAccessDenied,
+            JournalBridgeTerminalReason::RefusalsExhausted,
+        ] {
+            let status = JournalBridgeStatus {
+                terminal_reason: Some(stop),
+                ..bridge_status(true, false)
+            };
+            let snapshot = tracker.snapshot(status);
+            assert_eq!(snapshot.state, "unpaired", "{stop:?}");
+            assert_eq!(snapshot.health, "unhealthy", "{stop:?}");
+        }
+        for failure in [
+            JournalBridgeFailure::TlsCertificateUnknown,
+            JournalBridgeFailure::TlsRefused,
+            JournalBridgeFailure::UnknownJournal,
+            JournalBridgeFailure::Unreachable,
+        ] {
+            let status = JournalBridgeStatus {
+                last_failure: Some(failure),
+                refusals: 3,
+                ..bridge_status(true, false)
+            };
+            assert_eq!(
+                tracker.snapshot(status).state,
+                "disconnected",
+                "{failure:?}"
+            );
         }
     }
 

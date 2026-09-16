@@ -394,10 +394,22 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         ("stopped".to_string(), ver, "")
     };
 
+    let unpaired_note = if state_str == "unpaired" {
+        unpaired_note(&selection.bundle_dir)
+    } else {
+        String::new()
+    };
     CommandOutput::success(format!(
-        "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}",
+        "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}{unpaired_note}",
         selection.label, state_str, version_str
     ))
+}
+
+fn unpaired_note(bundle_dir: &Path) -> String {
+    format!(
+        "This device can't connect to your journal with its saved pairing. To pair it again, stop 'solstone link serve', remove the folder {}, run 'solstone link join --code <new pairing link>', then start 'solstone link serve' again.\n",
+        bundle_dir.display()
+    )
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -2948,6 +2960,67 @@ mod tests {
             "Label: alpha\nStatus: disconnected\nJournal version: 2026.07.26 (last known)\n"
         );
         assert_eq!(probe.recorded(), vec![5015]);
+    }
+
+    // Falsified by printing the unpaired state without its guidance: the owner learns the link
+    // stopped but not what to do about it.
+    #[test]
+    fn status_running_unpaired_says_how_to_pair_again() {
+        let temp = temp_dir("status-running-unpaired");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        serve_bundle(&config, "alpha", json!([]));
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "unpaired".to_string(),
+            health: "unhealthy".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 1,
+            last_connected_at: None,
+            connected_age_seconds: None,
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: None,
+            journal_version_fresh: false,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        assert!(
+            output.stdout.contains("Status: unpaired\n"),
+            "{}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.ends_with(&unpaired_note(&bundle_dir)),
+            "{}",
+            output.stdout
+        );
+        assert!(
+            output.stdout.contains(&bundle_dir.display().to_string()),
+            "{}",
+            output.stdout
+        );
     }
 
     #[test]
