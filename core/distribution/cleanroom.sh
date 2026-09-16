@@ -61,11 +61,13 @@ cleanup_inside() {
 start_supervisor() {
 	with_convey=$1
 	SUPERVISOR_PID=
+	# The rung asserts the registration and reconciliation INFO records below.
+	# Production defaults to WARN, so make the qualification log level explicit.
 	if [ "$with_convey" = yes ]; then
-		solstone-core supervisor --journal "$SOLSTONE_JOURNAL" --no-spl --no-daily 5015 \
+		RUST_LOG=info solstone-core supervisor --journal "$SOLSTONE_JOURNAL" --no-spl --no-daily 5015 \
 			>"$SOLSTONE_JOURNAL/supervisor.log" 2>&1 &
 	else
-		solstone-core supervisor --journal "$SOLSTONE_JOURNAL" --no-convey --no-spl --no-daily 5015 \
+		RUST_LOG=info solstone-core supervisor --journal "$SOLSTONE_JOURNAL" --no-convey --no-spl --no-daily 5015 \
 			>"$SOLSTONE_JOURNAL/supervisor.log" 2>&1 &
 	fi
 	SUPERVISOR_PID=$!
