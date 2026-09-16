@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- when pairing can't start because your journal finds no address a phone can reach, your journal's log now lists each address it saw, whether each could be used, and why a saved home address wasn't used.
+
 ### Fixed
 
 - the "preserve silent audio" switch in transcription settings had no effect, so audio with no speech could still be listed for deletion on your home page, where nothing is deleted until you say so. the switch has moved to storage settings as "keep audio with no speech". when it's on, that audio is no longer added to the list, and anything already listed comes off at the list's next daily rebuild. if you had it on, it stays on.
@@ -14,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a connected device could be told it had been unpaired when your journal couldn't read its own list of paired devices. the device is now told your journal couldn't check, not that it was unpaired.
 - a day could stop finishing and keep retrying forever when a recurring person or thing could not be matched to the one already in your journal, for instance because one name carried punctuation or an accent the other did not. names that differ that way now match, and a day held up by one of them finishes on its own once you install.
 - a new memory about someone is no longer skipped just because it repeats one you already have for a different day or a different relationship. only an exact repeat (same words, same day, same relationship) is treated as one.
+- your journal's network app would save a public internet address as your home address, and the solstone app on your phone then refused the pairing code made with it. the network app now saves only an address on your network or VPN, and shows your journal's actual port when it refuses one, so if you saved a public address before, replace it there.
 
 ## [2.0.7] - 2026-09-15
 
