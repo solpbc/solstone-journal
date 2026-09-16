@@ -145,9 +145,13 @@ impl ShutdownDriver for SupervisorShutdownDriver {
                     }))
                 })
                 .collect::<Vec<_>>();
-            stops
+            // Join every stop before answering; a short-circuit would leave
+            // a child's termination result unread.
+            let outcomes = stops
                 .into_iter()
-                .fold(false, |forced, stop| stop.join().unwrap_or(true) || forced)
+                .map(|stop| stop.join().unwrap_or(true))
+                .collect::<Vec<_>>();
+            outcomes.into_iter().any(|forced| forced)
         });
         if forced {
             disposition = ShutdownDisposition::ForcedAfterGraceTimeout;
