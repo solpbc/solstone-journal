@@ -182,7 +182,7 @@ solstone call entities aka "Federal Aviation Administration" "FAA" -f work
 ## observations
 
 ```bash
-solstone call entities observations ENTITY [-f FACET] [--oldest] [--limit N] [--offset N] [--after-id ID] [--all] [--json]
+solstone call entities observations ENTITY [-f FACET] [--oldest] [--limit N] [--all] [--json]
 ```
 
 List durable observations for an attached entity.
@@ -190,9 +190,7 @@ List durable observations for an attached entity.
 - `ENTITY`: entity id, name, or alias.
 - `-f, --facet`: facet name (default: `SOL_FACET` env).
 - `--oldest`: order oldest first (default: newest first).
-- `--limit`: maximum observations to return (default: 50, max: 200).
-- `--offset`: skip the specified number of observations.
-- `--after-id`: fetch observations following this observation id.
+- `--limit`: maximum observations to return (default: 50).
 - `--all`: show all observations across pagination boundaries.
 - `--json`: return the raw JSON payload.
 
