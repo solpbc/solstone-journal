@@ -73,6 +73,7 @@ pub use append::append_jsonl;
 pub use append::append_text;
 #[cfg(any(unix, windows))]
 pub use atomic::install_file;
+pub use atomic::is_publication_candidate_name;
 #[cfg(unix)]
 pub use atomic::write_bytes_exclusive_bound_detailed;
 #[cfg(any(unix, windows))]

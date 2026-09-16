@@ -1705,6 +1705,23 @@ pub(crate) const ATOMIC_CANDIDATE_MARKER: &str = "tmp";
 pub(crate) const STAGED_CANDIDATE_MARKER: &str = "stage";
 pub(crate) const CANDIDATE_SUFFIX: &str = ".tmp";
 
+/// Whether `name` is a publication candidate this module stages beside a
+/// destination before the atomic rename (`.tmp_…tmp`, `.stage_…tmp`, or the
+/// `_`-led forms used for dotfile destinations). A process killed between
+/// the write and the rename leaves one behind; a reader that enumerates the
+/// directory must not mistake it for a published entry.
+pub fn is_publication_candidate_name(name: &OsStr) -> bool {
+    let bytes = name.as_encoded_bytes();
+    let led = |marker: &str| {
+        let body = format!("{marker}_");
+        bytes.len() > 1
+            && matches!(bytes[0], b'.' | b'_')
+            && bytes[1..].starts_with(body.as_bytes())
+    };
+    bytes.ends_with(CANDIDATE_SUFFIX.as_bytes())
+        && (led(ATOMIC_CANDIDATE_MARKER) || led(STAGED_CANDIDATE_MARKER))
+}
+
 pub(crate) fn publication_candidate_name(
     destination_name: &OsStr,
     marker: &str,

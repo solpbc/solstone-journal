@@ -1620,8 +1620,10 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
     wait_for_socket(&mut child, &socket);
 
     // Callosum binds before the coordinator bootstraps and before any app is
-    // admitted; wait until the generation is admitting and owns at least one
-    // app fixture, which is the mid-admission shape the incident had.
+    // admitted; wait until the generation is admitting, owns at least one app
+    // fixture, and has COMPLETED at least one admission (a launcher-owned
+    // `result.json` reading `admitted`), so the closure has a recorded exact
+    // identity to prove exited or retire, not only a launch caught mid-flight.
     let ledger = ParentLossLedger::open(&journal.0).expect("open parent-loss ledger");
     let source = SystemProcessInstanceSource;
     let admitting_deadline = Instant::now() + Duration::from_secs(30);
@@ -1643,7 +1645,23 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
                 .filter(|row| row.ppid == active.supervisor.pid && row.instance != coordinator)
                 .map(|row| row.instance)
                 .collect::<Vec<_>>();
-            if !admitted.is_empty() {
+            let completed_admissions =
+                fs::read_dir(ledger.generation_path(active.generation).join("admissions"))
+                    .map(|entries| {
+                        entries
+                            .flatten()
+                            .filter(|entry| {
+                                fs::read(entry.path().join("result.json"))
+                                    .ok()
+                                    .and_then(|bytes| {
+                                        serde_json::from_slice::<serde_json::Value>(&bytes).ok()
+                                    })
+                                    .is_some_and(|result| result["state"] == "admitted")
+                            })
+                            .count()
+                    })
+                    .unwrap_or(0);
+            if !admitted.is_empty() && completed_admissions > 0 {
                 break (active, coordinator, admitted);
             }
         }

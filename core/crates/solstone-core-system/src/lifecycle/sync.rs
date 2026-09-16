@@ -847,6 +847,15 @@ pub(crate) fn assemble_sync_result(
         {
             continue;
         }
+        // ⛔ A publication candidate (`.tmp_…tmp`) that is merely FRESH is not
+        // a live peer. A supervisor SIGKILLed between writing its heartbeat's
+        // staging file and the rename leaves one behind, fresh and
+        // unparseable; read as a live malformed heartbeat it refused every
+        // start for the whole freshness window (measured 2026-09-16 under the
+        // control-group kill rig). One that APPEARS or CHANGES under a running
+        // scan is still a conflict, as any unidentified entry is, and it
+        // stays a peer observation so the stale collector removes it after
+        // its floor.
         let is_live = if matches!(
             &classification,
             HeartbeatClassification::AdmissionWaitMarker(_)
@@ -854,6 +863,8 @@ pub(crate) fn assemble_sync_result(
                 | HeartbeatClassification::AdmissionWaitMarkerMalformed
         ) {
             false
+        } else if solstone_core_journal_io::is_publication_candidate_name(&name) {
+            changed || appeared
         } else {
             fresh || changed || appeared
         };
@@ -1578,5 +1589,47 @@ mod tests {
         let result = scan_bound_sync(&sync, "self.check", Some(&first.snapshot), now).unwrap();
         assert_eq!(result.live_peer_observations.len(), 2);
         assert!(result.is_boot_conflict());
+    }
+
+    /// A SIGKILL between a heartbeat's staging write and its rename leaves
+    /// `.tmp_….tmp` beside the real entries. Fresh and unparseable, it must
+    /// not read as a live malformed heartbeat that refuses the next start for
+    /// the whole freshness window; it stays observed for the stale collector,
+    /// and one that appears under a running scan is still a conflict.
+    #[test]
+    fn a_fresh_publication_candidate_left_by_a_killed_run_is_not_a_live_peer() {
+        let temporary = temporary();
+        let (_root, _health, sync) = bound_sync(temporary.path());
+        let sync_path = temporary.path().join(SYNC_FOLDER_DIAGNOSTIC);
+        fs::write(sync_path.join(".tmp_9_9.tmp"), b"{\"sche").unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+
+        let first = scan_bound_sync(&sync, "self.check", None, now).unwrap();
+        assert_eq!(first.peer_observations.len(), 1, "it stays observed");
+        assert!(matches!(
+            first.peer_observations[0].classification,
+            HeartbeatClassification::BoundedMalformed
+        ));
+        assert!(
+            !first.is_boot_conflict(),
+            "a fresh staging leftover must not refuse the next start"
+        );
+
+        fs::write(sync_path.join(".stage_9_9.tmp"), b"{\"sche").unwrap();
+        let second = scan_bound_sync(&sync, "self.check", Some(&first.snapshot), now).unwrap();
+        assert!(
+            second.is_tick_conflict(Some(&first.snapshot)),
+            "one that appears under a running scan is still a conflict"
+        );
+
+        let is_candidate = solstone_core_journal_io::is_publication_candidate_name;
+        assert!(is_candidate(OsStr::new(".tmp_1.tmp")));
+        assert!(is_candidate(OsStr::new(".stage_1.tmp")));
+        assert!(is_candidate(OsStr::new("_tmp_1.tmp")));
+        assert!(!is_candidate(OsStr::new("solstone-v2-a-b.check")));
+        assert!(!is_candidate(OsStr::new("legacy.tmp")));
     }
 }
