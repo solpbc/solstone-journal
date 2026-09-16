@@ -465,7 +465,7 @@ impl DayCacheWriter for FailingWriter {
     fn write_day_cache(&self, path: &Path, _payload: &DayScan) -> Result<(), JournalStatsError> {
         Err(JournalStatsError::Io {
             path: path.to_path_buf(),
-            source: io::Error::new(io::ErrorKind::Other, "forced writer failure"),
+            source: io::Error::other("forced writer failure"),
         })
     }
 }
