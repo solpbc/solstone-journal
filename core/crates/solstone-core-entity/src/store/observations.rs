@@ -1414,14 +1414,22 @@ pub fn apply_ops_to_parsed(
             let rel_val = op_obj.get("relation").filter(|v| !v.is_null());
             let candidate_norm = normalize_observation_content(content);
 
-            // Normalized-content guard against ALL rows (live or retired), matching Append
-            let already_present = rows
-                .iter()
-                .any(|r| normalize_observation_content(&r.content) == candidate_norm);
+            // A duplicate is a still-live row whose normalized content, source day
+            // and relation all match what this add would produce — the same triple
+            // §6 dedups on, "present and equal" included. A now-retired row (e.g.
+            // dropped earlier in this same batch), a distinct relation, or a day
+            // that isn't both present and equal is not a duplicate; matching
+            // content alone here silently swallowed legitimate repeats.
+            let already_present = source_day.is_some()
+                && rows.iter().any(|r| {
+                    r.retired.is_none()
+                        && normalize_observation_content(&r.content) == candidate_norm
+                        && r.source_day.as_deref() == source_day
+                        && r.relation.as_ref() == rel_val
+                });
 
             if already_present {
-                counts.skip += 1;
-                counts.skipped += 1;
+                counts.keep += 1;
                 continue;
             }
 
@@ -1482,7 +1490,10 @@ pub fn apply_ops_to_parsed(
                 counts.skipped += 1;
                 continue;
             }
-        } else if op_type != "drop" {
+        } else {
+            // A `target_id` alone is a positional reference into a batch's own
+            // snapshot, not an identity check — every indexed op, drop included,
+            // needs the quote to confirm it is touching the row it thinks it is.
             counts.refused += 1;
             counts.skipped += 1;
             continue;
@@ -1717,11 +1728,24 @@ mod tests {
         assert_eq!(rows[1].id, 2);
         assert!(rows[1].retired.is_some());
 
-        // 5. Add duplicate -> skipped
+        // 5. Same content, but row 1 carries no source_day — §6 only dedups a day
+        // that is present and equal, so an add naming a day is not a duplicate of
+        // an undated row and must go through.
         let ops = vec![json!({"op": "add", "content": "original fact one"})];
-        let (_rows, counts, changed) =
-            apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
-        assert_eq!(counts.skip, 1);
+        let (rows, counts, changed) = apply_ops_to_parsed(&parsed, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.add, 1);
+        assert!(changed);
+        assert_eq!(rows.last().unwrap().content, "original fact one");
+
+        // 6. Same content, same day and same (absent) relation as an already-live
+        // row -> the write-time guard mirrors §6 and keeps the one row.
+        let same_day = "{\"id\":1,\"content\":\"Original fact one\",\"observed_at\":1000,\"source_day\":\"20260910\"}\n";
+        let dated =
+            parse_observation_file(same_day, ObservationParseSource::CapturedSnapshot).unwrap();
+        let ops = vec![json!({"op": "add", "content": "original fact one"})];
+        let (rows, counts, changed) = apply_ops_to_parsed(&dated, &ops, Some("20260910")).unwrap();
+        assert_eq!(counts.keep, 1);
         assert!(!changed);
+        assert_eq!(rows.len(), 1);
     }
 }

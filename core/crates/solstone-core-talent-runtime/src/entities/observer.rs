@@ -253,7 +253,11 @@ fn clean_operation(
 fn merge_counts(counts: &mut Counts, source: &solstone_core_facets::ObservationOperationCounts) {
     *counts.entry("add").or_default() += source.add;
     *counts.entry("replace").or_default() += source.replace;
-    *counts.entry("skip").or_default() += source.skip;
+    // The model's own "skip" decisions and the store's backstop for an "add" it
+    // already holds (content, day and relation all matching a live row) both mean
+    // the same thing to this outcome: no change was made. Roll both into one
+    // bucket rather than let the backstop case vanish from the day's counts.
+    *counts.entry("skip").or_default() += source.skip + source.keep;
     *counts.entry("refused").or_default() += source.refused;
 }
 
