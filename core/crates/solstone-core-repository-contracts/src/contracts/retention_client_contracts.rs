@@ -102,3 +102,55 @@ fn retention_client_reexports_only_its_allowlist() {
         "retention client public reexports must exactly match the allowlist"
     );
 }
+
+#[test]
+fn solstone_retention_binary_invocation_is_strictly_controlled() {
+    let root = repository_root();
+    let crates_dir = root.join("core/crates");
+    let mut found_spawners = BTreeSet::new();
+
+    for entry in fs::read_dir(&crates_dir).expect("read crates dir") {
+        let entry = entry.expect("crate entry");
+        let src_dir = entry.path().join("src");
+        if !src_dir.is_dir() {
+            continue;
+        }
+        for file in sources(&src_dir) {
+            let filename = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if filename.ends_with("tests.rs") || filename.starts_with("test_") {
+                continue;
+            }
+            let rel = file
+                .strip_prefix(&root)
+                .unwrap()
+                .to_string_lossy()
+                .replace('\\', "/");
+            if rel.contains("/solstone-core-retention-cli/") {
+                continue;
+            }
+            let content = fs::read_to_string(&file).expect("read file");
+            if content.contains("\"solstone-retention\"") {
+                found_spawners.insert(rel.clone());
+                assert!(
+                    !content.contains("release-raw"),
+                    "{rel} must not invoke or name `release-raw`"
+                );
+                assert!(
+                    !content.contains("sweep"),
+                    "{rel} must not invoke or name `sweep`"
+                );
+            }
+        }
+    }
+
+    let expected_spawners = BTreeSet::from([
+        "core/crates/solstone-core-retention-client/src/lib.rs".to_owned(),
+        "core/crates/solstone-core-settings-web/src/retention_executor.rs".to_owned(),
+        "core/crates/solstone-core/src/warm.rs".to_owned(),
+    ]);
+
+    assert_eq!(
+        found_spawners, expected_spawners,
+        "solstone-retention binary references in production sources must match exact allowlist"
+    );
+}
