@@ -268,47 +268,15 @@ fn validate_model_intent(intent: &WriteIntent) -> Result<(), StageError> {
             }
         }
         "schedule" => {
-            let events = value
+            let _ = value
                 .as_array()
                 .or_else(|| value.get("events").and_then(Value::as_array))
                 .ok_or_else(|| invalid("schedule events must be an array"))?;
             let WriteIntent::Schedule { day, .. } = intent else {
                 unreachable!()
             };
-            let day = chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
+            chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
                 .map_err(|_| invalid("invalid schedule day"))?;
-            for event in events {
-                for field in ["activity", "target_date", "title", "description", "facet"] {
-                    if !event
-                        .get(field)
-                        .and_then(Value::as_str)
-                        .is_some_and(|s| !s.trim().is_empty())
-                    {
-                        return Err(error(format!("validation: schedule event missing {field}")));
-                    }
-                }
-                let target = chrono::NaiveDate::parse_from_str(
-                    event["target_date"].as_str().unwrap(),
-                    "%Y-%m-%d",
-                )
-                .map_err(|_| invalid("invalid schedule target date"))?;
-                if target <= day {
-                    return Err(invalid("schedule target must be after analysis day"));
-                }
-                if !event.get("participation").is_some_and(Value::is_array) {
-                    return Err(invalid("schedule participation must be an array"));
-                }
-                for field in ["start", "end"] {
-                    if let Some(value) = event.get(field).filter(|v| !v.is_null())
-                        && value.as_str().is_none_or(|s| {
-                            s.len() != 8
-                                || chrono::NaiveTime::parse_from_str(s, "%H:%M:%S").is_err()
-                        })
-                    {
-                        return Err(invalid("schedule time must be HH:MM:SS"));
-                    }
-                }
-            }
         }
         _ => unreachable!(),
     }
@@ -924,6 +892,63 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.phase, "publication");
+    }
+
+    #[test]
+    fn schedule_intent_validation_accepts_mixed_future_and_non_future_events() {
+        let valid_event = json!({
+            "activity": "meeting",
+            "target_date": "2026-09-20",
+            "start": "09:00:00",
+            "title": "Project sync",
+            "description": "Discuss roadmap",
+            "facet": "work",
+            "participation": []
+        });
+        let non_future_event = json!({
+            "activity": "meeting",
+            "target_date": "2026-09-10",
+            "start": "09:00:00",
+            "title": "Past sync",
+            "description": "Past roadmap",
+            "facet": "work",
+            "participation": []
+        });
+        let intent = WriteIntent::Schedule {
+            output: json!({"events": [valid_event, non_future_event]}).to_string(),
+            day: "20260910".into(),
+        };
+        assert!(validate_model_intent(&intent).is_ok());
+
+        let array_intent = WriteIntent::Schedule {
+            output: json!([valid_event, non_future_event]).to_string(),
+            day: "20260910".into(),
+        };
+        assert!(validate_model_intent(&array_intent).is_ok());
+    }
+
+    #[test]
+    fn schedule_intent_validation_rejects_malformed_json_events_shape_and_day() {
+        let invalid_json = WriteIntent::Schedule {
+            output: "not-json".into(),
+            day: "20260910".into(),
+        };
+        let err = validate_model_intent(&invalid_json).unwrap_err();
+        assert!(err.detail.starts_with("validation: invalid schedule JSON:"));
+
+        let not_array = WriteIntent::Schedule {
+            output: json!({"events": "not an array"}).to_string(),
+            day: "20260910".into(),
+        };
+        let err = validate_model_intent(&not_array).unwrap_err();
+        assert_eq!(err.detail, "validation: schedule events must be an array");
+
+        let bad_day = WriteIntent::Schedule {
+            output: "[]".into(),
+            day: "bad-day".into(),
+        };
+        let err = validate_model_intent(&bad_day).unwrap_err();
+        assert_eq!(err.detail, "validation: invalid schedule day");
     }
 
     #[test]

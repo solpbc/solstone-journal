@@ -15,6 +15,51 @@ use crate::{PreparedTalent, StageError, detected_resolution_entities, stage_erro
 
 const ANTICIPATION_FUZZY_THRESHOLD: f64 = 0.85;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkipReason {
+    MissingField,
+    BadTargetDate,
+    UnknownFacet,
+    BadParticipation,
+    BadTime,
+    NonObject,
+    ResolvedChoiceEntityAbsent,
+    ResolvedChoiceEntityBlocked,
+}
+
+impl SkipReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingField => "missing field",
+            Self::BadTargetDate => "bad target date",
+            Self::UnknownFacet => "unknown facet",
+            Self::BadParticipation => "bad participation",
+            Self::BadTime => "bad time",
+            Self::NonObject => "non-object event",
+            Self::ResolvedChoiceEntityAbsent => "resolved-choice entity absent",
+            Self::ResolvedChoiceEntityBlocked => "resolved-choice entity blocked",
+        }
+    }
+}
+
+#[derive(Debug)]
+enum PrepareEventError {
+    Skip { reason: SkipReason, detail: String },
+    Abort(String),
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_SCHEDULE_SKIP_WARNINGS: std::cell::RefCell<Vec<String>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+fn warn_skipped_event(day: &str, reason: SkipReason) {
+    let message = format!("schedule event skipped for day {day}: {}", reason.as_str());
+    log::warn!("{message}");
+    #[cfg(test)]
+    TEST_SCHEDULE_SKIP_WARNINGS.with(|warnings| warnings.borrow_mut().push(message));
+}
+
 pub fn parse(
     output: &str,
     _prepared: &PreparedTalent,
@@ -101,7 +146,11 @@ fn apply_event(
         known_facets,
         entity_cache,
         false,
-    )?;
+    )
+    .map_err(|error| match error {
+        PrepareEventError::Skip { detail, .. } => detail,
+        PrepareEventError::Abort(detail) => detail,
+    })?;
     let new_id = require_text(&record, "id")?;
     let cancelled = record
         .get("cancelled")
@@ -182,9 +231,19 @@ pub fn prepare_publication(
     type DayAnticipations = Vec<(Map<String, Value>, Vec<String>)>;
     let mut groups: BTreeMap<(String, String), DayAnticipations> = BTreeMap::new();
     for raw in events {
-        let raw = raw.as_object().ok_or("schedule event must be an object")?;
+        let Some(raw) = raw.as_object() else {
+            warn_skipped_event(day, SkipReason::NonObject);
+            continue;
+        };
         let (facet, target, record) =
-            prepare_event(journal, raw, day, current_day, &known, &mut cache, true)?;
+            match prepare_event(journal, raw, day, current_day, &known, &mut cache, true) {
+                Ok(prepared) => prepared,
+                Err(PrepareEventError::Skip { reason, .. }) => {
+                    warn_skipped_event(day, reason);
+                    continue;
+                }
+                Err(PrepareEventError::Abort(detail)) => return Err(detail),
+            };
         let existing = solstone_core_facets::load_activity_records(journal, &facet, &target, true)
             .map_err(|e| e.to_string())?;
         let exact_match = existing.iter().any(|old| old.get("id") == record.get("id"));
@@ -235,24 +294,55 @@ fn prepare_event(
         Vec<solstone_core_entity::EntityResolutionEntity>,
     >,
     read_only: bool,
-) -> Result<(String, String, Map<String, Value>), String> {
-    let activity = require_text(raw, "activity")?;
-    let target_date = require_text(raw, "target_date")?;
-    let title = require_text(raw, "title")?;
-    let description = require_text(raw, "description")?;
-    let facet = require_text(raw, "facet")?;
+) -> Result<(String, String, Map<String, Value>), PrepareEventError> {
+    let activity = require_text(raw, "activity").map_err(|detail| PrepareEventError::Skip {
+        reason: SkipReason::MissingField,
+        detail,
+    })?;
+    let target_date =
+        require_text(raw, "target_date").map_err(|detail| PrepareEventError::Skip {
+            reason: SkipReason::MissingField,
+            detail,
+        })?;
+    let title = require_text(raw, "title").map_err(|detail| PrepareEventError::Skip {
+        reason: SkipReason::MissingField,
+        detail,
+    })?;
+    let description =
+        require_text(raw, "description").map_err(|detail| PrepareEventError::Skip {
+            reason: SkipReason::MissingField,
+            detail,
+        })?;
+    let facet = require_text(raw, "facet").map_err(|detail| PrepareEventError::Skip {
+        reason: SkipReason::MissingField,
+        detail,
+    })?;
     if !known_facets.contains(&facet) {
-        return Err(format!("validation: unknown facet {facet:?}"));
+        return Err(PrepareEventError::Skip {
+            reason: SkipReason::UnknownFacet,
+            detail: format!("validation: unknown facet {facet:?}"),
+        });
     }
-    let target_day =
-        NaiveDate::parse_from_str(&target_date, "%Y-%m-%d").map_err(|error| error.to_string())?;
+    let target_day = NaiveDate::parse_from_str(&target_date, "%Y-%m-%d").map_err(|error| {
+        PrepareEventError::Skip {
+            reason: SkipReason::BadTargetDate,
+            detail: error.to_string(),
+        }
+    })?;
     if target_day <= current_day {
-        return Err(format!(
-            "target_date must be after context day ({target_date} <= {day})"
-        ));
+        return Err(PrepareEventError::Skip {
+            reason: SkipReason::BadTargetDate,
+            detail: format!("target_date must be after context day ({target_date} <= {day})"),
+        });
     }
-    let start = optional_time(raw, "start")?;
-    let end = optional_time(raw, "end")?;
+    let start = optional_time(raw, "start").map_err(|detail| PrepareEventError::Skip {
+        reason: SkipReason::BadTime,
+        detail,
+    })?;
+    let end = optional_time(raw, "end").map_err(|detail| PrepareEventError::Skip {
+        reason: SkipReason::BadTime,
+        detail,
+    })?;
     let cancelled = raw
         .get("cancelled")
         .is_some_and(solstone_core_facets::activity_value_truthy);
@@ -262,32 +352,77 @@ fn prepare_event(
         .cloned()
         .unwrap_or(Value::Null);
     let Some(participation) = raw.get("participation").and_then(Value::as_array) else {
-        return Err("participation must be a list".to_owned());
+        return Err(PrepareEventError::Skip {
+            reason: SkipReason::BadParticipation,
+            detail: "participation must be a list".to_owned(),
+        });
     };
+    let new_id =
+        make_anticipation_id(&activity, start.as_deref(), &target_date).map_err(|detail| {
+            PrepareEventError::Skip {
+                reason: SkipReason::BadTargetDate,
+                detail,
+            }
+        })?;
     let target_day_key = target_day.format("%Y%m%d").to_string();
-    let entities = entity_cache
-        .entry((facet.clone(), target_day_key.clone()))
-        .or_insert(detected_resolution_entities(
-            journal,
-            &facet,
-            &target_day_key,
-        )?);
-    let new_id = make_anticipation_id(&activity, start.as_deref(), &target_date)?;
+    let entities = match entity_cache.entry((facet.clone(), target_day_key.clone())) {
+        std::collections::btree_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::btree_map::Entry::Vacant(entry) => {
+            let loaded = detected_resolution_entities(journal, &facet, &target_day_key)
+                .map_err(PrepareEventError::Abort)?;
+            entry.insert(loaded)
+        }
+    };
     let mut resolved = Vec::new();
     let mut active = Vec::new();
     let mut seen_active = BTreeSet::new();
     for entry in participation.iter().filter_map(Value::as_object) {
         let mut entry = entry.clone();
-        let resolution = solstone_core_entity::record_entity_resolution(
+        let resolution = match solstone_core_entity::record_entity_resolution(
             journal,
-            entry.get("name").and_then(Value::as_str).unwrap_or_default(),
+            entry
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
             entities,
             json!({"kind":"facet","facet":facet}),
             json!({"lane":"talent.schedule","facet":facet,"day":target_day_key,"record_id":new_id,"field":"participation.name"}),
             90.0,
             read_only,
-        )
-        .map_err(|error| error.to_string())?;
+        ) {
+            Ok(resolution) => resolution,
+            Err(
+                error @ solstone_core_entity::EntityResolutionError::ResolvedChoiceEntityAbsent {
+                    ..
+                },
+            ) => {
+                return Err(PrepareEventError::Skip {
+                    reason: SkipReason::ResolvedChoiceEntityAbsent,
+                    detail: error.to_string(),
+                });
+            }
+            Err(
+                error @ solstone_core_entity::EntityResolutionError::ResolvedChoiceEntityBlocked {
+                    ..
+                },
+            ) => {
+                return Err(PrepareEventError::Skip {
+                    reason: SkipReason::ResolvedChoiceEntityBlocked,
+                    detail: error.to_string(),
+                });
+            }
+            Err(solstone_core_entity::EntityResolutionError::Read(error)) => {
+                return Err(PrepareEventError::Abort(error.to_string()));
+            }
+            Err(solstone_core_entity::EntityResolutionError::TrustLock(error)) => {
+                // Unreachable on prepare_publication because read_only: true; reachable on apply_event (read_only: false)
+                return Err(PrepareEventError::Abort(error.to_string()));
+            }
+            Err(solstone_core_entity::EntityResolutionError::Write(error)) => {
+                // Unreachable on prepare_publication because read_only: true; reachable on apply_event (read_only: false)
+                return Err(PrepareEventError::Abort(error.to_string()));
+            }
+        };
         let entity_id = resolved_id(&resolution, entities);
         entry.insert("entity_id".to_owned(), entity_id.clone());
         if entry.get("role").and_then(Value::as_str) == Some("attendee")
@@ -628,5 +763,482 @@ mod tests {
                 .unwrap();
         assert_eq!(records2.len(), 1);
         assert_eq!(records2[0]["cancelled"], true);
+    }
+
+    fn reset_schedule_skip_warnings() {
+        TEST_SCHEDULE_SKIP_WARNINGS.with(|warnings| warnings.borrow_mut().clear());
+    }
+
+    fn schedule_skip_warnings() -> Vec<String> {
+        TEST_SCHEDULE_SKIP_WARNINGS.with(|warnings| warnings.borrow().clone())
+    }
+
+    #[test]
+    fn prepare_publication_drops_non_future_event_and_keeps_valid_sibling() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        reset_schedule_skip_warnings();
+
+        let output = json!({
+            "events": [
+                {
+                    "activity": "meeting",
+                    "target_date": "2026-09-10",
+                    "start": "09:00:00",
+                    "title": "Past sync",
+                    "description": "Discuss roadmap",
+                    "facet": "work",
+                    "participation": []
+                },
+                {
+                    "activity": "meeting",
+                    "target_date": "2026-09-20",
+                    "start": "09:00:00",
+                    "title": "Future sync",
+                    "description": "Discuss roadmap",
+                    "facet": "work",
+                    "participation": []
+                }
+            ]
+        })
+        .to_string();
+
+        let batches = prepare_publication(root.path(), &output, "20260910").unwrap();
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].facet, "work");
+        assert_eq!(batches[0].day, "20260920");
+        assert!(batches[0].after.contains("Future sync"));
+        assert!(!batches[0].after.contains("Past sync"));
+
+        let warnings = schedule_skip_warnings();
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(
+            warnings[0],
+            "schedule event skipped for day 20260910: bad target date"
+        );
+    }
+
+    #[test]
+    fn prepare_publication_aborts_on_structural_json_shape_and_day_errors() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+
+        assert!(prepare_publication(root.path(), "not-json", "20260910").is_err());
+        assert!(
+            prepare_publication(root.path(), "{\"events\": \"not an array\"}", "20260910").is_err()
+        );
+        assert!(prepare_publication(root.path(), "[]", "bad-day").is_err());
+    }
+
+    #[test]
+    fn prepare_publication_drops_single_invalid_events_and_warns_with_reason() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+
+        let valid_sibling = json!({
+            "activity": "meeting",
+            "target_date": "2026-09-20",
+            "start": "10:00:00",
+            "title": "Valid meeting",
+            "description": "Description",
+            "facet": "work",
+            "participation": []
+        });
+
+        let test_cases = vec![
+            (
+                json!({
+                    "target_date": "2026-09-20",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "work",
+                    "participation": []
+                }),
+                "missing field",
+                Some("Title"),
+            ),
+            (
+                json!({
+                    "activity": "meeting",
+                    "target_date": "2026-99-99",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "work",
+                    "participation": []
+                }),
+                "bad target date",
+                Some("Title"),
+            ),
+            (
+                json!({
+                    "activity": "meeting",
+                    "target_date": "2026-09-10",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "work",
+                    "participation": []
+                }),
+                "bad target date",
+                Some("Title"),
+            ),
+            (
+                json!({
+                    "activity": "meeting",
+                    "target_date": "2026-09-20",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "unknown_facet_name",
+                    "participation": []
+                }),
+                "unknown facet",
+                Some("Title"),
+            ),
+            (
+                json!({
+                    "activity": "meeting",
+                    "target_date": "2026-09-20",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "work",
+                }),
+                "bad participation",
+                Some("Title"),
+            ),
+            (
+                json!({
+                    "activity": "meeting",
+                    "target_date": "2026-09-20",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "work",
+                    "participation": "not an array"
+                }),
+                "bad participation",
+                Some("Title"),
+            ),
+            (
+                json!({
+                    "activity": "meeting",
+                    "target_date": "2026-09-20",
+                    "start": "9:00",
+                    "title": "Title",
+                    "description": "Description",
+                    "facet": "work",
+                    "participation": []
+                }),
+                "bad time",
+                Some("Title"),
+            ),
+            (json!("not an object"), "non-object event", None),
+        ];
+
+        for (bad_event, expected_reason, bad_title) in test_cases {
+            reset_schedule_skip_warnings();
+            let output = json!([bad_event, valid_sibling.clone()]).to_string();
+            let batches = prepare_publication(root.path(), &output, "20260910").unwrap();
+            assert_eq!(batches.len(), 1, "Failed for reason: {expected_reason}");
+            assert!(
+                batches[0].after.contains("Valid meeting"),
+                "batches[0].after missing 'Valid meeting' for reason: {expected_reason}"
+            );
+            if let Some(bad_title) = bad_title {
+                assert!(
+                    !batches[0].after.contains(bad_title),
+                    "batches[0].after contains '{bad_title}' for reason: {expected_reason}"
+                );
+            }
+
+            let warnings = schedule_skip_warnings();
+            assert_eq!(warnings.len(), 1, "Failed for reason: {expected_reason}");
+            assert_eq!(
+                warnings[0],
+                format!("schedule event skipped for day 20260910: {expected_reason}")
+            );
+        }
+    }
+
+    #[test]
+    fn prepare_publication_returns_empty_batches_when_all_events_are_skipped() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        reset_schedule_skip_warnings();
+
+        let output = json!([
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-10",
+                "title": "Past meeting",
+                "description": "Description",
+                "facet": "work",
+                "participation": []
+            },
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-20",
+                "title": "Unknown facet meeting",
+                "description": "Description",
+                "facet": "unknown",
+                "participation": []
+            }
+        ])
+        .to_string();
+
+        let batches = prepare_publication(root.path(), &output, "20260910").unwrap();
+        assert!(batches.is_empty());
+
+        let warnings = schedule_skip_warnings();
+        assert_eq!(warnings.len(), 2);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn prepare_publication_aborts_on_unreadable_detected_entities_store_error() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+
+        let entities_dir = root.path().join("facets/work/entities");
+        std::fs::create_dir_all(&entities_dir).unwrap();
+        let entity_file = entities_dir.join("20260920.jsonl");
+        std::fs::write(&entity_file, "{\"name\":\"test\"}\n").unwrap();
+
+        // Make unreadable
+        std::fs::set_permissions(&entity_file, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let output = json!([{
+            "activity": "meeting",
+            "target_date": "2026-09-20",
+            "title": "Meeting",
+            "description": "Description",
+            "facet": "work",
+            "participation": []
+        }])
+        .to_string();
+
+        let result = prepare_publication(root.path(), &output, "20260910");
+        // Restore permissions for cleanup
+        let _ = std::fs::set_permissions(&entity_file, std::fs::Permissions::from_mode(0o644));
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_publication_aborts_on_corrupt_ambiguities_store_read_error() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+
+        let ambiguities_path = root.path().join("entities/ambiguities.jsonl");
+        std::fs::create_dir_all(ambiguities_path.parent().unwrap()).unwrap();
+        std::fs::write(&ambiguities_path, "{not valid json}\n").unwrap();
+
+        let output = json!([{
+            "activity": "meeting",
+            "target_date": "2026-09-20",
+            "title": "Meeting",
+            "description": "Description",
+            "facet": "work",
+            "participation": [
+                {
+                    "name": "Sarah",
+                    "role": "attendee",
+                    "source": "screen",
+                    "confidence": 0.9,
+                    "context": "test"
+                }
+            ]
+        }])
+        .to_string();
+
+        let result = prepare_publication(root.path(), &output, "20260910");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn prepare_publication_drops_absent_and_blocked_resolved_choice_events() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+
+        // Seed choices
+        solstone_core_entity::record_ambiguity_observation(
+            root.path(),
+            &solstone_core_entity::AmbiguityObservation {
+                scope: json!({"kind": "facet", "facet": "work"}),
+                query: "Sarah".to_owned(),
+                normalized_query: "sarah".to_owned(),
+                observed_tier: 5,
+                ranked_candidates: vec![json!({
+                    "id": "sarah_absent",
+                    "name": "Sarah",
+                    "tier": 5,
+                    "score": 90.0,
+                })],
+                origin: json!({"lane": "test"}),
+            },
+        )
+        .unwrap();
+
+        solstone_core_entity::record_ambiguity_choice(
+            root.path(),
+            &solstone_core_entity::AmbiguityChoiceRequest {
+                scope: json!({"kind": "facet", "facet": "work"}),
+                query: "Sarah".to_owned(),
+                entity_id: "sarah_absent".to_owned(),
+                origin: None,
+            },
+            &[solstone_core_entity::AmbiguityChoiceEntity {
+                id: "sarah_absent".to_owned(),
+                blocked: false,
+            }],
+        )
+        .unwrap();
+
+        solstone_core_entity::record_ambiguity_observation(
+            root.path(),
+            &solstone_core_entity::AmbiguityObservation {
+                scope: json!({"kind": "facet", "facet": "work"}),
+                query: "Bob".to_owned(),
+                normalized_query: "bob".to_owned(),
+                observed_tier: 5,
+                ranked_candidates: vec![json!({
+                    "id": "bob_blocked",
+                    "name": "Bob",
+                    "tier": 5,
+                    "score": 90.0,
+                })],
+                origin: json!({"lane": "test"}),
+            },
+        )
+        .unwrap();
+
+        solstone_core_entity::record_ambiguity_choice(
+            root.path(),
+            &solstone_core_entity::AmbiguityChoiceRequest {
+                scope: json!({"kind": "facet", "facet": "work"}),
+                query: "Bob".to_owned(),
+                entity_id: "bob_blocked".to_owned(),
+                origin: None,
+            },
+            &[solstone_core_entity::AmbiguityChoiceEntity {
+                id: "bob_blocked".to_owned(),
+                blocked: false,
+            }],
+        )
+        .unwrap();
+
+        // Create detected entities in target day containing bob_blocked with blocked=true
+        let entities_dir = root.path().join("facets/work/entities");
+        std::fs::create_dir_all(&entities_dir).unwrap();
+        let entity_file = entities_dir.join("20260920.jsonl");
+        std::fs::write(
+            &entity_file,
+            json!({"id": "bob_blocked", "type": "person", "name": "Bob", "blocked": true})
+                .to_string()
+                + "\n",
+        )
+        .unwrap();
+
+        reset_schedule_skip_warnings();
+
+        let output = json!([
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-20",
+                "start": "09:00:00",
+                "title": "Meeting with Sarah",
+                "description": "Description",
+                "facet": "work",
+                "participation": [{"name": "Sarah", "role": "attendee"}]
+            },
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-20",
+                "start": "10:00:00",
+                "title": "Meeting with Bob",
+                "description": "Description",
+                "facet": "work",
+                "participation": [{"name": "Bob", "role": "attendee"}]
+            },
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-20",
+                "start": "11:00:00",
+                "title": "Solo sync",
+                "description": "Description",
+                "facet": "work",
+                "participation": []
+            }
+        ])
+        .to_string();
+
+        let batches = prepare_publication(root.path(), &output, "20260910").unwrap();
+        assert_eq!(batches.len(), 1);
+        assert!(batches[0].after.contains("Solo sync"));
+        assert!(!batches[0].after.contains("Meeting with Sarah"));
+        assert!(!batches[0].after.contains("Meeting with Bob"));
+
+        let warnings = schedule_skip_warnings();
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(
+            warnings[0],
+            "schedule event skipped for day 20260910: resolved-choice entity absent"
+        );
+        assert_eq!(
+            warnings[1],
+            "schedule event skipped for day 20260910: resolved-choice entity blocked"
+        );
+    }
+
+    #[test]
+    fn prepare_publication_records_distinct_warning_for_each_skipped_event() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        reset_schedule_skip_warnings();
+
+        let output = json!([
+            {
+                "target_date": "2026-09-20",
+                "title": "No activity",
+                "description": "Description",
+                "facet": "work",
+                "participation": []
+            },
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-01",
+                "title": "Past date",
+                "description": "Description",
+                "facet": "work",
+                "participation": []
+            },
+            "not an object",
+            {
+                "activity": "meeting",
+                "target_date": "2026-09-20",
+                "title": "Valid sync",
+                "description": "Description",
+                "facet": "work",
+                "participation": []
+            }
+        ])
+        .to_string();
+
+        let batches = prepare_publication(root.path(), &output, "20260910").unwrap();
+        assert_eq!(batches.len(), 1);
+        assert!(batches[0].after.contains("Valid sync"));
+
+        let warnings = schedule_skip_warnings();
+        assert_eq!(warnings.len(), 3);
+        assert_eq!(
+            warnings[0],
+            "schedule event skipped for day 20260910: missing field"
+        );
+        assert_eq!(
+            warnings[1],
+            "schedule event skipped for day 20260910: bad target date"
+        );
+        assert_eq!(
+            warnings[2],
+            "schedule event skipped for day 20260910: non-object event"
+        );
     }
 }
