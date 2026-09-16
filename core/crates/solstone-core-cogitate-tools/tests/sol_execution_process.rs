@@ -172,12 +172,23 @@ fn write_journal_fixture(directory: &Path, body: &str) -> std::path::PathBuf {
 
 #[test]
 fn hosted_journal_tool_fixture() {
-    use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
+    use solstone_core_system::lifecycle::{
+        ParentLossAdmissionError, acknowledge_hosted_child_admission,
+    };
     let Ok(role) = env::var("SOLSTONE_TEST_JOURNAL_TOOL_ROLE") else {
         return;
     };
     let journal = env::var_os("SOLSTONE_JOURNAL").unwrap();
-    if !matches!(role.as_str(), "unacknowledged" | "foreign") {
+    if role == "sealed" {
+        let acknowledged = acknowledge_hosted_child_admission(Path::new(&journal));
+        assert!(
+            matches!(
+                acknowledged,
+                Err(ParentLossAdmissionError::GenerationClosed)
+            ),
+            "a sealed generation must refuse the acknowledgement: {acknowledged:?}"
+        );
+    } else if !matches!(role.as_str(), "unacknowledged" | "foreign") {
         acknowledge_hosted_child_admission(Path::new(&journal)).unwrap();
     }
     if role == "helper" {

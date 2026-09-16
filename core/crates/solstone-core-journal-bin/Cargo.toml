@@ -27,6 +27,7 @@ velopack.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-installation-identity.workspace = true
 solstone-core-service-unit.workspace = true
+solstone-core-system.workspace = true
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

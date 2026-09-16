@@ -4487,6 +4487,7 @@ dependencies = [
  "solstone-core-journal-cli",
  "solstone-core-service-unit",
  "solstone-core-setup",
+ "solstone-core-system",
  "velopack",
  "zip 2.4.2",
 ]

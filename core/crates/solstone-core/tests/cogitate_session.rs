@@ -661,12 +661,23 @@ fn dead_stdout_pipe_uses_contract_exit_code() {
 #[test]
 fn hosted_one_shot_client_fixture() {
     use solstone_core_cogitate_wire::{CogitateOneShotClient, CogitateRequest};
-    use solstone_core_system::lifecycle::acknowledge_hosted_child_admission;
+    use solstone_core_system::lifecycle::{
+        ParentLossAdmissionError, acknowledge_hosted_child_admission,
+    };
     let Ok(role) = std::env::var("SOLSTONE_TEST_COGITATE_ADMISSION_ROLE") else {
         return;
     };
     let journal = PathBuf::from(std::env::var_os("SOLSTONE_JOURNAL").unwrap());
-    if role != "foreign" {
+    if role == "sealed" {
+        let acknowledged = acknowledge_hosted_child_admission(&journal);
+        assert!(
+            matches!(
+                acknowledged,
+                Err(ParentLossAdmissionError::GenerationClosed)
+            ),
+            "a sealed generation must refuse the acknowledgement: {acknowledged:?}"
+        );
+    } else if role != "foreign" {
         acknowledge_hosted_child_admission(&journal).unwrap();
     }
     let request = CogitateRequest::from_value(&json!({

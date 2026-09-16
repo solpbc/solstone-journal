@@ -1164,18 +1164,31 @@ fn ac34_shutdown_order_is_explicit() {
             Some(Duration::from_secs(2)),
         ]
     );
+    // The standard regime spends one absolute budget: reap and drain keep
+    // their own caps, the child stop holds two seconds back for the bus, and
+    // the bus join gets what is left. This driver returns at once, so the
+    // budget is nearly whole at every phase.
     let mut standard_driver = Driver(Vec::new());
     let standard = shutdown(&mut standard_driver, ShutdownRegime::Standard);
     assert_eq!(standard.phases.len(), 8);
-    assert_eq!(
-        standard_driver.0,
-        vec![
-            Some(Duration::from_secs(3)),
-            Some(Duration::from_secs(10)),
-            Some(Duration::from_secs(2)),
-            Some(Duration::from_secs(5)),
-        ]
+    let budget = solstone_core_system::lifecycle::standard_shutdown_ceiling();
+    let caps = standard_driver
+        .0
+        .iter()
+        .map(|cap| cap.expect("every standard phase is capped"))
+        .collect::<Vec<_>>();
+    assert_eq!(caps.len(), 4);
+    assert_eq!(caps[0], Duration::from_secs(3));
+    assert_eq!(caps[1], Duration::from_secs(8));
+    let bus_reserve = Duration::from_secs(2);
+    assert!(caps[2] <= budget - bus_reserve, "{caps:?}");
+    assert!(
+        caps[2] > budget - bus_reserve - Duration::from_secs(5),
+        "{caps:?}"
     );
+    assert!(caps[3] <= budget, "{caps:?}");
+    assert!(caps[3] <= caps[2] + bus_reserve, "{caps:?}");
+    assert!(caps[3] > budget - Duration::from_secs(5), "{caps:?}");
 }
 
 #[test]

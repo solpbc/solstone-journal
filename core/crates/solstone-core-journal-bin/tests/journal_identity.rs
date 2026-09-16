@@ -1300,14 +1300,35 @@ fn archive_merge_directory_source_is_unsafe() {
 
 #[test]
 fn hosted_local_journal_entry_acknowledges_once_and_rejects_identity_reuse() {
+    use solstone_core_system::lifecycle::{HostedServiceKind, ParentLossLedger};
+    use solstone_core_system::process::{
+        InspectResult, ProcessInstanceSource, SystemProcessInstanceSource,
+    };
+
     let temp = TempDir::new("journal-local-admission");
     let journal = temp.path.join("journal");
     fs::create_dir(&journal).unwrap();
+    // A hosted entry serves only while the generation it names still admits.
+    let ledger = ParentLossLedger::open(&journal).unwrap();
+    let InspectResult::Present { instance, .. } =
+        SystemProcessInstanceSource.inspect(std::process::id())
+    else {
+        panic!("fixture process identity unavailable");
+    };
+    let active = ledger
+        .reserve_generation(instance, [HostedServiceKind::Cortex])
+        .unwrap();
+    ledger.initialize_record(&active).unwrap();
+    ledger
+        .persist_coordinator_identity(active.generation, instance)
+        .unwrap();
+    ledger.mark_admitting(active.generation, instance).unwrap();
+    let generation = active.generation.to_string();
     let invoke = || {
         Command::new(bin())
             .arg("--help")
             .env("SOLSTONE_JOURNAL", &journal)
-            .env("SOL_PARENT_LOSS_GENERATION", "1")
+            .env("SOL_PARENT_LOSS_GENERATION", &generation)
             .env("SOL_PARENT_LOSS_LAUNCH_ID", "journal-tool-local")
             .env("SOL_PARENT_LOSS_PARENT_LAUNCH_ID", "talent-parent")
             .output()
@@ -1319,9 +1340,9 @@ fn hosted_local_journal_entry_acknowledges_once_and_rejects_identity_reuse() {
         "{}",
         String::from_utf8_lossy(&first.stderr)
     );
-    let ack_path = journal.join(
-        "health/parent-loss/generations/1/admissions/journal-tool-local/acknowledgement.json",
-    );
+    let ack_path = journal.join(format!(
+        "health/parent-loss/generations/{generation}/admissions/journal-tool-local/acknowledgement.json"
+    ));
     let before = fs::read(&ack_path).expect("local entry must acknowledge before returning help");
     let ack: Value = serde_json::from_slice(&before).unwrap();
     assert_eq!(ack["identity"]["parent_launch_id"], "talent-parent");
