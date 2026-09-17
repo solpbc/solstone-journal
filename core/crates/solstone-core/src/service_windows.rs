@@ -553,9 +553,21 @@ fn run_install_action(
             return ExitCode::from(1);
         }
     }
-    let port = match port.as_deref().map(str::parse::<u16>) {
-        Some(Ok(port)) => Some(port),
-        Some(Err(_)) => return ExitCode::from(1),
+    // `parse_service_port` accepts integer text without imposing a machine
+    // range, so a value that got this far can still be out of range for a port.
+    // It used to exit 1 with nothing on stderr, which is the same silence
+    // `service install <port>` used to have: the owner sees a failed command
+    // and no reason. The refusal is the locked one for an invalid `--port`
+    // value, so this adds no new owner-facing string.
+    let port = match port.as_deref().map(|text| (text, text.parse::<u16>())) {
+        Some((_, Ok(port))) => Some(port),
+        Some((text, Err(_))) => {
+            eprintln!(
+                "error: invalid port '{}'",
+                solstone_core_system_health::sanitize_str_for_terminal(text)
+            );
+            return ExitCode::from(1);
+        }
         None => None,
     };
     match install_task(&ctx, port) {

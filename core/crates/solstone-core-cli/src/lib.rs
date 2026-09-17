@@ -4619,6 +4619,17 @@ pub struct ServiceInstallationGuardArguments {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SafeServiceDiagnostic(String);
 
+/// Whether an argument is shaped like a port number, on the same axis the port
+/// grammar reads: `parse_integer_text` strips one leading `+` or `-` before it
+/// looks at digits, so the refusal has to as well. Underscores and non-ASCII
+/// digits are deliberately out: the grammar takes them, but nobody types them
+/// at a port and treating them as number-shaped would widen the range sentence
+/// to arguments it does not describe.
+fn is_port_shaped(text: &str) -> bool {
+    let digits = text.strip_prefix(['+', '-']).unwrap_or(text);
+    !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit())
+}
+
 impl SafeServiceDiagnostic {
     fn invalid_port_text(value: &str) -> Self {
         Self(format!(
@@ -4653,47 +4664,49 @@ impl SafeServiceDiagnostic {
         // different ways, and each arm below exists because of a specific way a
         // reader would be misled:
         //
-        //   * a real port echoes the owner's own value, not a metavar; it is
-        //     already in the sentence.
-        //   * a number that is not a usable port is not a spelling mistake, and
-        //     saying "expected --port PORT" names a problem the owner does not
-        //     have. Worse, it routes them to `--port 99999`, which the port
-        //     grammar accepts -- it parses integer text without imposing a
-        //     machine range -- and which then fails later. Offering a remedy
-        //     that leads to a second failure is worse than offering none, so
-        //     this arm names the range *and* keeps the flag: the owner who
-        //     typed a bare number still has to learn that the positional form
-        //     is refused, or their second attempt fails for the other reason.
-        //     The predicate is 1..=65535 rather than "parses as u16" because
-        //     port 0 is refused further in, by `WindowsServiceAction`, with a
-        //     message that also blames the journal path; echoing
-        //     `--port 0` back would send them straight at it.
-        //   * anything else has no owner value worth echoing -- an
-        //     unconditional remedy told someone who typed `--nonsense` to
-        //     `pass the port as --port --nonsense` -- so it names the flag, the
-        //     shape `unknown_subcommand` already uses for "you typed something
-        //     I do not know". A refusal with no next step leaves an owner who
-        //     mistyped a flag guessing.
+        // One sentence in three fillings, not three sentences. Every arm is the
+        // same imperative -- "pass ... as --port ..." -- and the arms differ
+        // only in how much of it we can fill in from what the owner typed.
         //
-        // Both ends of the range, not just the ceiling: `1 to 65535` is what
-        // every other port refusal in this binary states.
+        // The predicate is **what `service install` will actually accept**, not
+        // what the port grammar will parse and not what a `u16` will hold.
+        // Those three sets differ, and each gap is a way to hand someone a
+        // remedy that fails at the next seam:
+        //
+        //   * `parse_service_port` parses integer text without imposing a
+        //     machine range, so `--port 99999` is accepted here and refused
+        //     further in.
+        //   * a `u16` holds `0`, which `WindowsServiceAction::arguments`
+        //     refuses outright with a message that also blames the journal
+        //     path.
+        //   * that grammar also strips one leading `+` or `-`, so `+99999` is
+        //     number-shaped to an owner *and* to the parser, and only the
+        //     accept set separates it from a real port.
+        //
+        // So: echo the owner's own literal when it is a port this command will
+        // take; otherwise, if the argument is number-shaped at all, name the
+        // range; otherwise name the flag. `is_port_shaped` deliberately allows
+        // the sign the grammar allows, because the arm boundary has to sit on
+        // the same axis the grammar does or the gap reopens one character to
+        // the left.
+        //
+        // Echoing the LITERAL, not the parsed value: `007` is the owner's
+        // value and `7` is ours. The arm exists to hand back what they typed.
         //
         // Casing is house lowercase: a leading `error:` is sentence prose, not
         // a field label.
         let text =
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
         let literal = value.to_str();
-        let remedy = if let Some(port) = literal
+        let accepted_port = literal
             .and_then(|text| text.parse::<u16>().ok())
-            .filter(|port| *port != 0)
-        {
+            .is_some_and(|port| port != 0);
+        let remedy = if let (true, Some(port)) = (accepted_port, literal) {
             format!("; pass the port as --port {port}")
-        } else if literal.is_some_and(|text| {
-            !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
-        }) {
-            "; ports are 1 to 65535, pass one as --port PORT".to_owned()
+        } else if literal.is_some_and(is_port_shaped) {
+            "; pass a port between 1 and 65535 as --port PORT".to_owned()
         } else {
-            "; expected --port PORT".to_owned()
+            "; pass the port as --port PORT".to_owned()
         };
         Self(format!("error: unexpected argument '{text}'{remedy}"))
     }
@@ -6173,29 +6186,37 @@ mod tests {
 
     #[test]
     fn service_install_offers_the_port_remedy_only_when_the_argument_is_a_port() {
-        // Three remedies, because one unconditional remedy is wrong three ways.
-        // The out-of-range arm is the load-bearing one: "expected --port PORT"
-        // names a spelling problem the owner does not have, and sends them to
-        // `--port 99999`, which the port grammar accepts and which then fails
-        // later. A remedy that leads to a second failure is worse than none --
-        // which is also why `0` belongs here and not in the echo arm:
-        // `WindowsServiceAction::arguments` refuses port 0 outright.
+        // One imperative in three fillings. Every case here is a value whose
+        // remedy would otherwise lead somewhere that fails again:
+        //   0      -- a u16, refused by WindowsServiceAction::arguments
+        //   99999  -- accepted by the port grammar, refused at registration
+        //   +5015  -- the grammar strips the sign, so it IS a real port
+        //   +99999 -- the grammar strips the sign and it is still out of range
+        //   007    -- a real port; the echo must be the owner's text, not ours
         for (argv, expected) in [
             (
                 args(&["install", "--nonsense"]),
-                "error: unexpected argument '--nonsense'; expected --port PORT",
+                "error: unexpected argument '--nonsense'; pass the port as --port PORT",
             ),
             (
                 args(&["install", "99999"]),
-                "error: unexpected argument '99999'; ports are 1 to 65535, pass one as --port PORT",
+                "error: unexpected argument '99999'; pass a port between 1 and 65535 as --port PORT",
             ),
             (
                 args(&["install", "65536"]),
-                "error: unexpected argument '65536'; ports are 1 to 65535, pass one as --port PORT",
+                "error: unexpected argument '65536'; pass a port between 1 and 65535 as --port PORT",
             ),
             (
                 args(&["install", "0"]),
-                "error: unexpected argument '0'; ports are 1 to 65535, pass one as --port PORT",
+                "error: unexpected argument '0'; pass a port between 1 and 65535 as --port PORT",
+            ),
+            (
+                args(&["install", "+99999"]),
+                "error: unexpected argument '+99999'; pass a port between 1 and 65535 as --port PORT",
+            ),
+            (
+                args(&["install", "-5"]),
+                "error: unexpected argument '-5'; pass a port between 1 and 65535 as --port PORT",
             ),
             (
                 args(&["install", "5015"]),
@@ -6206,8 +6227,16 @@ mod tests {
                 "error: unexpected argument '65535'; pass the port as --port 65535",
             ),
             (
+                args(&["install", "007"]),
+                "error: unexpected argument '007'; pass the port as --port 007",
+            ),
+            (
+                args(&["install", "+5015"]),
+                "error: unexpected argument '+5015'; pass the port as --port +5015",
+            ),
+            (
                 args(&["install", "12x"]),
-                "error: unexpected argument '12x'; expected --port PORT",
+                "error: unexpected argument '12x'; pass the port as --port PORT",
             ),
         ] {
             let ServiceParseOutcome::Exit {
@@ -6257,7 +6286,7 @@ mod tests {
             };
             assert_eq!(
                 stderr.as_str(),
-                "error: unexpected argument '--nonsense'; expected --port PORT",
+                "error: unexpected argument '--nonsense'; pass the port as --port PORT",
                 "an unknown flag must not be handed a port remedy naming itself"
             );
         }

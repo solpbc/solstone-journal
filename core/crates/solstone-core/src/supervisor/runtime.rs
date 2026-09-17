@@ -1843,7 +1843,6 @@ fn shutdown_regime_for(stop_reason: &tick::SupervisorStopReason) -> ShutdownRegi
         // set outside this process, after which it is killed -- so it takes
         // the same bounded regime. The standard budget is fifteen seconds and
         // Windows allows about five.
-        #[cfg(windows)]
         tick::SupervisorStopReason::HostSessionEnd => ShutdownRegime::ParentLossBounded,
         tick::SupervisorStopReason::Signal(_) | tick::SupervisorStopReason::Sync(_) => {
             ShutdownRegime::Standard
@@ -2297,7 +2296,6 @@ mod tests {
         // loss: the standard fifteen-second budget does not fit inside what
         // Windows grants, and the lifecycle markers are what an owner sees at
         // the next logon if it does not finish.
-        #[cfg(windows)]
         assert_eq!(
             shutdown_regime_for(&SupervisorStopReason::HostSessionEnd),
             ShutdownRegime::ParentLossBounded

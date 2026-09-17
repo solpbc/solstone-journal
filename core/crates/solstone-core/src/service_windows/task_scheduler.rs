@@ -146,9 +146,21 @@ pub(super) fn execute_until(
         deadline,
     )?;
     if output.code != Some(0) {
+        // The reason is Windows' text, not ours: the fallback arm joins whatever
+        // the worker wrote to stderr once the CLIXML envelope is removed, so it
+        // can carry control bytes, escape sequences and any length PowerShell
+        // felt like emitting -- straight into a line an owner reads in a
+        // terminal. Bound and sanitize it here rather than in the extractor,
+        // which stays a pure text function; the raw streams remain in the
+        // operation's own captured output for support.
         return Err(format!(
             "task operation failed; scheduler state must be re-inspected: {}",
-            solstone_core_service_unit::windows_task_failure_reason(&output.stdout, &output.stderr)
+            solstone_core_system_health::sanitize_str_for_terminal_bounded(
+                &solstone_core_service_unit::windows_task_failure_reason(
+                    &output.stdout,
+                    &output.stderr
+                )
+            )
         ));
     }
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout)

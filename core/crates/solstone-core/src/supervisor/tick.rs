@@ -99,12 +99,15 @@ pub(crate) enum SupervisorStopReason {
     /// budget -- markers left on disk are what an owner sees at the next
     /// logon.
     ///
-    /// ⚠ Windows-only, unlike `ShutdownCause::HostSessionEnd`, which stays
-    /// unconditional because it is serialized into the shutdown receipt and
-    /// that shape must not vary by platform. This one is crate-private, so a
-    /// variant nothing constructs off Windows is dead code rather than a
-    /// contract -- and the canonical gate compiles with `-D dead-code`.
-    #[cfg(windows)]
+    /// ⚠ Only the Windows path constructs this, but the variant is
+    /// deliberately unconditional and carries an explicit dead-code allowance
+    /// instead of a `cfg`. Gating it would push a `cfg(windows)` onto every
+    /// match over the enum -- and, worse, onto the assertion that pins this
+    /// reason to the bounded regime, which would then be compiled only on a
+    /// platform where nothing in the rail *runs* this crate's lib tests. An
+    /// unconditional variant keeps that assertion executing on Linux, where
+    /// the canonical gate actually runs it.
+    #[cfg_attr(not(windows), allow(dead_code))]
     HostSessionEnd,
 }
 
@@ -1853,10 +1856,12 @@ mod tests {
     /// ⚠ Unix-only, because `supervisor::test_support` is `cfg(all(test,
     /// unix))` and this builds a literal `SupervisorState`, whose field set
     /// differs on Windows. Without the gate `cargo test -p solstone-core
-    /// --lib` does not compile for `x86_64-pc-windows-msvc` at all — which is
-    /// how it reached `origin/main`: no gate in the ordinary rail compiles
-    /// this crate's lib tests for Windows, and the native fixture build that
-    /// does is a separate instrument run once per Windows package.
+    /// --lib` does not compile for `x86_64-pc-windows-msvc` at all -- which is
+    /// how an ungated version of it reached the default branch. The workspace
+    /// Windows cross-check does run on Linux, but it *excludes* this crate:
+    /// `solstone-core` reaches `ring`, `libsqlite3-sys` and `ffmpeg-sys-next`,
+    /// three roots a Linux host cannot build. The instrument that does compile
+    /// this subject runs once per Windows package.
     #[cfg(unix)]
     async fn queue_only_state(journal: &std::path::Path) -> SupervisorState {
         fs::create_dir_all(journal.join("config")).expect("config dir");
