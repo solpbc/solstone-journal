@@ -6,24 +6,17 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.8] - 2026-09-16
+
 ### Added
 
-- when pairing can't start because your journal finds no address a phone can reach, your journal's log now lists each address it saw, whether each could be used, and why a saved home address wasn't used.
-- `solstone link status` now shows when something else answered where your journal was expected, with a spoken mark for what answered (claimed, not verified) next to your journal's mark. a sighting through the relay is called out as weaker evidence than a LAN address.
+- pairing and `solstone link status` now explain more of what they find: why no reachable address could be used, when something else answered where your journal was expected, whether this device is unpaired or your journal is only unreachable, and how to pair again. a sighting through the relay is called out as weaker evidence than an address on your own network. linked devices are also told when your journal cannot check its paired-device list or when they are no longer paired.
 
 ### Fixed
 
-- the "preserve silent audio" switch in transcription settings had no effect, so audio with no speech could still be listed for deletion on your home page, where nothing is deleted until you say so. the switch has moved to storage settings as "keep audio with no speech". when it's on, that audio is no longer added to the list, and anything already listed comes off at the list's next daily rebuild. if you had it on, it stays on.
-- storage settings and first-run setup could say everything was kept, and a storage warning could say nothing was added to the list on its own, while audio with no speech was still being listed. the status lines now say when that audio is listed, and the warning only says nothing is added when that's true.
-- a segment's page in the transcripts view said "original media removed per retention policy" whenever its original audio or screen media was missing, even when your retention settings weren't the reason. from this release on, it says why when you delete an original through your journal. for earlier deletions, for a deletion your journal told you it couldn't record, and for a segment's audio or screen media that was deleted more than one way, it says that media is no longer in your journal.
-- `journal grab` said an original video had been "purged by retention" whenever the video was missing, even when that wasn't the reason. it now says why, from what your journal recorded when it deleted the original. for earlier deletions, and for a video removed outside your journal, it says the video is no longer in your journal.
-- a linked device could be told it had been unpaired when your journal couldn't read its own list of paired devices. the device is now told your journal couldn't check, not that it was unpaired.
-- a linked device that reaches your journal through the relay could miss being told it was no longer paired, and keep trying as if your journal were offline, most often in the middle of a transfer. it is now told.
-- `solstone link status` now shows `unpaired`, with how to pair again, when this device is no longer paired, or it has reached your journal but been refused for about 30 minutes. it still shows `disconnected` when your journal is only unreachable.
-- a picture, recording or video opened through `solstone link serve` that stopped arriving partway could show or play as if it were complete. it now fails to load.
-- a day could stop finishing and keep retrying forever when a recurring person or thing could not be matched to the one already in your journal, for instance because one name carried punctuation or an accent the other did not. names that differ that way now match, and a day held up by one of them finishes on its own once you install.
-- a new memory about someone is no longer skipped just because it repeats one you already have for a different day or a different relationship. only an exact repeat (same words, same day, same relationship) is treated as one.
-- your journal's network app would save a public internet address as your home address, and the solstone app on your phone then refused the pairing code made with it. the network app now saves only an address on your network or VPN, and shows your journal's actual port when it refuses one, so if you saved a public address before, replace it there.
+- "keep audio with no speech" now works from storage settings: when it is on, that audio stays off the deletion list, anything already listed comes off at the next daily rebuild, and the home page and first-run setup describe the setting accurately. nothing on the list is deleted until you say so, and an existing choice to keep this audio is preserved.
+- a transcript or `journal grab` no longer says missing original media was removed by retention when the reason is unknown. for deletions made through your journal from this release on, it shows the saved deletion reason; otherwise it simply says the media is no longer in your journal. a picture, recording or video that stops arriving partway through `solstone link serve` now fails to load instead of appearing complete.
+- a day no longer retries forever when punctuation or accents kept a recurring person or thing from matching. a memory is now treated as a repeat only when its words, day and relationship all match, so the same words can still belong to another day or relationship.
 - on linux, pressing "install local model" started local setup, and setup stopped a few seconds later, every time. trying again, restarting your journal and rebooting all did the same, and installing from the terminal with `journal install-provider local` was the only way through. this release fixes that install failure.
 - the import page's progress panel stayed on "preparing…" for the whole import and after it had finished, and reloading the page left it there. it now follows the import as it runs, and once it finishes shows what the import wrote, with links to browse what was imported or import another source.
 
