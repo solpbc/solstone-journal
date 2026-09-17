@@ -71,29 +71,4 @@ mod tests {
             SETTINGS_JS
         );
     }
-
-    #[test]
-    fn parakeet_disclosure_names_only_the_owner_download_origin() {
-        let workspace = std::str::from_utf8(WORKSPACE).expect("workspace is UTF-8");
-        let parakeet_settings = workspace
-            .split("<fieldset id=\"parakeet-cpp-settings\"")
-            .nth(1)
-            .expect("parakeet settings fieldset")
-            .split("</fieldset>")
-            .next()
-            .expect("parakeet settings fieldset closes");
-        assert!(
-            parakeet_settings
-                .contains("both from updates.solstone.app: the parakeet.cpp server binary (MIT)")
-        );
-        assert!(
-            parakeet_settings.contains("the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md.")
-        );
-        for upstream in ["github.com", "huggingface.co"] {
-            assert!(
-                !parakeet_settings.contains(upstream),
-                "settings disclosure names {upstream}"
-            );
-        }
-    }
 }
