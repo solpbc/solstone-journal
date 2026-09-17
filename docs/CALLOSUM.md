@@ -37,7 +37,7 @@ and remote-network boundary, not a defense against malware already running as th
 
 > **Note:** This registry is kept intentionally high-level. For detailed field schemas and current implementation, always refer to the source files listed - they are the authoritative reference.
 >
-> **Bus events vs durable rows.** Most events here are broadcast on the bus. Some are written **only** to a segment's `events.jsonl` and never broadcast; they are marked *durable-only* below. The generated wire vocabulary is `core/fixtures/callosum_registry.json`, and it covers broadcast events only, so durable-only events do not appear there.
+> **Bus events vs durable rows.** Most events here are broadcast on the bus. Some are written **only** to a segment's `events.jsonl` and never broadcast; they are marked *durable-only* below. The generated wire vocabulary is `core/fixtures/callosum_registry.json`. ⚠ It does not track that distinction: it omits `observe.interrupted` but still lists `observe.transcribed`, which is durable-only.
 
 ### `cortex` - Agent execution events
 **Source:** `solstone-core-cortex`
@@ -52,7 +52,7 @@ and remote-network boundary, not a defense against malware already running as th
 **Purpose:** Live talent-run status, thinking `reflection_ready`, and support draft/submit-claim. Unknown event kinds are rejected. Closedness lives in `callosum.work.event` (`classification: closed`, `unknown_value_behavior: reject`), published in the OpenAPI `x-vocabularies` and the client-ingest `manifest.json` `vocabularies[]`. The registry-level `callosum.tract_event` stays extensible. This tract used to be named `chat`; it was renamed rather than folded into `cortex` (1:1 with the cogitate wire contract), `think` (the daily-think pipeline, not live run status), or `support` (an open registry list). `work` is also an owner-facing facet id — tract and facet are different namespaces.
 
 ### `supervisor` - Process lifecycle management
-**Source:** `solstone-core` (`src/supervisor/`, emitted through `bus.rs`). The queue, process and schedule types it wraps live in `solstone-core-system`.
+**Source:** `solstone-core`. Most events are emitted from `src/supervisor/bus.rs`, which wraps queue, process and schedule types from `solstone-core-system`. `service_stop` is the exception: it is a Windows-only one-shot write to the socket from `src/service_windows.rs`.
 **Events:** `started`, `stopped`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `service_stop`, `request`, `restart`, `drain`, `skipped`, `sync_conflict`
 **Listens for:** `request` (task spawn), `restart` (service restart), `drain` (catchup work)
 **Key fields:** `ref` (instance ID), `service` (name), `pid`, `exit_code`
