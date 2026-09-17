@@ -1463,4 +1463,110 @@ mod abandoned_generation_closer {
             AdmissionFinding::Retired { escalated: true }
         );
     }
+
+    #[test]
+    fn hosted_early_tempfail_child_records_rejected_and_reaped_ignoring_stale_ack() {
+        use std::collections::BTreeMap;
+        use std::ffi::OsString;
+
+        use solstone_core_system::process::{
+            Disposition, HostedLaunchProvenance, ManagedLaunchRequest, SpawnOptions,
+            launch_managed_hosted,
+        };
+
+        let bed = super::Bed::new("hosted-early-tempfail");
+        let ledger = ParentLossLedger::open(&bed.root).expect("ledger");
+        let active = ledger
+            .reserve_generation(instance(10, 1), [HostedServiceKind::Sense])
+            .expect("reserve generation");
+        ledger.initialize_record(&active).expect("record");
+        let coordinator = instance(20, 2);
+        ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .expect("coordinator identity");
+        ledger
+            .mark_admitting(active.generation, coordinator)
+            .expect("admitting state");
+
+        let launch_id = "sense-tempfail";
+        let mut environment = BTreeMap::new();
+        environment.insert(
+            OsString::from("SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS"),
+            OsString::from("300"),
+        );
+
+        let mut authority = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            ManagedLaunchRequest {
+                command: vec![super::FIXTURE.to_owned(), "always-tempfail".to_owned()],
+                options: SpawnOptions {
+                    journal_root: bed.root.clone(),
+                    reference: launch_id.to_owned(),
+                    day: None,
+                    sink: None,
+                    environment,
+                },
+            },
+            HostedLaunchProvenance {
+                journal: bed.root.clone(),
+                generation: active.generation,
+                launch_id: launch_id.to_owned(),
+                service: Some(HostedServiceKind::Sense),
+                parent_launch_id: None,
+                acknowledgement_timeout: Duration::from_millis(100),
+            },
+        )
+        .expect("short-lived fixture child returns authority");
+
+        assert_eq!(authority.exact_identity(), None);
+        assert_eq!(authority.poll().expect("poll"), Some(75));
+
+        let result_path = ledger
+            .generation_path(active.generation)
+            .join(format!("admissions/{launch_id}/result.json"));
+        let result: AdmissionResult =
+            serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
+                .expect("parse result");
+        assert_eq!(
+            result,
+            AdmissionResult {
+                schema: 1,
+                identity: None,
+                state: AdmissionResultState::RejectedAndReaped {
+                    exit_code: Some(75),
+                },
+            }
+        );
+
+        // The fixture `always-tempfail` writes its own acknowledgement file before exiting 75.
+        // Assert that the child's own acknowledgement is present on disk in the admissions layout.
+        let ack_path = ledger
+            .generation_path(active.generation)
+            .join(format!("admissions/{launch_id}/acknowledgement.json"));
+        assert!(
+            ack_path.is_file(),
+            "fixture must have written its own acknowledgement"
+        );
+        let child_ack =
+            solstone_core_system::lifecycle::read_parent_loss_admission_acknowledgement(
+                &bed.root,
+                active.generation,
+                launch_id,
+            )
+            .expect("read child acknowledgement")
+            .expect("child acknowledgement exists");
+        assert_eq!(child_ack.identity.generation, active.generation);
+        assert_eq!(child_ack.identity.launch_id, launch_id);
+
+        // Even though the child wrote a valid acknowledgement file, the closer must still
+        // classify the generation finding as RejectedAndReaped without treating that child
+        // identity as live or blocking successor reservation.
+        let successor = close_with_budget(&ledger, Duration::from_secs(5));
+        assert_eq!(successor, active.generation + 1);
+
+        assert_eq!(
+            finding(&ledger, active.generation),
+            AdmissionFinding::RejectedAndReaped
+        );
+    }
 }

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::fmt;
 use std::io;
+use std::path::Path;
 use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -21,8 +22,8 @@ use super::spawn::ManagedProcess;
 use super::terminate::terminate_exact_instance;
 use crate::lifecycle::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
-    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossLedger,
-    ParentLossPhase, read_parent_loss_admission_acknowledgement,
+    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossGeneration,
+    ParentLossLedger, ParentLossPhase, read_parent_loss_admission_acknowledgement,
     write_parent_loss_admission_intent, write_parent_loss_admission_result,
 };
 use solstone_core_journal_io::{LockOptions, hold_lock};
@@ -410,12 +411,84 @@ pub fn launch_managed_hosted(
     write_parent_loss_admission_intent(&provenance.journal, &intent)
         .map_err(|error| LaunchError::Admission(error.to_string()))?;
     inject_hosted_provenance(&mut request.options.environment, &provenance);
-    let mut authority = launch_managed_request(disposition, request)?;
-    let identity = authority
-        .exact_identity()
-        .ok_or_else(|| LaunchError::Admission("exact launch identity unavailable".to_owned()))?;
-    finish_hosted_admission(&mut authority, identity, &provenance)?;
-    Ok(authority)
+    let mut authority = match launch_managed_request(disposition, request) {
+        Ok(authority) => authority,
+        Err(err) => {
+            record_unidentified_admission_result(
+                &provenance.journal,
+                provenance.generation,
+                &provenance.launch_id,
+                AdmissionResultState::SpawnFailed {
+                    detail: err.to_string(),
+                },
+            )?;
+            return Err(err);
+        }
+    };
+    if let Some(identity) = authority.exact_identity() {
+        finish_hosted_admission(&mut authority, identity, &provenance)?;
+        return Ok(authority);
+    }
+    match authority.poll() {
+        Ok(Some(exit_code)) => {
+            record_unidentified_admission_result(
+                &provenance.journal,
+                provenance.generation,
+                &provenance.launch_id,
+                AdmissionResultState::RejectedAndReaped {
+                    exit_code: Some(exit_code),
+                },
+            )?;
+            Ok(authority)
+        }
+        Ok(None) => {
+            let result_state = match authority.terminate_exact(Duration::from_secs(2)) {
+                Ok(()) => AdmissionResultState::RejectedAndReaped {
+                    exit_code: authority.poll().ok().flatten(),
+                },
+                Err(err) => AdmissionResultState::RejectedUnreaped {
+                    detail: err.to_string(),
+                },
+            };
+            record_unidentified_admission_result(
+                &provenance.journal,
+                provenance.generation,
+                &provenance.launch_id,
+                result_state,
+            )?;
+            Err(LaunchError::Admission(
+                "exact launch identity unavailable".to_owned(),
+            ))
+        }
+        Err(error) => {
+            record_unidentified_admission_result(
+                &provenance.journal,
+                provenance.generation,
+                &provenance.launch_id,
+                AdmissionResultState::RejectedUnreaped {
+                    detail: error.to_string(),
+                },
+            )?;
+            Err(LaunchError::Admission(format!(
+                "failed to poll early-exited child: {error}"
+            )))
+        }
+    }
+}
+
+fn record_unidentified_admission_result(
+    journal: &Path,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+    state: AdmissionResultState,
+) -> Result<(), LaunchError> {
+    let result = AdmissionResult {
+        schema: 1,
+        identity: None,
+        state,
+    };
+    write_parent_loss_admission_result(journal, generation, launch_id, &result)
+        .map_err(|error| LaunchError::Admission(error.to_string()))
 }
 
 fn inject_hosted_provenance(

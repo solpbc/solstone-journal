@@ -1967,4 +1967,252 @@ mod tests {
                 .is_err()
         );
     }
+
+    #[cfg(unix)]
+    #[test]
+    fn early_exited_child_persists_rejected_and_reaped_and_seals_generation() {
+        use std::ffi::OsString;
+
+        let (journal, mut coordinator, _, _) = bootstrap([]);
+        let mut environment = BTreeMap::new();
+        environment.insert(
+            OsString::from("SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS"),
+            OsString::from("300"),
+        );
+        let launch_id = "early-exit-75";
+        let mut authority = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            ManagedLaunchRequest {
+                command: vec!["/bin/sh".to_owned(), "-c".to_owned(), "exit 75".to_owned()],
+                options: SpawnOptions {
+                    journal_root: journal.path().to_path_buf(),
+                    reference: launch_id.to_owned(),
+                    day: None,
+                    sink: None,
+                    environment,
+                },
+            },
+            HostedLaunchProvenance {
+                journal: journal.path().to_path_buf(),
+                generation: coordinator.generation(),
+                launch_id: launch_id.to_owned(),
+                service: None,
+                parent_launch_id: None,
+                acknowledgement_timeout: Duration::from_millis(100),
+            },
+        )
+        .expect("short-lived child returns authority holding the reaped exit code");
+
+        // spawn-time `Child::try_wait` caches `ExitStatus` on `std::process::Child`;
+        // later `poll`/`wait` reread that cache; there is no second kernel reap.
+        assert_eq!(authority.exact_identity(), None);
+        assert_eq!(authority.poll().expect("poll"), Some(75));
+        assert_eq!(authority.poll().expect("second poll"), Some(75));
+        assert_eq!(authority.wait().expect("wait"), 75);
+
+        let result_path = coordinator
+            .ledger
+            .generation_path(coordinator.generation())
+            .join(format!("admissions/{launch_id}/result.json"));
+        let result: AdmissionResult =
+            serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
+                .expect("parse result");
+        assert_eq!(
+            result,
+            AdmissionResult {
+                schema: 1,
+                identity: None,
+                state: AdmissionResultState::RejectedAndReaped {
+                    exit_code: Some(75),
+                },
+            }
+        );
+
+        let (sealed, digest) = coordinator
+            .seal_admissions()
+            .expect("seal admissions succeeds");
+        let terminal = coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now() + Duration::from_millis(1),
+                &gone_process_source(),
+            )
+            .expect("completed parent loss");
+        assert!(matches!(
+            terminal,
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+        assert!(coordinator._lease.is_none());
+        assert!(
+            coordinator
+                .ledger
+                .reserve_generation(instance(904, 94), [])
+                .is_ok()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn spawn_failure_persists_spawn_failed_result_and_seals_generation() {
+        use crate::process::{LaunchError, SpawnError};
+
+        let (journal, mut coordinator, _, _) = bootstrap([]);
+        let launch_id = "nonexistent-spawn";
+        let error = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            ManagedLaunchRequest {
+                command: vec!["/definitely/not/a-binary".to_owned()],
+                options: SpawnOptions {
+                    journal_root: journal.path().to_path_buf(),
+                    reference: launch_id.to_owned(),
+                    day: None,
+                    sink: None,
+                    environment: BTreeMap::new(),
+                },
+            },
+            HostedLaunchProvenance {
+                journal: journal.path().to_path_buf(),
+                generation: coordinator.generation(),
+                launch_id: launch_id.to_owned(),
+                service: None,
+                parent_launch_id: None,
+                acknowledgement_timeout: Duration::from_millis(100),
+            },
+        )
+        .expect_err("nonexistent binary must fail launch");
+
+        assert!(matches!(
+            error,
+            LaunchError::SpawnManaged(SpawnError::Spawn(_))
+        ));
+
+        let result_path = coordinator
+            .ledger
+            .generation_path(coordinator.generation())
+            .join(format!("admissions/{launch_id}/result.json"));
+        let result: AdmissionResult =
+            serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
+                .expect("parse result");
+        assert!(result.identity.is_none());
+        assert!(matches!(
+            result.state,
+            AdmissionResultState::SpawnFailed { ref detail } if !detail.is_empty() && detail.contains("failed to spawn child")
+        ));
+
+        let (sealed, digest) = coordinator
+            .seal_admissions()
+            .expect("seal admissions succeeds");
+        let terminal = coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now() + Duration::from_millis(1),
+                &gone_process_source(),
+            )
+            .expect("completed parent loss");
+        assert!(matches!(
+            terminal,
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+        assert!(coordinator._lease.is_none());
+        assert!(
+            coordinator
+                .ledger
+                .reserve_generation(instance(905, 95), [])
+                .is_ok()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unverifiable_live_child_persists_spawn_failed_and_seals_generation() {
+        use crate::process::{LaunchError, SpawnError};
+        use std::ffi::OsString;
+
+        let (journal, mut coordinator, _, _) = bootstrap([]);
+        let mut environment = BTreeMap::new();
+        environment.insert(
+            OsString::from("SOLSTONE_TEST_EXACT_SPAWN_FORCE_UNVERIFIABLE"),
+            OsString::from("1"),
+        );
+        environment.insert(
+            OsString::from("SOLSTONE_TEST_EXACT_SPAWN_INSPECT_DELAY_MS"),
+            OsString::from("300"),
+        );
+        let launch_id = "unverifiable-child";
+        let error = launch_managed_hosted(
+            Disposition::InheritedParentScope,
+            ManagedLaunchRequest {
+                command: vec!["/bin/sleep".to_owned(), "60".to_owned()],
+                options: SpawnOptions {
+                    journal_root: journal.path().to_path_buf(),
+                    reference: launch_id.to_owned(),
+                    day: None,
+                    sink: None,
+                    environment,
+                },
+            },
+            HostedLaunchProvenance {
+                journal: journal.path().to_path_buf(),
+                generation: coordinator.generation(),
+                launch_id: launch_id.to_owned(),
+                service: None,
+                parent_launch_id: None,
+                acknowledgement_timeout: Duration::from_millis(100),
+            },
+        )
+        .expect_err("unverifiable live child must fail exact launch");
+
+        let pid = match error {
+            LaunchError::SpawnManaged(SpawnError::ExactInstanceUnavailable { pid }) => pid,
+            other => panic!("unexpected launch error: {other:?}"),
+        };
+
+        // Confirm the child was directly reaped at the spawn boundary.
+        let source = SystemProcessInstanceSource;
+        assert!(matches!(
+            source.inspect(pid),
+            InspectResult::Absent | InspectResult::Unverifiable
+        ));
+
+        let result_path = coordinator
+            .ledger
+            .generation_path(coordinator.generation())
+            .join(format!("admissions/{launch_id}/result.json"));
+        let result: AdmissionResult =
+            serde_json::from_slice(&std::fs::read(&result_path).expect("result JSON exists"))
+                .expect("parse result");
+        assert!(result.identity.is_none());
+        assert!(matches!(
+            result.state,
+            AdmissionResultState::SpawnFailed { ref detail } if detail.contains("failed to capture birth-bound identity for spawned pid")
+        ));
+
+        let (sealed, digest) = coordinator
+            .seal_admissions()
+            .expect("seal admissions succeeds");
+        let terminal = coordinator
+            .wait_for_retirement_with_deadline_and_source(
+                &sealed,
+                digest,
+                false,
+                Instant::now() + Duration::from_millis(1),
+                &gone_process_source(),
+            )
+            .expect("completed parent loss");
+        assert!(matches!(
+            terminal,
+            ParentLossTerminalDisposition::Completed { .. }
+        ));
+        assert!(coordinator._lease.is_none());
+        assert!(
+            coordinator
+                .ledger
+                .reserve_generation(instance(906, 96), [])
+                .is_ok()
+        );
+    }
 }
