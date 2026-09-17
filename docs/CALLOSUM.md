@@ -36,13 +36,15 @@ and remote-network boundary, not a defense against malware already running as th
 ## Tract Registry
 
 > **Note:** This registry is kept intentionally high-level. For detailed field schemas and current implementation, always refer to the source files listed - they are the authoritative reference.
+>
+> **Bus events vs durable rows.** Most events here are broadcast on the bus. Some are written **only** to a segment's `events.jsonl` and never broadcast; they are marked *durable-only* below. The generated wire vocabulary is `core/fixtures/callosum_registry.json`, and it covers broadcast events only, so durable-only events do not appear there.
 
 ### `cortex` - Agent execution events
 **Source:** `solstone-core-cortex`
 **Events:** `request`, `start`, `thinking`, `tool_start`, `tool_end`, `finish`, `error`, `talent_updated`, `info`, `status`, `cancel`, `dry_run`, `progress`, `text_delta`, `tool_budget_exhausted`, `warning`, `budget_escalation`
 **Details:** See [CORTEX.md](CORTEX.md) for agent lifecycle, configuration, and event schemas
 
-**`info` note:** `info` remains the correct vocabulary for cortex telemetry. The current non-JSON stdout fallback in `_monitor_stdout()` writes an `info` record to the durable use-log through `_append_use_event()`; it does not broadcast that fallback record to Callosum. This is a bus-wiring gap, not a naming mismatch.
+**`info` note:** `info` is the vocabulary for cortex telemetry. See [CORTEX.md](CORTEX.md) for its schema.
 
 ### `work` - Talent-run, reflection, and support-draft events
 **Source:** talent-run and support-draft producers. There is no native producer on this tract today; the vocabulary is closed so a future dispatcher cannot silently grow it.
@@ -50,8 +52,8 @@ and remote-network boundary, not a defense against malware already running as th
 **Purpose:** Live talent-run status, thinking `reflection_ready`, and support draft/submit-claim. Unknown event kinds are rejected. Closedness lives in `callosum.work.event` (`classification: closed`, `unknown_value_behavior: reject`), published in the OpenAPI `x-vocabularies` and the client-ingest `manifest.json` `vocabularies[]`. The registry-level `callosum.tract_event` stays extensible. This tract used to be named `chat`; it was renamed rather than folded into `cortex` (1:1 with the cogitate wire contract), `think` (the daily-think pipeline, not live run status), or `support` (an open registry list). `work` is also an owner-facing facet id — tract and facet are different namespaces.
 
 ### `supervisor` - Process lifecycle management
-**Source:** `solstone-core-system` (supervisor)
-**Events:** `started`, `stopped`, `restarting`, `status`, `queue`, `request`, `restart`, `drain`, `skipped`, `sync_conflict`
+**Source:** `solstone-core` (`src/supervisor/`, emitted through `bus.rs`). The queue, process and schedule types it wraps live in `solstone-core-system`.
+**Events:** `started`, `stopped`, `restarting`, `status`, `queue`, `scheduled`, `provider_runtime`, `service_stop`, `request`, `restart`, `drain`, `skipped`, `sync_conflict`
 **Listens for:** `request` (task spawn), `restart` (service restart), `drain` (catchup work)
 **Key fields:** `ref` (instance ID), `service` (name), `pid`, `exit_code`
 **Purpose:** Unified lifecycle events for all supervised processes (services and tasks)
@@ -69,11 +71,11 @@ and remote-network boundary, not a defense against malware already running as th
 
 **Queue event:** Emitted when queue state changes:
 ```json
-{"tract": "supervisor", "event": "queue", "command": "indexer", "running": "ref123", "queued": 2, "queue": [{"refs": ["ref456"], "cmd": ["sol", "indexer", "--rescan"]}]}
+{"tract": "supervisor", "event": "queue", "command": "indexer", "running": "ref123", "queued": 2, "queue": [{"refs": ["ref456"], "cmd": ["journal", "heartbeat"]}]}
 ```
 
 ### `logs` - Process output streaming
-**Source:** `solstone-core-think-cli`
+**Source:** `solstone-core` (`src/supervisor/bus.rs`), from the output of the processes the supervisor runs
 **Events:** `exec`, `line`, `exit`
 **Key fields:** `ref` (correlates with supervisor), `name`, `stream` (stdout/stderr), `line`
 **Purpose:** Real-time stdout/stderr streaming and process exit events
@@ -86,13 +88,13 @@ and remote-network boundary, not a defense against malware already running as th
 **Events:**
 | Event | Emitter | Purpose |
 |-------|---------|---------|
-| `status` | sense | Periodic state (every 5s) - see `emit_status()` in source |
+| `status` | sense | Periodic state (every 5s) - see the status emitter in `solstone-core-sense` (`dispatch.rs`) |
 | `observing` | ingest | Recording window boundary crossed, files saved |
 | `detected` | sense | File detected, handler spawned |
 | `described` | describe | Vision analysis complete |
-| `transcribed` | transcribe | Audio transcription complete (includes VAD metadata) |
+| `transcribed` | transcribe | Audio transcription complete (includes VAD metadata). **Durable-only**: appended by `solstone-core-transcribe` (`event.rs`), never broadcast |
 | `observed` | sense | All files for segment fully processed (may include errors) |
-| `interrupted` | sense | Segment processing interrupted during graceful shutdown |
+| `interrupted` | sense | Segment processing interrupted during graceful shutdown. **Durable-only**: appended by `solstone-core-sense` (`dispatch.rs`), never broadcast |
 | `memory_throttle_started` | sense | Handler waiting for memory headroom |
 | `memory_throttle_completed` | sense | Handler admitted or stopped after memory throttle |
 
@@ -114,7 +116,11 @@ and remote-network boundary, not a defense against malware already running as th
 - `errors` (list[str], optional): Error descriptions for failed handlers (e.g., `["transcribe exit 1"]`)
 
 **Correlation:** `detected.ref` matches `logs.exec.ref`; `segment` groups files from same capture window
-**Event Log:** Observe, think, and activity tract events with `day` + `segment` are logged to `<day>/<segment>/events.jsonl` by supervisor
+
+**Event Log:** A segment's `events.jsonl` is a mixed durable log with two kinds of writer.
+- **Copied from the bus:** the supervisor appends `observe`, `think` and `activity` events that carry `day` + `segment` (`solstone-core/src/supervisor/tick.rs`, `handle_segment_event_log`). That allowlist is the whole set it copies.
+- **Appended directly by the producer**, never broadcast: `observe.transcribed` (transcribe), `observe.interrupted` (sense), device-ingest records (ingest), and `retention.original_deleted` (see the `retention` tract).
+- **Path:** `<day>/<stream>/<segment>/events.jsonl` when the event carries a `stream`, and `<day>/<segment>/events.jsonl` when it does not.
 
 ### `importer` - Media import processing
 **Source:** `solstone-core-import`
@@ -138,7 +144,7 @@ and remote-network boundary, not a defense against malware already running as th
 ### `activity` - Activity lifecycle events
 **Source:** `solstone-core-talent-runtime` (activity hooks)
 **Events:** `live`, `recorded`
-**Event Log:** Logged to `<day>/<segment>/events.jsonl` by supervisor
+**Event Log:** Copied into the segment event log by the supervisor, on the same path rule as `observe`
 
 **`live`** - Emitted per active activity per segment (new or continuing). Provides real-time activity tracking.
 **Key fields:** `facet`, `day`, `segment`, `id`, `activity` (type), `since`, `description`, `level`, `active_entities`
@@ -147,7 +153,7 @@ and remote-network boundary, not a defense against malware already running as th
 **Key fields:** `facet`, `day`, `segment`, `id`, `activity` (type), `segments` (full span), `level_avg`, `description`, `active_entities`
 
 ### `storage` - Storage health warnings
-**Sources:** `solstone-core-system` (supervisor) and `solstone-core-thinking`
+**Source:** no native producer emits this tract today; the vocabulary stays declared so a future producer has a name to use. Checked 2026-09-16 by searching every `src/` tree and the browser assets for the tract name.
 **Events:** `warning`
 **Purpose:** Surface storage conditions that need attention while retaining a shared notification path for owner-facing alerts.
 
@@ -186,7 +192,7 @@ and remote-network boundary, not a defense against malware already running as th
 **Correlation ID (`ref`):** Universal identifier for process instances, used across tracts to correlate events. Auto-generated as epoch milliseconds if not provided.
 
 **Field Semantics:**
-- `service` - Human-readable name (e.g., "cortex", "sol import")
+- `service` - Human-readable name (e.g., "cortex", "journal import")
 - `ref` - Unique instance ID (changes on each restart)
 - `pid` - Operating system process ID
 
