@@ -26,6 +26,10 @@ const SYSTEM_DLLS: &[&str] = &[
     "dbghelp.dll",
     "dxgi.dll",
     "gdi32.dll",
+    // IP Helper. The journal's pair-link discovery calls
+    // `GetAdaptersAddresses` here, the way the Unix build calls `getifaddrs`;
+    // it is a system DLL on every supported Windows, alongside ws2_32 below.
+    "iphlpapi.dll",
     "kernel32.dll",
     "ntdll.dll",
     "oleaut32.dll",
