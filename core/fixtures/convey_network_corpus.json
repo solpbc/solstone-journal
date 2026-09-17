@@ -144,16 +144,11 @@
             "DEVICE_CLIENT_LABEL_META_FORMAT": "paired as {client_label}",
             "DEVICE_EMPTY_BODY": "pair a device to read your journal on the go.",
             "DEVICE_EMPTY_TITLE": "no devices connected yet",
-            "DEVICE_GROUP_LABELS": {
-              "observers": "observers",
-              "peers": "peers"
-            },
             "DEVICE_LABEL_DEFAULT_FORMAT": "device, added {month} {day}",
             "DEVICE_LABEL_FIELD_LABEL": "name this device",
             "DEVICE_LABEL_PLACEHOLDER": "e.g. my iPhone",
             "DEVICE_LABEL_PLACEHOLDER_COMPUTER": "e.g. my laptop",
             "DEVICE_PAIR_CTA": "pair a device",
-            "DEVICE_SECTION_TITLE": "your devices",
             "DEVICE_STATUS_LABELS": {
               "offline": "offline",
               "online": "online",
@@ -190,6 +185,7 @@
             "PAIR_LINK_PATH": "/p",
             "PAIR_NETWORK_LINE": "this device needs to be on your network (or your VPN) to pair. expires in {time}.",
             "PAIR_START_FAIL_BODY": "couldn't start pairing. try again.",
+            "PAIR_START_PAIRED_DEVICE_BODY": "you're looking at your journal from a paired device. to add another one, open your journal's network app on the computer it lives on.",
             "PRESENTATION_COMPUTER_LABEL": "computer",
             "PRESENTATION_GLASSES_LABEL": "glasses",
             "PRESENTATION_PHONE_LABEL": "phone",
@@ -207,6 +203,7 @@
             "PRIVATE_LINK_SETTING_UP": "setting up your private network\u2026",
             "PRIVATE_LINK_SETUP_FAILED": "couldn't finish setting up your private network.",
             "PRIVATE_LINK_SETUP_SUCCESS": "your private network is on. your devices can reach home from anywhere.",
+            "PRIVATE_LINK_TIMEOUT_BODY": "your private network didn't answer in time. try again.",
             "REACH_HOME_ADDRESS_LABEL": "home address",
             "REACH_HOME_CANDIDATES_LABEL": "choose a home address",
             "REACH_HOME_CANDIDATES_REFRESH_FAIL": "saved, but couldn't refresh. showing the last confirmed address.",

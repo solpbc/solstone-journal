@@ -12,6 +12,9 @@ const REQUIRED_COPY_KEYS = [
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'DEVICE_PAIR_CTA', 'MODAL_TITLE', 'STEP_1', 'STEP_2',
   'STEP_3', 'PAIR_NETWORK_LINE', 'DETAILS_DISCLOSURE', 'CA_FP_LABEL', 'CA_FP_NOTE',
   'PAIR_LINK_FIELD_LABEL', 'PAIR_LINK_COPY_LABEL', 'CHECK_PAIRING_CTA', 'PAIR_START_FAIL_BODY',
+  'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'CHECK_AGAIN_LABEL',
+  'PRIVATE_LINK_NEEDS_REPAIR', 'SPL_NOT_ENROLLED_REPAIR_CTA', 'PRIVATE_LINK_DISABLE_CTA',
+  'PRIVATE_LINK_RETRY_CTA',
   'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON', 'SUCCESS_HEADING', 'SUCCESS_SUBHEAD',
   'SUCCESS_VERIFY_NOTE', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
   'DEVICE_LABEL_DEFAULT_FORMAT',
@@ -20,6 +23,7 @@ const REQUIRED_COPY_KEYS = [
 const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
   'DEVICE_LABEL_DEFAULT_FORMAT',
+  'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'PRIVATE_LINK_NEEDS_REPAIR',
 ].includes(key));
 
 function response(body, status = 200) {
@@ -198,7 +202,8 @@ class Element {
       return this.getAttribute('role') === 'dialog' && this.getAttribute('aria-modal') === 'true';
     }
     if (selector === '[data-pairing-action]') return Object.hasOwn(this.dataset, 'pairingAction');
-    if (selector === '[data-pairing-action="open"]') return this.dataset.pairingAction === 'open';
+    const actionMatch = selector.match(/^\[data-pairing-action="([^"]+)"\]$/);
+    if (actionMatch) return this.dataset.pairingAction === actionMatch[1];
     if (selector === '[tabindex]') return this.hasAttribute('tabindex');
     if (selector === '[contenteditable="true"]') return this.getAttribute('contenteditable') === 'true';
     if (selector === '[contenteditable=""]') return this.getAttribute('contenteditable') === '';
@@ -283,6 +288,14 @@ function createEnvironment(manifestDir, options = {}) {
   const opener = make('link-empty-pairing-action', 'button');
   opener.dataset.pairingAction = 'open';
   root.appendChild(opener);
+  const headerOpener = make('link-header-pairing-action', 'button');
+  headerOpener.dataset.pairingAction = 'open';
+  root.appendChild(headerOpener);
+  const clientsList = make('clientsList');
+  const errorSurface = new Element(document, 'div');
+  errorSurface.textContent = 'failed to load devices';
+  clientsList.appendChild(errorSurface);
+  root.appendChild(clientsList);
   const dialog = make('link-pairing-dialog');
   dialog.setAttribute('role', 'dialog');
   dialog.setAttribute('aria-modal', 'true');
@@ -316,9 +329,17 @@ function createEnvironment(manifestDir, options = {}) {
   const expiredButton = make('link-pairing-expired-action', 'button');
   expiredButton.dataset.pairingAction = 'regenerate';
   expired.appendChild(expiredButton);
+  const unavailableP = make('link-pairing-unavailable-p', 'p');
+  unavailableP.setAttribute('data-copy', 'PAIR_START_FAIL_BODY');
   const retryButton = make('link-pairing-retry', 'button');
   retryButton.dataset.pairingAction = 'regenerate';
-  unavailable.appendChild(retryButton);
+  const repairButton = make('link-pairing-repair', 'button');
+  repairButton.dataset.pairingAction = 'private-link-repair';
+  repairButton.hidden = true;
+  const disableButton = make('link-pairing-disable', 'button');
+  disableButton.dataset.pairingAction = 'private-link-disable';
+  disableButton.hidden = true;
+  unavailable.append(unavailableP, retryButton, repairButton, disableButton);
   const closedButton = make('link-pairing-window-action', 'button');
   closedButton.dataset.pairingAction = 'regenerate';
   windowClosed.appendChild(closedButton);
@@ -394,12 +415,16 @@ function createEnvironment(manifestDir, options = {}) {
   const networkSource = fs.readFileSync(path.join(manifestDir, 'assets/network/network.js'), 'utf8');
   vm.runInContext(modalSource, context, { filename: 'modal_layer.js' });
   vm.runInContext(networkSource, context, { filename: 'network.js' });
+  const repairs = [];
+  const disables = [];
   const controller = window.NetworkRender.initPairingCeremony({
     clipboardWriteText: options.clipboardWriteText || (async (value) => {
       clipboardWrites.push(value);
       return options.clipboardResult !== false;
     }),
     showToast: options.showToast || ((message) => toasts.push(message)),
+    onPrivateLinkRepair: options.onPrivateLinkRepair || (() => repairs.push(true)),
+    onPrivateLinkDisable: options.onPrivateLinkDisable || (() => disables.push(true)),
   });
 
   function click(target) {
@@ -417,10 +442,13 @@ function createEnvironment(manifestDir, options = {}) {
     nodes,
     root,
     opener,
+    headerOpener,
     requests,
     fetchQueue,
     clipboardWrites,
     toasts,
+    repairs,
+    disables,
     emitLink,
     click,
     timers: timerQueue,
@@ -724,6 +752,8 @@ async function main() {
     const emptyState = renderEmptyStateHTML(workspace, env.window.LinkCopy);
     assert.ok(emptyState.includes(env.window.LinkCopy.DEVICE_EMPTY_TITLE));
     assert.ok(emptyState.includes(env.window.LinkCopy.DEVICE_EMPTY_BODY));
+    assert.ok(emptyState.includes('data-pairing-action="open"'));
+    assert.ok(emptyState.includes(env.window.LinkCopy.DEVICE_PAIR_CTA) || emptyState.includes('DEVICE_PAIR_CTA'));
   });
 
   await testCase('G3-208: only a never-delivered row offers forget, and it asks in place', async () => {
@@ -835,6 +865,266 @@ async function main() {
     assert.strictEqual(labels.editor('a').row.display_label, 'reported');
     labels.input('a', 'forbidden'); status = 403; await labels.save('a');
     assert.strictEqual(labels.canEdit(), false);
+  });
+
+  await testCase('table-driven refusal matrix verifies all refusal outcomes', async () => {
+    const table = [
+      {
+        name: '403 paired device',
+        response: response({ error: 'forbidden' }, 403),
+        expectedBodyKey: 'PAIR_START_PAIRED_DEVICE_BODY',
+        regenVisible: false,
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '400 no usable local address',
+        response: response({ detail: 'no usable local address is available for pairing' }, 400),
+        expectedBodyKey: 'PAIR_ERROR_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '400 pairing_key_invalid',
+        response: response({ reason_code: 'pairing_key_invalid' }, 400),
+        expectedBodyKey: 'PAIR_START_FAIL_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '400 pairing_request_invalid (role is invalid)',
+        response: response({ reason_code: 'pairing_request_invalid', detail: 'role is invalid' }, 400),
+        expectedBodyKey: 'PAIR_START_FAIL_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '503 relay_pairing_unavailable',
+        response: response({ reason_code: 'relay_pairing_unavailable' }, 503),
+        expectedBodyKey: 'PRIVATE_LINK_NEEDS_REPAIR',
+        regenVisible: false,
+        repairVisible: true,
+        repairKey: 'SPL_NOT_ENROLLED_REPAIR_CTA',
+        disableVisible: true,
+        disableKey: 'PRIVATE_LINK_DISABLE_CTA',
+      },
+      {
+        name: '503 relay_pairing_registration_refused',
+        response: response({ reason_code: 'relay_pairing_registration_refused' }, 503),
+        expectedBodyKey: 'PRIVATE_LINK_NEEDS_REPAIR',
+        regenVisible: false,
+        repairVisible: true,
+        repairKey: 'SPL_NOT_ENROLLED_REPAIR_CTA',
+        disableVisible: true,
+        disableKey: 'PRIVATE_LINK_DISABLE_CTA',
+      },
+      {
+        name: '504 timeout',
+        response: response({ error: 'timeout' }, 504),
+        expectedBodyKey: 'PRIVATE_LINK_TIMEOUT_BODY',
+        regenVisible: true,
+        regenKey: 'PRIVATE_LINK_RETRY_CTA',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '500 internal error',
+        response: response({ error: 'internal' }, 500),
+        expectedBodyKey: 'PAIR_START_FAIL_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '502 relay_pairing_tunnel_instance_mismatch',
+        response: response({ reason_code: 'relay_pairing_tunnel_instance_mismatch' }, 502),
+        expectedBodyKey: 'PAIR_START_FAIL_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+      {
+        name: '410 window closed',
+        response: response({ error: 'gone' }, 410),
+        panel: 'link-pairing-window-closed',
+      },
+      {
+        name: 'network error catch-all',
+        error: new Error('network failure'),
+        expectedBodyKey: 'PAIR_START_FAIL_BODY',
+        regenVisible: true,
+        regenKey: 'CHECK_AGAIN_LABEL',
+        repairVisible: false,
+        disableVisible: false,
+      },
+    ];
+
+    const row503a = table.find((r) => r.name === '503 relay_pairing_unavailable');
+    const row503b = table.find((r) => r.name === '503 relay_pairing_registration_refused');
+    assert.ok(row503a && row503b);
+    assert.strictEqual(row503a.expectedBodyKey, row503b.expectedBodyKey);
+    assert.strictEqual(row503a.expectedBodyKey, 'PRIVATE_LINK_NEEDS_REPAIR');
+
+    for (const row of table) {
+      const env = createEnvironment(manifestDir);
+      if (row.error) {
+        const fetchDef = deferred();
+        env.fetchQueue.push(fetchDef);
+        env.click(env.opener);
+        fetchDef.reject(row.error);
+      } else {
+        env.fetchQueue.push(row.response);
+        env.click(env.opener);
+      }
+      await settle();
+
+      if (row.name.startsWith('403')) {
+        assert.strictEqual(env.headerOpener.hidden, false, 'headerOpener remains visible on 403');
+        assert.ok(env.headerOpener.parentElement !== null, 'headerOpener remains connected on 403');
+      }
+
+      if (row.panel) {
+        assert.strictEqual(env.nodes.get(row.panel).hidden, false, `${row.name} panel`);
+        assert.strictEqual(env.nodes.get('link-pairing-unavailable').hidden, true, `${row.name} unavailable hidden`);
+      } else {
+        const unavailable = env.nodes.get('link-pairing-unavailable');
+        assert.strictEqual(unavailable.hidden, false, `${row.name} unavailable visible`);
+        const p = unavailable.querySelector('p');
+        assert.strictEqual(p.getAttribute('data-copy'), row.expectedBodyKey, `${row.name} body key`);
+        assert.strictEqual(p.textContent, env.window.LinkCopy[row.expectedBodyKey], `${row.name} body text`);
+
+        const regen = unavailable.querySelector('[data-pairing-action="regenerate"]');
+        assert.strictEqual(regen.hidden, !row.regenVisible, `${row.name} regen visibility`);
+        if (row.regenVisible) {
+          assert.strictEqual(regen.getAttribute('data-copy'), row.regenKey, `${row.name} regen copy key`);
+          assert.strictEqual(regen.textContent, env.window.LinkCopy[row.regenKey], `${row.name} regen copy text`);
+        }
+
+        const repair = unavailable.querySelector('[data-pairing-action="private-link-repair"]');
+        assert.strictEqual(repair.hidden, !row.repairVisible, `${row.name} repair visibility`);
+        if (row.repairVisible) {
+          assert.strictEqual(repair.getAttribute('data-copy'), row.repairKey, `${row.name} repair copy key`);
+          assert.strictEqual(repair.textContent, env.window.LinkCopy[row.repairKey], `${row.name} repair copy text`);
+        }
+
+        const disable = unavailable.querySelector('[data-pairing-action="private-link-disable"]');
+        assert.strictEqual(disable.hidden, !row.disableVisible, `${row.name} disable visibility`);
+        if (row.disableVisible) {
+          assert.strictEqual(disable.getAttribute('data-copy'), row.disableKey, `${row.name} disable copy key`);
+          assert.strictEqual(disable.textContent, env.window.LinkCopy[row.disableKey], `${row.name} disable copy text`);
+        }
+      }
+    }
+  });
+
+  await testCase('AC1: workspace.html header pairing action is in devices section outside clientsList', async () => {
+    const sectionStart = workspace.indexOf('<section aria-label="devices">');
+    assert.ok(sectionStart !== -1, 'devices section exists');
+    const listStart = workspace.indexOf('id="clientsList"', sectionStart);
+    assert.ok(listStart !== -1, 'clientsList exists after devices section start');
+    const slice = workspace.slice(sectionStart, listStart);
+    assert.ok(slice.includes('data-pairing-action="open"'), 'pairing action open in header slice');
+    assert.ok(slice.includes('data-copy="DEVICE_PAIR_CTA"'), 'DEVICE_PAIR_CTA copy in header slice');
+  });
+
+  await testCase('AC2: headerOpener initiates pairing when clientsList shows error surface with no pairing action', async () => {
+    const env = createEnvironment(manifestDir);
+    const clientsList = env.nodes.get('clientsList');
+    assert.ok(clientsList);
+    assert.strictEqual(clientsList.querySelectorAll('[data-pairing-action]').length, 0);
+    env.fetchQueue.push(response(material()));
+    env.headerOpener.focus();
+    env.click(env.headerOpener);
+    await settle();
+    assert.strictEqual(env.dialog.hidden, false);
+    assert.strictEqual(env.requests.length, 1);
+    assert.strictEqual(env.requests[0].url, '/app/network/pair-start');
+  });
+
+  await testCase('AC4: required element ids from initPairingCeremony exist in workspace.html source', async () => {
+    const networkJsSource = fs.readFileSync(activeAsset, 'utf8');
+    const initStart = networkJsSource.indexOf('function initPairingCeremony(');
+    assert.ok(initStart !== -1);
+    const elementsEnd = networkJsSource.indexOf('const ceremony = {', initStart);
+    assert.ok(elementsEnd !== -1);
+    const slice = networkJsSource.slice(initStart, elementsEnd);
+    const idMatches = [...slice.matchAll(/findById\(documentRef,\s*'([^']+)'\)/g)].map((m) => m[1]);
+    assert.strictEqual(idMatches.length, 17, 'found 17 required findById ids in initPairingCeremony');
+    for (const id of idMatches) {
+      assert.ok(workspace.includes(`id="${id}"`), `workspace.html contains id="${id}"`);
+    }
+  });
+
+  await testCase('header opener opens ceremony and restores opener focus on close', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response(material()));
+    env.headerOpener.focus();
+    env.click(env.headerOpener);
+    await settle();
+    assert.strictEqual(env.dialog.hidden, false);
+    assert.strictEqual(env.requests[0].url, '/app/network/pair-start');
+    env.controller.close();
+    await settle();
+    assert.strictEqual(env.dialog.hidden, true);
+    assert.strictEqual(env.document.activeElement, env.headerOpener);
+  });
+
+  await testCase('503 repair button closes dialog and invokes onPrivateLinkRepair callback', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ reason_code: 'relay_pairing_unavailable' }, 503));
+    env.click(env.opener);
+    await settle();
+    const repair = env.nodes.get('link-pairing-repair');
+    assert.strictEqual(repair.hidden, false);
+    env.click(repair);
+    await settle();
+    assert.strictEqual(env.dialog.hidden, true);
+    assert.strictEqual(env.repairs.length, 1);
+  });
+
+  await testCase('503 disable button closes dialog and invokes onPrivateLinkDisable callback', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ reason_code: 'relay_pairing_unavailable' }, 503));
+    env.click(env.opener);
+    await settle();
+    const disable = env.nodes.get('link-pairing-disable');
+    assert.strictEqual(disable.hidden, false);
+    env.click(disable);
+    await settle();
+    assert.strictEqual(env.dialog.hidden, true);
+    assert.strictEqual(env.disables.length, 1);
+  });
+
+  await testCase('403 response keeps dialog open with paired device copy and no retry', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response({ error: 'forbidden' }, 403));
+    env.click(env.opener);
+    await settle();
+    assert.strictEqual(env.dialog.hidden, false);
+    const unavailable = env.nodes.get('link-pairing-unavailable');
+    assert.strictEqual(unavailable.hidden, false);
+    assert.strictEqual(unavailable.querySelector('p').textContent, env.window.LinkCopy.PAIR_START_PAIRED_DEVICE_BODY);
+    assert.strictEqual(unavailable.querySelector('[data-pairing-action="regenerate"]').hidden, true);
+    assert.strictEqual(unavailable.querySelector('[data-pairing-action="private-link-repair"]').hidden, true);
+    assert.strictEqual(unavailable.querySelector('[data-pairing-action="private-link-disable"]').hidden, true);
+  });
+
+  await testCase('AC10: workspace html and scripts satisfy private-link disable contract', async () => {
+    assert.ok(workspace.includes('id="link-private-link-not-enrolled-disable"'));
+    const disableIdMatches = workspace.match(/id="link-private-link-disable"/g);
+    assert.strictEqual(disableIdMatches ? disableIdMatches.length : 0, 1);
+    assert.ok(workspace.includes("querySelectorAll('.link-private-link-disable')"));
+    assert.ok(workspace.includes('data-pairing-action="private-link-repair"'));
+    assert.ok(workspace.includes('data-pairing-action="private-link-disable"'));
+    assert.ok(workspace.includes('data-pairing-action="open"'));
   });
 
   await testCase('active asset pin distinguishes the network ceremony from retired link init', async () => {

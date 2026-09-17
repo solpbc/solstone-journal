@@ -383,11 +383,14 @@ fn derive_reachability(
     posture: LinkPosture,
     relay_state: RelayState,
 ) -> Reachability {
-    if !lan_accessible {
-        return Reachability::LanUnreachable;
-    }
     match posture {
-        LinkPosture::Direct => Reachability::Online,
+        LinkPosture::Direct => {
+            if !lan_accessible {
+                Reachability::LanUnreachable
+            } else {
+                Reachability::Online
+            }
+        }
         LinkPosture::Spl => match relay_state {
             RelayState::Connecting => Reachability::FinishingSetup,
             RelayState::Parked => Reachability::Online,
@@ -837,7 +840,7 @@ mod tests {
     }
 
     #[test]
-    fn reachability_is_total_and_lan_precedes_everything() {
+    fn reachability_derivation_covers_posture_and_lan_matrix() {
         let cases = [
             (
                 false,
@@ -847,9 +850,39 @@ mod tests {
             ),
             (
                 false,
+                LinkPosture::Direct,
+                RelayState::Offline,
+                Reachability::LanUnreachable,
+            ),
+            (
+                false,
+                LinkPosture::Spl,
+                RelayState::Connecting,
+                Reachability::FinishingSetup,
+            ),
+            (
+                false,
                 LinkPosture::Spl,
                 RelayState::Parked,
-                Reachability::LanUnreachable,
+                Reachability::Online,
+            ),
+            (
+                false,
+                LinkPosture::Spl,
+                RelayState::Reconnecting,
+                Reachability::Reconnecting,
+            ),
+            (
+                false,
+                LinkPosture::Spl,
+                RelayState::Offline,
+                Reachability::Offline,
+            ),
+            (
+                false,
+                LinkPosture::Spl,
+                RelayState::NotEnrolled,
+                Reachability::NotEnrolled,
             ),
             (
                 true,
@@ -891,6 +924,35 @@ mod tests {
         for (lan, posture, relay, expected) in cases {
             assert_eq!(derive_reachability(lan, posture, relay), expected);
         }
+    }
+
+    #[test]
+    fn coupling_public_route_fallback_leaves_lan_unreachable_while_spl_parked_is_online() {
+        let snapshot = PairingSnapshot {
+            endpoints: vec![],
+            route_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)),
+        };
+        let health = LinkHealthProjection {
+            state: Some("connected".to_owned()),
+            last_link_event_at: Some(1_000_000),
+            ..Default::default()
+        };
+        let status = build_status_body(StatusInputs {
+            link_state: LinkStateRead::Missing,
+            token_present: true,
+            posture: LinkPosture::Spl,
+            relay_url: DEFAULT_RELAY_URL.to_owned(),
+            ca_fingerprint: None,
+            health: Some(&health),
+            home_address: None,
+            snapshot: Ok(snapshot),
+            now_ms: 1_000_000,
+            direct_port: 7657,
+        });
+
+        assert_eq!(status.lan_accessible, false);
+        assert_ne!(status.reachability, Reachability::LanUnreachable.as_str());
+        assert_eq!(status.reachability, Reachability::Online.as_str());
     }
 
     #[test]

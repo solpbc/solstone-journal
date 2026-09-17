@@ -79,6 +79,7 @@
   "CHECK_AGAIN_LABEL": "check again",
   "CHECK_PAIRING_CTA": "check pairing",
   "PAIR_START_FAIL_BODY": "couldn't start pairing. try again.",
+  "PAIR_START_PAIRED_DEVICE_BODY": "you're looking at your journal from a paired device. to add another one, open your journal's network app on the computer it lives on.",
   "PRIVATE_LINK_DISABLE_CTA": "turn off your private network",
   "PRIVATE_LINK_DISABLE_CONFIRM": "turn off your private network? your devices will only reach your journal over your own network, on the same wifi or your own VPN, until you turn it back on.",
   "PRIVATE_LINK_SETTING_UP": "setting up your private network…",
@@ -92,7 +93,7 @@
   "PRIVATE_LINK_DISABLE_FAILED": "couldn't turn off your private network. it's still on. try again.",
   "PRIVATE_LINK_NEEDS_REPAIR": "your private network needs setting up again.",
   "PRIVATE_LINK_RETRY_CTA": "try again",
-  "DEVICE_SECTION_TITLE": "your devices",
+  "PRIVATE_LINK_TIMEOUT_BODY": "your private network didn't answer in time. try again.",
   "DEVICE_PAIR_CTA": "pair a device",
   "DEVICE_EMPTY_TITLE": "no devices connected yet",
   "DEVICE_EMPTY_BODY": "pair a device to read your journal on the go.",
@@ -111,10 +112,6 @@
     "online": "online",
     "recent": "recently seen",
     "offline": "offline"
-  },
-  "DEVICE_GROUP_LABELS": {
-    "observers": "observers",
-    "peers": "peers"
   },
   "DEVICE_ACTION_LABELS": {
     "rename": "rename",

@@ -163,8 +163,8 @@ mod tests {
             check_network_dictionary_keys(value, &mut dictionary_keys_seen);
         }
         assert!(
-            dictionary_keys_seen >= 17,
-            "expected at least 17 network dictionary keys, found {dictionary_keys_seen}"
+            dictionary_keys_seen >= 16,
+            "expected at least 16 network dictionary keys, found {dictionary_keys_seen}"
         );
     }
 

@@ -207,7 +207,10 @@ pub fn resolve_pair_link_candidates(
         })
         .collect::<Vec<_>>();
     if filtered.is_empty() {
-        return usable_route.into_iter().collect();
+        return usable_route
+            .filter(|address| is_allowed_direct_ipv4(*address))
+            .into_iter()
+            .collect();
     }
     let mut non_vpn = Vec::new();
     let mut vpn = Vec::new();
@@ -687,6 +690,14 @@ mod tests {
         assert_eq!(
             resolve_pair_link_candidates(&[], Some(Ipv4Addr::new(10, 0, 0, 2))),
             vec![Ipv4Addr::new(10, 0, 0, 2)]
+        );
+        assert_eq!(
+            resolve_pair_link_candidates(&[], Some(Ipv4Addr::new(203, 0, 113, 1))),
+            Vec::<Ipv4Addr>::new()
+        );
+        assert_eq!(
+            resolve_pair_link_candidates(&[], Some(Ipv4Addr::new(8, 8, 8, 8))),
+            Vec::<Ipv4Addr>::new()
         );
     }
 

@@ -185,8 +185,8 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         lucide_icon: "network",
         launcher_group: AppLauncherGroup::Manage,
         launcher_rank: 1,
-        rail_group: None,
-        rail_rank: 0,
+        rail_group: Some(RailGroup::Management),
+        rail_rank: 2,
         date_nav: None,
         has_background: false,
         converted: true,
@@ -375,7 +375,7 @@ mod tests {
     use axum::http::{Request, StatusCode, header};
     use tower::ServiceExt;
 
-    use super::{APP_REGISTRY, known_app, shell_payload};
+    use super::{APP_REGISTRY, AppLauncherGroup, RailGroup, known_app, shell_payload};
 
     struct EstablishedJournal(tempfile::TempDir);
 
@@ -412,6 +412,23 @@ mod tests {
                 .iter()
                 .any(|app| app.name == "network" && app.converted)
         );
+    }
+
+    #[test]
+    fn management_rail_apps_are_ordered_and_network_remains_manage_launcher() {
+        let mut management_apps: Vec<_> = APP_REGISTRY
+            .iter()
+            .filter(|app| matches!(app.rail_group, Some(RailGroup::Management)))
+            .collect();
+        management_apps.sort_by_key(|app| app.rail_rank);
+        let names: Vec<&str> = management_apps.iter().map(|app| app.name).collect();
+        assert_eq!(names, &["import", "settings", "network"]);
+
+        let network = APP_REGISTRY
+            .iter()
+            .find(|app| app.name == "network")
+            .expect("network app is present");
+        assert!(matches!(network.launcher_group, AppLauncherGroup::Manage));
     }
 
     #[test]

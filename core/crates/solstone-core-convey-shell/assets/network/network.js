@@ -189,10 +189,79 @@
       elements.successSubhead.textContent = copy('SUCCESS_SUBHEAD').replace('{short_fp}', shortFingerprint);
     }
 
-    function openRecovery(kind) {
+    function renderUnavailable(response, body) {
+      const p = elements.unavailable.querySelector('p');
+      const regenBtn = elements.unavailable.querySelector('[data-pairing-action="regenerate"]');
+      const repairBtn = elements.unavailable.querySelector('[data-pairing-action="private-link-repair"]');
+      const disableBtn = elements.unavailable.querySelector('[data-pairing-action="private-link-disable"]');
+
+      const status = response?.status;
+      const detail = body?.detail;
+      const reasonCode = body?.reason_code;
+
+      let bodyCopyKey = 'PAIR_START_FAIL_BODY';
+      let showRegen = true;
+      let regenCopyKey = 'CHECK_AGAIN_LABEL';
+      let showRepair = false;
+      let showDisable = false;
+
+      if (status === 403) {
+        bodyCopyKey = 'PAIR_START_PAIRED_DEVICE_BODY';
+        showRegen = false;
+      } else if (status === 400 && detail === 'no usable local address is available for pairing') {
+        bodyCopyKey = 'PAIR_ERROR_BODY';
+        showRegen = true;
+        regenCopyKey = 'CHECK_AGAIN_LABEL';
+      } else if (status === 400 && reasonCode === 'pairing_key_invalid') {
+        bodyCopyKey = 'PAIR_START_FAIL_BODY';
+        showRegen = true;
+        regenCopyKey = 'CHECK_AGAIN_LABEL';
+      } else if (
+        status === 503
+        && (reasonCode === 'relay_pairing_unavailable' || reasonCode === 'relay_pairing_registration_refused')
+      ) {
+        bodyCopyKey = 'PRIVATE_LINK_NEEDS_REPAIR';
+        showRegen = false;
+        showRepair = true;
+        showDisable = true;
+      } else if (status === 504) {
+        bodyCopyKey = 'PRIVATE_LINK_TIMEOUT_BODY';
+        showRegen = true;
+        regenCopyKey = 'PRIVATE_LINK_RETRY_CTA';
+      } else {
+        bodyCopyKey = 'PAIR_START_FAIL_BODY';
+        showRegen = true;
+        regenCopyKey = 'CHECK_AGAIN_LABEL';
+      }
+
+      if (p) {
+        p.setAttribute('data-copy', bodyCopyKey);
+        p.textContent = copy(bodyCopyKey);
+      }
+      if (regenBtn) {
+        regenBtn.hidden = !showRegen;
+        regenBtn.setAttribute('data-copy', regenCopyKey);
+        regenBtn.textContent = copy(regenCopyKey);
+      }
+      if (repairBtn) {
+        repairBtn.hidden = !showRepair;
+        repairBtn.setAttribute('data-copy', 'SPL_NOT_ENROLLED_REPAIR_CTA');
+        repairBtn.textContent = copy('SPL_NOT_ENROLLED_REPAIR_CTA');
+      }
+      if (disableBtn) {
+        disableBtn.hidden = !showDisable;
+        disableBtn.setAttribute('data-copy', 'PRIVATE_LINK_DISABLE_CTA');
+        disableBtn.textContent = copy('PRIVATE_LINK_DISABLE_CTA');
+      }
+    }
+
+    function openRecovery(kind, response = null, body = null) {
       clearTimer();
       clearSubscription();
       ceremony.material = null;
+      if (kind === 'unavailable') {
+        renderUnavailable(response, body);
+      }
       displayState('unavailable', kind);
     }
 
@@ -243,7 +312,7 @@
       }
       if (generation !== ceremony.generation) return;
       if (!response.ok || !body || typeof body.present !== 'boolean' || typeof body.used !== 'boolean') {
-        openRecovery('unavailable');
+        openRecovery('unavailable', response, body);
         return;
       }
       if (body.used) {
@@ -276,8 +345,12 @@
         return;
       }
       if (generation !== ceremony.generation) return;
+      if (response.status === 410) {
+        openRecovery('window-closed');
+        return;
+      }
       if (!response.ok || !validMaterial(body)) {
-        openRecovery('unavailable');
+        openRecovery('unavailable', response, body);
         return;
       }
       ceremony.material = body;
@@ -335,7 +408,7 @@
       if (!control || !root.contains(control)) return;
       const action = control.dataset.pairingAction;
       if (action === 'open') {
-        ceremony.openerSelector = '[data-pairing-action="open"]';
+        ceremony.openerSelector = control.id ? `#${control.id}` : '[data-pairing-action="open"]';
         open();
       } else if (action === 'close') {
         close();
@@ -345,6 +418,14 @@
         if (!control.disabled) checkCurrentNonce(ceremony.generation, true);
       } else if (action === 'copy') {
         copyLink();
+      } else if (action === 'private-link-repair') {
+        if (typeof options.onPrivateLinkRepair !== 'function') return;
+        close();
+        options.onPrivateLinkRepair();
+      } else if (action === 'private-link-disable') {
+        if (typeof options.onPrivateLinkDisable !== 'function') return;
+        close();
+        options.onPrivateLinkDisable();
       }
     });
 

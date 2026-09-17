@@ -132,6 +132,7 @@
     <div id="link-mode-hosted-not-enrolled" class="link-modebody" hidden>
       <div class="link-handoff">
         <button type="button" id="link-private-link-enroll" class="link-btn-primary" data-copy="SPL_NOT_ENROLLED_REPAIR_CTA"></button>
+        <button type="button" id="link-private-link-not-enrolled-disable" class="link-private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA"></button>
       </div>
     </div>
 
@@ -172,6 +173,7 @@
     </div>
     <section aria-label="devices">
       <h2 class="section-title" id="devices" tabindex="-1">devices</h2>
+      <button type="button" class="modal-primary-btn" data-pairing-action="open" data-copy="DEVICE_PAIR_CTA"></button>
       <div id="clientsList" role="list">
         <div class="surface-state surface-state--loading" role="status" aria-busy="true">
           <div class="surface-state-spinner" aria-hidden="true"></div>
@@ -217,7 +219,11 @@
       </div>
       <div id="link-pairing-unavailable" hidden>
         <p data-copy="PAIR_START_FAIL_BODY"></p>
-        <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="CHECK_AGAIN_LABEL"></button></div>
+        <div class="modal-actions">
+          <button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="CHECK_AGAIN_LABEL"></button>
+          <button type="button" class="modal-primary-btn" data-pairing-action="private-link-repair" data-copy="SPL_NOT_ENROLLED_REPAIR_CTA" hidden></button>
+          <button type="button" class="modal-primary-btn" data-pairing-action="private-link-disable" data-copy="PRIVATE_LINK_DISABLE_CTA" hidden></button>
+        </div>
       </div>
       <div id="link-pairing-window-closed" hidden>
         <div class="modal-actions"><button type="button" class="modal-primary-btn" data-pairing-action="regenerate" data-copy="WINDOW_CLOSED_BUTTON"></button></div>
@@ -936,7 +942,6 @@
   const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
   const privateLinkSetup = document.getElementById('link-private-link-setup');
   const privateLinkEnroll = document.getElementById('link-private-link-enroll');
-  const privateLinkDisable = document.getElementById('link-private-link-disable');
   const privateLinkOperation = document.getElementById('link-private-link-operation');
   const privateLinkOperationHeadline = document.getElementById('link-private-link-operation-headline');
   const privateLinkOperationDetail = document.getElementById('link-private-link-operation-detail');
@@ -1305,7 +1310,7 @@
   }
 
   function setPrivateLinkButtonsBusy(busy) {
-    [privateLinkSetup, privateLinkEnroll, privateLinkDisable, privateLinkOperationRetry]
+    [privateLinkSetup, privateLinkEnroll, ...document.querySelectorAll('.link-private-link-disable'), privateLinkOperationRetry]
       .filter(Boolean)
       .forEach((button) => {
         button.disabled = busy;
@@ -1480,9 +1485,11 @@
   segHosted?.addEventListener('click', () => selectReachMode('hosted'));
   privateLinkSetup?.addEventListener('click', startPrivateLinkSetup);
   privateLinkEnroll?.addEventListener('click', startPrivateLinkSetup);
-  privateLinkDisable?.addEventListener('click', () => {
-    if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
-    disablePrivateLink();
+  document.querySelectorAll('.link-private-link-disable').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+      disablePrivateLink();
+    });
   });
   privateLinkOperationRetry?.addEventListener('click', () => {
     if (privateLinkRetryAction) privateLinkRetryAction();
@@ -1553,6 +1560,11 @@
     window.linkPairingCeremony = window.NetworkRender?.initPairingCeremony?.({
       clipboardWriteText,
       showToast,
+      onPrivateLinkRepair: startPrivateLinkSetup,
+      onPrivateLinkDisable: () => {
+        if (!confirm(window.LinkCopy.PRIVATE_LINK_DISABLE_CONFIRM)) return;
+        disablePrivateLink();
+      },
     });
     refreshStatus();
     refreshPrivateLinkStatus();
