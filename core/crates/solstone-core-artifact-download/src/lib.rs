@@ -212,7 +212,14 @@ pub(crate) fn download_verified_bytes_with(
 pub fn verify_sha256(path: &Path, expected: &str) -> Result<String, ArchiveError> {
     let mut file = File::open(path)?;
     let mut digest = Sha256::new();
-    let mut chunk = [0_u8; 1024 * 1024];
+    // Heap-allocated. A 1 MiB fixed-size array here lives on the stack, which
+    // alone meets or exceeds the default 1 MiB Windows main-thread stack
+    // reserve before any caller frame is considered: this is the same defect
+    // `solstone-core-pdf`'s `sha256_file` carried, and it crashed
+    // `journal install-models` with STATUS_STACK_OVERFLOW before it could
+    // print anything, because the bundled RF-DETR asset check hashes a file
+    // here first.
+    let mut chunk = vec![0_u8; 1024 * 1024];
     loop {
         let size = file.read(&mut chunk)?;
         if size == 0 {
@@ -655,6 +662,38 @@ mod tests {
             actual,
             "d59386e0ae435e292fbe0ebcdb954b75ed5fb3922091277cb19f798fc5d50718"
         );
+    }
+
+    #[test]
+    fn digest_verification_fits_a_one_mib_stack() {
+        // The Windows main thread reserves 1 MiB. `verify_sha256` runs on it,
+        // from `journal install-models` among others, so its read buffer must
+        // not be a stack array of that same size. A worker thread with a
+        // Windows-sized stack is the portable way to regress it here.
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("asset");
+        File::create(&path)
+            .unwrap()
+            .write_all(&vec![0x5a_u8; 3 * 1024 * 1024])
+            .unwrap();
+        let expected = {
+            let mut digest = Sha256::new();
+            digest.update(vec![0x5a_u8; 3 * 1024 * 1024]);
+            digest
+                .finalize()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        };
+        let probe = path.clone();
+        let reference = expected.clone();
+        let actual = std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || verify_sha256(&probe, &reference).expect("hash the asset"))
+            .expect("spawn worker with a Windows-sized stack")
+            .join()
+            .expect("hashing worker finished");
+        assert_eq!(actual, expected);
     }
 
     #[test]
