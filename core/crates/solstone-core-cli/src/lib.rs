@@ -4583,7 +4583,11 @@ pub const SERVICE_USAGE: &str = concat!(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ServiceAction {
     Install {
-        port: solstone_core_operational_logs::ServicePort,
+        /// `None` when the owner named no `--port`. The platform then keeps
+        /// the port the registration already carries, because re-registering
+        /// an established journal onto the 5015 default silently moves it off
+        /// its own port -- measured on Windows, true everywhere.
+        port: Option<solstone_core_operational_logs::ServicePort>,
         installation_guard: Option<ServiceInstallationGuardArguments>,
     },
     Uninstall,
@@ -4634,6 +4638,16 @@ impl SafeServiceDiagnostic {
         Self("Error: installation identity arguments must be supplied together".to_owned())
     }
 
+    fn unexpected_install_argument(value: &OsStr) -> Self {
+        // A bare port was accepted silently and then ignored, so
+        // `journal service install 6123` re-registered the task on the default
+        // and exited 0. Name the argument and the spelling that works.
+        Self(format!(
+            "Error: unexpected argument '{}'; the port is given as --port PORT",
+            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
+        ))
+    }
+
     fn unknown_subcommand(value: &OsStr) -> Self {
         // The retained Python owner prints this guidance on two lines. This pure
         // foundation deliberately keeps dynamic failures to one physical line.
@@ -4668,11 +4682,28 @@ pub enum ServiceParseOutcome {
     },
 }
 
-/// Parse the retained `--port` argv grammar without converting argv lossily.
+/// Parse the retained `--port` argv grammar without converting argv lossily,
+/// defaulting to 5015 when the owner named no port.
 #[doc(hidden)]
 pub fn parse_service_port_argv(
     args: &[OsString],
 ) -> Result<solstone_core_operational_logs::ServicePort, SafeServiceDiagnostic> {
+    match parse_service_port_argv_opt(args)? {
+        Some(port) => Ok(port),
+        None => solstone_core_operational_logs::parse_service_port(SERVICE_DEFAULT_PORT)
+            .map_err(|_| SafeServiceDiagnostic::invalid_port_value(OsStr::new(SERVICE_DEFAULT_PORT))),
+    }
+}
+
+/// The port a fresh installation takes when nothing else names one.
+const SERVICE_DEFAULT_PORT: &str = "5015";
+
+/// Parse `--port` without substituting a default, so a caller can tell
+/// "the owner asked for 5015" from "the owner asked for nothing".
+#[doc(hidden)]
+pub fn parse_service_port_argv_opt(
+    args: &[OsString],
+) -> Result<Option<solstone_core_operational_logs::ServicePort>, SafeServiceDiagnostic> {
     let mut index = 0;
     while index < args.len() {
         let argument = args[index].as_os_str();
@@ -4684,30 +4715,31 @@ pub fn parse_service_port_argv(
                 return Err(SafeServiceDiagnostic::invalid_port_value(value.as_os_str()));
             };
             return solstone_core_operational_logs::parse_service_port(value_text)
+                .map(Some)
                 .map_err(|_| SafeServiceDiagnostic::invalid_port_text(value_text));
         }
         if let Some(argument_text) = argument.to_str()
             && let Some(value) = argument_text.strip_prefix("--port=")
         {
             return solstone_core_operational_logs::parse_service_port(value)
+                .map(Some)
                 .map_err(|_| SafeServiceDiagnostic::invalid_port_text(argument_text));
         }
         index += 1;
     }
-    solstone_core_operational_logs::parse_service_port("5015")
-        .map_err(|_| SafeServiceDiagnostic::invalid_port_value(OsStr::new("5015")))
+    Ok(None)
 }
 
 fn parse_service_install_argv(
     args: &[OsString],
 ) -> Result<
     (
-        solstone_core_operational_logs::ServicePort,
+        Option<solstone_core_operational_logs::ServicePort>,
         Option<ServiceInstallationGuardArguments>,
     ),
     SafeServiceDiagnostic,
 > {
-    let port = parse_service_port_argv(args)?;
+    let port = parse_service_port_argv_opt(args)?;
     let mut namespace = None;
     let mut id = None;
     let mut generation = None;
@@ -4716,15 +4748,25 @@ fn parse_service_install_argv(
     while index < args.len() {
         let argument = args[index].as_os_str();
         let Some(name) = argument.to_str() else {
+            return Err(SafeServiceDiagnostic::unexpected_install_argument(argument));
+        };
+        if name == "--port" {
+            // Consumed by the port grammar above, value included.
+            index += 2;
+            continue;
+        }
+        if name.starts_with("--port=") {
             index += 1;
             continue;
-        };
+        }
         let field = match name {
             "--installation-namespace" => Some(&mut namespace),
             "--installation-id" => Some(&mut id),
             "--installation-generation" => Some(&mut generation),
             "--installation-journal-token" => Some(&mut journal_token),
-            _ => None,
+            // Everything else used to be skipped in silence, which is how a
+            // bare positional port reached the default branch unnoticed.
+            _ => return Err(SafeServiceDiagnostic::unexpected_install_argument(argument)),
         };
         let Some(field) = field else {
             index += 1;
@@ -6012,7 +6054,7 @@ mod tests {
             (
                 args(&["install", "--port", "7"]),
                 ServiceParseOutcome::Dispatch(ServiceAction::Install {
-                    port: solstone_core_operational_logs::parse_service_port("7").unwrap(),
+                    port: Some(solstone_core_operational_logs::parse_service_port("7").unwrap()),
                     installation_guard: None,
                 }),
             ),
@@ -6052,6 +6094,66 @@ mod tests {
             ),
         ] {
             assert_eq!(parse_service_args(&argv), expected);
+        }
+    }
+
+    #[test]
+    fn service_install_refuses_a_bare_port_instead_of_ignoring_it() {
+        // `journal service install 6123` took the port positionally, fell
+        // through to the 5015 default, re-registered an established journal
+        // there and exited 0. Refusing names the argument and the spelling.
+        let ServiceParseOutcome::Exit {
+            code: 1,
+            stdout: None,
+            stderr: Some(stderr),
+        } = parse_service_args(&args(&["install", "6123"]))
+        else {
+            panic!("a bare port must not dispatch");
+        };
+        assert_eq!(
+            stderr.as_str(),
+            "Error: unexpected argument '6123'; the port is given as --port PORT"
+        );
+    }
+
+    #[test]
+    fn service_install_without_a_port_asks_for_no_particular_port() {
+        // The platform then keeps whatever the registration already carries.
+        assert_eq!(
+            parse_service_args(&args(&["install"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::Install {
+                port: None,
+                installation_guard: None,
+            })
+        );
+        assert_eq!(
+            parse_service_args(&args(&["install", "--port=6123"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::Install {
+                port: Some(solstone_core_operational_logs::parse_service_port("6123").unwrap()),
+                installation_guard: None,
+            })
+        );
+    }
+
+    #[test]
+    fn service_install_refuses_an_unknown_flag_rather_than_skipping_it() {
+        for argv in [
+            args(&["install", "--nonsense"]),
+            args(&["install", "--port", "6123", "--nonsense", "x"]),
+        ] {
+            let ServiceParseOutcome::Exit {
+                code: 1,
+                stderr: Some(stderr),
+                ..
+            } = parse_service_args(&argv)
+            else {
+                panic!("an unknown flag must not dispatch");
+            };
+            assert!(
+                stderr.as_str().starts_with("Error: unexpected argument"),
+                "got {}",
+                stderr.as_str()
+            );
         }
     }
 

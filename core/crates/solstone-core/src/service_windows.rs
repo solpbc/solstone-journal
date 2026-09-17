@@ -48,7 +48,10 @@ pub(crate) fn run(action: ServiceAction) -> ExitCode {
         ServiceAction::Install {
             port,
             installation_guard,
-        } => run_install_action(port.canonical_decimal(), installation_guard),
+        } => run_install_action(
+            port.as_ref().map(|port| port.canonical_decimal().to_owned()),
+            installation_guard,
+        ),
         ServiceAction::Uninstall => run_uninstall_action(),
         ServiceAction::Start => run_start_action(),
         ServiceAction::Stop => run_stop_action(),
@@ -196,12 +199,26 @@ fn validate_task(
     Ok(definition)
 }
 
-fn install_task(ctx: &ServiceContext, port: u16) -> Result<(), ExitCode> {
+/// The port a first installation takes when nothing names one.
+const DEFAULT_SERVICE_PORT: u16 = 5015;
+
+fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(), ExitCode> {
     let deadline = Instant::now() + STOP_TIMEOUT;
     let before = inspect_task(ctx, deadline)?;
-    if before.present {
-        validate_task(ctx, &before)?;
-    }
+    let registered = if before.present {
+        Some(validate_task(ctx, &before)?)
+    } else {
+        None
+    };
+    // An explicit `--port` wins. Without one, keep the port the registration
+    // already carries: re-registering an established journal on the 5015
+    // default moved it off its own port and exited 0 -- measured here as
+    // `"supervisor" "6123"` becoming `"supervisor" "5015"`.
+    let port = requested_port.unwrap_or_else(|| {
+        registered
+            .as_ref()
+            .map_or(DEFAULT_SERVICE_PORT, |definition| definition.action.port)
+    });
     let journal_display = ctx
         .journal
         .to_str()
@@ -501,7 +518,10 @@ fn delete_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     Ok(())
 }
 
-fn run_install_action(port: &str, supplied: Option<ServiceInstallationGuardArguments>) -> ExitCode {
+fn run_install_action(
+    port: Option<String>,
+    supplied: Option<ServiceInstallationGuardArguments>,
+) -> ExitCode {
     let ctx = match resolve_context() {
         Ok(ctx) => ctx,
         Err(code) => return code,
@@ -532,8 +552,10 @@ fn run_install_action(port: &str, supplied: Option<ServiceInstallationGuardArgum
             return ExitCode::from(1);
         }
     }
-    let Ok(port) = port.parse::<u16>() else {
-        return ExitCode::from(1);
+    let port = match port.as_deref().map(str::parse::<u16>) {
+        Some(Ok(port)) => Some(port),
+        Some(Err(_)) => return ExitCode::from(1),
+        None => None,
     };
     match install_task(&ctx, port) {
         Ok(()) => ExitCode::SUCCESS,

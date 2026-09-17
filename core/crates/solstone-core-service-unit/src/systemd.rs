@@ -35,6 +35,37 @@ pub fn render_systemd_unit(
     )
 }
 
+/// Read the port out of an installed systemd unit.
+///
+/// The exec line this crate renders ends in the port, quoted only when the
+/// token needs it. Returning `None` means "this unit does not say", which the
+/// caller treats as "fall back to the default" rather than as a failure.
+#[must_use]
+pub fn systemd_unit_port(unit: &str) -> Option<String> {
+    let exec = unit
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.strip_prefix("ExecStart="))?;
+    unquote_exec_token(exec.split_whitespace().next_back()?)
+}
+
+/// Undo `render_exec_token` for one token.
+fn unquote_exec_token(token: &str) -> Option<String> {
+    let Some(quoted) = token.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) else {
+        return (!token.is_empty()).then(|| token.to_owned());
+    };
+    let mut value = String::with_capacity(quoted.len());
+    let mut characters = quoted.chars();
+    while let Some(character) = characters.next() {
+        if character == '\\' {
+            value.push(characters.next()?);
+        } else {
+            value.push(character);
+        }
+    }
+    (!value.is_empty()).then_some(value)
+}
+
 fn render_exec_token(token: &str) -> String {
     if is_safe(token) {
         return token.to_owned();
@@ -79,7 +110,39 @@ fn escape_quoted(value: &str, escape_dollar: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{escape_quoted, render_environment, render_exec_token};
+    use std::collections::BTreeMap;
+
+    use super::{
+        escape_quoted, render_environment, render_exec_token, render_systemd_unit,
+        systemd_unit_port,
+    };
+
+    #[test]
+    fn the_installed_port_round_trips_out_of_the_rendered_unit() {
+        // `journal service install` with no `--port` adopts this reading, so a
+        // re-register never silently moves an established journal onto 5015.
+        for port in ["5015", "6123", "65535"] {
+            let unit = render_systemd_unit(&BTreeMap::new(), "/home/sol/.local/bin/journal", port);
+            assert_eq!(systemd_unit_port(&unit).as_deref(), Some(port));
+        }
+    }
+
+    #[test]
+    fn a_unit_without_an_exec_line_says_nothing_rather_than_guessing() {
+        assert_eq!(systemd_unit_port("[Service]\nType=notify\n"), None);
+        assert_eq!(systemd_unit_port(""), None);
+    }
+
+    #[test]
+    fn a_quoted_launcher_does_not_swallow_the_port() {
+        let unit = render_systemd_unit(
+            &BTreeMap::new(),
+            "/home/sol journal/.local/bin/journal",
+            "6124",
+        );
+        assert!(unit.contains("ExecStart=\""));
+        assert_eq!(systemd_unit_port(&unit).as_deref(), Some("6124"));
+    }
 
     #[test]
     fn keeps_safe_values_unquoted() {

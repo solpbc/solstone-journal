@@ -8,6 +8,27 @@ use plist::{Dictionary, Value};
 const SERVICE_LABEL: &str = "org.solpbc.solstone";
 const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 
+/// Read the port out of an installed launchd plist.
+///
+/// `ProgramArguments` is rendered as `[launcher, "start", port]`; anything
+/// else is "this plist does not say", not a failure.
+#[must_use]
+pub fn launchd_plist_port(bytes: &[u8]) -> Option<String> {
+    let value = Value::from_reader(std::io::Cursor::new(bytes)).ok()?;
+    let arguments = value
+        .as_dictionary()?
+        .get("ProgramArguments")?
+        .as_array()?;
+    let [_, start, port] = arguments.as_slice() else {
+        return None;
+    };
+    if start.as_string()? != "start" {
+        return None;
+    }
+    let port = port.as_string()?;
+    (!port.is_empty()).then(|| port.to_owned())
+}
+
 /// Render the launchd plist for the Solstone supervisor.
 pub fn render_launchd_plist(
     env: &BTreeMap<String, String>,
@@ -59,7 +80,35 @@ mod tests {
 
     use plist::Value;
 
-    use super::render_launchd_plist;
+    use super::{launchd_plist_port, render_launchd_plist};
+
+    #[test]
+    fn the_installed_port_round_trips_out_of_the_rendered_plist() {
+        for port in ["5015", "6123", "65535"] {
+            let bytes = render_launchd_plist(
+                &BTreeMap::new(),
+                "/home/sol/.local/bin/journal",
+                port,
+            );
+            assert_eq!(launchd_plist_port(&bytes).as_deref(), Some(port));
+        }
+    }
+
+    #[test]
+    fn a_plist_that_is_not_ours_says_nothing_rather_than_guessing() {
+        assert_eq!(launchd_plist_port(b"not a plist"), None);
+        let foreign = Value::Dictionary(
+            [(
+                "ProgramArguments".to_owned(),
+                Value::Array(vec![Value::String("/bin/true".to_owned())]),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let mut bytes = Vec::new();
+        foreign.to_writer_xml(&mut bytes).expect("write plist");
+        assert_eq!(launchd_plist_port(&bytes), None);
+    }
 
     #[test]
     fn renders_the_complete_launchd_semantic_model() {

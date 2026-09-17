@@ -121,7 +121,8 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
             let guard = resolve_installation_guard(installation_guard, || {
                 load_existing_installation_guard(&home)
             })?;
-            install(platform, &home, port.canonical_decimal(), &guard).map(ExitCode::from)
+            let requested = port.as_ref().map(|port| port.canonical_decimal().to_owned());
+            install(platform, &home, requested.as_deref(), &guard).map(ExitCode::from)
         }
         ServiceAction::Uninstall => uninstall(platform, &home).map(ExitCode::from),
         ServiceAction::Start => start(platform, &home).map(ExitCode::from),
@@ -255,7 +256,42 @@ fn parse_installation_guard(
         .ok_or_else(|| "service install requires installation identity arguments".to_owned())
 }
 
-fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> Result<u8, String> {
+/// The port a first installation takes when nothing names one.
+const DEFAULT_SERVICE_PORT: &str = "5015";
+
+/// Resolve the port an install should register.
+///
+/// An explicit `--port` always wins. Without one, an existing registration
+/// keeps the port it already carries: re-registering on the default moved an
+/// established journal off its own port and reported success, which is the
+/// same defect measured on Windows as `"supervisor" "6123"` becoming
+/// `"supervisor" "5015"`.
+fn resolve_install_port(
+    platform: Platform,
+    requested: Option<&str>,
+    initial: &UnitTruth,
+) -> String {
+    if let Some(port) = requested {
+        return port.to_owned();
+    }
+    let UnitTruth::Managed(snapshot) = initial else {
+        return DEFAULT_SERVICE_PORT.to_owned();
+    };
+    let installed = match platform {
+        Platform::Linux => String::from_utf8(snapshot.bytes.clone())
+            .ok()
+            .and_then(|unit| solstone_core_service_unit::systemd_unit_port(&unit)),
+        Platform::Darwin => solstone_core_service_unit::launchd_plist_port(&snapshot.bytes),
+    };
+    installed.unwrap_or_else(|| DEFAULT_SERVICE_PORT.to_owned())
+}
+
+fn install(
+    platform: Platform,
+    home: &Path,
+    requested_port: Option<&str>,
+    guard: &GuardFields,
+) -> Result<u8, String> {
     let _lock = service_lock(home)?;
     let journal = resolve_process_journal_path()
         .map_err(|_| "service install: could not resolve journal".to_owned())?
@@ -273,6 +309,8 @@ fn install(platform: Platform, home: &Path, port: &str, guard: &GuardFields) -> 
     if matches!(initial, UnitTruth::Foreign | UnitTruth::Unknown(_)) {
         return Err(truth_error("install", &target, &initial));
     }
+    let port_owned = resolve_install_port(platform, requested_port, &initial);
+    let port = port_owned.as_str();
     ensure_health_dir(&journal)?;
     let runtime = observe_runtime(platform, &target)?;
     if matches!(runtime, RuntimeTruth::Foreign(_) | RuntimeTruth::Unknown(_)) {
