@@ -1823,6 +1823,8 @@ pub(crate) async fn boot_and_tick(
         &mut lifecycle,
         &mut shutdown_signals,
         parent_watch,
+        #[cfg(windows)]
+        installed_task,
     )
     .await;
     let regime = shutdown_regime_for(&stop_reason);
@@ -1837,6 +1839,12 @@ pub(crate) async fn boot_and_tick(
 fn shutdown_regime_for(stop_reason: &tick::SupervisorStopReason) -> ShutdownRegime {
     match stop_reason {
         tick::SupervisorStopReason::ParentLost(_) => ShutdownRegime::ParentLossBounded,
+        // Session end is the same kind of fact as parent loss -- a deadline
+        // set outside this process, after which it is killed -- so it takes
+        // the same bounded regime. The standard budget is fifteen seconds and
+        // Windows allows about five.
+        #[cfg(windows)]
+        tick::SupervisorStopReason::HostSessionEnd => ShutdownRegime::ParentLossBounded,
         tick::SupervisorStopReason::Signal(_) | tick::SupervisorStopReason::Sync(_) => {
             ShutdownRegime::Standard
         }

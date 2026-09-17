@@ -116,12 +116,24 @@ pub struct InstalledTaskLaunchRequest {
 #[derive(Debug)]
 pub struct AdmittedInstalledTaskLaunch {
     tuple: InstalledTaskTuple,
-    _stop: Arc<OwnedHandle>,
+    stop: Arc<OwnedHandle>,
 }
 
 impl AdmittedInstalledTaskLaunch {
     pub fn forwarder(&self) -> ProcessInstance {
         self.tuple.parent
+    }
+
+    /// Whether the retained forwarder has asked this run to stop.
+    ///
+    /// The installed task's forwarder inherits no upstream stop, so it sets
+    /// this event for exactly one reason: Windows broadcast session end. A
+    /// latched stop here therefore means the OS is ending this session and
+    /// will terminate the whole tree on its own schedule -- which is why the
+    /// supervisor answers it with a bounded shutdown rather than the standard
+    /// fifteen-second budget it would never finish.
+    pub fn stop_requested(&self) -> io::Result<bool> {
+        wait_stop(&self.stop)
     }
     pub fn launch_id(&self) -> &str {
         &self.tuple.launch_id
@@ -556,7 +568,7 @@ pub fn receive_windows_installed_task_launch(
     match received.tuple {
         LaunchTuple::InstalledTask(tuple) => Ok(AdmittedInstalledTaskLaunch {
             tuple,
-            _stop: received.stop,
+            stop: received.stop,
         }),
         LaunchTuple::Hosted(_) => Err(LaunchError::Admission(
             "hosted launch at installed task entry".into(),

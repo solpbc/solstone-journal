@@ -465,6 +465,18 @@ pub const CAP_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 pub const TASK_QUEUE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 /// Long-lived service shutdown's distinct default window.
 pub const SERVICE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long a Windows forwarder drains its tree once the session is ending.
+///
+/// 🔴 This is not a policy choice, it is the OS's clock. Windows gives an
+/// application `WaitToKillAppTimeout` (5 s by default on Windows 10/11) to
+/// answer `WM_ENDSESSION` and then terminates it; a logoff measured on
+/// WJL-HNBMKGDR killed the forwarder, the supervisor and the owner's console
+/// together about seven seconds after the notice, with `SERVICE_SHUTDOWN_TIMEOUT`
+/// still counting and the lifecycle markers still on disk. The supervisor
+/// answers a session-end stop with the bounded regime, whose ceiling is
+/// `PARENT_LOSS_SHUTDOWN_CEILING` (3.5 s), so this has to sit above that and
+/// below the kill.
+pub const SESSION_END_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 /// Unconditional bounded reap window after SIGKILL escalation.
 pub const KILL_REAP_GRACE: Duration = Duration::from_millis(500);
 /// Bounded drain-thread join after the child and descendants are reaped.

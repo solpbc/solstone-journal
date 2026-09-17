@@ -90,6 +90,16 @@ pub(crate) enum SupervisorStopReason {
     Signal(SupervisorSignal),
     Sync(SyncTickOutcome),
     ParentLost(ParentLossReason),
+    /// Windows told the retained forwarder that this session is ending.
+    ///
+    /// The forwarder of an installed task inherits no upstream stop, so it
+    /// latches its stop event for exactly one reason: a session-end broadcast.
+    /// The OS terminates the whole tree a few seconds later whatever we do,
+    /// which is why this takes the bounded shutdown rather than the standard
+    /// budget -- markers left on disk are what an owner sees at the next
+    /// logon.
+    #[cfg(windows)]
+    HostSessionEnd,
 }
 
 fn check_parent_watch(
@@ -265,11 +275,32 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
     })
 }
 
+/// Resolve once the retained forwarder latches its stop event.
+///
+/// Polled rather than waited on a handle so the supervisor keeps one runtime
+/// and no extra thread; the cadence bounds detection well inside the
+/// forwarder's own session-end drain.
+#[cfg(windows)]
+async fn await_host_session_end(
+    installed_task: Option<&solstone_core_system::process::AdmittedInstalledTaskLaunch>,
+) {
+    let Some(installed_task) = installed_task else {
+        std::future::pending::<()>().await;
+        return;
+    };
+    while !installed_task.stop_requested().unwrap_or(false) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
 pub(crate) async fn run(
     state: &mut SupervisorState,
     lifecycle: &mut SupervisorLifecycle,
     shutdown: &mut ShutdownSignals,
     parent_watch: Option<ParentWatch>,
+    #[cfg(windows)] installed_task: Option<
+        &solstone_core_system::process::AdmittedInstalledTaskLaunch,
+    >,
 ) -> SupervisorStopReason {
     let mut last_status = Instant::now() - state.timing.status_interval;
     let mut last_sync = Instant::now() - Duration::from_secs_f64(DEFAULT_INTERVAL_SECONDS);
@@ -278,6 +309,10 @@ pub(crate) async fn run(
             check_parent_watch(parent_watch.as_ref(), &SystemProcessInstanceSource)
         {
             return reason;
+        }
+        #[cfg(windows)]
+        if installed_task.is_some_and(|task| task.stop_requested().unwrap_or(false)) {
+            return SupervisorStopReason::HostSessionEnd;
         }
         #[cfg(windows)]
         let _ = solstone_core_system::process::observe_windows_launch_cleanup();
@@ -458,6 +493,15 @@ pub(crate) async fn run(
             }
             last_status = status_now;
         }
+        #[cfg(windows)]
+        tokio::select! {
+            _ = tokio::time::sleep(state.timing.tick_interval) => {},
+            signal = shutdown.wait() => return SupervisorStopReason::Signal(signal),
+            () = await_host_session_end(installed_task) => {
+                return SupervisorStopReason::HostSessionEnd;
+            }
+        }
+        #[cfg(not(windows))]
         tokio::select! {
             _ = tokio::time::sleep(state.timing.tick_interval) => {},
             signal = shutdown.wait() => return SupervisorStopReason::Signal(signal),
