@@ -4635,58 +4635,62 @@ impl SafeServiceDiagnostic {
     }
 
     fn incomplete_installation_guard() -> Self {
-        // ⚠ Left capitalized on purpose. VPX's ruling (`req_fuxldiob`) scoped
-        // house lowercase to the three *owner-reachable* messages and
-        // explicitly declined a broader sweep; this one is only reachable with
-        // a `--installation-*` flag, which is the hidden field set `journal
-        // setup` passes, so it is not owner copy. The owner-visible form of
-        // this failure is already locked lowercase elsewhere
-        // (`vpx/design-system/journal-service-install-recovery-copy.md`,
-        // "this installation couldn't be verified.").
+        // Left capitalized on purpose, unlike every owner-reachable message in
+        // this type. This branch is only reachable with an `--installation-*`
+        // flag, which is the hidden field set `journal setup` passes; it is an
+        // assertion about a programming error, not owner copy. The owner-facing
+        // form of this failure is the lowercase
+        // "this installation couldn't be verified." recovery.
         Self("Error: installation identity arguments must be supplied together".to_owned())
     }
 
     fn unexpected_install_argument(value: &OsStr) -> Self {
         // A bare port was accepted silently and then ignored, so
         // `journal service install 6123` re-registered the task on the default
-        // and exited 0. Name the argument, and add the spelling that works
-        // only when the argument is actually a port: this is the catch-all arm
-        // for every unrecognised argument, so an unconditional remedy told an
-        // owner who typed `--nonsense` to `pass the port as --port --nonsense`,
-        // which cannot work. The owner's own value, not a metavar -- it is
-        // already in the sentence.
+        // and exited 0. Name the argument, then add a remedy that fits what the
+        // owner actually typed. This is the catch-all arm for every
+        // unrecognised argument, so one unconditional remedy is wrong three
+        // different ways, and each arm below exists because of a specific way a
+        // reader would be misled:
         //
-        // Casing is house lowercase by VPX ruling (`req_fuxldiob`): a leading
-        // `error:` is sentence prose, not the `Installation:` field-label
-        // exception in `cmo/brand/voice-terminology.md` § brand casing. Lock:
-        // `vpx/design-system/journal-service-install-recovery-copy.md`.
+        //   * a real port echoes the owner's own value, not a metavar; it is
+        //     already in the sentence.
+        //   * a number too large for a port is not a spelling mistake, and
+        //     saying "expected --port PORT" names the wrong problem. Worse, it
+        //     routes the owner to `--port 99999`, which the port grammar
+        //     accepts (it parses integer text without imposing a machine
+        //     range) and which then fails later. Offering a remedy that leads
+        //     to a second failure is worse than offering none, so this arm
+        //     names the range instead.
+        //   * anything else has no owner value worth echoing -- an
+        //     unconditional remedy told someone who typed `--nonsense` to
+        //     `pass the port as --port --nonsense` -- so it names the flag, the
+        //     shape `unknown_subcommand` already uses for "you typed something
+        //     I do not know". A refusal with no next step leaves an owner who
+        //     mistyped a flag guessing.
+        //
+        // Casing is house lowercase: a leading `error:` is sentence prose, not
+        // a field label.
         let text =
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
-        // The predicate is what `service install` will actually accept, not
-        // what the port grammar will parse: `parse_service_port` takes any
-        // integer text, so `99999` passes it and then fails silently in
-        // `install`. Offering a remedy that leads to a second failure is worse
-        // than offering none.
-        // With no port to echo there is no owner value to name, so the branch
-        // names the flag instead -- the shape `unknown_subcommand` already uses
-        // for the same "you typed something I do not know" case. A refusal with
-        // no next step leaves an owner who mistyped a flag guessing.
-        let remedy = value
-            .to_str()
-            .filter(|text| text.parse::<u16>().is_ok())
-            .map_or_else(
-                || "; expected --port PORT".to_owned(),
-                |port| format!("; pass the port as --port {port}"),
-            );
+        let literal = value.to_str();
+        let remedy = if let Some(port) = literal.filter(|text| text.parse::<u16>().is_ok()) {
+            format!("; pass the port as --port {port}")
+        } else if literal.is_some_and(|text| {
+            !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+        }) {
+            "; ports go up to 65535".to_owned()
+        } else {
+            "; expected --port PORT".to_owned()
+        };
         Self(format!("error: unexpected argument '{text}'{remedy}"))
     }
 
     fn unknown_subcommand(value: &OsStr) -> Self {
         // The retained Python owner prints this guidance on two lines. This pure
         // foundation deliberately keeps dynamic failures to one physical line.
-        // Both tokens lowercase per the VPX lock, which rules on the list
-        // label too: "the command list remains part of the sentence, not a
-        // title-cased list heading."
+        // Both tokens stay lowercase: the command list is part of the sentence,
+        // not a title-cased list heading.
         Self(format!(
             "unknown subcommand: {}; available: install, uninstall, start, stop, restart, status, logs",
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
@@ -6157,8 +6161,11 @@ mod tests {
 
     #[test]
     fn service_install_offers_the_port_remedy_only_when_the_argument_is_a_port() {
-        // The remedy names the owner's own value, so on the catch-all arm an
-        // unconditional one would read "pass the port as --port --nonsense".
+        // Three remedies, because one unconditional remedy is wrong three ways.
+        // The out-of-range arm is the load-bearing one: "expected --port PORT"
+        // names a spelling problem the owner does not have, and sends them to
+        // `--port 99999`, which the port grammar accepts and which then fails
+        // later. A remedy that leads to a second failure is worse than none.
         for (argv, expected) in [
             (
                 args(&["install", "--nonsense"]),
@@ -6166,11 +6173,23 @@ mod tests {
             ),
             (
                 args(&["install", "99999"]),
-                "error: unexpected argument '99999'; expected --port PORT",
+                "error: unexpected argument '99999'; ports go up to 65535",
+            ),
+            (
+                args(&["install", "65536"]),
+                "error: unexpected argument '65536'; ports go up to 65535",
             ),
             (
                 args(&["install", "5015"]),
                 "error: unexpected argument '5015'; pass the port as --port 5015",
+            ),
+            (
+                args(&["install", "0"]),
+                "error: unexpected argument '0'; pass the port as --port 0",
+            ),
+            (
+                args(&["install", "12x"]),
+                "error: unexpected argument '12x'; expected --port PORT",
             ),
         ] {
             let ServiceParseOutcome::Exit {

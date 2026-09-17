@@ -469,8 +469,8 @@ pub const SERVICE_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 ///
 /// 🔴 This is not a policy choice, it is the OS's clock. Windows gives an
 /// application `WaitToKillAppTimeout` (5 s by default on Windows 10/11) to
-/// answer `WM_ENDSESSION` and then terminates it; a logoff measured on
-/// WJL-HNBMKGDR killed the forwarder, the supervisor and the owner's console
+/// answer `WM_ENDSESSION` and then terminates it; a measured logoff on a
+/// Windows 11 test host killed the forwarder, the supervisor and the console
 /// together about seven seconds after the notice, with `SERVICE_SHUTDOWN_TIMEOUT`
 /// still counting and the lifecycle markers still on disk. The supervisor
 /// answers a session-end stop with the bounded regime, whose ceiling is

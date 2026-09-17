@@ -734,8 +734,12 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
     // list its own addresses. And `AddressError`'s own Display already says
     // the listing failed ("could not enumerate local interfaces: {error}"),
     // so this half has to carry the reason rather than restate the failure.
+    //
+    // No "yet". A trailing "yet" promises a port that nothing in the tree
+    // commits to, and this arm exists precisely because no such commitment has
+    // been made for any platform that is neither unix nor windows.
     Err(AddressError::Enumeration(io::Error::other(
-        "solstone isn't built for this platform yet",
+        "solstone isn't built for this platform",
     )))
 }
 

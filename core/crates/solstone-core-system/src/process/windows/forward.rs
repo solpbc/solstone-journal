@@ -266,7 +266,7 @@ pub fn forward_windows_native_command(
 ///
 /// 🔴 This exists because the Scheduler's `RestartOnFailure` is not a crash
 /// restart. The installed task registers `Interval=PT1M Count=10`, and it was
-/// measured on WJL-HNBMKGDR not to fire at all when the action process is
+/// measured on a Windows 11 test host not to fire at all when the action is
 /// terminated: `LastTaskResult` reads `-1`, the task settles to `Ready` with
 /// `Next Run Time: N/A`, and nothing restarts in five minutes. Measured twice
 /// more on purpose-built probe tasks that copy the installed task's settings

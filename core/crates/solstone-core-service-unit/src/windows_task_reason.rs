@@ -114,7 +114,7 @@ fn strip_clixml(stderr: &str) -> String {
 mod tests {
     use super::*;
 
-    /// The exact shape measured on WJL-HNBMKGDR on 2026-09-15: a resumed
+    /// The exact shape measured on a Windows 11 test host: a resumed
     /// `journal setup` refused with the progress record as its whole reason.
     const MEASURED_CLIXML: &str = concat!(
         "#< CLIXML\r\n",
