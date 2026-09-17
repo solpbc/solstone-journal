@@ -289,12 +289,185 @@ function runImportRowColumns() {
   cases += 1;
 }
 
+// G3-401: the progress panel's only live updater called renderProgressView, a
+// name that exists nowhere in the workspace. Every importer event raised a
+// ReferenceError that the SSE dispatcher caught and logged, so the row in the
+// history table went to "completed" while the open panel stayed on its first
+// render -- the frozen "preparing..." a field report showed us.
+function runProgressPanelUpdatesOnCompletion() {
+  const guideSteps = new Element();
+  const context = vm.createContext({ console });
+  vm.runInContext([
+    "const window = {",
+    "  AppServices: { escapeHtml: (value) => String(value) },",
+    "  location: { hash: '#progress/1700000000' },",
+    "  CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },",
+    "};",
+    "const escapeHtml = (value) => window.AppServices.escapeHtml(value);",
+    "let importsCache = [];",
+    "let importEvents = {};",
+    "let currentGuideSource = null;",
+    "const sourceMetadataByName = {};",
+  ].join('\n'), context);
+  context.document = { getElementById: (id) => (id === 'guideSteps' ? guideSteps : null) };
+  vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, context);
+  for (const name of [
+    'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatDateRange',
+    'formatProgressStats', 'renderProgressStats', 'getImportById',
+    'showProgressView', 'refreshInlineProgress',
+  ]) {
+    vm.runInContext(functionSource(workspace, name), context);
+  }
+
+  vm.runInContext("importEvents['1700000000'] = { import_id: '1700000000', event: 'started', stage: 'initialization', source_display: 'Images' };", context);
+  vm.runInContext("showProgressView('1700000000')", context);
+  assert.ok(guideSteps.innerHTML.includes('preparing'), 'the panel starts on the preparing stage');
+
+  vm.runInContext("refreshInlineProgress('1700000000', { import_id: '1700000000', event: 'completed', entries_written: 1, entities_seeded: 0, duration_ms: 4000 })", context);
+  assert.ok(
+    guideSteps.innerHTML.includes('import complete'),
+    'G3-401: a completed event re-renders the open progress panel'
+  );
+  assert.ok(
+    guideSteps.innerHTML.includes('import another source'),
+    'G3-401: the completed panel offers the way back to the upload prompt'
+  );
+  assert.ok(
+    !guideSteps.innerHTML.includes('preparing'),
+    'G3-401: the stale preparing stage is gone once the import completes'
+  );
+
+  // An event for a different import must not repaint this panel.
+  vm.runInContext("refreshInlineProgress('1700000099', { import_id: '1700000099', event: 'error', error: 'other import' })", context);
+  assert.ok(
+    !guideSteps.innerHTML.includes('other import'),
+    'G3-401: only the displayed import repaints the panel'
+  );
+  cases += 1;
+}
+
+// G3-402: initImportWorkspace acted on the hash without waiting for the import
+// list, so a reload straight onto #progress/<id> rendered from an empty cache --
+// a generic "Import / preparing..." panel for an import that had already
+// finished, which no later event would correct.
+function runInitWaitsForTheImportList() {
+  const order = [];
+  const context = vm.createContext({ console, Promise });
+  context.window = {
+    solPathContext: () => ({ segment: null }),
+    appEvents: { listen: () => ({ pending: { track() {}, clear() {} } }) },
+  };
+  context.document = { getElementById: () => new Element() };
+  vm.runInContext([
+    "const IMPORT_STALL_TIMEOUT_MS = 1000;",
+    "const IMPORT_ROW_EVENTS = new Set();",
+    "const IMPORT_TERMINAL_EVENTS = new Set();",
+    "let importEventsCleanup = null;",
+    "const markRowStalled = () => {};",
+    "const updateImportRow = () => {};",
+    "const trackPendingImport = () => {};",
+    "const clearPendingImport = () => {};",
+  ].join('\n'), context);
+  context.order = order;
+  context.loadImports = async () => { await null; order.push('importList'); };
+  context.handleHashChange = () => { order.push('hash'); };
+  context.loadSourceGrid = () => { order.push('sourceGrid'); };
+  vm.runInContext(functionSource(workspace, 'initImportWorkspace'), context);
+  vm.runInContext('initImportWorkspace()', context);
+
+  return new Promise((resolve) => setImmediate(resolve)).then(() => {
+    assert.deepStrictEqual(
+      order,
+      ['importList', 'hash'],
+      'G3-402: the hash is acted on only after the import list has loaded'
+    );
+    cases += 1;
+  });
+}
+
+// G3-403: the panel's heading read only the live event while the summary below it
+// also read the import list, so a reload onto a finished import headlined
+// "preparing..." over its own completion summary. importEvents is in-memory and a
+// reload empties it, which is exactly the case a reload lands in.
+function runReloadedPanelAgreesWithItsOwnSummary() {
+  const guideSteps = new Element();
+  const context = vm.createContext({ console });
+  vm.runInContext([
+    "const window = {",
+    "  AppServices: { escapeHtml: (value) => String(value) },",
+    "  location: { hash: '#progress/1700000000' },",
+    "  CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },",
+    "};",
+    "const escapeHtml = (value) => window.AppServices.escapeHtml(value);",
+    "let importEvents = {};",   // a reload empties this
+    "let currentGuideSource = null;",
+    "const sourceMetadataByName = {};",
+    "let importsCache = [{ timestamp: '1700000000', status: 'success', source_display: 'Images', entries_written: 1, entities_seeded: 0 }];",
+  ].join('\n'), context);
+  context.document = { getElementById: (id) => (id === 'guideSteps' ? guideSteps : null) };
+  vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, context);
+  for (const name of [
+    'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatDateRange',
+    'formatProgressStats', 'renderProgressStats', 'getImportById', 'showProgressView',
+  ]) {
+    vm.runInContext(functionSource(workspace, name), context);
+  }
+
+  vm.runInContext("showProgressView('1700000000')", context);
+  assert.ok(
+    guideSteps.innerHTML.includes('import complete'),
+    'G3-403: a reload onto a finished import says so'
+  );
+  assert.ok(
+    !guideSteps.innerHTML.includes('preparing'),
+    'G3-403: the heading does not contradict the completion summary under it'
+  );
+  assert.ok(
+    guideSteps.innerHTML.includes('import another source'),
+    'G3-403: the reloaded panel still offers the way on'
+  );
+
+  // The same reading governs the failed case.
+  vm.runInContext("importsCache = [{ timestamp: '1700000001', status: 'failed', error: 'disk full' }];", context);
+  vm.runInContext("window.location.hash = '#progress/1700000001'; showProgressView('1700000001')", context);
+  assert.ok(
+    guideSteps.innerHTML.includes('import failed') && guideSteps.innerHTML.includes('disk full'),
+    'G3-403: a reload onto a failed import says so, with the reason'
+  );
+
+  // An import still running is still reported as running.
+  vm.runInContext("importsCache = [{ timestamp: '1700000002', status: 'running' }];", context);
+  vm.runInContext("window.location.hash = '#progress/1700000002'; showProgressView('1700000002')", context);
+  assert.ok(
+    guideSteps.innerHTML.includes('preparing'),
+    'G3-403: an unfinished import is not reported as complete'
+  );
+
+  // The list is only as fresh as the last load, so a live event outranks it: a
+  // retry in progress must not wear the failure cached against its own id.
+  vm.runInContext("importsCache = [{ timestamp: '1700000003', status: 'failed', error: 'disk full' }];", context);
+  vm.runInContext("importEvents['1700000003'] = { import_id: '1700000003', event: 'status', stage: 'writing' };", context);
+  vm.runInContext("window.location.hash = '#progress/1700000003'; showProgressView('1700000003')", context);
+  assert.ok(
+    guideSteps.innerHTML.includes('writing to journal'),
+    'G3-403: a live event outranks a stale terminal row in the list'
+  );
+  assert.ok(
+    !guideSteps.innerHTML.includes('disk full'),
+    'G3-403: and the stale failure summary does not render under it'
+  );
+  cases += 1;
+}
+
 Promise.resolve()
   .then(runQuickSubmit)
   .then(runGuidedSubmit)
   .then(runConfirmSubmit)
   .then(runHistoryHeaderSummary)
   .then(runImportRowColumns)
+  .then(runProgressPanelUpdatesOnCompletion)
+  .then(runInitWaitsForTheImportList)
+  .then(runReloadedPanelAgreesWithItsOwnSummary)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {
     console.error(error.stack || error);

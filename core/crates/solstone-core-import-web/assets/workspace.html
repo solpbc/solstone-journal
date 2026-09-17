@@ -1463,7 +1463,7 @@ function refreshInlineProgress(importId, eventData = null) {
   }
   const merged = eventData ? { ...(importEvents[importId] || {}), ...eventData } : importEvents[importId];
   if (merged) {
-    renderProgressView(importId, merged);
+    showProgressView(importId, merged);
   }
 }
 
@@ -1970,17 +1970,29 @@ function showProgressView(importId, eventData = null) {
   }
 
   const displayName = currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
+  // One reading decides the whole panel. The heading used to derive from the live
+  // event alone while the summary below it also consulted the import list, so a
+  // reload onto a finished import titled it "preparing..." over its own
+  // completion summary. A live event outranks the list, which is only ever as
+  // fresh as the last load: a retry in progress must not wear its own last
+  // failure.
+  const isComplete = currentEvent
+    ? currentEvent.event === 'completed'
+    : importInfo?.status === 'success';
+  const isFailed = currentEvent
+    ? currentEvent.event === 'error'
+    : importInfo?.status === 'failed';
   const stageLabel = currentEvent?.stalled
     ? 'stalled: no updates in 10 minutes'
-    : currentEvent?.event === 'completed'
+    : isComplete
       ? 'import complete'
-      : currentEvent?.event === 'error'
+      : isFailed
         ? 'import failed'
         : humanStageName(currentEvent?.stage || 'initialization', displayName);
   const progressHtml = currentEvent ? renderProgressStats(currentEvent) : '';
   let completionHtml = '';
 
-  if (currentEvent?.event === 'completed' || importInfo?.status === 'success') {
+  if (isComplete) {
     const completedInfo = currentEvent || importInfo || {};
     const range = completedInfo.date_range || importInfo?.date_range || null;
     completionHtml = `
@@ -1995,7 +2007,7 @@ function showProgressView(importId, eventData = null) {
         </div>
       </div>
     `;
-  } else if (currentEvent?.event === 'error' || importInfo?.status === 'failed') {
+  } else if (isFailed) {
     const errorText = currentEvent?.error || importInfo?.error || 'Unknown error';
     completionHtml = `
       <div class="import-completion-summary failed">
@@ -2126,9 +2138,14 @@ function initImportWorkspace() {
     updateImportRow(eventData.import_id, eventData);
   });
 
-  loadSourceGrid();
-  loadImports();
-  handleHashChange();
+  // The progress panel renders from the import list, so the list has to be in
+  // hand before the hash is acted on: a reload straight onto #progress/<id> was
+  // rendering an empty "preparing…" panel for an import that had already
+  // finished, and nothing re-rendered it. loadImports loads the source grid
+  // first, so there is no separate call for it here.
+  loadImports()
+    .catch(err => window.logError?.(err, { context: 'import: initial load failed' }))
+    .finally(handleHashChange);
 }
 
 if (document.readyState === 'loading') {
