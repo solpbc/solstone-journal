@@ -467,7 +467,7 @@ impl OAuthStore {
     }
 
     /// Consume the pairing code and issue a bound authorization code.
-    #[cfg(test)]
+    #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn complete_pairing(
         &self,
         transaction_id: &str,

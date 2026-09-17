@@ -1409,14 +1409,16 @@ mod tests {
                     &fs::read(segment.join("interaction.json")).expect("audit record"),
                 )
                 .expect("audit record is JSON");
-                // The admission is closed at schema 2: identity, time, tool,
+                // The admission is closed at schema 3: identity, time, tool,
                 // connection and the request — ⛔ no results and no response.
                 assert_eq!(record.as_object().expect("record object").len(), 6);
-                assert_eq!(record["schema"], 2);
+                assert_eq!(record["schema"], 3);
                 assert!(record["connection"].as_str().is_some());
                 // 🔒 The query is recorded. It is the owner's right to know what
                 // was asked of their own memory.
                 let arguments = &record["request"]["arguments"];
+                assert_eq!(record["request"]["permission"]["generation"], 1);
+                assert_eq!(record["request"]["permission"]["scope"], "whole_journal");
                 let outcome: Value = serde_json::from_slice(
                     &fs::read(segment.join("outcome.json")).expect("outcome sibling"),
                 )
@@ -2266,7 +2268,7 @@ mod tests {
             &mut client,
             "/authorize",
             &format!(
-                "transaction_id={}&pairing_code={}",
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
                 crate::oauth::urlparse::query_value_encode(&transaction_id),
                 crate::oauth::urlparse::query_value_encode(&pairing.code)
             ),
@@ -2429,7 +2431,7 @@ mod tests {
             &mut client,
             "/authorize",
             &format!(
-                "transaction_id={}&pairing_code={}",
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
                 crate::oauth::urlparse::query_value_encode(&transaction_id),
                 crate::oauth::urlparse::query_value_encode(&pairing.code)
             ),
@@ -2592,7 +2594,7 @@ mod tests {
             &mut client,
             "/authorize",
             &format!(
-                "transaction_id={}&pairing_code={}",
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
                 crate::oauth::urlparse::query_value_encode(&transaction_id),
                 crate::oauth::urlparse::query_value_encode(&pairing.code)
             ),
