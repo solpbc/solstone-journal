@@ -65,6 +65,20 @@ const fn content_date_nav(one: &'static str, other: &'static str, none: &'static
     }
 }
 
+pub static AGENTS_APP: AppDefinition = AppDefinition {
+    name: "agents",
+    icon: "🤖",
+    label: "agents",
+    lucide_icon: "bot",
+    launcher_group: AppLauncherGroup::Manage,
+    launcher_rank: 2,
+    rail_group: None,
+    rail_rank: 0,
+    date_nav: None,
+    has_background: false,
+    converted: true,
+};
+
 pub static APP_REGISTRY: &[AppDefinition] = &[
     AppDefinition {
         name: "activities",
@@ -93,7 +107,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         label: "backup",
         lucide_icon: "history",
         launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 2,
+        launcher_rank: 3,
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
@@ -145,7 +159,7 @@ pub static APP_REGISTRY: &[AppDefinition] = &[
         label: "health",
         lucide_icon: "stethoscope",
         launcher_group: AppLauncherGroup::Manage,
-        launcher_rank: 3,
+        launcher_rank: 4,
         rail_group: None,
         rail_rank: 0,
         date_nav: None,
@@ -334,6 +348,10 @@ pub fn known_app(name: &str) -> Option<&'static AppDefinition> {
 }
 
 pub fn shell_payload() -> ShellPayload {
+    shell_payload_with_agents(false)
+}
+
+pub fn shell_payload_with_agents(include_agents: bool) -> ShellPayload {
     let icons: HashMap<String, String> = serde_json::from_slice(
         assets::lookup("/static/icons/lucide.json")
             .expect("embedded lucide icon catalogue")
@@ -343,6 +361,7 @@ pub fn shell_payload() -> ShellPayload {
     ShellPayload {
         apps: APP_REGISTRY
             .iter()
+            .chain(include_agents.then_some(&AGENTS_APP))
             .map(|app| ShellApp {
                 app_bar: true,
                 background_url: app
@@ -375,7 +394,25 @@ mod tests {
     use axum::http::{Request, StatusCode, header};
     use tower::ServiceExt;
 
-    use super::{APP_REGISTRY, AppLauncherGroup, RailGroup, known_app, shell_payload};
+    use super::{
+        APP_REGISTRY, AppLauncherGroup, RailGroup, known_app, shell_payload,
+        shell_payload_with_agents,
+    };
+
+    #[test]
+    fn agents_app_is_only_exposed_when_the_owner_routes_are_present() {
+        assert!(!shell_payload().apps.iter().any(|app| app.name == "agents"));
+        assert!(known_app("agents").is_none());
+        let enabled = shell_payload_with_agents(true);
+        assert_eq!(
+            enabled
+                .apps
+                .iter()
+                .filter(|app| app.name == "agents")
+                .count(),
+            1
+        );
+    }
 
     struct EstablishedJournal(tempfile::TempDir);
 

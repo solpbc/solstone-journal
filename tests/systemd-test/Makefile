@@ -4,7 +4,7 @@
 IMAGE ?= solstone-systemd-test:latest
 FEDORA_IMAGE ?= solstone-systemd-test:fedora
 
-.PHONY: build build-fedora smoke install full legacy-upgrade legacy-upgrade-v1022 release-crossover-v1022-deb release-crossover-v1022-rpm shell clean rebuild
+.PHONY: build build-fedora smoke install full local-thinking-install legacy-upgrade legacy-upgrade-v1022 release-crossover-v1022-deb release-crossover-v1022-rpm shell clean rebuild
 
 build:
 	docker build -t $(IMAGE) .
@@ -22,6 +22,12 @@ install: build
 # Full path: also runs the model + Claude-skill installers. Slow.
 full: build
 	IMAGE=$(IMAGE) ./run-test.sh install full
+
+# Portal-owned local-model installation through the resident user service.
+# This is intentionally explicit: it downloads the full model/runtime payload.
+local-thinking-install: build
+	@test -n "$(LOCAL_THINKING_RECEIPT_DIR)" || { echo "LOCAL_THINKING_RECEIPT_DIR is required" >&2; exit 2; }
+	IMAGE=$(IMAGE) LOCAL_THINKING_RECEIPT_DIR="$(LOCAL_THINKING_RECEIPT_DIR)" ./run-test.sh local-thinking-install
 
 # Upgrade-over-legacy-state path: seed a legacy non-symlink wrapper, then
 # assert journal setup self-heals it through to a healthy service_identity.

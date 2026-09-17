@@ -1,0 +1,194 @@
+<style>
+  .agents{--paper:#fbfaf5;--ink:#292923;--muted:#706f66;--line:#dfddd2;--green:#416c54;--amber:#a46b1d;max-width:1040px;margin:0 auto;padding:38px 28px 80px;color:var(--ink)}
+  .agents *{box-sizing:border-box}.agents h1{font-size:clamp(34px,6vw,64px);line-height:1.03;letter-spacing:-.045em;margin:0 0 14px}.agents h2{font-size:20px;margin:0}.agents h3{font-size:15px;margin:0}.agents p{line-height:1.58}.agents a{color:inherit}.agents code{font-family:ui-monospace,SFMono-Regular,monospace;font-size:.9em;background:#efeee7;border-radius:5px;padding:2px 5px}
+  .agents .lead{max-width:740px;font-size:18px;color:var(--muted);margin:0 0 28px}.agents .card{background:var(--paper);border:1px solid var(--line);border-radius:16px;box-shadow:0 2px 9px #403e3410}.agents .pad{padding:22px}.agents .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.agents .explain h2{display:flex;gap:9px;align-items:center}.agents .explain p{color:var(--muted);margin:10px 0 0}.agents .section{margin-top:26px}.agents .section-head{display:flex;gap:12px;align-items:center;margin-bottom:10px}.agents .section-head h2{flex:1}.agents .btn{appearance:none;border:1px solid #bdbbb0;background:#fff;color:var(--ink);border-radius:9px;padding:9px 13px;font:inherit;font-weight:650;cursor:pointer;text-decoration:none}.agents .btn:hover{background:#f2f0e8}.agents .primary{background:var(--ink);color:#fff;border-color:var(--ink)}.agents .danger{color:#842e2e;border-color:#d1a7a7}.agents .row{display:flex;gap:14px;align-items:center;padding:16px 18px;border-top:1px solid var(--line)}.agents .row:first-child{border-top:0}.agents .row-main{flex:1;min-width:0}.agents .row-main strong,.agents .row-main small{display:block}.agents .row-main small,.agents .meta{color:var(--muted);font-size:13px;margin-top:4px}.agents .status{display:grid;grid-template-columns:74px 1fr;gap:20px}.agents .mark{width:70px;height:70px;border:2px solid var(--ink);border-radius:50%;display:grid;place-items:center;font-size:27px}.agents .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--green);margin-right:8px}.agents .dot.wait{background:var(--amber)}.agents .addr{margin-top:14px}.agents .addr code{font-size:15px}.agents details{margin-top:10px;color:var(--muted)}.agents summary{cursor:pointer;font-weight:650}.agents .notice{border-left:4px solid var(--amber);background:#fff8e7;padding:13px 15px;border-radius:5px;margin:14px 0}.agents .success{border-color:var(--green);background:#eef6f0}.agents .error{border-color:#943b3b;background:#fff1f1}.agents .legs{list-style:none;padding:0;margin:12px 0}.agents .legs li{display:grid;grid-template-columns:27px 1fr auto;gap:10px;padding:14px 0;border-top:1px solid var(--line)}.agents .legs small{display:block;color:var(--muted);margin-top:4px}.agents .step{width:23px;height:23px;border-radius:50%;display:grid;place-items:center;border:1px solid #aaa;font-size:12px}.agents .done .step{background:var(--green);border-color:var(--green);color:#fff}.agents .field{display:grid;gap:6px;margin-top:14px}.agents label{font-weight:650;font-size:14px}.agents input,.agents select{width:100%;border:1px solid #aaa89e;border-radius:8px;padding:10px;font:inherit;background:#fff}.agents .checks{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}.agents .check{display:flex;align-items:center;gap:6px;font-weight:500}.agents .check input{width:auto}.agents .outcome{font-size:12px;border:1px solid var(--line);border-radius:999px;padding:4px 8px;white-space:nowrap}.agents .outcome.refused,.agents .outcome.error{background:#fff0ee}.agents .outcome.uncertain{background:#fff7df}.agents .outcome.served{background:#edf6ef}.agents .activity-row{cursor:pointer}.agents .activity-row:hover{background:#f7f5ed}.agents .quote{font-weight:650}.agents .toolbar{display:flex;gap:10px;flex-wrap:wrap}.agents .toolbar .field{margin:0;min-width:160px}.agents .back{display:inline-block;margin-bottom:18px;color:var(--muted)}.agents .empty{text-align:center;padding:45px 20px}.agents .empty h3{font-size:20px}.agents .modal{position:fixed;inset:0;background:#27251f70;display:grid;place-items:center;padding:20px;z-index:50}.agents .modal-card{max-width:680px;width:100%;max-height:90vh;overflow:auto;background:var(--paper);border-radius:16px;padding:24px}.agents .hidden{display:none!important}.agents .button-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:18px}.agents .copy-code{font-size:25px;letter-spacing:.14em;display:inline-block;padding:12px}.agents .summary{display:flex;gap:18px;flex-wrap:wrap;padding:16px 20px}.agents .summary strong{font-size:22px}.agents .summary span{display:flex;gap:6px;align-items:baseline}.agents .spinner{animation:spin 1.2s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+  @media(max-width:700px){.agents{padding:25px 16px 70px}.agents .grid{grid-template-columns:1fr}.agents .status{grid-template-columns:1fr}.agents .mark{width:58px;height:58px}.agents .row{align-items:flex-start;flex-wrap:wrap}.agents .row .btn{margin-left:auto}.agents .modal{align-items:end;padding:0}.agents .modal-card{border-radius:16px 16px 0 0}}
+</style>
+
+<main class="agents" id="agents-root" tabindex="-1">
+  <div id="agents-view" aria-live="polite"><p class="lead">loading agents…</p></div>
+</main>
+
+<script>
+(() => {
+  'use strict';
+  const view = document.getElementById('agents-view');
+  const esc = value => window.AppServices.escapeHtml(String(value ?? ''));
+  let state = null;
+  let route = {name: 'home'};
+  let activity = null;
+  let pairingCode = null;
+
+  async function api(path, options) { return window.apiJson(path, options); }
+  function jsonOptions(method, body) { return {method, headers:{'content-type':'application/json','x-solstone-owner':'1'}, body:JSON.stringify(body)}; }
+  function ownerOptions(method) { return {method, headers:{'x-solstone-owner':'1'}}; }
+  function notify(message) { window.AppServices?.notifications?.show?.({title:'agents', body:message}); }
+  function address() { return state?.owner_state?.address || state?.certificate?.hostname || 'your journal address'; }
+  function endpoint() { return address() === 'your journal address' ? address() : `https://${address()}/mcp`; }
+  function permissionLine(permission) {
+    const read = permission?.read;
+    if (!read) return 'nothing until you choose';
+    const categories = read.categories.join(', ');
+    return read.scope.kind === 'whole_journal' ? `${categories} across your whole journal` : `${categories} in ${read.scope.ids.length} chosen facet${read.scope.ids.length === 1 ? '' : 's'}`;
+  }
+  function connectionKind(connection) { return connection.kind === 'oauth' ? 'paired in your browser' : 'a key you created'; }
+  function connectionAccessCopy(connection) { return connection.kind === 'oauth' ? 'paired in your browser. it can read what it may see until you disconnect it.' : 'a key you created. anyone holding it can read what it may see until you revoke it.'; }
+  function lastRequestCopy(connection, separator = ' · ') { if (!connection.last_request_at) return ''; return `${separator}${connection.activity_complete ? 'last' : 'latest found'} ${esc(new Date(connection.last_request_at).toLocaleString())}`; }
+  const categoryGloss = {
+    transcripts: 'what was said in your recordings and imports, as text. never the audio or the screen frames themselves.',
+    entities: 'the people, places and projects your journal knows, and what it has noted about them.',
+    facets: 'the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.',
+  };
+  function frame(title, lead, body) { return `<h1>${esc(title)}</h1><p class="lead">${lead}</p>${body}`; }
+  function errorPage(message) { view.innerHTML = frame('agents could not open.', `<span class="error notice">${esc(message)}</span>`, `<button class="btn" data-action="reload">try again</button>`); }
+
+  function explainers() {
+    return `<div class="grid">
+      <section class="card pad explain"><h2>◉ what an agent gets</h2><p>an agent you connect can search and read your journal, within what you let it see: your whole journal, or only the facets you choose. it reads. it can't add, change or delete anything.</p></section>
+      <section class="card pad explain"><h2>↝ how it reaches your journal</h2><p>your journal gets an address on the internet. an agent's requests travel encrypted to this computer and are opened only here.</p><p>sol pbc runs the relay in between. it passes the traffic along and can't read it. sol pbc can see that an agent and your journal met, when, and how much passed. nothing inside.</p></section>
+      <section class="card pad explain"><h2>◎ what stays on the record</h2><p>the address is eight random characters with nothing of yours in it. because it gets a real certificate, it is written into public certificate logs, and that record is permanent: it stays even if you turn this off, or ask sol pbc to delete everything it holds for you.</p><p>the record shows that an address existed. it does not say whose.</p></section>
+      <section class="card pad explain"><h2>≡ what you'll see</h2><p>every request an agent makes is recorded in your journal: what it asked, in its own words, and what it got or was refused. nothing about what it asked is sent anywhere.</p><p>you can narrow or disconnect any agent at any time.</p></section>
+    </div>`;
+  }
+
+  function offPage() {
+    return frame('let the agents you use work from your journal.', 'Claude, Codex, or any agent that speaks MCP can search and read your journal, within what you let it see. this is off until you turn it on.', `${explainers()}<section class="card pad section"><div class="button-row"><button class="btn primary" data-action="turn-on">turn on</button><span class="meta">off by default. nothing is reachable until you turn it on, and you can turn it off any time.</span></div></section>`);
+  }
+
+  function turnedOffPage() {
+    return frame('agents', 'the agents you use stay connected on paper while this is off.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>turned off</h2><p><code>${esc(address())}</code> isn't reachable and hands nothing out.</p><p>the address and your agents are kept: turning back on uses the same address, with no new certificate. its public certificate record remains either way.</p><div class="button-row"><button class="btn primary" data-action="turn-on">turn on again</button></div></div></section>${connections()}`);
+  }
+
+  function enrollmentPage() {
+    const owner = state.owner_state || {};
+    const status = state.status;
+    const offline = status === 'offline' || status === 'failed';
+    const legs = [
+      ['getting your journal an address', owner.address_leg || 'in_progress', owner.address ? `services.solstone.app minted <code>${esc(owner.address)}</code>. eight random characters, nothing of yours in them.` : 'asking services.solstone.app for eight random characters with nothing of yours in them.'],
+      ['getting a certificate for it', owner.certificate_leg || 'waiting', "so agents can check they are really talking to your journal. the certificate is requested from Let's Encrypt and its key never leaves this computer."],
+      ['connecting to the relay', owner.relay_leg || 'waiting', 'the relay sol pbc runs starts passing requests for your address through to this computer.'],
+    ];
+    return frame('turning on', 'your journal does this itself. you can leave this page; it keeps going.', `<section class="card pad"><ol class="legs">${legs.map(([title, leg, copy], i) => `<li class="${leg === 'done' ? 'done' : ''}"><span class="step">${leg === 'done' ? '✓' : i+1}</span><span><strong>${title}</strong><small>${copy}</small></span><span class="meta">${esc(leg.replaceAll('_',' '))}</span></li>`).join('')}</ol>${offline ? `<div class="notice error">${esc(owner.detail || "couldn't reach services.solstone.app. nothing was minted and nothing is on.")}</div>` : `<div class="notice">${esc(owner.detail || "the journal keeps trying on its own. no action needed; you'll see it here when it's ready.")}</div>`}${owner.certificate_leg === 'not_this_week' ? `<p>the address and your agents are kept: turning back on uses the same address, with no new certificate.</p>` : ''}<div class="button-row"><button class="btn" data-action="refresh">check now</button><button class="btn" data-action="turn-off-now">stop and turn off</button><span class="meta">${owner.next_attempt_at ? `next automatic attempt: ${esc(new Date(owner.next_attempt_at).toLocaleString())}.` : 'usually under a minute.'}</span></div></section><div class="section">${explainers()}</div>`);
+  }
+
+  function statusCard() {
+    const addr = address();
+    return `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot"></span>open to your agents</h2><p>your journal is reachable by agents at <code>${esc(addr)}</code>.${state.owner_state?.observed_at ? ` last checked ${esc(new Date(state.owner_state.observed_at).toLocaleString())}.` : ''}</p><div class="addr"><strong>your journal's address</strong><div class="button-row"><code>${esc(addr)}</code><button class="btn" data-copy="${esc(addr)}">copy</button></div></div><details><summary>about this address</summary><p>eight random characters, minted by services.solstone.app when you turned this on, with nothing of yours in them. it is written into public certificate logs, and that record is permanent: it stays even if you turn this off or ask sol pbc to delete everything it holds for you. the record shows an address existed, not whose. sol pbc can see when an agent and this address met, and how much passed, nothing inside.</p></details></div></section>`;
+  }
+
+  function offlinePage() {
+    return frame('agents', 'your journal is offline right now. this is ordinary for a journal on a laptop; your agents will get through when it is back.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>offline right now</h2><p><code>${esc(address())}</code> is not reachable. nothing is being handed out.${state.owner_state?.observed_at ? ` last checked ${esc(new Date(state.owner_state.observed_at).toLocaleString())}.` : ''}</p><p>the journal keeps trying on its own. your address, certificate and agent choices stay here.</p></div></section>${connections()}`);
+  }
+
+  function renewalPage() {
+    return frame('agents', 'the agents you use can work from your journal, within what you let each one see. every request they make is recorded here.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>open to your agents · certificate renewal overdue</h2><p>reachable at <code>${esc(address())}</code>. the address's certificate is past its renewal window and its renewal hasn't gone through yet. the journal keeps trying on its own.</p><div class="notice">if renewal still hasn't gone through when the certificate expires, agents will start seeing a warning from their side. no permission or connection changes while it retries.</div><details><summary>about this address</summary><p>the address's public certificate record is permanent. sol pbc can see when an agent and this address met, and how much passed, nothing inside.</p></details></div></section>${connections()}`);
+  }
+
+  function connections() {
+    if (!state.connections.length) return `<section class="section"><div class="section-head"><h2>your agents</h2><button class="btn" data-route="connect">connect an agent</button></div><div class="card empty"><h3>no agents connected yet</h3><p>connect an agent to let it search and read your journal, within what you choose.</p><button class="btn primary" data-route="connect">connect an agent</button></div></section>`;
+    return `<section class="section"><div class="section-head"><h2>your agents</h2><button class="btn" data-route="connect">connect an agent</button></div><div class="card">${state.connections.map(connection => `<button class="row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-connection="${esc(connection.kind)}:${esc(connection.id)}"><span aria-hidden="true">${connection.kind === 'oauth' ? '◉' : '⌁'}</span><span class="row-main"><strong>${esc(connection.name)}</strong><small>${esc(connectionKind(connection))} · connected ${esc(new Date(connection.created_at).toLocaleDateString())} · ${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection)}</small><small>${esc(permissionLine(connection.permission))}</small></span><span>›</span></button>`).join('')}</div></section>`;
+  }
+
+  function onPage() {
+    return frame('agents', 'the agents you use can work from your journal, within what you let each one see. every request they make is recorded here.', `${statusCard()}${connections()}<section class="section"><div class="section-head"><h2>activity</h2><button class="btn" data-route="activity">recent activity</button></div><div class="card pad"><p>what your agents asked, in their own words, and what they got or were refused. recorded in your journal, never sent anywhere.</p></div></section><section class="card pad section"><div class="button-row"><button class="btn danger" data-route="off">turn off</button><span class="meta">agents stop reaching your journal. the address and your agents are kept for when you turn it back on.</span></div></section>`);
+  }
+
+  function connectPage() {
+    return frame('connect an agent', `use the agent's own settings to add <code>${esc(endpoint())}</code>. your browser then opens your journal's page to finish safely.`, `<a class="back" href="#" data-route="home">← agents</a><section class="card pad"><h2>in Claude</h2><ol><li>open settings, then connectors, and choose <em>add custom connector</em>.</li><li>paste your journal's address as the server URL: <code>${esc(endpoint())}</code>. click connect.</li><li>your browser opens your journal's own page. check the mark is yours, then enter the pairing code below.</li><li>choose what Claude may see and connect. Claude returns to claude.ai and can start reading.</li></ol><h2 style="margin-top:20px">in Codex</h2><p><code>codex mcp add journal --url ${esc(endpoint())}</code></p><p class="meta">any MCP app can use the same URL.</p><div class="section"><h2>pairing code</h2>${pairingCode ? `<code class="copy-code">${esc(pairingCode.code)}</code><p class="meta">expires ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}. being at your journal to read the code is what proves it's you. no password, no sign-in.</p>` : state.pairing ? `<p>a pairing window is already open. codes are shown once; make a new one if you need to see it.</p>` : `<p>make a code when the agent asks for one. it works once and expires after 10 minutes.</p>`}<div class="button-row"><button class="btn primary" data-action="new-code">${state.pairing || pairingCode ? 'make a new code' : 'make a pairing code'}</button></div></div></section><section class="card pad section"><h2>verify it worked</h2><p>once connected, ask your agent:</p><div class="notice">search my journal for what I was working on yesterday and summarize it</div><p class="meta">it should come back with a few transcripts from yesterday. the request itself shows up under activity, which is how you know it went through your journal.</p></section>`);
+  }
+
+  function offConfirmPage() {
+    return frame('turn off?', '', `<a class="back" href="#" data-route="home">← agents</a><section class="card pad"><p>agents stop reaching your journal on their next request. <code>${esc(address())}</code> stops handing anything out.</p><p>the address and your agents are kept: turning back on uses the same address, with no new certificate. your agents pick up where they left off. their activity stays in your journal.</p><p>the address's public certificate record remains either way. it shows an address existed, not whose.</p><div class="button-row"><button class="btn danger" data-action="turn-off">turn off</button><button class="btn" data-route="home">keep it on</button></div></section>`);
+  }
+
+  function picker(connection) {
+    const read = connection?.permission?.read;
+    const cats = read?.categories || ['transcripts','entities','facets'];
+    return `<div class="field"><label for="scope">which part of your journal</label><select id="scope"><option value="whole_journal"${read?.scope?.kind !== 'facets' ? ' selected' : ''}>your whole journal</option><option value="facets"${read?.scope?.kind === 'facets' ? ' selected' : ''}>only facets you choose</option></select><span class="meta" id="scope-gloss">your whole journal includes everything now and anything added later, including facets you create later. chosen facets grow with their contents; facets you create later are not included.</span></div><div class="checks" aria-label="what kinds of material">${['transcripts','entities','facets'].map(cat => `<label class="check"><input type="checkbox" name="category" value="${cat}"${cats.includes(cat) ? ' checked' : ''}><span><strong>${cat}</strong><small class="meta">${categoryGloss[cat]}</small></span></label>`).join('')}</div><div class="field" id="facet-field"><span class="meta">facets</span><div class="checks">${state.facets.map(facet => `<label class="check"><input type="checkbox" name="facet" value="${esc(facet.name)}"${read?.scope?.ids?.includes(facet.id) ? ' checked' : ''}><span style="color:${esc(facet.color || '#76746b')}">●</span> ${esc(facet.title)}</label>`).join('')}</div></div>`;
+  }
+
+  function connectionPage(connection) {
+    return frame(connection.name, connectionAccessCopy(connection), `<a class="back" href="#" data-route="home">← agents</a><section class="card pad"><div class="section-head"><h2>what ${esc(connection.name)} may see</h2></div><p>narrow or widen at any time. ${esc(connection.name)} sees the change the next time it asks for anything; requests already in flight finish under the old choice.</p><p>${esc(permissionLine(connection.permission))}.</p>${picker(connection)}<div class="button-row"><button class="btn primary" data-save-permission="${esc(connection.kind)}:${esc(connection.id)}">save</button></div></section><section class="card pad section"><div class="section-head"><h2>its activity</h2><button class="btn" data-activity-connection="${esc(connection.key)}">see recent requests</button></div><p>${connection.activity_complete ? '' : 'at least '}${esc(connection.requests_this_week)} request${connection.requests_this_week === 1 ? '' : 's'} this week${lastRequestCopy(connection, '; ')}.</p></section><section class="card pad section"><h2>${connection.kind === 'bearer' ? 'revoke' : 'disconnect'}</h2><p>${esc(connection.name)} loses access on its next request. what it already read stays with it. its activity stays in your journal. to reconnect, pair again.</p><div class="button-row">${connection.kind === 'bearer' ? `<button class="btn" data-rename="${esc(connection.id)}">rename</button>` : ''}<button class="btn danger" data-revoke="${esc(connection.kind)}:${esc(connection.id)}">${connection.kind === 'bearer' ? 'revoke key' : 'disconnect'}</button></div></section>`);
+  }
+
+  const outcomeLabel = {served:'served',empty:'nothing matched',refused:'refused',error:"couldn't complete",uncertain:'unknown ending'};
+  function activityPage() {
+    const entries = activity?.entries || [];
+    const counts = activity?.counts || {};
+    const atLeast = activity && !activity.examination_complete ? 'at least ' : '';
+    return frame('activity', 'what your agents asked, in their own words, and what they got or were refused. recorded in your journal, never sent anywhere. the content that was released isn\'t copied here; each entry points at it.', `<a class="back" href="#" data-route="home">← agents</a><section class="card summary">${Object.entries(outcomeLabel).map(([key,label]) => `<span><strong>${atLeast}${counts[key] || 0}</strong>${label}</span>`).join('')}</section><div class="toolbar section"><div class="field"><label for="a-outcome">how it ended</label><select id="a-outcome"><option value="">any way</option>${Object.entries(outcomeLabel).map(([key,label]) => `<option value="${key}">${label}</option>`).join('')}</select></div><div class="field"><label for="a-tool">what it did</label><select id="a-tool"><option value="">any tool</option>${['list_facets','search','fetch','list_transcripts','get_transcript','list_entities','get_entity'].map(tool => `<option>${tool}</option>`).join('')}</select></div><button class="btn" data-action="filter-activity">apply</button></div><section class="card section">${entries.length ? entries.map((entry,index) => `<button class="row activity-row" style="width:100%;text-align:left;background:none;border-left:0;border-right:0;border-bottom:0;font:inherit" data-activity-index="${index}"><time class="meta">${esc(new Date(entry.timestamp).toLocaleString())}</time><span class="row-main"><span class="quote">${esc(entry.agent_identity)} used ${esc(entry.tool)}</span><small>${esc(entry.reason || 'open for request and result details')}</small></span><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></button>`).join('') : `<div class="empty"><h3>nothing matches these filters.</h3></div>`}</section>${activity && !activity.examination_complete ? `<div class="notice">only the first 100 matching requests are shown. these counts are minimums.</div>` : ''}`);
+  }
+
+  function activityDetail(entry) {
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="one request"><button class="btn" style="float:right" data-close-modal>close</button><h2>${esc(entry.agent_identity)} used ${esc(entry.tool)}</h2><p class="meta">${esc(new Date(entry.timestamp).toLocaleString())}</p><h3>how it ended</h3><p><span class="outcome ${esc(entry.outcome)}">${esc(outcomeLabel[entry.outcome])}</span></p><h3>what it asked</h3><pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.request?.arguments || {}, null, 2))}</pre><h3>what happened</h3><p>${esc(entry.reason || (entry.outcome === 'uncertain' ? 'nothing is known to have been released. the request was allowed; the record of how it ended was never written.' : entry.outcome === 'empty' ? 'nothing was released. the request was allowed and nothing in scope matched it.' : 'the result details are below.'))}</p>${entry.result ? `<pre style="white-space:pre-wrap">${esc(JSON.stringify(entry.result, null, 2))}</pre>` : ''}</article></div>`;
+  }
+
+  function targetLinks(entry) {
+    const targets = entry?.result?.targets || [];
+    if (!targets.length) return '';
+    const link = target => {
+      const coordinate = String(target);
+      const entity = coordinate.match(/\/entity:([^/]+)$/);
+      if (entity) return `/app/entities/?entity=${encodeURIComponent(entity[1])}`;
+      if (coordinate.startsWith('entity:')) return `/app/entities/?entity=${encodeURIComponent(coordinate.slice(7))}`;
+      if (coordinate.startsWith('facet:')) return `/app/settings/?facet=${encodeURIComponent(coordinate.slice(6))}`;
+      const day = coordinate.match(/^(\d{8})\//)?.[1];
+      if (day) return `/app/transcripts/${encodeURIComponent(day)}`;
+      return '/app/search/';
+    };
+    return `<h3>what was released</h3><ul>${targets.map(target => `<li><a href="${esc(link(target))}">${esc(target)}</a></li>`).join('')}</ul><p class="meta">these links open the corresponding journal record. the activity entry stores coordinates and a fingerprint, not a second copy of the content.</p>`;
+  }
+
+  function render() {
+    if (!state) return;
+    if (route.name === 'connect') view.innerHTML = connectPage();
+    else if (route.name === 'off') view.innerHTML = offConfirmPage();
+    else if (route.name === 'connection') view.innerHTML = connectionPage(route.connection);
+    else if (route.name === 'activity') view.innerHTML = activityPage();
+    else if (!state.enabled) view.innerHTML = state.owner_state?.address ? turnedOffPage() : offPage();
+    else if (state.status === 'offline') view.innerHTML = offlinePage();
+    else if (state.status === 'renewal_overdue') view.innerHTML = renewalPage();
+    else if (state.status !== 'on') view.innerHTML = enrollmentPage();
+    else view.innerHTML = onPage();
+    const scope = document.getElementById('scope');
+    const facetField = document.getElementById('facet-field');
+    if (scope && facetField) { const sync = () => facetField.classList.toggle('hidden', scope.value !== 'facets'); scope.addEventListener('change', sync); sync(); }
+    if (route.name === 'activity') {
+      view.querySelector('.toolbar')?.insertAdjacentHTML('afterbegin', `<div class="field"><label for="a-agent">agent</label><select id="a-agent"><option value="">all agents</option>${state.connections.map(connection => `<option value="${esc(connection.key)}">${esc(connection.name)}</option>`).join('')}</select></div><div class="field"><label for="a-from">from</label><input id="a-from" type="date"></div><div class="field"><label for="a-to">to</label><input id="a-to" type="date"></div>`);
+    }
+  }
+
+  async function reload() {
+    view.innerHTML = '<p class="lead">loading agents…</p>';
+    try { state = await api('/app/agents/api/state'); render(); }
+    catch (error) { errorPage(error.message || 'the journal did not return its agent state.'); }
+  }
+  async function loadActivity(connection = '') {
+    try { activity = await api(`/app/agents/api/activity${connection ? `?connection=${encodeURIComponent(connection)}` : ''}`); route = {name:'activity', connection}; render(); if (connection) document.getElementById('a-agent').value = connection; }
+    catch (error) { notify(error.message || 'activity could not be read'); }
+  }
+
+  view.addEventListener('click', async event => {
+    const target = event.target.closest('button,a'); if (!target) return;
+    const action = target.dataset.action;
+    if (target.dataset.route) { event.preventDefault(); const name = target.dataset.route; if (name === 'activity') await loadActivity(); else { route={name}; render(); } return; }
+    if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
+    if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route={name:'connection',connection:state.connections.find(item => item.kind===kind && item.id===id)}; render(); return; }
+    if (target.dataset.copy) { await navigator.clipboard?.writeText(target.dataset.copy); target.textContent='copied'; return; }
+    if (target.dataset.activityIndex) { const entry=activity.entries[Number(target.dataset.activityIndex)]; view.insertAdjacentHTML('beforeend', activityDetail(entry)); view.querySelector('.modal-card')?.insertAdjacentHTML('beforeend', targetLinks(entry)); return; }
+    if (target.dataset.closeModal !== undefined) { target.closest('.modal')?.remove(); return; }
+    try {
+      if (action === 'reload' || action === 'refresh') await reload();
+      else if (action === 'turn-on') { await api('/app/agents/api/capability', jsonOptions('PUT',{enabled:true})); await reload(); }
+      else if (action === 'turn-off-now' || action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT',{enabled:false})); route={name:'home'}; await reload(); }
+      else if (action === 'new-code') { pairingCode = await api('/app/agents/api/pairing',ownerOptions('POST')); state.pairing=pairingCode; render(); }
+      else if (action === 'filter-activity') { const params=new URLSearchParams(); const outcome=document.getElementById('a-outcome').value; const tool=document.getElementById('a-tool').value; const connection=document.getElementById('a-agent').value; const from=document.getElementById('a-from').value.replaceAll('-',''); const to=document.getElementById('a-to').value.replaceAll('-',''); if(outcome)params.set('outcome',outcome);if(tool)params.set('tool',tool);if(connection)params.set('connection',connection);if(from)params.set('from',from);if(to)params.set('to',to);activity=await api(`/app/agents/api/activity?${params}`);render(); }
+      else if (target.dataset.savePermission) { const [kind,id]=target.dataset.savePermission.split(':'); const categories=[...document.querySelectorAll('input[name=category]:checked')].map(node=>node.value); const scope=document.getElementById('scope').value; const facets=[...document.querySelectorAll('input[name=facet]:checked')].map(node=>node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`,jsonOptions('PUT',{categories,scope,facets})); route={name:'home'};await reload(); }
+      else if (target.dataset.revoke) { const [kind,id]=target.dataset.revoke.split(':'); if(confirm('disconnect this agent? what it already read stays with it. its activity stays in your journal.')) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`,ownerOptions('DELETE'));route={name:'home'};await reload(); } }
+      else if (target.dataset.rename) { const name=prompt('name this key',route.connection.name); if(name){await api(`/app/agents/api/connections/bearer/${encodeURIComponent(target.dataset.rename)}`,jsonOptions('PATCH',{name}));route={name:'home'};await reload();} }
+    } catch (error) { notify(error.message || 'that change did not finish'); }
+  });
+  reload();
+  window.setInterval(() => { if (state?.enabled && state?.status !== 'on' && route.name === 'home') reload(); }, 10000);
+})();
+</script>

@@ -22,10 +22,37 @@ use super::{
     parse_urlencoded_pairs, reject_non_identity_encoding,
 };
 use crate::http1::{HttpRequest, HttpResponse};
+use crate::permissions::{ReadPermission, ReadScope, resolve_permission_facet_names};
 #[cfg(all(test, not(feature = "full-tests")))]
 use crate::tokens::RandomSource;
 
-const AUTHORIZE_CSP: &str = "default-src 'none'; form-action 'self'; frame-ancestors 'none'";
+const AUTHORIZE_CSP: &str = "default-src 'none'; style-src 'self' 'unsafe-inline'; font-src 'self'; form-action 'self'; frame-ancestors 'none'";
+const AUTHORIZE_CSS: &str = r#"@font-face{font-family:Comfortaa;src:url('/authorize/assets/Comfortaa-Variable.woff2') format('woff2');font-display:swap;font-weight:300 700}
+:root{--paper:#f4f2e9;--surface:#fbfaf5;--ink:#292923;--muted:#6e6c63;--line:#dedbd0;--danger:#8b3030}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.mark{width:68px;height:68px;border:2px solid var(--ink);border-radius:50%;display:flex;align-items:center;justify-content:center;gap:3px;overflow:hidden}.mark svg{width:30px;height:30px}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}.check{display:block;padding:5px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid #999;border-radius:8px}button{background:var(--ink);color:white;border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:#fff0ee;border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
+"#;
+const COMFORTAA: &[u8] =
+    include_bytes!("../../../solstone-core-convey-shell/assets/static/Comfortaa-Variable.woff2");
+
+pub(crate) fn design_css() -> HttpResponse {
+    HttpResponse::bytes(
+        200,
+        "OK",
+        "text/css; charset=utf-8",
+        AUTHORIZE_CSS.as_bytes().to_vec(),
+    )
+    .with_header(
+        "Cache-Control",
+        "public, max-age=604800, immutable".to_owned(),
+    )
+}
+
+pub(crate) fn comfortaa() -> HttpResponse {
+    HttpResponse::bytes(200, "OK", "font/woff2", COMFORTAA.to_vec()).with_header(
+        "Cache-Control",
+        "public, max-age=604800, immutable".to_owned(),
+    )
+}
 
 /// GET `/authorize`.
 pub(crate) async fn get_authorize(
@@ -111,7 +138,7 @@ fn finish_authorize_get(
         state,
         &canonicalize_ip(source).to_string(),
     ) {
-        Ok(transaction_id) => consent_page(&client, redirect_uri, &transaction_id),
+        Ok(transaction_id) => consent_page(&client, redirect_uri, &transaction_id, oauth, false),
         Err(OAuthStoreError::Quota) => {
             error_redirect(redirect_uri, "temporarily_unavailable", state)
         }
@@ -164,7 +191,44 @@ pub(crate) fn post_authorize(
             "<p>wait and try again, or ask the owner for a new code</p>",
         );
     }
-    match oauth.store.complete_pairing(transaction_id, pairing_code) {
+    let categories: Vec<String> = pairs
+        .iter()
+        .filter(|(key, value)| {
+            key == "category" && matches!(value.as_str(), "transcripts" | "entities" | "facets")
+        })
+        .map(|(_, value)| value.clone())
+        .collect();
+    if categories.is_empty() {
+        return local_error("choose what this agent may see before connecting");
+    }
+    let scope = match field(&pairs, "scope") {
+        Some("whole_journal") => ReadScope::WholeJournal,
+        Some("facets") => {
+            let names: Vec<String> = pairs
+                .iter()
+                .filter(|(key, _)| key == "facet")
+                .map(|(_, value)| value.clone())
+                .collect();
+            if names.is_empty() {
+                return local_error("choose at least one facet before connecting");
+            }
+            match resolve_permission_facet_names(&oauth.journal_root, &names) {
+                Ok(ids) => ReadScope::Facets { ids },
+                Err(_) => {
+                    return local_error(
+                        "the chosen facets could not be verified; return to your journal and try again",
+                    );
+                }
+            }
+        }
+        _ => return local_error("choose what this agent may see before connecting"),
+    };
+    let permission = ReadPermission { categories, scope };
+    match oauth.store.complete_pairing_with_permission(
+        transaction_id,
+        pairing_code,
+        Some(permission),
+    ) {
         Ok(issued) => success_redirect(&issued),
         Err(OAuthStoreError::PairingMismatch) => {
             if oauth.pairing_limiter.record_failure(source, generation)
@@ -177,7 +241,7 @@ pub(crate) fn post_authorize(
                 .pending_transaction_exists(transaction_id)
                 .unwrap_or(false);
             if still_pending {
-                retry_page(transaction_id)
+                retry_page(transaction_id, oauth)
             } else {
                 local_error(
                     "too many attempts for this request; restart authorization from the client",
@@ -314,26 +378,16 @@ fn local_error(message: &str) -> HttpResponse {
     )
 }
 
-fn retry_page(transaction_id: &str) -> HttpResponse {
-    html_status(
-        400,
-        "Bad Request",
-        &format!(
-            "<p>incorrect pairing code, try again</p>\
-<form method=\"post\" action=\"/authorize\">\
-<input type=\"hidden\" name=\"transaction_id\" value=\"{}\">\
-<input type=\"text\" name=\"pairing_code\">\
-<button type=\"submit\">Authorize</button>\
-</form>",
-            html_escape(transaction_id)
-        ),
-    )
+fn retry_page(transaction_id: &str, oauth: &OAuthRuntime) -> HttpResponse {
+    consent_page_named("this agent", "the agent", transaction_id, oauth, true)
 }
 
 fn consent_page(
     client: &RegisteredClient,
     redirect_uri: &str,
     transaction_id: &str,
+    oauth: &OAuthRuntime,
+    wrong_code: bool,
 ) -> HttpResponse {
     let host = parse_redirect_uri(redirect_uri)
         .map(|parsed| redirect_host_label(&parsed))
@@ -342,20 +396,64 @@ fn consent_page(
         .client_name
         .as_deref()
         .unwrap_or(client.client_id.as_str());
+    consent_page_named(client_label, &host, transaction_id, oauth, wrong_code)
+}
+
+fn consent_page_named(
+    client_label: &str,
+    return_host: &str,
+    transaction_id: &str,
+    oauth: &OAuthRuntime,
+    wrong_code: bool,
+) -> HttpResponse {
+    let facets =
+        solstone_core_facets::list_declared_facet_names(&oauth.journal_root).unwrap_or_default();
+    let facet_options = facets
+        .into_iter()
+        .map(|facet| {
+            let declaration = solstone_core_facets::read_facet_declaration(&oauth.journal_root, &facet)
+                .ok()
+                .flatten();
+            let title = declaration
+                .as_ref()
+                .map(|value| value.title.as_str())
+                .filter(|value| !value.is_empty())
+                .unwrap_or(&facet);
+            let color = declaration
+                .as_ref()
+                .map(|value| value.color.as_str())
+                .filter(|value| !value.is_empty())
+                .unwrap_or("#76746b");
+            format!("<label class=\"check\"><input type=\"checkbox\" name=\"facet\" value=\"{}\"> <span style=\"color:{}\">●</span> {}</label>", html_escape(&facet), html_escape(color), html_escape(title))
+        })
+        .collect::<String>();
+    let mark = solstone_core_sol_link::establish::load_committed(&oauth.journal_root)
+        .ok()
+        .flatten()
+        .and_then(|identity| {
+            solstone_core_sol_link::mark::mark_from_jid(&identity.instance_id).ok()
+        })
+        .map(|mark| mark.to_render_spec());
+    let mark_html = mark.map_or_else(
+        || "<div class=\"mark\">◉</div>".to_owned(),
+        |mark| format!("<div class=\"mark\" title=\"{} {}\"><span style=\"color:{}\">{}</span><span style=\"color:{}\">{}</span></div>", html_escape(&mark.words[0]), html_escape(&mark.words[1]), html_escape(&mark.icon1.color.hex), mark.icon1.svg, html_escape(&mark.icon2.color.hex), mark.icon2.svg),
+    );
+    let wrong = if wrong_code {
+        "<p class=\"error\" role=\"alert\">that code didn't match. codes expire after 10 minutes; get a new one in your journal if this one is old.</p>"
+    } else {
+        ""
+    };
     html_status(
         200,
         "OK",
         &format!(
-            "<p>Redirect host: <strong>{}</strong></p>\
-<p>Client: {}</p>\
-<form method=\"post\" action=\"/authorize\">\
-<input type=\"hidden\" name=\"transaction_id\" value=\"{}\">\
-<label>Pairing code <input type=\"text\" name=\"pairing_code\" autocomplete=\"off\"></label>\
-<button type=\"submit\">Authorize</button>\
-</form>",
-            html_escape(&host),
-            html_escape(client_label),
-            html_escape(transaction_id)
+            r#"<link rel="stylesheet" href="/authorize/assets/design.css"><main>{mark_html}<p class="muted">this is your journal. if the mark doesn't match the one in your journal, close this tab.</p><h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2><fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" checked> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets"> <strong>only the facets you choose</strong><br><span class="muted">just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset><details><summary>choose facets</summary>{facets}</details><fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts" checked> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen frames themselves.</span></label><label class="check"><input type="checkbox" name="category" value="entities" checked> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets" checked> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label></fieldset><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form></main>"#,
+            mark_html = mark_html,
+            client = html_escape(client_label),
+            host = html_escape(return_host),
+            transaction = html_escape(transaction_id),
+            facets = facet_options,
+            wrong = wrong
         ),
     )
 }
@@ -418,7 +516,7 @@ mod tests {
     use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio::sync::watch;
 
-    use super::{get_authorize_with_io, post_authorize};
+    use super::{comfortaa, design_css, get_authorize_with_io, post_authorize};
     use crate::http1::{HttpMethod, HttpRequest, HttpResponse};
     use crate::oauth::cimd::CimdAttemptIo;
     use crate::oauth::urlparse::query_value_encode;
@@ -618,6 +716,7 @@ mod tests {
         assert_eq!(response.content_type, Some("text/html; charset=utf-8"));
         let body = body_text(&response);
         assert_eq!(body.matches("name=\"pairing_code\"").count(), 1);
+        assert!(body.contains("/authorize/assets/design.css"));
         assert!(body.contains("name=\"transaction_id\""));
         assert!(!body.contains("name=\"client_id\""));
         assert!(!body.contains("name=\"redirect_uri\""));
@@ -625,6 +724,19 @@ mod tests {
         assert_eq!(header(&response, "X-Frame-Options"), Some("DENY"));
         let csp = header(&response, "Content-Security-Policy").unwrap();
         assert!(csp.contains("frame-ancestors 'none'"));
+    }
+
+    #[test]
+    fn design_assets_are_same_origin_and_self_contained() {
+        let css = design_css();
+        assert_eq!(css.content_type, Some("text/css; charset=utf-8"));
+        let css_body = body_text(&css);
+        assert!(css_body.contains("font-family:Comfortaa"));
+        assert!(css_body.contains("/authorize/assets/Comfortaa-Variable.woff2"));
+
+        let font = comfortaa();
+        assert_eq!(font.content_type, Some("font/woff2"));
+        assert!(font.body.starts_with(b"wOF2"));
     }
 
     struct UnusedIo;
@@ -775,7 +887,7 @@ mod tests {
         let transaction_id = hidden_transaction_id(&body_text(&get));
         let response = post_authorize(
             &post_request(&format!(
-                "transaction_id={}&pairing_code={}",
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
                 query_value_encode(&transaction_id),
                 query_value_encode(&pairing.code)
             )),
@@ -802,6 +914,13 @@ mod tests {
             )
             .unwrap();
         assert!(!tokens.access_token.is_empty());
+        let grant = oauth.store.list_grants().unwrap().pop().unwrap();
+        let permission = crate::permissions::PermissionStore::open(journal.path())
+            .get_permission(&format!("oauth:{}", grant.id))
+            .unwrap()
+            .unwrap();
+        assert_eq!(permission.generation, 1);
+        assert_eq!(permission.read.unwrap().categories, vec!["transcripts"]);
     }
 
     #[tokio::test(start_paused = true)]
@@ -812,13 +931,13 @@ mod tests {
         let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
         let transaction_id = hidden_transaction_id(&body_text(&get));
         let body = format!(
-            "transaction_id={}&pairing_code=00000000",
+            "transaction_id={}&pairing_code=00000000&scope=whole_journal&category=transcripts",
             query_value_encode(&transaction_id)
         );
         for _ in 0..4 {
             let response = post_authorize(&post_request(&body), SOURCE, &oauth);
             let page = body_text(&response);
-            assert!(page.contains("incorrect pairing code"));
+            assert!(page.contains("that code didn't match"));
             assert!(page.contains(&transaction_id));
         }
         let fifth = post_authorize(&post_request(&body), SOURCE, &oauth);
@@ -838,7 +957,7 @@ mod tests {
             let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
             let transaction_id = hidden_transaction_id(&body_text(&get));
             let body = format!(
-                "transaction_id={}&pairing_code=00000000",
+                "transaction_id={}&pairing_code=00000000&scope=whole_journal&category=transcripts",
                 query_value_encode(&transaction_id)
             );
             for _ in 0..5 {
@@ -914,7 +1033,7 @@ mod tests {
         let transaction_id = hidden_transaction_id(&body_text(&get));
         let response = post_authorize(
             &post_request(&format!(
-                "transaction_id={}&pairing_code={}&redirect_uri={}&state=spoofed",
+                "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts&redirect_uri={}&state=spoofed",
                 query_value_encode(&transaction_id),
                 query_value_encode(&pairing.code),
                 query_value_encode("http://127.0.0.1/evil"),

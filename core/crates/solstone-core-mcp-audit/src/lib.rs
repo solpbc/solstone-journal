@@ -51,7 +51,7 @@ pub const AUDIT_STREAM: &str = "mcp.agent";
 
 /// The admission schema this build writes. Schema 1 records carry neither a
 /// connection key nor a request, and are left exactly as they were found.
-pub const INTERACTION_SCHEMA: u32 = 2;
+pub const INTERACTION_SCHEMA: u32 = 3;
 
 /// The outcome schema this build writes.
 pub const OUTCOME_SCHEMA: u32 = 1;
@@ -124,6 +124,19 @@ pub struct RequestRecord {
     /// rather than truncated into something that reads as complete.
     #[serde(default, skip_serializing_if = "is_false")]
     pub arguments_omitted: bool,
+    /// The exact permission generation used to admit this request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permission: Option<PermissionSnapshotRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PermissionSnapshotRecord {
+    pub generation: u64,
+    pub categories: Vec<String>,
+    pub scope: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub facet_ids: Vec<String>,
 }
 
 /// One MCP tool interaction admitted into the journal.
@@ -231,6 +244,7 @@ pub struct Admission<'a> {
     pub agent_identity: &'a str,
     pub tool_name: ToolName,
     pub arguments: Map<String, Value>,
+    pub permission: Option<PermissionSnapshotRecord>,
 }
 
 /// Failure while publishing an MCP audit record.
@@ -295,7 +309,10 @@ pub fn write_interaction_record(
     write_interaction_record_with_before_publish(journal_root, now, admission, || {})
 }
 
-fn bounded_request(arguments: &Map<String, Value>) -> RequestRecord {
+fn bounded_request(
+    arguments: &Map<String, Value>,
+    permission: Option<PermissionSnapshotRecord>,
+) -> RequestRecord {
     let within_bound = serde_json::to_vec(arguments)
         .map(|bytes| bytes.len() <= MAX_ARGUMENT_BYTES)
         .unwrap_or(false);
@@ -303,6 +320,7 @@ fn bounded_request(arguments: &Map<String, Value>) -> RequestRecord {
         RequestRecord {
             arguments: arguments.clone(),
             arguments_omitted: false,
+            permission,
         }
     } else {
         // ⛔ Dropped whole rather than truncated: a truncated argument reads as
@@ -311,6 +329,7 @@ fn bounded_request(arguments: &Map<String, Value>) -> RequestRecord {
         RequestRecord {
             arguments: Map::new(),
             arguments_omitted: true,
+            permission,
         }
     }
 }
@@ -335,7 +354,10 @@ where
         timestamp: now,
         tool_name: admission.tool_name,
         connection: Some(admission.connection.to_owned()),
-        request: Some(bounded_request(&admission.arguments)),
+        request: Some(bounded_request(
+            &admission.arguments,
+            admission.permission.clone(),
+        )),
     };
     let contents = serde_json::to_vec(&record).map_err(AuditWriteError::Serialization)?;
     let mut candidate = format!("{}_1", now.format("%H%M%S"));
@@ -459,11 +481,12 @@ mod tests {
             agent_identity: connection,
             tool_name,
             arguments: serde_json::Map::new(),
+            permission: None,
         }
     }
 
     #[test]
-    fn an_admission_serializes_only_the_closed_schema_two_fields() {
+    fn an_admission_serializes_only_the_closed_schema_three_fields() {
         let record = InteractionRecord {
             schema: INTERACTION_SCHEMA,
             agent_identity: "operator".to_owned(),
@@ -473,13 +496,14 @@ mod tests {
             request: Some(RequestRecord {
                 arguments: json!({"query": "budget"}).as_object().cloned().unwrap(),
                 arguments_omitted: false,
+                permission: None,
             }),
         };
 
         assert_eq!(
             serde_json::to_value(record).unwrap(),
             json!({
-                "schema": 2,
+                "schema": 3,
                 "agent_identity": "operator",
                 "timestamp": "2026-08-31T12:34:56Z",
                 "tool_name": "search",
@@ -523,7 +547,7 @@ mod tests {
         let record: serde_json::Value = serde_json::from_str(&record).unwrap();
         assert_eq!(record["tool_name"], "fetch");
         assert_eq!(record["connection"], "bearer:one");
-        assert_eq!(record["schema"], 2);
+        assert_eq!(record["schema"], 3);
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -579,6 +603,7 @@ mod tests {
                 agent_identity: "bearer:one",
                 tool_name: ToolName::Search,
                 arguments,
+                permission: None,
             },
         )
         .unwrap();

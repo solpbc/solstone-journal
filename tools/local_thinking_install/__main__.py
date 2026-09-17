@@ -10,7 +10,7 @@ import signal
 import sys
 from pathlib import Path
 
-from .harness import run_harness
+from .harness import run_harness, run_service_harness
 
 
 def _parse_args(args: list[str]) -> argparse.Namespace:
@@ -42,6 +42,15 @@ def _parse_args(args: list[str]) -> argparse.Namespace:
         type=Path,
         required=True,
         help="Absolute directory path for disposable test execution, logs, and receipts.",
+    )
+    parser.add_argument(
+        "--existing-service-journal",
+        type=Path,
+        default=None,
+        help=(
+            "Absolute journal path for service-context install-only mode. "
+            "Reads health/convey.port and leaves service lifecycle ownership to the caller."
+        ),
     )
     parser.add_argument(
         "--timeout-seconds",
@@ -85,6 +94,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    if args.existing_service_journal and not args.existing_service_journal.is_absolute():
+        sys.stderr.write(
+            "Error: --existing-service-journal must be an absolute path.\n"
+        )
+        return 2
+
     if run_dir.exists():
         sys.stderr.write("Error: --run-dir must not already exist.\n")
         return 2
@@ -102,12 +117,20 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGTERM, handle_signal)
 
     try:
-        report = run_harness(
-            candidate_dir=candidate_dir,
-            run_dir=run_dir,
-            portal_timeout_seconds=args.timeout_seconds,
-            install_timeout_seconds=args.install_timeout_seconds,
-        )
+        if args.existing_service_journal:
+            report = run_service_harness(
+                candidate_dir=candidate_dir,
+                journal_dir=args.existing_service_journal,
+                run_dir=run_dir,
+                install_timeout_seconds=args.install_timeout_seconds,
+            )
+        else:
+            report = run_harness(
+                candidate_dir=candidate_dir,
+                run_dir=run_dir,
+                portal_timeout_seconds=args.timeout_seconds,
+                install_timeout_seconds=args.install_timeout_seconds,
+            )
     except KeyboardInterrupt:
         sys.stderr.write("Harness interrupted by user/signal.\n")
         return 130

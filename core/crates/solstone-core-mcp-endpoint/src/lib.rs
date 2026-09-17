@@ -50,6 +50,10 @@ mod jsonrpc;
 #[cfg(unix)]
 mod oauth;
 #[cfg(unix)]
+mod owner_state;
+#[cfg(unix)]
+mod owner_web;
+#[cfg(unix)]
 mod permissions;
 #[cfg(unix)]
 mod permits;
@@ -92,7 +96,12 @@ pub use dispatch::{McpProbeError, run_mcp_probe};
 #[cfg(unix)]
 pub use oauth::store::{
     CreatedPairingCode, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
+    PairingCodeSummary,
 };
+#[cfg(unix)]
+pub use owner_state::{McpOwnerState, read_mcp_owner_state};
+#[cfg(unix)]
+pub use owner_web::owner_routes;
 #[cfg(unix)]
 pub use permissions::{
     ConnectionPermissionRecord, ConnectionReadSnapshot, PermissionDecision, PermissionStore,
@@ -108,7 +117,8 @@ pub use service_process::{McpServiceError, run_native_service_with_hosted_parent
 /// registry that keeps it away from the wire.
 #[cfg(unix)]
 pub use solstone_core_mcp_audit::{
-    Outcome as AuditOutcome, RequestRecord, ResultShape, ToolName as AuditToolName,
+    Outcome as AuditOutcome, PermissionSnapshotRecord, RequestRecord, ResultShape,
+    ToolName as AuditToolName,
 };
 #[cfg(unix)]
 pub use tls::{

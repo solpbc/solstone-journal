@@ -1645,17 +1645,26 @@ fn run_convey(
         HostedServiceKind::Convey,
         #[cfg(windows)]
         admitted,
-        move |parent| match solstone_core_convey_shell::run_convey_with_hosted_parent(
-            service_journal,
-            options.port,
-            parent,
-            #[cfg(windows)]
-            &_speakers_generation.child_launch_context(),
-        ) {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("{error}");
-                ExitCode::from(EXIT_TEMPFAIL)
+        move |parent| {
+            #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+            let agents_routes = Some(solstone_core_mcp_endpoint::owner_routes(
+                service_journal.clone(),
+            ));
+            #[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+            let agents_routes = None;
+            match solstone_core_convey_shell::run_convey_with_hosted_parent_and_routes(
+                service_journal,
+                options.port,
+                parent,
+                agents_routes,
+                #[cfg(windows)]
+                &_speakers_generation.child_launch_context(),
+            ) {
+                Ok(()) => ExitCode::SUCCESS,
+                Err(error) => {
+                    eprintln!("{error}");
+                    ExitCode::from(EXIT_TEMPFAIL)
+                }
             }
         },
     )
@@ -5486,7 +5495,7 @@ const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
         | OAuthStoreError::PairingLocked => EXIT_DATAERR,
         OAuthStoreError::Lock(_) => EXIT_TEMPFAIL,
         OAuthStoreError::Directory(_) | OAuthStoreError::Read { .. } => EXIT_IOERR,
-        OAuthStoreError::Write(_) => EXIT_CANTCREAT,
+        OAuthStoreError::Write(_) | OAuthStoreError::Permission => EXIT_CANTCREAT,
         OAuthStoreError::Randomness
         | OAuthStoreError::Quota
         | OAuthStoreError::Malformed { .. }

@@ -20,6 +20,7 @@ use solstone_core_journal_io::{
 use subtle::ConstantTimeEq;
 
 use super::pairing::{canonicalize_pairing_code, encode_pairing_code};
+use crate::permissions::ReadPermission;
 use crate::tokens::{RandomSource, RandomSourceError, SystemRandomSource, VerifiedToken};
 
 const OAUTH_DIRECTORY: &str = "mcp-endpoint";
@@ -52,6 +53,14 @@ pub struct CreatedPairingCode {
     pub code: String,
     pub expires_at: DateTime<Utc>,
     pub generation: u64,
+}
+
+/// Non-secret state for the owner's currently active pairing window.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PairingCodeSummary {
+    pub expires_at: DateTime<Utc>,
+    pub generation: u64,
+    pub locked: bool,
 }
 
 /// Authorization code plus the GET-bound redirect fields.
@@ -121,6 +130,7 @@ pub enum OAuthStoreError {
     Write(AtomicWriteError),
     EntryTooLarge,
     StateTooLarge,
+    Permission,
 }
 
 impl fmt::Display for OAuthStoreError {
@@ -146,6 +156,7 @@ impl fmt::Display for OAuthStoreError {
             Self::Write(_) => "could not write MCP OAuth store",
             Self::EntryTooLarge => "OAuth store entry exceeds its size limit",
             Self::StateTooLarge => "OAuth store exceeds its size limit",
+            Self::Permission => "the chosen permission could not be stored",
         })
     }
 }
@@ -232,6 +243,8 @@ struct StoredPending {
     failure_count: u8,
     authorization_code_verifier: Option<String>,
     code_expires_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    permission: Option<ReadPermission>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -293,6 +306,18 @@ impl OAuthStore {
             store.pairing = None;
             Ok(())
         })
+    }
+
+    /// Return the current live pairing window without exposing its one-time code.
+    pub fn current_pairing_code(&self) -> Result<Option<PairingCodeSummary>, OAuthStoreError> {
+        let now = current_time();
+        Ok(self.read_store()?.pairing.and_then(|pairing| {
+            (pairing.expires_at > now).then_some(PairingCodeSummary {
+                expires_at: pairing.expires_at,
+                generation: pairing.generation,
+                locked: pairing.locked,
+            })
+        }))
     }
 
     /// Lock the current pairing code without advancing generation.
@@ -435,24 +460,41 @@ impl OAuthStore {
                 failure_count: 0,
                 authorization_code_verifier: None,
                 code_expires_at: None,
+                permission: None,
             });
             Ok(transaction_id)
         })
     }
 
     /// Consume the pairing code and issue a bound authorization code.
+    #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn complete_pairing(
         &self,
         transaction_id: &str,
         pairing_code: &str,
     ) -> Result<IssuedAuthorization, OAuthStoreError> {
-        self.complete_pairing_with_random(transaction_id, pairing_code, &SystemRandomSource)
+        self.complete_pairing_with_permission(transaction_id, pairing_code, None)
     }
 
-    pub(crate) fn complete_pairing_with_random(
+    pub(crate) fn complete_pairing_with_permission(
         &self,
         transaction_id: &str,
         pairing_code: &str,
+        permission: Option<ReadPermission>,
+    ) -> Result<IssuedAuthorization, OAuthStoreError> {
+        self.complete_pairing_with_random_and_permission(
+            transaction_id,
+            pairing_code,
+            permission,
+            &SystemRandomSource,
+        )
+    }
+
+    fn complete_pairing_with_random_and_permission(
+        &self,
+        transaction_id: &str,
+        pairing_code: &str,
+        permission: Option<ReadPermission>,
         random: &dyn RandomSource,
     ) -> Result<IssuedAuthorization, OAuthStoreError> {
         let presented = canonicalize_pairing_code(pairing_code);
@@ -505,6 +547,7 @@ impl OAuthStore {
             let pending = &mut store.pending[index];
             pending.authorization_code_verifier = Some(authorization_verifier);
             pending.code_expires_at = Some(now + Duration::seconds(AUTH_CODE_TTL_SECS));
+            pending.permission = permission;
             Ok(IssuedAuthorization {
                 code: authorization_code,
                 redirect_uri: pending.redirect_uri.clone(),
@@ -547,7 +590,8 @@ impl OAuthStore {
         let refresh_bytes = random_bytes(random)?;
         let id_bytes = random_bytes(random)?;
         let pkce_digest = sha256_digest(pkce_verifier.as_bytes());
-        self.mutate(|store, now| {
+        let mut granted_permission = None;
+        let issued = self.mutate(|store, now| {
             let mut matched = None;
             for (index, pending) in store.pending.iter().enumerate() {
                 let Some(verifier) = pending.authorization_code_verifier.as_ref() else {
@@ -563,6 +607,7 @@ impl OAuthStore {
             }
             let index = matched.ok_or(OAuthStoreError::InvalidToken)?;
             let pending = store.pending.remove(index);
+            granted_permission = pending.permission.clone();
             let code_expires_at = pending
                 .code_expires_at
                 .ok_or(OAuthStoreError::CodeExpired)?;
@@ -616,7 +661,16 @@ impl OAuthStore {
                 token_id: grant_id,
                 expires_in: ACCESS_TTL_SECS,
             })
-        })
+        })?;
+        if let Some(permission) = granted_permission
+            && crate::permissions::PermissionStore::open(&self.root)
+                .set_permission(&format!("oauth:{}", issued.token_id), permission)
+                .is_err()
+        {
+            let _ = self.revoke_grant_by_id(&issued.token_id);
+            return Err(OAuthStoreError::Permission);
+        }
+        Ok(issued)
     }
 
     /// Rotate a refresh token and issue a new access/refresh pair.

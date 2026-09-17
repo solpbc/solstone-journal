@@ -44,6 +44,7 @@ pub struct CreatedToken {
 /// Non-secret metadata suitable for listing managed bearer tokens.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TokenSummary {
+    pub id: String,
     pub label: String,
     pub created_at: DateTime<Utc>,
 }
@@ -276,10 +277,43 @@ impl TokenStore {
             .tokens
             .into_iter()
             .map(|entry| TokenSummary {
+                id: entry.id,
                 label: entry.label,
                 created_at: entry.created_at,
             })
             .collect())
+    }
+
+    /// Rename a bearer connection without replacing its credential or permission key.
+    pub fn rename_by_id(&self, id: &str, label: &str) -> Result<bool, TokenStoreError> {
+        let label = normalize_label(label).map_err(TokenStoreError::InvalidLabel)?;
+        self.ensure_directory()?;
+        let path = self.tokens_path();
+        let _lock = hold_lock(
+            &path,
+            LockOptions {
+                mode: Some(0o600),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(TokenStoreError::Lock)?;
+        let mut store = self.read_store()?;
+        if store
+            .tokens
+            .iter()
+            .any(|entry| entry.id != id && entry.label.eq_ignore_ascii_case(&label))
+        {
+            return Err(TokenStoreError::DuplicateLabel { label });
+        }
+        let Some(entry) = store.tokens.iter_mut().find(|entry| entry.id == id) else {
+            return Ok(false);
+        };
+        if entry.label == label {
+            return Ok(true);
+        }
+        entry.label = label;
+        self.write_store(&path, &store)?;
+        Ok(true)
     }
 
     /// Find a bearer token's internal ID by its label.
@@ -580,6 +614,18 @@ mod tests {
             store.revoke("missing-agent"),
             Err(TokenStoreError::NotFound { .. })
         ));
+    }
+
+    #[test]
+    fn rename_preserves_the_bearer_secret_and_connection_id() {
+        let journal = journal_root();
+        let store = TokenStore::open(journal.path());
+        let created = store.create("old name").unwrap();
+        let id = store.list().unwrap()[0].id.clone();
+        assert!(store.rename_by_id(&id, "new name").unwrap());
+        let verified = store.verify(&created.token).unwrap();
+        assert_eq!(verified.id, format!("bearer:{id}"));
+        assert_eq!(verified.agent_identity, "new name");
     }
 
     struct ShortRandom;

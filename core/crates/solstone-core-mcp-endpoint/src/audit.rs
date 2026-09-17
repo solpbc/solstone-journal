@@ -100,6 +100,7 @@ mod tests {
                 agent_identity: "operator",
                 tool_name: ToolName::Search,
                 arguments: serde_json::Map::new(),
+                permission: None,
             },
         )
         .expect("audit record writes");

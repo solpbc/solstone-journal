@@ -4641,6 +4641,7 @@ version = "2.0.8"
 dependencies = [
  "arc-swap",
  "async-trait",
+ "axum",
  "base64 0.22.1",
  "chrono",
  "futures",
@@ -4658,10 +4659,12 @@ dependencies = [
  "sha2 0.10.9",
  "socket2",
  "solstone-core-callosum",
+ "solstone-core-convey-http",
  "solstone-core-facets",
  "solstone-core-indexer-query",
  "solstone-core-indexer-store",
  "solstone-core-journal-config",
+ "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-mcp-audit",
  "solstone-core-sol-link",
@@ -4675,6 +4678,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-rustls",
+ "tower",
  "webpki-roots 1.0.9",
  "x509-parser",
 ]

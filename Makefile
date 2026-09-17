@@ -747,13 +747,17 @@ check-rust-distribution-cleanroom:
 	core/distribution/cleanroom.sh "$${SOLSTONE_DISTRIBUTION_OUT:-/var/tmp/solstone-distribution-out}"
 
 # Live systemd --user install of produced linux-x86_64 packages. Requires
-# SOLSTONE_DIST_DIR and a working Docker/Podman daemon. This is the gate that
-# observes Type=notify READY=1 and the real public-v1.0.22 crossover on both
-# Debian/.deb and Fedora/.rpm. Explicit, not default make ci-full: it needs
-# artifacts and privileged disposable containers.
+# SOLSTONE_DIST_DIR, LOCAL_THINKING_RECEIPT_DIR, and a working Docker/Podman
+# daemon. This is the gate that observes Type=notify READY=1, drives the local
+# model install through the resident portal, and exercises the real
+# public-v1.0.22 crossover on both Debian/.deb and Fedora/.rpm. Explicit, not
+# default make ci-full: it needs artifacts, a full model download, and
+# privileged disposable containers.
 check-systemd-test:
 	@test -n "$$SOLSTONE_DIST_DIR" || { echo "check-systemd-test requires SOLSTONE_DIST_DIR (produced linux-x86_64 artifacts)" >&2; exit 2; }
+	@test -n "$$LOCAL_THINKING_RECEIPT_DIR" || { echo "check-systemd-test requires LOCAL_THINKING_RECEIPT_DIR (new receipt directory)" >&2; exit 2; }
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test install
+	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" LOCAL_THINKING_RECEIPT_DIR="$$LOCAL_THINKING_RECEIPT_DIR" $(MAKE) -C tests/systemd-test local-thinking-install
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test legacy-upgrade
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test legacy-upgrade-v1022
 	SOLSTONE_DIST_DIR="$$SOLSTONE_DIST_DIR" $(MAKE) -C tests/systemd-test release-crossover-v1022-deb

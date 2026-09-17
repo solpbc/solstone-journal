@@ -10,6 +10,7 @@
 
 use std::fmt;
 use std::io;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
@@ -28,7 +29,9 @@ use ring::signature::{
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use rustls::server::{ClientHello, ResolvesServerCert};
 use rustls::sign::CertifiedKey;
-use rustls_acme::{AccountCache, AcmeConfig, CertCache, EventError, ResolvesServerCertAcme};
+use rustls_acme::{
+    AccountCache, AcmeConfig, CertCache, EventError, OrderError, ResolvesServerCertAcme,
+};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use solstone_core_journal_config::McpEndpointCertificateEnvironment;
@@ -130,6 +133,9 @@ impl fmt::Debug for McpEndpointCertificateResolver {
 }
 
 impl McpEndpointTlsService {
+    pub(crate) fn ordinary_certificate_is_active(&self) -> bool {
+        self.resolver.ordinary.load().is_some()
+    }
     pub(crate) fn authorized_hostname(&self) -> &str {
         &self.resolver.hostname
     }
@@ -266,6 +272,23 @@ impl McpEndpointTlsService {
         &self,
         shutdown: &mut tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), McpEndpointCertificateLifecycleError> {
+        self.run_acme_renewal_inner(None, shutdown).await
+    }
+
+    pub(crate) async fn run_acme_renewal_with_owner_state(
+        &self,
+        journal_root: &Path,
+        shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), McpEndpointCertificateLifecycleError> {
+        self.run_acme_renewal_inner(Some(journal_root), shutdown)
+            .await
+    }
+
+    async fn run_acme_renewal_inner(
+        &self,
+        journal_root: Option<&Path>,
+        shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), McpEndpointCertificateLifecycleError> {
         if *shutdown.borrow() || shutdown.has_changed().is_err() {
             return Ok(());
         }
@@ -294,6 +317,7 @@ impl McpEndpointTlsService {
             .acme
             .store(Some(Arc::clone(&_resolver_guard.installed)));
 
+        let mut retry_count = 0_u32;
         loop {
             tokio::select! {
                 changed = shutdown.changed() => {
@@ -302,11 +326,23 @@ impl McpEndpointTlsService {
                     }
                 }
                 event = state.next() => match event {
-                    Some(Ok(_)) => {},
+                    Some(Ok(_)) => { retry_count = 0; },
                     Some(Err(error)) if persistent_acme_state_error(&error) => {
                         return Err(McpEndpointCertificateLifecycleError::State);
                     }
-                    Some(Err(_)) => {},
+                    Some(Err(error)) => {
+                        if acme_rate_limited(&error) {
+                            let delay = 1_i64 << retry_count.min(16);
+                            if let Some(root) = journal_root {
+                                crate::owner_state::write_mcp_rate_limit_state(
+                                    root,
+                                    &self.resolver.hostname,
+                                    chrono::Utc::now() + chrono::Duration::seconds(delay),
+                                );
+                            }
+                        }
+                        retry_count = retry_count.saturating_add(1);
+                    },
                     None => return Err(McpEndpointCertificateLifecycleError::State),
                 }
             }
@@ -334,6 +370,17 @@ impl McpEndpointTlsService {
                 key,
                 expires_at: Instant::now() + StdDuration::from_secs(3600),
             })));
+    }
+}
+
+fn acme_rate_limited<EC: std::fmt::Debug, EA: std::fmt::Debug>(error: &EventError<EC, EA>) -> bool {
+    match error {
+        EventError::Order(OrderError::BadOrder(order)) => order
+            .error
+            .as_ref()
+            .and_then(|problem| problem.typ.as_deref())
+            .is_some_and(|kind| kind.ends_with(":rateLimited")),
+        _ => false,
     }
 }
 
