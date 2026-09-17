@@ -22,6 +22,19 @@ from .portal import HttpResponse, PortalProcess, PortalStartupError, find_free_p
 
 SPAWN_UNAVAILABLE_SNIPPET = "local install can't be started from this build yet"
 MODEL_TOTAL_BYTES = 2_740_937_888 + 672_423_616  # 3,413,361,504
+# macOS has the smallest supported sockaddr_un.sun_path budget: 104 bytes
+# including its trailing NUL.
+UNIX_SOCKET_PATH_MAX_BYTES = 103
+RUNTIME_TERMINAL_PHASES = frozenset({
+    "artifact-not-ready",
+    "cleanup-failed",
+    "failed",
+    "host-blocked",
+    "not-desired",
+    "ready-proof-unavailable",
+    "state-corrupt",
+    "state-unavailable",
+})
 
 
 class PrerequisiteError(Exception):
@@ -147,13 +160,7 @@ def validate_candidate_dir(candidate_dir: Path) -> None:
         raise PrerequisiteError(f"Candidate directory does not exist: {candidate_dir}")
 
     missing: list[str] = []
-    req_bins = (
-        "solstone-core-journal",
-        "solstone-core",
-        "solstone-core-sol",
-        "solstone-core-speakers-analyze",
-        "solstone-core-vad-analyze",
-    )
+    req_bins = required_candidate_binaries()
     for name in req_bins:
         bin_path = candidate_dir / name
         if not bin_path.exists():
@@ -170,6 +177,31 @@ def validate_candidate_dir(candidate_dir: Path) -> None:
                 "transcription models already in `core/models/assets`)."
             )
         raise PrerequisiteError(f"Missing candidate binaries: {', '.join(missing)}")
+
+
+def validate_direct_run_dir(run_dir: Path) -> None:
+    if os.name == "nt":
+        return
+    for case_name in ("fresh", "prior_mlx"):
+        socket_path = run_dir / "cases" / case_name / "journal" / "health" / "callosum.sock"
+        if len(os.fsencode(socket_path)) > UNIX_SOCKET_PATH_MAX_BYTES:
+            raise PrerequisiteError(
+                "Run directory is too long for the Callosum Unix socket path "
+                f"({socket_path}); use a shorter absolute --run-dir"
+            )
+
+
+def required_candidate_binaries() -> tuple[str, ...]:
+    binaries = (
+        "solstone-core-journal",
+        "solstone-core",
+        "solstone-core-sol",
+        "solstone-core-speakers-analyze",
+        "solstone-core-vad-analyze",
+    )
+    if sys.platform.startswith("linux"):
+        return (*binaries, "solstone-core-vulkan-probe")
+    return binaries
 
 
 def setup_disposable_source_root(
@@ -197,18 +229,20 @@ def setup_disposable_source_root(
     debug_dir = source_root / "core" / "target" / "debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
 
-    req_bins = [
-        "solstone-core-journal",
-        "solstone-core",
-        "solstone-core-sol",
-        "solstone-core-speakers-analyze",
-        "solstone-core-vad-analyze",
-    ]
-    for b in req_bins:
+    for b in required_candidate_binaries():
         src_b = candidate_dir / b
         dest_b = debug_dir / b
         shutil.copy2(src_b, dest_b)
         os.chmod(dest_b, 0o755)
+
+    # Production packages expose both names. Supervisor children dispatch
+    # through `journal`, so omitting this sibling silently leaks to any older
+    # host installation on PATH instead of exercising the staged candidate.
+    journal_entry = debug_dir / "journal"
+    if os.name == "nt":
+        shutil.copy2(debug_dir / "solstone-core-journal", journal_entry)
+    else:
+        journal_entry.symlink_to("solstone-core-journal")
 
     if (candidate_dir / "solstone").exists():
         shutil.copy2(candidate_dir / "solstone", debug_dir / "solstone")
@@ -507,8 +541,9 @@ def run_post_admit_checks(
     journal_dir: Path,
     case_name: str,
     case_dir: Path,
-    helper_bin: Path,
+    helper_bin: Path | None,
     install_timeout_seconds: float = 3600.0,
+    install_only: bool = False,
 ) -> tuple[str, str | None, str | None]:
     poll_url = f"http://127.0.0.1:{port}/app/thinking/api/local/bootstrap/status?model=local%2Fqwen3.5-4b"
     deadline = time.monotonic() + install_timeout_seconds
@@ -563,6 +598,20 @@ def run_post_admit_checks(
         if len(set(rx_values)) < 2:
             return "fresh_progress_did_not_advance", None, None
 
+    if install_only:
+        final_resp = send_http_request(poll_url, method="GET")
+        final_payload = final_resp.json_data if isinstance(final_resp.json_data, dict) else {
+            "http_status": final_resp.status,
+            "body": final_resp.body,
+            "error": final_resp.error_detail,
+        }
+        (case_dir / "final-install-status.json").write_text(
+            json.dumps(final_payload, indent=2), encoding="utf-8"
+        )
+        if final_resp.status != 200 or final_payload.get("install_state") != "installed":
+            return "final_status_not_installed", None, None
+        return "passed_install_only", None, "service_context_install_only"
+
     # Switch lane to local via PUT /app/thinking/api/providers
     activate_url = f"http://127.0.0.1:{port}/app/thinking/api/providers"
     activate_resp = send_http_request(
@@ -580,12 +629,20 @@ def run_post_admit_checks(
     runtime_url = f"http://127.0.0.1:{port}/app/thinking/api/local/runtime"
     runtime_ready = False
     runtime_deadline = time.monotonic() + install_timeout_seconds
+    runtime_file = case_dir / "runtime.jsonl"
     while time.monotonic() < runtime_deadline:
         r_resp = send_http_request(runtime_url, method="GET")
         if r_resp.status == 200 and isinstance(r_resp.json_data, dict):
-            if r_resp.json_data.get("phase") == "ready":
+            runtime_sample = {"t": time.time(), **r_resp.json_data}
+            with open(runtime_file, "a", encoding="utf-8") as rf:
+                rf.write(json.dumps(runtime_sample) + "\n")
+            phase = r_resp.json_data.get("phase")
+            if phase == "ready":
                 runtime_ready = True
                 break
+            if phase in RUNTIME_TERMINAL_PHASES:
+                reason = r_resp.json_data.get("reason_code") or "unspecified"
+                return f"runtime_terminal_{phase}_{reason}", None, None
         time.sleep(1.0)
 
     if not runtime_ready:
@@ -605,6 +662,8 @@ def run_post_admit_checks(
         metal_evidence_str = metal_detail
 
     # Terminal inspect status
+    if helper_bin is None:
+        return "final_status_helper_missing", gen_text, metal_evidence_str
     final_inspect = helper_inspect_status(helper_bin, journal_dir)
     (case_dir / "final-install-status.json").write_text(json.dumps(final_inspect, indent=2))
     if not final_inspect.get("ok"):
@@ -800,6 +859,7 @@ def run_harness(
     repo_root = Path(__file__).resolve().parent.parent.parent
 
     try:
+        validate_direct_run_dir(run_dir)
         validate_candidate_dir(candidate_dir)
     except PrerequisiteError as err:
         provenance: dict[str, Any] = {"candidate_dir": str(candidate_dir), "error": str(err)}
@@ -868,6 +928,8 @@ def run_harness(
             overall_outcome = "inference_not_proven"
         elif any(r.post_admit_outcome and "generate" in r.post_admit_outcome for r in results):
             overall_outcome = "inference_not_proven"
+        elif any(r.post_admit_outcome and r.post_admit_outcome.startswith("runtime_") for r in results):
+            overall_outcome = "inference_not_proven"
         elif any(r.post_admit_outcome and r.post_admit_outcome.startswith("terminal_state_failed") for r in results):
             overall_outcome = "install_failed"
         elif any(r.post_admit_outcome and r.post_admit_outcome.startswith("terminal_state_timeout") for r in results):
@@ -885,6 +947,131 @@ def run_harness(
         all_passed=(overall_outcome == "passed"),
     )
 
+    write_report(report, run_dir)
+    return report
+
+
+def run_service_harness(
+    candidate_dir: Path,
+    journal_dir: Path,
+    run_dir: Path,
+    install_timeout_seconds: float = 3600.0,
+) -> HarnessReport:
+    """Exercise portal installation through an already-running user service.
+
+    The direct harness owns its supervisor and proves generation. This mode
+    deliberately owns no service process: the systemd-test runner owns that
+    lifecycle, while this same harness drives bootstrap through terminal
+    installation and records the service-context receipt.
+    """
+    candidate_dir = candidate_dir.resolve()
+    journal_dir = journal_dir.resolve()
+    run_dir = run_dir.resolve()
+    run_dir.mkdir(parents=True, exist_ok=False)
+
+    try:
+        validate_candidate_dir(candidate_dir)
+        convey_port_path = journal_dir / "health" / "convey.port"
+        convey_port = int(convey_port_path.read_text(encoding="utf-8").strip())
+        if not 1 <= convey_port <= 65535:
+            raise ValueError(f"port out of range: {convey_port}")
+    except (PrerequisiteError, OSError, ValueError) as err:
+        report = HarnessReport(
+            provenance={
+                "candidate_dir": str(candidate_dir),
+                "journal_dir": str(journal_dir),
+                "service_context": "systemd-user",
+                "error": str(err),
+            },
+            cases=[],
+            overall_outcome="harness_infra",
+            timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            all_passed=False,
+        )
+        write_report(report, run_dir)
+        return report
+
+    provenance = collect_provenance(candidate_dir)
+    provenance.update({
+        "journal_dir": str(journal_dir),
+        "service_context": "systemd-user",
+        "convey_port": convey_port,
+    })
+    (run_dir / "provenance.json").write_text(
+        json.dumps(provenance, indent=2), encoding="utf-8"
+    )
+
+    case_dir = run_dir / "cases" / "systemd_service"
+    case_dir.mkdir(parents=True)
+    bootstrap_url = (
+        f"http://127.0.0.1:{convey_port}/app/thinking/api/local/bootstrap"
+        "?model=local%2Fqwen3.5-4b"
+    )
+    resp = send_http_request(bootstrap_url, method="POST", timeout=10.0)
+    (case_dir / "bootstrap.json").write_text(
+        json.dumps({
+            "url": bootstrap_url,
+            "status": resp.status,
+            "reason_code": resp.json_data.get("reason_code")
+            if isinstance(resp.json_data, dict) else None,
+            "detail": resp.error_detail,
+            "body": resp.body,
+        }, indent=2),
+        encoding="utf-8",
+    )
+    classification, note = classify_bootstrap_response(resp, "fresh")
+    post_admit_outcome = None
+    metal_evidence = None
+    if classification == "admitted":
+        post_admit_outcome, _, metal_evidence = run_post_admit_checks(
+            port=convey_port,
+            staged_core_bin=candidate_dir / "solstone-core",
+            journal_dir=journal_dir,
+            case_name="fresh",
+            case_dir=case_dir,
+            helper_bin=None,
+            install_timeout_seconds=install_timeout_seconds,
+            install_only=True,
+        )
+
+    result = CaseResult(
+        name="systemd_service",
+        convey_port=convey_port,
+        direct_port=None,
+        http_status=resp.status,
+        reason_code=resp.json_data.get("reason_code")
+        if isinstance(resp.json_data, dict) else None,
+        detail=resp.error_detail,
+        classification=classification,
+        note=note,
+        post_admit_outcome=post_admit_outcome,
+        metal_evidence=metal_evidence,
+    )
+    passed = classification == "admitted" and post_admit_outcome == "passed_install_only"
+    if passed:
+        overall_outcome = "passed"
+    elif post_admit_outcome and post_admit_outcome.startswith("terminal_state_failed"):
+        overall_outcome = "install_failed"
+    elif post_admit_outcome and post_admit_outcome.startswith("terminal_state_timeout"):
+        overall_outcome = "install_timeout"
+    elif classification == "harness_infra":
+        overall_outcome = "harness_infra"
+    else:
+        overall_outcome = "unexpected"
+
+    report = HarnessReport(
+        provenance=provenance,
+        cases=[result],
+        overall_outcome=overall_outcome,
+        timestamp=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        all_passed=passed,
+    )
+    write_report(report, run_dir)
+    return report
+
+
+def write_report(report: HarnessReport, run_dir: Path) -> None:
+    provenance = report.provenance
     receipt_json_path = run_dir / "receipt.json"
     receipt_json_path.write_text(
         json.dumps(asdict(report), indent=2), encoding="utf-8"
@@ -932,5 +1119,3 @@ def run_harness(
     receipt_txt_lines.append("============================================================")
 
     receipt_txt_path.write_text("\n".join(receipt_txt_lines) + "\n", encoding="utf-8")
-
-    return report

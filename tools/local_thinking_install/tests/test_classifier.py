@@ -6,18 +6,74 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from tools.local_thinking_install.fixtures import write_prior_mlx_status
 from tools.local_thinking_install.harness import (
+    RUNTIME_TERMINAL_PHASES,
+    MODEL_TOTAL_BYTES,
+    PrerequisiteError,
     classify_bootstrap_response,
     find_or_build_helper,
     is_leftover_mlx,
+    run_post_admit_checks,
+    validate_direct_run_dir,
     wait_until_mlx_replaced,
 )
 from tools.local_thinking_install.portal import HttpResponse
 
 
 class TestBootstrapClassifier(unittest.TestCase):
+    def test_direct_run_dir_rejects_overlong_socket_path(self) -> None:
+        with self.assertRaises(PrerequisiteError):
+            validate_direct_run_dir(Path("/var/tmp") / ("x" * 100))
+
+    def test_service_install_only_reuses_terminal_install_checks(self) -> None:
+        responses = [
+            HttpResponse(200, {}, "", {
+                "install_state": "downloading",
+                "progress_bytes_received": 1,
+                "progress_bytes_total": MODEL_TOTAL_BYTES,
+            }, None),
+            HttpResponse(200, {}, "", {
+                "install_state": "downloading",
+                "progress_bytes_received": MODEL_TOTAL_BYTES,
+                "progress_bytes_total": MODEL_TOTAL_BYTES,
+            }, None),
+            HttpResponse(200, {}, "", {"install_state": "installed"}, None),
+            HttpResponse(200, {}, "", {"install_state": "installed"}, None),
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir, patch(
+            "tools.local_thinking_install.harness.send_http_request",
+            side_effect=responses,
+        ), patch(
+            "tools.local_thinking_install.harness.time.sleep",
+            return_value=None,
+        ):
+            root = Path(tmp_dir)
+            outcome, answer, evidence = run_post_admit_checks(
+                port=5015,
+                staged_core_bin=root / "solstone-core",
+                journal_dir=root / "journal",
+                case_name="fresh",
+                case_dir=root,
+                helper_bin=None,
+                install_timeout_seconds=1.0,
+                install_only=True,
+            )
+            self.assertEqual(outcome, "passed_install_only")
+            self.assertIsNone(answer)
+            self.assertEqual(evidence, "service_context_install_only")
+            self.assertTrue((root / "final-install-status.json").is_file())
+
+    def test_terminal_runtime_phases_are_explicit(self) -> None:
+        self.assertIn("artifact-not-ready", RUNTIME_TERMINAL_PHASES)
+        self.assertIn("host-blocked", RUNTIME_TERMINAL_PHASES)
+        self.assertIn("failed", RUNTIME_TERMINAL_PHASES)
+        self.assertNotIn("observing", RUNTIME_TERMINAL_PHASES)
+        self.assertNotIn("stopped", RUNTIME_TERMINAL_PHASES)
+        self.assertNotIn("warming", RUNTIME_TERMINAL_PHASES)
+
     def test_500_spawn_unavailable_refusal(self) -> None:
         detail_msg = (
             "local install can't be started from this build yet - use `journal` "

@@ -6,6 +6,8 @@
 #   ./run-test.sh                          # default: smoke (verify systemd --user only)
 #   ./run-test.sh smoke                    # tiny user unit, no solstone install
 #   ./run-test.sh install [extra-args]     # package install, then journal setup
+#   ./run-test.sh local-thinking-install   # install package, start resident service,
+#                                          # drive portal model install to terminal state
 #   ./run-test.sh legacy-upgrade           # install, but seed a legacy non-symlink
 #                                          #   wrapper first; assert setup self-heals it
 #                                          #   through to a healthy service_identity
@@ -30,6 +32,9 @@
 #                       (solstone-journal-*-linux-x86_64.deb). Mounted read-only
 #                       at /artifacts. Required for package-backed modes.
 #                       The wheel path is retired.
+#   LOCAL_THINKING_RECEIPT_DIR — new host directory that receives the preserved
+#                       local-thinking harness receipt. Required for
+#                       local-thinking-install.
 #
 # Exit codes:
 #   0  test passed
@@ -49,6 +54,7 @@ TEST_USER="${TEST_USER:-solstone}"
 PRIVILEGED="${PRIVILEGED:-1}"
 KEEP="${KEEP:-0}"
 SOLSTONE_DIST_DIR="${SOLSTONE_DIST_DIR:-}"
+LOCAL_THINKING_RECEIPT_DIR="${LOCAL_THINKING_RECEIPT_DIR:-}"
 
 mode="${1:-smoke}"
 shift || true
@@ -57,8 +63,8 @@ die() { echo "error: $*" >&2; exit 2; }
 log() { echo "[$(date -u +%H:%M:%S)] $*" >&2; }
 
 case "$mode" in
-    smoke|install|legacy-upgrade|legacy-upgrade-v1022|shell) ;;
-    *) die "unknown mode: $mode (expected: smoke | install | legacy-upgrade | legacy-upgrade-v1022 | shell)" ;;
+    smoke|install|local-thinking-install|legacy-upgrade|legacy-upgrade-v1022|shell) ;;
+    *) die "unknown mode: $mode (expected: smoke | install | local-thinking-install | legacy-upgrade | legacy-upgrade-v1022 | shell)" ;;
 esac
 
 command -v docker >/dev/null || die "docker not found in PATH"
@@ -95,6 +101,16 @@ if [ -n "$SOLSTONE_DIST_DIR" ]; then
     RUN_FLAGS+=(-v "$SOLSTONE_DIST_DIR:/artifacts:ro")
 elif [ "$mode" != "smoke" ] && [ "$mode" != "shell" ]; then
     die "SOLSTONE_DIST_DIR is required for $mode (produced linux-x86_64 .deb)"
+fi
+
+if [ "$mode" = "local-thinking-install" ]; then
+    [ -n "$LOCAL_THINKING_RECEIPT_DIR" ] \
+        || die "LOCAL_THINKING_RECEIPT_DIR is required for local-thinking-install"
+    [ ! -e "$LOCAL_THINKING_RECEIPT_DIR" ] \
+        || die "LOCAL_THINKING_RECEIPT_DIR must not already exist: $LOCAL_THINKING_RECEIPT_DIR"
+    mkdir "$LOCAL_THINKING_RECEIPT_DIR"
+    repo_root="$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)"
+    RUN_FLAGS+=(-v "$repo_root:/harness:ro")
 fi
 
 install_solstone_cmd='
@@ -247,6 +263,73 @@ UNIT
         '
 
         log "install: PASS"
+        ;;
+
+    local-thinking-install)
+        log "local-thinking-install: apt install solstone-journal .deb"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc "$install_solstone_cmd"
+
+        log "local-thinking-install: journal setup with optional model installers skipped"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc \
+            'journal setup -y --skip-models --skip-skills'
+
+        log "local-thinking-install: wait for resident user service"
+        for _ in $(seq 1 30); do
+            state=$(docker exec -u "$TEST_USER" "$CONTAINER" \
+                bash -lc 'systemctl --user is-active solstone' 2>/dev/null || true)
+            [ "$state" = "active" ] && break
+            sleep 1
+        done
+        if [ "$state" != "active" ]; then
+            log "solstone.service did not reach active (last: ${state:-unknown})"
+            docker exec -u "$TEST_USER" "$CONTAINER" \
+                bash -lc 'systemctl --user status solstone --no-pager -l || true' >&2
+            exit 1
+        fi
+
+        # CLI setup provisions the host and service but deliberately leaves the
+        # browser onboarding ceremony open. Complete that ceremony through its
+        # loopback API so the test reaches the authenticated product surface by
+        # the same state transition as an owner, instead of manufacturing
+        # setup.completed_at in the journal fixture.
+        log "local-thinking-install: complete loopback onboarding ceremony"
+        docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+            set -euo pipefail
+            port=$(cat "$HOME/journal/health/convey.port")
+            origin="http://127.0.0.1:${port}"
+            curl --fail-with-body --silent --show-error \
+                -X POST -H "Content-Type: application/json" -d "{}" \
+                "$origin/init/mark/regenerate" >/tmp/init-mark-regenerate.json
+            curl --fail-with-body --silent --show-error \
+                -X POST -H "Content-Type: application/json" -d "{}" \
+                "$origin/init/mark/lock" >/tmp/init-mark-lock.json
+            curl --fail-with-body --silent --show-error \
+                -X POST -H "Content-Type: application/json" -d "{\"lane\":\"local\"}" \
+                "$origin/init/finalize" >/tmp/init-finalize.json
+        '
+
+        log "local-thinking-install: drive portal bootstrap through terminal installed"
+        if docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
+                set -euo pipefail
+                cd /harness
+                python3 -m tools.local_thinking_install \
+                    --candidate-dir /usr/bin \
+                    --existing-service-journal "$HOME/journal" \
+                    --run-dir /var/tmp/lti-systemd
+            '
+        then
+            harness_rc=0
+        else
+            harness_rc=$?
+        fi
+
+        docker cp "$CONTAINER:/var/tmp/lti-systemd/." "$LOCAL_THINKING_RECEIPT_DIR/"
+        test -f "$LOCAL_THINKING_RECEIPT_DIR/receipt.json"
+        if [ "$harness_rc" -ne 0 ]; then
+            log "local-thinking-install: FAIL; receipt copied to $LOCAL_THINKING_RECEIPT_DIR"
+            exit "$harness_rc"
+        fi
+        log "local-thinking-install: PASS; receipt copied to $LOCAL_THINKING_RECEIPT_DIR"
         ;;
 
     legacy-upgrade)

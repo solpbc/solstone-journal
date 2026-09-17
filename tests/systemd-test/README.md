@@ -15,6 +15,7 @@ model](#what-this-does-not-model) below.
 make build               # build the image
 make smoke               # ~30s: verifies systemd --user works end-to-end
 SOLSTONE_DIST_DIR=/var/tmp/<outdir>/linux-x86_64 make install # ~3-5min: install candidate .deb, then journal setup
+SOLSTONE_DIST_DIR=/var/tmp/<outdir>/linux-x86_64 LOCAL_THINKING_RECEIPT_DIR=/var/tmp/local-thinking-receipt make local-thinking-install
 make legacy-upgrade      # ~3-5min: install over a seeded legacy non-symlink wrapper
 make release-crossover-v1022-deb # public v1.0.22 to candidate .deb crossover
 make release-crossover-v1022-rpm # public v1.0.22 to candidate .rpm crossover
@@ -31,6 +32,15 @@ may still return nonzero for the model degradation this cell creates on
 purpose. `--skip-models` / `--skip-skills` are passed by default because Parakeet
 / Claude-skill installation is orthogonal to the systemd question; use `make
 full` to drop those flags.
+
+`local-thinking-install` installs the same candidate package, starts the real
+`systemd --user` service, and uses `tools/local_thinking_install` to ask that
+resident portal to install the bundled local model. It waits for terminal
+`installed`, verifies byte progress, and copies the harness receipt to the new
+host directory named by `LOCAL_THINKING_RECEIPT_DIR`. This service-context cell
+is intentionally install-only because the generic container has no supported
+GPU. Run the direct harness on a suitable Linux host for the separate runtime
+readiness and real-generation proof.
 
 Linked-device ingest is not a systemd-test mode. It requires a paired client certificate, so use `tools/journal_device_sim` with a disposable journal for protocol-v3 ingest and reconciliation proof.
 
@@ -94,13 +104,14 @@ up. This is useful when an install step fails and you want to inspect it.
 | `PRIVILEGED` | `1`                           | `0` switches to the less-privileged path (cgroup-v2 host namespace + `CAP_SYS_ADMIN` + apparmor=unconfined). |
 | `KEEP`       | `0`                           | `1` leaves the container up on success for inspection.                  |
 | `SOLSTONE_DIST_DIR` | unset                  | Host directory of produced `linux-x86_64` artifacts, mounted at `/artifacts`. Required for package-backed tests. Must contain the candidate `.deb` or `.rpm` selected by the target. |
+| `LOCAL_THINKING_RECEIPT_DIR` | unset          | New host directory that receives the preserved receipt from `local-thinking-install`. Required for that mode. |
 
 ## why `--privileged`
 
 Booting `systemd` as PID 1 inside a container needs read-write access to
 the cgroup hierarchy and a few capabilities (`CAP_SYS_ADMIN`, etc.) that
-the default Docker profile denies. `--privileged` is the simplest, most
-portable way. The reduced-privilege path uses `--cgroupns=host`,
+the default Docker profile denies. `--privileged` is the harness's default.
+The reduced-privilege path uses `--cgroupns=host`,
 `CAP_SYS_ADMIN`, and a bind-mount of `/sys/fs/cgroup`; that is what
 `PRIVILEGED=0` uses. It is host-sensitive, so run that path on the target host
 before relying on it and fall back to `--privileged` if it hits cgroup
@@ -122,8 +133,7 @@ write-permission errors.
   is no explicit `/health` route there. The authoritative readiness
   probe is `journal service status`, which talks to the callosum Unix
   socket at `<journal>/health/callosum.sock`. The runner uses that
-  probe instead of `curl http://localhost:5015/health` (the request
-  body's shorthand).
+    probe instead of `curl http://localhost:5015/health`.
 
 ## file inventory
 
@@ -131,7 +141,7 @@ write-permission errors.
 |---------------|---------------------------------------------------------------------------|
 | `Dockerfile`  | Debian 12 (bookworm) base, full systemd, dbus-user-session, pre-lingered non-root user, uv pre-installed. |
 | `Dockerfile.fedora` | Fedora base for the native `.rpm` crossover. |
-| `run-test.sh` | `smoke` / `install` / `legacy-upgrade` / `shell` modes. Drives the boot-wait, runs the package install, asserts readiness. |
+| `run-test.sh` | `smoke` / `install` / `local-thinking-install` / `legacy-upgrade` / `shell` modes. Drives the boot-wait, runs the package install, asserts readiness. |
 | `run-release-crossover-v1022.sh` | Runs the public-v1 package crossover in a disposable Debian or Fedora container. |
 | `Makefile`    | Build, install, crossover, debugging, and cleanup targets. |
 | `README.md`   | This file.                                                                |
