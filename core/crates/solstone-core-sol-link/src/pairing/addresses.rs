@@ -613,7 +613,7 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
     use std::ffi::OsString;
     use std::os::windows::ffi::OsStringExt;
 
-    use windows_sys::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, NO_ERROR};
+    use windows_sys::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, ERROR_NO_DATA, NO_ERROR};
     use windows_sys::Win32::NetworkManagement::IpHelper::{
         GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
         GetAdaptersAddresses, IF_TYPE_SOFTWARE_LOOPBACK, IP_ADAPTER_ADDRESSES_LH,
@@ -650,6 +650,14 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
             let requested = (size as usize).div_ceil(size_of::<u64>());
             words = vec![0_u64; requested.max(words.len() + 1)];
             continue;
+        }
+        // `ERROR_NO_DATA` means the call found no addresses for the requested
+        // family, which is an empty list rather than a failure -- the same
+        // answer `getifaddrs` gives by returning a list with nothing in it.
+        // Reporting it as an error turned "this host has no usable address"
+        // into "pairing could not be completed".
+        if status == ERROR_NO_DATA {
+            return Ok(Vec::new());
         }
         if status != NO_ERROR {
             return Err(AddressError::Enumeration(io::Error::from_raw_os_error(
@@ -721,8 +729,11 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
 
 #[cfg(not(any(unix, windows)))]
 fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressError> {
+    // The gap is ours, not the machine's: every system this could run on can
+    // list its own addresses. Saying "unavailable on this platform" told a
+    // Windows owner their computer could not do a thing it does.
     Err(AddressError::Enumeration(io::Error::other(
-        "local interface enumeration is unavailable on this platform",
+        "solstone can't list this device's network addresses yet",
     )))
 }
 

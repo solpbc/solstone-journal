@@ -22,7 +22,9 @@ pub const WINDOWS_TASK_FAILURE_SCHEMA: &str = "solstone-windows-task-operation-f
 const PLAIN_PREFIX: &str = "Windows task operation failed: ";
 
 /// What an owner is told when the worker failed without saying anything.
-const NO_REASON: &str = "the task operation gave no reason";
+/// Names who was silent: "the task operation gave no reason" restated the
+/// subject of the clause it sits inside and answered nothing.
+const NO_REASON: &str = "windows gave no reason";
 
 /// Resolve the refusal to report for a failed task operation.
 ///

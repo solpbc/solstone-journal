@@ -4641,11 +4641,28 @@ impl SafeServiceDiagnostic {
     fn unexpected_install_argument(value: &OsStr) -> Self {
         // A bare port was accepted silently and then ignored, so
         // `journal service install 6123` re-registered the task on the default
-        // and exited 0. Name the argument and the spelling that works.
-        Self(format!(
-            "Error: unexpected argument '{}'; the port is given as --port PORT",
-            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
-        ))
+        // and exited 0. Name the argument, and add the spelling that works
+        // only when the argument is actually a port: this is the catch-all arm
+        // for every unrecognised argument, so an unconditional remedy told an
+        // owner who typed `--nonsense` to `pass the port as --port --nonsense`,
+        // which cannot work. The owner's own value, not a metavar -- it is
+        // already in the sentence.
+        //
+        // Casing matches this diagnostic type's siblings rather than the house
+        // lowercase, because one lowercase line among capitalized ones reads
+        // worse to the owner than either rule does on its own.
+        let text = solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
+        // The predicate is what `service install` will actually accept, not
+        // what the port grammar will parse: `parse_service_port` takes any
+        // integer text, so `99999` passes it and then fails silently in
+        // `install`. Offering a remedy that leads to a second failure is worse
+        // than offering none.
+        let remedy = value
+            .to_str()
+            .filter(|text| text.parse::<u16>().is_ok())
+            .map(|port| format!("; pass the port as --port {port}"))
+            .unwrap_or_default();
+        Self(format!("Error: unexpected argument '{text}'{remedy}"))
     }
 
     fn unknown_subcommand(value: &OsStr) -> Self {
@@ -6112,8 +6129,38 @@ mod tests {
         };
         assert_eq!(
             stderr.as_str(),
-            "Error: unexpected argument '6123'; the port is given as --port PORT"
+            "Error: unexpected argument '6123'; pass the port as --port 6123"
         );
+    }
+
+    #[test]
+    fn service_install_offers_the_port_remedy_only_when_the_argument_is_a_port() {
+        // The remedy names the owner's own value, so on the catch-all arm an
+        // unconditional one would read "pass the port as --port --nonsense".
+        for (argv, expected) in [
+            (
+                args(&["install", "--nonsense"]),
+                "Error: unexpected argument '--nonsense'",
+            ),
+            (
+                args(&["install", "99999"]),
+                "Error: unexpected argument '99999'",
+            ),
+            (
+                args(&["install", "5015"]),
+                "Error: unexpected argument '5015'; pass the port as --port 5015",
+            ),
+        ] {
+            let ServiceParseOutcome::Exit {
+                code: 1,
+                stderr: Some(stderr),
+                ..
+            } = parse_service_args(&argv)
+            else {
+                panic!("must not dispatch");
+            };
+            assert_eq!(stderr.as_str(), expected);
+        }
     }
 
     #[test]
@@ -6149,10 +6196,10 @@ mod tests {
             else {
                 panic!("an unknown flag must not dispatch");
             };
-            assert!(
-                stderr.as_str().starts_with("Error: unexpected argument"),
-                "got {}",
-                stderr.as_str()
+            assert_eq!(
+                stderr.as_str(),
+                "Error: unexpected argument '--nonsense'",
+                "an unknown flag must not be handed a port remedy naming itself"
             );
         }
     }

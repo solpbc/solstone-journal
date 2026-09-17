@@ -128,8 +128,15 @@ mod session_end {
     }
 
     /// Report that the forwarded tree is down, releasing `WM_ENDSESSION`.
+    ///
+    /// Only a session-end drain counts. The installed forwarder restarts a
+    /// crashed supervisor in a loop, and every one of those `forward` returns
+    /// calls this; without the guard the first crash restart would latch
+    /// DRAINED and a later `WM_ENDSESSION` would wait for nothing.
     pub(super) fn drained() {
-        DRAINED.store(true, Ordering::SeqCst);
+        if requested() {
+            DRAINED.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Create a hidden top-level window and pump its message loop for the
