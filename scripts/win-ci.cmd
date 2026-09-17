@@ -75,6 +75,8 @@ echo === cargo build --locked (portable journal substrate) ===
 cargo build --manifest-path core\Cargo.toml --locked -p solstone-core-journal -p solstone-core-journal-config -p solstone-core-journal-io -p solstone-core-system -p solstone-core-win-owner-rail || exit /b 1
 echo === cargo test --locked (portable journal config substrate) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal-config --lib || exit /b 1
+echo === cargo test --locked --no-run (solstone-core Windows library harness) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core --lib --features test-hooks --no-run || exit /b 1
 set "JOURNAL_WIN_CI_CLOUD_SYNC_EVIDENCE=skipped"
 set "JOURNAL_WIN_CI_ORDINARY_OWNER_EVIDENCE=failed"
 if "%JOURNAL_WIN_CI_RUN_CLOUD_SYNC_TEST%"=="1" (

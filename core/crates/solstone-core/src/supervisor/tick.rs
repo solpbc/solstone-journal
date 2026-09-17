@@ -1855,13 +1855,14 @@ mod tests {
     ///
     /// ⚠ Unix-only, because `supervisor::test_support` is `cfg(all(test,
     /// unix))` and this builds a literal `SupervisorState`, whose field set
-    /// differs on Windows. Without the gate `cargo test -p solstone-core
-    /// --lib` does not compile for `x86_64-pc-windows-msvc` at all -- which is
-    /// how an ungated version of it reached the default branch. The workspace
-    /// Windows cross-check does run on Linux, but it *excludes* this crate:
-    /// `solstone-core` reaches `ring`, `libsqlite3-sys` and `ffmpeg-sys-next`,
-    /// three roots a Linux host cannot build. The instrument that does compile
-    /// this subject runs once per Windows package.
+    /// differs on Windows. Without the gate `cargo test -p solstone-core --lib
+    /// --features test-hooks` does not compile for `x86_64-pc-windows-msvc` at
+    /// all -- which is how an ungated version of it reached the default branch.
+    /// The workspace Windows cross-check runs on Linux but *excludes* this
+    /// crate: `solstone-core` reaches `ring`, `libsqlite3-sys` and
+    /// `ffmpeg-sys-next`, three roots a Linux host cannot build. The native
+    /// Windows gate now compiles this exact subject, so a repeat is caught per
+    /// change rather than once per Windows package.
     #[cfg(unix)]
     async fn queue_only_state(journal: &std::path::Path) -> SupervisorState {
         fs::create_dir_all(journal.join("config")).expect("config dir");
