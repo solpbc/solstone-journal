@@ -731,10 +731,11 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
 #[cfg(not(any(unix, windows)))]
 fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressError> {
     // The gap is ours, not the machine's: every system this could run on can
-    // list its own addresses. Saying "unavailable on this platform" told a
-    // Windows owner their computer could not do a thing it does.
+    // list its own addresses. And `AddressError`'s own Display already says
+    // the listing failed ("could not enumerate local interfaces: {error}"),
+    // so this half has to carry the reason rather than restate the failure.
     Err(AddressError::Enumeration(io::Error::other(
-        "solstone can't list this device's network addresses yet",
+        "solstone isn't built for this platform yet",
     )))
 }
 

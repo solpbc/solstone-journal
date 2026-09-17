@@ -99,9 +99,12 @@ pub(crate) enum SupervisorStopReason {
     /// budget -- markers left on disk are what an owner sees at the next
     /// logon.
     ///
-    /// Only the Windows path produces this; the variant is unconditional so
-    /// every match over the enum has the same shape on every platform and the
-    /// serialized shutdown receipt does not change meaning across them.
+    /// ⚠ Windows-only, unlike `ShutdownCause::HostSessionEnd`, which stays
+    /// unconditional because it is serialized into the shutdown receipt and
+    /// that shape must not vary by platform. This one is crate-private, so a
+    /// variant nothing constructs off Windows is dead code rather than a
+    /// contract -- and the canonical gate compiles with `-D dead-code`.
+    #[cfg(windows)]
     HostSessionEnd,
 }
 

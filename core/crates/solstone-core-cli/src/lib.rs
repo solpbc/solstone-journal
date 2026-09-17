@@ -4658,11 +4658,17 @@ impl SafeServiceDiagnostic {
         // integer text, so `99999` passes it and then fails silently in
         // `install`. Offering a remedy that leads to a second failure is worse
         // than offering none.
+        // With no port to echo there is no owner value to name, so the branch
+        // names the flag instead -- the shape `unknown_subcommand` already uses
+        // for the same "you typed something I do not know" case. A refusal with
+        // no next step leaves an owner who mistyped a flag guessing.
         let remedy = value
             .to_str()
             .filter(|text| text.parse::<u16>().is_ok())
-            .map(|port| format!("; pass the port as --port {port}"))
-            .unwrap_or_default();
+            .map_or_else(
+                || "; expected --port PORT".to_owned(),
+                |port| format!("; pass the port as --port {port}"),
+            );
         Self(format!("Error: unexpected argument '{text}'{remedy}"))
     }
 
@@ -6144,11 +6150,11 @@ mod tests {
         for (argv, expected) in [
             (
                 args(&["install", "--nonsense"]),
-                "Error: unexpected argument '--nonsense'",
+                "Error: unexpected argument '--nonsense'; expected --port PORT",
             ),
             (
                 args(&["install", "99999"]),
-                "Error: unexpected argument '99999'",
+                "Error: unexpected argument '99999'; expected --port PORT",
             ),
             (
                 args(&["install", "5015"]),
@@ -6202,7 +6208,7 @@ mod tests {
             };
             assert_eq!(
                 stderr.as_str(),
-                "Error: unexpected argument '--nonsense'",
+                "Error: unexpected argument '--nonsense'; expected --port PORT",
                 "an unknown flag must not be handed a port remedy naming itself"
             );
         }

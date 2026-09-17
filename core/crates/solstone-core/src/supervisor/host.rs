@@ -433,6 +433,7 @@ pub async fn run_hosted(
             ShutdownCause::Sync(SyncFailureKind::classify(&sync_outcome))
         }
         tick::SupervisorStopReason::ParentLost(reason) => ShutdownCause::ParentLost(reason),
+        #[cfg(windows)]
         tick::SupervisorStopReason::HostSessionEnd => ShutdownCause::HostSessionEnd,
     };
     let sync_conflict = matches!(cause, ShutdownCause::Sync(SyncFailureKind::Conflict));
