@@ -105,9 +105,7 @@ fn strip_clixml(stderr: &str) -> String {
     stderr
         .lines()
         .map(str::trim)
-        .filter(|line| {
-            !line.is_empty() && !line.starts_with("#< CLIXML") && !line.starts_with('<')
-        })
+        .filter(|line| !line.is_empty() && !line.starts_with("#< CLIXML") && !line.starts_with('<'))
         .collect::<Vec<_>>()
         .join("; ")
 }
@@ -137,7 +135,9 @@ mod tests {
 
     #[test]
     fn a_plain_stderr_line_is_read_when_stdout_is_empty() {
-        let stderr = format!("{MEASURED_CLIXML}Windows task operation failed: task-changed-before-mutation\r\n");
+        let stderr = format!(
+            "{MEASURED_CLIXML}Windows task operation failed: task-changed-before-mutation\r\n"
+        );
         assert_eq!(
             windows_task_failure_reason(b"", stderr.as_bytes()),
             "task-changed-before-mutation"

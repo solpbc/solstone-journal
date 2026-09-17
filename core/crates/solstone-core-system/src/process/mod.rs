@@ -37,8 +37,7 @@ pub use common::{
     KILL_REAP_GRACE, LaunchError, LaunchedProcessIdentity, ManagedLaunchRequest, ProcessBirth,
     ProcessInstance, ProcessInstanceSource, ProcessOwner, ProcessTreeSnapshot,
     SERVICE_SHUTDOWN_TIMEOUT, SESSION_END_DRAIN_TIMEOUT, SignalKind, SpawnError, SpawnOptions,
-    SystemProcessInstanceSource,
-    TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
+    SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use common::{HostedAdmissionTestFault, set_hosted_admission_test_fault};

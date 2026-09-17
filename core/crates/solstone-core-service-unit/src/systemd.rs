@@ -51,7 +51,10 @@ pub fn systemd_unit_port(unit: &str) -> Option<String> {
 
 /// Undo `render_exec_token` for one token.
 fn unquote_exec_token(token: &str) -> Option<String> {
-    let Some(quoted) = token.strip_prefix('"').and_then(|rest| rest.strip_suffix('"')) else {
+    let Some(quoted) = token
+        .strip_prefix('"')
+        .and_then(|rest| rest.strip_suffix('"'))
+    else {
         return (!token.is_empty()).then(|| token.to_owned());
     };
     let mut value = String::with_capacity(quoted.len());

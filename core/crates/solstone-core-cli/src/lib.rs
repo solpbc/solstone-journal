@@ -4651,7 +4651,8 @@ impl SafeServiceDiagnostic {
         // Casing matches this diagnostic type's siblings rather than the house
         // lowercase, because one lowercase line among capitalized ones reads
         // worse to the owner than either rule does on its own.
-        let text = solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
+        let text =
+            solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
         // The predicate is what `service install` will actually accept, not
         // what the port grammar will parse: `parse_service_port` takes any
         // integer text, so `99999` passes it and then fails silently in
@@ -4707,8 +4708,11 @@ pub fn parse_service_port_argv(
 ) -> Result<solstone_core_operational_logs::ServicePort, SafeServiceDiagnostic> {
     match parse_service_port_argv_opt(args)? {
         Some(port) => Ok(port),
-        None => solstone_core_operational_logs::parse_service_port(SERVICE_DEFAULT_PORT)
-            .map_err(|_| SafeServiceDiagnostic::invalid_port_value(OsStr::new(SERVICE_DEFAULT_PORT))),
+        None => {
+            solstone_core_operational_logs::parse_service_port(SERVICE_DEFAULT_PORT).map_err(|_| {
+                SafeServiceDiagnostic::invalid_port_value(OsStr::new(SERVICE_DEFAULT_PORT))
+            })
+        }
     }
 }
 

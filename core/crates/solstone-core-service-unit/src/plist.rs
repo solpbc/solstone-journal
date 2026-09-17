@@ -15,10 +15,7 @@ const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 #[must_use]
 pub fn launchd_plist_port(bytes: &[u8]) -> Option<String> {
     let value = Value::from_reader(std::io::Cursor::new(bytes)).ok()?;
-    let arguments = value
-        .as_dictionary()?
-        .get("ProgramArguments")?
-        .as_array()?;
+    let arguments = value.as_dictionary()?.get("ProgramArguments")?.as_array()?;
     let [_, start, port] = arguments.as_slice() else {
         return None;
     };
@@ -85,11 +82,8 @@ mod tests {
     #[test]
     fn the_installed_port_round_trips_out_of_the_rendered_plist() {
         for port in ["5015", "6123", "65535"] {
-            let bytes = render_launchd_plist(
-                &BTreeMap::new(),
-                "/home/sol/.local/bin/journal",
-                port,
-            );
+            let bytes =
+                render_launchd_plist(&BTreeMap::new(), "/home/sol/.local/bin/journal", port);
             assert_eq!(launchd_plist_port(&bytes).as_deref(), Some(port));
         }
     }

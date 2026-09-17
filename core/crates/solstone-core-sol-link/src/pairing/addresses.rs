@@ -633,8 +633,9 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
     // buffer is allocated as 64-bit words and measured in whole words.
     let mut words = vec![0_u64; INITIAL_WORDS];
     for attempt in 0..ATTEMPTS {
-        let mut size = u32::try_from(words.len() * size_of::<u64>())
-            .map_err(|_| AddressError::Enumeration(io::Error::other("interface buffer too large")))?;
+        let mut size = u32::try_from(words.len() * size_of::<u64>()).map_err(|_| {
+            AddressError::Enumeration(io::Error::other("interface buffer too large"))
+        })?;
         // SAFETY: the buffer holds `size` writable bytes at the alignment the
         // struct requires, and the API retains no caller memory past the call.
         let status = unsafe {
@@ -669,8 +670,8 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
         while !adapter.is_null() {
             // SAFETY: `adapter` walks the list the API just wrote into `words`.
             let record = unsafe { &*adapter };
-            let usable = record.OperStatus == IfOperStatusUp
-                && record.IfType != IF_TYPE_SOFTWARE_LOOPBACK;
+            let usable =
+                record.OperStatus == IfOperStatusUp && record.IfType != IF_TYPE_SOFTWARE_LOOPBACK;
             if usable {
                 let name = if record.FriendlyName.is_null() {
                     String::new()

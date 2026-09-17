@@ -49,7 +49,8 @@ pub(crate) fn run(action: ServiceAction) -> ExitCode {
             port,
             installation_guard,
         } => run_install_action(
-            port.as_ref().map(|port| port.canonical_decimal().to_owned()),
+            port.as_ref()
+                .map(|port| port.canonical_decimal().to_owned()),
             installation_guard,
         ),
         ServiceAction::Uninstall => run_uninstall_action(),

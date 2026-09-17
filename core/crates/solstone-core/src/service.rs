@@ -121,7 +121,9 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
             let guard = resolve_installation_guard(installation_guard, || {
                 load_existing_installation_guard(&home)
             })?;
-            let requested = port.as_ref().map(|port| port.canonical_decimal().to_owned());
+            let requested = port
+                .as_ref()
+                .map(|port| port.canonical_decimal().to_owned());
             install(platform, &home, requested.as_deref(), &guard).map(ExitCode::from)
         }
         ServiceAction::Uninstall => uninstall(platform, &home).map(ExitCode::from),
