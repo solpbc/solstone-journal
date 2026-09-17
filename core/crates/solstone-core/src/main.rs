@@ -361,7 +361,10 @@ fn exit_code_for_shutdown_cause(cause: supervisor::ShutdownCause) -> u8 {
             | supervisor::SyncFailureKind::StaleHeartbeatCollectionFailure,
         ) => EXIT_TEMPFAIL,
         supervisor::ShutdownCause::ParentLost(_) => EXIT_TEMPFAIL,
-        supervisor::ShutdownCause::Signal(_) => 0,
+        // A session end is a requested stop, so it exits clean. This matters
+        // beyond tidiness on Windows: the installed forwarder restarts a
+        // supervisor that exits non-zero, and a logoff is not a crash.
+        supervisor::ShutdownCause::HostSessionEnd | supervisor::ShutdownCause::Signal(_) => 0,
     }
 }
 

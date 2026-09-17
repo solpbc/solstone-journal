@@ -71,6 +71,9 @@ pub enum ShutdownCause {
     Signal(SupervisorSignal),
     Sync(SyncFailureKind),
     ParentLost(ParentLossReason),
+    /// The host session is ending: Windows told the retained forwarder, which
+    /// asked this supervisor to stop. A requested stop, not a failure.
+    HostSessionEnd,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -430,6 +433,7 @@ pub async fn run_hosted(
             ShutdownCause::Sync(SyncFailureKind::classify(&sync_outcome))
         }
         tick::SupervisorStopReason::ParentLost(reason) => ShutdownCause::ParentLost(reason),
+        tick::SupervisorStopReason::HostSessionEnd => ShutdownCause::HostSessionEnd,
     };
     let sync_conflict = matches!(cause, ShutdownCause::Sync(SyncFailureKind::Conflict));
     let mut driver = outcome.state.into_shutdown_driver(outcome.regime);

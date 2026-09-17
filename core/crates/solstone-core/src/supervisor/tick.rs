@@ -98,7 +98,10 @@ pub(crate) enum SupervisorStopReason {
     /// which is why this takes the bounded shutdown rather than the standard
     /// budget -- markers left on disk are what an owner sees at the next
     /// logon.
-    #[cfg(windows)]
+    ///
+    /// Only the Windows path produces this; the variant is unconditional so
+    /// every match over the enum has the same shape on every platform and the
+    /// serialized shutdown receipt does not change meaning across them.
     HostSessionEnd,
 }
 
