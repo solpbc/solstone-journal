@@ -45,7 +45,7 @@ class ExistingDependencyEdges(unittest.TestCase):
         before = [p for p in self.old["package"] if p.get("source")]
         after = [p for p in self.new["package"] if p.get("source")]
         self.assertEqual(refresh.classify_external_delta(before, after), [])
-        changes = refresh.workspace_only_version_delta(
+        changes = refresh.workspace_version_or_existing_dependency_edge_delta(
             self.old, self.new, external_unchanged=before == after
         )
         refresh.require_unchanged_notice_closure(
@@ -74,7 +74,9 @@ class ExistingDependencyEdges(unittest.TestCase):
         with self.assertRaises(refresh.RefreshError):
             self.admit()
         with self.assertRaises(refresh.RefreshError):
-            refresh.workspace_only_version_delta(self.old, self.new, external_unchanged=True)
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=True
+            )
 
     def test_unknown_dependency_refuses(self):
         self.new["package"][1]["dependencies"] = ["unknown"]
@@ -100,6 +102,22 @@ class ExistingDependencyEdges(unittest.TestCase):
         self.new["package"][0]["version"] = "2.0.0"
         self.assertEqual(self.admit(), ["app", "indexer"])
 
+    def test_workspace_edge_survives_unrelated_external_git_pin(self):
+        git_old = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        git_new = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        self.old["package"].append(package("spl-core", source=git_old))
+        self.new["package"].append(package("spl-core", source=git_new))
+        self.new["package"][1]["dependencies"] = ["app"]
+        before = [p for p in self.old["package"] if p.get("source")]
+        after = [p for p in self.new["package"] if p.get("source")]
+        self.assertEqual(len(refresh.classify_external_delta(before, after)), 1)
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                self.old, self.new, external_unchanged=before == after
+            ),
+            ["indexer"],
+        )
+
 
 class ExternalPopulationDigest(unittest.TestCase):
     def test_order_independent(self):
@@ -119,6 +137,22 @@ class ExternalPopulationDigest(unittest.TestCase):
 
 class GitPinVendorDelta(unittest.TestCase):
     prefix = "vendor/spl-transport-0.1.0/"
+
+    def test_git_pin_may_change_resolved_edges_before_closure_check(self):
+        old_source = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        new_source = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        before = [package("spl-core", source=old_source, dependencies=["base64"])]
+        after = [package("spl-core", source=new_source, dependencies=["base64", "indexmap"])]
+        self.assertEqual(refresh.classify_external_delta(before, after), [(before[0], after[0])])
+
+    def test_git_pin_still_refuses_unrelated_row_change(self):
+        old_source = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
+        new_source = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
+        before = [package("spl-core", source=old_source)]
+        after = [package("spl-core", source=new_source)]
+        after[0]["checksum"] = "changed"
+        with self.assertRaisesRegex(refresh.RefreshError, "changed beyond"):
+            refresh.classify_external_delta(before, after)
 
     def test_added_file_under_moved_prefix_is_admitted(self):
         prior = {self.prefix + "src/lib.rs"}

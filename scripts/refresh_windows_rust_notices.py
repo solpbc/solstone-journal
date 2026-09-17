@@ -20,7 +20,9 @@ substituting only `Cargo.lock` itself.
 It handles two further cases. The first is a **git-source pin move**, where
 the set of external packages is unchanged by `(name, version)` and the rows
 that differ are all `git+` sources. That is the shape of advancing a first-party
-library tag. It cannot be member-preserved -- the vendored bytes genuinely
+library tag. The moved rows may also change their resolved dependency edges,
+but only when the independently recovered Windows notice closure remains
+identical. It cannot be member-preserved -- the vendored bytes genuinely
 change -- so this script performs the `cargo vendor` acquisition itself and
 substitutes the members that actually moved. Added files are admitted only
 when they sit under a moved package prefix (`vendor/<name>-<version>/`);
@@ -249,9 +251,9 @@ def classify_external_delta(
             for field in set(old_row) | set(new_row)
             if old_row.get(field) != new_row.get(field)
         }
-        if differing != {"source"}:
+        if "source" not in differing or not differing <= {"source", "dependencies"}:
             raise RefreshError(
-                f"git dependency {identity[0]} changed more than its source row "
+                f"git dependency {identity[0]} changed beyond its source and resolved dependency edges "
                 f"({sorted(differing)}); refusing rather than guess what moved"
             )
         moved.append((old_row, new_row))
@@ -450,11 +452,10 @@ def _workspace_existing_deps_only(
     new_lock: dict[str, Any],
     external_unchanged: bool,
 ) -> bool:
-    """Admit only edges to exactly resolved packages with unchanged external rows."""
+    """Admit workspace edges, and external edges only when external rows are unchanged."""
     old_external = [p for p in old_lock["package"] if p.get("source")]
     new_external = [p for p in new_lock["package"] if p.get("source")]
-    if not external_unchanged or old_external != new_external:
-        return False
+    external_rows_unchanged = external_unchanged and old_external == new_external
     left_rest, right_rest = dict(left), dict(right)
     left_deps = left_rest.pop("dependencies", None)
     right_deps = right_rest.pop("dependencies", None)
@@ -466,21 +467,27 @@ def _workspace_existing_deps_only(
         new = _resolve_lock_dependency(token, new_lock["package"])
         if old is None or new is None:
             return False
-        # Workspace version moves remain permitted. External identities must
-        # match exactly, including source, after unambiguous edge resolution.
-        if old != new and not (old[0] == new[0] and old[2] == new[2] == ""):
+        # Workspace version moves remain permitted even when an unrelated git
+        # pin moved elsewhere in the lock. External identities require the
+        # complete external row population to be unchanged as well as an exact
+        # resolved identity match.
+        if old[2] or new[2]:
+            if not external_rows_unchanged or old != new:
+                return False
+        elif old[0] != new[0]:
             return False
     return bool(moved)
 
 
-def workspace_only_version_delta(
+def workspace_version_or_existing_dependency_edge_delta(
     old_lock: dict[str, Any], new_lock: dict[str, Any], external_unchanged: bool
 ) -> list[str]:
     """Allow workspace versions or edges to existing packages only.
 
-    Edge changes require exact external-row equality and unambiguous dependency
-    resolution in both locks. The resulting Windows notice closure is checked
-    separately before any archive or index is published.
+    External edge changes require exact external-row equality; workspace edges
+    require unambiguous workspace resolution in both locks. The resulting
+    Windows notice closure is checked separately before any archive or index is
+    published.
     """
     old_by_name = {p["name"]: p for p in old_lock["package"] if not p.get("source")}
     new_by_name = {p["name"]: p for p in new_lock["package"] if not p.get("source")}
@@ -900,7 +907,7 @@ def refresh(
 
     moved_git = classify_external_delta(old_external, new_external)
 
-    workspace_delta = workspace_only_version_delta(
+    workspace_delta = workspace_version_or_existing_dependency_edge_delta(
         old_lock, new_lock, external_unchanged=old_external == new_external
     )
 
@@ -1151,7 +1158,7 @@ def refresh(
         )
 
     report = {
-        "workspace_version_only_changes": workspace_delta,
+        "workspace_version_or_existing_dependency_edge_changes": workspace_delta,
         "revendored_git_packages": revendored,
         "external_package_count": len(new_external),
         "external_population_sha256": new_index["population"]["source_sha256"],
