@@ -317,7 +317,7 @@ const SUPERVISOR_USAGE_ANCHOR: &[u8] =
     b"usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
 const START_USAGE_ANCHOR: &[u8] =
     b"usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n";
-const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"Unknown subcommand: --nonsense; Available: install, uninstall, start, stop, restart, status, logs\n";
+const SERVICE_UNKNOWN_ANCHOR: &[u8] = b"unknown subcommand: --nonsense; available: install, uninstall, start, stop, restart, status, logs\n";
 const BACKUP_USAGE_ANCHOR: &[u8] = b"usage: journal backup <command> [options]\n";
 const MAINTENANCE_USAGE_ANCHOR: &[u8] = b"usage: journal maintenance <command> [options]\n";
 

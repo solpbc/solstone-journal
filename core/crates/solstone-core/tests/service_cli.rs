@@ -66,7 +66,7 @@ fn service_help_and_invalid_port_are_owned_by_the_native_binary() {
         .expect("native service parser runs");
     assert_eq!(invalid.status.code(), Some(1));
     assert!(invalid.stdout.is_empty());
-    assert_eq!(invalid.stderr, b"Error: invalid port 'not-a-port'\n");
+    assert_eq!(invalid.stderr, b"error: invalid port 'not-a-port'\n");
 }
 
 #[test]

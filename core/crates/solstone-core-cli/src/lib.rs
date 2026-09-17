@@ -4622,19 +4622,27 @@ pub struct SafeServiceDiagnostic(String);
 impl SafeServiceDiagnostic {
     fn invalid_port_text(value: &str) -> Self {
         Self(format!(
-            "Error: invalid port '{}'",
+            "error: invalid port '{}'",
             solstone_core_system_health::sanitize_for_terminal(value)
         ))
     }
 
     fn invalid_port_value(value: &OsStr) -> Self {
         Self(format!(
-            "Error: invalid port '{}'",
+            "error: invalid port '{}'",
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
         ))
     }
 
     fn incomplete_installation_guard() -> Self {
+        // ⚠ Left capitalized on purpose. VPX's ruling (`req_fuxldiob`) scoped
+        // house lowercase to the three *owner-reachable* messages and
+        // explicitly declined a broader sweep; this one is only reachable with
+        // a `--installation-*` flag, which is the hidden field set `journal
+        // setup` passes, so it is not owner copy. The owner-visible form of
+        // this failure is already locked lowercase elsewhere
+        // (`vpx/design-system/journal-service-install-recovery-copy.md`,
+        // "this installation couldn't be verified.").
         Self("Error: installation identity arguments must be supplied together".to_owned())
     }
 
@@ -4648,9 +4656,10 @@ impl SafeServiceDiagnostic {
         // which cannot work. The owner's own value, not a metavar -- it is
         // already in the sentence.
         //
-        // Casing matches this diagnostic type's siblings rather than the house
-        // lowercase, because one lowercase line among capitalized ones reads
-        // worse to the owner than either rule does on its own.
+        // Casing is house lowercase by VPX ruling (`req_fuxldiob`): a leading
+        // `error:` is sentence prose, not the `Installation:` field-label
+        // exception in `cmo/brand/voice-terminology.md` § brand casing. Lock:
+        // `vpx/design-system/journal-service-install-recovery-copy.md`.
         let text =
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
         // The predicate is what `service install` will actually accept, not
@@ -4669,14 +4678,17 @@ impl SafeServiceDiagnostic {
                 || "; expected --port PORT".to_owned(),
                 |port| format!("; pass the port as --port {port}"),
             );
-        Self(format!("Error: unexpected argument '{text}'{remedy}"))
+        Self(format!("error: unexpected argument '{text}'{remedy}"))
     }
 
     fn unknown_subcommand(value: &OsStr) -> Self {
         // The retained Python owner prints this guidance on two lines. This pure
         // foundation deliberately keeps dynamic failures to one physical line.
+        // Both tokens lowercase per the VPX lock, which rules on the list
+        // label too: "the command list remains part of the sentence, not a
+        // title-cased list heading."
         Self(format!(
-            "Unknown subcommand: {}; Available: install, uninstall, start, stop, restart, status, logs",
+            "unknown subcommand: {}; available: install, uninstall, start, stop, restart, status, logs",
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes())
         ))
     }
@@ -5952,7 +5964,7 @@ mod tests {
                 PortResult::Exit { code, .. } => {
                     let error = parse_service_port_argv(&argv).unwrap_err();
                     assert_eq!(*code, 1, "{}", case.id);
-                    assert!(error.as_str().starts_with("Error: invalid port '"));
+                    assert!(error.as_str().starts_with("error: invalid port '"));
                 }
             }
         }
@@ -5983,7 +5995,7 @@ mod tests {
                 }
             };
             let expected = format!(
-                "Error: invalid port '{}'\n",
+                "error: invalid port '{}'\n",
                 solstone_core_system_health::sanitize_os_bytes_for_terminal(
                     value.as_encoded_bytes()
                 )
@@ -6000,7 +6012,7 @@ mod tests {
             ];
             assert_eq!(
                 render_service_diagnostic(&parse_service_port_argv(&argv).unwrap_err()),
-                "Error: invalid port '\\xff'\n"
+                "error: invalid port '\\xff'\n"
             );
         }
     }
@@ -6071,7 +6083,7 @@ mod tests {
         assert_eq!(stdout, None);
         assert_eq!(
             stderr.as_str(),
-            "Unknown subcommand: unknown; Available: install, uninstall, start, stop, restart, status, logs"
+            "unknown subcommand: unknown; available: install, uninstall, start, stop, restart, status, logs"
         );
     }
 
@@ -6139,7 +6151,7 @@ mod tests {
         };
         assert_eq!(
             stderr.as_str(),
-            "Error: unexpected argument '6123'; pass the port as --port 6123"
+            "error: unexpected argument '6123'; pass the port as --port 6123"
         );
     }
 
@@ -6150,15 +6162,15 @@ mod tests {
         for (argv, expected) in [
             (
                 args(&["install", "--nonsense"]),
-                "Error: unexpected argument '--nonsense'; expected --port PORT",
+                "error: unexpected argument '--nonsense'; expected --port PORT",
             ),
             (
                 args(&["install", "99999"]),
-                "Error: unexpected argument '99999'; expected --port PORT",
+                "error: unexpected argument '99999'; expected --port PORT",
             ),
             (
                 args(&["install", "5015"]),
-                "Error: unexpected argument '5015'; pass the port as --port 5015",
+                "error: unexpected argument '5015'; pass the port as --port 5015",
             ),
         ] {
             let ServiceParseOutcome::Exit {
@@ -6208,7 +6220,7 @@ mod tests {
             };
             assert_eq!(
                 stderr.as_str(),
-                "Error: unexpected argument '--nonsense'; expected --port PORT",
+                "error: unexpected argument '--nonsense'; expected --port PORT",
                 "an unknown flag must not be handed a port remedy naming itself"
             );
         }
@@ -6261,7 +6273,7 @@ mod tests {
         let argv = vec![OsString::from("--port"), OsString::from_vec(vec![0xff])];
         assert_eq!(
             render_service_diagnostic(&parse_service_port_argv(&argv).unwrap_err()),
-            "Error: invalid port '\\xff'\n"
+            "error: invalid port '\\xff'\n"
         );
     }
 
