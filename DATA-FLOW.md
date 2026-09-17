@@ -8,7 +8,7 @@ short version: with a local model, nothing leaves. with a hosted provider, only 
 
 if you point solstone at a local model through the local provider, model calls go to the local model running on your own machine (`localhost`) and stay there. no API key, no network call to any provider, nothing to sol pbc. this is the maximum-privacy path: the model runs where your data already is.
 
-(transcription is also local — solstone installs a local transcription model during setup, so your audio is turned into text on your machine, not sent out to be transcribed.)
+(this local path covers transcription too — solstone installs a local transcription model during setup, so speech becomes text on this machine, not sent anywhere. with confidential processing on, by contrast, the thinking leaves your device to be processed at that service; your journal itself never does.)
 
 ## with a hosted provider (Google / OpenAI / Anthropic): only that task, only to them
 

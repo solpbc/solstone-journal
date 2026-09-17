@@ -135,7 +135,7 @@ Every part of the journal that needs a model reaches it through one boundary, an
 
 1. **Local, the default.** Transcription (Parakeet), speaker analysis, screen description and the thinking model (Qwen, fetched when you choose local) run on your own machine. Nothing leaves.
 2. **Your own provider key.** Google, OpenAI, Anthropic, or any OpenAI-compatible endpoint you run yourself. Only the specific task's text goes, straight from your machine to that provider, under your key and your account. sol pbc is never in the path.
-3. **Confidential processing, operated by sol pbc.** Available to approved scouts. Off until you turn it on. While it is on, your journal verifies the service by attestation before anything leaves, and the work is done in memory and not retained. Its audio setting is on by default, so transcription runs there too unless you turn that off, in which case transcription stays on your device.
+3. **Confidential processing, operated by sol pbc.** Available to approved scouts. Off until you turn it on. While it is on, your journal verifies the service by attestation before anything leaves, and the work is done in memory and not retained.
 
 Nothing about how you use solstone is reported back to sol pbc: no telemetry, no analytics, no usage tracking, no crash phone-home. You can check: the code is here. The plain-language account of each path is [DATA-FLOW.md](DATA-FLOW.md).
 
