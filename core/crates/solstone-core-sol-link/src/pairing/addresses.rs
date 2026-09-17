@@ -340,10 +340,26 @@ impl fmt::Display for PairLinkEncodeError {
 impl std::error::Error for PairLinkEncodeError {}
 
 fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
-    let interface = entry.interface.as_str();
-    if ["lo", "docker", "br-", "vbox", "vmnet", "tap"]
-        .iter()
-        .any(|prefix| interface.starts_with(prefix))
+    // Compared case-insensitively because the same classes of interface are
+    // spelled differently per platform: `lo` and `vmnet1` on Unix,
+    // `Loopback Pseudo-Interface 1` and `VMware Network Adapter VMnet1` on
+    // Windows. A host-only or container bridge address is reachable from
+    // nothing an owner would pair with, so offering one costs a candidate slot
+    // out of the four the pair link can carry.
+    let interface = entry.interface.to_ascii_lowercase();
+    if [
+        "lo",
+        "docker",
+        "br-",
+        "vbox",
+        "virtualbox",
+        "vmnet",
+        "vmware",
+        "vethernet",
+        "tap",
+    ]
+    .iter()
+    .any(|prefix| interface.starts_with(prefix))
     {
         return None;
     }
@@ -587,10 +603,126 @@ fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressErro
     Ok(entries)
 }
 
-#[cfg(not(unix))]
+// This narrow FFI boundary is the only unsafe code needed to enumerate
+// interfaces through the IP Helper `GetAdaptersAddresses` API, which is what
+// Windows offers in place of `getifaddrs`. The records it produces go through
+// the same `classify_one` filtering as every other platform's.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressError> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+
+    use windows_sys::Win32::Foundation::{ERROR_BUFFER_OVERFLOW, NO_ERROR};
+    use windows_sys::Win32::NetworkManagement::IpHelper::{
+        GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST,
+        GetAdaptersAddresses, IF_TYPE_SOFTWARE_LOOPBACK, IP_ADAPTER_ADDRESSES_LH,
+    };
+    use windows_sys::Win32::NetworkManagement::Ndis::IfOperStatusUp;
+    use windows_sys::Win32::Networking::WinSock::{
+        AF_INET, AF_INET6, AF_UNSPEC, SOCKADDR_IN, SOCKADDR_IN6,
+    };
+
+    const FLAGS: u32 = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    // The API documents 15 KB as the working starting size; the loop below
+    // still honours whatever size it asks for rather than trusting that.
+    const INITIAL_WORDS: usize = 2048;
+    const ATTEMPTS: usize = 4;
+
+    // `IP_ADAPTER_ADDRESSES_LH` is pointer-aligned and `Vec<u8>` is not, so the
+    // buffer is allocated as 64-bit words and measured in whole words.
+    let mut words = vec![0_u64; INITIAL_WORDS];
+    for attempt in 0..ATTEMPTS {
+        let mut size = u32::try_from(words.len() * size_of::<u64>())
+            .map_err(|_| AddressError::Enumeration(io::Error::other("interface buffer too large")))?;
+        // SAFETY: the buffer holds `size` writable bytes at the alignment the
+        // struct requires, and the API retains no caller memory past the call.
+        let status = unsafe {
+            GetAdaptersAddresses(
+                u32::from(AF_UNSPEC),
+                FLAGS,
+                std::ptr::null(),
+                words.as_mut_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>(),
+                &raw mut size,
+            )
+        };
+        if status == ERROR_BUFFER_OVERFLOW && attempt + 1 < ATTEMPTS {
+            let requested = (size as usize).div_ceil(size_of::<u64>());
+            words = vec![0_u64; requested.max(words.len() + 1)];
+            continue;
+        }
+        if status != NO_ERROR {
+            return Err(AddressError::Enumeration(io::Error::from_raw_os_error(
+                status as i32,
+            )));
+        }
+        let mut entries = Vec::new();
+        let mut adapter = words.as_ptr().cast::<IP_ADAPTER_ADDRESSES_LH>();
+        while !adapter.is_null() {
+            // SAFETY: `adapter` walks the list the API just wrote into `words`.
+            let record = unsafe { &*adapter };
+            let usable = record.OperStatus == IfOperStatusUp
+                && record.IfType != IF_TYPE_SOFTWARE_LOOPBACK;
+            if usable {
+                let name = if record.FriendlyName.is_null() {
+                    String::new()
+                } else {
+                    // SAFETY: `FriendlyName` is a NUL-terminated wide string
+                    // owned by the buffer this call filled.
+                    let mut end = record.FriendlyName;
+                    while unsafe { *end } != 0 {
+                        end = unsafe { end.add(1) };
+                    }
+                    let length = unsafe { end.offset_from(record.FriendlyName) } as usize;
+                    let wide = unsafe { std::slice::from_raw_parts(record.FriendlyName, length) };
+                    OsString::from_wide(wide).to_string_lossy().into_owned()
+                };
+                let mut unicast = record.FirstUnicastAddress;
+                while !unicast.is_null() {
+                    // SAFETY: the unicast list belongs to the same buffer.
+                    let entry = unsafe { &*unicast };
+                    let sockaddr = entry.Address.lpSockaddr;
+                    if !sockaddr.is_null() {
+                        // SAFETY: the family field selects the sockaddr cast,
+                        // and `iSockaddrLength` covers the wider struct.
+                        let address = unsafe {
+                            match (*sockaddr).sa_family {
+                                AF_INET => {
+                                    let ipv4 = &*(sockaddr.cast::<SOCKADDR_IN>());
+                                    Some(IpAddr::V4(Ipv4Addr::from(u32::from_be(
+                                        ipv4.sin_addr.S_un.S_addr,
+                                    ))))
+                                }
+                                AF_INET6 => {
+                                    let ipv6 = &*(sockaddr.cast::<SOCKADDR_IN6>());
+                                    Some(IpAddr::V6(Ipv6Addr::from(ipv6.sin6_addr.u.Byte)))
+                                }
+                                _ => None,
+                            }
+                        };
+                        if let Some(address) = address {
+                            entries.push(RawInterfaceAddress {
+                                interface: name.clone(),
+                                address,
+                            });
+                        }
+                    }
+                    unicast = entry.Next;
+                }
+            }
+            adapter = record.Next;
+        }
+        return Ok(entries);
+    }
+    Err(AddressError::Enumeration(io::Error::other(
+        "interface enumeration did not settle on a buffer size",
+    )))
+}
+
+#[cfg(not(any(unix, windows)))]
 fn enumerate_system_interfaces() -> Result<Vec<RawInterfaceAddress>, AddressError> {
     Err(AddressError::Enumeration(io::Error::other(
-        "getifaddrs is unavailable on this platform",
+        "local interface enumeration is unavailable on this platform",
     )))
 }
 
@@ -638,6 +770,69 @@ mod tests {
                 endpoint("fd00::2", EndpointScope::Ula),
                 endpoint("100.64.0.2", EndpointScope::Vpn),
             ]
+        );
+    }
+
+    #[test]
+    fn classifier_drops_windows_virtual_switches_and_keeps_the_real_adapter() {
+        // Windows spells the same interface classes in friendly names, so the
+        // classifier has to recognise them there too: before this, a host with
+        // WSL or Hyper-V offered its virtual-switch address as a direct pairing
+        // candidate, which nothing on the owner's network can reach.
+        let raw = vec![
+            RawInterfaceAddress {
+                interface: "Ethernet".into(),
+                address: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 40)),
+            },
+            RawInterfaceAddress {
+                interface: "vEthernet (WSL (Hyper-V firewall))".into(),
+                address: IpAddr::V4(Ipv4Addr::new(172, 24, 96, 1)),
+            },
+            RawInterfaceAddress {
+                interface: "vEthernet (Default Switch)".into(),
+                address: IpAddr::V4(Ipv4Addr::new(172, 21, 128, 1)),
+            },
+            RawInterfaceAddress {
+                interface: "VirtualBox Host-Only Network".into(),
+                address: IpAddr::V4(Ipv4Addr::new(192, 168, 56, 1)),
+            },
+            RawInterfaceAddress {
+                interface: "VMware Network Adapter VMnet8".into(),
+                address: IpAddr::V4(Ipv4Addr::new(192, 168, 179, 1)),
+            },
+            RawInterfaceAddress {
+                interface: "Loopback Pseudo-Interface 1".into(),
+                address: IpAddr::V4(Ipv4Addr::LOCALHOST),
+            },
+            RawInterfaceAddress {
+                interface: "Tailscale".into(),
+                address: IpAddr::V4(Ipv4Addr::new(100, 90, 1, 7)),
+            },
+        ];
+        assert_eq!(
+            classify_interface_addresses(&raw),
+            vec![
+                endpoint("192.168.1.40", EndpointScope::Lan),
+                endpoint("100.90.1.7", EndpointScope::Vpn),
+            ]
+        );
+    }
+
+    #[test]
+    fn classifier_still_admits_a_windows_adapter_named_like_nothing_excluded() {
+        // The exclusion list must not swallow an ordinary adapter: the Windows
+        // guest this port is proven on presents exactly one.
+        let raw = vec![RawInterfaceAddress {
+            interface: "Ethernet Instance 0".into(),
+            address: IpAddr::V4(Ipv4Addr::new(10, 0, 2, 15)),
+        }];
+        assert_eq!(
+            classify_interface_addresses(&raw),
+            vec![endpoint("10.0.2.15", EndpointScope::Lan)]
+        );
+        assert_eq!(
+            resolve_pair_link_candidates(&classify_interface_addresses(&raw), None),
+            vec![Ipv4Addr::new(10, 0, 2, 15)]
         );
     }
 
