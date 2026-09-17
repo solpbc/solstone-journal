@@ -4655,13 +4655,19 @@ impl SafeServiceDiagnostic {
         //
         //   * a real port echoes the owner's own value, not a metavar; it is
         //     already in the sentence.
-        //   * a number too large for a port is not a spelling mistake, and
-        //     saying "expected --port PORT" names the wrong problem. Worse, it
-        //     routes the owner to `--port 99999`, which the port grammar
-        //     accepts (it parses integer text without imposing a machine
-        //     range) and which then fails later. Offering a remedy that leads
-        //     to a second failure is worse than offering none, so this arm
-        //     names the range instead.
+        //   * a number that is not a usable port is not a spelling mistake, and
+        //     saying "expected --port PORT" names a problem the owner does not
+        //     have. Worse, it routes them to `--port 99999`, which the port
+        //     grammar accepts -- it parses integer text without imposing a
+        //     machine range -- and which then fails later. Offering a remedy
+        //     that leads to a second failure is worse than offering none, so
+        //     this arm names the range *and* keeps the flag: the owner who
+        //     typed a bare number still has to learn that the positional form
+        //     is refused, or their second attempt fails for the other reason.
+        //     The predicate is 1..=65535 rather than "parses as u16" because
+        //     port 0 is refused further in, by `WindowsServiceAction`, with a
+        //     message that also blames the journal path; echoing
+        //     `--port 0` back would send them straight at it.
         //   * anything else has no owner value worth echoing -- an
         //     unconditional remedy told someone who typed `--nonsense` to
         //     `pass the port as --port --nonsense` -- so it names the flag, the
@@ -4669,17 +4675,23 @@ impl SafeServiceDiagnostic {
         //     I do not know". A refusal with no next step leaves an owner who
         //     mistyped a flag guessing.
         //
+        // Both ends of the range, not just the ceiling: `1 to 65535` is what
+        // every other port refusal in this binary states.
+        //
         // Casing is house lowercase: a leading `error:` is sentence prose, not
         // a field label.
         let text =
             solstone_core_system_health::sanitize_os_bytes_for_terminal(value.as_encoded_bytes());
         let literal = value.to_str();
-        let remedy = if let Some(port) = literal.filter(|text| text.parse::<u16>().is_ok()) {
+        let remedy = if let Some(port) = literal
+            .and_then(|text| text.parse::<u16>().ok())
+            .filter(|port| *port != 0)
+        {
             format!("; pass the port as --port {port}")
         } else if literal.is_some_and(|text| {
             !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
         }) {
-            "; ports go up to 65535".to_owned()
+            "; ports are 1 to 65535, pass one as --port PORT".to_owned()
         } else {
             "; expected --port PORT".to_owned()
         };
@@ -6165,7 +6177,9 @@ mod tests {
         // The out-of-range arm is the load-bearing one: "expected --port PORT"
         // names a spelling problem the owner does not have, and sends them to
         // `--port 99999`, which the port grammar accepts and which then fails
-        // later. A remedy that leads to a second failure is worse than none.
+        // later. A remedy that leads to a second failure is worse than none --
+        // which is also why `0` belongs here and not in the echo arm:
+        // `WindowsServiceAction::arguments` refuses port 0 outright.
         for (argv, expected) in [
             (
                 args(&["install", "--nonsense"]),
@@ -6173,19 +6187,23 @@ mod tests {
             ),
             (
                 args(&["install", "99999"]),
-                "error: unexpected argument '99999'; ports go up to 65535",
+                "error: unexpected argument '99999'; ports are 1 to 65535, pass one as --port PORT",
             ),
             (
                 args(&["install", "65536"]),
-                "error: unexpected argument '65536'; ports go up to 65535",
+                "error: unexpected argument '65536'; ports are 1 to 65535, pass one as --port PORT",
+            ),
+            (
+                args(&["install", "0"]),
+                "error: unexpected argument '0'; ports are 1 to 65535, pass one as --port PORT",
             ),
             (
                 args(&["install", "5015"]),
                 "error: unexpected argument '5015'; pass the port as --port 5015",
             ),
             (
-                args(&["install", "0"]),
-                "error: unexpected argument '0'; pass the port as --port 0",
+                args(&["install", "65535"]),
+                "error: unexpected argument '65535'; pass the port as --port 65535",
             ),
             (
                 args(&["install", "12x"]),
