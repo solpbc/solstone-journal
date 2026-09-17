@@ -2417,9 +2417,10 @@ button:focus:not(:focus-visible) {
           <small>runtime preference for the parakeet.cpp server on this host</small>
         </div>
         <p class="settings-field-note">
-          selecting this backend fetches two external artifacts into this journal's
-          provider cache: the parakeet.cpp server from github.com and the speech model
-          from huggingface.co. install with <code>journal install-provider parakeet</code>.
+          parakeet-cpp fetches two artifacts into this journal's provider cache before it
+          can run, both from updates.solstone.app: the parakeet.cpp server binary (MIT)
+          and the speech model (CC-BY-4.0). see THIRD_PARTY_NOTICES.md. install with
+          <code>journal install-provider parakeet</code>.
         </p>
       </fieldset>
       <div class="form-help" id="transcribeResourceInfo"></div>
