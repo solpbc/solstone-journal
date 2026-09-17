@@ -847,6 +847,20 @@ mod tests {
             "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:203.0.113.9:dropped,en0:fd00::1:ula] route=none candidates=[]"
         );
 
+        let disallowed_line = build_pair_start_diagnostic(
+            DiagnosticKind::DisallowedAddress,
+            "none",
+            &[],
+            Some(Ipv4Addr::new(203, 0, 113, 9)),
+            &[Ipv4Addr::new(203, 0, 113, 9)],
+            None,
+            false,
+        );
+        assert_eq!(
+            disallowed_line,
+            "pair-start address failed: kind=disallowed_address saved_home=none interfaces=[] route=203.0.113.9 candidates=[203.0.113.9]"
+        );
+
         let err = AddressError::Enumeration(io::Error::other("permission denied"));
         let err_line = build_pair_start_diagnostic(
             DiagnosticKind::EnumerationError,

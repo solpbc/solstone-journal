@@ -950,7 +950,7 @@ mod tests {
             direct_port: 7657,
         });
 
-        assert_eq!(status.lan_accessible, false);
+        assert!(!status.lan_accessible);
         assert_ne!(status.reachability, Reachability::LanUnreachable.as_str());
         assert_eq!(status.reachability, Reachability::Online.as_str());
     }

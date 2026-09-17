@@ -1933,9 +1933,13 @@ mod tests {
         let diag_b = outcome_b
             .diagnostic
             .expect("diagnostic emitted for case (b)");
+        // The resolver range-checks its route fallback, so a public route is no
+        // longer a candidate and this host reports no candidates at all. The
+        // disallowed-address kind stays for a caller that encodes candidates the
+        // resolver did not filter; the builder test below covers its wording.
         assert_eq!(
             diag_b,
-            "pair-start address failed: kind=disallowed_address saved_home=none interfaces=[eth0:203.0.113.9:dropped] route=203.0.113.9 candidates=[203.0.113.9]"
+            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[eth0:203.0.113.9:dropped] route=203.0.113.9 candidates=[]"
         );
 
         // Case (c): interface enumeration error.
