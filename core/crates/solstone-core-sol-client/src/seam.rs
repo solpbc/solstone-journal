@@ -209,6 +209,12 @@ pub struct LinkServeFailure {
     pub at: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnknownJournalSighting {
+    pub address: Option<String>,
+    pub jid: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LinkServeStatusSnapshot {
     pub health: String,
@@ -227,6 +233,8 @@ pub struct LinkServeStatusSnapshot {
     pub paired_at: String,
     #[serde(default)]
     pub persist_uncertain: bool,
+    #[serde(default)]
+    pub unknown_journals: Vec<UnknownJournalSighting>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

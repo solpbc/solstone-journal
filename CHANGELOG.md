@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - when pairing can't start because your journal finds no address a phone can reach, your journal's log now lists each address it saw, whether each could be used, and why a saved home address wasn't used.
+- `solstone link status` now shows when something else answered where your journal was expected, with a spoken mark for what answered (claimed, not verified) next to your journal's mark. a sighting through the relay is called out as weaker evidence than a LAN address.
 
 ### Fixed
 

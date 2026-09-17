@@ -21,7 +21,7 @@ use solstone_core_sol_client::seam::{
     LinkJournalMetadata, LinkServeBundle, LinkServeCarrierPolicy, LinkServeError,
     LinkServeErrorKind, LinkServeFailure, LinkServeRelayControlEndpoint, LinkServeRelayErrorKind,
     LinkServeRequest, LinkServeRunner, LinkServeRuntimeRecord, LinkServeSession,
-    LinkServeStatusSnapshot, LinkServeTransportErrorKind,
+    LinkServeStatusSnapshot, LinkServeTransportErrorKind, UnknownJournalSighting,
 };
 use spl_core::bridge::{BridgeNames, RequestHeaderPolicy};
 use spl_transport::client::{DialedCarrier, TokenPersistHook, TransportClient};
@@ -135,6 +135,19 @@ impl CurrentClientManager {
         state.incarnation
     }
 
+    pub fn unknown_journals(&self) -> Vec<spl_transport::UnknownJournal> {
+        if self.retired.load(Ordering::SeqCst) {
+            return Vec::new();
+        }
+        let (client, lan_client) = {
+            let state = self.inner.lock().expect("client manager lock");
+            (state.client.clone(), state.lan_client.clone())
+        };
+        let primary = client.map_or_else(Vec::new, |c| c.unknown_journals());
+        let secondary = lan_client.map_or_else(Vec::new, |c| c.unknown_journals());
+        merge_unknown_journals(&primary, &secondary)
+    }
+
     #[cfg(any(test, feature = "access-test-hooks"))]
     pub fn hook_for_test(
         self: &Arc<Self>,
@@ -173,6 +186,22 @@ impl CurrentClientManager {
     pub fn incarnation(&self) -> u64 {
         self.inner.lock().expect("client manager lock").incarnation
     }
+}
+
+fn merge_unknown_journals(
+    primary: &[spl_transport::UnknownJournal],
+    secondary: &[spl_transport::UnknownJournal],
+) -> Vec<spl_transport::UnknownJournal> {
+    let mut sightings = primary.to_vec();
+    for sighting in secondary {
+        if !sightings
+            .iter()
+            .any(|seen| seen.address == sighting.address)
+        {
+            sightings.push(sighting.clone());
+        }
+    }
+    sightings
 }
 
 struct ServeStarter {
@@ -860,6 +889,31 @@ fn status_body(snapshot: &LinkServeStatusSnapshot) -> Vec<u8> {
         Value::Number(snapshot.reconnect_count.into()),
     );
     root.insert("state".to_string(), Value::String(snapshot.state.clone()));
+    root.insert(
+        "unknown_journals".to_string(),
+        Value::Array(
+            snapshot
+                .unknown_journals
+                .iter()
+                .map(|s| {
+                    let mut item = Map::new();
+                    item.insert(
+                        "address".to_string(),
+                        s.address
+                            .as_ref()
+                            .map_or(Value::Null, |addr| Value::String(addr.clone())),
+                    );
+                    item.insert(
+                        "jid".to_string(),
+                        s.jid
+                            .as_ref()
+                            .map_or(Value::Null, |jid| Value::String(jid.clone())),
+                    );
+                    Value::Object(item)
+                })
+                .collect(),
+        ),
+    );
     serde_json::to_vec(&Value::Object(root)).expect("status snapshot must serialize")
 }
 
@@ -1130,6 +1184,22 @@ impl StatusTracker {
                     .expect("scheduler lock")
                     .as_ref()
                     .is_some_and(|s| s.client_manager.persist_uncertain.load(Ordering::SeqCst)),
+            unknown_journals: self
+                .scheduler
+                .lock()
+                .expect("scheduler lock")
+                .as_ref()
+                .map(|s| {
+                    s.client_manager
+                        .unknown_journals()
+                        .into_iter()
+                        .map(|u| UnknownJournalSighting {
+                            address: u.address,
+                            jid: u.jid,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
         }
     }
 
@@ -2061,15 +2131,210 @@ fn serve_failure_detail(kind: &LinkServeTransportErrorKind) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
     use serde_json::json;
     use solstone_core_sol_client::link_credentials::{RelayAccessRecord, RelayAccessState};
     use solstone_core_sol_client::seam::LinkServeEndpoint;
     use spl_core::bridge::RequestHead;
     use std::fs;
-    use std::sync::atomic::Ordering;
 
-    use super::*;
+    #[cfg(all(test, feature = "full-tests"))]
+    mod full_tests {
+        use rustls::ServerConfig;
+        use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
+        use tokio_rustls::TlsAcceptor;
+
+        use super::*;
+
+        fn self_signed_server() -> (CertificateDer<'static>, PrivateKeyDer<'static>) {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("server key");
+            let params =
+                CertificateParams::new(vec!["spl.local".to_string()]).expect("server params");
+            let cert = params.self_signed(&key).expect("server cert");
+            let cert_der = CertificateDer::from(cert.der().to_vec());
+            let key_der = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der()));
+            (cert_der, key_der)
+        }
+
+        fn server_config(
+            cert: CertificateDer<'static>,
+            key: PrivateKeyDer<'static>,
+        ) -> ServerConfig {
+            ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+                .with_safe_default_protocol_versions()
+                .expect("server protocol versions")
+                .with_no_client_auth()
+                .with_single_cert(vec![cert], key)
+                .expect("server config")
+        }
+
+        fn transport_credential_with_pin(pin: Vec<u8>, port: u16) -> Credential {
+            let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("client key");
+            let params = CertificateParams::new(vec!["transport.test".to_string()])
+                .expect("client cert params");
+            let cert = params.self_signed(&key).expect("client cert");
+            Credential {
+                client_key_pem: key.serialize_pem(),
+                client_cert_pem: cert.pem(),
+                ca_chain_pem: vec![cert.pem()],
+                ca_fp_prefix: pin,
+                instance_id: "test-instance".to_string(),
+                home_label: "Home".to_string(),
+                endpoints: vec![EndpointAddr {
+                    host: "127.0.0.1".to_string(),
+                    port,
+                }],
+                home_attestation: None,
+                local_endpoints: None,
+                relay_origin: None,
+                device_token: None,
+                device_token_expires_at: None,
+            }
+        }
+
+        #[tokio::test]
+        async fn status_tracker_snapshot_captures_recorded_unknown_journals_from_attached_client() {
+            let (cert, key) = self_signed_server();
+            let config = server_config(cert, key);
+            let acceptor = TlsAcceptor::from(Arc::new(config));
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .expect("bind impostor");
+            let impostor_port = listener.local_addr().expect("addr").port();
+
+            let server_handle = tokio::spawn(async move {
+                while let Ok((stream, _)) = listener.accept().await {
+                    let acceptor = acceptor.clone();
+                    tokio::spawn(async move {
+                        let _ = acceptor.accept(stream).await;
+                    });
+                }
+            });
+
+            // Paired pin MUST be a different self-signed cert's sha256 prefix
+            let paired_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("paired key");
+            let paired_params =
+                CertificateParams::new(vec!["paired.test".to_string()]).expect("paired params");
+            let paired_cert = paired_params.self_signed(&paired_key).expect("paired cert");
+            let paired_pin = spl_core::ca::sha256(paired_cert.der())[..16].to_vec();
+
+            let client = TransportClient::new(
+                transport_credential_with_pin(paired_pin, impostor_port),
+                None,
+            )
+            .expect("client");
+            let _ = client.dial_carrier().await;
+            assert!(
+                !client.unknown_journals().is_empty(),
+                "{:?}",
+                client.unknown_journals()
+            );
+
+            let client = Arc::new(client);
+            let client_manager = Arc::new(CurrentClientManager::new(Some(client.clone())));
+            let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+            let request = serve_request(LinkServeCarrierPolicy::Direct, None);
+            let scheduler = Arc::new(OptionalJobScheduler::new_for_test(JobSchedulerTestParams {
+                tracker: tracker.clone(),
+                client_manager: client_manager.clone(),
+                store: LinkCredentialStore::new(PathBuf::new(), ""),
+                identity: pairing_identity_from_bundle(&request.bundle).unwrap(),
+                policy: LinkServeCarrierPolicy::Direct,
+                configured_relay_origin: None,
+                ca_fp_prefix: ca_fp_prefix(&request.bundle).unwrap(),
+                bundle: request.bundle,
+            }));
+            tracker.set_scheduler(scheduler);
+
+            let snap = tracker.snapshot(bridge_status(true, false));
+            let expected_addr = format!("127.0.0.1:{impostor_port}");
+            assert_eq!(snap.unknown_journals.len(), client.unknown_journals().len());
+            assert_eq!(
+                snap.unknown_journals[0].address.as_deref(),
+                Some(expected_addr.as_str())
+            );
+            assert_eq!(
+                snap.unknown_journals[0].jid,
+                client.unknown_journals()[0].jid
+            );
+            assert_eq!(snap.state, "disconnected");
+
+            server_handle.abort();
+        }
+
+        #[tokio::test]
+        async fn status_tracker_snapshot_retains_disconnected_state_with_unknown_journal_sighting()
+        {
+            use spl_transport::journal_bridge::JournalBridgeFailure;
+
+            let (cert, key) = self_signed_server();
+            let config = server_config(cert, key);
+            let acceptor = TlsAcceptor::from(Arc::new(config));
+            let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+                .await
+                .expect("bind impostor");
+            let impostor_port = listener.local_addr().expect("addr").port();
+
+            let server_handle = tokio::spawn(async move {
+                while let Ok((stream, _)) = listener.accept().await {
+                    let acceptor = acceptor.clone();
+                    tokio::spawn(async move {
+                        let _ = acceptor.accept(stream).await;
+                    });
+                }
+            });
+
+            let paired_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("paired key");
+            let paired_params =
+                CertificateParams::new(vec!["paired.test".to_string()]).expect("paired params");
+            let paired_cert = paired_params.self_signed(&paired_key).expect("paired cert");
+            let paired_pin = spl_core::ca::sha256(paired_cert.der())[..16].to_vec();
+
+            let client = TransportClient::new(
+                transport_credential_with_pin(paired_pin, impostor_port),
+                None,
+            )
+            .expect("client");
+            let _ = client.dial_carrier().await;
+            assert!(
+                !client.unknown_journals().is_empty(),
+                "{:?}",
+                client.unknown_journals()
+            );
+
+            let client = Arc::new(client);
+            let client_manager = Arc::new(CurrentClientManager::new(Some(client.clone())));
+            let tracker = Arc::new(StatusTracker::new(Arc::new(SystemStatusClock)));
+            let request = serve_request(LinkServeCarrierPolicy::Direct, None);
+            let scheduler = Arc::new(OptionalJobScheduler::new_for_test(JobSchedulerTestParams {
+                tracker: tracker.clone(),
+                client_manager: client_manager.clone(),
+                store: LinkCredentialStore::new(PathBuf::new(), ""),
+                identity: pairing_identity_from_bundle(&request.bundle).unwrap(),
+                policy: LinkServeCarrierPolicy::Direct,
+                configured_relay_origin: None,
+                ca_fp_prefix: ca_fp_prefix(&request.bundle).unwrap(),
+                bundle: request.bundle,
+            }));
+            tracker.set_scheduler(scheduler);
+
+            let status = JournalBridgeStatus {
+                last_failure: Some(JournalBridgeFailure::UnknownJournal),
+                refusals: 3,
+                ..bridge_status(true, false)
+            };
+            let snap = tracker.snapshot(status);
+            assert_eq!(snap.state, "disconnected");
+            assert!(!snap.unknown_journals.is_empty());
+            assert_eq!(
+                snap.unknown_journals[0].address.as_deref(),
+                Some(format!("127.0.0.1:{impostor_port}").as_str())
+            );
+
+            server_handle.abort();
+        }
+    }
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct EnrollmentCall {
@@ -2854,6 +3119,7 @@ mod tests {
                 "persist_uncertain",
                 "reconnect_count",
                 "state",
+                "unknown_journals",
             ]
         );
         assert!((policy.local_response)(&request_head("/not-status"), &status).is_none());
@@ -3019,5 +3285,89 @@ mod tests {
         drop(client_manager);
         hook("stale_token_after_drop", 999999);
         assert_eq!(store.load_access(), StoreLoadOutcome::Absent);
+    }
+
+    #[test]
+    fn unknown_journals_merges_primary_and_secondary_deduping_by_address() {
+        let primary = vec![
+            spl_transport::UnknownJournal {
+                address: Some("192.168.1.10:7657".to_string()),
+                jid: Some("jid-1".to_string()),
+            },
+            spl_transport::UnknownJournal {
+                address: Some("192.168.1.11:7657".to_string()),
+                jid: Some("jid-2".to_string()),
+            },
+            spl_transport::UnknownJournal {
+                address: None,
+                jid: Some("relay-jid-1".to_string()),
+            },
+        ];
+        let secondary = vec![
+            spl_transport::UnknownJournal {
+                address: Some("192.168.1.11:7657".to_string()), // duplicate address
+                jid: Some("jid-2-other".to_string()),
+            },
+            spl_transport::UnknownJournal {
+                address: Some("192.168.1.12:7657".to_string()),
+                jid: Some("jid-3".to_string()),
+            },
+            spl_transport::UnknownJournal {
+                address: None, // duplicate None
+                jid: Some("relay-jid-2".to_string()),
+            },
+        ];
+        let merged = merge_unknown_journals(&primary, &secondary);
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0].address.as_deref(), Some("192.168.1.10:7657"));
+        assert_eq!(merged[0].jid.as_deref(), Some("jid-1"));
+        assert_eq!(merged[1].address.as_deref(), Some("192.168.1.11:7657"));
+        assert_eq!(merged[1].jid.as_deref(), Some("jid-2"));
+        assert_eq!(merged[2].address, None);
+        assert_eq!(merged[2].jid.as_deref(), Some("relay-jid-1"));
+        assert_eq!(merged[3].address.as_deref(), Some("192.168.1.12:7657"));
+        assert_eq!(merged[3].jid.as_deref(), Some("jid-3"));
+    }
+
+    #[test]
+    fn unknown_journals_returns_empty_when_retired() {
+        let manager = CurrentClientManager::new(None);
+        assert!(manager.unknown_journals().is_empty());
+        manager.retire();
+        assert!(manager.unknown_journals().is_empty());
+    }
+
+    #[test]
+    fn status_body_json_includes_unknown_journals_array() {
+        let snapshot = LinkServeStatusSnapshot {
+            health: "healthy".to_string(),
+            state: "connected".to_string(),
+            manager_alive: true,
+            connected_age_seconds: Some(5.0),
+            last_connected_at: Some(100.0),
+            last_failure: None,
+            next_retry_at: None,
+            reconnect_count: 0,
+            active_requests: 0,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "inst-1".to_string(),
+            ca_fp_prefix: "abcd".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![UnknownJournalSighting {
+                address: Some("192.168.1.50:7657".to_string()),
+                jid: Some("f30ed159-ef46-8e9c-913f-e49f0fe7d201".to_string()),
+            }],
+        };
+        let bytes = status_body(&snapshot);
+        let val: Value = serde_json::from_slice(&bytes).expect("json parse");
+        let list = val
+            .get("unknown_journals")
+            .and_then(Value::as_array)
+            .expect("array");
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["address"], "192.168.1.50:7657");
+        assert_eq!(list[0]["jid"], "f30ed159-ef46-8e9c-913f-e49f0fe7d201");
     }
 }

@@ -372,9 +372,9 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
             });
     }
 
-    let (state_str, version_str, persist_note) = if let Some(snap) = live_status {
-        let ver = if let Some(raw_ver) = snap.journal_version {
-            let clean_ver = sanitize_display_version(&raw_ver);
+    let (state_str, version_str, persist_note) = if let Some(ref snap) = live_status {
+        let ver = if let Some(raw_ver) = &snap.journal_version {
+            let clean_ver = sanitize_display_version(raw_ver);
             if snap.journal_version_fresh {
                 clean_ver
             } else {
@@ -388,7 +388,7 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
         } else {
             ""
         };
-        (snap.state, ver, note)
+        (snap.state.clone(), ver, note)
     } else {
         let ver = read_cached_version_fallback(&selection, expected_ca_fp_prefix.as_deref());
         ("stopped".to_string(), ver, "")
@@ -399,10 +399,64 @@ pub fn link_status(ctx: CommandContext<'_>) -> CommandOutput {
     } else {
         String::new()
     };
-    CommandOutput::success(format!(
+    let mut output = format!(
         "Label: {}\nStatus: {}\nJournal version: {}\n{persist_note}{unpaired_note}",
         selection.label, state_str, version_str
-    ))
+    );
+    if let Some(snap) = &live_status {
+        for sighting in &snap.unknown_journals {
+            output.push_str(&format_sighting_block(
+                sighting,
+                &selection.bundle.instance_id,
+            ));
+        }
+    }
+    CommandOutput::success(output)
+}
+
+fn format_spoken_mark(spec: &spl_core::mark::MarkRenderSpec) -> String {
+    format!(
+        "{}, {} · {}·{}",
+        spec.icon1.color.name, spec.icon2.color.name, spec.words[0], spec.words[1]
+    )
+}
+
+fn format_sighting_block(
+    sighting: &crate::seam::UnknownJournalSighting,
+    local_instance_id: &str,
+) -> String {
+    let header = match &sighting.address {
+        Some(addr) => format!("Unknown journal at {addr}:"),
+        None => "Unknown journal seen through the relay:".to_string(),
+    };
+    let what_answered = match &sighting.jid {
+        Some(jid) => match spl_core::mark::mark_from_jid(jid) {
+            Ok(mark) => {
+                let spoken = format_spoken_mark(&mark.to_render_spec());
+                format!("what answered:  {spoken} (claimed, not verified)")
+            }
+            Err(_) => "what answered:  claimed identity could not be shown (claimed, not verified)"
+                .to_string(),
+        },
+        None => "what answered:  no identity presented".to_string(),
+    };
+    let your_journal = match spl_core::mark::mark_from_jid(local_instance_id) {
+        Ok(mark) => {
+            let spoken = format_spoken_mark(&mark.to_render_spec());
+            format!("your journal:   {spoken}")
+        }
+        Err(_) => "your journal:   could not be shown".to_string(),
+    };
+    let footer = if sighting.jid.is_some() {
+        if sighting.address.is_some() {
+            "\n\nIf you recently reset this journal, pair this device again."
+        } else {
+            "\n\nA relay sighting is weaker evidence than a LAN address."
+        }
+    } else {
+        ""
+    };
+    format!("\n{header}\n\n{what_answered}\n{your_journal}{footer}\n")
 }
 
 fn unpaired_note(bundle_dir: &Path) -> String {
@@ -1673,6 +1727,44 @@ mod tests {
         }
     }
 
+    fn serve_bundle_with_instance_id(
+        config: &Path,
+        label: &str,
+        local_endpoints: Value,
+        instance_id: &str,
+    ) -> LinkServeBundle {
+        const CERT: &str = SERVE_BUNDLE_CERT;
+        let bundle_dir = config.join("solstone-observer").join("spl").join(label);
+        fs::create_dir_all(&bundle_dir).expect("serve bundle dir");
+        fs::write(bundle_dir.join("private.pem"), "PRIVATE\n").expect("private key");
+        fs::write(bundle_dir.join("cert.pem"), CERT).expect("client cert");
+        fs::write(bundle_dir.join("chain.pem"), CERT).expect("chain");
+        fs::write(bundle_dir.join("home_attestation.jwt"), "attestation.jwt").expect("attestation");
+        fs::write(
+            bundle_dir.join("peer.json"),
+            json!({
+                "instance_id": instance_id,
+                "home_label": "Home",
+                "paired_at": "2026-07-26T00:00:00Z",
+                "local_endpoints": local_endpoints.clone(),
+            })
+            .to_string(),
+        )
+        .expect("peer json");
+        LinkServeBundle {
+            private_key_pem: "PRIVATE\n".to_string(),
+            client_cert_pem: CERT.to_string(),
+            ca_chain_pem: vec![CERT.to_string()],
+            home_attestation: "attestation.jwt".to_string(),
+            instance_id: instance_id.to_string(),
+            home_label: "Home".to_string(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            endpoints: serve_endpoints_from_value(&local_endpoints).expect("serve endpoints"),
+            local_endpoints,
+            relay_access: Some(crate::link_credentials::StoreLoadOutcome::Absent),
+        }
+    }
+
     fn serve_bundle_ca_fp_prefix() -> String {
         ca_fp_prefix_hex(&[SERVE_BUNDLE_CERT.to_string()]).expect("test cert ca fp prefix")
     }
@@ -2895,6 +2987,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2944,6 +3037,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -2995,6 +3089,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3099,6 +3194,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3166,6 +3262,7 @@ mod tests {
             ca_fp_prefix: "different-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3220,6 +3317,7 @@ mod tests {
             ca_fp_prefix: "rogue-ca-fp".to_string(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3288,6 +3386,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "stale-paired-at-before-repair".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3340,6 +3439,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: false,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3432,6 +3532,7 @@ mod tests {
             ca_fp_prefix: serve_bundle_ca_fp_prefix(),
             paired_at: "2026-07-26T00:00:00Z".to_string(),
             persist_uncertain: true,
+            unknown_journals: Vec::new(),
         };
         let response = crate::seam::HttpResponse {
             status: 200,
@@ -3519,5 +3620,464 @@ mod tests {
         assert_eq!(loaded.endpoints.len(), 1);
         assert_eq!(loaded.endpoints[0].host, "192.168.1.50");
         assert_eq!(loaded.endpoints[0].port, 7657);
+    }
+
+    #[test]
+    fn status_running_unknown_journal_address_and_jid_prints_template() {
+        let temp = temp_dir("status-unknown-addr-jid");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let other_jid = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
+        let other_mark = spl_core::mark::mark_from_jid(other_jid).expect("other mark");
+        let other_spoken = format_spoken_mark(&other_mark.to_render_spec());
+        let local_mark = spl_core::mark::mark_from_jid(local_id).expect("local mark");
+        let local_spoken = format_spoken_mark(&local_mark.to_render_spec());
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: local_id.to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![crate::seam::UnknownJournalSighting {
+                address: Some("192.168.1.50:7657".to_string()),
+                jid: Some(other_jid.to_string()),
+            }],
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        let expected = format!(
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+        );
+        assert_eq!(output.stdout, expected);
+    }
+
+    #[test]
+    fn status_running_unknown_journal_relay_prints_template() {
+        let temp = temp_dir("status-unknown-relay");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let other_jid = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
+        let other_mark = spl_core::mark::mark_from_jid(other_jid).expect("other mark");
+        let other_spoken = format_spoken_mark(&other_mark.to_render_spec());
+        let local_mark = spl_core::mark::mark_from_jid(local_id).expect("local mark");
+        let local_spoken = format_spoken_mark(&local_mark.to_render_spec());
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: local_id.to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![crate::seam::UnknownJournalSighting {
+                address: None,
+                jid: Some(other_jid.to_string()),
+            }],
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        let expected = format!(
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal seen through the relay:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nA relay sighting is weaker evidence than a LAN address.\n"
+        );
+        assert_eq!(output.stdout, expected);
+    }
+
+    #[test]
+    fn status_running_unknown_journal_no_jid_prints_no_identity() {
+        let temp = temp_dir("status-unknown-no-jid");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let local_mark = spl_core::mark::mark_from_jid(local_id).expect("local mark");
+        let local_spoken = format_spoken_mark(&local_mark.to_render_spec());
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: local_id.to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![crate::seam::UnknownJournalSighting {
+                address: Some("192.168.1.50:7657".to_string()),
+                jid: None,
+            }],
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        let expected = format!(
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
+        );
+        assert_eq!(output.stdout, expected);
+        assert!(!output.stdout.contains("(claimed, not verified)"));
+        assert!(!output.stdout.contains("If you recently reset this journal"));
+    }
+
+    #[test]
+    fn status_running_unknown_journal_invalid_jid_prints_fallback_copy() {
+        let temp = temp_dir("status-unknown-invalid-jid");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let local_mark = spl_core::mark::mark_from_jid(local_id).expect("local mark");
+        let local_spoken = format_spoken_mark(&local_mark.to_render_spec());
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: local_id.to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![crate::seam::UnknownJournalSighting {
+                address: Some("192.168.1.50:7657".to_string()),
+                jid: Some("not-a-valid-uuid".to_string()),
+            }],
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        let expected = format!(
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  claimed identity could not be shown (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+        );
+        assert_eq!(output.stdout, expected);
+    }
+
+    #[test]
+    fn status_running_unknown_journal_invalid_local_id_prints_fallback_copy() {
+        let temp = temp_dir("status-unknown-invalid-local-id");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        // "home-instance" is not a UUID, so mark_from_jid will fail
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), "home-instance");
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let other_jid = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
+        let other_mark = spl_core::mark::mark_from_jid(other_jid).expect("other mark");
+        let other_spoken = format_spoken_mark(&other_mark.to_render_spec());
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: "home-instance".to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![crate::seam::UnknownJournalSighting {
+                address: Some("192.168.1.50:7657".to_string()),
+                jid: Some(other_jid.to_string()),
+            }],
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        let expected = format!(
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   could not be shown\n\nIf you recently reset this journal, pair this device again.\n"
+        );
+        assert_eq!(output.stdout, expected);
+    }
+
+    #[test]
+    fn status_running_multiple_unknown_journals_preserves_order() {
+        let temp = temp_dir("status-unknown-multi-order");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let other_jid = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
+        let other_mark = spl_core::mark::mark_from_jid(other_jid).expect("other mark");
+        let other_spoken = format_spoken_mark(&other_mark.to_render_spec());
+        let local_mark = spl_core::mark::mark_from_jid(local_id).expect("local mark");
+        let local_spoken = format_spoken_mark(&local_mark.to_render_spec());
+
+        let snapshot = LinkServeStatusSnapshot {
+            state: "connected".to_string(),
+            health: "ok".to_string(),
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: Some(100.0),
+            connected_age_seconds: Some(10.0),
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: Some("2026.07.26".to_string()),
+            journal_version_fresh: true,
+            instance_id: local_id.to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![
+                crate::seam::UnknownJournalSighting {
+                    address: Some("192.168.1.50:7657".to_string()),
+                    jid: Some(other_jid.to_string()),
+                },
+                crate::seam::UnknownJournalSighting {
+                    address: None,
+                    jid: None,
+                },
+            ],
+        };
+        let response = crate::seam::HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&snapshot).expect("serialize"),
+            policy: crate::seam::TimeoutPolicy::Api,
+        };
+        let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+
+        let output = run_status(&[], &env, Some(&probe));
+        assert_eq!(output.exit, 0);
+        let block1 = format!(
+            "\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+        );
+        let block2 = format!(
+            "\nUnknown journal seen through the relay:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
+        );
+        let expected = format!(
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n{block1}{block2}"
+        );
+        assert_eq!(output.stdout, expected);
+    }
+
+    #[test]
+    fn status_running_unknown_journal_prints_comparison_across_unpaired_and_connected_states() {
+        let temp = temp_dir("status-unknown-states");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let local_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        serve_bundle_with_instance_id(&config, "alpha", json!([]), local_id);
+
+        let bundle_dir = config.join("solstone-observer").join("spl").join("alpha");
+        let runtime = LinkServeRuntimeRecord { port: 5015 };
+        fs::write(
+            bundle_dir.join("serve_runtime.json"),
+            serde_json::to_vec(&runtime).expect("serialize"),
+        )
+        .expect("write");
+
+        let other_jid = "01957597-2a5c-7d92-8ec2-e0f3408a0d9b";
+        let other_mark = spl_core::mark::mark_from_jid(other_jid).expect("other mark");
+        let other_spoken = format_spoken_mark(&other_mark.to_render_spec());
+        let local_mark = spl_core::mark::mark_from_jid(local_id).expect("local mark");
+        let local_spoken = format_spoken_mark(&local_mark.to_render_spec());
+        assert_ne!(other_spoken, local_spoken);
+
+        let make_snapshot = |state: &str| LinkServeStatusSnapshot {
+            state: state.to_string(),
+            health: if state == "connected" {
+                "ok".to_string()
+            } else {
+                "unhealthy".to_string()
+            },
+            manager_alive: true,
+            active_requests: 0,
+            reconnect_count: 0,
+            last_connected_at: if state == "connected" {
+                Some(100.0)
+            } else {
+                None
+            },
+            connected_age_seconds: if state == "connected" {
+                Some(10.0)
+            } else {
+                None
+            },
+            last_failure: None,
+            next_retry_at: None,
+            journal_version: if state == "connected" {
+                Some("2026.07.26".to_string())
+            } else {
+                None
+            },
+            journal_version_fresh: state == "connected",
+            instance_id: local_id.to_string(),
+            ca_fp_prefix: serve_bundle_ca_fp_prefix(),
+            paired_at: "2026-07-26T00:00:00Z".to_string(),
+            persist_uncertain: false,
+            unknown_journals: vec![crate::seam::UnknownJournalSighting {
+                address: Some("192.168.1.50:7657".to_string()),
+                jid: Some(other_jid.to_string()),
+            }],
+        };
+
+        let expected_sighting = format!(
+            "Unknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+        );
+
+        // 1. Connected state
+        {
+            let snapshot = make_snapshot("connected");
+            let response = crate::seam::HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&snapshot).expect("serialize"),
+                policy: crate::seam::TimeoutPolicy::Api,
+            };
+            let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+            let output = run_status(&[], &env, Some(&probe));
+            assert_eq!(output.exit, 0);
+            assert!(output.stdout.contains("Status: connected\n"));
+            assert!(output.stdout.contains(&expected_sighting));
+        }
+
+        // 2. Unpaired state
+        {
+            let snapshot = make_snapshot("unpaired");
+            let response = crate::seam::HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&snapshot).expect("serialize"),
+                policy: crate::seam::TimeoutPolicy::Api,
+            };
+            let probe = crate::seam::ScriptedLinkStatusProbe::new(vec![(5015, Ok(response))]);
+            let output = run_status(&[], &env, Some(&probe));
+            assert_eq!(output.exit, 0);
+            assert!(output.stdout.contains("Status: unpaired\n"));
+            assert!(output.stdout.contains(&expected_sighting));
+            assert!(output.stdout.contains(&unpaired_note(&bundle_dir)));
+        }
     }
 }

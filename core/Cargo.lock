@@ -1019,7 +1019,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2981,7 +2981,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5667,10 +5667,12 @@ dependencies = [
 [[package]]
 name = "spl-core"
 version = "0.1.0"
-source = "git+https://github.com/solpbc/spl-rust?tag=v0.8.0#fb82d70cd60eac83a5633d12511a4a8a102e26dd"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1"
 dependencies = [
+ "argon2",
  "base64 0.22.1",
  "hkdf",
+ "indexmap",
  "p256",
  "serde",
  "serde_json",
@@ -5682,7 +5684,7 @@ dependencies = [
 [[package]]
 name = "spl-home"
 version = "0.1.0"
-source = "git+https://github.com/solpbc/spl-rust?tag=v0.8.0#fb82d70cd60eac83a5633d12511a4a8a102e26dd"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1"
 dependencies = [
  "rustls",
  "spl-core",
@@ -5694,7 +5696,7 @@ dependencies = [
 [[package]]
 name = "spl-transport"
 version = "0.1.0"
-source = "git+https://github.com/solpbc/spl-rust?tag=v0.8.0#fb82d70cd60eac83a5633d12511a4a8a102e26dd"
+source = "git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1"
 dependencies = [
  "base64 0.22.1",
  "futures-util",
@@ -5849,7 +5851,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
