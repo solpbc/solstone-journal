@@ -564,7 +564,7 @@ fn run_install_action(
         Some((text, Err(_))) => {
             eprintln!(
                 "error: invalid port '{}'",
-                solstone_core_system_health::sanitize_str_for_terminal(text)
+                solstone_core_system_health::sanitize_str_for_terminal_bounded(text)
             );
             return ExitCode::from(1);
         }
