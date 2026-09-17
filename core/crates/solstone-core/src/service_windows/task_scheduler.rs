@@ -148,7 +148,7 @@ pub(super) fn execute_until(
     if output.code != Some(0) {
         return Err(format!(
             "task operation failed; scheduler state must be re-inspected: {}",
-            String::from_utf8_lossy(&output.stderr)
+            solstone_core_service_unit::windows_task_failure_reason(&output.stdout, &output.stderr)
         ));
     }
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout)

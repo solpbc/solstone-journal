@@ -4,6 +4,12 @@
 # Task Scheduler COM calls are isolated in this process so the caller deadline
 # also covers a stalled RPC. No command text is accepted from the request.
 $ErrorActionPreference = 'Stop'
+# PowerShell serializes its progress stream as CLIXML onto stderr whenever
+# stderr is a pipe, and module auto-loading raises a "Preparing modules for
+# first use" progress record. That noise was reaching owners as this
+# operation's failure reason, so it is silenced at the source; the reason
+# itself now travels as JSON on stdout, which is never CLIXML-wrapped.
+$ProgressPreference = 'SilentlyContinue'
 Set-StrictMode -Version Latest
 [Console]::InputEncoding = [Text.UTF8Encoding]::new($false, $true)
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false, $true)
@@ -203,6 +209,10 @@ try {
     $after | ConvertTo-Json -Compress -Depth 6
     exit 0
 } catch {
-    [Console]::Error.WriteLine('Windows task operation failed: ' + $_.Exception.Message)
+    $reason = [string]$_.Exception.Message
+    # stdout carries the machine-readable reason; stderr keeps the same text in
+    # plain form for anyone reading a raw transcript.
+    [Console]::Out.WriteLine((@{ schema = 'solstone-windows-task-operation-failure-v1'; reason = $reason } | ConvertTo-Json -Compress))
+    [Console]::Error.WriteLine('Windows task operation failed: ' + $reason)
     exit 1
 }
