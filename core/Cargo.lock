@@ -4163,6 +4163,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-format",
  "solstone-core-journal-io",
+ "solstone-core-retention",
  "tempfile",
  "thiserror 2.0.20",
 ]

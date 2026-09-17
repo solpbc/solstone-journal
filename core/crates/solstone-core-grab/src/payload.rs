@@ -202,8 +202,14 @@ fn list_screen_frames(
             .filter(|frame| frame.get("error").is_some())
             .count()
     };
+    let mut summary = json!({"frames_analyzed":bundle.frame_records.len(),"error_frames":errors,"legacy_schema":bundle.legacy_schema,"video_present":bundle.video_path.is_some()});
+    // The key appears only when there is a recorded cause to name, so a present
+    // video keeps the payload it has always had.
+    if let (Some(reason), Some(map)) = (bundle.missing_video_reason, summary.as_object_mut()) {
+        map.insert("video_missing_reason".into(), Value::from(reason));
+    }
     Ok(
-        json!({"level":"4", "scope":scope(day,stream,segment,screen), "data":{"summary":{"frames_analyzed":bundle.frame_records.len(),"error_frames":errors,"legacy_schema":bundle.legacy_schema,"video_present":bundle.video_path.is_some()},"frames":frames}}),
+        json!({"level":"4", "scope":scope(day,stream,segment,screen), "data":{"summary":summary,"frames":frames}}),
     )
 }
 
@@ -240,7 +246,7 @@ fn save_frame_images(
     diagnostics: &mut dyn GrabDiagnostics,
 ) -> Result<Value, GrabFailure> {
     let bundle = load_analyzed_bundle(journal, day, stream, segment, screen, diagnostics)?;
-    let video = bundle.video_path.as_ref().ok_or_else(|| GrabFailure::runtime(if bundle.jsonl_rel.is_some() { format!("raw video has been purged by retention; metadata-only access remains via: journal grab {day} {stream} {segment} {screen} {}", ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")) } else { format!("raw video not found for screen {screen} in {segment}") }))?;
+    let video = bundle.video_path.as_ref().ok_or_else(|| GrabFailure::runtime(match bundle.missing_video_reason { Some(reason) => format!("{reason}; metadata-only access remains via: journal grab {day} {stream} {segment} {screen} {}", ids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",")), None => format!("raw video not found for screen {screen} in {segment}") }))?;
     let selected: Vec<_> = ids
         .iter()
         .map(|id| {
@@ -435,6 +441,57 @@ mod tests {
         assert_eq!(
             output.payload["data"]["computed"]["abs_time"],
             "2026-08-09T12:00:01.500000"
+        );
+    }
+
+    #[test]
+    fn the_missing_reason_key_appears_only_when_a_video_is_missing() {
+        let temp = tempdir().unwrap();
+        let segment = temp.path().join("chronicle/20260809/work/120000_300");
+        fs::create_dir_all(&segment).unwrap();
+        for screen in ["kept", "gone"] {
+            fs::write(
+                segment.join(format!("{screen}_screen.jsonl")),
+                format!(
+                    "{{\"raw\": \"{screen}_screen.mp4\"}}\n{{\"frame_id\": 1, \"timestamp\": 0, \"analysis\": {{\"primary\": \"editor\"}}}}\n"
+                ),
+            )
+            .unwrap();
+        }
+        fs::write(segment.join("kept_screen.mp4"), b"stand-in for a video").unwrap();
+
+        let summary = |screen: &str| {
+            let mut diagnostics = RecordingDiagnostics::default();
+            run(
+                temp.path(),
+                GrabRequest {
+                    tokens: vec![
+                        "20260809".into(),
+                        "work".into(),
+                        "120000_300".into(),
+                        screen.into(),
+                    ],
+                    ..GrabRequest::default()
+                },
+                &mut diagnostics,
+            )
+            .unwrap()
+            .payload["data"]["summary"]
+                .clone()
+        };
+
+        let kept = summary("kept");
+        assert_eq!(kept["video_present"], true);
+        assert!(
+            kept.get("video_missing_reason").is_none(),
+            "a present video adds no key to the payload: {kept}"
+        );
+
+        let gone = summary("gone");
+        assert_eq!(gone["video_present"], false);
+        assert_eq!(
+            gone["video_missing_reason"],
+            "the original video is no longer in your journal"
         );
     }
 }

@@ -8,6 +8,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 use solstone_core_journal_io::{DirEntryKind, day_dirs, list_dir_entries, segment_path};
 
+use solstone_core_retention::{RawReleaseClass, recorded_original_deletions};
+
 use crate::error::GrabFailure;
 use crate::request::GrabDiagnostics;
 use crate::time::{SegmentWindow, segment_window};
@@ -25,6 +27,10 @@ pub(crate) struct ScreenBundle {
     pub legacy_schema: bool,
     pub header_only: bool,
     pub status: &'static str,
+    /// Why the original video is gone, when the analysis refers to one that is
+    /// no longer on disk. Named only from a recorded deletion; `None` when the
+    /// video is present.
+    pub missing_video_reason: Option<&'static str>,
     pub window: SegmentWindow,
 }
 
@@ -180,6 +186,43 @@ pub(crate) fn available_screen_tokens(segment_path: &Path) -> Result<Vec<String>
     Ok(tokens.into_iter().collect())
 }
 
+/// Why a screen video the analysis refers to is no longer on disk.
+///
+/// ⛔ The cause is named only from a deletion record written by the retention
+/// door, keyed by the file's bare name. Absence alone names nothing: a file can
+/// also go missing outside the journal, and a deletion from before those records
+/// existed has none. `None` means no record, not "no deletion".
+fn missing_video_cause(segment_path: &Path, header_raw: Option<&str>) -> Option<RawReleaseClass> {
+    let name = header_raw.filter(|raw| !raw.contains('/') && !raw.contains('\\'))?;
+    recorded_original_deletions(segment_path).get(name).copied()
+}
+
+fn missing_video_reason(cause: Option<RawReleaseClass>) -> &'static str {
+    match cause {
+        Some(RawReleaseClass::Policy) => {
+            "you deleted the original video after your retention settings marked it"
+        }
+        Some(RawReleaseClass::Offload) => {
+            "you deleted the original video after your backup copied it"
+        }
+        Some(RawReleaseClass::Owner) => "you deleted the original video",
+        None => "the original video is no longer in your journal",
+    }
+}
+
+fn missing_video_status(cause: Option<RawReleaseClass>) -> &'static str {
+    match cause {
+        Some(RawReleaseClass::Policy) => {
+            "analyzed; you deleted the original video after your retention settings marked it"
+        }
+        Some(RawReleaseClass::Offload) => {
+            "analyzed; you deleted the original video after your backup copied it"
+        }
+        Some(RawReleaseClass::Owner) => "analyzed; you deleted the original video",
+        None => "analyzed; the original video is no longer in your journal",
+    }
+}
+
 pub(crate) fn load_bundle(
     journal: &Path,
     day: &str,
@@ -236,9 +279,14 @@ pub(crate) fn load_bundle(
     };
     let header_only = jsonl_path.is_some() && frame_records.is_empty() && non_header.is_empty();
     let legacy_schema = jsonl_path.is_some() && frame_records.is_empty() && !non_header.is_empty();
+    let header_raw = header
+        .and_then(|record| record.get("raw"))
+        .and_then(Value::as_str);
+    let cause = (jsonl_path.is_some() && video_path.is_none())
+        .then(|| missing_video_cause(&segment_path, header_raw));
     let status = match (jsonl_path.is_some(), video_path.is_some()) {
         (false, true) => "captured but not analyzed",
-        (true, false) => "analyzed; raw media purged by retention",
+        (true, false) => missing_video_status(cause.flatten()),
         (true, true) => "analyzed",
         (false, false) => {
             return Err(GrabFailure::runtime(format!(
@@ -264,6 +312,7 @@ pub(crate) fn load_bundle(
         legacy_schema,
         header_only,
         status,
+        missing_video_reason: cause.map(missing_video_reason),
         window,
     })
 }
@@ -461,7 +510,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(captured.status, "captured but not analyzed");
-        fs::write(path.join("purged_screen.jsonl"), "{\"frame_id\": 1}\n").unwrap();
+        fs::write(
+            path.join("purged_screen.jsonl"),
+            "{\"raw\": \"purged_screen.webm\"}\n{\"frame_id\": 1}\n",
+        )
+        .unwrap();
         let purged = load_bundle(
             temp.path(),
             "20260809",
@@ -472,7 +525,137 @@ mod tests {
             &mut diagnostics,
         )
         .unwrap();
-        assert_eq!(purged.status, "analyzed; raw media purged by retention");
+        assert_eq!(
+            purged.status, "analyzed; the original video is no longer in your journal",
+            "with no deletion record, grab names no cause"
+        );
+        assert_eq!(
+            purged.missing_video_reason,
+            Some("the original video is no longer in your journal")
+        );
+    }
+
+    fn deletion_row(name: &str, class: &str) -> String {
+        format!(
+            "{}\n",
+            json!({"tract":"retention","event":"original_deleted","ts":1_772_614_800_000_i64,"name":name,"class":class})
+        )
+    }
+
+    fn purged_bundle_status(record: Option<&str>) -> (String, Option<&'static str>) {
+        let temp = tempdir().unwrap();
+        let path = segment(temp.path());
+        fs::write(
+            path.join("main_screen.jsonl"),
+            "{\"raw\": \"main_screen.webm\"}\n{\"frame_id\": 1}\n",
+        )
+        .unwrap();
+        if let Some(class) = record {
+            fs::write(
+                path.join("events.jsonl"),
+                deletion_row("main_screen.webm", class),
+            )
+            .unwrap();
+        }
+        let mut diagnostics = RecordingDiagnostics::default();
+        let bundle = load_bundle(
+            temp.path(),
+            "20260809",
+            "work",
+            "120000_300",
+            "main",
+            true,
+            &mut diagnostics,
+        )
+        .unwrap();
+        (bundle.status.to_owned(), bundle.missing_video_reason)
+    }
+
+    #[test]
+    fn a_missing_video_names_a_cause_only_from_a_deletion_record() {
+        assert_eq!(
+            purged_bundle_status(Some("policy_raw_release")).0,
+            "analyzed; you deleted the original video after your retention settings marked it"
+        );
+        assert_eq!(
+            purged_bundle_status(Some("offload_raw_release")).0,
+            "analyzed; you deleted the original video after your backup copied it"
+        );
+        assert_eq!(
+            purged_bundle_status(Some("owner_raw_release")).0,
+            "analyzed; you deleted the original video"
+        );
+        // No record at all, a row for a different file, and a row whose class is
+        // not a raw release all name nothing.
+        assert_eq!(
+            purged_bundle_status(None).0,
+            "analyzed; the original video is no longer in your journal"
+        );
+        assert_eq!(
+            purged_bundle_status(Some("owner_segment_removal")).0,
+            "analyzed; the original video is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn a_record_for_another_file_never_names_this_one() {
+        let temp = tempdir().unwrap();
+        let path = segment(temp.path());
+        fs::write(
+            path.join("main_screen.jsonl"),
+            "{\"raw\": \"main_screen.webm\"}\n{\"frame_id\": 1}\n",
+        )
+        .unwrap();
+        fs::write(
+            path.join("events.jsonl"),
+            deletion_row("other_screen.webm", "policy_raw_release"),
+        )
+        .unwrap();
+        let mut diagnostics = RecordingDiagnostics::default();
+        let bundle = load_bundle(
+            temp.path(),
+            "20260809",
+            "work",
+            "120000_300",
+            "main",
+            true,
+            &mut diagnostics,
+        )
+        .unwrap();
+        assert_eq!(
+            bundle.status,
+            "analyzed; the original video is no longer in your journal"
+        );
+    }
+
+    #[test]
+    fn a_present_video_has_no_missing_reason() {
+        let temp = tempdir().unwrap();
+        let path = segment(temp.path());
+        fs::write(
+            path.join("main_screen.jsonl"),
+            "{\"raw\": \"main_screen.webm\"}\n{\"frame_id\": 1}\n",
+        )
+        .unwrap();
+        fs::write(path.join("main_screen.webm"), b"raw").unwrap();
+        fs::write(
+            path.join("events.jsonl"),
+            deletion_row("main_screen.webm", "policy_raw_release"),
+        )
+        .unwrap();
+        let mut diagnostics = RecordingDiagnostics::default();
+        let bundle = load_bundle(
+            temp.path(),
+            "20260809",
+            "work",
+            "120000_300",
+            "main",
+            true,
+            &mut diagnostics,
+        )
+        .unwrap();
+        assert_eq!(bundle.status, "analyzed");
+        assert_eq!(bundle.missing_video_reason, None);
     }
 
     #[test]

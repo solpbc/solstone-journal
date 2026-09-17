@@ -6,7 +6,19 @@ use serde_json::Value;
 use crate::error::GrabFailure;
 
 const LEVEL_4_FOOTER: &str = "Inspect:    journal grab <day> <stream> <segment> <screen> <id>\nSave one:   journal grab <day> <stream> <segment> <screen> <id> --out PATH\nSave many:  journal grab <day> <stream> <segment> <screen> <id1>,<id2>,... --out PATH\n\nHow extraction works:\n  Decoding walks the video linearly from frame 0 — seeking is unsafe at the\n  1 Hz capture rate. Cost is dominated by the highest requested frame_id, not\n  the count. Asking for ids 7,12,23 costs the same as asking for 23 alone.\n  Prefer batch mode when you want more than one frame from the same screen.";
-const LEVEL_4_PURGED_FOOTER: &str = "Save mode unavailable: raw video has been purged by retention.\nFrame metadata above is still readable.\n\nInspect: journal grab <day> <stream> <segment> <screen> <id>";
+const LEVEL_4_MISSING_VIDEO_TAIL: &str = "Frame metadata above is still readable.\n\nInspect: journal grab <day> <stream> <segment> <screen> <id>";
+
+/// The save-mode footer for a screen whose video is gone.
+///
+/// ⛔ The reason comes from the payload, which names a cause only from a
+/// recorded deletion. A missing reason says the video is gone and nothing more.
+fn missing_video_footer(summary: &serde_json::Map<String, Value>) -> String {
+    let reason = summary
+        .get("video_missing_reason")
+        .and_then(Value::as_str)
+        .unwrap_or("the original video is no longer in your journal");
+    format!("Save mode unavailable: {reason}.\n{LEVEL_4_MISSING_VIDEO_TAIL}")
+}
 
 pub(crate) fn frame_notes(frame: &Value) -> String {
     let error = frame
@@ -122,13 +134,11 @@ pub(crate) fn render(payload: &Value) -> Result<String, GrabFailure> {
                     array(data, "frames")?,
                 ));
                 output.push('\n');
-                output.push_str(
-                    if summary.get("video_present").and_then(Value::as_bool) == Some(true) {
-                        LEVEL_4_FOOTER
-                    } else {
-                        LEVEL_4_PURGED_FOOTER
-                    },
-                );
+                if summary.get("video_present").and_then(Value::as_bool) == Some(true) {
+                    output.push_str(LEVEL_4_FOOTER);
+                } else {
+                    output.push_str(&missing_video_footer(summary));
+                }
                 output.push('\n');
             }
         }
@@ -224,7 +234,7 @@ fn array<'a>(value: &'a Value, key: &str) -> Result<&'a [Value], GrabFailure> {
 mod tests {
     use serde_json::json;
 
-    use super::{frame_notes, print_table};
+    use super::{frame_notes, missing_video_footer, print_table};
 
     #[test]
     fn table_uses_python_widths_and_empty_is_silent() {
@@ -232,6 +242,27 @@ mod tests {
         assert_eq!(
             print_table(&["name", "n"], &[json!({"name":"a", "n":12})]),
             "name  n \n----  --\na     12\n"
+        );
+    }
+
+    #[test]
+    fn the_missing_video_footer_carries_the_payload_reason() {
+        let with_reason = json!({"video_present": false, "video_missing_reason": "you deleted the original video after your backup copied it"});
+        assert!(
+            missing_video_footer(with_reason.as_object().unwrap()).starts_with(
+                "Save mode unavailable: you deleted the original video after your backup copied it.\n"
+            )
+        );
+        // A payload with no reason says the video is gone and nothing more.
+        let without = json!({"video_present": false});
+        assert!(
+            missing_video_footer(without.as_object().unwrap()).starts_with(
+                "Save mode unavailable: the original video is no longer in your journal.\n"
+            )
+        );
+        assert!(
+            missing_video_footer(without.as_object().unwrap())
+                .contains("Frame metadata above is still readable.")
         );
     }
 
