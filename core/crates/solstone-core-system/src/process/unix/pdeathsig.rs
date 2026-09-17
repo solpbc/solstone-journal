@@ -3,6 +3,14 @@
 
 /// Install a Linux parent-death SIGKILL on `command` so a direct child cannot
 /// outlive a SIGKILL of this process. No-op on non-Linux.
+///
+/// 🔴 The kernel keys `PR_SET_PDEATHSIG` on the **thread** that forked the child,
+/// not on this process: the signal is delivered when that thread terminates, even
+/// though every other thread is still running. So a caller that forks a child it
+/// expects to outlive the call must fork from a thread that lives at least as long
+/// as the child — a pooled or request-scoped worker will silently kill it when the
+/// pool reaps it. Callers that fork and then poll the child to exit on the same
+/// thread already satisfy this.
 pub fn apply_parent_death_kill(command: &mut std::process::Command) {
     #[cfg(target_os = "linux")]
     {

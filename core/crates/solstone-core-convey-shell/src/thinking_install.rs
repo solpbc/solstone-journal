@@ -50,9 +50,38 @@ fn launch_installer(
     binary: &Path,
     admission_timeout: Duration,
 ) -> Result<Value, String> {
+    // Linux arms the installer's parent-death SIGKILL against the *thread* that
+    // forked it, so that thread has to outlive the child. The portal reaches here
+    // from a Tokio blocking worker, which is reaped after its idle keep-alive:
+    // forking there killed the installer seconds after admission and the next
+    // status read rendered `failed` / `install_interrupted`. One dedicated thread
+    // forks, admits, and then reaps, so the fork's parent thread and the child's
+    // reaper are the same thread by construction.
+    let (admitted, admission) = std::sync::mpsc::sync_channel(1);
+    let journal = journal.to_owned();
+    let model = model.to_owned();
+    let binary = binary.to_owned();
+    std::thread::Builder::new()
+        .name("local-install".into())
+        .spawn(move || admit_installer(&journal, &model, &binary, admission_timeout, &admitted))
+        .map_err(|e| e.to_string())?;
+    admission
+        .recv()
+        .map_err(|_| "installer admission unavailable".to_owned())?
+}
+
+/// Fork the installer, report the admission outcome, then reap it on this same
+/// thread. Every exit path sends exactly one admission result.
+fn admit_installer(
+    journal: &Path,
+    model: &str,
+    binary: &Path,
+    admission_timeout: Duration,
+    admitted: &std::sync::mpsc::SyncSender<Result<Value, String>>,
+) {
     // A bounded owner operation, not a hosted service generation. Managed launch
     // retains exact identity, canonical operational logs and child-tree cleanup.
-    let mut child = launch_managed_request(
+    let launched = launch_managed_request(
         Disposition::IndependentBoundedHelper {
             timeout: STOP_TIMEOUT,
         },
@@ -72,17 +101,41 @@ fn launch_installer(
             #[cfg(windows)]
             read_file_grants: Vec::new(),
         },
-    )
-    .map_err(|e| e.to_string())?;
-    let identity = child
-        .exact_identity()
-        .ok_or("installer identity unavailable")?
-        .instance;
+    );
+    let mut child = match launched {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = admitted.send(Err(error.to_string()));
+            return;
+        }
+    };
+    let Some(identity) = child.exact_identity().map(|launched| launched.instance) else {
+        let _ = admitted.send(Err("installer identity unavailable".into()));
+        return;
+    };
     let deadline = Instant::now() + admission_timeout;
     loop {
-        let exit = child.poll().map_err(|e| e.to_string())?;
-        let current = status::read_status(journal, "local").map_err(|e| e.to_string())?;
-        let held = lease::is_held(journal, "local").map_err(|e| e.to_string())?;
+        let exit = match child.poll() {
+            Ok(exit) => exit,
+            Err(error) => {
+                let _ = admitted.send(Err(error.to_string()));
+                return;
+            }
+        };
+        let current = match status::read_status(journal, "local") {
+            Ok(current) => current,
+            Err(error) => {
+                let _ = admitted.send(Err(error.to_string()));
+                return;
+            }
+        };
+        let held = match lease::is_held(journal, "local") {
+            Ok(held) => held,
+            Err(error) => {
+                let _ = admitted.send(Err(error.to_string()));
+                return;
+            }
+        };
         let owned = current
             .owner
             .clone()
@@ -93,36 +146,38 @@ fn launch_installer(
             && status::is_in_flight(&current.install_state)
             && held
         {
-            let payload = solstone_core_thinking::local::bootstrap_status(journal, model);
-            // Moving the authority keeps Drop cleanup armed even if thread creation
-            // fails. Successful admission always has a waiter that reaps the child.
-            std::thread::Builder::new()
-                .name("local-install-wait".into())
-                .spawn(move || {
-                    let _ = child.wait();
-                })
-                .map_err(|e| e.to_string())?;
-            return Ok(payload);
+            let _ = admitted.send(Ok(solstone_core_thinking::local::bootstrap_status(
+                journal, model,
+            )));
+            // Reaping here, rather than on a thread spawned for it, is what keeps
+            // the child's parent thread alive for the whole install.
+            let _ = child.wait();
+            return;
         }
         if let Some(code) = exit {
             if code == 0 && !held && current.install_state == "installed" {
-                return Ok(solstone_core_thinking::local::bootstrap_status(
+                let _ = admitted.send(Ok(solstone_core_thinking::local::bootstrap_status(
                     journal, model,
-                ));
+                )));
+                return;
             }
             if held && status::is_in_flight(&current.install_state) && current.attempt_id.is_some()
             {
-                return Ok(solstone_core_thinking::local::bootstrap_status(
+                let _ = admitted.send(Ok(solstone_core_thinking::local::bootstrap_status(
                     journal, model,
-                ));
+                )));
+                return;
             }
-            return Err(format!("installer exited before admission ({code})"));
+            let _ = admitted.send(Err(format!("installer exited before admission ({code})")));
+            return;
         }
         if Instant::now() >= deadline {
-            child
-                .terminate_exact(STOP_TIMEOUT)
-                .map_err(|e| format!("installer admission cleanup failed: {e}"))?;
-            return Err("installer admission timed out".into());
+            let outcome = match child.terminate_exact(STOP_TIMEOUT) {
+                Ok(()) => Err("installer admission timed out".to_owned()),
+                Err(error) => Err(format!("installer admission cleanup failed: {error}")),
+            };
+            let _ = admitted.send(outcome);
+            return;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -398,6 +453,88 @@ mod tests {
         release.send(()).unwrap();
         writer.join().unwrap();
         assert!(!lease::is_held(journal.path(), "local").unwrap());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn an_admitted_installer_outlives_the_thread_that_requested_it() {
+        // The portal requests the install from a Tokio blocking worker, which is
+        // reaped once it has been idle past the pool's keep-alive. On Linux the
+        // installer's parent-death SIGKILL is armed against the forking thread, so
+        // a reaped requester used to take the installer with it: the lease was
+        // released, the persisted state stayed in flight, and the next status read
+        // rendered `failed` / `install_interrupted` seconds after admission.
+        // Joining the requesting thread here terminates it exactly as the pool
+        // would, without waiting out a keep-alive.
+        use std::os::unix::fs::PermissionsExt;
+        let journal = tempfile::tempdir().unwrap();
+        let script = journal.path().join("installer");
+        let pid_path = journal.path().join("installer.pid");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\necho $$ > '{}'\nexec sleep 30\n",
+                pid_path.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let root = journal.path().to_owned();
+        let (release, released) = std::sync::mpsc::channel();
+        let pid_file = pid_path.clone();
+        let writer = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let identity = loop {
+                if let Ok(text) = std::fs::read_to_string(&pid_file)
+                    && let Ok(pid) = text.trim().parse()
+                    && let InspectResult::Present { instance, .. } =
+                        SystemProcessInstanceSource.inspect(pid)
+                {
+                    break instance;
+                }
+                assert!(Instant::now() < deadline, "fake installer did not start");
+                std::thread::sleep(Duration::from_millis(10));
+            };
+            let _held = lease::acquire(&root, "local").unwrap().unwrap();
+            status::begin(
+                &root,
+                "{}".into(),
+                "target".into(),
+                Some(serde_json::json!(identity)),
+                "downloading",
+            )
+            .unwrap();
+            released.recv_timeout(Duration::from_secs(10)).unwrap();
+            stop(&serde_json::json!(identity)).unwrap();
+        });
+
+        let requested = journal.path().to_owned();
+        let requester = std::thread::spawn(move || {
+            launch_installer(&requested, "local/qwen3.5-4b", &script, ADMISSION_TIMEOUT)
+        });
+        let admitted = requester.join().unwrap().unwrap();
+        assert_eq!(admitted["install_state"], "downloading");
+
+        // The requesting thread is gone. The installer must still be running.
+        let pid: u32 = std::fs::read_to_string(&pid_path)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            assert!(
+                matches!(
+                    SystemProcessInstanceSource.inspect(pid),
+                    InspectResult::Present { .. }
+                ),
+                "the installer died with the thread that requested it"
+            );
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        release.send(()).unwrap();
+        writer.join().unwrap();
     }
 
     #[test]

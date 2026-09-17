@@ -24,6 +24,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a day could stop finishing and keep retrying forever when a recurring person or thing could not be matched to the one already in your journal, for instance because one name carried punctuation or an accent the other did not. names that differ that way now match, and a day held up by one of them finishes on its own once you install.
 - a new memory about someone is no longer skipped just because it repeats one you already have for a different day or a different relationship. only an exact repeat (same words, same day, same relationship) is treated as one.
 - your journal's network app would save a public internet address as your home address, and the solstone app on your phone then refused the pairing code made with it. the network app now saves only an address on your network or VPN, and shows your journal's actual port when it refuses one, so if you saved a public address before, replace it there.
+- on linux, pressing "install local model" started local setup, and setup stopped a few seconds later, every time. trying again, restarting your journal and rebooting all did the same, and installing from the terminal with `journal install-provider local` was the only way through. this release fixes that install failure.
 
 ## [2.0.7] - 2026-09-15
 
