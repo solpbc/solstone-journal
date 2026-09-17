@@ -444,19 +444,47 @@ fn render_suggest_entity_packet(
         }
     }
 
-    let mut segment_count = 0usize;
+    let mut source_excerpts = Vec::new();
     for label in segment_labels {
-        if segment_count >= MAX_SOURCE_SEGMENTS {
+        if source_excerpts.len() >= MAX_SOURCE_SEGMENTS {
             break;
         }
         if let Some(text) = load_segment_text(journal, day, &label) {
-            let truncated: String = text.chars().take(MAX_SEGMENT_CONTEXT_CHARS).collect();
-            parts.push(format!("- [source {label}]: {truncated}"));
-            segment_count += 1;
+            source_excerpts.push((label, text));
         }
     }
-    if segment_count == 0 {
+    if source_excerpts.is_empty() {
         parts.push("  (no source excerpts available)".to_owned());
+    } else {
+        let prefixes = source_excerpts
+            .iter()
+            .map(|(label, _)| format!("- [source {label}]: "))
+            .collect::<Vec<_>>();
+        let fixed_chars = joined_chars(&parts)
+            + prefixes.len()
+            + prefixes
+                .iter()
+                .map(|prefix| prefix.chars().count())
+                .sum::<usize>();
+        if fixed_chars > MAX_ENTITY_CONTEXT_CHARS {
+            return Err(format!(
+                "entity packet for {} is at least {fixed_chars} characters; maximum is {MAX_ENTITY_CONTEXT_CHARS}",
+                entity.entity_id
+            ));
+        }
+        let mut remaining = MAX_ENTITY_CONTEXT_CHARS - fixed_chars;
+        for (index, ((_, text), prefix)) in source_excerpts.iter().zip(prefixes).enumerate() {
+            let sources_left = source_excerpts.len() - index;
+            let fair_share = remaining / sources_left;
+            let take = text
+                .chars()
+                .count()
+                .min(MAX_SEGMENT_CONTEXT_CHARS)
+                .min(fair_share);
+            let truncated: String = text.chars().take(take).collect();
+            parts.push(format!("{prefix}{truncated}"));
+            remaining -= take;
+        }
     }
 
     let rendered = parts.join("\n");
@@ -469,6 +497,10 @@ fn render_suggest_entity_packet(
     }
 
     Ok(rendered)
+}
+
+fn joined_chars(parts: &[String]) -> usize {
+    parts.iter().map(|part| part.chars().count()).sum::<usize>() + parts.len().saturating_sub(1)
 }
 
 fn load_segment_text(journal: &Path, day: &str, label: &str) -> Option<String> {
@@ -630,6 +662,49 @@ mod tests {
         let prompt = talent.config.get("prompt").and_then(Value::as_str).unwrap();
         assert!(prompt.contains("Ada"));
         assert!(prompt.contains("Detection summaries:"));
+    }
+
+    #[test]
+    fn suggest_packet_shares_the_remaining_budget_across_full_source_evidence() {
+        let temp = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(temp.path(), "work", "Work", "", "", "", None).unwrap();
+        solstone_core_facets::attach_or_reactivate_entity(
+            temp.path(),
+            "work",
+            "Person",
+            "Ada",
+            "Mathematician",
+        )
+        .unwrap();
+        let day = "20260910";
+        let labels = ["090000_300", "090500_300", "091000_300"];
+        for (label, fill) in labels.iter().zip(['x', 'y', 'z']) {
+            let segment = temp.path().join("chronicle").join(day).join(label);
+            std::fs::create_dir_all(&segment).unwrap();
+            std::fs::write(segment.join("imported.md"), fill.to_string().repeat(1_000)).unwrap();
+        }
+        let entity =
+            solstone_core_facets::list_scoped_facet_entities(temp.path(), "work", true, true)
+                .unwrap()
+                .remove(0);
+        let detected = vec![
+            serde_json::json!({
+                "description": "s".repeat(600),
+                "segments": labels.map(|label| format!("{day}/{label}")),
+            }),
+            serde_json::json!({"description": "t".repeat(600)}),
+        ];
+
+        let packet = render_suggest_entity_packet(temp.path(), "work", day, &entity, &detected)
+            .expect("full evidence is trimmed to the packet budget");
+
+        assert!(packet.chars().count() <= MAX_ENTITY_CONTEXT_CHARS);
+        for label in labels {
+            assert!(packet.contains(&format!("[source {day}/{label}]")));
+        }
+        for fill in ['x', 'y', 'z'] {
+            assert!(packet.contains(&fill.to_string().repeat(100)));
+        }
     }
 
     #[test]

@@ -592,9 +592,6 @@ fn render_reconcile_packet(
     let mut shown_ids = BTreeSet::new();
     let mut rendered_obs = Vec::new();
 
-    let base_chars: usize = parts.iter().map(|p| p.chars().count() + 1).sum();
-    let mut accum_chars = base_chars + 60;
-
     for (id, content, observed_at, source_day, has_history) in &rows {
         let date_str = if let Some(day) = source_day {
             chrono::NaiveDate::parse_from_str(day, "%Y%m%d")
@@ -613,11 +610,17 @@ fn render_reconcile_packet(
         };
         let revised_str = if *has_history { " [revised]" } else { "" };
         let line = format!("#{id} ({date_str}): {content}{revised_str}");
-        let line_chars = line.chars().count() + 1;
-        if accum_chars + line_chars <= MAX_ENTITY_CONTEXT_CHARS {
+        let candidate_count = rendered_obs.len() + 1;
+        let mut candidate = parts.clone();
+        candidate.push(String::new());
+        candidate.push(format!(
+            "Current observations (showing {candidate_count} of {total_live}):"
+        ));
+        candidate.extend(rendered_obs.iter().map(|row| format!("- {row}")));
+        candidate.push(format!("- {line}"));
+        if joined_chars(&candidate) <= MAX_ENTITY_CONTEXT_CHARS {
             shown_ids.insert(*id);
             rendered_obs.push(line);
-            accum_chars += line_chars;
         } else {
             break;
         }
@@ -648,6 +651,10 @@ fn render_reconcile_packet(
     }
 
     Ok((rendered, shown_ids))
+}
+
+fn joined_chars(parts: &[String]) -> usize {
+    parts.iter().map(|part| part.chars().count()).sum::<usize>() + parts.len().saturating_sub(1)
 }
 
 pub fn apply_prompt_override(
@@ -1145,6 +1152,49 @@ mod tests {
         assert!(prompt.contains("S1: New suggestion about analytical engine"));
         assert!(prompt.contains("#2 (2026-09-09): Second observation"));
         assert!(prompt.contains("#1 (2026-09-08): First observation"));
+    }
+
+    #[test]
+    fn reconcile_packet_counts_bullet_and_header_overhead_inside_the_budget() {
+        let entity = solstone_core_facets::ScopedFacetEntity {
+            entity_id: "ada".to_owned(),
+            entity_dir: "ada".to_owned(),
+            relationship_dir: "ada".to_owned(),
+            relationship: serde_json::json!({"entity_id":"ada"}),
+            identity: serde_json::json!({"id":"ada","name":"Ada","type":"Person"}),
+            detached: false,
+            blocked: false,
+        };
+        let suggestions = vec![
+            serde_json::json!({"content": "a".repeat(600)}),
+            serde_json::json!({"content": "b".repeat(600)}),
+            serde_json::json!({"content": "c".repeat(600)}),
+        ];
+        let before = (1..=200)
+            .map(|id| {
+                serde_json::json!({
+                    "id": id,
+                    "content": "x",
+                    "observed_at": id,
+                    "source_day": "20260910",
+                })
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let (packet, shown) = render_reconcile_packet(
+            std::path::Path::new("."),
+            "work",
+            &entity,
+            &suggestions,
+            Some(&before),
+        )
+        .expect("the observation window is filled to the exact packet budget");
+
+        assert!(packet.chars().count() <= MAX_ENTITY_CONTEXT_CHARS);
+        assert!(!shown.is_empty());
+        assert!(shown.len() < 200);
     }
 
     #[test]

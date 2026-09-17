@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- days with a lot of context about a person or thing no longer get stuck while your journal considers new memories. it now fits source excerpts and existing memories within the available space before asking the model.
+
 ## [2.0.8] - 2026-09-16
 
 ### Added
