@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- settings now name updates.solstone.app as the source for the parakeet-cpp server and speech model, along with their licenses and where to find the notices.
+
 ### Fixed
 
 - days with a lot of context about a person or thing no longer get stuck while your journal considers new memories. it now fits source excerpts and existing memories within the available space before asking the model.
