@@ -1799,6 +1799,7 @@ mod tests {
     /// call to `submit` records a pending reference and returns without ever
     /// reaching `start_dispatch`, so this drives the real handler — not a
     /// stand-in for it — without spawning a `journal think` child process.
+    #[cfg(unix)]
     async fn queue_only_state(journal: &std::path::Path) -> SupervisorState {
         fs::create_dir_all(journal.join("config")).expect("config dir");
         fs::write(
@@ -1859,6 +1860,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn the_guard_is_load_bearing_removing_it_would_submit_the_audit_segment() {
         // ⚠ The predicate test above pins `is_mcp_audit_segment` in isolation

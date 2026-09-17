@@ -324,6 +324,29 @@ fn ffmpeg_toolchain_bootstrap_is_bound_and_precedes_the_gate() {
 }
 
 #[test]
+fn windows_gate_compiles_solstone_core_library_tests() {
+    let win_ci = read_repo_file("scripts/win-ci.cmd");
+    let command = "cargo test --manifest-path core\\Cargo.toml --locked -p solstone-core --lib --features test-hooks --no-run || exit /b 1";
+    assert_eq!(
+        win_ci.lines().filter(|line| *line == command).count(),
+        1,
+        "the native Windows gate must compile the solstone-core library test harness exactly once"
+    );
+
+    let source_binding = win_ci
+        .find("call :verify_source_binding || exit /b 1")
+        .expect("win-ci verifies the transferred source before compiling");
+    let core_library = win_ci
+        .find(command)
+        .expect("win-ci compiles solstone-core tests");
+    let acknowledgement = win_ci
+        .find("=== JOURNAL_WIN_CI_OK:")
+        .expect("win-ci emits its final acknowledgement");
+    assert!(source_binding < core_library);
+    assert!(core_library < acknowledgement);
+}
+
+#[test]
 fn native_launch_preparation_receipts_are_source_bound_and_exactly_once() {
     let win_ci = read_repo_file("scripts/win-ci.cmd");
     let host = read_repo_file("scripts/win-host-ci.sh");
