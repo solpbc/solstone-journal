@@ -210,6 +210,10 @@ async fn process_request(
         (HttpMethod::Get, "/authorize") => {
             crate::oauth::authorize::get_authorize(request, source, oauth, shutdown).await
         }
+        (HttpMethod::Get, "/authorize/assets/design.css") => crate::oauth::authorize::design_css(),
+        (HttpMethod::Get, "/authorize/assets/Comfortaa-Variable.woff2") => {
+            crate::oauth::authorize::comfortaa()
+        }
         (HttpMethod::Post, "/authorize") => {
             crate::oauth::authorize::post_authorize(request, source, oauth)
         }

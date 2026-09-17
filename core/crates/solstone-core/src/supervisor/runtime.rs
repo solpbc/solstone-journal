@@ -16,10 +16,6 @@ use serde::Serialize;
 use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
 use solstone_core_cli::SupervisorOptions;
 use solstone_core_journal_config::read_direct_door_port;
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
-use solstone_core_journal_config::{
-    McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
-};
 use solstone_core_journal_config_write::persist_direct_door_port;
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 use solstone_core_local::plan::Platform;
@@ -1154,7 +1150,7 @@ fn app_processes(
     #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
     let services = {
         let mut services = services;
-        if !remote && mcp_endpoint_enabled(journal) {
+        if !remote {
             services.push((AppService::Mcp, true));
         }
         services
@@ -1173,14 +1169,6 @@ fn app_processes(
             )
         })
         .collect()
-}
-
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
-fn mcp_endpoint_enabled(journal: &Path) -> bool {
-    matches!(
-        read_journal_config(journal),
-        Ok(config) if matches!(mcp_endpoint_capability(&config), Ok(McpEndpointCapability::Enabled))
-    )
 }
 
 pub(crate) fn spawn_app_process(

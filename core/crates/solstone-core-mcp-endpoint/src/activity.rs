@@ -400,6 +400,7 @@ mod tests {
                 agent_identity: connection,
                 tool_name,
                 arguments: json!({"query": "budget"}).as_object().cloned().unwrap(),
+                permission: None,
             },
         )
         .expect("admission publishes")
@@ -678,6 +679,7 @@ mod tests {
                 agent_identity: "bearer:one",
                 tool_name: ToolName::Search,
                 arguments: serde_json::Map::new(),
+                permission: None,
             },
         )
         .unwrap();

@@ -129,7 +129,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
     let snapshot = match evaluate_connection_read(journal_root, principal.connection) {
         PermissionDecision::Snapshot(snapshot) => snapshot,
         PermissionDecision::Denied { reason } => {
-            let coordinates = audit_call(journal_root, now, principal, entry, recorded)?;
+            let coordinates = audit_call(journal_root, now, principal, entry, recorded, None)?;
             record_outcome(
                 journal_root,
                 &coordinates,
@@ -145,7 +145,14 @@ pub(crate) fn dispatch_authenticated_tool_call(
     if let Some(refusal) = scope_refusal(&snapshot, entry, &validated) {
         // Missing categories are permission denials and are still durable audit
         // events — now ones an owner can tell apart from a served call.
-        let coordinates = audit_call(journal_root, now, principal, entry, recorded)?;
+        let coordinates = audit_call(
+            journal_root,
+            now,
+            principal,
+            entry,
+            recorded,
+            Some(&snapshot),
+        )?;
         record_outcome(
             journal_root,
             &coordinates,
@@ -158,7 +165,16 @@ pub(crate) fn dispatch_authenticated_tool_call(
     }
 
     let (coordinates, executed) = execute_after_audit(
-        || audit_call(journal_root, now, principal, entry, recorded),
+        || {
+            audit_call(
+                journal_root,
+                now,
+                principal,
+                entry,
+                recorded,
+                Some(&snapshot),
+            )
+        },
         || execute_validated(journal_root, principal, &snapshot, validated),
     )?;
 
@@ -434,6 +450,7 @@ fn audit_call(
     principal: DispatchPrincipal<'_>,
     entry: &ToolEntry,
     arguments: Map<String, Value>,
+    snapshot: Option<&ConnectionReadSnapshot>,
 ) -> Result<AuditCoordinates, DispatchError> {
     audit::write_admitted_interaction(
         journal_root,
@@ -443,9 +460,38 @@ fn audit_call(
             agent_identity: principal.agent_identity,
             tool_name: entry.audit_name,
             arguments,
+            permission: snapshot.map(audit_permission_snapshot),
         },
     )
     .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))
+}
+
+fn audit_permission_snapshot(
+    snapshot: &ConnectionReadSnapshot,
+) -> solstone_core_mcp_audit::PermissionSnapshotRecord {
+    let categories = snapshot
+        .categories
+        .iter()
+        .map(|category| match category {
+            solstone_core_indexer_query::AdmittedCategory::Transcripts => "transcripts".to_owned(),
+            solstone_core_indexer_query::AdmittedCategory::Entities => "entities".to_owned(),
+            solstone_core_indexer_query::AdmittedCategory::Facets => "facets".to_owned(),
+        })
+        .collect();
+    let (scope, facet_ids) = match &snapshot.scope {
+        solstone_core_indexer_query::ConnectionScope::WholeJournal => {
+            ("whole_journal".to_owned(), Vec::new())
+        }
+        solstone_core_indexer_query::ConnectionScope::ChosenFacets { ids } => {
+            ("facets".to_owned(), ids.iter().cloned().collect())
+        }
+    };
+    solstone_core_mcp_audit::PermissionSnapshotRecord {
+        generation: snapshot.generation,
+        categories,
+        scope,
+        facet_ids,
+    }
 }
 
 fn execute_validated(

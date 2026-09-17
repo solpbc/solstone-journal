@@ -130,11 +130,33 @@ async fn run_endpoint_topology(
     shutdown_send: watch::Sender<bool>,
     mut shutdown_receive: watch::Receiver<bool>,
 ) -> Result<(), McpServiceError> {
-    if !capability_enabled(&journal_root) {
-        return Ok(());
+    while !capability_enabled(&journal_root) {
+        tokio::select! {
+            changed = shutdown_receive.changed() => {
+                if changed.is_err() || *shutdown_receive.borrow_and_update() {
+                    return Ok(());
+                }
+            }
+            () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {}
+        }
     }
-    let Some(owner) = bootstrap_mcp_endpoint_owner_identity(&journal_root)
-        .map_err(|_| McpServiceError::Bootstrap)?
+    crate::owner_state::write_mcp_owner_state(
+        &journal_root,
+        "turning_on",
+        None,
+        ("in_progress", "waiting", "waiting"),
+        None,
+    );
+    let Some(owner) = bootstrap_mcp_endpoint_owner_identity(&journal_root).map_err(|_| {
+        crate::owner_state::write_mcp_owner_state(
+            &journal_root,
+            "failed",
+            None,
+            ("failed", "waiting", "waiting"),
+            Some("your journal could not prepare its agent address"),
+        );
+        McpServiceError::Bootstrap
+    })?
     else {
         return Ok(());
     };
@@ -146,10 +168,37 @@ async fn run_endpoint_topology(
     {
         Ok(tunnel) => tunnel,
         Err(_) if shutdown_requested(&shutdown_receive) => return Ok(()),
-        Err(_) => return Err(McpServiceError::Tunnel),
+        Err(_) => {
+            crate::owner_state::write_mcp_owner_state(
+                &journal_root,
+                "failed",
+                None,
+                ("failed", "waiting", "waiting"),
+                Some(
+                    "this computer could not reach services.solstone.app; it will try again when the service restarts",
+                ),
+            );
+            return Err(McpServiceError::Tunnel);
+        }
     };
     let (tls, forwarder_session) = tunnel.into_service_parts();
     let tls = Arc::new(tls);
+    let endpoint_address = tls.authorized_hostname().to_owned();
+    crate::owner_state::write_mcp_owner_state(
+        &journal_root,
+        if tls.ordinary_certificate_is_active() {
+            "on"
+        } else {
+            "turning_on"
+        },
+        Some(&endpoint_address),
+        if tls.ordinary_certificate_is_active() {
+            ("done", "done", "in_progress")
+        } else {
+            ("done", "in_progress", "waiting")
+        },
+        None,
+    );
     let tls_config = mcp_endpoint_server_config(&tls);
     let resource_origin = format!("https://{}", tls.authorized_hostname());
     let listener = TcpListener::bind(("127.0.0.1", MCP_ENDPOINT_LOOPBACK_PORT))
@@ -157,22 +206,67 @@ async fn run_endpoint_topology(
         .map_err(|_| McpServiceError::Bind)?;
 
     let mut tasks = JoinSet::new();
+    let capability_root = journal_root.clone();
+    let capability_shutdown = shutdown_send.clone();
+    let mut capability_parent_shutdown = shutdown_receive.clone();
+    tasks.spawn(async move {
+        loop {
+            tokio::select! {
+                changed = capability_parent_shutdown.changed() => {
+                    if changed.is_err() || *capability_parent_shutdown.borrow_and_update() {
+                        return Ok(());
+                    }
+                }
+                () = tokio::time::sleep(std::time::Duration::from_secs(1)) => {
+                    if !capability_enabled(&capability_root) {
+                        capability_shutdown.send_replace(true);
+                        return Ok(());
+                    }
+                }
+            }
+        }
+    });
+    let state_root = journal_root.clone();
+    let state_tls = Arc::clone(&tls);
+    let state_address = endpoint_address.clone();
+    let mut state_shutdown = shutdown_receive.clone();
+    tasks.spawn(async move {
+        loop {
+            tokio::select! {
+                changed = state_shutdown.changed() => {
+                    if changed.is_err() || *state_shutdown.borrow_and_update() { return Ok(()); }
+                }
+                () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
+                    let active = state_tls.ordinary_certificate_is_active();
+                    let rate_limit_is_current = crate::owner_state::read_mcp_owner_state(&state_root)
+                        .is_some_and(|state| state.certificate_leg == "not_this_week"
+                            && state.next_attempt_at.is_some_and(|next| next > chrono::Utc::now()));
+                    if rate_limit_is_current && !active {
+                        continue;
+                    }
+                    crate::owner_state::write_mcp_owner_state(
+                        &state_root,
+                        if active { "on" } else { "turning_on" },
+                        Some(&state_address),
+                        if active { ("done", "done", "done") } else { ("done", "in_progress", "waiting") },
+                        if active { None } else { Some("the journal keeps trying on its own") },
+                    );
+                }
+            }
+        }
+    });
     let listener_shutdown = shutdown_receive.clone();
     let listener_root = Arc::new(journal_root);
+    let server_root = Arc::clone(&listener_root);
+    let renewal_root = Arc::clone(&listener_root);
     let oauth = Arc::new(crate::oauth::OAuthRuntime::new(
         listener_root.as_path(),
         resource_origin,
     ));
     tasks.spawn(async move {
-        crate::server::serve(
-            listener,
-            tls_config,
-            listener_root,
-            oauth,
-            listener_shutdown,
-        )
-        .await
-        .map_err(|_| McpServiceError::Listener)
+        crate::server::serve(listener, tls_config, server_root, oauth, listener_shutdown)
+            .await
+            .map_err(|_| McpServiceError::Listener)
     });
     let mut forwarder_shutdown = shutdown_receive.clone();
     let forwarder_tls = Arc::clone(&tls);
@@ -191,7 +285,7 @@ async fn run_endpoint_topology(
     let mut renewal_shutdown = shutdown_receive.clone();
     tasks.spawn(async move {
         renewal_tls
-            .run_acme_renewal(&mut renewal_shutdown)
+            .run_acme_renewal_with_owner_state(renewal_root.as_path(), &mut renewal_shutdown)
             .await
             .map_err(|_| McpServiceError::Renewal)
     });
@@ -208,6 +302,17 @@ async fn run_endpoint_topology(
             Some(Err(_)) | None => Err(McpServiceError::Listener),
         },
     };
+    if matches!(result, Err(McpServiceError::Forwarder))
+        && capability_enabled(listener_root.as_path())
+    {
+        crate::owner_state::write_mcp_owner_state(
+            listener_root.as_path(),
+            "offline",
+            Some(&endpoint_address),
+            ("done", "done", "waiting"),
+            Some("your journal is offline right now. your agents will get through when it's back"),
+        );
+    }
     shutdown_send.send_replace(true);
     while tasks.join_next().await.is_some() {}
     result

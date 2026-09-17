@@ -46,6 +46,7 @@ const MAX_URLENCODED_PAIRS: usize = 32;
 
 /// Process-local OAuth helpers bound to one journal root.
 pub(crate) struct OAuthRuntime {
+    pub(crate) journal_root: std::path::PathBuf,
     pub(crate) store: OAuthStore,
     pub(crate) pairing_limiter: PairingRateLimiter,
     pub(crate) cimd_bulkhead: Arc<CimdBulkhead>,
@@ -57,6 +58,7 @@ pub(crate) struct OAuthRuntime {
 impl OAuthRuntime {
     pub(crate) fn new(journal_root: &Path, resource_origin: String) -> Self {
         Self {
+            journal_root: journal_root.to_path_buf(),
             store: OAuthStore::open(journal_root),
             pairing_limiter: PairingRateLimiter::new(),
             cimd_bulkhead: CimdBulkhead::new(),

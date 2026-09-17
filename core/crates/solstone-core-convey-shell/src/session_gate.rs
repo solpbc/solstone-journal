@@ -16,6 +16,7 @@ use crate::session::{SessionState, classify_session};
 #[derive(Debug, Clone)]
 pub struct SessionGateState {
     pub journal_root: PathBuf,
+    pub include_agents: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,13 +39,29 @@ pub const SESSION_GATE_EXEMPTIONS: &[SessionExemption] = &[
 ];
 
 pub fn apply_layer(router: axum::Router, journal_root: PathBuf) -> axum::Router {
+    apply_layer_with_agents(router, journal_root, false)
+}
+
+pub fn apply_layer_with_agents(
+    router: axum::Router,
+    journal_root: PathBuf,
+    include_agents: bool,
+) -> axum::Router {
     router.route_layer(middleware::from_fn_with_state(
-        SessionGateState { journal_root },
+        SessionGateState {
+            journal_root,
+            include_agents,
+        },
         require_session,
     ))
 }
 
+#[cfg(test)]
 fn is_exempt(path: &str) -> bool {
+    is_exempt_with_agents(path, false)
+}
+
+fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
     SESSION_GATE_EXEMPTIONS
         .iter()
         .any(|exemption| match exemption {
@@ -59,7 +76,10 @@ fn is_exempt(path: &str) -> bool {
                         // registry entry; it must stay session-gated.
                         // `/app/devices` left the registry; leftover ingest
                         // routes and the permanent redirects must stay gated.
-                        name != "link" && name != "devices" && known_app(name).is_none()
+                        name != "link"
+                            && name != "devices"
+                            && !(include_agents && name == "agents")
+                            && known_app(name).is_none()
                     })
             }
             SessionExemption::ImportDoor => {
@@ -87,7 +107,7 @@ async fn require_session(
     next: Next,
 ) -> Response {
     let path = request.uri().path();
-    if is_exempt(path) {
+    if is_exempt_with_agents(path, state.include_agents) {
         return next.run(request).await;
     }
     match classify_session(&state.journal_root) {

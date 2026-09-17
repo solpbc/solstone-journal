@@ -128,6 +128,23 @@ impl HttpResponse {
         }
     }
 
+    pub(crate) fn bytes(
+        status: u16,
+        reason: &'static str,
+        content_type: &'static str,
+        body: Vec<u8>,
+    ) -> Self {
+        Self {
+            status,
+            reason,
+            content_type: Some(content_type),
+            body,
+            session_id: None,
+            close: false,
+            extra_headers: Vec::new(),
+        }
+    }
+
     pub(crate) fn with_session_id(mut self, session_id: String) -> Self {
         self.session_id = Some(session_id);
         self

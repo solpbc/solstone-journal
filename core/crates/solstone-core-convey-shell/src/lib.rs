@@ -172,7 +172,7 @@ pub use thinking::{ConfidentialPoll, ConfidentialRuntimeOverride, PollOutcome};
 
 use assets::lookup;
 use refusal::AppNotConverted;
-use registry::{ShellPayload, known_app, shell_payload};
+use registry::{ShellPayload, known_app, shell_payload, shell_payload_with_agents};
 
 /// Journal filesystem root shared with converted app route handlers.
 #[derive(Clone)]
@@ -435,6 +435,25 @@ pub fn run_convey_with_hosted_parent(
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
     #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
+    run_convey_with_hosted_parent_and_routes(
+        journal_root,
+        port,
+        hosted_parent,
+        None,
+        #[cfg(windows)]
+        generation,
+    )
+}
+
+/// Run Convey with an optional, compile-time-gated local owner surface.
+#[cfg(feature = "host")]
+pub fn run_convey_with_hosted_parent_and_routes(
+    journal_root: PathBuf,
+    port: u16,
+    hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+    agents_routes: Option<Router>,
+    #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
+) -> Result<(), String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("convey could not inspect current executable: {error}"))?;
     let executable_dir = executable
@@ -445,6 +464,7 @@ pub fn run_convey_with_hosted_parent(
         journal_root,
         port,
         hosted_parent,
+        agents_routes,
         #[cfg(windows)]
         generation,
     )
@@ -463,6 +483,7 @@ pub fn run_convey_from_executable_dir(
         journal_root,
         port,
         None,
+        None,
         #[cfg(windows)]
         generation,
     )
@@ -473,6 +494,7 @@ fn run_convey_bound(
     journal_root: PathBuf,
     port: u16,
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+    agents_routes: Option<Router>,
     #[cfg(windows)] discovery_generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<(), String> {
     use solstone_core_journal_config::read_direct_door_port;
@@ -498,7 +520,8 @@ fn run_convey_bound(
     let (authorization_sender, authorization_receiver) = watch::channel(
         DeviceDoorAuthorization::from(AuthorizedClientsRead::Missing),
     );
-    let loopback_router = router_with_hosted_parent(journal_root.clone(), hosted_parent.clone());
+    let loopback_router =
+        router_with_hosted_parent(journal_root.clone(), hosted_parent.clone(), agents_routes);
     #[cfg(windows)]
     let loopback_router = loopback_router.layer(Extension(DiscoveryGenerationContext(
         discovery_generation.clone(),
@@ -661,15 +684,21 @@ fn remove_port_file(journal_root: &FsPath) -> Result<(), String> {
 }
 
 pub fn router(journal_root: PathBuf) -> Router {
-    router_with_hosted_parent(journal_root, None)
+    router_with_hosted_parent(journal_root, None, None)
 }
 
 fn router_with_hosted_parent(
     journal_root: PathBuf,
     hosted_parent: Option<Arc<solstone_core_system::lifecycle::HostedServiceParentRuntime>>,
+    agents_routes: Option<Router>,
 ) -> Router {
     solstone_core_convey_body::warm_trends(journal_root.clone());
-    let shell = Arc::new(shell_payload());
+    let include_agents = agents_routes.is_some();
+    let shell = Arc::new(if include_agents {
+        shell_payload_with_agents(true)
+    } else {
+        shell_payload()
+    });
     let route_journal_root = Arc::new(JournalRoot(journal_root.clone()));
     let operation_registry = Arc::new(OperationRegistry::default());
     let relay_admissions = relay_admission::admission_registry_for(&journal_root);
@@ -712,6 +741,14 @@ fn router_with_hosted_parent(
         .route("/app/devices", get(clients::redirect_app))
         .route("/app/devices/", get(clients::redirect_app))
         .route("/app/devices/workspace", get(clients::redirect_workspace))
+        .merge(if include_agents {
+            Router::new()
+                .route("/app/agents/", get(agents_shell))
+                .route("/app/agents/workspace", get(agents_workspace))
+        } else {
+            Router::new()
+        })
+        .merge(agents_routes.unwrap_or_default())
         .merge(solstone_core_ingest::api_router(journal_root.clone()))
         .merge(solstone_core_push::api_router(journal_root.clone()))
         .merge(solstone_core_clients_web::router(journal_root.clone()))
@@ -954,7 +991,7 @@ fn router_with_hosted_parent(
         .layer(Extension(shell))
         .layer(Extension(route_journal_root))
         .layer(Extension(HostedLaunchContext(hosted_parent)));
-    session_gate::apply_layer(routes, journal_root).fallback(not_found)
+    session_gate::apply_layer_with_agents(routes, journal_root, include_agents).fallback(not_found)
 }
 
 pub(crate) fn asset_response(path: &str) -> Response {
@@ -998,6 +1035,14 @@ async fn favicon() -> Response {
 
 async fn static_asset(Path(path): Path<String>) -> Response {
     asset_response(&format!("/static/{path}"))
+}
+
+async fn agents_shell() -> Response {
+    asset_response("/static/shell.html")
+}
+
+async fn agents_workspace() -> Response {
+    asset_response("/app/agents/workspace")
 }
 
 async fn shell_api(Extension(shell): Extension<Arc<ShellPayload>>) -> Response {
