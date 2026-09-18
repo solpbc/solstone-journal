@@ -16,6 +16,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use solstone_core_convey_shell::router;
 use solstone_core_npy::write_npy;
 use tower::ServiceExt;
@@ -410,10 +411,34 @@ async fn owner_write_routes_cover_ready_detect_build_rebuild_confirm_reject_and_
     assert_eq!(status, StatusCode::OK, "{classify}");
     assert_eq!(classify["sentences"], json!([]));
 
+    let emb = unit(1.0, 0.0);
+    let mut le = Vec::new();
+    for v in &emb {
+        le.extend_from_slice(&v.to_le_bytes());
+    }
+    let emb_sha = format!("{:x}", Sha256::digest(&le));
+    let audio_bytes = b"RIFFaudiofakebytes";
+    let audio_sha = format!("{:x}", Sha256::digest(audio_bytes));
+
+    let seg_dir = journal
+        .0
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(SEGMENT);
+    fs::create_dir_all(&seg_dir).expect("seg dir");
+    fs::write(
+        seg_dir.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"sentence_id\":1,\"text\":\"test\"}\n",
+    )
+    .expect("jsonl");
+    fs::write(seg_dir.join("audio.flac"), audio_bytes).expect("flac");
+    write_embeddings(&seg_dir.join("audio.npz"), &[emb.clone()]);
+
     solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
         &journal.0,
         &solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
-            centroid: unit(1.0, 0.0),
+            centroid: emb.clone(),
             cluster_size: 5,
             threshold: 0.43,
             version: "owner-candidate-v1".to_owned(),
@@ -424,7 +449,27 @@ async fn owner_write_routes_cover_ready_detect_build_rebuild_confirm_reject_and_
     fs::create_dir_all(journal.0.join("awareness")).expect("awareness");
     fs::write(
         journal.0.join("awareness/current.json"),
-        json!({"voiceprint":{"status":"candidate","recommendation":"ready","cluster_size":5,"streams_represented":2}}).to_string(),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "owner-candidate-v1",
+                "recommendation": "ready",
+                "cluster_size": 5,
+                "streams_represented": 2,
+                "samples": [{
+                    "day": DAY,
+                    "stream_layout": "named",
+                    "stream": STREAM,
+                    "segment_key": SEGMENT,
+                    "source": "audio",
+                    "sentence_id": 1,
+                    "version": "owner-candidate-v1",
+                    "embedding_sha256": emb_sha,
+                    "audio_sha256": audio_sha,
+                }]
+            }
+        })
+        .to_string(),
     )
     .expect("state");
     let (status, candidate_ready) = call(
@@ -439,7 +484,16 @@ async fn owner_write_routes_cover_ready_detect_build_rebuild_confirm_reject_and_
     let (status, confirmed) = call(
         router(journal.0.clone()),
         "/app/speakers/api/owner/confirm",
-        json!({}),
+        json!({
+            "version": "owner-candidate-v1",
+            "day": DAY,
+            "stream_layout": "named",
+            "stream": STREAM,
+            "segment_key": SEGMENT,
+            "source": "audio",
+            "sentence_id": 1,
+            "audio_sha256": audio_sha,
+        }),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{confirmed}");
@@ -457,10 +511,38 @@ async fn owner_write_routes_cover_ready_detect_build_rebuild_confirm_reject_and_
     assert_eq!(status, StatusCode::OK, "{after_confirm}");
     assert_eq!(after_confirm["reason"], "centroid_exists");
 
+    // Re-create candidate to test reject
+    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
+        &journal.0,
+        &solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+            centroid: emb.clone(),
+            cluster_size: 5,
+            threshold: 0.43,
+            version: "owner-candidate-v2".to_owned(),
+            evidence_tier: "standard".to_owned(),
+        },
+    )
+    .expect("candidate 2");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "owner-candidate-v2",
+                "recommendation": "ready",
+                "cluster_size": 5,
+                "streams_represented": 2,
+                "samples": []
+            }
+        })
+        .to_string(),
+    )
+    .expect("state 2");
+
     let (status, rejected) = call(
         router(journal.0.clone()),
         "/app/speakers/api/owner/reject",
-        json!({}),
+        json!({"version": "owner-candidate-v2"}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{rejected}");
@@ -481,6 +563,7 @@ async fn owner_identity_invalid_refuses_every_owner_surface_without_writes() {
             ("/app/speakers/api/owner/build-from-tags", json!({})),
             ("/app/speakers/api/owner/rebuild", json!({})),
             ("/app/speakers/api/owner/reject", json!({})),
+            ("/app/speakers/api/owner/set-aside", json!({})),
             (
                 "/app/speakers/api/owner/classify",
                 json!({"day":DAY,"stream":STREAM,"segment_key":SEGMENT,"source":SOURCE}),
@@ -1727,4 +1810,163 @@ async fn correct_repairs_legacy_invalid_old_speakers_into_an_admitted_person() {
             assert_eq!(response["voiceprint_removal"]["outcome"], "not_found");
         }
     }
+}
+
+#[tokio::test]
+async fn owner_confirm_evidentiary_rejections() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+
+    let emb = unit(1.0, 0.0);
+    let mut le = Vec::new();
+    for v in &emb {
+        le.extend_from_slice(&v.to_le_bytes());
+    }
+    let emb_sha = format!("{:x}", Sha256::digest(&le));
+    let audio_bytes = b"RIFFaudiofakebytes";
+    let audio_sha = format!("{:x}", Sha256::digest(audio_bytes));
+
+    let seg_dir = journal
+        .0
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(SEGMENT);
+    fs::create_dir_all(&seg_dir).expect("seg dir");
+    fs::write(
+        seg_dir.join("audio.jsonl"),
+        "{\"raw\":\"audio.flac\"}\n{\"sentence_id\":0,\"text\":\"test\"}\n",
+    )
+    .expect("jsonl");
+    fs::write(seg_dir.join("audio.flac"), audio_bytes).expect("flac");
+    write_embeddings(&seg_dir.join("audio.npz"), &[emb.clone()]);
+
+    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
+        &journal.0,
+        &solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+            centroid: emb.clone(),
+            cluster_size: 5,
+            threshold: 0.43,
+            version: "v-candidate-1".to_owned(),
+            evidence_tier: "standard".to_owned(),
+        },
+    )
+    .expect("candidate");
+
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "v-candidate-1",
+                "recommendation": "ready",
+                "cluster_size": 5,
+                "streams_represented": 2,
+                "samples": [{
+                    "day": DAY,
+                    "stream_layout": "named",
+                    "stream": STREAM,
+                    "segment_key": SEGMENT,
+                    "source": "audio",
+                    "sentence_id": 0,
+                    "version": "v-candidate-1",
+                    "embedding_sha256": emb_sha,
+                    "audio_sha256": audio_sha,
+                }]
+            }
+        })
+        .to_string(),
+    )
+    .expect("state");
+
+    // 1. Hash mismatch
+    let (status, resp) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/confirm",
+        json!({
+            "version": "v-candidate-1",
+            "day": DAY,
+            "stream_layout": "named",
+            "stream": STREAM,
+            "segment_key": SEGMENT,
+            "source": "audio",
+            "sentence_id": 0,
+            "audio_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(resp["reason_code"], "speaker_candidate_unverified");
+
+    // 2. Version mismatch
+    let (status, resp) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/confirm",
+        json!({
+            "version": "v-candidate-wrong",
+            "day": DAY,
+            "stream_layout": "named",
+            "stream": STREAM,
+            "segment_key": SEGMENT,
+            "source": "audio",
+            "sentence_id": 0,
+            "audio_sha256": audio_sha,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(resp["reason_code"], "speaker_candidate_stale_version");
+}
+
+#[tokio::test]
+async fn owner_set_aside_clears_candidate_and_sets_no_cluster() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+
+    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
+        &journal.0,
+        &solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+            centroid: unit(1.0, 0.0),
+            cluster_size: 5,
+            threshold: 0.43,
+            version: "v-aside-1".to_owned(),
+            evidence_tier: "standard".to_owned(),
+        },
+    )
+    .expect("candidate");
+
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "v-aside-1",
+                "recommendation": "ready",
+                "cluster_size": 5,
+                "streams_represented": 2,
+                "samples": []
+            }
+        })
+        .to_string(),
+    )
+    .expect("state");
+
+    let (status, resp) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/set-aside",
+        json!({"version": "v-aside-1"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{resp}");
+    assert_eq!(resp["status"], "no_cluster");
+    assert!(!journal.0.join("awareness/owner_candidate.npz").exists());
+
+    let awareness: Value = serde_json::from_str(
+        &fs::read_to_string(journal.0.join("awareness/current.json")).expect("awareness read"),
+    )
+    .expect("awareness parse");
+    assert_eq!(awareness["voiceprint"]["status"], "no_cluster");
+    assert!(awareness["voiceprint"]["detected_at"].is_null());
 }

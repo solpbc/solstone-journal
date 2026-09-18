@@ -23,6 +23,8 @@ use crate::owner_centroid::{
     write_archive,
 };
 
+pub use crate::owner_candidate_hydrate::hydrate_owner_candidate_samples;
+
 /// One owner-candidate snapshot written before user confirmation.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct OwnerCandidate {
@@ -93,8 +95,16 @@ pub fn load_owner_candidate(
     }))
 }
 
-/// Write and reload-verify the five-member candidate snapshot.
-pub fn write_owner_candidate(
+/// Acquire the sidecar lock for the owner candidate snapshot.
+pub fn hold_owner_candidate_lock(
+    journal_root: &Path,
+) -> Result<solstone_core_journal_io::FileLock, OwnerCandidateError> {
+    let path = owner_candidate_path(journal_root)?;
+    hold_lock(&path, LockOptions::default()).map_err(OwnerCandidateError::Lock)
+}
+
+/// Write and reload-verify the five-member candidate snapshot while holding the candidate lock.
+pub fn write_owner_candidate_in_lock(
     journal_root: &Path,
     candidate: &OwnerCandidate,
 ) -> Result<(), OwnerCandidateError> {
@@ -102,7 +112,6 @@ pub fn write_owner_candidate(
         OwnerCandidateError::Invalid("candidate centroid has zero norm".to_owned())
     })?;
     let path = owner_candidate_path(journal_root)?;
-    let _lock = hold_lock(&path, LockOptions::default()).map_err(OwnerCandidateError::Lock)?;
     let members = vec![
         ("centroid.npy", f32_vector_npy(&centroid)),
         ("cluster_size.npy", i32_scalar_npy(candidate.cluster_size)),
@@ -122,16 +131,31 @@ pub fn write_owner_candidate(
     Ok(())
 }
 
-/// Remove the owner candidate under the same sidecar lock used for writes.
+/// Remove the owner candidate while holding the candidate lock.
 ///
 /// An absent snapshot is a successful no-op, matching the Python clear paths.
-pub fn clear_owner_candidate(journal_root: &Path) -> Result<Removed, OwnerCandidateError> {
+pub fn clear_owner_candidate_in_lock(journal_root: &Path) -> Result<Removed, OwnerCandidateError> {
     if !journal_root.join("awareness").is_dir() {
         return Ok(Removed::AlreadyAbsent);
     }
-    let path = owner_candidate_path(journal_root)?;
-    let _lock = hold_lock(&path, LockOptions::default()).map_err(OwnerCandidateError::Lock)?;
     remove_file(journal_root, "awareness/owner_candidate.npz").map_err(OwnerCandidateError::Path)
+}
+
+/// Write and reload-verify the five-member candidate snapshot.
+pub fn write_owner_candidate(
+    journal_root: &Path,
+    candidate: &OwnerCandidate,
+) -> Result<(), OwnerCandidateError> {
+    let _lock = hold_owner_candidate_lock(journal_root)?;
+    write_owner_candidate_in_lock(journal_root, candidate)
+}
+
+/// Remove the owner candidate under the sidecar lock.
+///
+/// An absent snapshot is a successful no-op, matching the Python clear paths.
+pub fn clear_owner_candidate(journal_root: &Path) -> Result<Removed, OwnerCandidateError> {
+    let _lock = hold_owner_candidate_lock(journal_root)?;
+    clear_owner_candidate_in_lock(journal_root)
 }
 
 fn owner_candidate_path(journal_root: &Path) -> Result<std::path::PathBuf, OwnerCandidateError> {
@@ -212,4 +236,41 @@ fn unicode_scalar(bytes: &[u8], name: &str) -> Result<String, OwnerCandidateErro
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn sample_candidate() -> OwnerCandidate {
+        let mut centroid = vec![0.0f32; 256];
+        centroid[0] = 1.0;
+        OwnerCandidate {
+            centroid,
+            cluster_size: 3,
+            threshold: 0.43,
+            version: "2026-09-18T00:00:00Z".to_owned(),
+            evidence_tier: "direct".to_owned(),
+        }
+    }
+
+    #[test]
+    fn in_lock_operations_succeed_under_held_lock() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let candidate = sample_candidate();
+
+        let lock = hold_owner_candidate_lock(root).expect("acquire lock");
+        write_owner_candidate_in_lock(root, &candidate).expect("write in lock");
+
+        let loaded = load_owner_candidate(root).expect("load candidate");
+        assert_eq!(loaded, Some(candidate));
+
+        clear_owner_candidate_in_lock(root).expect("clear in lock");
+        let cleared = load_owner_candidate(root).expect("load after clear");
+        assert_eq!(cleared, None);
+
+        drop(lock);
+    }
 }

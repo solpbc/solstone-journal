@@ -38,7 +38,7 @@ const PATH_COMPONENT: &AsciiSet = &CONTROLS
     .add(b'|')
     .add(b'}');
 
-const AUDIO_FORMATS: [(&str, &str); 6] = [
+pub const AUDIO_FORMATS: [(&str, &str); 6] = [
     (".flac", "audio/flac"),
     (".opus", "audio/opus"),
     (".ogg", "audio/ogg"),

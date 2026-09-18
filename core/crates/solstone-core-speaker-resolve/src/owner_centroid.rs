@@ -480,6 +480,15 @@ pub(crate) fn f32_vector_npy(values: &[f32]) -> Vec<u8> {
     write_npy("<f4", &format!("({},)", values.len()), &payload)
 }
 
+#[allow(dead_code)]
+pub(crate) fn i32_vector_npy(values: &[i32]) -> Vec<u8> {
+    let payload = values
+        .iter()
+        .flat_map(|value| value.to_le_bytes())
+        .collect::<Vec<_>>();
+    write_npy("<i4", &format!("({},)", values.len()), &payload)
+}
+
 pub(crate) fn f32_scalar_npy(value: f32) -> Vec<u8> {
     write_npy("<f4", "()", &value.to_le_bytes())
 }

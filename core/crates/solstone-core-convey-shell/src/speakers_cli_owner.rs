@@ -193,59 +193,80 @@ fn encoder() -> solstone_core_entity::EncoderIdentity {
 }
 
 pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let principal_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(
-        &root.0,
+    if matches!(
+        solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0),
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid
     ) {
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
-            return err(
-                "speaker_owner_identity_invalid",
-                "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
-                "configured owner identity is not admitted",
-                StatusCode::BAD_REQUEST,
-            );
-        }
+        return err(
+            "speaker_owner_identity_invalid",
+            "that owner voice couldn't be confirmed because your configured owner identity needs attention.",
+            "configured owner identity is not admitted",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    err(
+        "review_required",
+        "Confirm this candidate in the Speakers browser page.",
+        "Native confirm-owner does not save a centroid. Open the browser to review the candidate.",
+        StatusCode::BAD_REQUEST,
+    )
+}
+
+pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match body(request).await {
+        Ok(val) => val,
+        Err(resp) => return resp,
     };
+    if matches!(
+        solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0),
+        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid
+    ) {
+        return err(
+            "speaker_owner_identity_invalid",
+            "that speaker command couldn't run because your configured owner identity needs attention.",
+            "configured owner identity is not admitted",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    let Some(req_version) = body.get("version").and_then(Value::as_str) else {
+        return err(
+            "missing_required_field",
+            "a required field is missing.",
+            "version is required",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+
+    let _lock =
+        match solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(&root.0) {
+            Ok(guard) => guard,
+            Err(error) => return owner_error(error.to_string()),
+        };
+
     let candidate =
         match solstone_core_speaker_resolve::owner_candidate::load_owner_candidate(&root.0) {
             Ok(Some(candidate)) => candidate,
             Ok(None) => {
                 return err(
-                    "speaker_command_failed",
-                    "that speaker command didn't finish.",
+                    "speaker_review_unavailable",
+                    "that speaker review couldn't be loaded.",
                     "No candidate available",
-                    StatusCode::BAD_REQUEST,
+                    StatusCode::NOT_FOUND,
                 );
             }
             Err(error) => return owner_error(error.to_string()),
         };
-    let input = solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
-        centroid: candidate.centroid,
-        cluster_size: candidate.cluster_size,
-        timestamp: Utc::now().to_rfc3339(),
-        evidence_tier: candidate.evidence_tier.clone(),
-    };
-    if let Err(error) = solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
-        &root.0,
-        &principal_id,
-        &input,
-    ) {
-        return owner_error(error.to_string());
-    }
-    if let Err(error) =
-        solstone_core_speaker_resolve::owner_candidate::clear_owner_candidate(&root.0)
-    {
-        return owner_error(error.to_string());
-    }
-    Json(json!({
-        "status":"confirmed", "principal_id":principal_id, "cluster_size":candidate.cluster_size,
-        "evidence_tier":candidate.evidence_tier, "partial_success":true,
-        "awareness_state":{"status":"skipped","reason_code":"speaker_awareness_state_not_native","detail":"Owner centroid was saved and the candidate was cleared, but awareness/current.json was not updated."}
-    })).into_response()
-}
 
-pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    match solstone_core_speaker_resolve::owner_candidate::clear_owner_candidate(&root.0) {
+    if req_version != candidate.version {
+        return err(
+            "speaker_candidate_stale_version",
+            "that speaker candidate is no longer current.",
+            "Candidate version mismatch or stale generation",
+            StatusCode::CONFLICT,
+        );
+    }
+
+    match solstone_core_speaker_resolve::owner_candidate::clear_owner_candidate_in_lock(&root.0) {
         Ok(_) => Json(json!({
             "status":"rejected", "partial_success":true,
             "awareness_state":{"status":"skipped","reason_code":"speaker_awareness_state_not_native","detail":"The candidate was cleared, but the rejection/cooldown state was not recorded."}

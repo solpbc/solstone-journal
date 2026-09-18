@@ -130,6 +130,8 @@
   "SPK_SEARCH_ERROR": "couldn't search your people. try again.",
   "SPK_CHECK_NAME_ERROR": "couldn't check this name. try again.",
   "SPK_SAMPLE_UNAVAILABLE": "this sample isn't available",
+  "SPK_SAMPLE_UNVERIFIED_EVIDENCE": "unverified evidence",
+  "SPK_ACTION_SET_ASIDE": "set aside",
   "SPK_ACTION_RETRY": "try again",
   "SPK_CORRECT_SCOPE": "This fixes this one statement.",
   "SPK_CORRECT_PROPAGATE_OFFER": "these two can be looked up across segments to show you what else would change.",

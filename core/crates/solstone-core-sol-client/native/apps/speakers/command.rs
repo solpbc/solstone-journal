@@ -1081,71 +1081,48 @@ pub fn confirm_owner(ctx: CommandContext<'_>) -> CommandOutput {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
-    let backfill_after = parsed.bool_value("--backfill").unwrap_or(true);
     let json_output = parsed.flag("--json");
-    let mut result = match request_json(
-        ctx,
-        HttpMethod::Post,
-        "/app/speakers/api/owner/confirm-cli",
-        vec![],
-        None,
-    ) {
-        Ok(result) => result,
-        Err(error) if error.reason_code() == Some("speaker_command_failed") => {
-            return detail_error(error);
-        }
-        Err(error) => return speaker_error(error),
-    };
-    let mut out = String::new();
-    if !json_output {
-        emit(
-            &mut out,
-            format!(
-                "Owner centroid confirmed (principal: {}, cluster_size: {})",
-                value_to_string(result.get("principal_id")),
-                value_to_string(result.get("cluster_size")),
-            ),
-        );
-    }
-    if backfill_after {
-        if !json_output {
-            emit(&mut out, "Running attribution backfill...");
-        }
-        let stats = match request_json(
-            ctx,
-            HttpMethod::Post,
-            "/app/speakers/api/backfill",
-            vec![],
-            Some(json!({"commit": true})),
-        ) {
-            Ok(stats) => stats,
-            Err(error) => return speaker_error_preserving_stdout(out, error),
-        };
-        if json_output {
-            if let Value::Object(object) = &mut result {
-                object.insert("backfill".to_string(), stats);
-            }
-        } else {
-            emit(
-                &mut out,
-                format!(
-                    "Backfill complete: {} segments processed, {} already labeled",
-                    value_to_string(stats.get("processed")),
-                    value_to_string(stats.get("already_labeled")),
-                ),
-            );
-        }
-    }
+    let review_entry = format!("/app/speakers/{}", ctx.today);
+    let message = format!(
+        "Owner voice candidates must be confirmed in the browser.\nReview and confirm at {review_entry}"
+    );
     if json_output {
-        stdout_json(&result)
+        CommandOutput::failure(
+            format!(
+                "{}\n",
+                json!({
+                    "reason_code": "review_required",
+                    "error": "review_required",
+                    "detail": "Owner voice candidates must be confirmed in the browser.",
+                    "message": message,
+                    "review_entry": review_entry,
+                })
+            ),
+            1,
+        )
     } else {
-        CommandOutput::success(out)
+        stderr(format!("error: {message}"))
     }
 }
 
 #[must_use]
 pub fn reject_owner(ctx: CommandContext<'_>) -> CommandOutput {
-    post_json(ctx, "/app/speakers/api/owner/reject-cli", Value::Null)
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--version", None)],
+        &[FlagSpec::true_flag("--json")],
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(version) = parsed.value("--version") else {
+        return stderr("Error: --version is required.");
+    };
+    post_json(
+        ctx,
+        "/app/speakers/api/owner/reject-cli",
+        json!({"version": version}),
+    )
 }
 
 #[must_use]
@@ -2206,7 +2183,10 @@ fn monotonic_seconds(ctx: CommandContext<'_>) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
+    use crate::seam::ScriptedHttpTransport;
 
     #[test]
     fn parse_stream_layout_option_accepts_omitted_named_and_direct() {
@@ -2236,5 +2216,132 @@ mod tests {
         let err = parse_stream_layout_option(&args).unwrap_err();
         assert_eq!(err.exit, 1);
         assert_eq!(err.stderr, "Error: invalid value for --stream-layout\n");
+    }
+
+    #[test]
+    fn confirm_owner_refusal_json() {
+        let args = vec!["--json".to_string()];
+        let env = BTreeMap::new();
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let output = confirm_owner(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260918",
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+
+        assert_eq!(output.exit, 1);
+        assert_eq!(output.stdout, "");
+        let json_err: Value = serde_json::from_str(output.stderr.trim()).expect("stderr JSON");
+        assert_eq!(json_err["reason_code"], "review_required");
+        assert_eq!(json_err["error"], "review_required");
+        assert_eq!(
+            json_err["detail"],
+            "Owner voice candidates must be confirmed in the browser."
+        );
+        assert_eq!(json_err["review_entry"], "/app/speakers/20260918");
+        assert!(transport.recorded().is_empty());
+        transport.assert_done();
+    }
+
+    #[test]
+    fn confirm_owner_refusal_plain() {
+        let args = vec![];
+        let env = BTreeMap::new();
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let output = confirm_owner(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260918",
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+
+        assert_eq!(output.exit, 1);
+        assert_eq!(output.stdout, "");
+        assert!(output.stderr.contains("/app/speakers/20260918"));
+        assert!(transport.recorded().is_empty());
+        transport.assert_done();
+    }
+
+    #[test]
+    fn confirm_owner_refusal_with_backfill_flags() {
+        for flag in ["--backfill", "--no-backfill"] {
+            let args = vec![flag.to_string(), "--json".to_string()];
+            let env = BTreeMap::new();
+            let transport = ScriptedHttpTransport::new(vec![]);
+            let output = confirm_owner(CommandContext {
+                args: &args,
+                env: &env,
+                stdin: "",
+                today: "20260918",
+                transport: &transport,
+                clock: None,
+                files: None,
+                build_identity: None,
+                client_item_ids: None,
+                notification_sink: None,
+                link_pairing: None,
+                link_serve: None,
+                link_status_probe: None,
+            });
+
+            assert_eq!(output.exit, 1);
+            assert_eq!(output.stdout, "");
+            let json_err: Value = serde_json::from_str(output.stderr.trim()).expect("stderr JSON");
+            assert_eq!(json_err["reason_code"], "review_required");
+            assert_eq!(json_err["error"], "review_required");
+            assert_eq!(
+                json_err["detail"],
+                "Owner voice candidates must be confirmed in the browser."
+            );
+            assert_eq!(json_err["review_entry"], "/app/speakers/20260918");
+            assert!(transport.recorded().is_empty());
+            transport.assert_done();
+        }
+    }
+
+    #[test]
+    fn reject_owner_requires_version() {
+        let args = vec![];
+        let env = BTreeMap::new();
+        let transport = ScriptedHttpTransport::new(vec![]);
+        let output = reject_owner(CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260918",
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+
+        assert_eq!(output.exit, 1);
+        assert!(output.stderr.contains("--version is required"));
+        assert!(transport.recorded().is_empty());
+        transport.assert_done();
     }
 }

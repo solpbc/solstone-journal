@@ -236,25 +236,6 @@ async fn resolve_names_commit_merges_ready_candidate() {
 #[tokio::test]
 async fn reject_declares_skipped_awareness_state() {
     let journal = Journal::new();
-    let (status, value) = call(
-        router(journal.0.clone()),
-        "/app/speakers/api/owner/reject-cli",
-        json!({}),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(value["status"], "rejected");
-    assert_eq!(value["partial_success"], true);
-    assert_eq!(value["awareness_state"]["status"], "skipped");
-    assert_eq!(
-        value["awareness_state"]["reason_code"],
-        "speaker_awareness_state_not_native"
-    );
-}
-
-#[tokio::test]
-async fn confirm_declares_skipped_awareness_state_after_native_mutation() {
-    let journal = Journal::new();
     journal.entity("owner", true);
     fs::create_dir_all(journal.0.join("awareness")).expect("awareness");
     solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
@@ -268,15 +249,17 @@ async fn confirm_declares_skipped_awareness_state_after_native_mutation() {
         },
     )
     .expect("candidate");
+
     let (status, value) = call(
         router(journal.0.clone()),
-        "/app/speakers/api/owner/confirm-cli",
-        json!({}),
+        "/app/speakers/api/owner/reject-cli",
+        json!({"version": "v1"}),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(value["status"], "confirmed");
+    assert_eq!(value["status"], "rejected");
     assert_eq!(value["partial_success"], true);
+    assert_eq!(value["awareness_state"]["status"], "skipped");
     assert_eq!(
         value["awareness_state"]["reason_code"],
         "speaker_awareness_state_not_native"
@@ -285,20 +268,31 @@ async fn confirm_declares_skipped_awareness_state_after_native_mutation() {
 }
 
 #[tokio::test]
-async fn confirm_cli_refuses_invalid_owner_identity_before_candidate_reads_or_writes() {
+async fn reject_cli_missing_version_refuses_with_bad_request() {
     let journal = Journal::new();
-    let before = content_snapshot(&journal.0);
+    journal.entity("owner", true);
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/reject-cli",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value["reason_code"], "missing_required_field");
+}
 
+#[tokio::test]
+async fn confirm_cli_refuses_in_place_with_review_required() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
     let (status, value) = call(
         router(journal.0.clone()),
         "/app/speakers/api/owner/confirm-cli",
         json!({}),
     )
     .await;
-
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{value}");
-    assert_eq!(value["reason_code"], "speaker_owner_identity_invalid");
-    assert_eq!(content_snapshot(&journal.0), before);
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value["reason_code"], "review_required");
 }
 
 #[tokio::test]
@@ -960,4 +954,356 @@ async fn backfill_last_seen_reads_direct_labels_and_preflights_all_labels_before
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{refused}");
     assert_eq!(refused["reason_code"], "speaker_command_failed");
     assert_eq!(crate::support::snapshot_files(&journal.0), before);
+}
+
+async fn get_call(app: axum::Router, uri: &str) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(Request::get(uri).body(Body::empty()).expect("request"))
+        .await
+        .expect("response");
+    let status = response.status();
+    let value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+    )
+    .expect("json");
+    (status, value)
+}
+
+#[tokio::test]
+async fn owner_status_unbound_on_identities_only_legacy_samples() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness dir");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "20260808T120000Z",
+                "samples": [
+                    {
+                        "day": "20260808",
+                        "stream": "main",
+                        "segment_key": "120000_1",
+                        "sentence_id": 1,
+                        "source": "audio",
+                        "stream_layout": "standard"
+                    }
+                ]
+            }
+        })
+        .to_string(),
+    )
+    .expect("awareness write");
+
+    let mut centroid = vec![0.0; 256];
+    centroid[0] = 1.0;
+    let candidate = solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+        centroid,
+        cluster_size: 1,
+        threshold: 0.5,
+        version: "20260808T120000Z".to_owned(),
+        evidence_tier: "evidentiary".to_owned(),
+    };
+    let _lock =
+        solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(&journal.0)
+            .unwrap();
+    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate_in_lock(
+        &journal.0, &candidate,
+    )
+    .unwrap();
+    drop(_lock);
+
+    let (status, value) =
+        get_call(router(journal.0.clone()), "/app/speakers/api/owner/status").await;
+    assert_eq!(status, StatusCode::OK, "{value}");
+    assert_eq!(value["status"], "candidate", "{value}");
+    let samples = value["samples"].as_array().expect("samples array");
+    assert_eq!(samples.len(), 1);
+    assert_eq!(samples[0]["evidence_state"], "unbound");
+    assert_eq!(samples[0]["artifact_eligible"], false);
+}
+
+#[tokio::test]
+async fn owner_confirm_empty_body_refuses() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness dir");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "20260808T120000Z",
+                "samples": []
+            }
+        })
+        .to_string(),
+    )
+    .expect("awareness write");
+
+    let mut centroid = vec![0.0; 256];
+    centroid[0] = 1.0;
+    let candidate = solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+        centroid,
+        cluster_size: 1,
+        threshold: 0.5,
+        version: "20260808T120000Z".to_owned(),
+        evidence_tier: "evidentiary".to_owned(),
+    };
+    let _lock =
+        solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(&journal.0)
+            .unwrap();
+    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate_in_lock(
+        &journal.0, &candidate,
+    )
+    .unwrap();
+    drop(_lock);
+
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/confirm",
+        json!({}),
+    )
+    .await;
+    assert!(status.is_client_error(), "{value}");
+}
+
+#[tokio::test]
+async fn owner_set_aside_stale_version_refuses() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness dir");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "20260808T120000Z",
+                "samples": []
+            }
+        })
+        .to_string(),
+    )
+    .expect("awareness write");
+
+    let mut centroid = vec![0.0; 256];
+    centroid[0] = 1.0;
+    let candidate = solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+        centroid,
+        cluster_size: 1,
+        threshold: 0.5,
+        version: "20260808T120000Z".to_owned(),
+        evidence_tier: "evidentiary".to_owned(),
+    };
+    let _lock =
+        solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(&journal.0)
+            .unwrap();
+    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate_in_lock(
+        &journal.0, &candidate,
+    )
+    .unwrap();
+    drop(_lock);
+
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/set-aside",
+        json!({"version": "20260807T000000Z_stale"}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT, "{value}");
+    assert_eq!(value["reason_code"], "speaker_candidate_stale_version");
+}
+
+#[tokio::test]
+async fn owner_reject_cli_missing_version_refuses() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/reject-cli",
+        json!({}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{value}");
+    assert_eq!(value["reason_code"], "missing_required_field");
+}
+
+#[cfg(feature = "test-hooks")]
+#[tokio::test]
+async fn test_hooks_pause_after_snapshot_concurrent_status_waits() {
+    use solstone_core_convey_shell::speakers_owner_write::test_hooks;
+    use solstone_core_speaker_resolve::owner_candidate::{
+        OwnerCandidate, hold_owner_candidate_lock, write_owner_candidate_in_lock,
+    };
+
+    test_hooks::reset();
+    test_hooks::set_pause_after_snapshot(true);
+
+    let journal = Journal::new();
+    journal.entity("owner", true);
+
+    let j_root = journal.0.clone();
+    let writer_handle = std::thread::spawn(move || {
+        let _lock = hold_owner_candidate_lock(&j_root).expect("candidate lock");
+        let mut centroid = vec![0.0; 256];
+        centroid[0] = 1.0;
+        let candidate = OwnerCandidate {
+            centroid,
+            cluster_size: 3,
+            threshold: 0.5,
+            version: "20260808T120000Z".to_owned(),
+            evidence_tier: "evidentiary".to_owned(),
+        };
+        write_owner_candidate_in_lock(&j_root, &candidate).expect("write candidate");
+
+        test_hooks::wait_if_pause_after_snapshot();
+
+        fs::create_dir_all(j_root.join("awareness")).expect("awareness dir");
+        fs::write(
+            j_root.join("awareness/current.json"),
+            json!({
+                "voiceprint": {
+                    "status": "candidate",
+                    "detected_at": "20260808T120000Z",
+                    "cluster_size": 3,
+                    "evidence_tier": "evidentiary",
+                    "samples": []
+                }
+            })
+            .to_string(),
+        )
+        .expect("awareness write");
+    });
+
+    test_hooks::wait_entered_pause_after_snapshot(1);
+
+    let j_root_get = journal.0.clone();
+    let status_handle = tokio::spawn(async move {
+        get_call(router(j_root_get), "/app/speakers/api/owner/status").await
+    });
+
+    // Give the status request a moment to spawn and attempt to acquire the candidate lock
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    test_hooks::set_pause_after_snapshot(false);
+    writer_handle.join().expect("writer thread join");
+
+    let (status, value) = status_handle.await.expect("status task join");
+    assert_eq!(status, StatusCode::OK, "{value}");
+    assert_eq!(value["status"], "candidate", "{value}");
+    assert_eq!(value["version"], "20260808T120000Z", "{value}");
+    assert_ne!(value.get("review"), Some(&json!("incomplete")), "{value}");
+
+    test_hooks::reset();
+}
+
+#[cfg(feature = "test-hooks")]
+#[tokio::test]
+async fn test_hooks_stale_confirm_cannot_clear_replacement() {
+    use solstone_core_convey_shell::speakers_owner_write::test_hooks;
+    use solstone_core_speaker_resolve::owner_candidate::{
+        OwnerCandidate, hold_owner_candidate_lock, load_owner_candidate,
+        write_owner_candidate_in_lock,
+    };
+
+    test_hooks::reset();
+
+    let journal = Journal::new();
+    journal.entity("owner", true);
+
+    // Initial candidate version A
+    fs::create_dir_all(journal.0.join("awareness")).expect("awareness dir");
+    fs::write(
+        journal.0.join("awareness/current.json"),
+        json!({
+            "voiceprint": {
+                "status": "candidate",
+                "detected_at": "20260808T100000Z",
+                "samples": []
+            }
+        })
+        .to_string(),
+    )
+    .expect("awareness write");
+
+    let mut centroid_a = vec![0.0; 256];
+    centroid_a[0] = 1.0;
+    let candidate_a = OwnerCandidate {
+        centroid: centroid_a,
+        cluster_size: 1,
+        threshold: 0.5,
+        version: "20260808T100000Z".to_owned(),
+        evidence_tier: "evidentiary".to_owned(),
+    };
+    {
+        let _lock = hold_owner_candidate_lock(&journal.0).expect("candidate lock");
+        write_owner_candidate_in_lock(&journal.0, &candidate_a).expect("write candidate A");
+    }
+
+    test_hooks::set_hold_confirm_or_reject(true);
+
+    let j_root = journal.0.clone();
+    let confirm_handle = tokio::spawn(async move {
+        call(
+            router(j_root),
+            "/app/speakers/api/owner/confirm",
+            json!({
+                "version": "20260808T100000Z",
+                "samples": []
+            }),
+        )
+        .await
+    });
+
+    test_hooks::wait_entered_hold_confirm_or_reject(1);
+
+    // Install candidate replacement B while confirm is paused before taking the lock
+    {
+        let _lock = hold_owner_candidate_lock(&journal.0).expect("candidate lock");
+        let mut centroid_b = vec![0.0; 256];
+        centroid_b[0] = 2.0;
+        let candidate_b = OwnerCandidate {
+            centroid: centroid_b,
+            cluster_size: 2,
+            threshold: 0.5,
+            version: "20260808T120000Z".to_owned(),
+            evidence_tier: "evidentiary".to_owned(),
+        };
+        write_owner_candidate_in_lock(&journal.0, &candidate_b).expect("write candidate B");
+        fs::write(
+            journal.0.join("awareness/current.json"),
+            json!({
+                "voiceprint": {
+                    "status": "candidate",
+                    "detected_at": "20260808T120000Z",
+                    "samples": []
+                }
+            })
+            .to_string(),
+        )
+        .expect("awareness write B");
+    }
+
+    test_hooks::set_hold_confirm_or_reject(false);
+
+    let (status, value) = confirm_handle.await.expect("confirm task join");
+    assert_ne!(status, StatusCode::OK, "{value}");
+    assert_eq!(status, StatusCode::CONFLICT, "{value}");
+    assert_eq!(value["reason_code"], "speaker_candidate_stale_version");
+
+    let loaded = load_owner_candidate(&journal.0)
+        .expect("load candidate")
+        .expect("candidate exists");
+    assert_eq!(loaded.version, "20260808T120000Z");
+    assert!(
+        !journal
+            .0
+            .join("state/speakers/owner_centroid.json")
+            .exists()
+    );
+
+    test_hooks::reset();
 }
