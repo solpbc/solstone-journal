@@ -1690,7 +1690,7 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
     let helper_launch_id =
         solstone_core_system::lifecycle::generate_helper_launch_id("task-worker");
     solstone_core_system::lifecycle::write_parent_loss_admission_intent(
-        journal.root(),
+        &journal.0,
         &solstone_core_system::lifecycle::AdmissionIntent::new(
             active.generation,
             &helper_launch_id,
@@ -1707,7 +1707,7 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
         parent_launch_id: None,
     };
     solstone_core_system::lifecycle::write_parent_loss_admission_spawn_identity(
-        journal.root(),
+        &journal.0,
         &helper_identity,
     )
     .expect("write helper spawn identity");
