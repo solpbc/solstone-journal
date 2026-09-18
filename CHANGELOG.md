@@ -17,8 +17,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- if a journal start stops partway through, starting it again no longer gets blocked
-- new linux service units now wait up to twenty seconds for the journal to stop, matching macos
+- the journal now cleans up an earlier start that stopped partway through before starting again; if it cannot prove cleanup is safe, it still stops rather than risk two copies
+- journal setup now gives linux journals the same twenty seconds as macos to finish stopping before the system ends them
 - a damaged recoverable bookkeeping file no longer stops the journal from starting or finishing its day; the damaged file is kept beside the original and journal doctor lists it
 - days with a lot of context about a person or thing no longer get stuck while your journal considers new memories. it now fits source excerpts and existing memories within the available space before asking the model.
 - the network page's pairing confirmation no longer asks you to compare a fingerprint nothing else shows; it points at the journal mark shown on the same page instead.

@@ -259,7 +259,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            "no recovery was needed",
+            "no recorded recovery to report",
             None::<String>,
         ));
     }
@@ -292,15 +292,13 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     } else {
         Status::Fail
     };
-    let mut result = make_result(
-        check,
-        status,
-        truncate(&detail, 4096),
-        Some(
-            "nothing needs doing: these records are kept beside your journal's bookkeeping so \
-             recovery is always listed; they hold none of your memories",
-        ),
-    );
+    let action = if report.unreadable.is_empty() {
+        "no action is needed: recovered records stay beside the originals and are listed here"
+    } else {
+        "check the paths under 'could not inspect'; any recovered records stay beside the \
+         originals and are listed here"
+    };
+    let mut result = make_result(check, status, truncate(&detail, 4096), Some(action));
     if !heals.is_empty() {
         result.heals = Some(heals);
     }
@@ -425,6 +423,12 @@ mod tests {
         let context = test_context(journal.path().to_path_buf());
         let result = run(&context, test_check()).expect("run");
         assert_eq!(result.status, Status::Warn);
+        assert_eq!(
+            result.fix.as_deref(),
+            Some(
+                "no action is needed: recovered records stay beside the originals and are listed here"
+            )
+        );
         let heals = result.heals.expect("heals list");
         assert_eq!(heals.len(), 10);
         assert!(heals.contains(&"health/providers/runtime/local.wedged-1.json".to_string()));
@@ -458,6 +462,12 @@ mod tests {
         let result = run(&context, test_check()).expect("run");
 
         assert_eq!(result.status, Status::Fail);
+        assert_eq!(
+            result.fix.as_deref(),
+            Some(
+                "check the paths under 'could not inspect'; any recovered records stay beside the originals and are listed here"
+            )
+        );
         assert!(
             result.detail.contains("health: Permission denied")
                 || result.detail.contains("health:")
