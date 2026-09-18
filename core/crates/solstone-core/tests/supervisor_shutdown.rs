@@ -156,6 +156,53 @@ async fn request_and_started(socket: &std::path::Path, cmd: Vec<String>, referen
     .await
     .expect("started event")
 }
+
+async fn seed_same_partition_backlog(
+    socket: &std::path::Path,
+    commands: &[Vec<String>],
+) -> (i32, usize) {
+    let stream = UnixStream::connect(socket).await.expect("connect Callosum");
+    let (read, mut write) = stream.into_split();
+    let mut reader = tokio::io::BufReader::new(read);
+    for (index, cmd) in commands.iter().enumerate() {
+        let line = serde_json::to_vec(&json!({
+            "tract": "supervisor",
+            "event": "request",
+            "cmd": cmd,
+            "ref": format!("backlog-{index}"),
+        }))
+        .expect("request JSON");
+        write.write_all(&line).await.expect("request");
+        write.write_all(b"\n").await.expect("frame");
+    }
+
+    timeout(Duration::from_secs(8), async {
+        let mut running_pid = None;
+        let mut queued_depth = 0;
+        loop {
+            let mut line = String::new();
+            let bytes = reader.read_line(&mut line).await.expect("event line");
+            assert!(bytes > 0, "connection closed while seeding backlog");
+            let value: Value = serde_json::from_str(&line).expect("event JSON");
+            if value["tract"] == "supervisor" && value["event"] == "started" {
+                if let Some(pid) = value["pid"].as_i64() {
+                    running_pid = Some(pid as i32);
+                }
+            }
+            if value["tract"] == "supervisor" && value["event"] == "queue" {
+                queued_depth =
+                    queued_depth.max(value["queued"].as_u64().expect("queue event depth") as usize);
+            }
+            if let Some(pid) = running_pid
+                && queued_depth == commands.len() - 1
+            {
+                return (pid, queued_depth);
+            }
+        }
+    })
+    .await
+    .expect("backlog reaches measured depth")
+}
 fn foreign_heartbeat(journal: &TempJournal) {
     let sync = journal.0.join("health/sync");
     fs::create_dir_all(&sync).expect("sync directory");
@@ -260,6 +307,86 @@ async fn ac14_shutdown_clears_lifecycle_in_order_and_reaps_task_child() {
     assert!(
         nix::sys::signal::kill(nix::unistd::Pid::from_raw(task_pid), None).is_err(),
         "task child was reaped"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn standard_shutdown_under_real_queue_backlog_fits_launchd_boundary() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal);
+    let socket = journal.0.join("health/callosum.sock");
+    let ready = journal.0.join("health/supervisor.ready");
+    wait_for(&ready, &mut child);
+
+    let ready_paths = (0..8)
+        .map(|index| journal.0.join(format!("backlog-task-{index}.ready")))
+        .collect::<Vec<_>>();
+    let commands = ready_paths
+        .iter()
+        .map(|path| {
+            vec![
+                env!("CARGO_BIN_EXE_solstone-core-system-test-child").into(),
+                "ready-sleep".into(),
+                path.display().to_string(),
+                "30000".into(),
+            ]
+        })
+        .collect::<Vec<_>>();
+    let (running_pid, queued_before) = seed_same_partition_backlog(&socket, &commands).await;
+    assert_eq!(queued_before, 7, "one task runs and seven remain queued");
+    let outcome = await_outcome_async(
+        WaitPolarity::Positive,
+        Duration::from_millis(10),
+        300,
+        Instant::now,
+        || {
+            if ready_paths[0].exists() {
+                PollState::Held
+            } else {
+                PollState::Pending
+            }
+        },
+        tokio::time::sleep,
+    )
+    .await;
+    panic_for_wait("active backlog task did not reach ready point", outcome);
+
+    let shutdown_started = Instant::now();
+    nix::sys::signal::kill(
+        nix::unistd::Pid::from_raw(child.id() as i32),
+        nix::sys::signal::Signal::SIGTERM,
+    )
+    .expect("signal supervisor");
+    let status = timeout(Duration::from_secs(20), async {
+        loop {
+            if let Some(status) = child.try_wait().expect("supervisor status") {
+                return status;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("supervisor exits inside launchd boundary");
+    let elapsed = shutdown_started.elapsed();
+
+    assert!(status.success(), "standard shutdown exits cleanly");
+    assert!(
+        elapsed < Duration::from_secs(15),
+        "healthy backlog shutdown must fit the in-process budget: {elapsed:?}"
+    );
+    assert!(
+        nix::sys::signal::kill(nix::unistd::Pid::from_raw(running_pid), None).is_err(),
+        "the active task is reaped"
+    );
+    assert!(
+        ready_paths[1..].iter().all(|path| !path.exists()),
+        "queued tasks stay inert once shutdown begins"
+    );
+    eprintln!(
+        "LIVE_BACKLOG_MEASUREMENT elapsed_ms={} queued_before={} queued_after=0 active_reaped=true queued_started=0 exit={}",
+        elapsed.as_millis(),
+        queued_before,
+        status.code().unwrap_or_default(),
     );
 }
 
