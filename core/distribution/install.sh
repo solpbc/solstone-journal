@@ -311,6 +311,10 @@ parse_args() {
 	journal | cli) ;;
 	*) refuse role-invalid "$ROLE" ;;
 	esac
+	# --no-start changes journal setup only. Canonicalize it away for CLI
+	# installs so interrupted CLI transactions can be retried with either
+	# spelling of the same effective policy.
+	[ "$ROLE" != cli ] || NO_START=0
 
 	case $LANE in
 	release | staging | dev) ;;
@@ -1158,6 +1162,7 @@ check_existing_destination_marker() {
 		[ -f "$_m" ] || continue
 		_marker_role=$(awk -F= '$1=="requested_role"{print $2}' "$_m")
 		_marker_no_start=$(awk -F= '$1=="requested_no_start"{print $2}' "$_m")
+		[ "$_marker_role" != cli ] || _marker_no_start=0
 		if [ -n "$_marker_role" ] && [ "$_marker_role" != "$ROLE" ]; then
 			refuse transaction-policy-conflict "prior transaction was for role ${_marker_role}, but requested role is ${ROLE}"
 		fi

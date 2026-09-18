@@ -1808,14 +1808,14 @@ printf '%s\n' \
 	"candidate_dest=$INTR_CAND_DEST" \
 	"candidate_digest=$INTR_CAND_DIGEST" \
 	'requested_role=cli' \
-	'requested_no_start=0' \
+	'requested_no_start=1' \
 	'prior_service_policy=start' \
 	'phase=extract' \
 	>"$INTR_CAND_DEST/.install-transaction-testtoken"
 if env HOME="$INTR_CLI_HOME" "$INSTALL" --role cli --prefix "$INTR_CLI_PREFIX" \
 	--archive "$INTR_CAND_ARCHIVE" --sha256 "$INTR_CAND_SHA" --release "$INTR_CAND_REL" >/dev/null \
 	&& grep -F 'role=cli' "$INTR_CLI_PREFIX/install-receipt" >/dev/null; then
-	pass "interrupted CLI candidate retries without role-conflict"
+	pass "interrupted CLI candidate treats --no-start as no effect on retry"
 else
 	fail "interrupted CLI candidate retry failed"
 fi
