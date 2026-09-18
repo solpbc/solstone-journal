@@ -31,7 +31,6 @@
   // Worst signal wins, and green is earned: a verdict may not read "everything's
   // working" while the device rows below it say a device has gone quiet, and a
   // failure to derive device delivery renders unavailable, never green.
-  // vpx/design-system/health-verdict-glance.md
   const GLANCE_DEVICES_ACTION = { href: '#registeredClientsCard', label: 'view devices' };
 
   let brainSnapshot = null;

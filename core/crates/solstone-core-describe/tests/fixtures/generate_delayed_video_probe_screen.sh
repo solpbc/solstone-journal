@@ -18,7 +18,7 @@ if [ "$#" -gt 1 ]; then
     exit 2
 fi
 
-source_root=${1:-${SOLSTONE_FIELD_JOURNAL_ROOT:-/home/jer/projects/field_journal}}
+source_root=${1:-${SOLSTONE_FIELD_JOURNAL_ROOT:-$HOME/projects/field_journal}}
 source_file="$source_root/$SOURCE_RELATIVE_PATH"
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 output_file="$script_dir/delayed_video_probe_screen.mp4"

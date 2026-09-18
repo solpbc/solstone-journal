@@ -1081,7 +1081,7 @@ mod tests {
 
     #[test]
     fn a_stale_offload_mark_is_declined_when_the_owner_turns_on_keep() {
-        // media-lifecycle candidate 2 (req_ysgdq4ik): an OffloadRawRelease mark
+        // media-lifecycle candidate 2: an OffloadRawRelease mark
         // must not keep looking approvable once retention policy would no
         // longer release it. `.flac` + `no_decodable_audio` puts this segment on
         // the empty-audio side of the policy split, not the ordinary-media side.

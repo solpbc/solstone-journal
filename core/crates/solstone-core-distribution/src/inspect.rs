@@ -56,7 +56,7 @@ pub fn write_sidecars(
         OS_WINDOWS => {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "windows archive/signing is not implemented in this lode",
+                "windows archive/signing is not implemented on this platform",
             ));
         }
         other => {
@@ -449,7 +449,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("windows archive/signing is not implemented in this lode"),
+                .contains("windows archive/signing is not implemented on this platform"),
             "{error}"
         );
         assert!(!out.join(format!("{basename}.release")).exists());

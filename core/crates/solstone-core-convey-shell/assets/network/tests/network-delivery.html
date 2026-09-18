@@ -31,12 +31,12 @@
   const R = window.NetworkRender;
   const NOW = Date.parse('2026-09-06T03:25:00Z');
 
-  // The live-journal shape that produced finding G3-02: a device whose material
-  // arrived 34 s ago while its heartbeat is 12 min stale. Delivery and connection
-  // are separate measurements and the card must not merge them.
+  // A real live-journal shape: a device whose material arrived 34 s ago while
+  // its heartbeat is 12 min stale. Delivery and connection are separate
+  // measurements and the card must not merge them.
   const deliveringButStaleHeartbeat = {
     cid: 'sha256:a',
-    display_label: 'extro-tmux-native',
+    display_label: 'tmux-native',
     state: 'disconnected',
     group: 'inactive',
     label: 'offline',

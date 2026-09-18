@@ -897,14 +897,14 @@ mod tests {
     #[test]
     fn locator_controls_reject_public_or_wrong_identity() {
         let locator =
-            "ssh://jer@fedora.local/data/git/advisory-mirrors/rustsec/rustsec-advisory-db.git";
+            "ssh://mirror-operator@git-mirror.internal/data/git/advisory-mirrors/rustsec/rustsec-advisory-db.git";
         let name = validate_locator(locator).expect("private locator");
         assert!(name.starts_with("rustsec-advisory-db.git-"));
         for invalid in [
-            "git@fedora.local:advisory-db",
+            "git@git-mirror.internal:advisory-db",
             "https://github.com/RustSec/advisory-db",
-            "ssh://fedora.local/data/git/not-rustsec.git",
-            "ssh://fedora.local/data/git/advisory-db?ref=main",
+            "ssh://git-mirror.internal/data/git/not-rustsec.git",
+            "ssh://git-mirror.internal/data/git/advisory-db?ref=main",
         ] {
             assert!(validate_locator(invalid).is_err(), "{invalid}");
         }

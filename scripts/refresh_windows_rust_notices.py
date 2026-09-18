@@ -98,12 +98,12 @@ LOCK_RELATIVE_PATH = "core/Cargo.lock"
 INVENTORY_RELATIVE_PATH = "core/distribution/inventory.toml"
 
 # Operator-internal fragments that must never end up in a file this repo
-# carries (VPE index § operating principle 8: no extro/office/session paths
-# on public surface). Structural patterns, not a specific incident's names.
-# Plain substrings only for path/host fragments that cannot collide with a
-# real crate name; a hopper/session id (`req_igym6lkc`, `req-ymiemtwm`) needs
-# a word-boundaried regex instead, because a bare "req-" substring match is a
-# false positive against real crates (e.g. `ureq`, `ureq-proto`).
+# carries: no internal office/session paths on public surface. Structural
+# patterns, not a specific incident's names. Plain substrings only for
+# path/host fragments that cannot collide with a real crate name; an internal
+# work-item id (e.g. `req_` followed by an 8-character alphanumeric token)
+# needs a word-boundaried regex instead, because a bare "req-" substring match
+# is a false positive against real crates (e.g. `ureq`, `ureq-proto`).
 FORBIDDEN_PATH_FRAGMENTS = (
     "/home/",
     "/var/tmp/",
@@ -1153,7 +1153,7 @@ def refresh(
     id_match = FORBIDDEN_ID_PATTERN.search(encoded)
     if id_match:
         raise RefreshError(
-            "the regenerated index contains what looks like a hopper/session id: "
+            "the regenerated index contains what looks like an internal work-item id: "
             f"{id_match.group().decode(errors='replace')!r}"
         )
 

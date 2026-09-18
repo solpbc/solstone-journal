@@ -848,10 +848,10 @@ mod tests {
         attach(
             root.path(),
             "work",
-            "journal_jer",
-            "link_jer",
-            r#"{"id":"jer","name":"Jer","type":"Person","is_principal":true}"#,
-            r#"{"entity_id":"jer","description":"founder"}"#,
+            "journal_sam",
+            "link_sam",
+            r#"{"id":"sam","name":"Sam","type":"Person","is_principal":true}"#,
+            r#"{"entity_id":"sam","description":"founder"}"#,
         );
         attach(
             root.path(),
@@ -875,7 +875,7 @@ mod tests {
         let list = focused_entity_lines(&rendered).join("\n");
         assert!(list.contains("Ada"), "{list}");
         assert!(list.contains("Moe"), "{list}");
-        assert!(!list.contains("Jer"), "{list}");
+        assert!(!list.contains("Sam"), "{list}");
         assert!(!list.contains("Soleil"), "{list}");
     }
 
@@ -886,10 +886,10 @@ mod tests {
         attach(
             root.path(),
             "work",
-            "journal_jer",
-            "link_jer",
-            r#"{"id":"jer","name":"Jer","type":"Person","is_principal":true}"#,
-            r#"{"entity_id":"jer","description":"founder"}"#,
+            "journal_sam",
+            "link_sam",
+            r#"{"id":"sam","name":"Sam","type":"Person","is_principal":true}"#,
+            r#"{"entity_id":"sam","description":"founder"}"#,
         );
         attach(
             root.path(),
@@ -905,7 +905,7 @@ mod tests {
             !rendered.contains("'s Role"),
             "role line should not form without a usable preferred/name: {rendered}"
         );
-        assert!(list.contains("Jer"), "principal vanished: {list}");
+        assert!(list.contains("Sam"), "principal vanished: {list}");
         assert!(list.contains("Ada"), "{list}");
     }
 
@@ -977,10 +977,10 @@ mod tests {
         attach(
             root.path(),
             "work",
-            "journal_jer",
-            "link_jer",
-            r#"{"id":"jer","name":"Jer","type":"Person","is_principal":true}"#,
-            r#"{"entity_id":"jer","description":"ROLE_DESC_MARKER"}"#,
+            "journal_sam",
+            "link_sam",
+            r#"{"id":"sam","name":"Sam","type":"Person","is_principal":true}"#,
+            r#"{"entity_id":"sam","description":"ROLE_DESC_MARKER"}"#,
         );
         attach(
             root.path(),
@@ -997,7 +997,7 @@ mod tests {
         );
         assert!(rendered.contains("Ada"), "{rendered}");
         assert!(
-            rendered.contains("Jer"),
+            rendered.contains("Sam"),
             "principal should stay in the names-only roster when no role line is rendered: {rendered}"
         );
     }

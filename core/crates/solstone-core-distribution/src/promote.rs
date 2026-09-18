@@ -70,7 +70,7 @@ impl PromoteStep {
                 .into_iter()
                 .filter(|step| !macos_only(step))
                 .collect()),
-            OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+            OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
             other => panic!("unexpected distribution os {other}"),
         }
     }
@@ -171,7 +171,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         OS_MACOS => {}
         OS_WINDOWS => {
             return Err(PromoteError::new(
-                "windows archive/signing is not implemented in this lode",
+                "windows archive/signing is not implemented on this platform",
             ));
         }
         other => {
@@ -201,7 +201,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         OS_LINUX => None,
         OS_WINDOWS => {
             return Err(PromoteError::new(
-                "windows archive/signing is not implemented in this lode",
+                "windows archive/signing is not implemented on this platform",
             ));
         }
         other => return Err(PromoteError::new(format!("unexpected os {other}"))),
@@ -221,7 +221,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         OS_LINUX => None,
         OS_WINDOWS => {
             return Err(PromoteError::new(
-                "windows archive/signing is not implemented in this lode",
+                "windows archive/signing is not implemented on this platform",
             ));
         }
         other => return Err(PromoteError::new(format!("unexpected os {other}"))),
@@ -264,7 +264,7 @@ pub fn promote(request: &PromoteRequest) -> Result<PathBuf, PromoteError> {
         }
         OS_WINDOWS => {
             return Err(PromoteError::new(
-                "windows archive/signing is not implemented in this lode",
+                "windows archive/signing is not implemented on this platform",
             ));
         }
         other => return Err(PromoteError::new(format!("unexpected os {other}"))),
@@ -536,7 +536,7 @@ mod tests {
             std::path::Path::new(
                 "/var/tmp/solstone-distribution-work/linux-x86_64/promote/out.partial",
             ),
-            std::path::Path::new("/home/jer/out/linux-x86_64"),
+            std::path::Path::new("/home/builder/out/linux-x86_64"),
             "Invalid cross-device link (os error 18)",
         );
         let message = error.to_string();
@@ -544,7 +544,7 @@ mod tests {
             message
                 .contains("/var/tmp/solstone-distribution-work/linux-x86_64/promote/out.partial")
         );
-        assert!(message.contains("/home/jer/out/linux-x86_64"));
+        assert!(message.contains("/home/builder/out/linux-x86_64"));
         assert!(message.contains("SOLSTONE_DISTRIBUTION_WORK"));
     }
 
@@ -669,7 +669,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("windows archive/signing is not implemented in this lode"),
+                .contains("windows archive/signing is not implemented on this platform"),
             "{error}"
         );
         assert_eq!(
@@ -684,7 +684,7 @@ mod tests {
     fn promote_step_for_os_refuses_windows() {
         let error = super::PromoteStep::for_os("windows").unwrap_err();
         assert!(
-            error.contains("windows archive/signing is not implemented in this lode"),
+            error.contains("windows archive/signing is not implemented on this platform"),
             "{error}"
         );
         assert!(

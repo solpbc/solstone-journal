@@ -726,7 +726,7 @@ struct FinishProduce<'a> {
 
 /// Selection, binary inspection, staging and atomic promotion. Linux inspects
 /// ELF and emits deb/rpm; macOS inspects Mach-O and emits a signed pkg. Windows
-/// produce is refused in this lode.
+/// produce is refused on this platform.
 fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceError> {
     let FinishProduce {
         args,
@@ -783,7 +783,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         }
         OS_WINDOWS => {
             return Err(ProduceError::new(
-                "windows produce is not implemented in this lode",
+                "windows produce is not implemented on this platform",
             ));
         }
         other => {
@@ -827,7 +827,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         OS_LINUX => {}
         OS_WINDOWS => {
             return Err(ProduceError::new(
-                "windows produce is not implemented in this lode",
+                "windows produce is not implemented on this platform",
             ));
         }
         other => {

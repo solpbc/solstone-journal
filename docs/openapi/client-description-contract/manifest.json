@@ -19,8 +19,8 @@
       "sha256": "bf23b3651fa73dd6bc02748f162130d0b516e01d6d73ac03b56a51fddc062457"
     },
     "fixtures/wire-behavior.json": {
-      "byte_count": 900,
-      "sha256": "ab34a69b3bfa80f9e2687e9f69c515abd1cafdbc7ca5029adfb29a343d5f9186"
+      "byte_count": 901,
+      "sha256": "a5c332431aec20f3d4abc89f1b8d9c7d34f000b7696fe1e2b94836d787b1810d"
     },
     "projection.openapi.json": {
       "byte_count": 10655,

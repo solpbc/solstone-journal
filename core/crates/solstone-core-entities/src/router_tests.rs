@@ -1704,7 +1704,7 @@ fn summary_ids(body: &Value) -> Vec<String> {
 fn seed_residue_typed_journal(root: &Path) {
     seed_typed_entity(root, "a", "Alice", "Person");
     seed_typed_entity(root, "b", "Acme", "Company");
-    seed_typed_entity(root, "c", "Residue", "*3. ceo/cfo/cio triage (11");
+    seed_typed_entity(root, "c", "Residue", "*3. misc/notes/todo triage (11");
     seed_typed_entity(root, "d", "Today", "Today (Fri)");
 }
 
@@ -1735,7 +1735,7 @@ async fn journal_summary_buckets_residue_types_and_keeps_the_stored_value() {
         .find(|item| item["id"] == "c")
         .expect("residue entity");
     assert_eq!(residue["type_bucket"], "other");
-    assert_eq!(residue["type"], "*3. ceo/cfo/cio triage (11");
+    assert_eq!(residue["type"], "*3. misc/notes/todo triage (11");
 }
 
 #[tokio::test]

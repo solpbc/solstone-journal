@@ -7,8 +7,7 @@
 //! `solstone-core-ced-sys` `dlopen`s a dynamically-linked glibc shared object
 //! (`libced.so`). A `musl-static`-lane process -- every binary that links
 //! this crate -- has no in-process dynamic loader and can never satisfy that
-//! call: see Brief D
-//! (`vpe/workspace/archived/wave8-suze-owner-journal-burn-in-260831/brief-d-ced-out-of-process.md`),
+//! call: see the CED out-of-process design brief,
 //! measured on a shipped build. `solstone-core-ced-analyze` is the
 //! `zig-gnu-2.27` sibling that owns `dlopen`ing CED instead; this module owns
 //! resolving and invoking it.

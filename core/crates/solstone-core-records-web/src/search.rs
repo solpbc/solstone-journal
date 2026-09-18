@@ -954,8 +954,8 @@ mod highlight_phrase_tests {
     #[test]
     fn highlight_terms_mixes_a_phrase_with_a_bare_word() {
         assert_eq!(
-            highlight_terms("\"release burn\" hopper"),
-            vec!["release burn".to_string(), "hopper".to_string()]
+            highlight_terms("\"release burn\" garden"),
+            vec!["release burn".to_string(), "garden".to_string()]
         );
     }
 
@@ -1087,7 +1087,7 @@ mod highlight_phrase_tests {
         );
         assert!(!ordinary_is_record);
         // No match anywhere leaves the sentences, never the braces.
-        let (neither, neither_is_record) = excerpt_html(&record, Some(&readable), "hopper");
+        let (neither, neither_is_record) = excerpt_html(&record, Some(&readable), "garden");
         assert_eq!(neither, "thursday afternoon. it finished.");
         assert!(!neither_is_record);
     }

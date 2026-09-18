@@ -133,7 +133,7 @@ pub fn artifact_archives_for_os(os: &str, basename: &str) -> Result<Vec<String>,
             format!("{basename}.pkg"),
         ]),
         OS_LINUX => Ok(artifact_archives(basename).to_vec()),
-        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
         other => panic!("unexpected distribution os {other}"),
     }
 }
@@ -179,7 +179,7 @@ pub fn checksum_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, 
             names.push(bootstrap);
             Ok(names)
         }
-        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
         other => panic!("unexpected distribution os {other}"),
     }
 }
@@ -193,7 +193,7 @@ pub fn manifest_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, 
             names.push(format!("{basename}.sha256"));
             Ok(names)
         }
-        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
         other => panic!("unexpected distribution os {other}"),
     }
 }
@@ -228,7 +228,7 @@ pub fn artifact_sidecars_for_os(os: &str, basename: &str) -> Result<Vec<String>,
             names.push(bootstrap);
             Ok(names)
         }
-        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
         other => panic!("unexpected distribution os {other}"),
     }
 }
@@ -248,7 +248,7 @@ pub fn artifact_set_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'st
             names.extend(artifact_sidecars_for_os(os, basename)?);
             Ok(names)
         }
-        OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
+        OS_WINDOWS => Err("windows archive/signing is not implemented on this platform"),
         other => panic!("unexpected distribution os {other}"),
     }
 }
@@ -1346,7 +1346,7 @@ mod tests {
     #[test]
     fn windows_artifact_helpers_refuse() {
         let base = "solstone-journal-1.0.22-windows-x86_64";
-        let refusal = "windows archive/signing is not implemented in this lode";
+        let refusal = "windows archive/signing is not implemented on this platform";
         assert_eq!(
             artifact_archives_for_os(OS_WINDOWS, base).unwrap_err(),
             refusal

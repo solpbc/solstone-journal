@@ -1026,7 +1026,7 @@ win-host-ci: require-win-remote-host
 # disposable cloud host; win-host-ci remains the direct local development loop.
 ci-full-windows:
 ifneq ($(strip $(HOPPER_LID)),)
-	@echo "ci-full-windows is not supported in an agent lode; use make ci." >&2; exit 2
+	@echo "ci-full-windows is not supported inside this automated build; use make ci." >&2; exit 2
 else
 	@command -v extro-windows-ci >/dev/null 2>&1 || { \
 		echo "ci-full-windows requires extro-windows-ci on PATH" >&2; \
@@ -1320,7 +1320,7 @@ check-distribution-route-protocol:
 	SOLSTONE_ROUTE_JOURNAL_BIN="$(RUST_BIN)/solstone-core-journal" SOLSTONE_ROUTE_CORE_BIN="$(RUST_BIN)/solstone-core" sh core/distribution/route-record.test.sh
 
 # Fast, no-cargo-build installer-shell gate for install.sh + its .release
-# contract (req_impawibu, G20). Reachable by name; not part of ci/ci-full.
+# contract (gate G20). Reachable by name; not part of ci/ci-full.
 check-install-fast:
 	@$(REQUIRE_CARGO)
 	sh core/distribution/install.test.sh
@@ -1561,12 +1561,12 @@ ci-under-poison:
 	@$(MAKE) check-rust-unit
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 
-# HOPPER_LID is set by the build orchestrator that runs coding-agent lodes. The
-# name is that tool's contract and cannot be renamed here; the message below is
-# ours, so it does not repeat it.
+# HOPPER_LID is set by the external build orchestrator that runs isolated
+# automated build tasks. The name is that tool's contract and cannot be
+# renamed here; the message below is ours, so it does not repeat it.
 ci-full:
 ifneq ($(strip $(HOPPER_LID)),)
-	@echo "ci-full is not supported in an agent lode; make ci is the only pass needed." >&2; exit 2
+	@echo "ci-full is not supported inside this automated build; make ci is the only pass needed." >&2; exit 2
 else
 ifneq ($(strip $(SOLSTONE_CI_CLOUD)),)
 ifneq ($(SOLSTONE_CI_CLOUD),1)

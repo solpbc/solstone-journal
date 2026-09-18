@@ -79,7 +79,7 @@ fn isolate_local_ci_fixture(command: &mut Command) {
 
 fn seed_and_isolate_local_ci_fixture(command: &mut Command) {
     command
-        .env("HOPPER_LID", "fixture-lode")
+        .env("HOPPER_LID", "fixture-worker-id")
         .env("SOLSTONE_CI_CLOUD", "1");
     isolate_local_ci_fixture(command);
     for key in ["HOPPER_LID", "SOLSTONE_CI_CLOUD"] {

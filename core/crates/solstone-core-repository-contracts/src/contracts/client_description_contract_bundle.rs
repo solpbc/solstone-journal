@@ -327,7 +327,7 @@ fn wire_behavior() -> Value {
                 "id": "declared.client_description.patch_label.sample",
                 "kind": "declared",
                 "payload": {
-                    "label": "Jer's Studio Mac"
+                    "label": "Alex's Studio Mac"
                 },
                 "provenance": {
                     "http_status": 200,

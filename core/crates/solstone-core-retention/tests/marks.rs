@@ -585,7 +585,7 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
 
 // The next two tests guard the reconciliation `run_offload_body` performs when
 // retention policy no longer agrees with a pending `OffloadRawRelease` mark
-// (`req_ysgdq4ik`, journal-reliability-trio, media-lifecycle candidate 2). Unlike
+// (journal-reliability-trio, media-lifecycle candidate 2). Unlike
 // `reconcile`, `decline_offload` touches exactly one mark by its derived id and
 // never treats its caller's view of the register as the authoritative full state
 // for the class — these prove that design choice actually holds, not just that it

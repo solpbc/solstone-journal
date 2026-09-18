@@ -1180,7 +1180,7 @@ mod tests {
                     "protocol_version": 1,
                     "expected_revision": 0,
                     "reported": {
-                        "name": "Jer's Laptop",
+                        "name": "Alex's Laptop",
                         "platform": "linux",
                         "device_type": null,
                         "app_id": "solstone",
@@ -1199,7 +1199,7 @@ mod tests {
         let (status, body) = request(app.clone(), req_valid).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["revision"], 1);
-        assert_eq!(body["reported"]["name"], "Jer's Laptop");
+        assert_eq!(body["reported"]["name"], "Alex's Laptop");
         assert_eq!(body["reported"]["platform"], "linux");
 
         // Verify file exists and GET returns revision 1
@@ -1220,7 +1220,7 @@ mod tests {
         let (status, body) = request(app.clone(), req_get).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["revision"], 1);
-        assert_eq!(body["reported"]["name"], "Jer's Laptop");
+        assert_eq!(body["reported"]["name"], "Alex's Laptop");
     }
 
     #[tokio::test]
