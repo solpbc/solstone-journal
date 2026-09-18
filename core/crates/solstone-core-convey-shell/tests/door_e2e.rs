@@ -35,7 +35,8 @@ use solstone_core_sol_link::ledger::{
 use solstone_core_sol_link::pairing::addresses::{EndpointScope, LocalEndpoint, PairingSnapshot};
 use solstone_core_sol_link::{DeviceDoorAuthorization, authorization_publication_ticks};
 use spl_core::frame::{
-    FLAG_CLOSE, FLAG_DATA, FLAG_OPEN, FLAG_RESET, Frame, FrameDecoder, FrameDialer,
+    FLAG_CLOSE, FLAG_DATA, FLAG_OPEN, FLAG_RESET, Frame, FrameDecoder, FrameDialer, RESET_CANCEL,
+    RESET_STREAM_LIMIT_EXCEEDED,
 };
 use spl_core::mux::{ResponseAssembler, WindowedUpload};
 use spl_transport::client::TransportClient;
@@ -269,6 +270,24 @@ async fn await_stalled_stream_reset(
         for frame in decoder.drain().expect("stalled stream frames") {
             if frame.stream_id == stream_id && frame.flags & FLAG_RESET != 0 {
                 return;
+            }
+        }
+    }
+}
+
+async fn await_stream_reset_code(
+    carrier: &mut tokio_rustls::client::TlsStream<tokio::net::TcpStream>,
+    decoder: &mut FrameDecoder,
+    stream_id: u32,
+) -> u8 {
+    let mut buffer = [0_u8; 4096];
+    loop {
+        let read = carrier.read(&mut buffer).await.expect("stream reset reads");
+        assert!(read > 0, "carrier closed before stream {stream_id} reset");
+        decoder.feed(&buffer[..read]);
+        for frame in decoder.drain().expect("stream reset frames") {
+            if frame.stream_id == stream_id && frame.flags & FLAG_RESET != 0 {
+                return *frame.payload.first().expect("reset reason byte");
             }
         }
     }
@@ -2273,10 +2292,10 @@ async fn ac6_ca_signed_but_unlisted_client_is_refused() {
 #[tokio::test]
 async fn a_carrier_at_its_stream_cap_records_the_refusal_against_the_device() {
     // The real failure, at the granularity it actually happens: MAX_CONCURRENT_STREAMS
-    // is per carrier, so this holds eight streams open on ONE mTLS carrier and
-    // opens a ninth. ⛔ Eight TCP connections at the door proves nothing.
+    // is per carrier, so this holds sixteen streams open on ONE mTLS carrier and
+    // opens a seventeenth. ⛔ Sixteen TCP connections at the door proves nothing.
     //
-    // The ninth is refused, the carrier deliberately stays up, and before this
+    // The seventeenth is refused, the carrier deliberately stays up, and before this
     // change nothing anywhere recorded that -- which is why the client's
     // "the network connection was lost" was indistinguishable from a real one.
     //
@@ -2291,9 +2310,9 @@ async fn a_carrier_at_its_stream_cap_records_the_refusal_against_the_device() {
     let port = door_port(handle.door_outcome());
     let mut carrier = live_carrier(&fixture, port).await;
 
-    // Bare OPENs allocate a stream each and never complete, so all eight slots
+    // Bare OPENs allocate a stream each and never complete, so all sixteen slots
     // stay held. Odd ids are the peer's half of the parity split.
-    for stream_id in (1..=15).step_by(2) {
+    for stream_id in (1..=31).step_by(2) {
         carrier
             .write_all(
                 &Frame::new(stream_id as u32, FLAG_OPEN, Vec::new())
@@ -2306,27 +2325,113 @@ async fn a_carrier_at_its_stream_cap_records_the_refusal_against_the_device() {
     carrier.flush().await.expect("cap-filling flush");
     carrier
         .write_all(
-            &Frame::new(17, FLAG_OPEN, Vec::new())
+            &Frame::new(33, FLAG_OPEN, Vec::new())
                 .encode()
-                .expect("ninth open frame"),
+                .expect("seventeenth open frame"),
         )
         .await
-        .expect("ninth open writes");
-    carrier.flush().await.expect("ninth open flush");
+        .expect("seventeenth open writes");
+    carrier.flush().await.expect("seventeenth open flush");
+
+    let mut decoder = FrameDecoder::new();
+    assert_eq!(
+        await_stream_reset_code(&mut carrier, &mut decoder, 33).await,
+        RESET_STREAM_LIMIT_EXCEEDED,
+        "stream 17 is refused for the configured capacity"
+    );
 
     let refusal = await_transport_refusal(&fixture, &cid).await;
     assert_eq!(
         refusal["reason_code"].as_str(),
         Some("stream_limit"),
-        "the ninth stream is refused for the cap, not for anything else"
+        "the seventeenth stream is refused for the cap, not for anything else"
     );
-    assert!(
-        refusal["active_count"]
-            .as_u64()
-            .is_some_and(|count| count >= 1),
-        "the refusal is counted: {refusal}"
+    assert_eq!(
+        refusal["active_count"].as_u64(),
+        Some(1),
+        "the single over-cap open is counted exactly once: {refusal}"
+    );
+
+    carrier
+        .write_all(
+            &Frame::reset(1, RESET_CANCEL)
+                .encode()
+                .expect("held stream reset frame"),
+        )
+        .await
+        .expect("held stream reset writes");
+    carrier.flush().await.expect("held stream reset flushes");
+    let restored = complete_status_exchange(&mut carrier, &mut decoder, 35).await;
+    assert_eq!(
+        restored.status, 200,
+        "freeing one slot restores service on the same carrier"
     );
     drop(carrier);
+    handle.shutdown();
+}
+
+#[tokio::test]
+async fn certless_pairing_carrier_uses_the_same_stream_budget_and_survives_refusal() {
+    let fixture = Fixture::established(0);
+    open_pairing_window(&fixture, "capacity-window");
+    let handle = serve(options(
+        &fixture,
+        pairing_router(&fixture, pairing_snapshot()),
+        0,
+    ))
+    .await
+    .expect("serve");
+    let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
+        .await
+        .expect("certless carrier");
+
+    for stream_id in (1..=31).step_by(2) {
+        carrier
+            .write_all(
+                &Frame::new(stream_id, FLAG_OPEN, Vec::new())
+                    .encode()
+                    .expect("certless held open frame"),
+            )
+            .await
+            .expect("certless held open writes");
+    }
+    carrier
+        .write_all(
+            &Frame::new(33, FLAG_OPEN, Vec::new())
+                .encode()
+                .expect("certless seventeenth open frame"),
+        )
+        .await
+        .expect("certless seventeenth open writes");
+    carrier.flush().await.expect("certless opens flush");
+
+    let mut decoder = FrameDecoder::new();
+    assert_eq!(
+        await_stream_reset_code(&mut carrier, &mut decoder, 33).await,
+        RESET_STREAM_LIMIT_EXCEEDED
+    );
+    carrier
+        .write_all(
+            &Frame::reset(1, RESET_CANCEL)
+                .encode()
+                .expect("certless held reset frame"),
+        )
+        .await
+        .expect("certless held reset writes");
+    carrier.flush().await.expect("certless held reset flushes");
+
+    let response = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        35,
+        "POST",
+        "/app/network/pair?token=capacity-window",
+        &[("content-type".into(), "application/json".into())],
+        br#"{"csr":"not a CSR","device_label":"phone"}"#,
+    )
+    .await
+    .expect("certless carrier stays usable after one slot frees");
+    assert_eq!(response.status, 400);
     handle.shutdown();
 }
 
@@ -2342,25 +2447,88 @@ async fn a_carrier_under_its_stream_cap_records_no_refusal_at_all() {
         .expect("serve");
     let port = door_port(handle.door_outcome());
     let mut carrier = live_carrier(&fixture, port).await;
+    for stream_id in (1..=29).step_by(2) {
+        carrier
+            .write_all(
+                &Frame::new(stream_id, FLAG_OPEN, Vec::new())
+                    .encode()
+                    .expect("held open frame"),
+            )
+            .await
+            .expect("held open writes");
+    }
+    carrier.flush().await.expect("held opens flush");
+
     let mut decoder = FrameDecoder::new();
-    let response = exchange_over_carrier(
-        &mut carrier,
-        &mut decoder,
-        1,
-        "GET",
-        "/api/system/status",
-        &[],
-        &[],
-    )
-    .await
-    .expect("ordinary request completes");
-    assert_eq!(response.status, 200);
+    let mut next_stream_id = 31;
+    for cycle in 0..32 {
+        let response = complete_status_exchange(&mut carrier, &mut decoder, next_stream_id).await;
+        assert_eq!(response.status, 200, "ordinary replacement cycle {cycle}");
+        next_stream_id += 2;
+    }
     drop(carrier);
     handle.shutdown();
 
     assert!(
         read_transport_refusal(&fixture, &cid).is_none(),
         "an ordinary carrier records no refusal"
+    );
+}
+
+#[tokio::test]
+async fn peer_resets_at_capacity_do_not_ratchet_the_carrier_budget() {
+    let fixture = Fixture::established(1);
+    let cid = format!("sha256:{}", spl_core::ca::sha256_hex(fixture.client_der(0)));
+    let handle = serve(options(&fixture, router(fixture.root.clone()), 0))
+        .await
+        .expect("serve");
+    let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+
+    for stream_id in (1..=29).step_by(2) {
+        carrier
+            .write_all(
+                &Frame::new(stream_id, FLAG_OPEN, Vec::new())
+                    .encode()
+                    .expect("held open frame"),
+            )
+            .await
+            .expect("held open writes");
+    }
+    carrier.flush().await.expect("held opens flush");
+
+    let mut decoder = FrameDecoder::new();
+    let mut next_stream_id = 31;
+    for cycle in 0..32 {
+        let abandoned = next_stream_id;
+        next_stream_id += 2;
+        carrier
+            .write_all(
+                &Frame::new(abandoned, FLAG_OPEN, Vec::new())
+                    .encode()
+                    .expect("abandoned open frame"),
+            )
+            .await
+            .expect("abandoned open writes");
+        carrier
+            .write_all(
+                &Frame::reset(abandoned, RESET_CANCEL)
+                    .encode()
+                    .expect("peer reset frame"),
+            )
+            .await
+            .expect("peer reset writes");
+        carrier.flush().await.expect("peer reset flushes");
+
+        let response = complete_status_exchange(&mut carrier, &mut decoder, next_stream_id).await;
+        assert_eq!(response.status, 200, "peer-reset replacement cycle {cycle}");
+        next_stream_id += 2;
+    }
+
+    drop(carrier);
+    handle.shutdown();
+    assert!(
+        read_transport_refusal(&fixture, &cid).is_none(),
+        "peer-reset turnover below the cap records no refusal"
     );
 }
 
@@ -4906,38 +5074,55 @@ async fn ac20_stalled_reader_resets_only_its_stream() {
     let handle = serve(serve_options).await.expect("serve");
     let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
 
-    tokio::time::timeout(Duration::from_secs(30), async {
+    tokio::time::timeout(Duration::from_secs(60), async {
         let mut ids = FrameDialer::default();
-        let stalled_stream = ids.allocate();
-        let request = format!(
-            "POST /__door_test/echo?response_bytes={TWO_MIB} HTTP/1.1\r\nhost: spl.local\r\ncontent-length: 0\r\n\r\n"
-        );
-        carrier
-            .write_all(
-                &Frame::new(stalled_stream, FLAG_OPEN | FLAG_DATA, request.into_bytes())
-                    .encode()
-                    .expect("stalled request frame"),
-            )
-            .await
-            .expect("stalled request writes");
-        carrier
-            .write_all(
-                &Frame::new(stalled_stream, FLAG_CLOSE, Vec::new())
-                    .encode()
-                    .expect("stalled request close"),
-            )
-            .await
-            .expect("stalled request close writes");
-        carrier.flush().await.expect("stalled request flushes");
-
+        for _ in 0..15 {
+            let held = ids.allocate();
+            carrier
+                .write_all(
+                    &Frame::new(held, FLAG_OPEN, Vec::new())
+                        .encode()
+                        .expect("held stream frame"),
+                )
+                .await
+                .expect("held stream writes");
+        }
+        carrier.flush().await.expect("held streams flush");
         let mut decoder = FrameDecoder::new();
-        await_stalled_stream_reset(&mut carrier, &mut decoder, stalled_stream).await;
+        for cycle in 0..32 {
+            let stalled_stream = ids.allocate();
+            let request = format!(
+                "POST /__door_test/echo?response_bytes={TWO_MIB} HTTP/1.1\r\nhost: spl.local\r\ncontent-length: 0\r\n\r\n"
+            );
+            carrier
+                .write_all(
+                    &Frame::new(stalled_stream, FLAG_OPEN | FLAG_DATA, request.into_bytes())
+                        .encode()
+                        .expect("stalled request frame"),
+                )
+                .await
+                .expect("stalled request writes");
+            carrier
+                .write_all(
+                    &Frame::new(stalled_stream, FLAG_CLOSE, Vec::new())
+                        .encode()
+                        .expect("stalled request close"),
+                )
+                .await
+                .expect("stalled request close writes");
+            carrier.flush().await.expect("stalled request flushes");
 
-        let response = complete_status_exchange(&mut carrier, &mut decoder, ids.allocate()).await;
-        assert_eq!(response.status, 200, "stream B remains live after A resets");
+            await_stalled_stream_reset(&mut carrier, &mut decoder, stalled_stream).await;
+            let response =
+                complete_status_exchange(&mut carrier, &mut decoder, ids.allocate()).await;
+            assert_eq!(
+                response.status, 200,
+                "local-reset replacement cycle {cycle} remains on the carrier"
+            );
+        }
     })
     .await
-    .expect("stalled stream reset and independent stream B exchange must complete");
+    .expect("32 stalled stream resets and same-carrier replacements must complete");
     handle.shutdown();
 }
 

@@ -57,7 +57,7 @@ use crate::relay_admission::{RelayAdmissionClaim, RelayAdmissionRegistry, RelayN
 use crate::session::{SessionState, classify_session};
 use crate::{DoorOutcome, DoorWithheldReason};
 
-const MAX_CONCURRENT_STREAMS: usize = 8;
+const MAX_CONCURRENT_STREAMS: usize = 16;
 const AUTHORIZATION_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
 const PAIRING_REAPER_INTERVAL: Duration = Duration::from_millis(250);
 // `HomeStream::poll_shutdown` queues the SPL close frame but does not wait for
@@ -957,12 +957,14 @@ async fn serve_carrier(
             identity.clone(),
             certless_pairing_admitted,
         )),
-        // Peer stream 9 is refused with `refuse(StreamLimit)` rather than tearing
-        // down the carrier, so 8 safely bounds normal parallel requests. Per
-        // carrier: 8 x 1 MiB inbound + 8 x MAX_STAGED_WRITE_BYTES_PER_STREAM
-        // + the 16,777,223-byte decoder ceiling on a growing Vec = 33,554,439
-        // bytes, about 32 MiB. The cert-less pairing population is separately
-        // capped at four carriers; linked-device carriers remain independent.
+        // The seventeenth peer-opened stream (wire id 33) is refused with
+        // `refuse(StreamLimit)` rather than tearing down the carrier. Per
+        // carrier: 16 x 1 MiB inbound + 16 x
+        // MAX_STAGED_WRITE_BYTES_PER_STREAM + the 16,777,223-byte decoder
+        // ceiling on a growing Vec = 50,331,655 bytes, about 48 MiB. The
+        // cert-less pairing population is separately capped at four carriers
+        // (201,326,620 bytes); linked-device carriers remain independent, so N
+        // saturated authorized carriers retain N x 50,331,655 bytes.
         mux_limits: MuxLimits {
             max_concurrent_streams: MAX_CONCURRENT_STREAMS,
             decoder_buffer_bytes: DEFAULT_DECODER_BUFFER_BYTES,
@@ -1357,6 +1359,16 @@ fn carrier_from_peer(peer: Option<SocketAddr>) -> Carrier {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stream_budget_memory_bounds_match_spl_constants() {
+        let per_stream =
+            spl_core::mux::INITIAL_WINDOW + spl_home::MAX_STAGED_WRITE_BYTES_PER_STREAM;
+        let per_carrier = MAX_CONCURRENT_STREAMS * per_stream + DEFAULT_DECODER_BUFFER_BYTES;
+
+        assert_eq!(per_carrier, 50_331_655);
+        assert_eq!(MAX_PAIRING_CARRIERS * per_carrier, 201_326_620);
+    }
 
     #[test]
     fn completed_start_cannot_publish_after_shutdown() {
