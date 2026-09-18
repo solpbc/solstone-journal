@@ -365,8 +365,17 @@ fn canonical_oplog_removal_revalidates_identity_before_unlinking() {
     let raced = planned.prunable[0].clone();
     let raced_path = bed.root.join(raced.rel());
     let replacement = fs::read(&raced_path).expect("original oplog bytes");
+    // Hold the original file open across the unlink+recreate so the filesystem cannot
+    // hand its inode straight back to the replacement: POSIX keeps an unlinked file's
+    // inode allocated while any descriptor to it stays open. Without this, ext4 (and
+    // other allocators) commonly reuse the just-freed inode for the very next create()
+    // in the same directory -- confirmed empirically on this filesystem -- which would
+    // give the "raced" replacement the SAME (dev, ino) identity as the original file
+    // and silently defeat the race this test exists to simulate.
+    let held_original = fs::File::open(&raced_path).expect("hold original open across the race");
     fs::remove_file(&raced_path).expect("replace planned oplog");
     fs::write(&raced_path, replacement).expect("replacement oplog");
+    drop(held_original);
     let unchanged = planned
         .prunable
         .iter()
