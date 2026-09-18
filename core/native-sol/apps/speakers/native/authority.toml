@@ -21,6 +21,7 @@ params = [
   { name = "commit", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--commit"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "save", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = true, options = ["--save"], secondary = ["--no-save"], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "accumulate", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = true, options = ["--accumulate"], secondary = ["--no-accumulate"], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "stream_layout", kind = "option", type = "text", required = false, nargs = 1, multiple = false, default = "named", options = ["--stream-layout"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
@@ -116,6 +117,7 @@ params = [
   { name = "source", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["source"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "sentence_id", kind = "argument", type = "integer", required = true, nargs = 1, multiple = false, options = ["sentence_id"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "new_speaker", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["new_speaker"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "stream_layout", kind = "option", type = "text", required = false, nargs = 1, multiple = false, default = "named", options = ["--stream-layout"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
@@ -457,6 +459,7 @@ params = [
   { name = "segment", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["segment"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "source", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["source"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "sentence_id", kind = "argument", type = "integer", required = true, nargs = 1, multiple = false, options = ["sentence_id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "stream_layout", kind = "option", type = "text", required = false, nargs = 1, multiple = false, default = "named", options = ["--stream-layout"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 

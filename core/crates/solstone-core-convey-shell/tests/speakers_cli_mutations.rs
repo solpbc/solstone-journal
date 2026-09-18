@@ -20,6 +20,7 @@ use tower::ServiceExt;
 use super::support::{
     PERSON_ADMISSION_DAY, PERSON_ADMISSION_SEGMENT, PERSON_ADMISSION_SOURCE,
     PERSON_ADMISSION_STREAM, PersonAdmissionMode, build_person_admission_journal, snapshot_files,
+    write_embeddings_npz,
 };
 
 static SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -80,6 +81,21 @@ impl Journal {
         )
         .expect("voiceprint");
     }
+    fn owner_centroid(&self) {
+        let mut centroid = vec![0.0; 256];
+        centroid[0] = 1.0;
+        solstone_core_speaker_resolve::owner_centroid::write_owner_centroid(
+            &self.0,
+            "owner",
+            &solstone_core_speaker_resolve::owner_centroid::OwnerCentroidWriteInput {
+                centroid,
+                cluster_size: 5,
+                timestamp: "2026-08-08T00:00:00Z".to_owned(),
+                evidence_tier: "standard".to_owned(),
+            },
+        )
+        .expect("owner centroid");
+    }
 }
 
 fn resolve_names_encoder() -> EncoderIdentity {
@@ -88,6 +104,28 @@ fn resolve_names_encoder() -> EncoderIdentity {
         sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
         width: 256,
     }
+}
+
+fn has_voiceprint_metadata(
+    journal: &std::path::Path,
+    entity: &str,
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    stream_layout: &str,
+) -> bool {
+    let Some(voiceprints) = solstone_core_entity::load_entity_voiceprints_file(journal, entity) else {
+        return false;
+    };
+    voiceprints.metadata.iter().any(|m| {
+        let Ok(v) = serde_json::from_str::<Value>(m) else {
+            return false;
+        };
+        v.get("day").and_then(Value::as_str) == Some(day)
+            && v.get("stream").and_then(Value::as_str) == Some(stream)
+            && v.get("segment_key").and_then(Value::as_str) == Some(segment_key)
+            && v.get("stream_layout").and_then(Value::as_str) == Some(stream_layout)
+    })
 }
 
 impl Drop for Journal {
@@ -273,7 +311,7 @@ async fn tag_cli_uses_the_admitted_owner_and_refuses_invalid_identity_without_wr
         let (actual_status, response) = call(
             router(journal.root().to_path_buf()),
             "/app/speakers/api/owner/tag-cli",
-            json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+            json!({"day":"20260808","stream_layout":"named","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
         )
         .await;
         assert_eq!(actual_status, StatusCode::BAD_REQUEST, "{response}");
@@ -285,7 +323,7 @@ async fn tag_cli_uses_the_admitted_owner_and_refuses_invalid_identity_without_wr
     let (status, response) = call(
         router(journal.root().to_path_buf()),
         "/app/speakers/api/owner/tag-cli",
-        json!({"day":"20260808","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
+        json!({"day":"20260808","stream_layout":"named","stream":"main","segment_key":"120000_1","source":"audio","sentence_id":1}),
     )
     .await;
     assert_eq!(status, StatusCode::OK, "{response}");
@@ -451,30 +489,44 @@ async fn link_import_rejects_ambiguous_alias_conflict() {
     assert_eq!(value["reason_code"], "entity_alias_conflict");
 }
 
-fn direct_dir(journal: &Journal, day: &str, segment: &str) {
-    fs::create_dir_all(journal.0.join("chronicle").join(day).join(segment)).expect("direct");
-}
-
-fn assert_direct_refused(status: StatusCode, body: &Value) {
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(body["reason_code"], "speaker_segment_layout_unsupported");
-    assert_eq!(
-        body["error"],
-        "This command can't change that speaker review."
-    );
-    assert_eq!(
-        body["detail"],
-        "This segment uses the direct journal layout, which this command doesn't support."
-    );
-}
-
 #[tokio::test]
-async fn tag_cli_refuses_direct_layout_without_writes() {
+async fn tag_cli_mutates_direct_and_named_twins_independently() {
     let journal = Journal::new();
     journal.entity("owner", true);
-    direct_dir(&journal, "20260808", "120000_1");
-    let before = crate::support::snapshot_files(&journal.0);
-    let (status, refused) = call(
+    journal.voiceprint("owner");
+
+    let direct_dir = journal.0.join("chronicle/20260808/120000_1");
+    fs::create_dir_all(direct_dir.join("talents")).expect("direct talents");
+    fs::write(
+        direct_dir.join("audio.jsonl"),
+        "{\"sentence_id\":1,\"text\":\"direct hello\"}\n",
+    )
+    .expect("direct transcript");
+    write_embeddings_npz(&direct_dir.join("audio.npz"), 1, true, 0);
+    fs::write(
+        direct_dir.join("talents/speaker_labels.json"),
+        json!({"labels":[{"sentence_id":1,"text":"direct"}]}).to_string(),
+    )
+    .expect("direct labels");
+
+    let named_dir = journal.0.join("chronicle/20260808/_default/120000_1");
+    fs::create_dir_all(named_dir.join("talents")).expect("named talents");
+    fs::write(
+        named_dir.join("audio.jsonl"),
+        "{\"sentence_id\":1,\"text\":\"named hello\"}\n",
+    )
+    .expect("named transcript");
+    write_embeddings_npz(&named_dir.join("audio.npz"), 1, true, 1);
+    fs::write(
+        named_dir.join("talents/speaker_labels.json"),
+        json!({"labels":[{"sentence_id":1,"text":"named"}]}).to_string(),
+    )
+    .expect("named labels");
+
+    let named_snapshot = crate::support::snapshot_files(&named_dir);
+
+    // 1. Direct tag
+    let (status, response) = call(
         router(journal.0.clone()),
         "/app/speakers/api/owner/tag-cli",
         json!({
@@ -487,16 +539,148 @@ async fn tag_cli_refuses_direct_layout_without_writes() {
         }),
     )
     .await;
-    assert_direct_refused(status, &refused);
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["status"], "assigned");
+    assert_eq!(response["stream_layout"], "direct");
+    assert_eq!(
+        crate::support::snapshot_files(&named_dir),
+        named_snapshot,
+        "named twin was modified by direct tag"
+    );
+    let direct_labels: Value = serde_json::from_str(
+        &fs::read_to_string(direct_dir.join("talents/speaker_labels.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(direct_labels["labels"][0]["speaker"], "owner");
+    assert!(
+        has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "direct"),
+        "direct voiceprint present after direct tag"
+    );
+    assert!(
+        !has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "named"),
+        "named voiceprint absent before named tag"
+    );
+
+    // 2. Named tag
+    let direct_snapshot = crate::support::snapshot_files(&direct_dir);
+    let (status, response) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/tag-cli",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment_key": "120000_1",
+            "sentence_id": 1,
+            "source": "audio",
+            "stream_layout": "named",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["status"], "assigned");
+    assert_eq!(response["stream_layout"], "named");
+    assert_eq!(
+        crate::support::snapshot_files(&direct_dir),
+        direct_snapshot,
+        "direct twin was modified by named tag"
+    );
+    let named_labels: Value = serde_json::from_str(
+        &fs::read_to_string(named_dir.join("talents/speaker_labels.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(named_labels["labels"][0]["speaker"], "owner");
+    assert!(
+        has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "direct"),
+        "direct voiceprint still present after named tag"
+    );
+    assert!(
+        has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "named"),
+        "named voiceprint present after named tag"
+    );
+
+    // 3. Collapse refusal in both directions
+    let direct_only_dir = journal.0.join("chronicle/20260808/120000_direct_only");
+    fs::create_dir_all(direct_only_dir.join("talents")).expect("direct only");
+    fs::write(
+        direct_only_dir.join("talents/speaker_labels.json"),
+        json!({"labels":[{"sentence_id":1}]}).to_string(),
+    )
+    .expect("labels");
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/tag-cli",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment_key": "120000_direct_only",
+            "sentence_id": 1,
+            "source": "audio",
+            "stream_layout": "named",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused}");
+    assert_eq!(refused["reason_code"], "speaker_review_unavailable");
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
+
+    let named_only_dir = journal
+        .0
+        .join("chronicle/20260808/_default/120000_named_only");
+    fs::create_dir_all(named_only_dir.join("talents")).expect("named only");
+    fs::write(
+        named_only_dir.join("talents/speaker_labels.json"),
+        json!({"labels":[{"sentence_id":1}]}).to_string(),
+    )
+    .expect("labels");
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/owner/tag-cli",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment_key": "120000_named_only",
+            "sentence_id": 1,
+            "source": "audio",
+            "stream_layout": "direct",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused}");
+    assert_eq!(refused["reason_code"], "speaker_review_unavailable");
     assert_eq!(crate::support::snapshot_files(&journal.0), before);
 }
 
 #[tokio::test]
-async fn attribute_segment_refuses_direct_layout_without_writes() {
+async fn attribute_segment_mutates_direct_and_named_twins_independently() {
     let journal = Journal::new();
-    direct_dir(&journal, "20260808", "120000_1");
-    let before = crate::support::snapshot_files(&journal.0);
-    let (status, refused) = call(
+    journal.entity("owner", true);
+    journal.voiceprint("owner");
+    journal.owner_centroid();
+
+    let direct_dir = journal.0.join("chronicle/20260808/120000_1");
+    fs::create_dir_all(&direct_dir).expect("direct");
+    fs::write(
+        direct_dir.join("audio.jsonl"),
+        "{\"sentence_id\":1,\"text\":\"direct hello\"}\n",
+    )
+    .expect("direct transcript");
+    write_embeddings_npz(&direct_dir.join("audio.npz"), 1, true, 0);
+
+    let named_dir = journal.0.join("chronicle/20260808/_default/120000_1");
+    fs::create_dir_all(&named_dir).expect("named");
+    fs::write(
+        named_dir.join("audio.jsonl"),
+        "{\"sentence_id\":1,\"text\":\"named hello\"}\n",
+    )
+    .expect("named transcript");
+    write_embeddings_npz(&named_dir.join("audio.npz"), 1, true, 1);
+
+    let named_snapshot = crate::support::snapshot_files(&named_dir);
+
+    // 1. Direct attribute
+    let (status, response) = call(
         router(journal.0.clone()),
         "/app/speakers/api/attribute-segment",
         json!({
@@ -504,10 +688,97 @@ async fn attribute_segment_refuses_direct_layout_without_writes() {
             "stream": "_default",
             "segment": "120000_1",
             "stream_layout": "direct",
+            "commit": true,
+            "save": true,
+            "accumulate": true,
         }),
     )
     .await;
-    assert_direct_refused(status, &refused);
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["stream_layout"], "direct");
+    assert_eq!(response["segment_key"], "120000_1");
+    assert_eq!(
+        crate::support::snapshot_files(&named_dir),
+        named_snapshot,
+        "named twin was modified by direct attribute"
+    );
+    assert!(direct_dir.join("talents/speaker_labels.json").is_file());
+
+    // 2. Named attribute
+    let direct_snapshot = crate::support::snapshot_files(&direct_dir);
+    let (status, response) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/attribute-segment",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment": "120000_1",
+            "stream_layout": "named",
+            "commit": true,
+            "save": true,
+            "accumulate": true,
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["stream_layout"], "named");
+    assert_eq!(response["segment_key"], "120000_1");
+    assert_eq!(
+        crate::support::snapshot_files(&direct_dir),
+        direct_snapshot,
+        "direct twin was modified by named attribute"
+    );
+    assert!(named_dir.join("talents/speaker_labels.json").is_file());
+
+    // 3. Collapse refusal in both directions
+    let direct_only_dir = journal.0.join("chronicle/20260808/120000_direct_only");
+    fs::create_dir_all(&direct_only_dir).expect("direct only");
+    fs::write(
+        direct_only_dir.join("audio.jsonl"),
+        "{\"sentence_id\":1,\"text\":\"direct\"}\n",
+    )
+    .expect("transcript");
+    write_embeddings_npz(&direct_only_dir.join("audio.npz"), 1, true, 0);
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/attribute-segment",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment": "120000_direct_only",
+            "stream_layout": "named",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused}");
+    assert_eq!(refused["reason_code"], "speaker_review_unavailable");
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
+
+    let named_only_dir = journal
+        .0
+        .join("chronicle/20260808/_default/120000_named_only");
+    fs::create_dir_all(&named_only_dir).expect("named only");
+    fs::write(
+        named_only_dir.join("audio.jsonl"),
+        "{\"sentence_id\":1,\"text\":\"named\"}\n",
+    )
+    .expect("transcript");
+    write_embeddings_npz(&named_only_dir.join("audio.npz"), 1, true, 0);
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/attribute-segment",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment": "120000_named_only",
+            "stream_layout": "direct",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "{refused}");
+    assert_eq!(refused["reason_code"], "speaker_review_unavailable");
     assert_eq!(crate::support::snapshot_files(&journal.0), before);
 }
 
@@ -550,6 +821,34 @@ async fn review_cli_reads_a_direct_segment() {
 async fn tag_cli_malformed_stream_layout_is_not_named() {
     let journal = Journal::new();
     journal.entity("owner", true);
+    for layout in [
+        json!("Direct"),
+        json!(""),
+        json!(true),
+        json!(1),
+        Value::Null,
+    ] {
+        let before = crate::support::snapshot_files(&journal.0);
+        let (status, refused) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/owner/tag-cli",
+            json!({
+                "day": "20260808",
+                "stream": "main",
+                "segment_key": "120000_1",
+                "sentence_id": 1,
+                "source": "audio",
+                "stream_layout": layout,
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+        assert_eq!(refused["reason_code"], "invalid_segment_or_stream");
+        assert_eq!(crate::support::snapshot_files(&journal.0), before);
+    }
+
+    // Missing stream_layout field
+    let before = crate::support::snapshot_files(&journal.0);
     let (status, refused) = call(
         router(journal.0.clone()),
         "/app/speakers/api/owner/tag-cli",
@@ -559,12 +858,57 @@ async fn tag_cli_malformed_stream_layout_is_not_named() {
             "segment_key": "120000_1",
             "sentence_id": 1,
             "source": "audio",
-            "stream_layout": "Direct",
         }),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
     assert_eq!(refused["reason_code"], "invalid_segment_or_stream");
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
+}
+
+#[tokio::test]
+async fn attribute_segment_malformed_stream_layout_is_not_named() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    for layout in [
+        json!("Direct"),
+        json!(""),
+        json!(true),
+        json!(1),
+        Value::Null,
+    ] {
+        let before = crate::support::snapshot_files(&journal.0);
+        let (status, refused) = call(
+            router(journal.0.clone()),
+            "/app/speakers/api/attribute-segment",
+            json!({
+                "day": "20260808",
+                "stream": "_default",
+                "segment": "120000_1",
+                "stream_layout": layout,
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+        assert_eq!(refused["reason_code"], "invalid_segment_or_stream");
+        assert_eq!(crate::support::snapshot_files(&journal.0), before);
+    }
+
+    // Missing stream_layout field
+    let before = crate::support::snapshot_files(&journal.0);
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/attribute-segment",
+        json!({
+            "day": "20260808",
+            "stream": "_default",
+            "segment": "120000_1",
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{refused}");
+    assert_eq!(refused["reason_code"], "invalid_segment_or_stream");
+    assert_eq!(crate::support::snapshot_files(&journal.0), before);
 }
 
 #[tokio::test]

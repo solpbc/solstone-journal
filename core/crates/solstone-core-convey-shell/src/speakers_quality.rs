@@ -21,7 +21,7 @@ use crate::speakers_calendar::{
 };
 use crate::speakers_npz::{load_voiceprints, owner_centroid_summary};
 use solstone_core_speaker_resolve::segment_catalog::{
-    CatalogBuildError, DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
+    CatalogBuildError, SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 
 const QUALITY_WINDOW_DAYS: usize = 30;
@@ -499,19 +499,11 @@ fn manual_owner_tag_stream(
         (SegmentLayout::Named, Some(stream)) => stream,
         (SegmentLayout::Named, None) => return ManualOwnerTagResolution::LookupError,
     };
-    let segment = match lookup_segment(
-        root,
-        day,
-        stream,
-        segment_key,
-        Ok(layout),
-        DirectSupport::Allow,
-    ) {
+    let segment = match lookup_segment(root, day, stream, segment_key, Ok(layout)) {
         SegmentLookup::Present(path) => path,
-        SegmentLookup::Absent
-        | SegmentLookup::UnsupportedLayout
-        | SegmentLookup::MalformedLayout
-        | SegmentLookup::Failed(_) => return ManualOwnerTagResolution::LookupError,
+        SegmentLookup::Absent | SegmentLookup::MalformedLayout | SegmentLookup::Failed(_) => {
+            return ManualOwnerTagResolution::LookupError;
+        }
     };
     let Some(labels) = read_json_object(&segment.join("talents/speaker_labels.json"))
         .and_then(|labels| labels.get("labels").and_then(Value::as_array).cloned())

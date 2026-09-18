@@ -28,7 +28,7 @@ use crate::speakers_calendar::{
 };
 use crate::speakers_npz::{SegmentEmbeddings, load_segment_embeddings};
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, decode_stream_layout, lookup_segment,
+    SegmentLookup, decode_stream_layout, lookup_segment,
 };
 
 #[derive(Debug, Default, Deserialize)]
@@ -289,7 +289,6 @@ fn lookup_read_segment(
         stream,
         segment_key,
         decode_stream_layout(stream_layout),
-        DirectSupport::Allow,
     ) {
         SegmentLookup::Present(path) => Ok(Some(path)),
         SegmentLookup::Absent => Ok(None),
@@ -302,13 +301,6 @@ fn lookup_read_segment(
             "speaker_review_unavailable",
             "that speaker review couldn't be loaded.",
             error.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response()),
-        SegmentLookup::UnsupportedLayout => Err(error_envelope(
-            "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
-            "segment layout is not readable",
             StatusCode::INTERNAL_SERVER_ERROR,
         )
         .into_response()),

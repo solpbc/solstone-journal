@@ -90,6 +90,27 @@ impl Journal {
         write_embeddings(&directory.join("audio.npz"), &[unit(1.0, 0.0)]);
     }
 
+    fn named_default_segment_at(&self, day: &str, segment_key: &str, labels: Value) {
+        let directory = self
+            .0
+            .join("chronicle")
+            .join(day)
+            .join("_default")
+            .join(segment_key);
+        fs::create_dir_all(directory.join("talents")).expect("talents");
+        fs::write(
+            directory.join("audio.jsonl"),
+            "{\"raw\":\"audio.flac\"}\n{\"id\":1,\"text\":\"test\"}\n",
+        )
+        .expect("sentences");
+        fs::write(
+            directory.join("talents/speaker_labels.json"),
+            labels.to_string(),
+        )
+        .expect("labels");
+        write_embeddings(&directory.join("audio.npz"), &[unit(1.0, 0.0)]);
+    }
+
     fn segment_at(&self, segment_key: &str, labels: Value, embedding: Vec<f32>) {
         let directory = self
             .0
@@ -192,7 +213,7 @@ async fn get(app: axum::Router, path: &str) -> (StatusCode, Value) {
 }
 
 fn request() -> Value {
-    json!({"day":DAY,"stream":STREAM,"segment_key":SEGMENT,"source":SOURCE,"sentence_id":1})
+    json!({"day":DAY,"stream_layout":"named","stream":STREAM,"segment_key":SEGMENT,"source":SOURCE,"sentence_id":1})
 }
 
 fn unit(first: f32, second: f32) -> Vec<f32> {
@@ -1203,22 +1224,38 @@ fn direct_request() -> Value {
     body
 }
 
-fn assert_direct_refused(status: StatusCode, body: &Value) {
-    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
-    assert_eq!(body["reason_code"], "speaker_segment_layout_unsupported");
-    assert_eq!(
-        body["error"],
-        "This command can't change that speaker review."
-    );
-    assert_eq!(
-        body["detail"],
-        "This segment uses the direct journal layout, which this command doesn't support."
-    );
+fn named_default_request() -> Value {
+    let mut body = request();
+    body["stream"] = json!("_default");
+    body["stream_layout"] = json!("named");
+    body
+}
+
+fn has_voiceprint_metadata(
+    journal: &std::path::Path,
+    entity: &str,
+    day: &str,
+    stream: &str,
+    segment_key: &str,
+    stream_layout: &str,
+) -> bool {
+    let Some(voiceprints) = solstone_core_entity::load_entity_voiceprints_file(journal, entity) else {
+        return false;
+    };
+    voiceprints.metadata.iter().any(|m| {
+        let Ok(v) = serde_json::from_str::<Value>(m) else {
+            return false;
+        };
+        v.get("day").and_then(Value::as_str) == Some(day)
+            && v.get("stream").and_then(Value::as_str) == Some(stream)
+            && v.get("segment_key").and_then(Value::as_str) == Some(segment_key)
+            && v.get("stream_layout").and_then(Value::as_str) == Some(stream_layout)
+    })
 }
 
 #[tokio::test]
-async fn assign_confirm_and_correct_refuse_direct_layout_without_writes() {
-    for (path, labels, body) in [
+async fn assign_confirm_and_correct_mutate_direct_and_named_twins_independently() {
+    for (path, labels, direct_body, named_body, expected_status) in [
         (
             "/app/speakers/api/assign-attribution",
             json!({"labels":[{"sentence_id":1}]}),
@@ -1227,11 +1264,19 @@ async fn assign_confirm_and_correct_refuse_direct_layout_without_writes() {
                 body["speaker"] = json!("owner");
                 body
             },
+            {
+                let mut body = named_default_request();
+                body["speaker"] = json!("owner");
+                body
+            },
+            "assigned",
         ),
         (
             "/app/speakers/api/confirm-attribution",
             json!({"labels":[{"sentence_id":1,"speaker":"owner","confidence":"medium","method":"acoustic"}]}),
             direct_request(),
+            named_default_request(),
+            "confirmed",
         ),
         (
             "/app/speakers/api/correct-attribution",
@@ -1241,68 +1286,219 @@ async fn assign_confirm_and_correct_refuse_direct_layout_without_writes() {
                 body["new_speaker"] = json!("owner");
                 body
             },
+            {
+                let mut body = named_default_request();
+                body["new_speaker"] = json!("owner");
+                body
+            },
+            "corrected",
         ),
     ] {
         let journal = Journal::new();
         journal.entity("owner", true);
         journal.entity("other", false);
-        journal.direct_segment(labels);
-        let before = crate::support::snapshot_files(&journal.0);
-        let (status, refused) = call(router(journal.0.clone()), path, body).await;
-        assert_direct_refused(status, &refused);
+        journal.owner_centroid();
+
+        let direct_dir = journal.0.join("chronicle").join(DAY).join(SEGMENT);
+        let named_dir = journal
+            .0
+            .join("chronicle")
+            .join(DAY)
+            .join("_default")
+            .join(SEGMENT);
+        journal.direct_segment_at(DAY, SEGMENT, labels.clone());
+        journal.named_default_segment_at(DAY, SEGMENT, labels.clone());
+
+        // 1. Mutate Direct twin
+        let named_snapshot = crate::support::snapshot_files(&named_dir);
+        let (status, response) = call(router(journal.0.clone()), path, direct_body).await;
+        assert_eq!(status, StatusCode::OK, "{path}: {response}");
+        assert_eq!(response["status"], expected_status, "{path}: {response}");
+        assert_eq!(response["stream_layout"], "direct", "{path}: {response}");
         assert_eq!(
-            crate::support::snapshot_files(&journal.0),
-            before,
-            "{path} wrote the journal"
+            crate::support::snapshot_files(&named_dir),
+            named_snapshot,
+            "{path}: named twin was modified by direct mutation"
         );
+        let direct_labels: Value = serde_json::from_str(
+            &fs::read_to_string(direct_dir.join("talents/speaker_labels.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(direct_labels["labels"][0]["speaker"], "owner", "{path}");
+        assert!(
+            has_voiceprint_metadata(&journal.0, "owner", DAY, "_default", SEGMENT, "direct"),
+            "{path}: direct voiceprint present after direct mutation"
+        );
+        assert!(
+            !has_voiceprint_metadata(&journal.0, "owner", DAY, "_default", SEGMENT, "named"),
+            "{path}: named voiceprint absent before named mutation"
+        );
+
+        // 2. Mutate Named twin
+        let direct_snapshot = crate::support::snapshot_files(&direct_dir);
+        let (status, response) = call(router(journal.0.clone()), path, named_body).await;
+        assert_eq!(status, StatusCode::OK, "{path}: {response}");
+        assert_eq!(response["status"], expected_status, "{path}: {response}");
+        assert_eq!(response["stream_layout"], "named", "{path}: {response}");
+        assert_eq!(
+            crate::support::snapshot_files(&direct_dir),
+            direct_snapshot,
+            "{path}: direct twin was modified by named mutation"
+        );
+        let named_labels: Value = serde_json::from_str(
+            &fs::read_to_string(named_dir.join("talents/speaker_labels.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(named_labels["labels"][0]["speaker"], "owner", "{path}");
+        assert!(
+            has_voiceprint_metadata(&journal.0, "owner", DAY, "_default", SEGMENT, "direct"),
+            "{path}: direct voiceprint still present after named mutation"
+        );
+        assert!(
+            has_voiceprint_metadata(&journal.0, "owner", DAY, "_default", SEGMENT, "named"),
+            "{path}: named voiceprint present after named mutation"
+        );
+
+        // 3. Collapse refusal in both directions
+        let direct_only_key = "120000_direct_only";
+        journal.direct_segment_at(DAY, direct_only_key, labels.clone());
+        let before = crate::support::snapshot_files(&journal.0);
+        let mut collapse_named = named_default_request();
+        collapse_named["segment_key"] = json!(direct_only_key);
+        if path == "/app/speakers/api/assign-attribution" {
+            collapse_named["speaker"] = json!("owner");
+        } else if path == "/app/speakers/api/correct-attribution" {
+            collapse_named["new_speaker"] = json!("owner");
+        }
+        let (status, refused) = call(router(journal.0.clone()), path, collapse_named).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}: {refused}");
+        assert_eq!(
+            refused["reason_code"], "speaker_review_unavailable",
+            "{path}"
+        );
+        assert_eq!(crate::support::snapshot_files(&journal.0), before);
+
+        let named_only_key = "120000_named_only";
+        journal.named_default_segment_at(DAY, named_only_key, labels.clone());
+        let before = crate::support::snapshot_files(&journal.0);
+        let mut collapse_direct = direct_request();
+        collapse_direct["segment_key"] = json!(named_only_key);
+        if path == "/app/speakers/api/assign-attribution" {
+            collapse_direct["speaker"] = json!("owner");
+        } else if path == "/app/speakers/api/correct-attribution" {
+            collapse_direct["new_speaker"] = json!("owner");
+        }
+        let (status, refused) = call(router(journal.0.clone()), path, collapse_direct).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{path}: {refused}");
+        assert_eq!(
+            refused["reason_code"], "speaker_review_unavailable",
+            "{path}"
+        );
+        assert_eq!(crate::support::snapshot_files(&journal.0), before);
     }
 }
 
 #[tokio::test]
-async fn propagation_preflights_direct_and_mixed_targets_before_resolver_or_writes() {
-    for mixed in [false, true] {
-        let journal = Journal::new();
-        journal.entity("owner", true);
-        journal.entity("old", false);
-        journal.entity("new", false);
-        journal.owner_centroid();
-        if mixed {
-            journal.segment(json!({"labels":[{"sentence_id":1,"speaker":"old"}]}));
-            fs::write(
-                journal
-                    .0
-                    .join("chronicle")
-                    .join(DAY)
-                    .join(STREAM)
-                    .join(SEGMENT)
-                    .join("audio.npz"),
-                b"not an npz archive",
-            )
-            .expect("invalid named evidence writes");
-        }
-        journal.direct_segment_at(
-            "20260809",
-            "120000_1",
-            json!({"labels":[{"sentence_id":1,"speaker":"old"}]}),
-        );
-        // Materialize the lock file before snapshotting so the route's lock is not a mutation.
-        let trust = solstone_core_entity::hold_entity_trust_lock(&journal.0)
-            .expect("initialize entity trust lock");
-        drop(trust);
-        let before = crate::support::snapshot_files(&journal.0);
-        let (status, refused) = call(
-            router(journal.0.clone()),
-            "/app/speakers/api/propagate-correction",
-            json!({"old_speaker":"old","new_speaker":"new","commit":true}),
-        )
-        .await;
-        assert_direct_refused(status, &refused);
-        assert_eq!(
-            crate::support::snapshot_files(&journal.0),
-            before,
-            "mixed={mixed} wrote the journal"
-        );
-    }
+async fn propagation_applies_across_direct_and_named_targets() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.entity("old", false);
+    journal.entity("new", false);
+    journal.owner_centroid();
+
+    // 1. Direct target matching "old"
+    journal.direct_segment_at(
+        "20260809",
+        "120000_1",
+        json!({"labels":[{"sentence_id":1,"speaker":"old"}]}),
+    );
+    // 2. Named target matching "old"
+    journal.named_default_segment_at(
+        "20260809",
+        "120000_2",
+        json!({"labels":[{"sentence_id":1,"speaker":"old"}]}),
+    );
+    // 3. Unaddressed Named twin of 120000_1
+    journal.named_default_segment_at(
+        "20260809",
+        "120000_1",
+        json!({"labels":[{"sentence_id":1,"speaker":"other"}]}),
+    );
+    // 4. Unaddressed Direct twin of 120000_2
+    journal.direct_segment_at(
+        "20260809",
+        "120000_2",
+        json!({"labels":[{"sentence_id":1,"speaker":"other"}]}),
+    );
+
+    let unaddressed_named_dir = journal.0.join("chronicle/20260809/_default/120000_1");
+    let unaddressed_direct_dir = journal.0.join("chronicle/20260809/120000_2");
+    let unaddressed_named_snapshot = crate::support::snapshot_files(&unaddressed_named_dir);
+    let unaddressed_direct_snapshot = crate::support::snapshot_files(&unaddressed_direct_dir);
+
+    let (status, response) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/propagate-correction",
+        json!({"old_speaker":"old","new_speaker":"new","commit":true}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(response["status"], "applied", "{response}");
+    assert_eq!(response["statement_count"], 2, "{response}");
+
+    // Assert per-row actual layout in segments
+    let segments = response["segments"].as_array().expect("segments array");
+    let res1 = segments
+        .iter()
+        .find(|r| r["segment_key"] == "120000_1")
+        .expect("res 120000_1");
+    assert_eq!(res1["stream_layout"], "direct", "{res1}");
+    let res2 = segments
+        .iter()
+        .find(|r| r["segment_key"] == "120000_2")
+        .expect("res 120000_2");
+    assert_eq!(res2["stream_layout"], "named", "{res2}");
+
+    // Assert per-row actual layout in changes
+    let changes = response["changes"].as_array().expect("changes array");
+    let ch1 = changes
+        .iter()
+        .find(|c| c["segment_key"] == "120000_1")
+        .expect("ch 120000_1");
+    assert_eq!(ch1["stream_layout"], "direct", "{ch1}");
+    let ch2 = changes
+        .iter()
+        .find(|c| c["segment_key"] == "120000_2")
+        .expect("ch 120000_2");
+    assert_eq!(ch2["stream_layout"], "named", "{ch2}");
+
+    // Assert unaddressed twins are byte-identical
+    assert_eq!(
+        crate::support::snapshot_files(&unaddressed_named_dir),
+        unaddressed_named_snapshot
+    );
+    assert_eq!(
+        crate::support::snapshot_files(&unaddressed_direct_dir),
+        unaddressed_direct_snapshot
+    );
+}
+
+#[tokio::test]
+async fn attribution_direct_trust_lock_timeout_is_the_python_compatible_labels_busy_refusal() {
+    let journal = Journal::new();
+    journal.direct_segment(json!({"labels":[{"sentence_id":1}]}));
+    let _held = solstone_core_entity::hold_entity_trust_lock_raw_for_test(&journal.0)
+        .expect("hold trust lock outside the route coordinator");
+    let mut body = direct_request();
+    body["speaker"] = json!("target");
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/assign-attribution",
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{refused}");
+    assert_eq!(refused["reason_code"], "speaker_labels_busy");
 }
 
 #[tokio::test]
@@ -1310,7 +1506,13 @@ async fn attribution_malformed_stream_layout_is_not_named() {
     let journal = Journal::new();
     journal.entity("owner", true);
     journal.segment(json!({"labels":[{"sentence_id":1}]}));
-    for layout in [json!("Direct"), json!(""), json!(true), json!(1)] {
+    for layout in [
+        json!("Direct"),
+        json!(""),
+        json!(true),
+        json!(1),
+        Value::Null,
+    ] {
         let mut body = request();
         body["speaker"] = json!("owner");
         body["stream_layout"] = layout.clone();
@@ -1326,6 +1528,22 @@ async fn attribution_malformed_stream_layout_is_not_named() {
             "{layout}: {refused}"
         );
     }
+
+    // Missing stream_layout field
+    let mut body = request();
+    body["speaker"] = json!("owner");
+    body.as_object_mut().unwrap().remove("stream_layout");
+    let (status, refused) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/assign-attribution",
+        body,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "missing layout: {refused}");
+    assert_eq!(
+        refused["reason_code"], "invalid_segment_or_stream",
+        "missing layout: {refused}"
+    );
 }
 
 #[tokio::test]

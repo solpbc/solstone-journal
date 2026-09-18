@@ -108,10 +108,31 @@ impl Journal {
         write_embeddings(&directory.join("audio.npz"), embeddings);
     }
 
-    fn direct_segment(&self, key: &str) {
+    fn direct_candidate_segment(&self, key: &str, labels: Value, embeddings: &[Vec<f32>]) {
         let directory = self.0.join("chronicle").join(DAY).join(key);
         fs::create_dir_all(directory.join("talents")).expect("direct talents");
-        fs::write(directory.join("marker"), "unchanged").expect("direct marker");
+        fs::write(
+            directory.join("talents/speaker_labels.json"),
+            labels.to_string(),
+        )
+        .expect("labels");
+        write_embeddings(&directory.join("audio.npz"), embeddings);
+    }
+
+    fn named_default_candidate_segment(&self, key: &str, labels: Value, embeddings: &[Vec<f32>]) {
+        let directory = self
+            .0
+            .join("chronicle")
+            .join(DAY)
+            .join("_default")
+            .join(key);
+        fs::create_dir_all(directory.join("talents")).expect("named default talents");
+        fs::write(
+            directory.join("talents/speaker_labels.json"),
+            labels.to_string(),
+        )
+        .expect("labels");
+        write_embeddings(&directory.join("audio.npz"), embeddings);
     }
 }
 impl Drop for Journal {
@@ -355,45 +376,209 @@ async fn identify_uses_the_standard_voiceprint_busy_response_for_a_held_trust_lo
 }
 
 #[tokio::test]
-async fn web_and_cli_identify_refuse_direct_members_before_any_write() {
+async fn identify_succeeds_on_direct_and_mixed_members() {
     for route in [
         "/app/speakers/api/discovery/identify",
         "/app/speakers/api/discovery/identify-cli",
     ] {
-        let journal = Journal::new();
-        journal.direct_segment("120000_1");
-        journal.cache(json!([{
-            "day": DAY,
-            "stream_layout": "direct",
-            "stream": "_default",
-            "segment_key": "120000_1",
-            "source": SOURCE,
-            "sentence_id": 1,
-        }]));
-        let before = snapshot(&journal.0);
+        // 1. Direct-only cluster with unaddressed Named _default twin
+        {
+            let journal = Journal::new();
+            journal.entity("owner", true);
+            journal.direct_candidate_segment("120000_1", json!({"labels":[]}), &[unit(0.0, 1.0)]);
+            journal.named_default_candidate_segment(
+                "120000_1",
+                json!({"labels":[{"sentence_id":1,"speaker":"untouched"}]}),
+                &[unit(0.0, 1.0)],
+            );
+            journal.cache(json!([{
+                "day": DAY,
+                "stream_layout": "direct",
+                "stream": "_default",
+                "segment_key": "120000_1",
+                "source": SOURCE,
+                "sentence_id": 1,
+            }]));
 
-        let (status, body) = call(
-            &journal.0,
-            route,
-            json!({"cluster_id":7,"name":"target","create_new":true}),
-        )
-        .await;
+            let unaddressed_named_dir = journal
+                .0
+                .join("chronicle")
+                .join(DAY)
+                .join("_default")
+                .join("120000_1");
+            let unaddressed_named_snapshot = crate::support::snapshot_files(&unaddressed_named_dir);
 
-        assert_eq!(status, StatusCode::BAD_REQUEST, "{route}: {body}");
-        assert_eq!(
-            body["reason_code"], "speaker_segment_layout_unsupported",
-            "{route}: {body}"
-        );
-        assert_eq!(
-            body["error"],
-            "This command can't change that speaker review."
-        );
-        assert_eq!(
-            body["detail"],
-            "This segment uses the direct journal layout, which this command doesn't support."
-        );
-        assert_eq!(snapshot(&journal.0), before, "{route} mutated the journal");
+            let (status, body) = call(
+                &journal.0,
+                route,
+                json!({"cluster_id":7,"name":"target","create_new":true}),
+            )
+            .await;
+
+            assert_eq!(status, StatusCode::OK, "{route}: {body}");
+            assert_eq!(body["status"], "identified", "{route}: {body}");
+            assert_eq!(body["segments_updated"], 1, "{route}: {body}");
+            assert_eq!(body["voiceprints_saved"], 1, "{route}: {body}");
+            // Assert public body does NOT carry singular operation-wide stream_layout or member coordinates
+            assert!(body.get("stream_layout").is_none(), "{route}: {body}");
+            assert!(body.get("day").is_none(), "{route}: {body}");
+            assert!(body.get("segment_key").is_none(), "{route}: {body}");
+
+            let direct_labels: Value = serde_json::from_str(
+                &fs::read_to_string(
+                    journal
+                        .0
+                        .join("chronicle")
+                        .join(DAY)
+                        .join("120000_1/talents/speaker_labels.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(direct_labels["labels"][0]["speaker"], "target", "{route}");
+
+            assert_eq!(
+                crate::support::snapshot_files(&unaddressed_named_dir),
+                unaddressed_named_snapshot,
+                "{route}: unaddressed named twin was modified by direct identify"
+            );
+        }
+
+        // 2. Mixed cluster with Direct and Named _default members, plus unaddressed twins
+        {
+            let journal = Journal::new();
+            journal.entity("owner", true);
+            // Member 1: Direct 120000_2
+            journal.direct_candidate_segment("120000_2", json!({"labels":[]}), &[unit(0.0, 1.0)]);
+            // Member 2: Named _default 120000_3
+            journal.named_default_candidate_segment(
+                "120000_3",
+                json!({"labels":[]}),
+                &[unit(0.0, 1.0)],
+            );
+            // Unaddressed twins:
+            journal.named_default_candidate_segment(
+                "120000_2",
+                json!({"labels":[{"sentence_id":1,"speaker":"untouched"}]}),
+                &[unit(0.0, 1.0)],
+            );
+            journal.direct_candidate_segment(
+                "120000_3",
+                json!({"labels":[{"sentence_id":1,"speaker":"untouched"}]}),
+                &[unit(0.0, 1.0)],
+            );
+
+            journal.cache(json!([
+                {
+                    "day": DAY,
+                    "stream_layout": "direct",
+                    "stream": "_default",
+                    "segment_key": "120000_2",
+                    "source": SOURCE,
+                    "sentence_id": 1,
+                },
+                {
+                    "day": DAY,
+                    "stream_layout": "named",
+                    "stream": "_default",
+                    "segment_key": "120000_3",
+                    "source": SOURCE,
+                    "sentence_id": 1,
+                }
+            ]));
+
+            let unaddressed_named_dir = journal
+                .0
+                .join("chronicle")
+                .join(DAY)
+                .join("_default")
+                .join("120000_2");
+            let unaddressed_direct_dir = journal.0.join("chronicle").join(DAY).join("120000_3");
+            let unaddressed_named_snapshot = crate::support::snapshot_files(&unaddressed_named_dir);
+            let unaddressed_direct_snapshot =
+                crate::support::snapshot_files(&unaddressed_direct_dir);
+
+            let (status, body) = call(
+                &journal.0,
+                route,
+                json!({"cluster_id":7,"name":"target","create_new":true}),
+            )
+            .await;
+
+            assert_eq!(status, StatusCode::OK, "{route}: {body}");
+            assert_eq!(body["status"], "identified", "{route}: {body}");
+            assert_eq!(body["segments_updated"], 2, "{route}: {body}");
+            assert_eq!(body["voiceprints_saved"], 2, "{route}: {body}");
+            assert!(body.get("stream_layout").is_none(), "{route}: {body}");
+
+            let direct_labels: Value = serde_json::from_str(
+                &fs::read_to_string(
+                    journal
+                        .0
+                        .join("chronicle")
+                        .join(DAY)
+                        .join("120000_2/talents/speaker_labels.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(direct_labels["labels"][0]["speaker"], "target", "{route}");
+
+            let named_labels: Value = serde_json::from_str(
+                &fs::read_to_string(
+                    journal
+                        .0
+                        .join("chronicle")
+                        .join(DAY)
+                        .join("_default/120000_3/talents/speaker_labels.json"),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+            assert_eq!(named_labels["labels"][0]["speaker"], "target", "{route}");
+
+            assert_eq!(
+                crate::support::snapshot_files(&unaddressed_named_dir),
+                unaddressed_named_snapshot,
+                "{route}: unaddressed named twin was modified by identify"
+            );
+            assert_eq!(
+                crate::support::snapshot_files(&unaddressed_direct_dir),
+                unaddressed_direct_snapshot,
+                "{route}: unaddressed direct twin was modified by identify"
+            );
+        }
     }
+}
+
+#[tokio::test]
+async fn identify_direct_member_uses_the_standard_voiceprint_busy_response_for_a_held_trust_lock() {
+    let journal = Journal::new();
+    journal.direct_candidate_segment("120000_1", json!({"labels":[]}), &[unit(0.0, 1.0)]);
+    journal.cache(json!([{
+        "day": DAY,
+        "stream_layout": "direct",
+        "stream": "_default",
+        "segment_key": "120000_1",
+        "source": SOURCE,
+        "sentence_id": 1,
+    }]));
+    let _held = solstone_core_entity::hold_entity_trust_lock_raw_for_test(&journal.0)
+        .expect("hold trust lock outside the route coordinator");
+
+    let (status, body) = call(
+        &journal.0,
+        "/app/speakers/api/discovery/identify",
+        json!({"cluster_id":7,"name":"target"}),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
+    assert_eq!(body["reason_code"], "speaker_voiceprint_busy");
+    assert_eq!(
+        body["error"],
+        "that voice couldn't be updated because another update is running."
+    );
 }
 
 #[cfg(unix)]

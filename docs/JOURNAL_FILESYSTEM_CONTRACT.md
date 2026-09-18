@@ -389,9 +389,8 @@ Read surfaces admit both layouts through the explicit resolver. Shell-owned
 and native speaker mutations preserve layout awareness across bootstrap,
 backfill, identification, retroactive confirmation, and voiceprint
 accumulation by resolving exact locators `(day, stream_layout, stream, exact_basename)`.
-Public Direct layout mutation remains refused at the CLI and convey boundary
-(`UNSUPPORTED_LAYOUT_REASON`) before any state change. The bundled speaker workspace keys a row by
-the JSON-encoded tuple `(day, stream_layout, stream, exact basename)`, and only
-accepts a legacy basename-only deep link when that basename is unique among
-the loaded rows.
+Public Shell and CLI mutations accept Direct and Named layouts equally.
+The bundled speaker workspace keys a row by the JSON-encoded tuple
+`(day, stream_layout, stream, exact basename)`, and only accepts a legacy
+basename-only deep link when that basename is unique among the loaded rows.
 

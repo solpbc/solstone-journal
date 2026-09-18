@@ -35,7 +35,7 @@ use crate::speakers_attribution::action;
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_quality::awareness_voiceprint;
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
+    SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 
 const MIN_STATEMENTS: usize = 30;
@@ -206,7 +206,6 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         stream,
         segment_key,
         decode_stream_layout_value(body.get("stream_layout")),
-        DirectSupport::Allow,
     ) {
         SegmentLookup::Present(path) => path,
         SegmentLookup::Absent => return Json(json!({"sentences":[]})).into_response(),
@@ -223,14 +222,6 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
                 "speaker_command_failed",
                 "that speaker command didn't finish.",
                 &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-        SegmentLookup::UnsupportedLayout => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                "segment layout is not readable",
                 StatusCode::INTERNAL_SERVER_ERROR,
             );
         }
@@ -608,23 +599,13 @@ fn expand_candidate(
                 stream.to_owned(),
                 segment_key.to_owned(),
             ));
-            let segment = match lookup_segment(
-                root,
-                day,
-                stream,
-                segment_key,
-                Ok(layout),
-                DirectSupport::Allow,
-            ) {
+            let segment = match lookup_segment(root, day, stream, segment_key, Ok(layout)) {
                 SegmentLookup::Present(path) => path,
                 SegmentLookup::Absent => continue,
                 SegmentLookup::MalformedLayout => {
                     return Err("invalid stream_layout on candidate source segment".to_owned());
                 }
                 SegmentLookup::Failed(error) => return Err(error.to_string()),
-                SegmentLookup::UnsupportedLayout => {
-                    return Err("segment layout is not readable".to_owned());
-                }
             };
             let jsonl = segment.join(format!("{source}.jsonl"));
             if !segment.is_dir() || crate::speakers_quality::segment_overlap_fraction(&jsonl) > 0.10

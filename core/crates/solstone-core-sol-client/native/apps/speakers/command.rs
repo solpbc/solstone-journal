@@ -138,7 +138,7 @@ pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
 pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
-        &[],
+        &[("--stream-layout", None)],
         &[
             FlagSpec::true_flag("--commit"),
             FlagSpec::paired("--save", "--no-save", true),
@@ -161,6 +161,10 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
     let commit = parsed.flag("--commit");
     let save = parsed.bool_value("--save").unwrap_or(true);
     let accumulate = parsed.bool_value("--accumulate").unwrap_or(true);
+    let stream_layout = match parse_stream_layout_option(&parsed) {
+        Ok(layout) => layout,
+        Err(err) => return err,
+    };
     let json_output = parsed.flag("--json");
     let wrap = match request_json(
         ctx,
@@ -169,6 +173,7 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
         Some(json!({
             "day": day,
+            "stream_layout": stream_layout,
             "stream": stream,
             "segment": segment,
             "commit": commit,
@@ -204,7 +209,11 @@ pub fn attribute_segment(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--stream-layout", None)],
+        &[FlagSpec::true_flag("--json")],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -230,6 +239,10 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(new_speaker) = parsed.positionals.get(5) else {
         return stderr("Error: missing argument NEW_SPEAKER");
     };
+    let stream_layout = match parse_stream_layout_option(&parsed) {
+        Ok(layout) => layout,
+        Err(err) => return err,
+    };
     let result = match request_json(
         ctx,
         HttpMethod::Post,
@@ -237,6 +250,7 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
         vec![],
         Some(json!({
             "day": day,
+            "stream_layout": stream_layout,
             "stream": stream,
             "segment_key": segment,
             "source": source,
@@ -254,7 +268,7 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
     if string_field(&result, "status").as_deref() == Some("already_correct") {
         emit(
             &mut out,
-            format!("Already correct: {day}/{stream}/{segment} #{sentence_id}"),
+            format!("Already correct: {day}/{stream_layout}/{stream}/{segment} #{sentence_id}"),
         );
         return CommandOutput::success(out);
     }
@@ -262,7 +276,7 @@ pub fn correct(ctx: CommandContext<'_>) -> CommandOutput {
     emit(
         &mut out,
         format!(
-            "Corrected {day}/{stream}/{segment} #{sentence_id}: {old} -> {}",
+            "Corrected {day}/{stream_layout}/{stream}/{segment} #{sentence_id}: {old} -> {}",
             value_to_string(result.get("new_speaker"))
         ),
     );
@@ -874,7 +888,11 @@ pub fn rebuild_owner(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn tag_owner(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--stream-layout", None)],
+        &[FlagSpec::true_flag("--json")],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
@@ -897,13 +915,17 @@ pub fn tag_owner(ctx: CommandContext<'_>) -> CommandOutput {
     else {
         return stderr("Error: missing argument SENTENCE_ID");
     };
+    let stream_layout = match parse_stream_layout_option(&parsed) {
+        Ok(layout) => layout,
+        Err(err) => return err,
+    };
     let result = match request_json(
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/owner/tag-cli",
         vec![],
         Some(
-            json!({"day": day, "stream": stream, "segment_key": segment, "source": source, "sentence_id": sentence_id}),
+            json!({"day": day, "stream_layout": stream_layout, "stream": stream, "segment_key": segment, "source": source, "sentence_id": sentence_id}),
         ),
     ) {
         Ok(result) => result,
@@ -928,11 +950,11 @@ pub fn tag_owner(ctx: CommandContext<'_>) -> CommandOutput {
     }
     if string_field(&result, "status").as_deref() == Some("already_assigned") {
         stdout_line(format!(
-            "Owner sentence already tagged: {day}/{stream}/{segment} #{sentence_id}"
+            "Owner sentence already tagged: {day}/{stream_layout}/{stream}/{segment} #{sentence_id}"
         ))
     } else {
         stdout_line(format!(
-            "Tagged owner sentence: {day}/{stream}/{segment} #{sentence_id}"
+            "Tagged owner sentence: {day}/{stream_layout}/{stream}/{segment} #{sentence_id}"
         ))
     }
 }
@@ -1399,6 +1421,15 @@ fn stdout_json(value: &Value) -> CommandOutput {
 
 fn stdout_line(value: impl AsRef<str>) -> CommandOutput {
     CommandOutput::success(format!("{}\n", value.as_ref()))
+}
+
+fn parse_stream_layout_option(parsed: &ParsedArgs) -> Result<&'static str, CommandOutput> {
+    match parsed.value("--stream-layout") {
+        None => Ok("named"),
+        Some("direct") => Ok("direct"),
+        Some("named") => Ok("named"),
+        Some(_) => Err(stderr("Error: invalid value for --stream-layout")),
+    }
 }
 
 fn stderr(value: impl AsRef<str>) -> CommandOutput {
@@ -2171,4 +2202,39 @@ fn monotonic_seconds(ctx: CommandContext<'_>) -> f64 {
         .map(|clock| clock.monotonic())
         .unwrap_or(Duration::ZERO)
         .as_secs_f64()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_stream_layout_option_accepts_omitted_named_and_direct() {
+        let args = ParsedArgs::default();
+        assert_eq!(parse_stream_layout_option(&args).unwrap(), "named");
+
+        let mut args = ParsedArgs::default();
+        args.values
+            .push(("--stream-layout".to_string(), "direct".to_string()));
+        assert_eq!(parse_stream_layout_option(&args).unwrap(), "direct");
+
+        let mut args = ParsedArgs::default();
+        args.values
+            .push(("--stream-layout".to_string(), "named".to_string()));
+        assert_eq!(parse_stream_layout_option(&args).unwrap(), "named");
+
+        let mut args = ParsedArgs::default();
+        args.values
+            .push(("--stream-layout".to_string(), "Direct".to_string()));
+        let err = parse_stream_layout_option(&args).unwrap_err();
+        assert_eq!(err.exit, 1);
+        assert_eq!(err.stderr, "Error: invalid value for --stream-layout\n");
+
+        let mut args = ParsedArgs::default();
+        args.values
+            .push(("--stream-layout".to_string(), "other".to_string()));
+        let err = parse_stream_layout_option(&args).unwrap_err();
+        assert_eq!(err.exit, 1);
+        assert_eq!(err.stderr, "Error: invalid value for --stream-layout\n");
+    }
 }

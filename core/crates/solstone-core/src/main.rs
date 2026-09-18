@@ -1797,14 +1797,9 @@ fn speaker_resolve_error_exit(error: &str) -> u8 {
 }
 
 fn identify_request(value: Value) -> Result<Value, String> {
-    use solstone_core_speaker_resolve::discovery_cache::{
-        load_discovery_cache, member_tuple, normalize_reviewed_near_match_ids,
-    };
+    use solstone_core_speaker_resolve::discovery_cache::normalize_reviewed_near_match_ids;
     use solstone_core_speaker_resolve::identify_cluster::{
         IdentifyClusterRequest, identify_cluster,
-    };
-    use solstone_core_speaker_resolve::segment_catalog::{
-        UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE, UNSUPPORTED_LAYOUT_REASON,
     };
     let request_object = request_object(
         value,
@@ -1833,26 +1828,6 @@ fn identify_request(value: Value) -> Result<Value, String> {
         };
     let root = PathBuf::from(required_string(object, "journal_root")?);
     let cluster_id = required_i64(object, "cluster_id")?;
-    if let Some(cache) = load_discovery_cache(&root)
-        && let Some(raw_members) = cache
-            .get("clusters")
-            .and_then(Value::as_object)
-            .and_then(|clusters| clusters.get(&cluster_id.to_string()))
-            .and_then(Value::as_array)
-    {
-        for member in raw_members {
-            if let Ok(m) = member_tuple(member)
-                && m.stream_layout == solstone_core_journal_io::SegmentLayout::Direct
-            {
-                return Ok(json!({
-                    "status": "error",
-                    "reason": UNSUPPORTED_LAYOUT_REASON,
-                    "message": UNSUPPORTED_LAYOUT_MESSAGE,
-                    "detail": UNSUPPORTED_LAYOUT_DETAIL,
-                }));
-            }
-        }
-    }
     let request = IdentifyClusterRequest {
         journal_root: root,
         cluster_id,

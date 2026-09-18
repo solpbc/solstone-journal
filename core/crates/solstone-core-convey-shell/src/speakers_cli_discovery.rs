@@ -15,9 +15,6 @@ use solstone_core_convey_http::envelope::error_envelope;
 
 use crate::JournalRoot;
 use crate::speakers_discovery_write::{IdentifyPreflightError, preflight_identify_cluster};
-use solstone_core_speaker_resolve::segment_catalog::{
-    UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE, UNSUPPORTED_LAYOUT_REASON,
-};
 
 pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
     let body = match request_json(request).await {
@@ -37,14 +34,6 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
     }
     match preflight_identify_cluster(&root.0, cluster_id) {
         Ok(()) => {}
-        Err(IdentifyPreflightError::UnsupportedLayout) => {
-            return err(
-                UNSUPPORTED_LAYOUT_REASON,
-                UNSUPPORTED_LAYOUT_MESSAGE,
-                UNSUPPORTED_LAYOUT_DETAIL,
-                StatusCode::BAD_REQUEST,
-            );
-        }
         Err(IdentifyPreflightError::Failed(detail)) => {
             return err(
                 "speaker_command_failed",

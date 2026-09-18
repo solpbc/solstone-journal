@@ -20,8 +20,7 @@ use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
-    UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
+    SegmentLookup, catalog_journal, decode_required_stream_layout_value, lookup_segment,
 };
 
 pub async fn bootstrap(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -133,44 +132,45 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    let layout = decode_stream_layout_value(body.get("stream_layout"));
-    let directory =
-        match lookup_segment(&root.0, day, stream, segment, layout, DirectSupport::Refuse) {
-            SegmentLookup::Present(path) => path,
-            SegmentLookup::UnsupportedLayout => {
-                return err(
-                    UNSUPPORTED_LAYOUT_REASON,
-                    UNSUPPORTED_LAYOUT_MESSAGE,
-                    UNSUPPORTED_LAYOUT_DETAIL,
-                    StatusCode::BAD_REQUEST,
-                );
-            }
-            SegmentLookup::MalformedLayout => {
-                return err(
-                    "invalid_segment_or_stream",
-                    "that segment or stream couldn't be used.",
-                    "Invalid segment key or stream",
-                    StatusCode::BAD_REQUEST,
-                );
-            }
-            SegmentLookup::Absent => {
-                return err(
-                    "speaker_review_unavailable",
-                    "that speaker review couldn't be loaded.",
-                    "No transcript found",
-                    StatusCode::NOT_FOUND,
-                );
-            }
-            SegmentLookup::Failed(error) => {
-                return err(
-                    "speaker_command_failed",
-                    "that speaker command didn't finish.",
-                    &error.to_string(),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                );
-            }
-        };
-    let stream_layout = layout.unwrap_or(SegmentLayout::Named);
+    let layout = match decode_required_stream_layout_value(body.get("stream_layout")) {
+        Ok(layout) => layout,
+        Err(_) => {
+            return err(
+                "invalid_segment_or_stream",
+                "that segment or stream couldn't be used.",
+                "Invalid segment key or stream",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+    };
+    let directory = match lookup_segment(&root.0, day, stream, segment, Ok(layout)) {
+        SegmentLookup::Present(path) => path,
+        SegmentLookup::MalformedLayout => {
+            return err(
+                "invalid_segment_or_stream",
+                "that segment or stream couldn't be used.",
+                "Invalid segment key or stream",
+                StatusCode::BAD_REQUEST,
+            );
+        }
+        SegmentLookup::Absent => {
+            return err(
+                "speaker_review_unavailable",
+                "that speaker review couldn't be loaded.",
+                "No transcript found",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        SegmentLookup::Failed(error) => {
+            return err(
+                "speaker_command_failed",
+                "that speaker command didn't finish.",
+                &error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            );
+        }
+    };
+    let stream_layout = layout;
     let now = Utc::now().timestamp_millis();
     let outcome = match solstone_core_speaker_resolve::resolve::resolve(
         &root.0,
@@ -260,7 +260,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
     } else {
         Value::Null
     };
-    Json(json!({"result":result,"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"stream":stream,"segment_key":segment,"written_path":written_path,"accumulated":accumulated}))
+    Json(json!({"result":result,"day":day,"stream_layout":layout_name(layout),"stream":stream,"segment_key":segment,"written_path":written_path,"accumulated":accumulated}))
         .into_response()
 }
 

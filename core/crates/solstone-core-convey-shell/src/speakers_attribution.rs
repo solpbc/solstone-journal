@@ -26,8 +26,7 @@ use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
 
 use crate::JournalRoot;
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
-    UNSUPPORTED_LAYOUT_REASON, catalog_journal, decode_stream_layout_value, lookup_segment,
+    SegmentLookup, catalog_journal, decode_required_stream_layout_value, lookup_segment,
 };
 
 const OWNER_TOO_CLOSE: (&str, &str, StatusCode) = (
@@ -140,7 +139,7 @@ pub async fn assign(Extension(root): Extension<Arc<JournalRoot>>, request: Reque
         return write_error(error, true);
     }
     let principal = admitted_owner(&root.0);
-    let mut response = json!({"success":true,"status":"assigned","speaker":fields.speaker});
+    let mut response = json!({"success":true,"status":"assigned","speaker":fields.speaker,"stream_layout":layout_name(fields.layout)});
     if principal.as_deref() == Some(fields.speaker.as_str()) {
         owner_bootstrap_response(
             &mut response,
@@ -189,7 +188,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     if current.get("confidence").and_then(Value::as_str) == Some("high")
         && current.get("method").and_then(Value::as_str) == Some("user_confirmed")
     {
-        return Json(json!({"success":true,"status":"already_confirmed"})).into_response();
+        return Json(json!({"success":true,"status":"already_confirmed","stream_layout":layout_name(fields.layout)})).into_response();
     }
     if current.get("confidence").and_then(Value::as_str) != Some("medium") {
         return err(
@@ -240,7 +239,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         return write_error(error, true);
     }
     maybe_bootstrap_owner(&root.0, &target.speaker);
-    Json(json!({"success":true,"status":"confirmed","speaker":target.speaker})).into_response()
+    Json(json!({"success":true,"status":"confirmed","speaker":target.speaker,"stream_layout":layout_name(target.layout)})).into_response()
 }
 
 pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -279,7 +278,7 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         .and_then(Value::as_str)
         .map(str::to_owned);
     if old_speaker.as_deref() == Some(fields.speaker.as_str()) {
-        return Json(json!({"success":true,"status":"already_correct"})).into_response();
+        return Json(json!({"success":true,"status":"already_correct","stream_layout":layout_name(fields.layout)})).into_response();
     }
     let embedding = match sentence_embedding(&segment, &fields.source, fields.sentence_id) {
         Some(value) => value,
@@ -349,7 +348,7 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     }
     maybe_bootstrap_owner(&root.0, &fields.speaker);
     let propagation_offer = propagation_offer(&root.0, old_speaker.as_deref(), &fields.speaker);
-    Json(json!({"success":true,"status":"corrected","old_speaker":old_speaker,"new_speaker":fields.speaker,"voiceprint_removal":removal,"propagation_offer":propagation_offer})).into_response()
+    Json(json!({"success":true,"status":"corrected","old_speaker":old_speaker,"new_speaker":fields.speaker,"stream_layout":layout_name(fields.layout),"voiceprint_removal":removal,"propagation_offer":propagation_offer})).into_response()
 }
 
 fn propagation_offer(
@@ -375,7 +374,7 @@ fn propagation_offer(
                 "segment_count":0,
             });
         }
-        Err(PropagationError::UnsupportedLayout | PropagationError::Failed(_)) => {
+        Err(PropagationError::Failed(_)) => {
             return json!({
                 "available":false,
                 "reason":"preview_failed",
@@ -514,14 +513,6 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
                 "configured owner identity is not admitted",
             );
         }
-        Err(PropagationError::UnsupportedLayout) => {
-            return err(
-                UNSUPPORTED_LAYOUT_REASON,
-                UNSUPPORTED_LAYOUT_MESSAGE,
-                UNSUPPORTED_LAYOUT_DETAIL,
-                StatusCode::BAD_REQUEST,
-            );
-        }
         Err(PropagationError::Failed(error)) => return write_error(error, true),
     };
     let statement_count = result["statement_count"].as_u64().unwrap_or(0);
@@ -539,7 +530,6 @@ pub async fn propagate(Extension(root): Extension<Arc<JournalRoot>>, request: Re
 }
 
 enum PropagationError {
-    UnsupportedLayout,
     OwnerIdentityInvalid,
     Failed(String),
 }
@@ -594,9 +584,6 @@ fn propagate_speaker_correction(
                 || label.get("speaker").and_then(Value::as_str) == Some(new_speaker)
         }) {
             continue;
-        }
-        if segment.layout == SegmentLayout::Direct {
-            return Err(PropagationError::UnsupportedLayout);
         }
         preflight_targets.push(PreflightTarget { segment, current });
     }
@@ -687,7 +674,7 @@ fn propagate_speaker_correction(
                 results.push(json!({
                     "status": if changed_count > 0 { "changed" } else { "unchanged" },
                     "day":segment.day,
-                    "stream_layout":"named",
+                    "stream_layout":layout_name(segment.layout),
                     "stream":segment.stream,
                     "segment_key":segment.name,
                     "source":output.source,
@@ -698,10 +685,10 @@ fn propagate_speaker_correction(
                 }));
             }
             solstone_core_speaker_resolve::resolve::ResolveOutcome::SegmentMissing => {
-                results.push(json!({"status":"skipped","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"segment_missing"}));
+                results.push(json!({"status":"skipped","day":segment.day,"stream_layout":layout_name(segment.layout),"stream":segment.stream,"segment_key":segment.name,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"segment_missing"}));
             }
             solstone_core_speaker_resolve::resolve::ResolveOutcome::Empty { source } => {
-                results.push(json!({"status":"skipped","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
+                results.push(json!({"status":"skipped","day":segment.day,"stream_layout":layout_name(segment.layout),"stream":segment.stream,"segment_key":segment.name,"source":source,"changes":[],"changed_count":0,"accumulated":{},"error":Value::Null,"skip_reason":"no_embeddings"}));
             }
             solstone_core_speaker_resolve::resolve::ResolveOutcome::IdentityInvalid => {
                 return Err(PropagationError::OwnerIdentityInvalid);
@@ -712,7 +699,7 @@ fn propagate_speaker_correction(
                     "{}/{}/{}: {error}",
                     segment.day, segment.stream, segment.name
                 ));
-                results.push(json!({"status":"error","day":segment.day,"stream_layout":"named","stream":segment.stream,"segment_key":segment.name,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
+                results.push(json!({"status":"error","day":segment.day,"stream_layout":layout_name(segment.layout),"stream":segment.stream,"segment_key":segment.name,"source":Value::Null,"changes":[],"changed_count":0,"accumulated":{},"error":error}));
             }
         }
     }
@@ -878,9 +865,10 @@ fn assign_fields(value: &Value) -> Result<Fields, Response> {
             "Use a valid day, stream, and segment, then pick a sentence.",
         ));
     }
-    let layout = decode_stream_layout_value(object.get("stream_layout")).map_err(|_| {
-        invalid_segment_or_stream("Use a valid day, stream, and segment, then pick a sentence.")
-    })?;
+    let layout =
+        decode_required_stream_layout_value(object.get("stream_layout")).map_err(|_| {
+            invalid_segment_or_stream("Use a valid day, stream, and segment, then pick a sentence.")
+        })?;
     Ok(Fields {
         day: day.to_owned(),
         layout,
@@ -935,7 +923,7 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
     if stream != DEFAULT_STREAM && !valid_stream(stream) {
         return Err(invalid_segment_or_stream("Invalid stream"));
     }
-    let layout = decode_stream_layout_value(object.get("stream_layout"))
+    let layout = decode_required_stream_layout_value(object.get("stream_layout"))
         .map_err(|_| invalid_segment_or_stream("Invalid stream layout"))?;
     let speaker = if correction {
         object
@@ -1145,15 +1133,8 @@ fn lookup_mutation_segment(
         &fields.stream,
         &fields.segment_key,
         Ok(fields.layout),
-        DirectSupport::Refuse,
     ) {
         SegmentLookup::Present(path) => Ok(path),
-        SegmentLookup::UnsupportedLayout => Err(err(
-            UNSUPPORTED_LAYOUT_REASON,
-            UNSUPPORTED_LAYOUT_MESSAGE,
-            UNSUPPORTED_LAYOUT_DETAIL,
-            StatusCode::BAD_REQUEST,
-        )),
         SegmentLookup::MalformedLayout => {
             Err(invalid_segment_or_stream("Invalid segment key or stream"))
         }

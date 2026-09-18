@@ -26,7 +26,7 @@ use crate::speakers_calendar::{
 use crate::speakers_review::{find_matching_entity, is_admissible_speaker_entity};
 use solstone_core_speaker_resolve::audio_sample::audio_info;
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, decode_stream_layout_value, lookup_segment,
+    SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 
 #[derive(Debug, Deserialize)]
@@ -368,7 +368,6 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Result<Option<Value>, Strin
             &segment.1,
             &segment.2,
             Ok(layout_from_flag(segment.3)),
-            DirectSupport::Allow,
         ) {
             SegmentLookup::Present(path) => path,
             SegmentLookup::Absent => {
@@ -404,7 +403,6 @@ fn cluster_presence(root: &Path, cluster_id: i64) -> Result<Option<Value>, Strin
                 }));
                 continue;
             }
-            SegmentLookup::UnsupportedLayout => unreachable!("discovery reads allow Direct"),
         };
         let (evidence, gaps) = segment_evidence(&segment_dir, &all_entities);
         for gap in gaps {
@@ -897,14 +895,7 @@ fn resolved_segment_dir(
     segment_key: &str,
     layout: SegmentLayout,
 ) -> Option<PathBuf> {
-    match lookup_segment(
-        root,
-        day,
-        stream,
-        segment_key,
-        Ok(layout),
-        DirectSupport::Allow,
-    ) {
+    match lookup_segment(root, day, stream, segment_key, Ok(layout)) {
         SegmentLookup::Present(path) => Some(path),
         _ => None,
     }

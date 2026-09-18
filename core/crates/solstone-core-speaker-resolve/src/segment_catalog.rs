@@ -14,14 +14,6 @@ use solstone_core_journal_io::{
     iter_segments, resolve_segment_locator_exact,
 };
 
-/// Voice-approved Direct-layout refusal reason code for `err(...)`.
-pub const UNSUPPORTED_LAYOUT_REASON: &str = "speaker_segment_layout_unsupported";
-/// First line of the Direct-layout refusal (`err` message slot).
-pub const UNSUPPORTED_LAYOUT_MESSAGE: &str = "This command can't change that speaker review.";
-/// Second line of the Direct-layout refusal (`err` detail slot).
-pub const UNSUPPORTED_LAYOUT_DETAIL: &str =
-    "This segment uses the direct journal layout, which this command doesn't support.";
-
 /// One cataloged chronicle segment with a resolver-validated path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogedSegment {
@@ -106,14 +98,20 @@ impl fmt::Display for LayoutDecodeError {
 
 impl Error for LayoutDecodeError {}
 
-/// Whether a Direct hit is admitted on this surface.
+/// Rejected required `stream_layout` value on mutation endpoints.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DirectSupport {
-    /// GET-style reads may open a Direct segment.
-    Allow,
-    /// Mutations refuse Direct with [`UNSUPPORTED_LAYOUT_REASON`].
-    Refuse,
+pub enum RequiredLayoutDecodeError {
+    /// Omitted, null, non-string, wrong case, or unknown.
+    MissingOrMalformed,
 }
+
+impl fmt::Display for RequiredLayoutDecodeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("stream_layout is required and must be \"direct\" or \"named\"")
+    }
+}
+
+impl Error for RequiredLayoutDecodeError {}
 
 /// Classified result of resolving one request identity.
 #[derive(Debug)]
@@ -122,8 +120,6 @@ pub enum SegmentLookup {
     Present(PathBuf),
     /// Resolver returned `Ok(None)`.
     Absent,
-    /// Well-formed Direct identity on a Named-only surface.
-    UnsupportedLayout,
     /// Layout decode failed, or journal-io rejected the request shape.
     MalformedLayout,
     /// Resolver IO / containment / wrong-kind failure.
@@ -244,6 +240,22 @@ pub fn decode_stream_layout_value(raw: Option<&Value>) -> Result<SegmentLayout, 
     }
 }
 
+/// Decode a required `stream_layout` value on mutation endpoints.
+///
+/// Omitted, `Null`, non-string, wrong case, or unknown returns [`RequiredLayoutDecodeError::MissingOrMalformed`].
+pub fn decode_required_stream_layout_value(
+    raw: Option<&Value>,
+) -> Result<SegmentLayout, RequiredLayoutDecodeError> {
+    match raw {
+        Some(Value::String(value)) => match value.as_str() {
+            "direct" => Ok(SegmentLayout::Direct),
+            "named" => Ok(SegmentLayout::Named),
+            _ => Err(RequiredLayoutDecodeError::MissingOrMalformed),
+        },
+        _ => Err(RequiredLayoutDecodeError::MissingOrMalformed),
+    }
+}
+
 pub fn resolve_exact(
     journal_root: &Path,
     day: &str,
@@ -300,52 +312,19 @@ pub fn lookup_segment(
     stream: &str,
     segment_name: &str,
     layout: Result<SegmentLayout, LayoutDecodeError>,
-    direct_support: DirectSupport,
 ) -> SegmentLookup {
     let layout = match layout {
         Ok(layout) => layout,
         Err(LayoutDecodeError::Malformed) => return SegmentLookup::MalformedLayout,
     };
     match resolve_exact(journal_root, day, stream, segment_name, layout) {
-        Ok(Some(path)) => {
-            if layout == SegmentLayout::Direct && direct_support == DirectSupport::Refuse {
-                SegmentLookup::UnsupportedLayout
-            } else {
-                SegmentLookup::Present(path)
-            }
-        }
+        Ok(Some(path)) => SegmentLookup::Present(path),
         Ok(None) => SegmentLookup::Absent,
         Err(
             ExactLookupError::LayoutMismatch { .. } | ExactLookupError::InvalidComponent { .. },
         ) => SegmentLookup::MalformedLayout,
         Err(error) => SegmentLookup::Failed(error),
     }
-}
-
-/// Resolve every target as a Named-required lookup, fail closed.
-///
-/// The first non-[`SegmentLookup::Present`] outcome is returned and no paths
-/// are kept, including targets that already resolved.
-#[allow(dead_code)]
-pub fn lookup_named_segments(
-    journal_root: &Path,
-    targets: &[SegmentTarget<'_>],
-) -> Result<Vec<PathBuf>, SegmentLookup> {
-    let mut paths = Vec::with_capacity(targets.len());
-    for target in targets {
-        match lookup_segment(
-            journal_root,
-            target.day,
-            target.stream,
-            target.name,
-            target.layout,
-            DirectSupport::Refuse,
-        ) {
-            SegmentLookup::Present(path) => paths.push(path),
-            other => return Err(other),
-        }
-    }
-    Ok(paths)
 }
 
 #[cfg(test)]
@@ -410,22 +389,6 @@ mod tests {
                 segment.layout == layout && segment.stream == stream && segment.name == name
             })
             .unwrap_or_else(|| panic!("missing {layout:?} {stream}/{name}"))
-    }
-
-    #[test]
-    fn unsupported_layout_copy_is_the_voice_approved_text() {
-        assert_eq!(
-            UNSUPPORTED_LAYOUT_REASON,
-            "speaker_segment_layout_unsupported"
-        );
-        assert_eq!(
-            UNSUPPORTED_LAYOUT_MESSAGE,
-            "This command can't change that speaker review."
-        );
-        assert_eq!(
-            UNSUPPORTED_LAYOUT_DETAIL,
-            "This segment uses the direct journal layout, which this command doesn't support."
-        );
     }
 
     #[test]
@@ -649,17 +612,62 @@ mod tests {
     }
 
     #[test]
-    fn lookup_segment_covers_all_five_outcomes() {
+    fn decode_required_stream_layout_value_rejects_missing_null_and_malformed() {
+        assert_eq!(
+            decode_required_stream_layout_value(None),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&Value::Null)),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!("direct"))),
+            Ok(SegmentLayout::Direct)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!("named"))),
+            Ok(SegmentLayout::Named)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!("Direct"))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!("Named"))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!("other"))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!(""))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!(1))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!(true))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!([]))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+        assert_eq!(
+            decode_required_stream_layout_value(Some(&json!({}))),
+            Err(RequiredLayoutDecodeError::MissingOrMalformed)
+        );
+    }
+
+    #[test]
+    fn lookup_segment_covers_all_four_outcomes() {
         let (_temporary, journal) = twin_journal();
 
-        match lookup_segment(
-            &journal,
-            DAY,
-            "main",
-            KEY,
-            Ok(SegmentLayout::Named),
-            DirectSupport::Refuse,
-        ) {
+        match lookup_segment(&journal, DAY, "main", KEY, Ok(SegmentLayout::Named)) {
             SegmentLookup::Present(path) => {
                 assert_eq!(
                     path,
@@ -669,14 +677,7 @@ mod tests {
             other => panic!("{other:?}"),
         }
 
-        match lookup_segment(
-            &journal,
-            DAY,
-            "missing",
-            KEY,
-            Ok(SegmentLayout::Named),
-            DirectSupport::Allow,
-        ) {
+        match lookup_segment(&journal, DAY, "missing", KEY, Ok(SegmentLayout::Named)) {
             SegmentLookup::Absent => {}
             other => panic!("{other:?}"),
         }
@@ -687,19 +688,6 @@ mod tests {
             DEFAULT_STREAM,
             KEY,
             Ok(SegmentLayout::Direct),
-            DirectSupport::Refuse,
-        ) {
-            SegmentLookup::UnsupportedLayout => {}
-            other => panic!("{other:?}"),
-        }
-
-        match lookup_segment(
-            &journal,
-            DAY,
-            DEFAULT_STREAM,
-            KEY,
-            Ok(SegmentLayout::Direct),
-            DirectSupport::Allow,
         ) {
             SegmentLookup::Present(path) => {
                 assert_eq!(path, journal.join("chronicle").join(DAY).join(KEY));
@@ -713,7 +701,6 @@ mod tests {
             "main",
             KEY,
             Err(LayoutDecodeError::Malformed),
-            DirectSupport::Allow,
         ) {
             SegmentLookup::MalformedLayout => {}
             other => panic!("{other:?}"),
@@ -723,36 +710,15 @@ mod tests {
     #[test]
     fn lookup_segment_maps_layout_mismatch_and_invalid_component_to_malformed() {
         let (_temporary, journal) = twin_journal();
-        match lookup_segment(
-            &journal,
-            DAY,
-            "main",
-            KEY,
-            Ok(SegmentLayout::Direct),
-            DirectSupport::Allow,
-        ) {
+        match lookup_segment(&journal, DAY, "main", KEY, Ok(SegmentLayout::Direct)) {
             SegmentLookup::MalformedLayout => {}
             other => panic!("{other:?}"),
         }
-        match lookup_segment(
-            &journal,
-            DAY,
-            "a/b",
-            KEY,
-            Ok(SegmentLayout::Named),
-            DirectSupport::Allow,
-        ) {
+        match lookup_segment(&journal, DAY, "a/b", KEY, Ok(SegmentLayout::Named)) {
             SegmentLookup::MalformedLayout => {}
             other => panic!("{other:?}"),
         }
-        match lookup_segment(
-            &journal,
-            DAY,
-            "",
-            KEY,
-            Ok(SegmentLayout::Named),
-            DirectSupport::Allow,
-        ) {
+        match lookup_segment(&journal, DAY, "", KEY, Ok(SegmentLayout::Named)) {
             SegmentLookup::MalformedLayout => {}
             other => panic!("{other:?}"),
         }
@@ -765,81 +731,8 @@ mod tests {
         create_dir(&day);
         let looped = day.join("looped");
         symlink(&looped, &looped).expect("looped symlink");
-        match lookup_segment(
-            &journal,
-            DAY,
-            "looped",
-            KEY,
-            Ok(SegmentLayout::Named),
-            DirectSupport::Allow,
-        ) {
+        match lookup_segment(&journal, DAY, "looped", KEY, Ok(SegmentLayout::Named)) {
             SegmentLookup::Failed(ExactLookupError::Io { .. }) => {}
-            other => panic!("{other:?}"),
-        }
-    }
-
-    fn named<'a>(day: &'a str, stream: &'a str, name: &'a str) -> SegmentTarget<'a> {
-        SegmentTarget {
-            day,
-            stream,
-            name,
-            layout: Ok(SegmentLayout::Named),
-        }
-    }
-
-    #[test]
-    fn lookup_named_segments_returns_all_named_paths_in_order() {
-        let (_temporary, journal) = twin_journal();
-        let paths = lookup_named_segments(
-            &journal,
-            &[named(DAY, "main", KEY), named(DAY, "work", KEY)],
-        )
-        .expect("named targets resolve");
-        assert_eq!(
-            paths,
-            vec![
-                journal.join("chronicle").join(DAY).join("main").join(KEY),
-                journal.join("chronicle").join(DAY).join("work").join(KEY),
-            ]
-        );
-    }
-
-    #[test]
-    fn lookup_named_segments_fails_closed_on_direct_absent_or_error() {
-        let (_temporary, journal) = twin_journal();
-
-        match lookup_named_segments(
-            &journal,
-            &[
-                named(DAY, "main", KEY),
-                SegmentTarget {
-                    day: DAY,
-                    stream: DEFAULT_STREAM,
-                    name: KEY,
-                    layout: Ok(SegmentLayout::Direct),
-                },
-                named(DAY, "work", KEY),
-            ],
-        ) {
-            Err(SegmentLookup::UnsupportedLayout) => {}
-            other => panic!("{other:?}"),
-        }
-
-        match lookup_named_segments(
-            &journal,
-            &[named(DAY, "main", KEY), named(DAY, "missing", KEY)],
-        ) {
-            Err(SegmentLookup::Absent) => {}
-            other => panic!("{other:?}"),
-        }
-
-        let looped = journal.join("chronicle").join(DAY).join("looped");
-        symlink(&looped, &looped).expect("looped symlink");
-        match lookup_named_segments(
-            &journal,
-            &[named(DAY, "main", KEY), named(DAY, "looped", KEY)],
-        ) {
-            Err(SegmentLookup::Failed(ExactLookupError::Io { .. })) => {}
             other => panic!("{other:?}"),
         }
     }

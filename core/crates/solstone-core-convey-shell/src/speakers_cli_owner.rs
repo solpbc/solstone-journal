@@ -17,8 +17,7 @@ use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
-    UNSUPPORTED_LAYOUT_REASON, decode_stream_layout_value, lookup_segment,
+    SegmentLookup, decode_required_stream_layout_value, lookup_segment,
 };
 
 pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -52,24 +51,19 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
             );
         }
     };
-    let layout = decode_stream_layout_value(body.get("stream_layout"));
-    let segment = match lookup_segment(
-        &root.0,
-        day,
-        stream,
-        segment_key,
-        layout,
-        DirectSupport::Refuse,
-    ) {
-        SegmentLookup::Present(path) => path,
-        SegmentLookup::UnsupportedLayout => {
+    let layout = match decode_required_stream_layout_value(body.get("stream_layout")) {
+        Ok(layout) => layout,
+        Err(_) => {
             return err(
-                UNSUPPORTED_LAYOUT_REASON,
-                UNSUPPORTED_LAYOUT_MESSAGE,
-                UNSUPPORTED_LAYOUT_DETAIL,
+                "invalid_segment_or_stream",
+                "that segment or stream couldn't be used.",
+                "Invalid segment key or stream",
                 StatusCode::BAD_REQUEST,
             );
         }
+    };
+    let segment = match lookup_segment(&root.0, day, stream, segment_key, Ok(layout)) {
+        SegmentLookup::Present(path) => path,
         SegmentLookup::MalformedLayout => {
             return err(
                 "invalid_segment_or_stream",
@@ -110,7 +104,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
         label.get("speaker").and_then(Value::as_str) == Some(speaker.as_str())
             && label.get("method").and_then(Value::as_str) == Some("user_assigned")
     }) {
-        return Json(json!({"success":true,"status":"already_assigned","owner_bootstrap_outcome":Value::Null})).into_response();
+        return Json(json!({"success":true,"status":"already_assigned","stream_layout":layout_name(layout),"owner_bootstrap_outcome":Value::Null})).into_response();
     }
     if current
         .and_then(|label| label.get("speaker").and_then(Value::as_str))
@@ -141,7 +135,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
             StatusCode::NOT_FOUND,
         );
     };
-    let metadata = json!({"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"segment_key":segment_key,"source":source,"sentence_id":sentence_id,"stream":stream});
+    let metadata = json!({"day":day,"stream_layout":layout_name(layout),"segment_key":segment_key,"source":source,"sentence_id":sentence_id,"stream":stream});
     if let Err(error) = solstone_core_speaker_resolve::direct_voiceprints::write_voiceprint(
         &root.0,
         &speaker,
@@ -180,7 +174,7 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     {
         return speaker_write_error(error.to_string(), true);
     }
-    Json(json!({"success":true,"status":"assigned","speaker":speaker})).into_response()
+    Json(json!({"success":true,"status":"assigned","speaker":speaker,"stream_layout":layout_name(layout)})).into_response()
 }
 
 fn layout_name(layout: SegmentLayout) -> &'static str {

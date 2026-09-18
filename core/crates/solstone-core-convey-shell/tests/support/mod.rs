@@ -392,7 +392,7 @@ fn write_transcript(path: &Path, source: &str, sentences: &[&str], malformed_at:
     fs::write(path, format!("{}\n", lines.join("\n"))).expect("transcript writes");
 }
 
-fn write_embeddings_npz(path: &Path, count: usize, durations: bool, offset: usize) {
+pub(crate) fn write_embeddings_npz(path: &Path, count: usize, durations: bool, offset: usize) {
     let vectors = (0..count)
         .flat_map(|index| unit_vector(offset + index))
         .collect::<Vec<_>>();

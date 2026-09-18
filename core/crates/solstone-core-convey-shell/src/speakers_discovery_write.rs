@@ -16,7 +16,7 @@ use chrono::Utc;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
-use solstone_core_journal_io::{LockOptions, SegmentLayout, hold_lock};
+use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::speakers_attribution::action;
 use crate::{HostedLaunchContext, JournalRoot};
@@ -28,8 +28,7 @@ use solstone_core_speaker_resolve::discovery_scan::{
     DiscoveryRefresh, DiscoveryRefreshError, refresh_discovery_cache,
 };
 use solstone_core_speaker_resolve::segment_catalog::{
-    DirectSupport, SegmentLookup, UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE,
-    UNSUPPORTED_LAYOUT_REASON, decode_stream_layout_value, lookup_segment,
+    SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
 
 const OWNER_VOICE_UNAVAILABLE: &str = "speaker_discovery_owner_voice_unavailable";
@@ -43,15 +42,12 @@ type DiscoveryMember = (String, String, String, String, String, i64);
 
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum IdentifyPreflightError {
-    UnsupportedLayout,
     Failed(String),
 }
 
 /// Resolve every cached identify target before the speaker-resolve mutator runs.
 ///
 /// The cache remains backward compatible: absent `stream_layout` means Named.
-/// Direct is represented losslessly by discovery, but identify is still a
-/// Named-only mutation until speaker-resolve accepts explicit locators.
 pub(crate) fn preflight_identify_cluster(
     root: &Path,
     cluster_id: i64,
@@ -84,26 +80,13 @@ pub(crate) fn preflight_identify_cluster(
         let layout = decode_stream_layout_value(member.get("stream_layout")).map_err(|error| {
             IdentifyPreflightError::Failed(format!("invalid discovery member layout: {error}"))
         })?;
-        if layout == SegmentLayout::Direct {
-            return Err(IdentifyPreflightError::UnsupportedLayout);
-        }
         let day = member["day"].as_str().expect("canonical day");
         let stream = member["stream"].as_str().expect("canonical stream");
         let segment = member["segment_key"]
             .as_str()
             .expect("canonical segment key");
-        match lookup_segment(
-            root,
-            day,
-            stream,
-            segment,
-            Ok(layout),
-            DirectSupport::Refuse,
-        ) {
+        match lookup_segment(root, day, stream, segment, Ok(layout)) {
             SegmentLookup::Present(_) => {}
-            SegmentLookup::UnsupportedLayout => {
-                return Err(IdentifyPreflightError::UnsupportedLayout);
-            }
             SegmentLookup::Absent => {
                 return Err(IdentifyPreflightError::Failed(format!(
                     "discovery segment was not found: {day}/{stream}/{segment}"
@@ -582,12 +565,6 @@ fn canonical_members(members: &[Value]) -> Result<Vec<Value>, String> {
 
 fn preflight_error(failure: IdentifyPreflightError) -> Response {
     match failure {
-        IdentifyPreflightError::UnsupportedLayout => error(
-            UNSUPPORTED_LAYOUT_REASON,
-            UNSUPPORTED_LAYOUT_MESSAGE,
-            UNSUPPORTED_LAYOUT_DETAIL,
-            StatusCode::BAD_REQUEST,
-        ),
         IdentifyPreflightError::Failed(detail) => {
             command(detail, StatusCode::INTERNAL_SERVER_ERROR)
         }
