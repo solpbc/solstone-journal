@@ -246,7 +246,11 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
                     &ledger_path,
                     &BackfillOperationEvent {
                         schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
-                        event_id: next_checkpoint_event_id(&ledger_path, &request.operation_id, key)?,
+                        event_id: next_checkpoint_event_id(
+                            &ledger_path,
+                            &request.operation_id,
+                            key,
+                        )?,
                         operation_id: request.operation_id.clone(),
                         ts: Utc::now().to_rfc3339(),
                         payload: BackfillOperationPayload::Checkpoint {

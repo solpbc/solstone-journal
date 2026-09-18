@@ -138,8 +138,13 @@ pub fn resolve(
     read_only: bool,
     now_ms: i64,
 ) -> Result<ResolveOutcome, ResolveError> {
-    let Some(segment_dir) =
-        crate::segment_catalog::resolve_exact(journal_root, day, stream, segment_key, stream_layout)?
+    let Some(segment_dir) = crate::segment_catalog::resolve_exact(
+        journal_root,
+        day,
+        stream,
+        segment_key,
+        stream_layout,
+    )?
     else {
         return Ok(ResolveOutcome::SegmentMissing);
     };

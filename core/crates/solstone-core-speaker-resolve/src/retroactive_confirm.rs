@@ -94,7 +94,13 @@ pub fn plan_retroactive_confirm(
                     });
                 }
             };
-            let dir = match crate::segment_catalog::resolve_exact(journal, day, stream, segment_key, layout)? {
+            let dir = match crate::segment_catalog::resolve_exact(
+                journal,
+                day,
+                stream,
+                segment_key,
+                layout,
+            )? {
                 Some(dir) => dir,
                 None => continue,
             };
@@ -231,12 +237,17 @@ fn voiceprint_snapshot(journal: &Path, entity: &str) -> (HashSet<String>, usize,
 }
 fn key_for_metadata(value: &Value) -> Option<String> {
     let day = value.get("day")?.as_str()?;
-    let layout = value.get("stream_layout").and_then(Value::as_str).unwrap_or("");
+    let layout = value
+        .get("stream_layout")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let stream = value.get("stream").and_then(Value::as_str).unwrap_or("");
     let segment_key = value.get("segment_key")?.as_str()?;
     let source = value.get("source")?.as_str()?;
     let sentence_id = value.get("sentence_id")?.as_i64()?;
-    Some(format!("{day}|{layout}|{stream}|{segment_key}|{source}|{sentence_id}"))
+    Some(format!(
+        "{day}|{layout}|{stream}|{segment_key}|{source}|{sentence_id}"
+    ))
 }
 fn dot(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(a, b)| a * b).sum()

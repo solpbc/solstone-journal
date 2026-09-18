@@ -301,11 +301,14 @@ fn parse_voiceprint_candidates(metadata: &[String]) -> Vec<ManualTagCandidate> {
                 .and_then(Value::as_str)
                 .filter(|stream| !stream.is_empty())
                 .map(ToOwned::to_owned);
-            let stream_layout = row.get("stream_layout").and_then(Value::as_str).and_then(|s| match s {
-                "direct" => Some(SegmentLayout::Direct),
-                "named" => Some(SegmentLayout::Named),
-                _ => None,
-            });
+            let stream_layout = row
+                .get("stream_layout")
+                .and_then(Value::as_str)
+                .and_then(|s| match s {
+                    "direct" => Some(SegmentLayout::Direct),
+                    "named" => Some(SegmentLayout::Named),
+                    _ => None,
+                });
             Some(ManualTagCandidate {
                 day,
                 stream_layout,
@@ -338,18 +341,12 @@ fn dedupe_candidates(candidates: Vec<ManualTagCandidate>) -> Vec<ManualTagCandid
     }
     let mut candidates = latest.into_values().collect::<Vec<_>>();
     candidates.sort_by(|left, right| {
-        (
-            &left.day,
-            &left.segment_key,
-            &left.source,
-            left.sentence_id,
-        )
-            .cmp(&(
-                &right.day,
-                &right.segment_key,
-                &right.source,
-                right.sentence_id,
-            ))
+        (&left.day, &left.segment_key, &left.source, left.sentence_id).cmp(&(
+            &right.day,
+            &right.segment_key,
+            &right.source,
+            right.sentence_id,
+        ))
     });
     candidates
 }

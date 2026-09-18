@@ -3,14 +3,14 @@
 
 //! Replay-safe undo phases for a committed identify operation.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{EncoderIdentity, VoiceprintRemoval, remove_voiceprints_by_key};
 use solstone_core_facets::{EntityHistoryReference, delete_created_entity_if_unreferenced};
 use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_id::corrections::{append_correction, read_corrections};
 use solstone_core_speaker_id::labels::{LabelRestoration, restore_label_rows};
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 use thiserror::Error;
 
 use crate::candidate_tracker::{CandidateTracker, CandidateTrackerError};
@@ -69,7 +69,8 @@ pub fn undo_labels(journal_root: &Path, state: &OperationState) -> Result<Value,
         return Ok(json!({"labels":report}));
     };
     let map = label_plan_map(&state.prepared_plan);
-    let mut grouped = BTreeMap::<(String, SegmentLayout, String, String), Vec<LabelRestoration>>::new();
+    let mut grouped =
+        BTreeMap::<(String, SegmentLayout, String, String), Vec<LabelRestoration>>::new();
     for key in checkpoint_keys(
         checkpoint,
         &["patched_sentence_keys", "inserted_sentence_keys"],
@@ -97,7 +98,8 @@ pub fn undo_labels(journal_root: &Path, state: &OperationState) -> Result<Value,
             &stream,
             &segment_key,
             layout,
-        )? else {
+        )?
+        else {
             skip(&mut report, "missing", restorations.len());
             continue;
         };
@@ -141,13 +143,9 @@ pub fn undo_corrections(
             skip(&mut report, "missing_plan", 1);
             continue;
         };
-        let Some(directory) = crate::segment_catalog::resolve_exact(
-            journal_root,
-            &key.0,
-            &key.2,
-            &key.3,
-            key.1,
-        )? else {
+        let Some(directory) =
+            crate::segment_catalog::resolve_exact(journal_root, &key.0, &key.2, &key.3, key.1)?
+        else {
             skip(&mut report, "missing", 1);
             continue;
         };
@@ -445,19 +443,20 @@ fn plan_key(segment: &Value, sentence_id: i64) -> Option<PlanKey> {
     let day = segment["day"].as_str()?.to_owned();
     let stream = segment["stream"].as_str()?.to_owned();
     let segment_key = segment["segment_key"].as_str()?.to_owned();
-    let stream_layout = if let Some(layout_str) = segment.get("stream_layout").and_then(Value::as_str) {
-        match layout_str {
-            "direct" => SegmentLayout::Direct,
-            "named" => SegmentLayout::Named,
-            _ => return None,
-        }
-    } else {
-        if stream == "_default" {
-            SegmentLayout::Direct
+    let stream_layout =
+        if let Some(layout_str) = segment.get("stream_layout").and_then(Value::as_str) {
+            match layout_str {
+                "direct" => SegmentLayout::Direct,
+                "named" => SegmentLayout::Named,
+                _ => return None,
+            }
         } else {
-            SegmentLayout::Named
-        }
-    };
+            if stream == "_default" {
+                SegmentLayout::Direct
+            } else {
+                SegmentLayout::Named
+            }
+        };
     Some((day, stream_layout, stream, segment_key, sentence_id))
 }
 fn checkpoint_keys(checkpoint: &Value, fields: &[&str]) -> Vec<PlanKey> {
@@ -469,19 +468,20 @@ fn checkpoint_keys(checkpoint: &Value, fields: &[&str]) -> Vec<PlanKey> {
             let stream = key["stream"].as_str()?.to_owned();
             let segment_key = key["segment_key"].as_str()?.to_owned();
             let sentence_id = key["sentence_id"].as_i64()?;
-            let stream_layout = if let Some(layout_str) = key.get("stream_layout").and_then(Value::as_str) {
-                match layout_str {
-                    "direct" => SegmentLayout::Direct,
-                    "named" => SegmentLayout::Named,
-                    _ => return None,
-                }
-            } else {
-                if stream == "_default" {
-                    SegmentLayout::Direct
+            let stream_layout =
+                if let Some(layout_str) = key.get("stream_layout").and_then(Value::as_str) {
+                    match layout_str {
+                        "direct" => SegmentLayout::Direct,
+                        "named" => SegmentLayout::Named,
+                        _ => return None,
+                    }
                 } else {
-                    SegmentLayout::Named
-                }
-            };
+                    if stream == "_default" {
+                        SegmentLayout::Direct
+                    } else {
+                        SegmentLayout::Named
+                    }
+                };
             Some((day, stream_layout, stream, segment_key, sentence_id))
         })
         .collect()
@@ -516,8 +516,13 @@ fn value_key(value: &Value) -> Option<ValueKey> {
     let segment_key = value["segment_key"].as_str()?.into();
     let source = value["source"].as_str()?.into();
     let sentence_id = value["sentence_id"].as_i64()?;
-    let stream = value.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
-    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+    let stream = value
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str)
+    {
         match layout_str {
             "direct" => SegmentLayout::Direct,
             "named" => SegmentLayout::Named,

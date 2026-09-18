@@ -645,7 +645,12 @@ fn legacy_missing_stream_direct_only_is_gap_and_named_with_direct_decoy_resolves
     );
 
     // Named match + same-basename Direct decoy -> resolves Named source
-    let named_dir = temporary.path().join("chronicle").join(DAY).join("mic").join(SEGMENT);
+    let named_dir = temporary
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join("mic")
+        .join(SEGMENT);
     fs::create_dir_all(&named_dir).unwrap();
     write_embeddings(temporary.path(), "mic", &[1, 2, 3, 4, 5], (1.0, 0.0));
     write_labels(
@@ -676,7 +681,12 @@ fn legacy_missing_stream_direct_only_is_gap_and_named_with_direct_decoy_resolves
 fn current_version_layout_present_missing_stream_does_not_probe() {
     let temporary = TempDir::new();
     seed_principal(&temporary);
-    let named_dir = temporary.path().join("chronicle").join(DAY).join("mic").join(SEGMENT);
+    let named_dir = temporary
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join("mic")
+        .join(SEGMENT);
     fs::create_dir_all(&named_dir).unwrap();
     write_embeddings(temporary.path(), "mic", &[1, 2, 3, 4, 5], (1.0, 0.0));
     write_labels(

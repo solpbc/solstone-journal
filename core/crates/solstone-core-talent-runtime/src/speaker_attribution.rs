@@ -37,17 +37,18 @@ fn fields(prepared: &PreparedTalent) -> Option<(&str, SegmentLayout, &str, &str)
         .and_then(Value::as_str)
         .filter(|stream| !stream.is_empty())
         .unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
-    let layout = if let Some(layout_str) = prepared.config.get("stream_layout").and_then(Value::as_str) {
-        match layout_str {
-            "direct" => SegmentLayout::Direct,
-            "named" => SegmentLayout::Named,
-            _ => return None,
-        }
-    } else if stream == solstone_core_journal_io::DEFAULT_STREAM {
-        SegmentLayout::Direct
-    } else {
-        SegmentLayout::Named
-    };
+    let layout =
+        if let Some(layout_str) = prepared.config.get("stream_layout").and_then(Value::as_str) {
+            match layout_str {
+                "direct" => SegmentLayout::Direct,
+                "named" => SegmentLayout::Named,
+                _ => return None,
+            }
+        } else if stream == solstone_core_journal_io::DEFAULT_STREAM {
+            SegmentLayout::Direct
+        } else {
+            SegmentLayout::Named
+        };
     (!day.is_empty() && !segment.is_empty()).then_some((day, layout, segment, stream))
 }
 
@@ -69,11 +70,7 @@ fn segment_dir(
 ) -> Result<PathBuf, String> {
     if create {
         let resolved = solstone_core_speaker_resolve::segment_catalog::resolve_exact(
-            journal,
-            day,
-            stream,
-            segment,
-            layout,
+            journal, day, stream, segment, layout,
         )
         .map_err(|error| error.to_string())?;
         match resolved {
@@ -100,11 +97,7 @@ fn segment_dir(
         }
     } else {
         if let Ok(Some(resolved)) = solstone_core_speaker_resolve::segment_catalog::resolve_exact(
-            journal,
-            day,
-            stream,
-            segment,
-            layout,
+            journal, day, stream, segment, layout,
         ) {
             return Ok(resolved);
         }
@@ -357,7 +350,14 @@ pub fn build(
                 &metadata_values(&state.resolved.metadata),
             )
             .map_err(|error| skipped(prepared, error.to_string()))?;
-            try_accumulate(&context.journal, day, layout, segment, stream, &state.resolved);
+            try_accumulate(
+                &context.journal,
+                day,
+                layout,
+                segment,
+                stream,
+                &state.resolved,
+            );
         }
         // Preserve solstone/talent/speaker_attribution.py:73-81: this writes from build because
         // the reference writes before it skips generation.

@@ -179,7 +179,12 @@ pub fn segment_plans(
             }
         }
         let segment_sources = sources
-            .remove(&(day.clone(), stream_layout, stream.clone(), segment_key.clone()))
+            .remove(&(
+                day.clone(),
+                stream_layout,
+                stream.clone(),
+                segment_key.clone(),
+            ))
             .unwrap_or_default();
         let sources_vec = segment_sources.into_iter().collect::<Vec<_>>();
         let source = sources_vec.first().cloned().unwrap_or_default();
@@ -900,8 +905,13 @@ fn direct_key_from_json(value: &Value) -> Option<DirectVoiceprintKey> {
     let segment_key = value.get("segment_key")?.as_str()?.to_owned();
     let source = value.get("source")?.as_str()?.to_owned();
     let sentence_id = value.get("sentence_id")?.as_i64()?;
-    let stream = value.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
-    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+    let stream = value
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str)
+    {
         match layout_str {
             "direct" => SegmentLayout::Direct,
             "named" => SegmentLayout::Named,
@@ -929,7 +939,8 @@ fn member_from_json(value: &Value) -> Option<MemberProvenance> {
     let segment_key = value.get("segment_key")?.as_str()?.to_owned();
     let source = value.get("source")?.as_str()?.to_owned();
     let sentence_id = value.get("sentence_id")?.as_i64()?;
-    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str)
+    {
         match layout_str {
             "direct" => SegmentLayout::Direct,
             "named" => SegmentLayout::Named,
@@ -970,19 +981,24 @@ fn correction_plans(plan: &Value) -> Result<Vec<SegmentCorrectionPlan>, ExecuteE
                 .as_str()
                 .ok_or_else(|| ExecuteError::Unexpected("segment stream".into()))?
                 .to_owned();
-            let stream_layout = if let Some(layout_str) = s.get("stream_layout").and_then(Value::as_str) {
-                match layout_str {
-                    "direct" => SegmentLayout::Direct,
-                    "named" => SegmentLayout::Named,
-                    _ => return Err(ExecuteError::Unexpected("invalid segment stream_layout".into())),
-                }
-            } else {
-                if stream == "_default" {
-                    SegmentLayout::Direct
+            let stream_layout =
+                if let Some(layout_str) = s.get("stream_layout").and_then(Value::as_str) {
+                    match layout_str {
+                        "direct" => SegmentLayout::Direct,
+                        "named" => SegmentLayout::Named,
+                        _ => {
+                            return Err(ExecuteError::Unexpected(
+                                "invalid segment stream_layout".into(),
+                            ));
+                        }
+                    }
                 } else {
-                    SegmentLayout::Named
-                }
-            };
+                    if stream == "_default" {
+                        SegmentLayout::Direct
+                    } else {
+                        SegmentLayout::Named
+                    }
+                };
             Ok(SegmentCorrectionPlan {
                 day: s["day"]
                     .as_str()
@@ -1007,19 +1023,24 @@ fn label_plans(plan: &Value) -> Result<Vec<SegmentLabelPlan>, ExecuteError> {
                 .as_str()
                 .ok_or_else(|| ExecuteError::Unexpected("segment stream".into()))?
                 .to_owned();
-            let stream_layout = if let Some(layout_str) = s.get("stream_layout").and_then(Value::as_str) {
-                match layout_str {
-                    "direct" => SegmentLayout::Direct,
-                    "named" => SegmentLayout::Named,
-                    _ => return Err(ExecuteError::Unexpected("invalid segment stream_layout".into())),
-                }
-            } else {
-                if stream == "_default" {
-                    SegmentLayout::Direct
+            let stream_layout =
+                if let Some(layout_str) = s.get("stream_layout").and_then(Value::as_str) {
+                    match layout_str {
+                        "direct" => SegmentLayout::Direct,
+                        "named" => SegmentLayout::Named,
+                        _ => {
+                            return Err(ExecuteError::Unexpected(
+                                "invalid segment stream_layout".into(),
+                            ));
+                        }
+                    }
                 } else {
-                    SegmentLayout::Named
-                }
-            };
+                    if stream == "_default" {
+                        SegmentLayout::Direct
+                    } else {
+                        SegmentLayout::Named
+                    }
+                };
             let labels = entries(s, "labels")?
                 .iter()
                 .map(|label| {
@@ -2452,8 +2473,16 @@ mod tests {
         let temporary = Temp::new();
         let direct_dir = temporary.path().join("chronicle/20260808/120000_300");
         fs::create_dir_all(direct_dir.join("talents")).unwrap();
-        fs::write(direct_dir.join("talents/speaker_labels.jsonl"), b"direct_labels\n").unwrap();
-        fs::write(direct_dir.join("talents/speaker_corrections.jsonl"), b"direct_corrections\n").unwrap();
+        fs::write(
+            direct_dir.join("talents/speaker_labels.jsonl"),
+            b"direct_labels\n",
+        )
+        .unwrap();
+        fs::write(
+            direct_dir.join("talents/speaker_corrections.jsonl"),
+            b"direct_corrections\n",
+        )
+        .unwrap();
 
         write_embeddings(temporary.path());
         write_cache(temporary.path());
@@ -2483,7 +2512,11 @@ mod tests {
         let temporary = Temp::new();
         let sib_b = temporary.path().join("chronicle/20260808/mic/093000_300_b");
         fs::create_dir_all(sib_b.join("talents")).unwrap();
-        fs::write(sib_b.join("talents/speaker_labels.jsonl"), b"sibling_b_labels\n").unwrap();
+        fs::write(
+            sib_b.join("talents/speaker_labels.jsonl"),
+            b"sibling_b_labels\n",
+        )
+        .unwrap();
         let sib_b_before = snapshot_files(&sib_b);
 
         let member_a = MemberProvenance {
@@ -2499,16 +2532,25 @@ mod tests {
         let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
         let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
         archive.start_file("embeddings.npy", options).unwrap();
-        archive.write_all(&write_npy("<f4", "(1, 256)", &floats(&vector()))).unwrap();
+        archive
+            .write_all(&write_npy("<f4", "(1, 256)", &floats(&vector())))
+            .unwrap();
         archive.start_file("statement_ids.npy", options).unwrap();
-        archive.write_all(&write_npy("<i4", "(1,)", &ints(&[7]))).unwrap();
-        fs::write(sib_a.join("audio.npz"), archive.finish().unwrap().into_inner()).unwrap();
+        archive
+            .write_all(&write_npy("<i4", "(1,)", &ints(&[7])))
+            .unwrap();
+        fs::write(
+            sib_a.join("audio.npz"),
+            archive.finish().unwrap().into_inner(),
+        )
+        .unwrap();
 
         fs::create_dir_all(temporary.path().join("awareness")).unwrap();
         fs::write(
             temporary.path().join("awareness/discovery_clusters.json"),
             json!({"clusters":{"1":[member_json(&member_a)]}}).to_string(),
-        ).unwrap();
+        )
+        .unwrap();
 
         let request = IdentifyClusterRequest {
             journal_root: temporary.path().to_path_buf(),

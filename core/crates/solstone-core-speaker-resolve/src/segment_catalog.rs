@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use serde_json::Value;
 pub use solstone_core_journal_io::ExactLookupError;
 use solstone_core_journal_io::{
-    PathError, PathOrDay, SegmentIdentityError, SegmentLayout,
-    day_dirs as journal_day_dirs, iter_segments, resolve_segment_locator_exact,
+    PathError, PathOrDay, SegmentIdentityError, SegmentLayout, day_dirs as journal_day_dirs,
+    iter_segments, resolve_segment_locator_exact,
 };
 
 /// Voice-approved Direct-layout refusal reason code for `err(...)`.
@@ -278,19 +278,20 @@ pub fn resolve_exact_dir(
     segment_name: &str,
     layout: SegmentLayout,
 ) -> Result<PathBuf, SegmentResolutionError> {
-    let path = resolve_exact(journal_root, day, stream, segment_name, layout)?
-        .ok_or_else(|| SegmentResolutionError::NotFound {
-            day: day.to_owned(),
-            layout,
-            stream: stream.to_owned(),
-            name: segment_name.to_owned(),
+    let path =
+        resolve_exact(journal_root, day, stream, segment_name, layout)?.ok_or_else(|| {
+            SegmentResolutionError::NotFound {
+                day: day.to_owned(),
+                layout,
+                stream: stream.to_owned(),
+                name: segment_name.to_owned(),
+            }
         })?;
     if !path.is_dir() {
         return Err(SegmentResolutionError::NotADirectory { path });
     }
     Ok(path)
 }
-
 
 /// Resolve one identity and classify the result for Shell callers.
 pub fn lookup_segment(

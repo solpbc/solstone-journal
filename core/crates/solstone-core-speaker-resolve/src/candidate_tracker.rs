@@ -689,7 +689,18 @@ pub(crate) fn source_segment_anchor(value: &Value) -> Option<String> {
         if layout_str != "direct" && layout_str != "named" {
             return None;
         }
-        Some(json!([2, day, layout_str, stream, segment_key, source, cluster_label]).to_string())
+        Some(
+            json!([
+                2,
+                day,
+                layout_str,
+                stream,
+                segment_key,
+                source,
+                cluster_label
+            ])
+            .to_string(),
+        )
     } else {
         Some(json!([day, segment_key, stream, source, cluster_label]).to_string())
     }
@@ -1187,7 +1198,7 @@ mod tests {
             merge_events: Vec::new(),
         };
         let (journal_path, mut tracker) = tracker_with_candidates("v1-stability", vec![v1_cand]);
-        
+
         // Add a new cluster
         let new_input = ClusterInput {
             source_segment: json!({
@@ -1202,18 +1213,39 @@ mod tests {
             embeddings: vec![vec![0.0, 1.0]],
         };
         tracker.process_segment(&[new_input]).unwrap();
-        
+
         let loaded = CandidateTracker::new(&journal_path).candidates();
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].source_segments[0], v1_src);
-        assert_eq!(source_segment_anchor(&loaded[0].source_segments[0]).unwrap(), json!(["20260101", "seg-v1", "mic", "audio", 1]).to_string());
+        assert_eq!(
+            source_segment_anchor(&loaded[0].source_segments[0]).unwrap(),
+            json!(["20260101", "seg-v1", "mic", "audio", 1]).to_string()
+        );
 
         // Test v2 anchors differ when any coordinate differs
         let a_direct = json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"080000_300","source":"audio","cluster_label":1});
         let a_named = json!({"day":"20260101","stream_layout":"named","stream":"_default","segment_key":"080000_300","source":"audio","cluster_label":1});
-        assert_eq!(source_segment_anchor(&a_direct).unwrap(), json!([2, "20260101", "direct", "_default", "080000_300", "audio", 1]).to_string());
-        assert_eq!(source_segment_anchor(&a_named).unwrap(), json!([2, "20260101", "named", "_default", "080000_300", "audio", 1]).to_string());
-        assert_ne!(source_segment_anchor(&a_direct).unwrap(), source_segment_anchor(&a_named).unwrap());
+        assert_eq!(
+            source_segment_anchor(&a_direct).unwrap(),
+            json!([
+                2,
+                "20260101",
+                "direct",
+                "_default",
+                "080000_300",
+                "audio",
+                1
+            ])
+            .to_string()
+        );
+        assert_eq!(
+            source_segment_anchor(&a_named).unwrap(),
+            json!([2, "20260101", "named", "_default", "080000_300", "audio", 1]).to_string()
+        );
+        assert_ne!(
+            source_segment_anchor(&a_direct).unwrap(),
+            source_segment_anchor(&a_named).unwrap()
+        );
 
         fs::remove_dir_all(journal_path).unwrap();
     }

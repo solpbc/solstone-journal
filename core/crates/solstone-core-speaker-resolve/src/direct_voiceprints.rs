@@ -333,7 +333,8 @@ fn load_member_embedding(
         &member.stream,
         &member.segment_key,
         member.stream_layout,
-    )? else {
+    )?
+    else {
         return Ok(None);
     };
     let Ok(Some(embeddings)) =
@@ -393,24 +394,29 @@ fn direct_key_from_metadata(metadata: &Value) -> Option<DirectVoiceprintKey> {
     let segment_key = metadata.get("segment_key")?.as_str()?.to_owned();
     let source = metadata.get("source")?.as_str()?.to_owned();
     let sentence_id = metadata.get("sentence_id")?.as_i64()?;
-    let stream_raw = metadata.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
-    let (stream_layout, stream) = if let Some(layout_str) = metadata.get("stream_layout").and_then(Value::as_str) {
-        let layout = match layout_str {
-            "direct" => SegmentLayout::Direct,
-            "named" => SegmentLayout::Named,
-            _ => return None,
-        };
-        let stream = if layout == SegmentLayout::Direct && stream_raw.is_empty() {
-            "_default".to_owned()
+    let stream_raw = metadata
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let (stream_layout, stream) =
+        if let Some(layout_str) = metadata.get("stream_layout").and_then(Value::as_str) {
+            let layout = match layout_str {
+                "direct" => SegmentLayout::Direct,
+                "named" => SegmentLayout::Named,
+                _ => return None,
+            };
+            let stream = if layout == SegmentLayout::Direct && stream_raw.is_empty() {
+                "_default".to_owned()
+            } else {
+                stream_raw
+            };
+            (layout, stream)
+        } else if stream_raw == "_default" || stream_raw.is_empty() {
+            (SegmentLayout::Direct, "_default".to_owned())
         } else {
-            stream_raw
+            (SegmentLayout::Named, stream_raw)
         };
-        (layout, stream)
-    } else if stream_raw == "_default" || stream_raw.is_empty() {
-        (SegmentLayout::Direct, "_default".to_owned())
-    } else {
-        (SegmentLayout::Named, stream_raw)
-    };
     Some(DirectVoiceprintKey {
         day,
         stream_layout,

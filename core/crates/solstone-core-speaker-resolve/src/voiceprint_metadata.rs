@@ -155,14 +155,15 @@ impl VoiceprintMetadata {
                 .and_then(Value::as_i64)
                 .ok_or(VoiceprintMetadataError::InvalidField { field })
         };
-        let last_seen_ts = match object.get("last_seen_ts") {
-            None => None,
-            Some(value) => Some(value.as_i64().ok_or(
-                VoiceprintMetadataError::InvalidField {
-                    field: "last_seen_ts",
-                },
-            )?),
-        };
+        let last_seen_ts =
+            match object.get("last_seen_ts") {
+                None => None,
+                Some(value) => Some(value.as_i64().ok_or(
+                    VoiceprintMetadataError::InvalidField {
+                        field: "last_seen_ts",
+                    },
+                )?),
+            };
         Ok(Self {
             schema_version,
             stream_layout,

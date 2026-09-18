@@ -855,11 +855,18 @@ fn direct_vs_named_default_members_are_unequal_and_fingerprints_differ() {
         sentence_id: 1,
     };
     assert_ne!(direct_member, named_member);
-    let fp_direct = request_fingerprint(&[direct_member.clone()], "ent-alice", false, "Person", &[]);
+    let fp_direct =
+        request_fingerprint(&[direct_member.clone()], "ent-alice", false, "Person", &[]);
     let fp_named = request_fingerprint(&[named_member.clone()], "ent-alice", false, "Person", &[]);
     assert_ne!(fp_direct, fp_named);
 
-    let fp_both = request_fingerprint(&[direct_member, named_member], "ent-alice", false, "Person", &[]);
+    let fp_both = request_fingerprint(
+        &[direct_member, named_member],
+        "ent-alice",
+        false,
+        "Person",
+        &[],
+    );
     assert_ne!(fp_both, fp_direct);
     assert_ne!(fp_both, fp_named);
 }
@@ -936,5 +943,8 @@ fn current_version_event3_plan2_missing_stream_layout_fails() {
     event.insert("prepared_plan".into(), plan);
 
     let err = validate_row(&Value::Object(event)).unwrap_err();
-    assert!(matches!(err, IdentifyOperationError::InvalidClusterMemberProvenance));
+    assert!(matches!(
+        err,
+        IdentifyOperationError::InvalidClusterMemberProvenance
+    ));
 }

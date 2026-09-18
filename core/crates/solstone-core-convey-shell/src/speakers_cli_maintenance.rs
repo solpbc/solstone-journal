@@ -244,7 +244,16 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         && let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = &outcome
         && output.source.is_some()
     {
-        match accumulate(&root.0, &directory, day, stream_layout, stream, segment, output, now) {
+        match accumulate(
+            &root.0,
+            &directory,
+            day,
+            stream_layout,
+            stream,
+            segment,
+            output,
+            now,
+        ) {
             Ok(value) => value,
             Err(error) => return accumulation_error(error),
         }

@@ -412,8 +412,7 @@ fn ac7_unmatched_texts_follow_resolved_transcript_sentence_ids() {
         true,
         1,
     )
-    .expect("resolve")
-    else {
+    .expect("resolve") else {
         panic!("expected resolved");
     };
     assert_eq!(output.unmatched, [5, 2]);

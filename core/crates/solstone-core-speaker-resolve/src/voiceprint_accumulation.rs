@@ -398,10 +398,7 @@ impl ExistingVoiceprints {
             .filter_map(|metadata| {
                 let value = serde_json::from_str::<Value>(metadata).ok()?;
                 let day = value.get("day")?.as_str()?.to_owned();
-                let stream_raw = value
-                    .get("stream")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let stream_raw = value.get("stream").and_then(Value::as_str).unwrap_or("");
                 let (layout, stream) = if let Some(layout_val) = value.get("stream_layout") {
                     let layout_str = layout_val.as_str()?;
                     match layout_str {
@@ -414,7 +411,11 @@ impl ExistingVoiceprints {
                 } else {
                     ("named".to_owned(), stream_raw.to_owned())
                 };
-                let stream = if stream.is_empty() { "_default".to_owned() } else { stream };
+                let stream = if stream.is_empty() {
+                    "_default".to_owned()
+                } else {
+                    stream
+                };
                 Some((
                     day,
                     layout,

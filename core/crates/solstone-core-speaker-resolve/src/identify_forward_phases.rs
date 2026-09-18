@@ -778,8 +778,13 @@ fn direct_key_from_metadata(value: &Value) -> Option<DirectVoiceprintKey> {
     let segment_key = value.get("segment_key")?.as_str()?.to_owned();
     let source = value.get("source")?.as_str()?.to_owned();
     let sentence_id = value.get("sentence_id")?.as_i64()?;
-    let stream = value.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
-    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+    let stream = value
+        .get("stream")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned();
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str)
+    {
         match layout_str {
             "direct" => SegmentLayout::Direct,
             "named" => SegmentLayout::Named,

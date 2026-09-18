@@ -112,8 +112,13 @@ pub fn compute_segment_candidate_evidence_readonly(
     segment_key: &str,
     stream_layout: SegmentLayout,
 ) -> Result<(Vec<CandidateEvidence>, Vec<EvidenceGap>), EvidenceError> {
-    let Some(segment_dir) =
-        crate::segment_catalog::resolve_exact(journal_root, day, stream, segment_key, stream_layout)?
+    let Some(segment_dir) = crate::segment_catalog::resolve_exact(
+        journal_root,
+        day,
+        stream,
+        segment_key,
+        stream_layout,
+    )?
     else {
         return Ok((Vec::new(), Vec::new()));
     };

@@ -1081,7 +1081,10 @@ pub fn validate_row(row: &Value) -> Result<IdentifyOperationEvent, IdentifyOpera
         .as_object()
         .ok_or(IdentifyOperationError::MissingOrInvalidField { field: "row" })?;
     let schema_version = object.get("schema_version").and_then(Value::as_i64);
-    if !matches!(schema_version, Some(1 | 2 | IDENTIFY_OPERATION_SCHEMA_VERSION)) {
+    if !matches!(
+        schema_version,
+        Some(1 | 2 | IDENTIFY_OPERATION_SCHEMA_VERSION)
+    ) {
         return Err(IdentifyOperationError::InvalidSchemaVersion);
     }
     let schema_version = schema_version.expect("validated schema version");
@@ -1258,7 +1261,10 @@ fn validate_prepared(
         .ok_or(IdentifyOperationError::MissingOrInvalidField {
             field: "prepared_plan",
         })?;
-    let plan_schema_version = plan.get("plan_schema_version").and_then(Value::as_i64).unwrap_or(1);
+    let plan_schema_version = plan
+        .get("plan_schema_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
     if !matches!(plan_schema_version, 1 | 2) {
         return Err(IdentifyOperationError::InvalidPlanSchemaVersion);
     }
@@ -1484,14 +1490,22 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
     let lifecycle = lifecycle(&events)?;
     let terminal_status = lifecycle.terminal_status;
     let plan = prepared_plan.as_object().expect("validated prepared plan");
-    let plan_schema_version = plan.get("plan_schema_version").and_then(Value::as_i64).unwrap_or(1);
+    let plan_schema_version = plan
+        .get("plan_schema_version")
+        .and_then(Value::as_i64)
+        .unwrap_or(1);
     let request = plan["request"].as_object().expect("validated request");
     let target = plan["target"].as_object().expect("validated target");
     let members = plan["cluster"]["members"]
         .as_array()
         .expect("validated members")
         .iter()
-        .map(|member| member_provenance(member.as_object().expect("validated member"), plan_schema_version))
+        .map(|member| {
+            member_provenance(
+                member.as_object().expect("validated member"),
+                plan_schema_version,
+            )
+        })
         .collect::<Result<_, _>>()?;
     let pending_phases = pending_phases(
         terminal_status,

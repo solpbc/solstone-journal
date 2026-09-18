@@ -723,7 +723,11 @@ fn metadata_keys(archive: Option<solstone_core_entity::VoiceprintArchive>) -> Ha
             } else {
                 ("named", stream_raw)
             };
-            let stream = if stream.is_empty() { "_default" } else { stream };
+            let stream = if stream.is_empty() {
+                "_default"
+            } else {
+                stream
+            };
             Some(provenance_key(
                 day,
                 layout,
