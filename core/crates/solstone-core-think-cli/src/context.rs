@@ -49,10 +49,41 @@ struct NativeIndexBoundary;
 
 impl IndexBoundary for NativeIndexBoundary {
     fn rescan_file(&self, journal: &Path, path: &Path) {
-        // Source-derived, not measured: thinking.py:240-242 queues the rescan
-        // and ignores its outcome, so the native port deliberately does too.
-        let _ = solstone_core_indexer_store::scan::rescan_file(journal, path);
+        // thinking.py:240-242 queued the rescan and ignored its outcome; the
+        // native port mirrored that for parity. But an ignored outcome means
+        // a failed immediate rescan is retained nowhere and logged nowhere,
+        // so a completed talent's output can silently never become
+        // searchable. Visibility only, matching the talent-runtime writer's
+        // existing pattern for the same call — a durable retry queue is
+        // separate, larger, out-of-scope Phase 1 work.
+        if let Err(error) = solstone_core_indexer_store::scan::rescan_file(journal, path) {
+            index_rescan_warning(&format!(
+                "talent output index rescan failed for {}: {error}",
+                path.display()
+            ));
+        }
     }
+}
+
+fn index_rescan_warning(message: &str) {
+    log::warn!("{message}");
+    #[cfg(test)]
+    TEST_INDEX_RESCAN_WARNINGS.with(|warnings| warnings.set(warnings.get() + 1));
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_INDEX_RESCAN_WARNINGS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+pub(crate) fn reset_test_index_rescan_warnings() {
+    TEST_INDEX_RESCAN_WARNINGS.with(|warnings| warnings.set(0));
+}
+
+#[cfg(test)]
+pub(crate) fn test_index_rescan_warnings() -> usize {
+    TEST_INDEX_RESCAN_WARNINGS.with(|warnings| warnings.get())
 }
 
 struct NativeCortexBoundary(CortexRequestClient);
@@ -247,5 +278,27 @@ mod tests {
         assert_eq!(apps, share.join("solstone/apps"));
         fs::remove_file(share.join(solstone_core_journal::LAYOUT_BUNDLE_ANCHOR)).unwrap();
         assert!(package_roots_from_executable_dir(&bin).is_none());
+    }
+
+    #[test]
+    fn native_index_boundary_warns_and_counts_on_a_failed_rescan_instead_of_discarding_it() {
+        reset_test_index_rescan_warnings();
+        assert_eq!(test_index_rescan_warnings(), 0);
+
+        let journal = tempfile::tempdir().unwrap();
+        // Absolute and non-existent: resolve_rescan_target's canonicalize
+        // fails deterministically before any index write is attempted,
+        // reproducing the real race (item.output_path.exists() checked,
+        // then removed before rescan_file runs) without depending on it.
+        let missing_output = journal.path().join("does-not-exist.md");
+        assert!(!missing_output.exists());
+
+        NativeIndexBoundary.rescan_file(journal.path(), &missing_output);
+
+        assert_eq!(
+            test_index_rescan_warnings(),
+            1,
+            "a failed rescan must be counted/logged, never silently discarded"
+        );
     }
 }

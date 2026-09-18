@@ -56,6 +56,10 @@ pub struct ScanReport {
     pub merge_steps_spent: usize,
     pub failed: usize,
     pub warnings: Vec<String>,
+    /// Expected, non-blocking skips (e.g. a discovered file type this index
+    /// does not classify). Never gates `mark_index_build_complete` — unlike
+    /// `warnings`, whose presence keeps a full build in `Building`.
+    pub benign_skips: Vec<String>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -212,7 +216,7 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
             ContentResolution::Unrecognized => {
                 report.skipped += 1;
                 report
-                    .warnings
+                    .benign_skips
                     .push(format!("unclassified discovered file skipped: {rel}"));
                 continue;
             }
@@ -424,7 +428,14 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     }
     let mtime = file_mtime_secs(&path)?;
     let mut conn = open_index(journal)?;
-    let tx = conn.transaction()?;
+    // Immediate, not deferred: this reads current state (ensure_file_current's
+    // mtime comparison) before writing. A deferred transaction's read snapshot
+    // can be invalidated by a concurrent committer between that read and this
+    // transaction's write-lock upgrade, surfacing SQLITE_BUSY_SNAPSHOT even
+    // under a configured busy_timeout (which only retries lock acquisition,
+    // never a snapshot conflict). scan_journal's own per-file write loop
+    // already uses Immediate for the identical reason.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut warnings = Vec::new();
     if let Some(family) = family {
         warnings.extend(ensure_file_current(
@@ -1798,6 +1809,72 @@ mod tests {
         drop_trigger(&conn, "abort_build_state_completion");
         drop(conn);
         fs::remove_dir_all(root).expect("cleanup failed build state root");
+    }
+
+    #[test]
+    fn full_scan_completion_gate_distinguishes_a_benign_skip_from_a_real_failure() {
+        // Case 1: a benign, expected skip (an unclassified discovered file,
+        // via a corrupt/unusable shape.json sidecar) does not block
+        // completion — it now lands in benign_skips, not warnings.
+        let root = temp_root("build-state-benign-skip-completes");
+        write_discovered_shape_segment(&root, Some("not valid json"));
+        let report = scan_journal(&root, true).expect("scan with benign skip");
+        assert_eq!(report.failed, 0);
+        assert!(
+            report.warnings.is_empty(),
+            "a benign skip must not warn: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.benign_skips.len(), 1);
+        assert!(report.benign_skips[0].starts_with("unclassified discovered file skipped:"));
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read build state"),
+            Some(IndexBuildState {
+                schema_version: 1,
+                state: IndexBuildLifecycle::Complete,
+                files_count: 0,
+                chunks_count: 0,
+            }),
+            "a benign skip alone must still let a full build reach Complete"
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup benign skip root");
+
+        // Case 2: a genuine per-file content failure (invalid UTF-8, so
+        // fs::read_to_string fails inside index_file) still blocks
+        // completion — deliberately not reclassified by this change — even
+        // alongside an unrelated benign skip in the same run.
+        let root = temp_root("build-state-real-failure-blocks");
+        write_discovered_shape_segment(&root, Some("not valid json"));
+        let bad_path = root.join("chronicle/20260717/talents/flow.md");
+        fs::create_dir_all(bad_path.parent().expect("test path should have parent"))
+            .expect("create parent");
+        fs::write(&bad_path, [0xFFu8, 0xFE, 0x00, 0xFF]).expect("write invalid utf8 content");
+        let report = scan_journal(&root, true).expect("scan with real failure");
+        assert_eq!(
+            report.failed, 0,
+            "a content read failure is a skip+warning, not report.failed"
+        );
+        assert_eq!(
+            report.benign_skips.len(),
+            1,
+            "the unrelated benign skip is unaffected by the real failure"
+        );
+        assert_eq!(report.warnings.len(), 1);
+        assert!(
+            report.warnings[0].starts_with("content read failed for"),
+            "unexpected warning: {}",
+            report.warnings[0]
+        );
+        let conn = open_index(&root).expect("open index");
+        assert_eq!(
+            read_index_build_state(&conn).expect("read build state"),
+            None,
+            "a genuine failure must keep the build out of Complete, unlike the benign-only case above"
+        );
+        drop(conn);
+        fs::remove_dir_all(root).expect("cleanup real failure root");
     }
 
     #[test]
@@ -3636,6 +3713,64 @@ mod tests {
             RescanFileStatus::Declined
         );
         fs::remove_dir_all(root).expect("cleanup rescan root");
+    }
+
+    #[test]
+    fn rescan_file_waits_out_a_concurrent_writer_instead_of_erroring() {
+        // Immediate-mode admission (not deferred) means rescan_file's own
+        // transaction acquires the write lock (RESERVED) up front, at BEGIN,
+        // rather than only discovering contention when it later tries to
+        // escalate a read snapshot to a write -- the point at which the
+        // deferred behavior could surface SQLITE_BUSY_SNAPSHOT regardless of
+        // busy_timeout (which retries lock *acquisition*, never a stale
+        // snapshot). A held BEGIN IMMEDIATE lock is a real, general-purpose
+        // stand-in for "some other writer got there first": rescan_file must
+        // wait behind it and then succeed, not surface a busy error --
+        // asserting only "succeeds or fails with a visible warning" would
+        // still pass against the unfixed deferred behavior and prove
+        // nothing about the concurrency fix itself.
+        let root = temp_root("rescan-waits-out-holder");
+        let rel = "20260717/default/100000_300/talents/audio.md";
+        write(
+            &root,
+            &format!("chronicle/{rel}"),
+            "# Audio\n\nconcurrent holder present",
+        );
+        write_stream(&root, "20260717", "default", "100000_300");
+
+        let mut holder_conn = open_index(&root).expect("pre-create index for holder");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let holder_barrier = std::sync::Arc::clone(&barrier);
+        let holder = std::thread::spawn(move || {
+            let tx = holder_conn
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .expect("holder acquires the write lock first");
+            holder_barrier.wait();
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            tx.commit().expect("holder releases the write lock");
+        });
+
+        barrier.wait();
+        let started = std::time::Instant::now();
+        let result = rescan_file(&root, Path::new(rel));
+        let elapsed = started.elapsed();
+        holder.join().expect("holder thread panicked");
+
+        match result {
+            Ok(RescanFileStatus::Indexed { warnings }) => {
+                assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}")
+            }
+            other => panic!(
+                "rescan_file must wait out a concurrent writer and succeed, never surface a busy/snapshot error: {other:?}"
+            ),
+        }
+        assert!(
+            elapsed >= std::time::Duration::from_millis(250),
+            "rescan_file returned in {elapsed:?}, faster than the holder's 300ms hold -- \
+             it did not actually wait for the lock, so this run did not exercise contention"
+        );
+
+        fs::remove_dir_all(root).expect("cleanup rescan-waits-out-holder root");
     }
 
     #[test]

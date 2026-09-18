@@ -4,7 +4,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params};
+use rusqlite::{
+    Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params,
+};
 
 use crate::StoreError;
 
@@ -336,7 +338,15 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<(), StoreError> {
-    let tx = conn.transaction()?;
+    // Immediate, not deferred: create_schema's final statement is a real
+    // write (REPLACE INTO edge_files), and this runs on every open_index
+    // call -- the busiest admission path in the crate. A deferred
+    // transaction here establishes its read snapshot during the earlier
+    // schema-check statements, then can be told SQLITE_BUSY_SNAPSHOT at that
+    // final write if a concurrent writer committed in between, and
+    // busy_timeout cannot retry a stale snapshot into a fresh one. Same
+    // reasoning as rescan_file's admission fix.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     migrate_legacy_chunks(&tx)?;
     create_schema(&tx)?;
     tx.commit()?;
