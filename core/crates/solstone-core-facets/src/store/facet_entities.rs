@@ -622,8 +622,19 @@ pub fn publish_review_aliases(
     {
         return Err("conflict: alias target is no longer attached".into());
     }
+    let inherited = change
+        .before
+        .as_ref()
+        .map(identity_aliases)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|alias| normalize_resolution_query(&alias))
+        .collect::<BTreeSet<_>>();
     for alias in identity_aliases(&change.after) {
         let query = normalize_resolution_query(&alias);
+        if inherited.contains(&query) {
+            continue;
+        }
         if scoped.iter().any(|other| {
             other.entity_id != change.entity_id
                 && !other.detached
