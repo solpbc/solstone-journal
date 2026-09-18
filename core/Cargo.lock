@@ -3457,6 +3457,7 @@ dependencies = [
  "solstone-core-backup",
  "solstone-core-backup-runtime",
  "solstone-core-offload",
+ "solstone-core-system-health",
  "tempfile",
 ]
 

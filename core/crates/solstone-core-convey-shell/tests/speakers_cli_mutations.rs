@@ -114,7 +114,8 @@ fn has_voiceprint_metadata(
     segment_key: &str,
     stream_layout: &str,
 ) -> bool {
-    let Some(voiceprints) = solstone_core_entity::load_entity_voiceprints_file(journal, entity) else {
+    let Some(voiceprints) = solstone_core_entity::load_entity_voiceprints_file(journal, entity)
+    else {
         return false;
     };
     voiceprints.metadata.iter().any(|m| {
@@ -553,11 +554,15 @@ async fn tag_cli_mutates_direct_and_named_twins_independently() {
     .unwrap();
     assert_eq!(direct_labels["labels"][0]["speaker"], "owner");
     assert!(
-        has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "direct"),
+        has_voiceprint_metadata(
+            &journal.0, "owner", "20260808", "_default", "120000_1", "direct"
+        ),
         "direct voiceprint present after direct tag"
     );
     assert!(
-        !has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "named"),
+        !has_voiceprint_metadata(
+            &journal.0, "owner", "20260808", "_default", "120000_1", "named"
+        ),
         "named voiceprint absent before named tag"
     );
 
@@ -590,11 +595,15 @@ async fn tag_cli_mutates_direct_and_named_twins_independently() {
     .unwrap();
     assert_eq!(named_labels["labels"][0]["speaker"], "owner");
     assert!(
-        has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "direct"),
+        has_voiceprint_metadata(
+            &journal.0, "owner", "20260808", "_default", "120000_1", "direct"
+        ),
         "direct voiceprint still present after named tag"
     );
     assert!(
-        has_voiceprint_metadata(&journal.0, "owner", "20260808", "_default", "120000_1", "named"),
+        has_voiceprint_metadata(
+            &journal.0, "owner", "20260808", "_default", "120000_1", "named"
+        ),
         "named voiceprint present after named tag"
     );
 

@@ -145,9 +145,15 @@ fn command_text(program: &str, args: &[&str]) -> Option<String> {
 }
 fn host_platform() -> PlatformInput {
     let raw_os = std::env::consts::OS;
+    // ⚠ Every arm here must be added in step with `supported()` and the
+    // `platform_detail` match below. Windows was missing from this mapping while
+    // a `platform.os == "Windows"` arm existed downstream, so that arm was dead
+    // code and Windows owners fell through to a message written for platforms
+    // the journal does not ship on at all.
     let os = match raw_os {
         "macos" => "Darwin",
         "linux" => "Linux",
+        "windows" => "Windows",
         other => other,
     };
     let arch = if raw_os == "macos" && std::env::consts::ARCH == "aarch64" {
@@ -229,7 +235,20 @@ fn memory() -> MemoryInput {
         available_bytes: available,
     }
 }
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(windows)]
+fn memory() -> MemoryInput {
+    match solstone_core_system::memory_admission::windows_physical_memory_bytes() {
+        Some((total, available)) => MemoryInput {
+            total_bytes: Some(total),
+            available_bytes: Some(available),
+        },
+        None => MemoryInput {
+            total_bytes: None,
+            available_bytes: None,
+        },
+    }
+}
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
 fn memory() -> MemoryInput {
     MemoryInput {
         total_bytes: None,
@@ -451,9 +470,17 @@ fn placement_suffix(
     );
     cpu_placement_suffix(selected, decision.force_cpu)
 }
+/// Whether this host runs any of the bundled local capabilities.
+///
+/// ⛔ Not "runs all of them". Windows ships and runs CED and RF-DETR today and
+/// has no local-STT lane yet; reporting the whole surface as blocked there told
+/// owners the machine could run none of it, which was false on a build that
+/// downloads a CED model on request. The per-capability rows carry what is
+/// actually true; this gate only decides whether the owner gets to see them.
 fn supported(platform: &PlatformInput) -> bool {
     (platform.os == "Darwin" && platform.arch == "arm64")
         || (platform.os == "Linux" && matches!(platform.arch.as_str(), "x86_64" | "aarch64"))
+        || (platform.os == "Windows" && platform.arch == "x86_64")
 }
 fn overall(checks: &[Check]) -> Severity {
     if checks.iter().any(|item| item.severity == Severity::Blocked) {
@@ -478,13 +505,11 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
         supported,
     };
     if !supported {
-        let detail = if inputs.platform.os == "Windows" {
-            "Windows isn't supported for the bundled local models yet — run the journal on Linux or an Apple Silicon Mac.".into()
-        } else if inputs.platform.os == "Darwin" {
+        let detail = if inputs.platform.os == "Darwin" {
             "Intel Macs aren't supported — use an Apple Silicon Mac, or run the journal on supported Linux.".into()
         } else {
             format!(
-                "{}/{} can't run the bundled local models yet — only Apple Silicon macOS and x86_64/aarch64 Linux are supported.",
+                "{}/{} can't run the bundled local models yet — only Apple Silicon macOS, x86_64/aarch64 Linux and x86_64 Windows are supported.",
                 inputs.platform.os, inputs.platform.arch
             )
         };
@@ -497,14 +522,34 @@ pub fn build_check_report(inputs: &CheckInputs) -> CheckReport {
             version: inputs.version.clone(),
         };
     }
-    let platform_detail = if inputs.platform.os == "Darwin" {
-        "Apple Silicon macOS (arm64)".into()
-    } else {
-        format!("Linux ({})", inputs.platform.arch)
+    let platform_detail = match inputs.platform.os.as_str() {
+        "Darwin" => "Apple Silicon macOS (arm64)".into(),
+        "Windows" => format!("Windows ({})", inputs.platform.arch),
+        _ => format!("Linux ({})", inputs.platform.arch),
     };
     let mut checks = vec![check("platform", Severity::Ok, platform_detail, None, None)];
     if inputs.platform.os == "Darwin" {
         checks.push(mac_memory(&inputs.memory));
+        checks.push(disk(inputs));
+        if let Some(ced) = ced_check(inputs) {
+            checks.push(ced);
+        }
+        if let Some(rfdetr) = rfdetr_check(inputs) {
+            checks.push(rfdetr);
+        }
+        return CheckReport {
+            platform,
+            overall: overall(&checks),
+            checks,
+            recommended_package: Some("solstone-journal"),
+            version: inputs.version.clone(),
+        };
+    }
+    if inputs.platform.os == "Windows" {
+        // ⛔ No `gpu` row. Windows has no local-inference lane yet, and a GPU
+        // row would imply one it does not have; CED and RF-DETR are the two
+        // bundled capabilities this platform actually runs.
+        checks.push(ram(&inputs.memory));
         checks.push(disk(inputs));
         if let Some(ced) = ced_check(inputs) {
             checks.push(ced);
@@ -604,9 +649,18 @@ fn rfdetr_check(inputs: &CheckInputs) -> Option<Check> {
             // Object detection is an optional enhancement -- this check's own
             // guidance says "Screen descriptions will continue" -- so a degraded
             // RF-DETR must not set `overall` to Blocked.
+            // 🔴 `platform.os` is a DISPLAY field ("Darwin"/"Linux"/"Windows")
+            // and this predicate wants the canonical pair. It matched only
+            // because Windows was the one platform whose display value happened
+            // to be lowercase, so capitalizing it for consistency would have
+            // silently swapped the Windows package guidance for the Unix one.
+            // Canonicalize instead of reading the display string.
+            let lowercase_os = inputs.platform.os.to_ascii_lowercase();
+            let (guidance_os, guidance_arch) =
+                canonical_host_pair(&lowercase_os, &inputs.platform.arch);
             let guidance = solstone_core_local::install::rfdetr_windows::rfdetr_degraded_guidance(
-                &inputs.platform.os,
-                &inputs.platform.arch,
+                guidance_os,
+                guidance_arch,
             );
             let mut item = check("rfdetr", Severity::Warning, guidance, None, None);
             item.cause = Some(rfdetr_cause_str(*cause));
@@ -999,6 +1053,82 @@ mod tests {
         );
     }
 
+    /// Windows is a first-class `check` platform, and the rows it renders are
+    /// the capabilities it actually ships.
+    ///
+    /// 🔴 Before this, `supported()` admitted only macOS and Linux, so a Windows
+    /// owner running `journal check` got a single `platform` row, `overall:
+    /// blocked`, and a sentence saying the machine "can't run the bundled local
+    /// models yet" -- from a build that ships CED and RF-DETR, runs both, and
+    /// downloads a CED model on request. The diagnostic an owner reaches for
+    /// first was the one surface lying to them.
+    #[test]
+    fn windows_renders_the_capabilities_it_actually_ships() {
+        let mut inputs = check_inputs(Some(CapabilityStatus::Ready), RfdetrCheckInput::Ready);
+        inputs.platform.os = "Windows".into();
+        inputs.platform.arch = "x86_64".into();
+
+        let report = build_check_report(&inputs);
+        assert!(report.platform.supported, "windows/x86_64 is supported");
+        assert_eq!(report.overall, Severity::Ok);
+        assert_eq!(report.recommended_package, Some("solstone-journal"));
+
+        let names: Vec<_> = report.checks.iter().map(|item| item.name).collect();
+        assert!(names.contains(&"ced"), "{names:?}");
+        assert!(names.contains(&"rfdetr"), "{names:?}");
+        // ⛔ No GPU row: Windows has no local-inference lane yet, and a row
+        // would imply one.
+        assert!(!names.contains(&"gpu"), "{names:?}");
+        assert_eq!(report.checks[0].name, "platform");
+        assert_eq!(report.checks[0].detail, "Windows (x86_64)");
+        assert_eq!(report.checks[0].severity, Severity::Ok);
+    }
+
+    /// The unsupported sentence names the real accept set, and Windows arm64 is
+    /// genuinely not in it.
+    #[test]
+    fn an_unsupported_host_is_told_what_is_actually_supported() {
+        let mut inputs = check_inputs(None, RfdetrCheckInput::Omit);
+        inputs.platform.os = "Windows".into();
+        inputs.platform.arch = "aarch64".into();
+
+        let report = build_check_report(&inputs);
+        assert!(!report.platform.supported);
+        assert_eq!(report.overall, Severity::Blocked);
+        assert_eq!(report.checks.len(), 1);
+        assert!(
+            report.checks[0].detail.contains("x86_64 Windows"),
+            "{}",
+            report.checks[0].detail
+        );
+        // ⛔ The retired arm claimed Windows was unsupported outright.
+        assert!(!report.checks[0].detail.contains("Windows isn't supported"));
+    }
+
+    /// `host_platform()` and `supported()` have to name the OS the same way, and
+    /// they did not: the mapping left Windows as the raw lowercase `"windows"`
+    /// while a downstream arm tested `== "Windows"`, so that arm was unreachable
+    /// and nobody noticed. This pins the value each target actually produces.
+    #[test]
+    fn the_host_os_name_matches_what_every_downstream_arm_tests_for() {
+        let os = host_platform().os;
+        let expected = if cfg!(target_os = "macos") {
+            "Darwin"
+        } else if cfg!(target_os = "linux") {
+            "Linux"
+        } else if cfg!(windows) {
+            "Windows"
+        } else {
+            std::env::consts::OS
+        };
+        assert_eq!(os, expected);
+        assert!(
+            !os.is_empty() && os.chars().next().is_some_and(char::is_uppercase)
+                || os == std::env::consts::OS,
+            "a shipped platform names itself in the display register: {os}"
+        );
+    }
+
     #[test]
     fn windows_degraded_rfdetr_uses_package_guidance() {
         use solstone_core_local::install::rfdetr_windows::RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE;
@@ -1009,14 +1139,27 @@ mod tests {
                 cause: RfdetrDegradedCause::Absent,
             },
         );
-        inputs.platform.os = "windows".into();
         inputs.platform.arch = "x86_64".into();
 
-        let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check on Windows");
-        assert_eq!(rfdetr.severity, Severity::Warning);
-        assert_eq!(rfdetr.detail, RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE);
-        assert!(!rfdetr.detail.contains("journal install-models"));
-        assert_eq!(rfdetr.cause, Some("absent"));
+        // 🔴 BOTH spellings, deliberately. This predicate reads a DISPLAY field,
+        // and it used to match only because Windows was the one platform whose
+        // display value happened to be lowercase -- so capitalizing it for
+        // consistency would have silently handed Windows owners the Unix
+        // guidance ("run journal install-models") for a package-payload asset.
+        for spelling in ["windows", "Windows"] {
+            inputs.platform.os = spelling.into();
+            let rfdetr = rfdetr_check(&inputs).expect("degraded RF-DETR check on Windows");
+            assert_eq!(rfdetr.severity, Severity::Warning, "{spelling}");
+            assert_eq!(
+                rfdetr.detail, RFDETR_PACKAGE_UNAVAILABLE_GUIDANCE,
+                "{spelling}"
+            );
+            assert!(
+                !rfdetr.detail.contains("journal install-models"),
+                "{spelling}"
+            );
+            assert_eq!(rfdetr.cause, Some("absent"), "{spelling}");
+        }
     }
 
     /// CED counterpart of `degraded_rfdetr_blocks_for_every_cause`: same

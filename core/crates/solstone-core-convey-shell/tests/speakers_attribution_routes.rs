@@ -1239,7 +1239,8 @@ fn has_voiceprint_metadata(
     segment_key: &str,
     stream_layout: &str,
 ) -> bool {
-    let Some(voiceprints) = solstone_core_entity::load_entity_voiceprints_file(journal, entity) else {
+    let Some(voiceprints) = solstone_core_entity::load_entity_voiceprints_file(journal, entity)
+    else {
         return false;
     };
     voiceprints.metadata.iter().any(|m| {

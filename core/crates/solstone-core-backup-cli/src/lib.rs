@@ -21,9 +21,9 @@ use solstone_core_backup_runtime::{
     BackupResult, BackupServices, Clock, HttpTransport, NativeJournalMaintenance,
     NativeRestoreRecorder, PruneResult, ResticKeyError, RestoreDraft, RestoreOutcome,
     RestoreRecorder, RotationResult, SystemToolRunner, TeardownResult, ToolInstallDirs, ToolRunner,
-    UreqHttpTransport, ensure_restic, prepare, publish_restore_outcome, resolve_operational_tools,
-    resolve_tools, restore_journal, rotate_recovery_key, run_prune, teardown_backup,
-    validate_destination,
+    UnreadableSources, UreqHttpTransport, ensure_restic, prepare, publish_restore_outcome,
+    resolve_operational_tools, resolve_tools, restore_journal, rotate_recovery_key, run_prune,
+    teardown_backup, validate_destination,
 };
 use solstone_core_offload::{
     OffloadResult, RestoreResult as OffloadRestoreResult, build_offload_status,
@@ -974,6 +974,14 @@ fn run_admitted_backup(
 
 fn backup_run_result(result: BackupResult) -> CliRun {
     match (result.status.as_str(), result.error_reason.as_deref()) {
+        // A snapshot exists and some files could not be read. It succeeded, so
+        // it exits 0 and speaks on stdout -- a scheduler that reads the exit
+        // code must not treat a written snapshot as a failed run -- and the
+        // owner is told plainly what is not in it.
+        ("ok", Some("incomplete")) => success(format!(
+            "{}\n",
+            incomplete_backup_message(result.snapshot_id.as_deref(), result.unreadable.as_ref())
+        )),
         ("ok", _) => success(format!(
             "Backup complete (snapshot {}).\n",
             result.snapshot_id.as_deref().unwrap_or_default()
@@ -986,30 +994,129 @@ fn backup_run_result(result: BackupResult) -> CliRun {
         // -- measured on the Windows checkpoint guest, where a real repository
         // and ~740 KB of data landed under a message that reads like nothing
         // happened.
-        (_, Some("incomplete")) => {
-            runtime_error(incomplete_backup_message(result.snapshot_id.as_deref()))
-        }
-        (_, reason) => runtime_error(format!("Backup failed: {}.", reason.unwrap_or("failed"))),
+        (_, Some("incomplete")) => runtime_error(incomplete_backup_message(
+            result.snapshot_id.as_deref(),
+            result.unreadable.as_ref(),
+        )),
+        (_, reason) => runtime_error(format!(
+            "Backup failed: {}.",
+            backup_failure_reason(reason.unwrap_or("failed"))
+        )),
     }
 }
 
 /// The owner-facing sentence for a partial backup.
 ///
 /// Split out from [`backup_run_result`] so it can be asserted verbatim.
-fn incomplete_backup_message(snapshot_id: Option<&str>) -> String {
-    match snapshot_id {
-        // "incomplete" is only honest where a partial artifact exists, and the
-        // re-run only helps once the files it could not read are closed, so
-        // neither sentence promises more than it can keep.
-        Some(id) => format!(
-            "Backup incomplete: snapshot {id} was written, but some files couldn't be read and \
-             aren't in it. Files that are open in another app can't be read. If any were open, \
-             close them and run `journal backup run` again."
+/// Turn a backup-run reason code into something an owner can read.
+///
+/// 🔴 These codes are internal identifiers and every one of them was reaching
+/// owners verbatim: `Backup failed: restic_unavailable.`,
+/// `Backup failed: journal_path_unresolved.`, `Backup failed: broker_error.`
+/// The set is closed -- every value is a `&'static str` from this crate or
+/// `hosted_runtime` -- so each one gets a sentence.
+///
+/// ⛔ The fallback still prints the code rather than swallowing it. An owner
+/// with an unmapped code and a support request is better off than one told
+/// "something went wrong", and a code that appears here is a missing arm, which
+/// is a thing someone can see and fix.
+///
+/// ⛔ No recovery command is invented: `journal backup enable` and
+/// `journal backup run` are the two this crate documents, and only those appear.
+fn backup_failure_reason(reason: &str) -> String {
+    // ⚠ Written from where the OWNER stands, not from inside the backup
+    // subsystem. The first draft of these said "repository", "couldn't be
+    // resolved", "wasn't reported", "this journal's" and "on this account" --
+    // all the machine describing itself. An owner does not think "the
+    // repository"; they think "my backup". Fix the vantage and the vocabulary
+    // mostly follows.
+    match reason {
+        "repo_missing" => "there's no backup at the destination yet".into(),
+        "repo_exists" => "there's already a backup there".into(),
+        "locked" => {
+            "the backup at the destination is locked, usually by a run that's still going or one \
+             that was interrupted"
+                .into()
+        }
+        // ⚠ These two codes mean different things and must not read alike:
+        // credentials refused, versus credentials accepted without permission.
+        "auth_failed" => "the destination rejected the credentials".into(),
+        "access" => "the destination refused permission for this write".into(),
+        "unreachable" => "the destination couldn't be reached".into(),
+        "timeout" => "it ran too long and stopped".into(),
+        // ✅ restic and rclone are named. Canon bars a third-party brand as a
+        // SERVICE name; these are missing dependencies, and with no recovery
+        // command on offer the tool name is the only actionable token here.
+        "restic_unavailable" => "the restic backup program isn't available".into(),
+        "rclone_unavailable" => "the rclone program isn't available".into(),
+        "journal_path_unresolved" => "couldn't find your journal".into(),
+        // ⛔ Never "solstone's backup service": sol pbc operates, solstone never
+        // hosts, and brand lives at the layer rather than on each service.
+        "broker_unreachable" => "the backup service sol pbc runs couldn't be reached".into(),
+        "broker_error" => "the backup service sol pbc runs couldn't complete the request".into(),
+        // ⛔ Not "operated backup": "operated" is the disclosure clause, never
+        // part of a name. And owners have services, not accounts.
+        "hosted_entitlement_inactive" => "sol pbc isn't running backup for you".into(),
+        // ⛔ "your journal", never "this journal" -- it is the owner's own and
+        // they are sitting at their own terminal.
+        "binding_invalid" => "your journal's backup settings are no longer valid".into(),
+        "binding_superseded" => "newer backup settings replaced these".into(),
+        // ⛔ Not "it didn't finish": the header already said that.
+        "failed" | "unknown" => "no reason was given".into(),
+        other => format!(
+            "stopped without a reason ({})",
+            solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
         ),
-        None => "Backup failed: some files couldn't be read, and no snapshot was written. Files \
-                 that are open in another app can't be read. If any were open, close them and run \
-                 `journal backup run` again."
-            .to_owned(),
+    }
+}
+
+fn incomplete_backup_message(
+    snapshot_id: Option<&str>,
+    unreadable: Option<&UnreadableSources>,
+) -> String {
+    // ⛔ The CAUSE is never named here, and that is deliberate. An earlier draft
+    // said "files that are open in another app can't be read" -- true on
+    // Windows, where the running journal holds files open, and false on the two
+    // platforms the journal has shipped on longest, where an open file reads
+    // fine and a partial run is normally a permission denial or a file that
+    // changed mid-run. ✅ restic knows which one it hit and says so per file, so
+    // the line carries what the tool reported instead of guessing.
+    let scale = match unreadable {
+        Some(UnreadableSources { count: 1, .. }) => {
+            "1 file couldn't be read, so it isn't".to_owned()
+        }
+        Some(UnreadableSources { count, .. }) => {
+            format!("{count} files couldn't be read, so they aren't")
+        }
+        None => "some files couldn't be read, so they aren't".to_owned(),
+    };
+    // The reason is restic's text reaching an owner's terminal: bound and
+    // sanitize it the way every other relayed tool reason on this surface is.
+    let reason = unreadable
+        .and_then(|sources| sources.first_reason.as_deref())
+        .map(|reason| {
+            format!(
+                " The first: {}.",
+                solstone_core_system_health::sanitize_str_for_terminal_bounded(reason)
+            )
+        })
+        .unwrap_or_default();
+    match snapshot_id {
+        // ✅ Opens in the SUCCESS form this surface already uses -- "Backup
+        // complete (snapshot …)" -- because it is one. The colon-and-prose
+        // shape next to it is the failure form, and a line that borrows it
+        // scans as a failure before the owner reaches the snapshot id.
+        Some(id) => format!(
+            "Backup partial (snapshot {id}). {scale} in it.{reason} Run \
+             `journal backup run` again once that's fixed."
+        ),
+        // ⛔ Never "no snapshot was written". A source-read failure is exactly
+        // the condition that writes one; arriving here means the summary did not
+        // parse, so the id is what is missing, not the snapshot.
+        None => format!(
+            "Backup partial. {scale} in it, and the snapshot couldn't be \
+             confirmed.{reason} Run `journal backup run` again once that's fixed."
+        ),
     }
 }
 
@@ -1502,12 +1609,14 @@ mod tests {
             status: "ok".into(),
             snapshot_id: Some("snapshot-1".into()),
             error_reason: None,
+            unreadable: None,
         });
         assert_eq!(ok.stdout, "Backup complete (snapshot snapshot-1).\n");
         let skipped = backup_run_result(BackupResult {
             status: "skipped".into(),
             snapshot_id: None,
             error_reason: None,
+            unreadable: None,
         });
         assert_eq!(
             skipped.stdout,
@@ -1517,41 +1626,126 @@ mod tests {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("timeout".into()),
+            unreadable: None,
         });
-        assert_eq!(error.stderr, "Error: Backup failed: timeout.\n");
+        assert_eq!(
+            error.stderr,
+            "Error: Backup failed: it ran too long and stopped.\n"
+        );
+    }
+
+    /// ⛔ No internal identifier reaches an owner, and the closed set is the
+    /// point: every one of these used to print verbatim.
+    #[test]
+    fn no_backup_reason_code_reaches_the_owner_as_an_identifier() {
+        const EVERY_REASON: &[&str] = &[
+            "repo_missing",
+            "repo_exists",
+            "locked",
+            "auth_failed",
+            "access",
+            "unreachable",
+            "timeout",
+            "restic_unavailable",
+            "rclone_unavailable",
+            "journal_path_unresolved",
+            "broker_unreachable",
+            "broker_error",
+            "hosted_entitlement_inactive",
+            "binding_invalid",
+            "binding_superseded",
+            "failed",
+            "unknown",
+        ];
+        for reason in EVERY_REASON {
+            let rendered = backup_failure_reason(reason);
+            // ⚠ Not a substring check: "access" and "failed" are ordinary
+            // English words and a sentence is allowed to contain them. The
+            // identifier tell is the underscore and the bare code standing
+            // alone as the whole clause.
+            assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
+            assert!(
+                !rendered.contains('_'),
+                "{reason} leaves snake_case in owner copy: {rendered}"
+            );
+            assert!(
+                rendered
+                    .chars()
+                    .next()
+                    .is_some_and(|first| first.is_lowercase()),
+                "{reason} completes the sentence after the colon: {rendered}"
+            );
+        }
+        // ⛔ An unmapped code still reaches support rather than being swallowed.
+        let unmapped = backup_failure_reason("some_new_code");
+        assert!(unmapped.contains("some_new_code"), "{unmapped}");
     }
 
     #[test]
     fn a_partial_backup_names_its_snapshot_what_is_missing_and_the_next_step() {
-        // The refusal an owner reads when restic wrote a snapshot and could
-        // not read every source file. "incomplete" alone told them none of
-        // those three things, and it is the exact state a running journal on
-        // Windows produces.
+        // ✅ Opens in the success form this surface already uses, carries the
+        // count and restic's OWN reason, and never names a cause.
         let partial = backup_run_result(BackupResult {
-            status: "error".into(),
+            status: "ok".into(),
             snapshot_id: Some("ab12cd34".into()),
             error_reason: Some("incomplete".into()),
+            unreadable: Some(UnreadableSources {
+                count: 3,
+                first_reason: Some("open /journal/b.txt: permission denied".into()),
+            }),
         });
         assert_eq!(
-            partial.stderr,
-            "Error: Backup incomplete: snapshot ab12cd34 was written, but some files couldn't \
-             be read and aren't in it. Files that are open in another app can't be read. If any \
-             were open, close them and run `journal backup run` again.\n"
+            partial.stdout,
+            "Backup partial (snapshot ab12cd34). 3 files couldn't be read, so they aren't in it. \
+             The first: open /journal/b.txt: permission denied. Run `journal backup run` again \
+             once that's fixed.\n"
         );
-        assert_eq!(partial.exit_code, 1);
-        // Without a snapshot there is no partial artifact, so the headline word
-        // is "failed": "incomplete" would name something the owner does not have.
-        let without_snapshot = backup_run_result(BackupResult {
+        // 🔴 Exit 0 and stdout: a snapshot exists, so the run SUCCEEDED. A
+        // scheduler or health check reading the exit code must not learn
+        // "failed" from a backup that worked.
+        assert_eq!(partial.exit_code, 0);
+        assert!(partial.stderr.is_empty());
+
+        // One file reads as one file.
+        let single = backup_run_result(BackupResult {
+            status: "ok".into(),
+            snapshot_id: Some("ab12cd34".into()),
+            error_reason: Some("incomplete".into()),
+            unreadable: Some(UnreadableSources {
+                count: 1,
+                first_reason: None,
+            }),
+        });
+        assert!(
+            single
+                .stdout
+                .starts_with("Backup partial (snapshot ab12cd34). 1 file couldn't be read, so it isn't in it. Run"),
+            "{}",
+            single.stdout
+        );
+
+        // ⛔ Without an id the snapshot is UNCONFIRMED, never absent: a
+        // source-read failure is exactly the condition that writes one.
+        let without_id = backup_run_result(BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("incomplete".into()),
+            unreadable: None,
         });
         assert_eq!(
-            without_snapshot.stderr,
-            "Error: Backup failed: some files couldn't be read, and no snapshot was written. \
-             Files that are open in another app can't be read. If any were open, close them and \
-             run `journal backup run` again.\n"
+            without_id.stderr,
+            "Error: Backup partial. some files couldn't be read, so they aren't in it, and the \
+             snapshot couldn't be confirmed. Run `journal backup run` again once that's fixed.\n"
         );
+        assert!(!without_id.stderr.contains("no snapshot was written"));
+
+        // ⛔ No platform-specific cause on any of the three: an open file blocks
+        // a read on Windows and not on macOS or Linux, and this line cannot tell
+        // which host it is printing on.
+        for rendered in [&partial.stdout, &single.stdout, &without_id.stderr] {
+            assert!(!rendered.contains("open in another"), "{rendered}");
+            assert!(!rendered.contains("permission to read"), "{rendered}");
+        }
     }
 
     #[test]
@@ -2934,13 +3128,19 @@ mod resolution_tests {
 
     fn assert_restic_unavailable_output(output: &CliRun) {
         assert_eq!(output.stdout, "");
-        assert_eq!(output.stderr, "Error: Backup failed: restic_unavailable.\n");
+        assert_eq!(
+            output.stderr,
+            "Error: Backup failed: the restic backup program isn't available.\n"
+        );
         assert_eq!(output.exit_code, 1);
     }
 
     fn assert_rclone_unavailable_output(output: &CliRun) {
         assert_eq!(output.stdout, "");
-        assert_eq!(output.stderr, "Error: Backup failed: rclone_unavailable.\n");
+        assert_eq!(
+            output.stderr,
+            "Error: Backup failed: the rclone program isn't available.\n"
+        );
         assert_eq!(output.exit_code, 1);
     }
 
@@ -3038,7 +3238,20 @@ mod resolution_tests {
             dirs(restic_dir.path(), None),
         );
         assert_eq!(output.exit_code, 1);
-        assert!(output.stderr.contains("restic_unavailable"));
+        // ✅ The owner reads a sentence; the PERSISTED reason stays the stable
+        // machine code, which is what the status surface and support key off.
+        assert!(
+            output
+                .stderr
+                .contains("the restic backup program isn't available"),
+            "{}",
+            output.stderr
+        );
+        assert!(
+            !output.stderr.contains("restic_unavailable"),
+            "{}",
+            output.stderr
+        );
         assert_eq!(
             last_backup_reason(journal.path()).as_deref(),
             Some("restic_unavailable")
@@ -3685,7 +3898,7 @@ mod resolution_tests {
         assert_eq!(output.stdout, "");
         assert_eq!(
             output.stderr,
-            "Error: Backup failed: journal_path_unresolved.\n"
+            "Error: Backup failed: couldn't find your journal.\n"
         );
         assert_eq!(output.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
@@ -3736,7 +3949,10 @@ mod resolution_tests {
         );
 
         assert_eq!(output.stdout, "");
-        assert_eq!(output.stderr, "Error: Backup failed: broker_error.\n");
+        assert_eq!(
+            output.stderr,
+            "Error: Backup failed: the backup service sol pbc runs couldn't complete the request.\n"
+        );
         assert_eq!(output.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
         assert_alias_resolved_once();
@@ -3775,7 +3991,7 @@ mod resolution_tests {
         );
         assert_eq!(
             unresolved.stderr,
-            "Error: Backup failed: journal_path_unresolved.\n"
+            "Error: Backup failed: couldn't find your journal.\n"
         );
         assert_eq!(unresolved.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
@@ -3796,7 +4012,10 @@ mod resolution_tests {
             &UnusedHttp,
             ToolInstallDirs::default(),
         );
-        assert_eq!(config_error.stderr, "Error: Backup failed: broker_error.\n");
+        assert_eq!(
+            config_error.stderr,
+            "Error: Backup failed: the backup service sol pbc runs couldn't complete the request.\n"
+        );
         assert_eq!(config_error.exit_code, 1);
         assert!(runner.programs.borrow().is_empty());
     }
@@ -3915,7 +4134,18 @@ mod resolution_tests {
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
         assert_eq!(output.exit_code, 1);
-        assert!(output.stderr.contains("rclone_unavailable"));
+        // ✅ The owner reads a sentence; the PERSISTED reason stays the stable
+        // machine code, which is what the status surface and support key off.
+        assert!(
+            output.stderr.contains("the rclone program isn't available"),
+            "{}",
+            output.stderr
+        );
+        assert!(
+            !output.stderr.contains("rclone_unavailable"),
+            "{}",
+            output.stderr
+        );
         assert_eq!(
             last_backup_reason(journal.path()).as_deref(),
             Some("rclone_unavailable")

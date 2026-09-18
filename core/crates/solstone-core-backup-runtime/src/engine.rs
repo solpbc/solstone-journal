@@ -177,6 +177,23 @@ pub struct BackupResult {
     pub status: String,
     pub snapshot_id: Option<String>,
     pub error_reason: Option<String>,
+    /// What restic said it could not read, when it said anything.
+    ///
+    /// 🔴 The tool already hands us the reason per file, on its JSON stderr, and
+    /// the runner already captures it. Discarding it and telling the owner to
+    /// go check their permissions is sending them elsewhere for an answer this
+    /// line is holding -- and it is a guess: a vanished file, an I/O error and a
+    /// mode problem all land here and only one of them is a permission problem.
+    pub unreadable: Option<UnreadableSources>,
+}
+
+/// The source-read failures behind a partial backup, as restic reported them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnreadableSources {
+    /// How many source files restic reported it could not read.
+    pub count: usize,
+    /// The first reason verbatim, for an owner who has one thing to fix.
+    pub first_reason: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PruneResult {
@@ -913,6 +930,40 @@ fn snapshot_id(value: Option<&Value>) -> Option<String> {
         .filter(|id| !id.is_empty())
         .map(str::to_owned)
 }
+/// Count restic's own per-file read failures and keep the first reason verbatim.
+///
+/// restic emits one `{"message_type":"error", …}` record per unreadable source
+/// on the same JSON stream the summary arrives on, and the runner already
+/// captures it. ⛔ The reason is NOT interpreted here: a vanished file, an I/O
+/// error and a mode problem all arrive through this record and only the tool
+/// knows which one it hit.
+fn unreadable_sources(value: Option<&Value>) -> Option<UnreadableSources> {
+    let records: &[Value] = match value? {
+        Value::Array(records) => records,
+        single => std::slice::from_ref(single),
+    };
+    let mut count = 0;
+    let mut first_reason = None;
+    for record in records {
+        if record.get("message_type").and_then(Value::as_str) != Some("error") {
+            continue;
+        }
+        count += 1;
+        if first_reason.is_none() {
+            first_reason = record
+                .get("error")
+                .and_then(|error| error.get("message"))
+                .and_then(Value::as_str)
+                .filter(|message| !message.is_empty())
+                .map(str::to_owned);
+        }
+    }
+    (count > 0).then_some(UnreadableSources {
+        count,
+        first_reason,
+    })
+}
+
 fn record_backup(journal: &Path, clock: &dyn Clock, result: &BackupResult) {
     #[cfg(any(test, feature = "test-hooks"))]
     if run_backup_record_failure_hook(journal) {
@@ -939,6 +990,7 @@ pub fn record_backup_error(journal: &Path, clock: &dyn Clock, reason: &str) -> B
         status: "error".into(),
         snapshot_id: None,
         error_reason: Some(reason.to_owned()),
+        unreadable: None,
     };
     record_backup(journal, clock, &result);
     result
@@ -976,11 +1028,13 @@ pub fn prepare(journal: &Path, clock: &dyn Clock) -> Result<AdmittedCapability, 
             status: "skipped".into(),
             snapshot_id: None,
             error_reason: None,
+            unreadable: None,
         }),
         Err(BackupAdmissionTerminal::Unresolved) => Err(BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("journal_path_unresolved".into()),
+            unreadable: None,
         }),
         Err(BackupAdmissionTerminal::Error {
             record_journal,
@@ -1066,28 +1120,58 @@ impl AdmittedCapability {
                 ) {
                     Ok(output) => {
                         let id = snapshot_id(output.json.as_ref());
-                        if output.returncode == 0 && id.is_some() {
-                            BackupResult {
+                        match (output.returncode, id) {
+                            (0, Some(id)) => BackupResult {
                                 status: "ok".into(),
-                                snapshot_id: id,
+                                snapshot_id: Some(id),
                                 error_reason: None,
-                            }
-                        } else {
-                            BackupResult {
+                                unreadable: None,
+                            },
+                            // 🔴 restic exit 3 means a snapshot WAS written and
+                            // some source files could not be read. That is a
+                            // backup with a caveat, not a failed backup, and
+                            // calling it an error made the owner's own status
+                            // surface read "failed" while their data was in
+                            // fact backed up -- `status` is what drives that
+                            // copy key. On Windows the running journal holds
+                            // files open, so this is the ORDINARY outcome
+                            // there: reporting it as failure would have meant a
+                            // working BYO backup showing failed every day,
+                            // which is how an owner learns to ignore the one
+                            // signal that matters. `error_reason` keeps the
+                            // caveat for anyone who looks.
+                            (3, Some(id)) => BackupResult {
+                                status: "ok".into(),
+                                snapshot_id: Some(id),
+                                error_reason: Some("incomplete".into()),
+                                unreadable: unreadable_sources(output.json.as_ref()),
+                            },
+                            // ⛔ No snapshot means no backup, whatever the code.
+                            // ⛔ Reaching here on code 3 means the summary did
+                            // not parse, which is "we do not have the id" and
+                            // never "nothing was written" -- a source-read
+                            // failure is exactly the condition that DOES write
+                            // a snapshot. The copy must not claim an absence
+                            // this branch cannot prove.
+                            (code, _) => BackupResult {
                                 status: "error".into(),
-                                snapshot_id: if output.returncode == 3 { id } else { None },
-                                error_reason: Some(if output.returncode == 0 {
+                                snapshot_id: None,
+                                error_reason: Some(if code == 0 {
                                     "unknown".into()
                                 } else {
-                                    reason_for_returncode(output.returncode).into()
+                                    reason_for_returncode(code).into()
                                 }),
-                            }
+                                unreadable: (code == 3)
+                                    .then(|| unreadable_sources(output.json.as_ref()))
+                                    .flatten(),
+                            },
                         }
                     }
                     Err(reason) => BackupResult {
                         status: "error".into(),
                         snapshot_id: None,
                         error_reason: Some(reason),
+                        unreadable: None,
                     },
                 }
             }
@@ -1095,6 +1179,7 @@ impl AdmittedCapability {
                 status: "error".into(),
                 snapshot_id: None,
                 error_reason: Some(reason),
+                unreadable: None,
             },
         };
         record_backup(&resolved_journal, services.clock, &result);
@@ -1111,6 +1196,7 @@ impl AdmittedCapability {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some(reason.into()),
+            unreadable: None,
         };
         record_backup(&self.resolved_journal, clock, &result);
         result
@@ -1278,6 +1364,7 @@ pub fn run_archive_backup(
                 status: "skipped".into(),
                 snapshot_id: None,
                 error_reason: None,
+                unreadable: None,
             };
         }
         Ok(Some(runtime)) => runtime,
@@ -1286,6 +1373,7 @@ pub fn run_archive_backup(
                 status: "error".into(),
                 snapshot_id: None,
                 error_reason: Some(reason),
+                unreadable: None,
             };
         }
     };
@@ -1306,22 +1394,26 @@ pub fn run_archive_backup(
                 status: "error".into(),
                 snapshot_id: None,
                 error_reason: Some("unknown".into()),
+                unreadable: None,
             },
             |id| BackupResult {
                 status: "ok".into(),
                 snapshot_id: Some(id),
                 error_reason: None,
+                unreadable: None,
             },
         ),
         Ok(output) => BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some(reason_for_returncode(output.returncode).into()),
+            unreadable: None,
         },
         Err(reason) => BackupResult {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some(reason),
+            unreadable: None,
         },
     }
 }
@@ -1667,6 +1759,69 @@ mod tests {
             Err(result) => result,
         }
     }
+    /// restic exit 3 wrote a snapshot and could not read every source file.
+    ///
+    /// 🔴 That is a backup with a caveat, not a failed backup, and the
+    /// distinction is owner-visible: `status` is what drives the backup panel's
+    /// copy key, so reporting `error` made a run that genuinely backed the
+    /// owner's data up read as "failed". On Windows the running journal holds
+    /// files open, which makes exit 3 the ORDINARY outcome there -- a working
+    /// BYO backup would have shown failed every single day.
+    #[test]
+    fn a_partial_backup_keeps_its_snapshot_and_reports_success_with_a_caveat() {
+        let journal = configured_journal();
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, ""),
+                output(
+                    3,
+                    concat!(
+                        r#"[{"message_type":"error","item":"/journal/b.txt","#,
+                        r#""error":{"message":"open /journal/b.txt: permission denied"}},"#,
+                        r#"{"message_type":"error","item":"/journal/c.txt","#,
+                        r#""error":{"message":"open /journal/c.txt: permission denied"}},"#,
+                        r#"{"message_type":"summary","snapshot_id":"partial"}]"#
+                    ),
+                ),
+            ])),
+            requests: RefCell::new(Vec::new()),
+            after_unlock: RefCell::new(None),
+        };
+        let services = services(&runner, &Http, &FixedClock, &Maintenance);
+        let result = prepare(journal.path(), &FixedClock)
+            .unwrap()
+            .execute(&services);
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.snapshot_id.as_deref(), Some("partial"));
+        assert_eq!(result.error_reason.as_deref(), Some("incomplete"));
+        // ✅ restic's own per-file reasons are carried, not discarded: the owner
+        // line must not have to guess at a cause the tool already reported.
+        let unreadable = result.unreadable.expect("restic's read failures");
+        assert_eq!(unreadable.count, 2);
+        assert_eq!(
+            unreadable.first_reason.as_deref(),
+            Some("open /journal/b.txt: permission denied")
+        );
+    }
+
+    /// ⛔ The inverse: exit 3 with no snapshot is not a backup at all.
+    #[test]
+    fn a_partial_run_that_wrote_no_snapshot_is_still_an_error() {
+        let journal = configured_journal();
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([output(0, ""), output(3, "")])),
+            requests: RefCell::new(Vec::new()),
+            after_unlock: RefCell::new(None),
+        };
+        let services = services(&runner, &Http, &FixedClock, &Maintenance);
+        let result = prepare(journal.path(), &FixedClock)
+            .unwrap()
+            .execute(&services);
+        assert_eq!(result.status, "error");
+        assert_eq!(result.snapshot_id, None);
+        assert_eq!(result.error_reason.as_deref(), Some("incomplete"));
+    }
+
     #[test]
     fn repository_operations_wait_for_native_locks_within_existing_deadlines() {
         let journal = configured_journal();
@@ -2562,6 +2717,7 @@ mod tests {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("restic_unavailable".into()),
+            unreadable: None,
         };
 
         record_backup(journal.path(), &clock, &result);
@@ -2581,6 +2737,7 @@ mod tests {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("restic_unavailable".into()),
+            unreadable: None,
         };
         arm_backup_record_failure_hook(expected.path().to_path_buf());
 
@@ -2613,6 +2770,7 @@ mod tests {
             status: "error".into(),
             snapshot_id: None,
             error_reason: Some("restic_unavailable".into()),
+            unreadable: None,
         };
         reset_backup_record_failure_hook();
         install_backup_record_failure_hook(journal.path().to_path_buf());

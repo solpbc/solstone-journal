@@ -51,6 +51,30 @@ pub fn windows_available_physical_bytes() -> Option<u64> {
     validated_windows_available_bytes(succeeded, status.ullTotalPhys, status.ullAvailPhys)
 }
 
+/// Total and available physical memory, for a readiness report rather than an
+/// admission decision.
+///
+/// [`available_physical_bytes`] answers "may this work start". A check surface
+/// also has to say how much memory the machine has at all, and one that cannot
+/// name the total has to tell the owner it "could not be verified" -- which is
+/// exactly what Windows owners were told, because this platform had no reader
+/// here. Same call, same validation, both halves returned.
+#[cfg(windows)]
+#[allow(unsafe_code)]
+pub fn windows_physical_memory_bytes() -> Option<(u64, u64)> {
+    use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
+    // SAFETY: status is initialized, correctly sized, and exclusively borrowed
+    // for the synchronous call. The API retains no pointer after returning.
+    let succeeded = unsafe { GlobalMemoryStatusEx(&mut status) } != 0;
+    validated_windows_available_bytes(succeeded, status.ullTotalPhys, status.ullAvailPhys)
+        .map(|available| (status.ullTotalPhys, available))
+}
+
 /// Read free plus inactive pages from Darwin's host VM statistics.
 #[cfg(target_os = "macos")]
 #[allow(unsafe_code)]
