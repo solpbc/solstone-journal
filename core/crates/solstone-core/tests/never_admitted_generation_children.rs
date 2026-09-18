@@ -4,7 +4,7 @@
 #[cfg(unix)]
 mod tests {
     use std::fs;
-    use std::io::{BufRead, BufReader};
+    use std::net::TcpListener;
     use std::path::PathBuf;
     use std::process::{Child, Command, Stdio};
     use std::thread;
@@ -52,55 +52,42 @@ mod tests {
     }
 
     fn spawn_child(ignore_sigterm: bool) -> (Child, ProcessInstance) {
-        let mut command = if ignore_sigterm {
-            let mut command = Command::new("python3");
-            command.args([
-                "-c",
-                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(60)",
-            ]);
-            command
+        let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let ready = std::env::temp_dir().join(format!(
+            "solstone-never-admitted-stubborn-{}-{stamp}",
+            std::process::id()
+        ));
+        let mut command = Command::new(fixture);
+        if ignore_sigterm {
+            command.args(["block-term-sleep", ready.to_str().expect("utf8 path")]);
         } else {
-            let mut command = Command::new("sh");
-            command.args(["-c", "sleep 60"]);
-            command
-        };
+            command.arg("sleep");
+        }
         let child = command
             .stdin(Stdio::null())
-            .stdout(if ignore_sigterm {
-                Stdio::piped()
-            } else {
-                Stdio::null()
-            })
+            .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn child");
-        let mut child = child;
         if ignore_sigterm {
-            let mut ready = String::new();
-            BufReader::new(child.stdout.take().expect("stubborn child stdout"))
-                .read_line(&mut ready)
-                .expect("stubborn child readiness");
-            assert_eq!(ready.trim(), "ready");
+            for _ in 0..500 {
+                if ready.exists() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(ready.exists(), "stubborn child installed SIGTERM mask");
+            let _ = fs::remove_file(&ready);
         }
         let instance = match SystemProcessInstanceSource.inspect(child.id()) {
             InspectResult::Present { instance, .. } => instance,
             other => panic!("own child must be inspectable: {other:?}"),
         };
         (child, instance)
-    }
-
-    fn lock_is_available(path: &std::path::Path) -> bool {
-        Command::new("python3")
-            .args([
-                "-c",
-                "import fcntl,sys; f=open(sys.argv[1], 'a+'); fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)",
-            ])
-            .arg(path)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success())
     }
 
     fn close_with_budget(
@@ -217,16 +204,12 @@ mod tests {
             .mark_admitting(active.generation, coordinator)
             .expect("admitting state");
 
-        // Spawn a task-worker root that creates a descendant holding an advisory
-        // lock. A readiness file removes the bind-before-probe race the former
-        // ephemeral-port fixture carried under a loaded host.
-        let lock_path = journal.root.join("descendant-resource.lock");
+        // Spawn a task-worker root whose Rust fixture creates a descendant that
+        // binds its own loopback port before publishing that exact port. This
+        // has no select-then-bind race and no interpreter dependency.
         let ready_path = journal.root.join("descendant-resource.ready");
-        let descendant = "import fcntl,sys,time; f=open(sys.argv[1], 'a+'); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[2], 'w').write('ready'); time.sleep(60)";
-        let root = "import subprocess,sys,time; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2], sys.argv[3]]); time.sleep(60)";
-        let mut root_child = Command::new("python3")
-            .args(["-c", root, descendant])
-            .arg(&lock_path)
+        let mut root_child = Command::new(env!("CARGO_BIN_EXE_solstone-core-system-test-child"))
+            .arg("tcp-descendant-root")
             .arg(&ready_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -238,16 +221,21 @@ mod tests {
             other => panic!("own child inspectable: {other:?}"),
         };
 
-        // Wait for the descendant to report that the lock is held.
-        let mut held = false;
-        for _ in 0..200 {
-            if ready_path.exists() && !lock_is_available(&lock_path) {
-                held = true;
-                break;
+        // Wait for the descendant to publish the port it already holds.
+        let port = (0..500).find_map(|_| {
+            let port = fs::read_to_string(&ready_path)
+                .ok()
+                .and_then(|value| value.parse::<u16>().ok());
+            if port.is_none() {
+                thread::sleep(Duration::from_millis(10));
             }
-            thread::sleep(Duration::from_millis(10));
-        }
-        assert!(held, "descendant must have acquired the resource lock");
+            port
+        });
+        let port = port.expect("descendant must have acquired the TCP resource");
+        assert!(
+            TcpListener::bind(("127.0.0.1", port)).is_err(),
+            "descendant must still hold the published TCP resource"
+        );
 
         let launch_id = generate_helper_launch_id("task-worker");
         write_parent_loss_admission_intent(
@@ -272,10 +260,10 @@ mod tests {
 
         let _ = root_child.wait();
 
-        // Successor can now acquire the resource because the descendant was terminated.
+        // Successor can now bind the same port because the descendant was terminated.
         let mut reacquired = false;
         for _ in 0..200 {
-            if lock_is_available(&lock_path) {
+            if TcpListener::bind(("127.0.0.1", port)).is_ok() {
                 reacquired = true;
                 break;
             }

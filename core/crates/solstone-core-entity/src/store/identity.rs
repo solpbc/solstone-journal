@@ -7,7 +7,7 @@ use serde_json::Value;
 use solstone_core_journal_io::durability::{
     ArtifactId, DurableObservation, DurableRead, observe_json_durable, read_json_durable, set_aside,
 };
-use solstone_core_journal_io::{MalformedDataError, ReadError, contained_path, path_lexists};
+use solstone_core_journal_io::{ReadError, contained_path, path_lexists};
 
 use super::error::EntityStoreError;
 use super::paths::identity_path;
@@ -45,20 +45,11 @@ pub fn read_entity_identity(
     let path = identity_path(journal_root, entity_dir)?;
     let value = match observe_json_durable(ArtifactId::Entity, &path) {
         DurableObservation::Present(value) => value,
-        DurableObservation::Absent => return Ok(None),
-        DurableObservation::Malformed { path, source } => {
-            return Err(ReadError::Malformed(MalformedDataError {
-                path,
-                line: None,
-                source,
-            })
-            .into());
-        }
-        DurableObservation::Unreadable { path, source } => {
-            return Err(ReadError::Io { path, source }.into());
-        }
+        DurableObservation::Absent
+        | DurableObservation::Malformed { .. }
+        | DurableObservation::Unreadable { .. } => return Ok(None),
     };
-    identity_snapshot(path, entity_dir, value)
+    identity_snapshot(entity_dir, value)
 }
 
 pub(super) fn read_entity_identity_repairing(
@@ -81,7 +72,6 @@ pub(super) fn read_entity_identity_repairing(
 }
 
 fn identity_snapshot(
-    path: PathBuf,
     entity_dir: &str,
     mut value: Value,
 ) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
@@ -89,7 +79,7 @@ fn identity_snapshot(
         return Ok(None);
     }
     let Some(object) = value.as_object_mut() else {
-        return Err(EntityStoreError::IdentityNotObject { path });
+        return Ok(None);
     };
     let written = object
         .get("id")
@@ -122,7 +112,7 @@ fn identity_snapshot_repairing(
         })?;
         return Ok(None);
     }
-    identity_snapshot(path, entity_dir, value)
+    identity_snapshot(entity_dir, value)
 }
 
 /// Return whether the literal identity destination exists, including an empty

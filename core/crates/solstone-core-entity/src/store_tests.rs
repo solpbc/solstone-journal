@@ -395,17 +395,15 @@ fn history_guards_preserve_required_messages() {
     );
 
     write_text(temporary.path(), "entities/not_object/entity.json", "[]");
-    assert_eq!(
+    assert!(
         read_entity_identity(temporary.path(), "not_object")
-            .unwrap_err()
-            .to_string(),
-        format!(
-            "entity identity is not an object: {}",
-            temporary
-                .path()
-                .join("entities/not_object/entity.json")
-                .display()
-        )
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        fs::read(temporary.path().join("entities/not_object/entity.json")).unwrap(),
+        b"[]",
+        "ordinary identity reads preserve malformed evidence for explicit repair"
     );
 
     write_text(

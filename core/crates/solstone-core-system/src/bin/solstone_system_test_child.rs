@@ -421,6 +421,29 @@ fn main() {
                 .expect("spawn term-resistant descendant");
             let _ = child.wait();
         }
+        "tcp-descendant-root" => {
+            let ready_path = args.next().expect("ready path");
+            let executable = std::env::current_exe().expect("fixture executable");
+            let mut child = Command::new(executable)
+                .args(["tcp-descendant-holder", &ready_path])
+                .spawn()
+                .expect("spawn TCP descendant");
+            let _ = child.wait();
+        }
+        "tcp-descendant-holder" => {
+            let ready_path = args.next().expect("ready path");
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind TCP resource");
+            std::fs::write(
+                ready_path,
+                listener
+                    .local_addr()
+                    .expect("TCP resource address")
+                    .port()
+                    .to_string(),
+            )
+            .expect("signal TCP resource readiness");
+            std::thread::sleep(Duration::from_secs(30));
+        }
         "setsid-grandchild" => {
             let ready_path = args.next().expect("ready path");
             let executable = std::env::current_exe().expect("fixture executable");
