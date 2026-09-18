@@ -58,15 +58,20 @@ fn path(journal: &Path, identity: &ActivityRetry) -> Result<PathBuf, String> {
 }
 
 fn read(path: &Path) -> Result<Option<Record>, String> {
-    match std::fs::read(path) {
-        Ok(bytes) => {
-            let record: Record = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            if record.version != 1 {
-                return Err("unsupported activity work version".to_owned());
-            }
-            Ok(Some(record))
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
+    match read_json_durable_validated::<Record>(ArtifactId::ActivityWork, path, |record| {
+        if record.version == 1 {
+            Ok(())
+        } else {
+            Err("unsupported activity work version".to_owned())
         }
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+    }) {
+        Ok(DurableRead::Present(record)) => Ok(Some(record)),
+        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
+            Ok(None)
+        }
         Err(e) => Err(e.to_string()),
     }
 }
@@ -230,7 +235,15 @@ pub fn due_activity_retries(journal: &Path, now_ms: i64) -> Result<Vec<ActivityR
     let mut due = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| e.to_string())?;
-        if entry.path().extension().and_then(|x| x.to_str()) != Some("json") {
+        if entry.path().extension().and_then(|x| x.to_str()) != Some("json")
+            || entry
+                .path()
+                .file_name()
+                .and_then(|x| x.to_str())
+                .is_some_and(|name| {
+                    name.contains(solstone_core_journal_io::durability::SET_ASIDE_MARKER)
+                })
+        {
             continue;
         }
         let Some(record) = read(&entry.path())? else {

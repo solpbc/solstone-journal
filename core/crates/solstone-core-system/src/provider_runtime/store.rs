@@ -1051,7 +1051,36 @@ pub fn read_current_detail(
 }
 
 fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, RuntimeStoreError> {
-    let value = read_value(path)?;
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
+    let value =
+        match read_json_durable_validated::<Value>(ArtifactId::ProviderRuntimeHealth, path, |val| {
+            let Some(object) = val.as_object() else {
+                return Err("health record must be an object".to_owned());
+            };
+            validate_schema_and_provider(object, provider).map_err(|e| format!("{e:?}"))?;
+            let _phase = object
+                .get("phase")
+                .and_then(Value::as_str)
+                .and_then(runtime_phase_from_wire)
+                .ok_or_else(|| "invalid phase".to_owned())?;
+            validate_optional_reason(object.get("reason_code")).map_err(|e| format!("{e:?}"))?;
+            if !object.get("detail").is_none_or(Value::is_object) {
+                return Err("detail must be object".to_owned());
+            }
+            optional_object(object.get("owner")).map_err(|e| format!("{e:?}"))?;
+            nonnegative(object.get("revision")).map_err(|e| format!("{e:?}"))?;
+            nonnegative(object.get("generation")).map_err(|e| format!("{e:?}"))?;
+            u32::try_from(nonnegative(object.get("attempt")).map_err(|e| format!("{e:?}"))?)
+                .map_err(|_| "invalid attempt".to_owned())?;
+            Ok(())
+        }) {
+            Ok(DurableRead::Present(value)) => Some(value),
+            Ok(DurableRead::Absent | DurableRead::SetAside(_)) => None,
+            Ok(DurableRead::Unreadable { .. }) => return Err(RuntimeStoreError::Unavailable),
+            Err(_) => return Err(RuntimeStoreError::Unavailable),
+        };
     let Some(value) = value else {
         return Ok(HealthRecord {
             revision: 0,
@@ -1063,17 +1092,6 @@ fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, Runt
         });
     };
     let object = value.as_object().ok_or(RuntimeStoreError::Corrupt)?;
-    validate_schema_and_provider(object, provider)?;
-    let _phase = object
-        .get("phase")
-        .and_then(Value::as_str)
-        .and_then(runtime_phase_from_wire)
-        .ok_or(RuntimeStoreError::Corrupt)?;
-    validate_optional_reason(object.get("reason_code"))?;
-    if !object.get("detail").is_none_or(Value::is_object) {
-        return Err(RuntimeStoreError::Corrupt);
-    }
-    optional_object(object.get("owner"))?;
     Ok(HealthRecord {
         revision: nonnegative(object.get("revision"))?,
         incarnation: optional_string(object.get("incarnation"))?,
@@ -1086,7 +1104,40 @@ fn read_health(path: &Path, provider: ProviderName) -> Result<HealthRecord, Runt
 }
 
 fn read_retry(path: &Path, provider: ProviderName) -> Result<RetryRecord, RuntimeStoreError> {
-    let value = read_value(path)?;
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
+    let value =
+        match read_json_durable_validated::<Value>(ArtifactId::ProviderRetryToken, path, |val| {
+            let Some(object) = val.as_object() else {
+                return Err("retry record must be an object".to_owned());
+            };
+            validate_schema_and_provider(object, provider).map_err(|e| format!("{e:?}"))?;
+            let token_id = optional_string(object.get("token_id")).map_err(|e| format!("{e:?}"))?;
+            let desired_fingerprint = optional_string(object.get("desired_fingerprint_sha256"))
+                .map_err(|e| format!("{e:?}"))?;
+            let requested_at =
+                optional_string(object.get("requested_at")).map_err(|e| format!("{e:?}"))?;
+            let reason_code =
+                optional_reason(object.get("reason_code")).map_err(|e| format!("{e:?}"))?;
+            let owner = optional_object(object.get("owner")).map_err(|e| format!("{e:?}"))?;
+            if (token_id.is_none()
+                && (desired_fingerprint.is_some()
+                    || requested_at.is_some()
+                    || reason_code.is_some()
+                    || owner.is_some()))
+                || (token_id.is_some() && (requested_at.is_none() || reason_code.is_none()))
+            {
+                return Err("invalid retry token shape".to_owned());
+            }
+            nonnegative(object.get("revision")).map_err(|e| format!("{e:?}"))?;
+            Ok(())
+        }) {
+            Ok(DurableRead::Present(value)) => Some(value),
+            Ok(DurableRead::Absent | DurableRead::SetAside(_)) => None,
+            Ok(DurableRead::Unreadable { .. }) => return Err(RuntimeStoreError::Unavailable),
+            Err(_) => return Err(RuntimeStoreError::Unavailable),
+        };
     let Some(value) = value else {
         return Ok(RetryRecord {
             revision: 0,
@@ -1098,21 +1149,11 @@ fn read_retry(path: &Path, provider: ProviderName) -> Result<RetryRecord, Runtim
         });
     };
     let object = value.as_object().ok_or(RuntimeStoreError::Corrupt)?;
-    validate_schema_and_provider(object, provider)?;
     let token_id = optional_string(object.get("token_id"))?;
     let desired_fingerprint = optional_string(object.get("desired_fingerprint_sha256"))?;
     let requested_at = optional_string(object.get("requested_at"))?;
     let reason_code = optional_reason(object.get("reason_code"))?;
     let owner = optional_object(object.get("owner"))?;
-    if (token_id.is_none()
-        && (desired_fingerprint.is_some()
-            || requested_at.is_some()
-            || reason_code.is_some()
-            || owner.is_some()))
-        || (token_id.is_some() && (requested_at.is_none() || reason_code.is_none()))
-    {
-        return Err(RuntimeStoreError::Corrupt);
-    }
     Ok(RetryRecord {
         revision: nonnegative(object.get("revision"))?,
         token_id,
@@ -1121,17 +1162,6 @@ fn read_retry(path: &Path, provider: ProviderName) -> Result<RetryRecord, Runtim
         reason_code,
         owner,
     })
-}
-
-fn read_value(path: &Path) -> Result<Option<Value>, RuntimeStoreError> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(RuntimeStoreError::Unavailable),
-    };
-    serde_json::from_slice(&bytes)
-        .map(Some)
-        .map_err(|_| RuntimeStoreError::Corrupt)
 }
 
 fn validate_schema_and_provider(
@@ -1685,16 +1715,13 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_and_unavailable_store_failures_are_distinct() {
+    fn corrupt_and_unavailable_store_failures_are_handled() {
         let journal = TempJournal::new();
         let shared = Arc::new(LocalRuntimeShared::default());
         let mut store = store(&journal, shared);
         fs::create_dir_all(store.runtime_directory()).unwrap();
         fs::write(store.health_path(), b"not json").unwrap();
-        assert_eq!(
-            store.publish_state(&state(RuntimePhase::Starting)),
-            Err(RuntimeStoreError::Corrupt)
-        );
+        assert!(store.publish_state(&state(RuntimePhase::Starting)).is_ok());
 
         let file_journal = std::env::temp_dir().join(format!(
             "solstone-local-runtime-store-file-{}",
@@ -1715,14 +1742,14 @@ mod tests {
     }
 
     #[test]
-    fn read_current_detail_fails_closed_on_corrupt_and_unavailable_records() {
+    fn read_current_detail_heals_on_corrupt_and_errors_on_unavailable() {
         let journal = TempJournal::new();
         let runtime_dir = journal.0.join("health").join("providers").join("runtime");
         fs::create_dir_all(&runtime_dir).unwrap();
         fs::write(runtime_dir.join("parakeet.json"), b"not json").unwrap();
         assert_eq!(
             read_current_detail(&journal.0, ProviderName::Parakeet),
-            Err(RuntimeStoreError::Corrupt)
+            Ok(json!({}))
         );
 
         let file_journal = std::env::temp_dir().join(format!(
@@ -1810,16 +1837,14 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_retry_record_is_not_treated_as_absent() {
+    fn corrupt_retry_record_is_set_aside_and_healed() {
         let journal = TempJournal::new();
         let shared = Arc::new(LocalRuntimeShared::default());
         let mut store = store(&journal, shared);
         fs::create_dir_all(store.runtime_directory()).unwrap();
         fs::write(store.retry_path(), b"not json").unwrap();
-        assert_eq!(
-            store.read_retry_token(ProviderName::Local),
-            Err(RuntimeStoreError::Corrupt)
-        );
+        assert_eq!(store.read_retry_token(ProviderName::Local), Ok(None));
+        assert!(!store.retry_path().exists());
     }
 
     #[test]

@@ -2740,7 +2740,7 @@ mod tests {
             None
         );
         assert_eq!(warnings().len(), 1);
-        assert_eq!(fs::read(&path).unwrap(), corrupt);
+        assert!(!path.exists());
 
         LOGS.get().unwrap().lock().unwrap().clear();
         fs::write(&path, "[]").unwrap();

@@ -348,23 +348,26 @@ pub fn daily_unit_record_path(journal: &Path, identity: &DailyUnitIdentity) -> P
     daily_unit_record_dir(journal, &identity.day).join(filename)
 }
 
-/// Reads a daily unit record from a specific path, verifying record version.
 pub fn read_daily_unit_record(path: &Path) -> Result<Option<DailyUnitRecord>, DailyUnitError> {
-    let content = match fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(DailyUnitError::Io(e)),
-    };
-    let record: DailyUnitRecord = serde_json::from_str(&content)
-        .map_err(|e| DailyUnitError::Malformed(format!("{}: {}", path.display(), e)))?;
-    if record.version != DAILY_UNIT_RECORD_VERSION {
-        return Err(DailyUnitError::Malformed(format!(
-            "{}: unsupported version {}",
-            path.display(),
-            record.version
-        )));
+    match crate::durability::read_json_durable_validated::<DailyUnitRecord>(
+        crate::durability::ArtifactId::DailyUnits,
+        path,
+        |record| {
+            if record.version == DAILY_UNIT_RECORD_VERSION {
+                Ok(())
+            } else {
+                Err(format!("unsupported version {}", record.version))
+            }
+        },
+    ) {
+        Ok(crate::durability::DurableRead::Present(record)) => Ok(Some(record)),
+        Ok(
+            crate::durability::DurableRead::Absent
+            | crate::durability::DurableRead::SetAside(_)
+            | crate::durability::DurableRead::Unreadable { .. },
+        ) => Ok(None),
+        Err(e) => Err(DailyUnitError::Io(e)),
     }
-    Ok(Some(record))
 }
 
 fn validate_identity(identity: &DailyUnitIdentity) -> Result<(), DailyUnitError> {
@@ -863,10 +866,9 @@ mod tests {
             "updated_at_ms": 0
         }"#;
         fs::write(&record_path, json).unwrap();
-        let err = read_daily_unit_record(&record_path).unwrap_err();
-        assert!(
-            matches!(err, DailyUnitError::Malformed(ref msg) if msg.contains("unsupported version 99"))
-        );
+        let rec = read_daily_unit_record(&record_path).unwrap();
+        assert!(rec.is_none());
+        assert!(!record_path.exists());
     }
 
     #[test]

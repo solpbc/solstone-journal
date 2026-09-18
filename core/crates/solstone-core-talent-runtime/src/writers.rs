@@ -13,9 +13,7 @@ use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
-use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, MalformedPolicy, atomic_replace, read_jsonl, write_jsonl,
-};
+use solstone_core_journal_io::{AtomicWriteError, AtomicWriteOptions, atomic_replace, write_jsonl};
 
 use crate::contract::{CommitDisposition, CommitPlan};
 use crate::{ExecutionContext, PreparedTalent, StageError};
@@ -312,8 +310,13 @@ pub fn append_day_record(
         .join(day)
         .join("talents")
         .join(format!("{agent}.jsonl"));
-    let mut records: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Skip)
-        .map_err(|error| stage_error(agent, error.to_string()))?;
+    let mut records: Vec<Value> =
+        solstone_core_journal_io::durability::read_jsonl_durable::<Value>(
+            solstone_core_journal_io::durability::ArtifactId::TalentDayAccumulator,
+            &path,
+        )
+        .map_err(|error| stage_error(agent, error.to_string()))?
+        .records;
     records.push(Value::Object(record.clone()));
     write_jsonl(&path, records, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(|error| stage_error(agent, error.to_string()))?;
@@ -346,8 +349,8 @@ mod tests {
     use std::os::unix::fs::MetadataExt;
 
     use nix::fcntl::{Flock, FlockArg};
-
     use serde_json::json;
+    use solstone_core_journal_io::{MalformedPolicy, read_jsonl};
 
     use super::*;
 

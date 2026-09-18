@@ -1084,7 +1084,17 @@ pub(crate) async fn config(
             json!({"staged":false,"skipped":true,"reason":"idempotent"}),
         );
     }
-    let target = read_json(&app.root.join("config/journal.json"));
+    let target = match solstone_core_journal_config::read_journal_config(&app.root) {
+        Ok(read) => read.config.map(Value::Object).unwrap_or_else(|| json!({})),
+        Err(e) => {
+            return error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "that import couldn't be saved.",
+                "import_config_failed",
+                e.to_string(),
+            );
+        }
+    };
     let source_flat = flatten_config(source, "");
     let target_flat = flatten_config(&target, "");
     let mut diff = Map::new();

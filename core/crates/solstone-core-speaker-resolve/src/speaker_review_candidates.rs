@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::Value;
+use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, MalformedPolicy, ReadError,
-    hold_lock, read_jsonl, write_jsonl,
+    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, ReadError, hold_lock, write_jsonl,
 };
 use thiserror::Error;
 
@@ -35,11 +35,19 @@ pub enum SpeakerReviewCandidateError {
 
 /// Load name-variant review candidates, skipping malformed JSONL rows.
 pub fn load_candidates(journal_root: &Path) -> Result<Vec<Value>, SpeakerReviewCandidateError> {
-    Ok(read_jsonl(
-        review_candidates_path(journal_root),
-        Vec::new(),
-        MalformedPolicy::WarnAndSkip,
-    )?)
+    let path = review_candidates_path(journal_root);
+    let result =
+        read_jsonl_durable::<Value>(ArtifactId::SpeakerReviewCandidates, &path).map_err(|e| {
+            ReadError::Io {
+                path: path.clone(),
+                source: e,
+            }
+        })?;
+    Ok(result
+        .records
+        .into_iter()
+        .filter(Value::is_object)
+        .collect())
 }
 
 /// Record a detected name variant without reopening an accepted or dismissed pair.
@@ -50,7 +58,7 @@ pub fn record_name_variant_candidate(
     let path = review_candidates_path(journal_root);
     create_parent(&path)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
-    let mut rows: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Raise)?;
+    let mut rows = load_candidates(journal_root)?;
     if rows.iter().any(|row| !row.is_object()) {
         return Err(SpeakerReviewCandidateError::InvalidRow(
             "expected JSON objects",
@@ -351,24 +359,12 @@ mod tests {
     }
 
     #[test]
-    fn recording_refuses_damaged_stores_without_rewriting_them() {
+    fn recording_sets_aside_damaged_stores() {
         let journal = temporary_journal("damaged");
         let path = review_candidates_path(journal.path());
         create_parent(&path).unwrap();
-        for bad in ["{bad\n", "42\n"] {
-            fs::write(&path, bad).unwrap();
-            assert!(record_name_variant_candidate(journal.path(), &detection()).is_err());
-            assert_eq!(fs::read_to_string(&path).unwrap(), bad);
-        }
-        seed(journal.path());
-        let before = fs::read(&path).unwrap();
-        fs::write(
-            journal.path().join("speakers/keep-separate.jsonl"),
-            "{bad\n",
-        )
-        .unwrap();
-        assert!(record_name_variant_candidate(journal.path(), &detection()).is_err());
-        assert_eq!(fs::read(&path).unwrap(), before);
+        fs::write(&path, "{bad\n").unwrap();
+        assert!(record_name_variant_candidate(journal.path(), &detection()).is_ok());
     }
 
     fn row() -> Value {

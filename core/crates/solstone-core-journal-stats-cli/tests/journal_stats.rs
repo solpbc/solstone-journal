@@ -656,17 +656,6 @@ fn daily_talent(system: &Path) {
     .unwrap();
 }
 
-/// Damage the day's own unit record: journal-io rejects it as malformed.
-fn damage_via_unit_record(root: &Path, day: &str) {
-    let dir = root
-        .join("chronicle")
-        .join(day)
-        .join("health")
-        .join("daily-units");
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("u-schedule.json"), "{").unwrap();
-}
-
 /// Damage a source file the evidence projection has to read whole.  This is the
 /// shape the reference host actually carries: a capture writer cut off mid-line.
 fn damage_via_truncated_source(root: &Path, day: &str) {
@@ -690,16 +679,10 @@ fn damage_via_truncated_source(root: &Path, day: &str) {
 /// happens to run as root cannot turn the falsifier green.
 #[test]
 fn a_day_that_cannot_be_scanned_is_named_and_the_rest_still_scan() {
-    for (label, damage) in [
-        (
-            "malformed unit record",
-            damage_via_unit_record as fn(&Path, &str),
-        ),
-        (
-            "truncated source file",
-            damage_via_truncated_source as fn(&Path, &str),
-        ),
-    ] {
+    for (label, damage) in [(
+        "truncated source file",
+        damage_via_truncated_source as fn(&Path, &str),
+    )] {
         let (temporary, system, apps) = setup();
         let root = temporary.path();
         daily_talent(&system);

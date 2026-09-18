@@ -2701,10 +2701,9 @@ mod tests {
         // Recreate the router to prove the recovery authority is on disk.
         let app = router(&root);
         let (status, body) = call_upload(&app, request.clone(), "audio.flac", b"sound").await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert_eq!(body["reason_code"], "stream_advance_failed");
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
         assert_eq!(stream_record(&root, stream)["seq"], 1);
-        fs::remove_dir(segment.join("stream.json")).unwrap();
 
         // A newer upload must finish the old marker before replacing its tail.
         let mut newer = request.clone();

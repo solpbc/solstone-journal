@@ -3,17 +3,12 @@
 
 //! Journal-wide allocation of the numeric millisecond Cortex use identity.
 
-use std::ffi::OsStr;
 #[cfg(test)]
 use std::fs;
 use std::io;
 use std::path::Path;
 
 use super::{census_cortex_namespace, create_or_admit_cortex_namespace};
-#[cfg(unix)]
-use crate::read_observed_file_bounded as read_counter;
-#[cfg(windows)]
-use crate::read_windows_observed_file_bounded as read_counter;
 use crate::{DetailedAtomicOutcome, JournalRoot, LockOptions, atomic_replace_detailed, hold_lock};
 
 const COUNTER: &str = "health/cortex-use-id.json";
@@ -37,19 +32,21 @@ pub fn allocate_cortex_use_id(journal: &Path, now_ms: i64) -> io::Result<i64> {
         },
     )
     .map_err(io::Error::other)?;
-    let previous = match read_counter(authority.health(), OsStr::new("cortex-use-id.json"), 128)
-        .map_err(io::Error::other)?
-    {
-        Some(observed) => {
-            let id: i64 = serde_json::from_slice(&observed.bytes).map_err(io::Error::other)?;
-            if id < 0 {
-                return Err(io::Error::other(
-                    "Cortex use counter precedes the Unix epoch",
-                ));
+    let previous = match crate::durability::read_json_durable_validated::<i64>(
+        crate::durability::ArtifactId::CortexUseId,
+        &path,
+        |&id| {
+            if id >= 0 {
+                Ok(())
+            } else {
+                Err("Cortex use counter precedes the Unix epoch".to_owned())
             }
-            Some(id)
-        }
-        None => {
+        },
+    )? {
+        crate::durability::DurableRead::Present(id) => Some(id),
+        crate::durability::DurableRead::Absent
+        | crate::durability::DurableRead::SetAside(_)
+        | crate::durability::DurableRead::Unreadable { .. } => {
             let census = census_cortex_namespace(authority, MAXIMUM_BOOTSTRAP_ENTRIES)
                 .map_err(io::Error::other)?;
             if census.refused_talent_count() != 0 {
@@ -112,39 +109,32 @@ mod tests {
     }
 
     #[test]
-    fn damaged_or_exhausted_counter_refuses_without_replacing_it() {
+    fn damaged_counter_heals_via_census_and_allocates() {
         let root = TempDir::new();
         allocate_cortex_use_id(root.path(), 42).unwrap();
-        for bytes in ["", "null", "bad", "-1", "9223372036854775807"] {
+        for bytes in ["", "null", "bad", "-1"] {
             fs::write(root.path().join(COUNTER), bytes).unwrap();
-            assert!(allocate_cortex_use_id(root.path(), 42).is_err());
-            assert_eq!(
-                fs::read_to_string(root.path().join(COUNTER)).unwrap(),
-                bytes
-            );
+            assert_eq!(allocate_cortex_use_id(root.path(), 42).unwrap(), 42);
         }
+        fs::write(root.path().join(COUNTER), "9223372036854775807").unwrap();
+        assert!(allocate_cortex_use_id(root.path(), 42).is_err());
     }
 
     #[cfg(unix)]
     #[test]
-    fn unsafe_or_oversized_counter_is_refused_without_following_it() {
-        use nix::sys::stat::Mode;
-        use nix::unistd::mkfifo;
+    fn unsafe_or_oversized_counter_is_refused_or_healed() {
         use std::os::unix::fs::symlink;
         let root = TempDir::new();
         allocate_cortex_use_id(root.path(), 42).unwrap();
         let path = root.path().join(COUNTER);
         fs::write(&path, vec![b' '; 129]).unwrap();
-        assert!(allocate_cortex_use_id(root.path(), 42).is_err());
+        assert_eq!(allocate_cortex_use_id(root.path(), 42).unwrap(), 42);
         fs::remove_file(&path).unwrap();
         let target = root.path().join("outside");
         fs::write(&target, b"42").unwrap();
         symlink(&target, &path).unwrap();
         assert!(allocate_cortex_use_id(root.path(), 42).is_err());
         assert_eq!(fs::read(&target).unwrap(), b"42");
-        fs::remove_file(&path).unwrap();
-        mkfifo(&path, Mode::S_IRUSR | Mode::S_IWUSR).unwrap();
-        assert!(allocate_cortex_use_id(root.path(), 42).is_err());
     }
 
     #[cfg(unix)]

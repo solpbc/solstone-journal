@@ -23,6 +23,7 @@ pub mod cortex_use;
 mod create_only_retry;
 pub mod daily_unit;
 pub mod deconflict;
+pub mod durability;
 pub mod entry;
 pub mod errors;
 mod exclusive_copy;

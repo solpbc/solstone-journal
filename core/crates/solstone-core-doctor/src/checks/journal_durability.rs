@@ -13,7 +13,8 @@ use std::path::Path;
 use crate::context::CheckContext;
 use crate::vocabulary::{Check, RunnerResult, Status, make_result, truncate};
 
-const SET_ASIDE_MARKER: &str = ".wedged-";
+use solstone_core_journal_io::durability::SET_ASIDE_MARKER;
+
 /// The doctor names at most this many items per kind; the rest are counted.
 const NAMED_LIMIT: usize = 8;
 
@@ -45,8 +46,8 @@ fn relative(journal: &Path, path: &Path) -> String {
         .to_string()
 }
 
-/// Collect set-aside names in one directory, non-recursively.
-fn collect_set_aside(journal: &Path, directory: &Path, report: &mut DurabilityReport) {
+/// Collect set-aside names by traversing directories dynamically.
+fn scan_directory_recursive(journal: &Path, directory: &Path, report: &mut DurabilityReport) {
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
@@ -57,10 +58,32 @@ fn collect_set_aside(journal: &Path, directory: &Path, report: &mut DurabilityRe
             return;
         }
     };
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                report
+                    .unreadable
+                    .push(format!("{}: {error}", relative(journal, directory)));
+                continue;
+            }
+        };
+        let path = entry.path();
         let name = entry.file_name();
         if name.to_string_lossy().contains(SET_ASIDE_MARKER) {
-            report.set_aside.push(relative(journal, &entry.path()));
+            report.set_aside.push(relative(journal, &path));
+        }
+        let is_dir = match entry.file_type() {
+            Ok(ft) => ft.is_dir(),
+            Err(error) => {
+                report
+                    .unreadable
+                    .push(format!("{}: {error}", relative(journal, &path)));
+                false
+            }
+        };
+        if is_dir {
+            scan_directory_recursive(journal, &path, report);
         }
     }
 }
@@ -82,19 +105,27 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
             return;
         }
     };
-    let mut numbered = entries
-        .flatten()
-        .filter_map(|entry| {
-            entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.parse::<u64>().ok())
-                .map(|generation| (generation, entry.path()))
-        })
-        .collect::<Vec<_>>();
+    let mut numbered = Vec::new();
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                report
+                    .unreadable
+                    .push(format!("{}: {error}", relative(journal, &generations)));
+                continue;
+            }
+        };
+        if let Some(generation) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<u64>().ok())
+        {
+            numbered.push((generation, entry.path()));
+        }
+    }
     numbered.sort();
     for (generation, directory) in numbered {
-        collect_set_aside(journal, &directory, report);
         let record_path = directory.join("record.json");
         let bytes = match fs::read(&record_path) {
             Ok(bytes) => bytes,
@@ -150,12 +181,24 @@ fn scan_generations(_journal: &Path, _report: &mut DurabilityReport) {}
 
 pub(crate) fn scan(journal: &Path) -> DurabilityReport {
     let mut report = DurabilityReport::default();
-    let health = journal.join("health");
-    collect_set_aside(journal, &journal.join("config"), &mut report);
-    collect_set_aside(journal, &health, &mut report);
-    collect_set_aside(journal, &health.join("parent-loss"), &mut report);
+    let mut root_prefixes = std::collections::BTreeSet::new();
+    for entry in solstone_core_journal_io::durability::artifacts() {
+        if let Some(first) = entry
+            .path
+            .split(['/', '\\'])
+            .next()
+            .filter(|f| !f.is_empty() && !f.contains('*'))
+        {
+            root_prefixes.insert(first.to_owned());
+        }
+    }
+    for prefix in root_prefixes {
+        let dir = journal.join(prefix);
+        scan_directory_recursive(journal, &dir, &mut report);
+    }
     scan_generations(journal, &mut report);
     report.set_aside.sort();
+    report.set_aside.dedup();
     report
 }
 
@@ -189,20 +232,24 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         ));
     }
     let mut sections = Vec::new();
+    let mut heals = Vec::new();
     if !report.closed_generations.is_empty() {
         sections.push(named(
             "runs closed by a later start",
             &report.closed_generations,
         ));
+        heals.extend(report.closed_generations.clone());
     }
     if !report.unresolved_generations.is_empty() {
         sections.push(named(
             "runs that ended without a proven clean stop",
             &report.unresolved_generations,
         ));
+        heals.extend(report.unresolved_generations.clone());
     }
     if !report.set_aside.is_empty() {
         sections.push(named("bookkeeping set aside", &report.set_aside));
+        heals.extend(report.set_aside.clone());
     }
     if !report.unreadable.is_empty() {
         sections.push(named("could not inspect", &report.unreadable));
@@ -213,7 +260,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     } else {
         Status::Fail
     };
-    Ok(make_result(
+    let mut result = make_result(
         check,
         status,
         truncate(&detail, 4096),
@@ -221,11 +268,16 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             "nothing needs doing: these records are kept beside your journal's bookkeeping so a \
              heal is never silent; they hold none of your memories",
         ),
-    ))
+    );
+    if !heals.is_empty() {
+        result.heals = Some(heals);
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::*;
@@ -292,6 +344,92 @@ mod tests {
             ]
         );
         assert!(report.unreadable.is_empty());
+    }
+
+    fn test_context(journal_path: std::path::PathBuf) -> CheckContext {
+        CheckContext {
+            home_dir: std::path::PathBuf::new(),
+            install_bin_dir: std::path::PathBuf::new(),
+            journal_path,
+            callosum_socket_path: std::path::PathBuf::new(),
+            platform: crate::vocabulary::Platform::Linux,
+            now: chrono::Utc::now(),
+            host_arch: String::new(),
+            hostname: "host".to_owned(),
+            checkout_root: None,
+            payload_root: None,
+            port: 0,
+            service_status_timeout: std::time::Duration::ZERO,
+            service_status_command_override: None,
+            parakeet_server_probe_override: None,
+            speakers_analyze_resolvers: None,
+            vad_runtime_probe: None,
+            free_space_bytes_override: None,
+        }
+    }
+
+    fn test_check() -> Check {
+        Check {
+            name: "journal_durability",
+            severity: crate::vocabulary::Severity::Advisory,
+            platforms: &[],
+        }
+    }
+
+    #[test]
+    fn nine_or_more_wedged_files_are_all_present_in_heals() {
+        let journal = TempDir::new().expect("journal");
+        let health = journal.path().join("health");
+        fs::create_dir_all(health.join("providers/runtime")).unwrap();
+        fs::create_dir_all(health.join("activity-work")).unwrap();
+
+        fs::write(health.join("providers/runtime/local.wedged-1.json"), b"x").unwrap();
+        fs::write(health.join("activity-work/dead.wedged-1.json"), b"x").unwrap();
+
+        for i in 1..=8 {
+            fs::write(health.join(format!("file-{i}.wedged-1.json")), b"x").unwrap();
+        }
+
+        let context = test_context(journal.path().to_path_buf());
+        let result = run(&context, test_check()).expect("run");
+        assert_eq!(result.status, Status::Warn);
+        let heals = result.heals.expect("heals list");
+        assert_eq!(heals.len(), 10);
+        assert!(heals.contains(&"health/providers/runtime/local.wedged-1.json".to_string()));
+        assert!(heals.contains(&"health/activity-work/dead.wedged-1.json".to_string()));
+        for i in 1..=8 {
+            assert!(heals.contains(&format!("health/file-{i}.wedged-1.json")));
+        }
+        // Human detail caps at 8
+        assert!(result.detail.contains("... and 2 more"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_scan_directory_fails_and_names_path() {
+        use std::os::unix::fs::PermissionsExt;
+
+        struct ModeGuard(PathBuf);
+        impl Drop for ModeGuard {
+            fn drop(&mut self) {
+                let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+            }
+        }
+
+        let journal = TempDir::new().expect("journal");
+        let health = journal.path().join("health");
+        fs::create_dir_all(&health).unwrap();
+        let _guard = ModeGuard(health.clone());
+        fs::set_permissions(&health, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let context = test_context(journal.path().to_path_buf());
+        let result = run(&context, test_check()).expect("run");
+
+        assert_eq!(result.status, Status::Fail);
+        assert!(
+            result.detail.contains("health: Permission denied")
+                || result.detail.contains("health:")
+        );
     }
 
     #[cfg(unix)]

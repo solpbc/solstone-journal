@@ -16,7 +16,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
-use solstone_core_journal_io::{JsonWriteOptions, MalformedPolicy, read_json, write_json};
+use solstone_core_journal_io::{JsonWriteOptions, write_json};
 #[cfg(not(windows))]
 use solstone_core_journal_io::{LeaseOptions, acquire_file_lease};
 use solstone_core_system::process::{
@@ -453,12 +453,13 @@ fn validate_windows_borrow(
     if bytes != token.as_bytes() {
         return Err(fail());
     }
-    let record = read_json(
-        generation_path(journal),
-        Value::Null,
-        MalformedPolicy::Raise,
-    )
-    .map_err(|_| fail())?;
+    let record = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+        solstone_core_journal_io::durability::ArtifactId::SpeakersInstallGeneration,
+        &generation_path(journal),
+    ) {
+        Ok(solstone_core_journal_io::durability::DurableRead::Present(val)) => val,
+        _ => return Err(fail()),
+    };
     if record.get("schema").and_then(Value::as_str) != Some(INSTALL_GENERATION_SCHEMA)
         || record.get("id").and_then(Value::as_str) != Some(id)
         || record.get("token").and_then(Value::as_str) != Some(token)
@@ -502,7 +503,13 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
     if !generation_lock_is_held(journal) {
         return None;
     }
-    let record = read_json(generation_path(journal), Value::Null, MalformedPolicy::Skip).ok()?;
+    let record = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+        solstone_core_journal_io::durability::ArtifactId::SpeakersInstallGeneration,
+        &generation_path(journal),
+    ) {
+        Ok(solstone_core_journal_io::durability::DurableRead::Present(val)) => val,
+        _ => return None,
+    };
     let current_id = record.get("id").and_then(Value::as_str)?;
     if record.get("schema").and_then(Value::as_str) != Some(INSTALL_GENERATION_SCHEMA) {
         return None;
@@ -518,7 +525,13 @@ fn read_speakers_analyze_owner_inner(journal: &Path) -> Option<SpeakersAnalyzeOw
             return None;
         }
     }
-    let owner = read_json(owner_path(journal), Value::Null, MalformedPolicy::Skip).ok()?;
+    let owner = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+        solstone_core_journal_io::durability::ArtifactId::SpeakersInstallOwner,
+        &owner_path(journal),
+    ) {
+        Ok(solstone_core_journal_io::durability::DurableRead::Present(val)) => val,
+        _ => return None,
+    };
     if owner.get("schema").and_then(Value::as_str) != Some(OWNER_SCHEMA) {
         return None;
     }
@@ -689,8 +702,12 @@ fn borrowed_generation_matches(
     {
         return false;
     }
-    let Ok(record) = read_json(generation_path, Value::Null, MalformedPolicy::Skip) else {
-        return false;
+    let record = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+        solstone_core_journal_io::durability::ArtifactId::SpeakersInstallGeneration,
+        generation_path,
+    ) {
+        Ok(solstone_core_journal_io::durability::DurableRead::Present(val)) => val,
+        _ => return false,
     };
     record.get("schema").and_then(Value::as_str) == Some(INSTALL_GENERATION_SCHEMA)
         && record.get("id").and_then(Value::as_str) == Some(id)

@@ -17,6 +17,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- a damaged bookkeeping file no longer stops the journal from starting or finishing its day; the damaged file is kept beside the original and journal doctor lists it
 - days with a lot of context about a person or thing no longer get stuck while your journal considers new memories. it now fits source excerpts and existing memories within the available space before asking the model.
 - the network page's pairing confirmation no longer asks you to compare a fingerprint nothing else shows; it points at the journal mark shown on the same page instead.
 - first-run setup and the network page now show the plain "your journal" mark instead of an error message when your journal's mark isn't ready yet or can't be read.

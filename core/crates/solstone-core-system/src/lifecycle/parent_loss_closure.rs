@@ -41,7 +41,6 @@ use super::parent_loss_ledger::{
     BootstrapRecoveryReason, PARENT_LOSS_LEDGER_SCHEMA_V1, ParentLossGeneration,
     ParentLossGenerationRecord, ParentLossLedger, ParentLossLedgerError,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, digest_bytes, json_options,
-    read_json_optional,
 };
 use crate::process::{
     InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner, SignalKind,
@@ -196,19 +195,34 @@ pub(crate) fn load_record_for_closure(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
 ) -> Result<(Option<ParentLossGenerationRecord>, Vec<String>), ParentLossLedgerError> {
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
     let path = ledger.record_path(generation);
-    match read_json_optional::<ParentLossGenerationRecord>(&path) {
-        Ok(Some(record)) if record.generation == generation => Ok((Some(record), Vec::new())),
-        Ok(Some(_)) | Err(ParentLossLedgerError::Json(_)) => {
-            let aside = crate::durability::set_aside(&path)?;
+    match read_json_durable_validated::<ParentLossGenerationRecord>(
+        ArtifactId::ParentLossRecord,
+        &path,
+        |record| {
+            if record.generation == generation {
+                Ok(())
+            } else {
+                Err(format!(
+                    "generation mismatch: expected {generation}, found {}",
+                    record.generation
+                ))
+            }
+        },
+    ) {
+        Ok(DurableRead::Present(record)) => Ok((Some(record), Vec::new())),
+        Ok(DurableRead::SetAside(aside)) => {
             let aside = aside
                 .file_name()
                 .map(|name| name.to_string_lossy().into_owned())
                 .unwrap_or_default();
             Ok((None, vec![aside]))
         }
-        Ok(None) => Ok((None, Vec::new())),
-        Err(error) => Err(error),
+        Ok(DurableRead::Absent | DurableRead::Unreadable { .. }) => Ok((None, Vec::new())),
+        Err(error) => Err(error.into()),
     }
 }
 

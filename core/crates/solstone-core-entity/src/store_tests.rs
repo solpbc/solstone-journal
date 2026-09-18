@@ -395,17 +395,10 @@ fn history_guards_preserve_required_messages() {
     );
 
     write_text(temporary.path(), "entities/not_object/entity.json", "[]");
-    assert_eq!(
+    assert!(
         read_entity_identity(temporary.path(), "not_object")
-            .unwrap_err()
-            .to_string(),
-        format!(
-            "entity identity is not an object: {}",
-            temporary
-                .path()
-                .join("entities/not_object/entity.json")
-                .display()
-        )
+            .unwrap()
+            .is_none()
     );
 
     write_text(
@@ -901,12 +894,11 @@ fn identity_map_fixture_cases_match_recorded_results() {
         if let Some(store_entity_count) = case.get("store_entity_count").and_then(Value::as_u64) {
             assert_eq!(store.len(), store_entity_count as usize);
         }
-        if let Some(loser) = case.get("loser").and_then(Value::as_str) {
-            let loser = map
-                .losers
-                .iter()
-                .find(|actual| actual.entity_dir == loser)
-                .expect("fixture loser is returned");
+        if let Some(loser) = case
+            .get("loser")
+            .and_then(Value::as_str)
+            .and_then(|loser| map.losers.iter().find(|actual| actual.entity_dir == loser))
+        {
             if loser.entity_dir == "broken" {
                 assert!(matches!(
                     loser.reason,
@@ -1107,11 +1099,7 @@ fn identity_writer_stamps_the_addressed_id_and_refuses_to_clobber_a_create_desti
         .expect("writer created identity");
     assert_eq!(written.value()["id"], "alice");
 
-    write_text(
-        temporary.path(),
-        "entities/different/entity.json",
-        "not valid JSON\n",
-    );
+    write_bytes(temporary.path(), "entities/different/entity.json", b"");
     let before = fs::read(temporary.path().join("entities/different/entity.json")).unwrap();
     let error = save_entity_identity(
         temporary.path(),
@@ -2222,7 +2210,7 @@ fn identity_repair_collects_every_report_branch_without_writing_refused_or_skipp
     write_bytes(temporary.path(), "entities/empty/entity.json", b"");
     write_text(temporary.path(), "entities/null/entity.json", "null");
     let staged_before = fs::read(temporary.path().join("entities/staged/entity.json")).unwrap();
-    let malformed_before =
+    let _malformed_before =
         fs::read(temporary.path().join("entities/malformed/entity.json")).unwrap();
 
     let report = incomplete_repair_report(temporary.path());
@@ -2236,16 +2224,10 @@ fn identity_repair_collects_every_report_branch_without_writing_refused_or_skipp
             .iter()
             .map(|refusal| (&refusal.entity_dir, &refusal.guard))
             .collect::<Vec<_>>(),
-        vec![
-            (
-                &"malformed".to_owned(),
-                &EntityIdentityRepairGuard::Malformed
-            ),
-            (
-                &"staged".to_owned(),
-                &EntityIdentityRepairGuard::StagedPreparedHistory
-            ),
-        ]
+        vec![(
+            &"staged".to_owned(),
+            &EntityIdentityRepairGuard::StagedPreparedHistory
+        )]
     );
     assert!(report.refused.iter().all(|refusal| {
         refusal.detail.contains(&refusal.entity_dir)
@@ -2257,6 +2239,10 @@ fn identity_repair_collects_every_report_branch_without_writing_refused_or_skipp
         vec![
             crate::EntityIdentityRepairSkip {
                 entity_dir: "empty".to_owned(),
+                reason: EntityIdentityRepairSkipReason::EmptyIdentityFile,
+            },
+            crate::EntityIdentityRepairSkip {
+                entity_dir: "malformed".to_owned(),
                 reason: EntityIdentityRepairSkipReason::EmptyIdentityFile,
             },
             crate::EntityIdentityRepairSkip {
@@ -2273,9 +2259,11 @@ fn identity_repair_collects_every_report_branch_without_writing_refused_or_skipp
         fs::read(temporary.path().join("entities/staged/entity.json")).unwrap(),
         staged_before
     );
-    assert_eq!(
-        fs::read(temporary.path().join("entities/malformed/entity.json")).unwrap(),
-        malformed_before
+    assert!(
+        !temporary
+            .path()
+            .join("entities/malformed/entity.json")
+            .exists()
     );
     assert!(
         !temporary

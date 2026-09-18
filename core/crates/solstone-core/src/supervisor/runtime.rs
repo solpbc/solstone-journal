@@ -21,7 +21,8 @@ use solstone_core_journal_io::{JsonWriteOptions, write_json};
 use solstone_core_local::plan::Platform;
 use solstone_core_system::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
 use solstone_core_system::direct_door::{
-    initialize_direct_door, peek_direct_door_generation, withhold_direct_door,
+    DirectDoorPublishResult, initialize_direct_door, peek_direct_door_generation,
+    withhold_direct_door,
 };
 #[cfg(unix)]
 use solstone_core_system::lifecycle::write_retire_expected_control;
@@ -750,10 +751,18 @@ fn withhold_app_direct_door(app: &mut ManagedAppProcess, journal: &Path) -> Resu
     };
     let port = read_direct_door_port(journal)
         .map_err(|error| format!("failed to read direct-door port: {error}"))?;
-    withhold_direct_door(journal, generation, port)
-        .map_err(|error| format!("generation {generation} could not be withheld: {error}"))?;
-    app.direct_door_generation = None;
-    Ok(())
+    match withhold_direct_door(journal, generation, port) {
+        Ok(DirectDoorPublishResult::Published) => {
+            app.direct_door_generation = None;
+            Ok(())
+        }
+        Ok(DirectDoorPublishResult::RejectedStale) => {
+            Err(format!("generation {generation} was stale and rejected"))
+        }
+        Err(error) => Err(format!(
+            "generation {generation} could not be withheld: {error}"
+        )),
+    }
 }
 
 fn fixture_marker_path(journal: &Path, service: AppService) -> String {

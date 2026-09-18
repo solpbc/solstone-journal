@@ -9,9 +9,9 @@ use std::path::Path;
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
+use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, MalformedPolicy, hold_lock,
-    read_jsonl, write_text,
+    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, hold_lock, write_text,
 };
 
 use crate::{FacetTrustLockError, hold_facet_trust_lock};
@@ -54,9 +54,20 @@ impl Error for FacetReviewCandidateError {
 /// Load facet review candidates, skipping malformed and non-object rows.
 pub fn load_candidates(journal_root: &Path) -> Result<Vec<Value>, FacetReviewCandidateError> {
     let path = review_candidates_path(journal_root).map_err(FacetReviewCandidateError::Store)?;
-    read_jsonl(&path, Vec::<Value>::new(), MalformedPolicy::WarnAndSkip)
-        .map_err(|error| FacetReviewCandidateError::Store(error.into()))
-        .map(|rows| rows.into_iter().filter(Value::is_object).collect())
+    let result =
+        read_jsonl_durable::<Value>(ArtifactId::FacetReviewCandidates, &path).map_err(|error| {
+            FacetReviewCandidateError::Store(FacetStoreError::from(
+                solstone_core_journal_io::ReadError::Io {
+                    path: path.clone(),
+                    source: error,
+                },
+            ))
+        })?;
+    Ok(result
+        .records
+        .into_iter()
+        .filter(Value::is_object)
+        .collect())
 }
 
 /// Mark a facet review candidate accepted.

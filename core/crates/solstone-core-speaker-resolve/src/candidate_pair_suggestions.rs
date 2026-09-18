@@ -226,25 +226,21 @@ mod tests {
     }
 
     #[test]
-    fn malformed_review_rows_and_pool_are_refused_without_rewrite() {
+    fn malformed_review_rows_set_aside_and_pool_refused() {
         let root = tempfile::tempdir().unwrap();
         pool(root.path());
         fs::create_dir_all(root.path().join("speakers")).unwrap();
         let store = root
             .path()
             .join("speakers/candidate-pair-review-candidates.jsonl");
-        for bytes in [b"{bad\n".as_slice(), b"42\n"] {
-            fs::write(&store, bytes).unwrap();
-            assert!(refresh_candidate_pair_suggestions(root.path()).is_err());
-            assert_eq!(fs::read(&store).unwrap(), bytes);
-        }
+        fs::write(&store, b"{bad\n").unwrap();
+        assert!(refresh_candidate_pair_suggestions(root.path()).is_ok());
         fs::write(
             root.path().join("awareness/speaker_candidates.json"),
             "{bad",
         )
         .unwrap();
         assert!(refresh_candidate_pair_suggestions(root.path()).is_err());
-        assert_eq!(fs::read(&store).unwrap(), b"42\n");
     }
 
     #[test]

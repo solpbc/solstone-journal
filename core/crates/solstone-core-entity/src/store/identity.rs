@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_journal_io::{MalformedPolicy, contained_path, path_lexists, read_json};
+use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable, set_aside};
+use solstone_core_journal_io::{contained_path, path_lexists};
 
 use super::error::EntityStoreError;
 use super::paths::identity_path;
@@ -40,12 +41,23 @@ pub fn read_entity_identity(
     entity_dir: &str,
 ) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
     let path = identity_path(journal_root, entity_dir)?;
-    let mut value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)?;
+    let mut value: Value = match read_json_durable(ArtifactId::Entity, &path).map_err(|e| {
+        EntityStoreError::from(solstone_core_journal_io::ReadError::Io {
+            path: path.clone(),
+            source: e,
+        })
+    })? {
+        DurableRead::Present(val) => val,
+        DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. } => {
+            return Ok(None);
+        }
+    };
     if value.is_null() {
         return Ok(None);
     }
     let Some(object) = value.as_object_mut() else {
-        return Err(EntityStoreError::IdentityNotObject { path });
+        let _ = set_aside(&path);
+        return Ok(None);
     };
     let written = object
         .get("id")

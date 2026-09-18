@@ -4910,8 +4910,8 @@ async fn refusal_sites_batch_1_unexpected_store_failures_are_exact() {
     assert_oracle_refusal(
         "delete_journal_entity_route:2039",
         delete(bad_identity.path(), "/app/entities/api/journal/entity/a").await,
-        "entity_operation_failed",
-        500,
+        "entity_not_found",
+        400,
     );
 }
 
@@ -5057,8 +5057,8 @@ async fn refusal_sites_batch_2_read_routes_are_exact() {
             "/app/entities/api/journal/entity/a",
         )
         .await,
-        "entity_operation_failed",
-        500,
+        "entity_not_found",
+        404,
     );
     assert_oracle_refusal(
         "get_journal_entity_version_history:1054",
@@ -5067,8 +5067,8 @@ async fn refusal_sites_batch_2_read_routes_are_exact() {
             "/app/entities/api/journal/entity/a/history",
         )
         .await,
-        "entity_operation_failed",
-        500,
+        "entity_not_found",
+        404,
     );
 }
 
@@ -5792,8 +5792,8 @@ async fn refusal_sites_batch_7_real_catch_all_conditions_are_exact() {
             json!({"version_id":"v1"}),
         )
         .await,
-        "entity_operation_failed",
-        500,
+        "entity_not_found",
+        404,
     );
     assert_oracle_refusal(
         "update_journal_entity:1970",
@@ -5803,8 +5803,8 @@ async fn refusal_sites_batch_7_real_catch_all_conditions_are_exact() {
             json!({"name":"Alicia"}),
         )
         .await,
-        "entity_operation_failed",
-        500,
+        "entity_not_found",
+        404,
     );
 
     let malformed_link = Journal::new();

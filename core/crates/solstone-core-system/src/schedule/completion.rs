@@ -5,20 +5,27 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use serde_json::{Map, Value, json};
-use solstone_core_journal_io::{
-    AtomicWriteOptions, MalformedPolicy, ReadError, atomic_replace, read_json,
-};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
 
 use super::ScheduleError;
 
 pub(crate) fn load_runtime_state(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
-    match read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise) {
-        Ok(Value::Object(state)) => Ok(state),
-        Ok(_) => Err(ScheduleError::StateShape {
-            path: path.to_path_buf(),
-        }),
-        Err(ReadError::Malformed(_)) => Ok(Map::new()),
-        Err(error) => Err(io_error(error)),
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
+    match read_json_durable_validated::<Value>(ArtifactId::SchedulerState, path, |val| {
+        if val.is_object() {
+            Ok(())
+        } else {
+            Err("scheduler state must be a JSON object".to_owned())
+        }
+    }) {
+        Ok(DurableRead::Present(Value::Object(state))) => Ok(state),
+        Ok(DurableRead::Present(_)) => unreachable!(),
+        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
+            Ok(Map::new())
+        }
+        Err(error) => Err(ScheduleError::Io(error.to_string())),
     }
 }
 
@@ -31,19 +38,7 @@ pub(crate) fn record_completion(
     reference: &str,
 ) -> Result<(), ScheduleError> {
     let _guard = lock.lock().expect("schedule completion lock poisoned");
-    let mut state =
-        match read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise) {
-            Ok(Value::Object(state)) => state,
-            // Python's `.get()` raises for a valid non-object; the task runner's
-            // broad caller catches it. Surface the corresponding failure here.
-            Ok(_) => {
-                return Err(ScheduleError::StateShape {
-                    path: path.to_path_buf(),
-                });
-            }
-            Err(ReadError::Malformed(_)) => Map::new(),
-            Err(error) => return Err(io_error(error)),
-        };
+    let mut state = load_runtime_state(path)?;
     let current = state
         .get(name)
         .and_then(Value::as_object)
