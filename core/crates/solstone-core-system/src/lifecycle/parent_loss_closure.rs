@@ -566,13 +566,23 @@ fn retire_live_admissions(
                 #[cfg(any(target_os = "linux", target_os = "macos"))]
                 if let Some(uid) = admission.uid {
                     let descendant_budget = kill_at.saturating_duration_since(Instant::now());
-                    let _ = terminate_descendants_exact(
+                    if terminate_descendants_exact(
                         instance,
                         uid,
                         descendant_budget,
                         authority.source,
                         || {},
-                    );
+                    )
+                    .is_err()
+                    {
+                        // Retiring the recorded root after an incomplete tree
+                        // observation could orphan an escaped descendant that
+                        // still owns the very resource blocking this start.
+                        // Preserve the open generation and retry once exact
+                        // descendant coverage is available.
+                        unverifiable = true;
+                        continue;
+                    }
                 }
                 // A failed signal here means the exact instance was gone by the
                 // time the guard re-observed it; the wait below settles it.
@@ -697,7 +707,7 @@ mod tests {
         ActiveGeneration, CoordinatorLease, ParentLossReaderOutcome, read_parent_loss_outcome,
     };
     use crate::lifecycle::{HEARTBEAT_SCHEMA_V2, HeartbeatV2, RunId, WriterId};
-    use crate::process::{ExecutionState, InspectResult, InstanceCensus, ProcessBirth};
+    use crate::process::{CensusRow, ExecutionState, InspectResult, InstanceCensus, ProcessBirth};
 
     fn instance(pid: u32, birth: u64) -> ProcessInstance {
         ProcessInstance {
@@ -712,6 +722,7 @@ mod tests {
     struct FakeTable {
         live: HashMap<u32, (ProcessInstance, u32)>,
         unverifiable: HashSet<u32>,
+        incomplete_census: bool,
         /// What the process table says owns a pid `inspect` cannot read.
         owners: HashMap<u32, ProcessOwner>,
     }
@@ -738,7 +749,23 @@ mod tests {
         }
 
         fn census(&self) -> InstanceCensus {
-            InstanceCensus::Complete(Vec::new())
+            let table = self.0.lock().expect("fake table");
+            let rows = table
+                .live
+                .values()
+                .map(|(instance, uid)| CensusRow {
+                    instance: *instance,
+                    uid: *uid,
+                    ppid: 1,
+                    pgid: 1,
+                    execution: ExecutionState::Running,
+                })
+                .collect();
+            if table.incomplete_census {
+                InstanceCensus::Incomplete(rows)
+            } else {
+                InstanceCensus::Complete(rows)
+            }
         }
     }
 
@@ -799,6 +826,7 @@ mod tests {
         let table = Arc::new(Mutex::new(FakeTable {
             live: live.iter().map(|(i, uid)| (i.pid, (*i, *uid))).collect(),
             unverifiable: HashSet::new(),
+            incomplete_census: false,
             owners: HashMap::new(),
         }));
         let retirer = FakeRetirer {
@@ -1117,6 +1145,47 @@ mod tests {
             closure_of(&ledger, active.generation).admissions[0].finding,
             AdmissionFinding::Retired { escalated: false }
         );
+    }
+
+    /// 🔒 A complete descendant observation is part of the proof, not a
+    /// best-effort prelude to retiring the recorded root. Otherwise an escaped
+    /// child can retain a port after the root exits and the successor boots.
+    #[test]
+    fn incomplete_descendant_coverage_refuses_without_retiring_the_root() {
+        let directory = TempDir::new().expect("temporary root");
+        let (ledger, active) = open_generation(&directory);
+        let live = instance(6262, 62);
+        admit(
+            directory.path(),
+            active.generation,
+            "spl-incomplete-tree",
+            Some(HostedServiceKind::Spl),
+            Some(live),
+        );
+        let (source, retirer) = fake(&[(live, 501)], &[live.pid], &[]);
+        source.0.lock().expect("fake table").incomplete_census = true;
+        let lease = lease(&ledger);
+
+        let result = ledger.reserve_generation_closing_abandoned(
+            instance(11, 3),
+            [],
+            &lease,
+            &authority(&source, &retirer, Duration::from_millis(400)),
+        );
+
+        assert!(matches!(
+            result,
+            Err(ParentLossLedgerError::RecoveryRequired(
+                BootstrapRecoveryReason::AbandonedAdmissionUnverifiable
+            ))
+        ));
+        assert!(retirer.signals.lock().expect("signals").is_empty());
+        let record = ledger
+            .record(active.generation)
+            .expect("record")
+            .expect("record");
+        assert!(record.terminal.is_none(), "the generation stays open");
+        assert!(record.closure.is_none());
     }
 
     /// 🔒 A pid `inspect` cannot read is settled only by a positive owner
