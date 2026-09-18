@@ -27,8 +27,10 @@ pub use edges::{
     OverviewEntity, OverviewTotals, is_safe_entity_id_component, load_edge_evidence,
     load_entity_network, load_network_overview, open_edges_reader,
 };
+#[cfg(any(test, feature = "test-hooks"))]
+pub use execute::QueryCounters;
 pub use execute::{
-    IndexedEntry, OwnerIndex, QueryCounters, ResolvedCounts, SearchPlan, agents, coverage, hit_at,
+    IndexedEntry, OwnerIndex, ResolvedCounts, SearchPlan, agents, coverage, hit_at,
     indexed_entity_ids, open_owner_index, read_indexed_entry, search, search_connection,
     search_counts, search_counts_connection,
 };

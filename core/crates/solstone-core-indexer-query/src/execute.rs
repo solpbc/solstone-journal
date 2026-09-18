@@ -499,6 +499,7 @@ impl OwnerIndex {
         self.connection.fetch_day_hits(&plan.0, days, per_day_limit)
     }
 
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn query_counters(&self) -> QueryCounters {
         QueryCounters {
             aggregate_calls: self.connection.aggregate_calls,
@@ -507,10 +508,12 @@ impl OwnerIndex {
         }
     }
 
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn inject_aggregate_failure(&mut self) {
         self.connection.injected_aggregate_failure = true;
     }
 
+    #[cfg(any(test, feature = "test-hooks"))]
     pub fn inject_fetch_failure(&mut self) {
         self.connection.injected_fetch_failure = true;
     }
@@ -530,10 +533,15 @@ impl OwnerIndex {
 pub(crate) struct QueryConnection {
     connection: Connection,
     path: PathBuf,
+    #[cfg(any(test, feature = "test-hooks"))]
     aggregate_calls: usize,
+    #[cfg(any(test, feature = "test-hooks"))]
     fetch_hits_calls: usize,
+    #[cfg(any(test, feature = "test-hooks"))]
     agents_calls: usize,
+    #[cfg(any(test, feature = "test-hooks"))]
     injected_aggregate_failure: bool,
+    #[cfg(any(test, feature = "test-hooks"))]
     injected_fetch_failure: bool,
 }
 
@@ -658,10 +666,15 @@ impl QueryConnection {
         Self {
             connection,
             path,
+            #[cfg(any(test, feature = "test-hooks"))]
             aggregate_calls: 0,
+            #[cfg(any(test, feature = "test-hooks"))]
             fetch_hits_calls: 0,
+            #[cfg(any(test, feature = "test-hooks"))]
             agents_calls: 0,
+            #[cfg(any(test, feature = "test-hooks"))]
             injected_aggregate_failure: false,
+            #[cfg(any(test, feature = "test-hooks"))]
             injected_fetch_failure: false,
         }
     }
@@ -841,14 +854,17 @@ impl QueryConnection {
         offset: usize,
         ordering: &str,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
-        if self.injected_fetch_failure {
-            self.injected_fetch_failure = false;
-            return Err(IndexAccessError::Unreadable {
-                path: self.path.clone(),
-                detail: "injected fetch failure".to_string(),
-            });
+        #[cfg(any(test, feature = "test-hooks"))]
+        {
+            if self.injected_fetch_failure {
+                self.injected_fetch_failure = false;
+                return Err(IndexAccessError::Unreadable {
+                    path: self.path.clone(),
+                    detail: "injected fetch failure".to_string(),
+                });
+            }
+            self.fetch_hits_calls += 1;
         }
-        self.fetch_hits_calls += 1;
         let sql = format!(
             "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid FROM chunks WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
@@ -901,14 +917,17 @@ impl QueryConnection {
         if days.is_empty() {
             return Ok(Vec::new());
         }
-        if self.injected_fetch_failure {
-            self.injected_fetch_failure = false;
-            return Err(IndexAccessError::Unreadable {
-                path: self.path.clone(),
-                detail: "injected fetch failure".to_string(),
-            });
+        #[cfg(any(test, feature = "test-hooks"))]
+        {
+            if self.injected_fetch_failure {
+                self.injected_fetch_failure = false;
+                return Err(IndexAccessError::Unreadable {
+                    path: self.path.clone(),
+                    detail: "injected fetch failure".to_string(),
+                });
+            }
+            self.fetch_hits_calls += 1;
         }
-        self.fetch_hits_calls += 1;
         if per_day_limit == 0 {
             return Ok(days.iter().map(|day| (day.clone(), Vec::new())).collect());
         }
@@ -1014,14 +1033,17 @@ impl QueryConnection {
         plan: &SqlPlan,
         relaxed: bool,
     ) -> Result<CountsResponse, IndexAccessError> {
-        if self.injected_aggregate_failure {
-            self.injected_aggregate_failure = false;
-            return Err(IndexAccessError::Unreadable {
-                path: self.path.clone(),
-                detail: "injected aggregate failure".to_string(),
-            });
+        #[cfg(any(test, feature = "test-hooks"))]
+        {
+            if self.injected_aggregate_failure {
+                self.injected_aggregate_failure = false;
+                return Err(IndexAccessError::Unreadable {
+                    path: self.path.clone(),
+                    detail: "injected aggregate failure".to_string(),
+                });
+            }
+            self.aggregate_calls += 1;
         }
-        self.aggregate_calls += 1;
         let sql = format!(
             "SELECT facet, agent, day, stream FROM chunks WHERE {}",
             plan.where_clause
@@ -1058,7 +1080,10 @@ impl QueryConnection {
     }
 
     fn agents(&mut self) -> Result<Vec<String>, IndexAccessError> {
-        self.agents_calls += 1;
+        #[cfg(any(test, feature = "test-hooks"))]
+        {
+            self.agents_calls += 1;
+        }
         let mut statement = self
             .connection
             .prepare(&format!(
@@ -1150,7 +1175,8 @@ fn classify_sql_error(path: PathBuf, error: Error) -> IndexAccessError {
     }
 }
 
-/// Counters for observable query execution phases.
+/// Counters for observable query execution phases in tests.
+#[cfg(any(test, feature = "test-hooks"))]
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct QueryCounters {
     pub aggregate_calls: usize,
