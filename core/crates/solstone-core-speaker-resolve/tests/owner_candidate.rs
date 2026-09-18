@@ -94,3 +94,35 @@ fn ac21_owner_candidate_round_trips_the_five_member_record() {
         assert!(archive.by_name(name).is_ok(), "missing {name}");
     }
 }
+
+#[test]
+fn ac22_hold_owner_candidate_lock_blocks_concurrent_write() {
+    let temporary = TempDir::new();
+    let lock_guard =
+        solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(temporary.path())
+            .expect("hold lock");
+
+    let candidate = OwnerCandidate {
+        centroid: vec![1.0, 0.0],
+        cluster_size: 2,
+        threshold: 0.4,
+        version: "v1".into(),
+        evidence_tier: "high".into(),
+    };
+    let error = write_owner_candidate(temporary.path(), &candidate).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("voiceprint storage is busy; try again")
+    );
+    drop(lock_guard);
+
+    // After dropping lock, writing succeeds
+    write_owner_candidate(temporary.path(), &candidate).unwrap();
+    assert!(
+        temporary
+            .path()
+            .join("awareness/owner_candidate.npz")
+            .exists()
+    );
+}

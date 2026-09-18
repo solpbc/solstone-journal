@@ -754,6 +754,7 @@
           },
           "speaker_copy": {
             "SPK_ACTION_RETRY": "try again",
+            "SPK_ACTION_SET_ASIDE": "set aside",
             "SPK_ACTION_WHO_IS_THIS": "who is this?",
             "SPK_ANCHOR": "in your journal",
             "SPK_ANCHOR_HAS_VOICE": "in your journal \u00b7 their voice is already there",
@@ -875,6 +876,7 @@
             "SPK_RECEIPT_TITLE": "{name}'s voice is in your journal now",
             "SPK_RECEIPT_UNDO": "undo",
             "SPK_SAMPLE_UNAVAILABLE": "this sample isn't available",
+            "SPK_SAMPLE_UNVERIFIED_EVIDENCE": "unverified evidence",
             "SPK_SEARCH_ERROR": "couldn't search your people. try again.",
             "SPK_SEARCH_LABEL": "someone else",
             "SPK_SEARCH_NO_RESULTS": "no one in your journal matches \"{query}\"",

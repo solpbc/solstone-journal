@@ -88,12 +88,9 @@ params = [
 [[entries]]
 path = ["speakers", "confirm-owner"]
 kind = "command"
-help = "Confirm the owner voice candidate and save the centroid.\n\nBy default, automatically runs attribution backfill on all segments\nafter saving the centroid."
+help = "Confirm the owner voice candidate in the browser.\n\nNative confirm-owner does not save a centroid. Review and confirm candidates in the browser at /app/speakers/<today>."
 operation_id = "speakers.confirm-owner"
-entry_type = "http"
-method = "POST"
-route = "/app/speakers/api/owner/confirm-cli"
-contract_operation_id = "speakers.confirm-owner"
+entry_type = "local"
 handler = "confirm_owner"
 params = [
   { name = "backfill_after", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = true, options = ["--backfill"], secondary = ["--no-backfill"], hidden = false, is_flag = true, count = false, flag_value = true },
@@ -357,14 +354,17 @@ params = [
 [[entries]]
 path = ["speakers", "reject-owner"]
 kind = "command"
-help = "Reject the owner voice candidate and enter 14-day cooldown."
+help = "Reject the rendered owner voice candidate generation."
 operation_id = "speakers.reject-owner"
 entry_type = "http"
 method = "POST"
 route = "/app/speakers/api/owner/reject-cli"
 contract_operation_id = "speakers.reject-owner"
 handler = "reject_owner"
-params = []
+params = [
+  { name = "version", kind = "option", type = "text", required = true, nargs = 1, multiple = false, options = ["--version"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
 
 [[entries]]
 path = ["speakers", "resolve-names"]

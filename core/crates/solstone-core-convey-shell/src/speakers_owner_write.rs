@@ -15,6 +15,7 @@ use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use chrono::{DateTime, Utc};
 use serde_json::{Map, Value, json};
+use sha2::{Digest, Sha256};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::{
     JsonWriteOptions, LockOptions, SegmentLayout, hold_lock, write_json,
@@ -23,7 +24,10 @@ use solstone_core_speaker_resolve::candidate_tracker::{
     CandidateProfile, CandidateTracker, trim_solo_cluster_rows,
 };
 use solstone_core_speaker_resolve::owner_admission::{OwnerAdmission, admitted_owner_id};
-use solstone_core_speaker_resolve::owner_candidate::{clear_owner_candidate, load_owner_candidate};
+use solstone_core_speaker_resolve::owner_candidate::{
+    clear_owner_candidate_in_lock, hold_owner_candidate_lock, hydrate_owner_candidate_samples,
+    load_owner_candidate, write_owner_candidate_in_lock,
+};
 use solstone_core_speaker_resolve::owner_centroid::{
     OwnerCentroidRebuildInput, OwnerCentroidRebuildOutcome, OwnerCentroidWriteInput,
     load_owner_centroid, rebuild_owner_centroid, write_owner_centroid,
@@ -109,10 +113,22 @@ pub async fn rebuild(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     }
 }
 
-pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match required_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let Some(principal_id) = admitted_principal_id(&root.0) else {
         return owner_identity_invalid();
     };
+
+    test_hooks::wait_if_hold_confirm_or_reject();
+
+    let _lock = match hold_owner_candidate_lock(&root.0) {
+        Ok(guard) => guard,
+        Err(error) => return owner_error(error.to_string()),
+    };
+
     let candidate = match load_owner_candidate(&root.0) {
         Ok(Some(candidate)) => candidate,
         Ok(None) => {
@@ -125,6 +141,107 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         }
         Err(error) => return owner_error(error.to_string()),
     };
+    let awareness = awareness_voiceprint(&root.0);
+    if awareness.get("status").and_then(Value::as_str) != Some("candidate") {
+        return err(
+            "speaker_review_unavailable",
+            "that speaker review couldn't be loaded.",
+            "Awareness state is not candidate",
+            StatusCode::NOT_FOUND,
+        );
+    }
+
+    let req_version = body.get("version").and_then(Value::as_str);
+    if req_version != Some(&candidate.version)
+        || awareness.get("detected_at").and_then(Value::as_str) != Some(&candidate.version)
+    {
+        return err(
+            "speaker_candidate_stale_version",
+            "that speaker candidate is no longer current.",
+            "Candidate version mismatch or stale generation",
+            StatusCode::CONFLICT,
+        );
+    }
+
+    let Some(day) = body.get("day").and_then(Value::as_str) else {
+        return missing_fields();
+    };
+    let Some(stream) = body.get("stream").and_then(Value::as_str) else {
+        return missing_fields();
+    };
+    let Some(segment_key) = body.get("segment_key").and_then(Value::as_str) else {
+        return missing_fields();
+    };
+    let Some(source) = body.get("source").and_then(Value::as_str) else {
+        return missing_fields();
+    };
+    let Some(sentence_id) = body.get("sentence_id").and_then(Value::as_i64) else {
+        return missing_fields();
+    };
+    let Some(audio_sha256) = body.get("audio_sha256").and_then(Value::as_str) else {
+        return missing_fields();
+    };
+    if audio_sha256.is_empty() {
+        return err(
+            "speaker_candidate_unverified",
+            "that speaker sample has unverified audio evidence.",
+            "audio_sha256 must be a non-empty hex hash",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
+    let awareness_samples = awareness.get("samples").and_then(Value::as_array);
+    let sample_match = awareness_samples.and_then(|samples| {
+        samples.iter().find(|s| {
+            s.get("day").and_then(Value::as_str) == Some(day)
+                && s.get("stream").and_then(Value::as_str) == Some(stream)
+                && s.get("segment_key").and_then(Value::as_str) == Some(segment_key)
+                && s.get("source").and_then(Value::as_str) == Some(source)
+                && s.get("sentence_id").and_then(Value::as_i64) == Some(sentence_id)
+        })
+    });
+
+    let Some(sample_row) = sample_match else {
+        return err(
+            "speaker_candidate_unverified",
+            "that speaker sample is not part of the active candidate.",
+            "Sample not found in active candidate samples",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+
+    let sample_version = sample_row.get("version").and_then(Value::as_str);
+    let sample_embedding_sha256 = sample_row.get("embedding_sha256").and_then(Value::as_str);
+    let sample_audio_sha256 = sample_row.get("audio_sha256").and_then(Value::as_str);
+
+    if sample_version != Some(&candidate.version)
+        || sample_embedding_sha256.is_none()
+        || sample_audio_sha256 != Some(audio_sha256)
+    {
+        return err(
+            "speaker_candidate_unverified",
+            "that speaker sample does not have valid evidentiary hashes.",
+            "Sample hash verification failed",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
+    let hydrated =
+        hydrate_owner_candidate_samples(&root.0, &candidate, std::slice::from_ref(sample_row));
+    if hydrated.is_empty() || hydrated[0].get("artifact_eligible") != Some(&Value::Bool(true)) {
+        let reason = hydrated
+            .first()
+            .and_then(|h| h.get("evidence_reason"))
+            .and_then(Value::as_str)
+            .unwrap_or("evidence_not_eligible");
+        return err(
+            "speaker_candidate_unverified",
+            "that speaker sample could not be verified against on-disk evidence.",
+            reason,
+            StatusCode::BAD_REQUEST,
+        );
+    }
+
     if let Err(error) = write_owner_centroid(
         &root.0,
         &principal_id,
@@ -137,7 +254,7 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     ) {
         return owner_error(error.to_string());
     }
-    if let Err(error) = clear_owner_candidate(&root.0) {
+    if let Err(error) = clear_owner_candidate_in_lock(&root.0) {
         return owner_error(error.to_string());
     }
     if let Err(error) = update_voiceprint(
@@ -156,11 +273,49 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     Json(json!({"status":"confirmed","principal_id":principal_id})).into_response()
 }
 
-pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
+pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match required_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     if admitted_principal_id(&root.0).is_none() {
         return owner_identity_invalid();
     }
-    if let Err(error) = clear_owner_candidate(&root.0) {
+
+    test_hooks::wait_if_hold_confirm_or_reject();
+
+    let _lock = match hold_owner_candidate_lock(&root.0) {
+        Ok(guard) => guard,
+        Err(error) => return owner_error(error.to_string()),
+    };
+
+    let candidate = match load_owner_candidate(&root.0) {
+        Ok(Some(candidate)) => candidate,
+        Ok(None) => {
+            return err(
+                "speaker_review_unavailable",
+                "that speaker review couldn't be loaded.",
+                "No candidate available",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        Err(error) => return owner_error(error.to_string()),
+    };
+    let awareness = awareness_voiceprint(&root.0);
+
+    let req_version = body.get("version").and_then(Value::as_str);
+    if req_version != Some(&candidate.version)
+        || awareness.get("detected_at").and_then(Value::as_str) != Some(&candidate.version)
+    {
+        return err(
+            "speaker_candidate_stale_version",
+            "that speaker candidate is no longer current.",
+            "Candidate version mismatch or stale generation",
+            StatusCode::CONFLICT,
+        );
+    }
+
+    if let Err(error) = clear_owner_candidate_in_lock(&root.0) {
         return owner_error(error.to_string());
     }
     if let Err(error) = update_voiceprint(
@@ -170,6 +325,60 @@ pub async fn reject(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
         return owner_error(error);
     }
     Json(json!({"status":"needs_detection"})).into_response()
+}
+
+pub async fn set_aside(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = match required_json(request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if admitted_principal_id(&root.0).is_none() {
+        return owner_identity_invalid();
+    }
+
+    test_hooks::wait_if_hold_confirm_or_reject();
+
+    let _lock = match hold_owner_candidate_lock(&root.0) {
+        Ok(guard) => guard,
+        Err(error) => return owner_error(error.to_string()),
+    };
+
+    let candidate = match load_owner_candidate(&root.0) {
+        Ok(Some(candidate)) => candidate,
+        Ok(None) => {
+            return err(
+                "speaker_review_unavailable",
+                "that speaker review couldn't be loaded.",
+                "No candidate available",
+                StatusCode::NOT_FOUND,
+            );
+        }
+        Err(error) => return owner_error(error.to_string()),
+    };
+    let awareness = awareness_voiceprint(&root.0);
+
+    let req_version = body.get("version").and_then(Value::as_str);
+    if req_version != Some(&candidate.version)
+        || awareness.get("detected_at").and_then(Value::as_str) != Some(&candidate.version)
+    {
+        return err(
+            "speaker_candidate_stale_version",
+            "that speaker candidate is no longer current.",
+            "Candidate version mismatch or stale generation",
+            StatusCode::CONFLICT,
+        );
+    }
+
+    if let Err(error) = clear_owner_candidate_in_lock(&root.0) {
+        return owner_error(error.to_string());
+    }
+    if let Err(error) = update_voiceprint(
+        &root.0,
+        json!({"status":"no_cluster","detected_at":Value::Null,"samples":[]}),
+    ) {
+        return owner_error(error);
+    }
+    Json(json!({"status":"no_cluster"})).into_response()
 }
 
 pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
@@ -373,6 +582,8 @@ fn rebuild_owner(root: &Path, override_regression: bool) -> Result<Value, String
 
 fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     let principal = admitted_principal_id(root).ok_or_else(|| OWNER_IDENTITY_INVALID.to_owned())?;
+    let _lock = hold_owner_candidate_lock(root).map_err(|error| error.to_string())?;
+
     if let Ok(Some(centroid)) = load_owner_centroid(root, &principal) {
         update_voiceprint(
             root,
@@ -383,7 +594,7 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
         );
     }
     if force {
-        clear_owner_candidate(root).map_err(|error| error.to_string())?;
+        clear_owner_candidate_in_lock(root).map_err(|error| error.to_string())?;
         update_voiceprint(root, json!({"rejected_at":Value::Null}))?;
     }
     let state = awareness_voiceprint(root);
@@ -395,8 +606,14 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     if let Ok(Some(candidate)) = load_owner_candidate(root)
         && state.get("status").and_then(Value::as_str) == Some("candidate")
     {
+        let raw_samples = state
+            .get("samples")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let samples = hydrate_owner_candidate_samples(root, &candidate, &raw_samples);
         return Ok(
-            json!({"status":"candidate","cluster_size":candidate.cluster_size,"streams_represented":state.get("streams_represented").cloned().unwrap_or_else(|| json!(0)),"recommendation":state.get("recommendation").cloned().unwrap_or_else(|| json!("single_stream")),"samples":state.get("samples").cloned().unwrap_or_else(|| json!([])),"evidence_tier":candidate.evidence_tier}),
+            json!({"status":"candidate","cluster_size":candidate.cluster_size,"streams_represented":state.get("streams_represented").cloned().unwrap_or_else(|| json!(0)),"recommendation":state.get("recommendation").cloned().unwrap_or_else(|| json!("single_stream")),"samples":samples,"evidence_tier":candidate.evidence_tier}),
         );
     }
     let pool_exists = root.join("awareness/speaker_candidates.json").exists();
@@ -483,25 +700,26 @@ fn detect_owner_candidate(root: &Path, force: bool) -> Result<Value, String> {
     } else {
         "single_stream"
     };
-    let samples = candidate_samples(root, &expansion.rows, &centroid);
     let version = Utc::now().to_rfc3339();
-    solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
-        root,
-        &solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
-            centroid,
-            cluster_size: expansion.rows.len() as i32,
-            threshold: OWNER_THRESHOLD,
-            version: version.clone(),
-            evidence_tier: quality.tier.to_owned(),
-        },
-    )
-    .map_err(|error| error.to_string())?;
+    let samples = candidate_samples(root, &expansion.rows, &centroid, &version);
+    let snapshot = solstone_core_speaker_resolve::owner_candidate::OwnerCandidate {
+        centroid,
+        cluster_size: expansion.rows.len() as i32,
+        threshold: OWNER_THRESHOLD,
+        version: version.clone(),
+        evidence_tier: quality.tier.to_owned(),
+    };
+    write_owner_candidate_in_lock(root, &snapshot).map_err(|error| error.to_string())?;
+
+    test_hooks::wait_if_pause_after_snapshot();
+
     update_voiceprint(
         root,
         json!({"status":"candidate","cluster_size":expansion.rows.len(),"streams_represented":streams,"recommendation":recommendation,"samples":samples,"detected_at":version,"evidence_tier":quality.tier}),
     )?;
+    let hydrated_samples = hydrate_owner_candidate_samples(root, &snapshot, &samples);
     Ok(
-        json!({"status":"candidate","cluster_size":expansion.rows.len(),"streams_represented":streams,"recommendation":recommendation,"samples":samples,"evidence_tier":quality.tier}),
+        json!({"status":"candidate","cluster_size":expansion.rows.len(),"streams_represented":streams,"recommendation":recommendation,"samples":hydrated_samples,"evidence_tier":quality.tier}),
     )
 }
 
@@ -733,7 +951,12 @@ fn candidate_quality(rows: &[CandidateRow]) -> Quality {
         bound,
     }
 }
-fn candidate_samples(_root: &Path, rows: &[CandidateRow], centroid: &[f32]) -> Vec<Value> {
+fn candidate_samples(
+    _root: &Path,
+    rows: &[CandidateRow],
+    centroid: &[f32],
+    version: &str,
+) -> Vec<Value> {
     let mut ordered = rows.iter().collect::<Vec<_>>();
     ordered.sort_by(|left, right| {
         dot(&right.embedding, centroid).total_cmp(&dot(&left.embedding, centroid))
@@ -756,19 +979,37 @@ fn candidate_samples(_root: &Path, rows: &[CandidateRow], centroid: &[f32]) -> V
                 .parent()
                 .unwrap_or_else(|| Path::new(""))
                 .to_path_buf();
-            let url = ["flac", "wav", "m4a", "mp3", "ogg"]
-                .iter()
-                .map(|ext| segment.join(format!("{}.{}", row.source, ext)))
-                .find(|path| path.is_file())
-                .map(|path| {
-                    serve_audio_url(
+
+            let mut audio_sha256 = Value::Null;
+            let mut audio_url = None;
+
+            for (ext, _) in solstone_core_speaker_resolve::audio_sample::AUDIO_FORMATS {
+                let path = segment.join(format!("{}{}", row.source, ext));
+                if path.is_file() {
+                    if let Ok(bytes) = fs::read(&path)
+                        && !bytes.is_empty()
+                    {
+                        audio_sha256 = Value::String(format!("{:x}", Sha256::digest(&bytes)));
+                    }
+                    let (url, _) = solstone_core_speaker_resolve::audio_sample::audio_info(
+                        &segment,
                         &row.day,
                         &row.stream,
                         &row.segment_key,
-                        &path.file_name().expect("name").to_string_lossy(),
+                        &row.source,
                         row.layout,
-                    )
-                });
+                    );
+                    audio_url = url;
+                    break;
+                }
+            }
+
+            let mut emb_le = Vec::with_capacity(row.embedding.len() * 4);
+            for val in &row.embedding {
+                emb_le.extend_from_slice(&val.to_le_bytes());
+            }
+            let embedding_sha256 = format!("{:x}", Sha256::digest(&emb_le));
+
             json!({
                 "day": row.day,
                 "stream_layout": layout_flag(row.layout),
@@ -777,7 +1018,10 @@ fn candidate_samples(_root: &Path, rows: &[CandidateRow], centroid: &[f32]) -> V
                 "source": row.source,
                 "sentence_id": row.sentence_id,
                 "duration_s": fallback_duration(&row.jsonl_path, row.sentence_id),
-                "audio_url": url
+                "audio_url": audio_url,
+                "version": version,
+                "embedding_sha256": embedding_sha256,
+                "audio_sha256": audio_sha256,
             })
         })
         .collect()
@@ -790,39 +1034,6 @@ fn layout_flag(layout: SegmentLayout) -> &'static str {
     }
 }
 
-fn encode_path_component(value: &str) -> String {
-    let mut encoded = String::new();
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(char::from(byte));
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    encoded
-}
-
-fn serve_audio_url(
-    day: &str,
-    stream: &str,
-    segment_key: &str,
-    filename: &str,
-    layout: SegmentLayout,
-) -> String {
-    let day = encode_path_component(day);
-    let stream = encode_path_component(stream);
-    let segment_key = encode_path_component(segment_key);
-    let filename = encode_path_component(filename);
-    match layout {
-        SegmentLayout::Direct => {
-            format!("/app/speakers/api/serve_audio/{day}/{segment_key}/{filename}")
-        }
-        SegmentLayout::Named => {
-            format!("/app/speakers/api/serve_audio/{day}/{stream}/{segment_key}/{filename}")
-        }
-    }
-}
 fn fallback_duration(path: &Path, sentence_id: i64) -> Option<f64> {
     let starts = fs::read_to_string(path)
         .ok()?
@@ -1143,4 +1354,127 @@ fn owner_error(detail: String) -> Response {
             StatusCode::BAD_REQUEST,
         )
     }
+}
+
+#[cfg(feature = "test-hooks")]
+pub mod test_hooks {
+    use std::sync::{Condvar, Mutex, OnceLock};
+
+    static HOOKS: OnceLock<Hooks> = OnceLock::new();
+
+    struct Hooks {
+        pause_after_snapshot: Mutex<bool>,
+        pause_after_snapshot_cv: Condvar,
+        pause_after_snapshot_entered: Mutex<usize>,
+        pause_after_snapshot_entered_cv: Condvar,
+        hold_confirm_or_reject: Mutex<bool>,
+        hold_confirm_or_reject_cv: Condvar,
+        hold_confirm_or_reject_entered: Mutex<usize>,
+        hold_confirm_or_reject_entered_cv: Condvar,
+    }
+
+    impl Hooks {
+        fn get() -> &'static Self {
+            HOOKS.get_or_init(|| Hooks {
+                pause_after_snapshot: Mutex::new(false),
+                pause_after_snapshot_cv: Condvar::new(),
+                pause_after_snapshot_entered: Mutex::new(0),
+                pause_after_snapshot_entered_cv: Condvar::new(),
+                hold_confirm_or_reject: Mutex::new(false),
+                hold_confirm_or_reject_cv: Condvar::new(),
+                hold_confirm_or_reject_entered: Mutex::new(0),
+                hold_confirm_or_reject_entered_cv: Condvar::new(),
+            })
+        }
+    }
+
+    pub fn reset() {
+        let hooks = Hooks::get();
+        *hooks.pause_after_snapshot.lock().unwrap() = false;
+        *hooks.pause_after_snapshot_entered.lock().unwrap() = 0;
+        hooks.pause_after_snapshot_cv.notify_all();
+        hooks.pause_after_snapshot_entered_cv.notify_all();
+        *hooks.hold_confirm_or_reject.lock().unwrap() = false;
+        *hooks.hold_confirm_or_reject_entered.lock().unwrap() = 0;
+        hooks.hold_confirm_or_reject_cv.notify_all();
+        hooks.hold_confirm_or_reject_entered_cv.notify_all();
+    }
+
+    pub fn set_pause_after_snapshot(enable: bool) {
+        let hooks = Hooks::get();
+        let mut guard = hooks.pause_after_snapshot.lock().unwrap();
+        *guard = enable;
+        if !enable {
+            hooks.pause_after_snapshot_cv.notify_all();
+        }
+    }
+
+    pub fn entered_pause_after_snapshot() -> usize {
+        let hooks = Hooks::get();
+        *hooks.pause_after_snapshot_entered.lock().unwrap()
+    }
+
+    pub fn wait_entered_pause_after_snapshot(expected: usize) {
+        let hooks = Hooks::get();
+        let mut guard = hooks.pause_after_snapshot_entered.lock().unwrap();
+        while *guard < expected {
+            guard = hooks.pause_after_snapshot_entered_cv.wait(guard).unwrap();
+        }
+    }
+
+    pub fn wait_if_pause_after_snapshot() {
+        let hooks = Hooks::get();
+        {
+            let mut entered = hooks.pause_after_snapshot_entered.lock().unwrap();
+            *entered += 1;
+            hooks.pause_after_snapshot_entered_cv.notify_all();
+        }
+        let mut guard = hooks.pause_after_snapshot.lock().unwrap();
+        while *guard {
+            guard = hooks.pause_after_snapshot_cv.wait(guard).unwrap();
+        }
+    }
+
+    pub fn set_hold_confirm_or_reject(enable: bool) {
+        let hooks = Hooks::get();
+        let mut guard = hooks.hold_confirm_or_reject.lock().unwrap();
+        *guard = enable;
+        if !enable {
+            hooks.hold_confirm_or_reject_cv.notify_all();
+        }
+    }
+
+    pub fn entered_hold_confirm_or_reject() -> usize {
+        let hooks = Hooks::get();
+        *hooks.hold_confirm_or_reject_entered.lock().unwrap()
+    }
+
+    pub fn wait_entered_hold_confirm_or_reject(expected: usize) {
+        let hooks = Hooks::get();
+        let mut guard = hooks.hold_confirm_or_reject_entered.lock().unwrap();
+        while *guard < expected {
+            guard = hooks.hold_confirm_or_reject_entered_cv.wait(guard).unwrap();
+        }
+    }
+
+    pub fn wait_if_hold_confirm_or_reject() {
+        let hooks = Hooks::get();
+        {
+            let mut entered = hooks.hold_confirm_or_reject_entered.lock().unwrap();
+            *entered += 1;
+            hooks.hold_confirm_or_reject_entered_cv.notify_all();
+        }
+        let mut guard = hooks.hold_confirm_or_reject.lock().unwrap();
+        while *guard {
+            guard = hooks.hold_confirm_or_reject_cv.wait(guard).unwrap();
+        }
+    }
+}
+
+#[cfg(not(feature = "test-hooks"))]
+pub mod test_hooks {
+    #[inline(always)]
+    pub fn wait_if_pause_after_snapshot() {}
+    #[inline(always)]
+    pub fn wait_if_hold_confirm_or_reject() {}
 }

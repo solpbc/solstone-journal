@@ -216,6 +216,9 @@ fn collect_manifest(root: &Path, directory: &Path, manifest: &mut BTreeMap<PathB
         if path.is_dir() {
             collect_manifest(root, &path, manifest);
         } else if path.is_file() {
+            if path.extension().is_some_and(|ext| ext == "lock") {
+                continue;
+            }
             let metadata = fs::metadata(&path).expect("file metadata reads");
             let bytes = fs::read(&path).expect("file reads");
             manifest.insert(

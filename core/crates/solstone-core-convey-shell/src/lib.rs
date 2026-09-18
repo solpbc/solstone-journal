@@ -146,6 +146,9 @@ mod speakers_known;
 mod speakers_media;
 mod speakers_npz;
 mod speakers_owner;
+#[cfg(feature = "test-hooks")]
+pub mod speakers_owner_write;
+#[cfg(not(feature = "test-hooks"))]
 mod speakers_owner_write;
 mod speakers_quality;
 mod speakers_review;
@@ -931,6 +934,10 @@ fn router_with_hosted_parent(
         .route(
             "/app/speakers/api/owner/reject",
             post(speakers_owner_write::reject),
+        )
+        .route(
+            "/app/speakers/api/owner/set-aside",
+            post(speakers_owner_write::set_aside),
         )
         .route(
             "/app/speakers/api/owner/classify",

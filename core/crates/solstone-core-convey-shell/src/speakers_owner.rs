@@ -46,6 +46,13 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
                 StatusCode::INTERNAL_SERVER_ERROR,
             )
             .into_response(),
+            Err(OwnerStatusError::Failed(error)) => error_envelope(
+                "speaker_command_failed",
+                "that speaker command didn't finish.",
+                error,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response(),
         },
     )
     .await
@@ -54,6 +61,7 @@ pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
 enum OwnerStatusError {
     IdentityInvalid,
     Catalog(CatalogBuildError),
+    Failed(String),
 }
 
 fn owner_status(root: &Path) -> Result<Value, OwnerStatusError> {
@@ -64,6 +72,8 @@ fn owner_status(root: &Path) -> Result<Value, OwnerStatusError> {
             return Err(OwnerStatusError::IdentityInvalid);
         }
     };
+    let _lock = solstone_core_speaker_resolve::owner_candidate::hold_owner_candidate_lock(root)
+        .map_err(|e| OwnerStatusError::Failed(e.to_string()))?;
     let voiceprint = awareness_voiceprint(root);
     let status = match voiceprint.get("status") {
         Some(Value::String(status)) => status.as_str(),
@@ -75,12 +85,54 @@ fn owner_status(root: &Path) -> Result<Value, OwnerStatusError> {
 
     Ok(match status {
         "confirmed" => confirmed_status(root, &principal_id, &manual_stats),
-        "candidate" => json!({
-            "status": "candidate",
-            "cluster_size": voiceprint.get("cluster_size").cloned().unwrap_or(Value::Null),
-            "samples": voiceprint.get("samples").cloned().unwrap_or_else(|| json!([])),
-            "evidence_tier": voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),
-        }),
+        "candidate" => {
+            let candidate_opt =
+                solstone_core_speaker_resolve::owner_candidate::load_owner_candidate(root)
+                    .map_err(|e| OwnerStatusError::Failed(e.to_string()))?;
+            let detected_at = voiceprint.get("detected_at").and_then(Value::as_str);
+
+            match (candidate_opt, detected_at) {
+                (Some(candidate), Some(ver)) if candidate.version == ver => {
+                    let raw_samples = voiceprint
+                        .get("samples")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    let hydrated = solstone_core_speaker_resolve::owner_candidate::hydrate_owner_candidate_samples(
+                        root,
+                        &candidate,
+                        &raw_samples,
+                    );
+                    json!({
+                        "status": "candidate",
+                        "version": candidate.version,
+                        "cluster_size": voiceprint.get("cluster_size").cloned().unwrap_or_else(|| json!(candidate.cluster_size)),
+                        "samples": hydrated,
+                        "evidence_tier": candidate.evidence_tier,
+                        "manual_tags_count": diagnostics.manual_tags_count,
+                        "segments_available": diagnostics.segments_available,
+                        "embeddings_available": diagnostics.embeddings_available,
+                        "streams_represented": diagnostics.streams_represented,
+                        "can_build_from_tags": diagnostics.can_build_from_tags,
+                        "segments_with_embeddings": diagnostics.segments_with_embeddings,
+                    })
+                }
+                _ => json!({
+                    "status": "candidate",
+                    "review": "incomplete",
+                    "version": voiceprint.get("detected_at").cloned().unwrap_or(Value::Null),
+                    "cluster_size": voiceprint.get("cluster_size").cloned().unwrap_or(Value::Null),
+                    "samples": [],
+                    "evidence_tier": voiceprint.get("evidence_tier").cloned().unwrap_or(Value::Null),
+                    "manual_tags_count": diagnostics.manual_tags_count,
+                    "segments_available": diagnostics.segments_available,
+                    "embeddings_available": diagnostics.embeddings_available,
+                    "streams_represented": diagnostics.streams_represented,
+                    "can_build_from_tags": diagnostics.can_build_from_tags,
+                    "segments_with_embeddings": diagnostics.segments_with_embeddings,
+                }),
+            }
+        }
         "low_quality" => {
             let guidance = manual_guidance(&manual_stats);
             json!({

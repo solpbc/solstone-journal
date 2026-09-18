@@ -1813,10 +1813,19 @@
         ownerTeachState = null;
         ownerTeachStartRequested = false;
         hideDiscovery();
-        hideOwnerBannerUnlessHandoff();
+        renderOwnerNotReady(data);
         return data;
       }
       if (data.status === 'candidate') {
+        if (ownerTeachStartRequested) {
+          startOwnerTeachSession(data);
+          return data;
+        }
+        if (ownerTeachState?.active) {
+          ownerTeachState.statusData = data;
+          renderOwnerTeachSession();
+          return data;
+        }
         ownerTeachState = null;
         ownerTeachStartRequested = false;
         hideDiscovery();
@@ -1860,36 +1869,128 @@
 
   function renderOwnerCandidate(data) {
     const samples = data.samples || [];
+    const playableIndices = new Set();
+    const version = data.version || '';
+    const isReviewIncomplete = data.review === 'incomplete';
+    const eligibleSamples = samples.filter(s => s.artifact_eligible && s.audio_url);
+    const hasInitialEligible = eligibleSamples.length > 0 && !isReviewIncomplete;
+
+    function sampleNotice(sample) {
+      if (sample.evidence_state === 'unbound' || sample.evidence_state === 'mismatch') {
+        return `<div class="spk-owner-sample-unavailable">${escapeHtml(SPK_COPY.SPK_SAMPLE_UNVERIFIED_EVIDENCE || 'unverified evidence')}</div>`;
+      }
+      return `<div class="spk-owner-sample-unavailable">${escapeHtml(SPK_COPY.SPK_SAMPLE_UNAVAILABLE || "this sample isn't available")}</div>`;
+    }
+
+    function updateActionButtons() {
+      const confirmBtn = document.getElementById('spkOwnerConfirm');
+      const rejectBtn = document.getElementById('spkOwnerReject');
+      const hasPlayable = playableIndices.size > 0 && !isReviewIncomplete;
+      if (confirmBtn) {
+        confirmBtn.style.display = hasPlayable ? '' : 'none';
+        confirmBtn.disabled = !hasPlayable;
+      }
+      if (rejectBtn) {
+        rejectBtn.style.display = hasPlayable ? '' : 'none';
+        rejectBtn.disabled = !hasPlayable;
+      }
+    }
+
     ownerBanner.style.display = 'block';
     ownerBanner.innerHTML = `
       <div class="spk-owner-panel">
         <div class="spk-owner-title">is this your voice?</div>
         <div class="spk-owner-copy">
-          a voice pattern is likely yours, based on ${escapeHtml(data.cluster_size || 0)} voice samples. review a few examples before confirming.
+          a voice pattern is likely yours, based on ${escapeHtml(String(data.cluster_size || 0))} voice samples. review a few examples before confirming.
         </div>
         <div class="spk-owner-samples">
-          ${samples.map((sample, index) => `
-            <div class="spk-owner-sample">
+          ${samples.map((sample, index) => {
+            const hasOffset = Number.isFinite(sample.offset_s);
+            const playFromHere = (sample.artifact_eligible && sample.audio_url && hasOffset)
+              ? `<button type="button" class="spk-owner-btn spk-owner-btn-play" data-sample-idx="${index}" data-play-offset="${sample.offset_s}">${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || 'play from here')}</button>`
+              : '';
+            return `
+            <div class="spk-owner-sample" data-sample-idx="${index}">
               <div class="spk-owner-sample-title">sample ${index + 1}</div>
               <div class="spk-owner-sample-meta">
                 ${escapeHtml(sample.day)} · ${escapeHtml(sample.stream)} · ${escapeHtml(sample.segment_key)}
               </div>
-              ${sample.audio_url ? `<audio controls preload="metadata" src="${sample.audio_url}"></audio>` : ''}
+              ${sample.text ? `<div class="spk-owner-sample-text">${escapeHtml(sample.text)}</div>` : ''}
+              ${sample.artifact_eligible && sample.audio_url
+                ? `<div class="spk-owner-sample-player">
+                     ${playFromHere}
+                     <audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}" data-sample-idx="${index}"></audio>
+                   </div>`
+                : sampleNotice(sample)}
             </div>
-          `).join('')}
+          `;}).join('')}
         </div>
         <div class="spk-owner-actions">
-          <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerConfirm">yes, that's me</button>
-          <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerReject">no, try again</button>
+          <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerConfirm" ${hasInitialEligible ? 'disabled' : 'style="display:none;"'}>yes, that's me</button>
+          <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerReject" ${hasInitialEligible ? 'disabled' : 'style="display:none;"'}>no, try again</button>
+          <button class="spk-owner-btn" id="spkOwnerSetAside">${escapeHtml(SPK_COPY.SPK_ACTION_SET_ASIDE || 'set aside')}</button>
         </div>
       </div>
     `;
 
-    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
-      submitOwnerChoice('/app/speakers/api/owner/confirm', 'candidate');
+    const audios = ownerBanner.querySelectorAll('audio');
+    audios.forEach((audio) => {
+      const idx = Number(audio.dataset.sampleIdx);
+      audio.addEventListener('canplay', () => {
+        playableIndices.add(idx);
+        updateActionButtons();
+      });
+      audio.addEventListener('error', () => {
+        playableIndices.delete(idx);
+        updateActionButtons();
+        const card = ownerBanner.querySelector(`.spk-owner-sample[data-sample-idx="${idx}"]`);
+        if (card) {
+          const sample = samples[idx];
+          if (audio.src && audio.src.startsWith('blob:')) {
+            URL.revokeObjectURL(audio.src);
+          }
+          const playerWrap = card.querySelector('.spk-owner-sample-player') || audio;
+          playerWrap.remove();
+          card.insertAdjacentHTML('beforeend', sampleNotice(sample || {}));
+        }
+      });
     });
+
+    ownerBanner.querySelectorAll('.spk-owner-btn-play').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const idx = e.currentTarget.dataset.sampleIdx;
+        const offset = Number(e.currentTarget.dataset.playOffset);
+        const audio = ownerBanner.querySelector(`audio[data-sample-idx="${idx}"]`);
+        if (audio && Number.isFinite(offset)) {
+          audio.currentTime = offset;
+          audio.play();
+        }
+      });
+    });
+
+    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
+      if (playableIndices.size === 0) return;
+      const firstIdx = Array.from(playableIndices)[0];
+      const sample = samples[firstIdx];
+      if (!sample) return;
+      submitOwnerCandidateAction('/app/speakers/api/owner/confirm', {
+        version: version,
+        day: sample.day,
+        stream_layout: sample.stream_layout,
+        stream: sample.stream,
+        segment_key: sample.segment_key,
+        source: sample.source,
+        sentence_id: sample.sentence_id,
+        audio_sha256: sample.audio_sha256,
+      }, 'candidate');
+    });
+
     document.getElementById('spkOwnerReject')?.addEventListener('click', () => {
-      submitOwnerChoice('/app/speakers/api/owner/reject');
+      submitOwnerCandidateAction('/app/speakers/api/owner/reject', { version });
+    });
+
+    document.getElementById('spkOwnerSetAside')?.addEventListener('click', () => {
+      submitOwnerCandidateAction('/app/speakers/api/owner/set-aside', { version });
     });
 
     attachAudioErrorListeners(ownerBanner);
@@ -2219,7 +2320,14 @@
         <div class="spk-owner-copy">${escapeHtml(ownerTeachState.refusalGuidance)}</div>
       `;
     } else if ((ownerTeachState.noticeKind === 'busy' || ownerTeachState.noticeKind === 'failed') && !current) {
-      body = `<div class="spk-owner-copy">${escapeHtml(ownerTeachState.notice || '')}</div>`;
+      body = `
+        <div class="spk-owner-copy">${escapeHtml(ownerTeachState.notice || '')}</div>
+        <div class="spk-owner-actions" style="margin-top: 8px;">
+          <button class="spk-owner-btn spk-owner-btn-confirm" id="spkOwnerTeachRetry" type="button">
+            ${escapeHtml(SPK_COPY.SPK_ACTION_RETRY || 'try again')}
+          </button>
+        </div>
+      `;
     } else if (ownerTeachState.items.length === 0 && !ownerTeachState.startedWithItems) {
       body = `<div class="spk-owner-copy">${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_EMPTY || '')}</div>`;
     } else if (ownerTeachState.items.length === 0 || !current) {
@@ -2267,6 +2375,11 @@
               ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_SKIP_LABEL || '')}
             </button>
           ` : ''}
+          ${(!current && !ownerTeachState.loading && (data.status === 'candidate' || data.version)) ? `
+            <button class="spk-owner-btn" id="spkOwnerTeachSetAside" type="button">
+              ${escapeHtml(SPK_COPY.SPK_ACTION_SET_ASIDE || 'set aside')}
+            </button>
+          ` : ''}
           <button class="spk-owner-btn spk-owner-btn-reject" id="spkOwnerTeachPause" type="button">
             ${escapeHtml(SPK_COPY.SPK_OWNER_TEACH_PAUSE_LABEL || '')}
           </button>
@@ -2277,6 +2390,15 @@
   }
 
   function attachOwnerTeachHandlers() {
+    document.getElementById('spkOwnerTeachRetry')?.addEventListener('click', () => {
+      startOwnerTeachSession(ownerTeachState?.statusData || ownerStatusData);
+    });
+    document.getElementById('spkOwnerTeachSetAside')?.addEventListener('click', () => {
+      const ver = ownerTeachState?.statusData?.version || ownerStatusData?.version;
+      ownerTeachState = null;
+      ownerTeachStartRequested = false;
+      submitOwnerCandidateAction('/app/speakers/api/owner/set-aside', { version: ver });
+    });
     document.getElementById('spkOwnerTeachPause')?.addEventListener('click', pauseOwnerTeachSession);
     document.getElementById('spkOwnerTeachMine')?.addEventListener('click', submitOwnerTeachMine);
     document.getElementById('spkOwnerTeachNotMe')?.addEventListener('click', declineOwnerTeachStatement);
@@ -2383,20 +2505,33 @@
     const requestId = ownerTeachRequestId + 1;
     ownerTeachRequestId = requestId;
     renderOwnerTeachSession();
-    const poolSegments = await ensureOwnerTeachSegments();
-    const results = await loadOwnerTeachReviews(poolSegments);
-    if (!ownerTeachState || ownerTeachRequestId !== requestId) return;
-    const counts = ownerTeachPoolCounts(results);
-    const items = results.flatMap(result => result.items || []);
-    ownerTeachState = {
-      ...ownerTeachState,
-      loading: false,
-      items: ownerTeachOrderStatements(items, ownerTeachMomentumCount(ownerTeachState.statusData)),
-      index: 0,
-      failed_count: counts.failed_count,
-      startedWithItems: items.length > 0,
-    };
-    renderOwnerTeachSession();
+    try {
+      const poolSegments = await ensureOwnerTeachSegments();
+      const results = await loadOwnerTeachReviews(poolSegments);
+      if (!ownerTeachState || ownerTeachRequestId !== requestId) return;
+      const counts = ownerTeachPoolCounts(results);
+      const items = results.flatMap(result => result.items || []);
+      ownerTeachState = {
+        ...ownerTeachState,
+        loading: false,
+        items: ownerTeachOrderStatements(items, ownerTeachMomentumCount(ownerTeachState.statusData)),
+        index: 0,
+        failed_count: counts.failed_count,
+        startedWithItems: items.length > 0,
+      };
+      renderOwnerTeachSession();
+    } catch (err) {
+      if (!ownerTeachState || ownerTeachRequestId !== requestId) return;
+      ownerTeachState = {
+        ...ownerTeachState,
+        loading: false,
+        failed_count: 1,
+        notice: SPK_COPY.SPK_OWNER_TEACH_FAILED || "Couldn't load voice samples.",
+        noticeKind: 'failed',
+      };
+      renderOwnerTeachSession();
+      window.logError?.(err, { context: 'speakers: startOwnerTeachSession failed' });
+    }
   }
 
   async function submitOwnerTeachMine() {
@@ -2480,6 +2615,24 @@
         ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = false; });
         renderOwnerBanner(err.serverMessage);
         window.logError(err, { context: 'speakers: submitOwnerChoice failed' });
+      });
+  }
+
+  function submitOwnerCandidateAction(path, payload, revealSource = null) {
+    ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+    window.apiJson(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+      .then(() => {
+        if (revealSource) ownerRevealPendingSource = revealSource;
+        checkOwnerStatus();
+      })
+      .catch((err) => {
+        ownerBanner.querySelectorAll('button').forEach(btn => { btn.disabled = false; });
+        renderOwnerBanner(err.serverMessage);
+        window.logError(err, { context: 'speakers: submitOwnerCandidateAction failed' });
       });
   }
 
@@ -4138,28 +4291,141 @@
 
   function ownerCandidate(data) {
     const samples = data.samples || [];
+    const playableIndices = new Set();
+    const version = data.version || '';
+    const isReviewIncomplete = data.review === 'incomplete';
+    const eligibleSamples = samples.filter(s => s.artifact_eligible && s.audio_url);
+    const hasInitialEligible = eligibleSamples.length > 0 && !isReviewIncomplete;
+
+    function sampleNotice(sample) {
+      if (sample.evidence_state === 'unbound' || sample.evidence_state === 'mismatch') {
+        return `<div class="spk-card-line">${escapeHtml(COPY.SPK_SAMPLE_UNVERIFIED_EVIDENCE || 'unverified evidence')}</div>`;
+      }
+      return `<div class="spk-card-line">${escapeHtml(COPY.SPK_SAMPLE_UNAVAILABLE || "this sample isn't available")}</div>`;
+    }
+
+    function updateActionButtons() {
+      const confirmBtn = document.getElementById('spkOwnerConfirm');
+      const rejectBtn = document.getElementById('spkOwnerReject');
+      const teachLink = document.getElementById('spkOwnerTeachLink');
+      const hasPlayable = playableIndices.size > 0 && !isReviewIncomplete;
+      if (confirmBtn) {
+        confirmBtn.style.display = hasPlayable ? '' : 'none';
+        confirmBtn.disabled = !hasPlayable;
+      }
+      if (rejectBtn) {
+        rejectBtn.style.display = hasPlayable ? '' : 'none';
+        rejectBtn.disabled = !hasPlayable;
+      }
+      if (teachLink) {
+        teachLink.style.display = hasPlayable ? 'none' : '';
+      }
+    }
+
     ownerPanel.innerHTML = `
       <strong>Is this you?</strong>
       <p class="spk-overview-muted">${escapeHtml(String(data.cluster_size || 0))} ${escapeHtml(COPY.SPK_OVERVIEW_OWNER_SAMPLES_LABEL)}</p>
       <div class="spk-owner-samples">
-        ${samples.map((sample, index) => `
-          <div class="spk-owner-sample">
+        ${samples.map((sample, index) => {
+          const hasOffset = Number.isFinite(sample.offset_s);
+          const playFromHere = (sample.artifact_eligible && sample.audio_url && hasOffset)
+            ? `<button type="button" class="spk-overview-btn spk-owner-btn-play" data-sample-idx="${index}" data-play-offset="${sample.offset_s}">${escapeHtml(COPY.SPK_PLAY_FROM_HERE_LABEL || 'play from here')}</button>`
+            : '';
+          return `
+          <div class="spk-owner-sample" data-sample-idx="${index}">
             <div class="spk-card-title">sample ${index + 1}</div>
             <div class="spk-card-line">${escapeHtml(sample.day)} · ${escapeHtml(sample.stream)} · ${escapeHtml(sample.segment_key)}</div>
-            ${sample.audio_url ? `<audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}"></audio>` : ''}
+            ${sample.text ? `<div class="spk-card-line">${escapeHtml(sample.text)}</div>` : ''}
+            ${sample.artifact_eligible && sample.audio_url
+              ? `<div class="spk-owner-sample-player">
+                   ${playFromHere}
+                   <audio controls preload="metadata" src="${escapeHtml(sample.audio_url)}" data-sample-idx="${index}"></audio>
+                 </div>`
+              : sampleNotice(sample)}
           </div>
-        `).join('')}
+        `;}).join('')}
       </div>
       <div class="spk-overview-actions">
-        <button id="spkOwnerConfirm" class="spk-overview-btn spk-overview-btn-primary">yes, that's me</button>
-        <button id="spkOwnerReject" class="spk-overview-btn">no, try again</button>
+        <button id="spkOwnerConfirm" class="spk-overview-btn spk-overview-btn-primary" ${hasInitialEligible ? 'disabled' : 'style="display:none;"'}>yes, that's me</button>
+        <button id="spkOwnerReject" class="spk-overview-btn" ${hasInitialEligible ? 'disabled' : 'style="display:none;"'}>no, try again</button>
+        <button id="spkOwnerSetAside" class="spk-overview-btn">${escapeHtml(COPY.SPK_ACTION_SET_ASIDE || 'set aside')}</button>
+        <a class="spk-overview-btn" id="spkOwnerTeachLink" href="/app/speakers/${TODAY}#owner-teach" ${hasInitialEligible ? 'style="display:none;"' : ''}>${escapeHtml(COPY.SPK_OVERVIEW_OWNER_HELP_LABEL || 'help teach your voice')}</a>
       </div>
     `;
-    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
-      fetch('/app/speakers/api/owner/confirm', {method: 'POST'}).then(loadOwner);
+
+    const audios = ownerPanel.querySelectorAll('audio');
+    audios.forEach((audio) => {
+      const idx = Number(audio.dataset.sampleIdx);
+      audio.addEventListener('canplay', () => {
+        playableIndices.add(idx);
+        updateActionButtons();
+      });
+      audio.addEventListener('error', () => {
+        playableIndices.delete(idx);
+        updateActionButtons();
+        const card = ownerPanel.querySelector(`.spk-owner-sample[data-sample-idx="${idx}"]`);
+        if (card) {
+          const sample = samples[idx];
+          if (audio.src && audio.src.startsWith('blob:')) {
+            URL.revokeObjectURL(audio.src);
+          }
+          const playerWrap = card.querySelector('.spk-owner-sample-player') || audio;
+          playerWrap.remove();
+          card.insertAdjacentHTML('beforeend', sampleNotice(sample || {}));
+        }
+      });
     });
+
+    ownerPanel.querySelectorAll('.spk-owner-btn-play').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const idx = e.currentTarget.dataset.sampleIdx;
+        const offset = Number(e.currentTarget.dataset.playOffset);
+        const audio = ownerPanel.querySelector(`audio[data-sample-idx="${idx}"]`);
+        if (audio && Number.isFinite(offset)) {
+          audio.currentTime = offset;
+          audio.play();
+        }
+      });
+    });
+
+    document.getElementById('spkOwnerConfirm')?.addEventListener('click', () => {
+      if (playableIndices.size === 0) return;
+      const firstIdx = Array.from(playableIndices)[0];
+      const sample = samples[firstIdx];
+      if (!sample) return;
+      ownerPanel.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+      fetch('/app/speakers/api/owner/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          version: version,
+          day: sample.day,
+          stream_layout: sample.stream_layout,
+          stream: sample.stream,
+          segment_key: sample.segment_key,
+          source: sample.source,
+          sentence_id: sample.sentence_id,
+          audio_sha256: sample.audio_sha256,
+        }),
+      }).then(loadOwner);
+    });
+
     document.getElementById('spkOwnerReject')?.addEventListener('click', () => {
-      fetch('/app/speakers/api/owner/reject', {method: 'POST'}).then(loadOwner);
+      ownerPanel.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+      fetch('/app/speakers/api/owner/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version }),
+      }).then(loadOwner);
+    });
+
+    document.getElementById('spkOwnerSetAside')?.addEventListener('click', () => {
+      ownerPanel.querySelectorAll('button').forEach(btn => { btn.disabled = true; });
+      fetch('/app/speakers/api/owner/set-aside', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ version }),
+      }).then(loadOwner);
     });
   }
 

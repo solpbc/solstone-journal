@@ -720,7 +720,8 @@ async fn speakers_state_uses_the_python_local_date_semantics() {
     // 124 + 1: fresh-eyes 2 #E-15 added SPK_OWNER_REVEAL_STREAMS_TEMPLATE_ONE
     // (the singular of "appears in {count} places", which read
     // "1 places").
-    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 125);
+    // 125 + 2: added SPK_SAMPLE_UNVERIFIED_EVIDENCE and SPK_ACTION_SET_ASIDE
+    assert_eq!(state["speaker_copy"].as_object().unwrap().len(), 127);
 }
 
 #[tokio::test]
