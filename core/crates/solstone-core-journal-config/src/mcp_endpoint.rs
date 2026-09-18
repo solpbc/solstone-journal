@@ -23,7 +23,7 @@ pub enum McpEndpointCapabilityError {
 /// The ACME directory selected for the journal-local MCP certificate.
 ///
 /// This setting never enables the endpoint. Missing configuration deliberately
-/// selects the non-production directory.
+/// selects the production directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpEndpointCertificateEnvironment {
     Staging,
@@ -72,16 +72,17 @@ pub fn mcp_endpoint_capability(
 
 /// Return the certificate environment without changing the capability gate.
 ///
-/// Only the exact lowercase literal `production` can select the production
-/// directory. An absent endpoint object or key is always staging.
+/// Missing configuration or an absent key deliberately selects the production
+/// directory. Only the exact lowercase literal `staging` selects staging; only
+/// exact `production` (or absence) selects production; anything else fails closed.
 pub fn mcp_endpoint_certificate_environment(
     read: &JournalConfigRead,
 ) -> Result<McpEndpointCertificateEnvironment, McpEndpointCertificateEnvironmentError> {
     let Some(config) = read.config.as_ref() else {
-        return Ok(McpEndpointCertificateEnvironment::Staging);
+        return Ok(McpEndpointCertificateEnvironment::Production);
     };
     let Some(endpoint) = config.get("mcp_endpoint") else {
-        return Ok(McpEndpointCertificateEnvironment::Staging);
+        return Ok(McpEndpointCertificateEnvironment::Production);
     };
     let Some(endpoint) = endpoint.as_object() else {
         return Err(
@@ -89,7 +90,7 @@ pub fn mcp_endpoint_certificate_environment(
         );
     };
     match endpoint.get("certificate_environment") {
-        None => Ok(McpEndpointCertificateEnvironment::Staging),
+        None => Ok(McpEndpointCertificateEnvironment::Production),
         Some(Value::String(value)) if value == "staging" => {
             Ok(McpEndpointCertificateEnvironment::Staging)
         }
@@ -240,10 +241,19 @@ mod tests {
     }
 
     #[test]
-    fn certificate_environment_missing_is_staging_without_changing_the_gate() {
+    fn certificate_environment_absent_config_is_production() {
+        for config in [None, Some(Map::new())] {
+            let read = read(config);
+            assert_eq!(
+                mcp_endpoint_certificate_environment(&read),
+                Ok(McpEndpointCertificateEnvironment::Production)
+            );
+        }
+    }
+
+    #[test]
+    fn certificate_environment_absent_key_is_production() {
         for config in [
-            None,
-            Some(Map::new()),
             Some(config_with_endpoint(json!({}))),
             Some(config_with_endpoint(json!({"enabled": false}))),
             Some(config_with_endpoint(json!({"enabled": true}))),
@@ -251,30 +261,33 @@ mod tests {
             let read = read(config);
             assert_eq!(
                 mcp_endpoint_certificate_environment(&read),
-                Ok(McpEndpointCertificateEnvironment::Staging)
+                Ok(McpEndpointCertificateEnvironment::Production)
             );
         }
     }
 
     #[test]
-    fn certificate_environment_requires_one_exact_literal() {
-        for (value, expected) in [
-            (
-                json!("staging"),
-                Ok(McpEndpointCertificateEnvironment::Staging),
-            ),
-            (
-                json!("production"),
-                Ok(McpEndpointCertificateEnvironment::Production),
-            ),
-        ] {
-            assert_eq!(
-                mcp_endpoint_certificate_environment(&read(Some(config_with_endpoint(json!({
-                    "certificate_environment": value,
-                }))))),
-                expected
-            );
-        }
+    fn certificate_environment_explicit_staging_is_staging() {
+        assert_eq!(
+            mcp_endpoint_certificate_environment(&read(Some(config_with_endpoint(json!({
+                "certificate_environment": "staging",
+            }))))),
+            Ok(McpEndpointCertificateEnvironment::Staging)
+        );
+    }
+
+    #[test]
+    fn certificate_environment_explicit_production_is_production() {
+        assert_eq!(
+            mcp_endpoint_certificate_environment(&read(Some(config_with_endpoint(json!({
+                "certificate_environment": "production",
+            }))))),
+            Ok(McpEndpointCertificateEnvironment::Production)
+        );
+    }
+
+    #[test]
+    fn certificate_environment_malformed_values_fail_closed() {
         for value in [
             json!(null),
             json!(false),
@@ -335,6 +348,12 @@ mod tests {
         assert_eq!(
             mcp_endpoint_force_staging_renewal(&read(Some(config_with_endpoint(json!({
                 "certificate_environment": "production",
+                "force_staging_renewal": true,
+            }))))),
+            Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalRequiresStaging)
+        );
+        assert_eq!(
+            mcp_endpoint_force_staging_renewal(&read(Some(config_with_endpoint(json!({
                 "force_staging_renewal": true,
             }))))),
             Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalRequiresStaging)

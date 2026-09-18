@@ -164,10 +164,14 @@ impl McpEndpointTlsService {
         if let Some(bytes) =
             unix::read_tls_state_bytes(&store.directory).map_err(|_| McpEndpointTlsError::State)?
         {
-            let decoded = decode_stored_state(&bytes, &service.resolver.hostname, environment)?;
-            if certificate_is_current(&decoded)? {
-                let active = activate_decoded_stored_state(decoded)?;
-                service.resolver.ordinary.store(Some(Arc::new(active)));
+            match classify_stored_state(&bytes, &service.resolver.hostname, environment)? {
+                StoredCertificateClassification::Same(decoded) => {
+                    if certificate_is_current(&decoded)? {
+                        let active = activate_decoded_stored_state(decoded)?;
+                        service.resolver.ordinary.store(Some(Arc::new(active)));
+                    }
+                }
+                StoredCertificateClassification::Foreign => {}
             }
         }
         Ok(service)
@@ -427,10 +431,14 @@ impl CertCache for McpEndpointAcmeCache {
         let Some(bytes) = unix::read_tls_state_bytes(&store.directory)? else {
             return Ok(None);
         };
-        let decoded =
-            decode_stored_state(&bytes, &self.service.resolver.hostname, store.environment)
-                .map_err(|_| io::Error::other("MCP endpoint certificate state is invalid"))?;
-        Ok(Some(stored_state_to_pem(decoded)))
+        match classify_stored_state(&bytes, &self.service.resolver.hostname, store.environment)
+            .map_err(|_| io::Error::other("MCP endpoint certificate state is invalid"))?
+        {
+            StoredCertificateClassification::Same(decoded) => {
+                Ok(Some(stored_state_to_pem(decoded)))
+            }
+            StoredCertificateClassification::Foreign => Ok(None),
+        }
     }
 
     async fn store_cert(
@@ -664,18 +672,27 @@ fn validate_stored_state(
     activate_decoded_stored_state(decoded)
 }
 
-fn decode_stored_state(
+enum StoredCertificateClassification {
+    Same(DecodedStoredCertificateState),
+    Foreign,
+}
+
+fn classify_stored_state(
     bytes: &[u8],
     expected_hostname: &str,
     expected_environment: McpEndpointCertificateEnvironment,
-) -> Result<DecodedStoredCertificateState, McpEndpointTlsError> {
+) -> Result<StoredCertificateClassification, McpEndpointTlsError> {
     if bytes.len() > unix::MAX_TLS_STATE_BYTES {
         return Err(McpEndpointTlsError::State);
     }
     let state = serde_json::from_slice::<StoredCertificateState>(bytes)
         .map_err(|_| McpEndpointTlsError::State)?;
-    if state.environment != environment_name(expected_environment)
-        || state.hostname != expected_hostname
+    let stored_environment = match state.environment.as_str() {
+        "staging" => McpEndpointCertificateEnvironment::Staging,
+        "production" => McpEndpointCertificateEnvironment::Production,
+        _ => return Err(McpEndpointTlsError::State),
+    };
+    if state.hostname != expected_hostname
         || !is_exact_authorized_hostname(&state.hostname, expected_hostname)
         || state.not_before >= state.not_after
     {
@@ -741,12 +758,29 @@ fn decode_stored_state(
     if leaf.public_key().subject_public_key.data != ecdsa_key.public_key().as_ref() {
         return Err(McpEndpointTlsError::State);
     }
-    Ok(DecodedStoredCertificateState {
-        certificate_chain,
-        private_key,
-        not_before: state.not_before,
-        not_after: state.not_after,
-    })
+    if stored_environment == expected_environment {
+        Ok(StoredCertificateClassification::Same(
+            DecodedStoredCertificateState {
+                certificate_chain,
+                private_key,
+                not_before: state.not_before,
+                not_after: state.not_after,
+            },
+        ))
+    } else {
+        Ok(StoredCertificateClassification::Foreign)
+    }
+}
+
+fn decode_stored_state(
+    bytes: &[u8],
+    expected_hostname: &str,
+    expected_environment: McpEndpointCertificateEnvironment,
+) -> Result<DecodedStoredCertificateState, McpEndpointTlsError> {
+    match classify_stored_state(bytes, expected_hostname, expected_environment)? {
+        StoredCertificateClassification::Same(decoded) => Ok(decoded),
+        StoredCertificateClassification::Foreign => Err(McpEndpointTlsError::State),
+    }
 }
 
 fn certificate_is_current(
@@ -1383,6 +1417,418 @@ mod tests {
             ),
             Err(McpEndpointTlsError::State)
         ));
+    }
+
+    #[test]
+    fn staging_state_is_foreign_under_production() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, _) = state_fixture();
+        let staging_service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("staging root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+            false,
+        )
+        .expect("staging service");
+        staging_service
+            .install_ordinary_certificate(chain, private_key, not_before, not_after)
+            .expect("install staging state");
+
+        let state_path = root.path().join("mcp-endpoint/tls/state.json");
+        let before_bytes = fs::read(&state_path).expect("read staging state");
+
+        let prod_service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("production root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("production service opens foreign staging state cleanly");
+        assert!(
+            prod_service.resolver.ordinary.load_full().is_none(),
+            "foreign staging state must not be served under production"
+        );
+
+        let cache = McpEndpointAcmeCache {
+            service: prod_service.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "production"))
+                .expect("foreign state load_cert is a clean miss, not an error")
+                .is_none()
+        );
+
+        let after_bytes = fs::read(&state_path).expect("read state after prod open");
+        assert_eq!(
+            before_bytes, after_bytes,
+            "foreign state file must not be rewritten on open or miss"
+        );
+    }
+
+    #[test]
+    fn production_install_activates_and_reuses_under_production() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, certificate) = state_fixture();
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("empty production service");
+        service
+            .install_ordinary_certificate(chain, private_key, not_before, not_after)
+            .expect("validated production state installs");
+
+        let reloaded = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("reloaded valid production state");
+        assert!(reloaded.resolver.ordinary.load_full().is_some());
+
+        let mut client = ClientConnection::new(
+            trusted_client_config(certificate, vec![HTTP11_ALPN.to_vec()]),
+            ServerName::try_from(HOSTNAME.to_owned()).expect("fixture hostname"),
+        )
+        .expect("ordinary client");
+        let mut server =
+            ServerConnection::new(mcp_endpoint_server_config(&reloaded)).expect("reloaded server");
+        complete_handshake(&mut client, &mut server)
+            .expect("reloaded production certificate handshakes");
+
+        let second_reload = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("second reopen")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("second production reopen");
+        assert!(second_reload.resolver.ordinary.load_full().is_some());
+
+        let cache = McpEndpointAcmeCache {
+            service: second_reload.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        let pem = runtime
+            .block_on(CertCache::load_cert(&cache, &[], "production"))
+            .expect("load production cert")
+            .expect("production cert is available to ACME");
+        assert!(pem.starts_with(b"-----BEGIN PRIVATE KEY-----"));
+    }
+
+    #[test]
+    fn production_state_is_foreign_under_explicit_staging() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, _) = state_fixture();
+        let prod_service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("prod root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("prod service");
+        prod_service
+            .install_ordinary_certificate(chain, private_key, not_before, not_after)
+            .expect("install production state");
+
+        let state_path = root.path().join("mcp-endpoint/tls/state.json");
+        let before_bytes = fs::read(&state_path).expect("read production state");
+
+        let staging_service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("staging root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+            false,
+        )
+        .expect("staging service opens foreign production state cleanly");
+        assert!(
+            staging_service.resolver.ordinary.load_full().is_none(),
+            "foreign production state must not be served under staging"
+        );
+
+        let cache = McpEndpointAcmeCache {
+            service: staging_service.lifecycle_copy(),
+            production: false,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "staging"))
+                .expect("foreign state load_cert is a clean miss, not an error")
+                .is_none()
+        );
+
+        let after_bytes = fs::read(&state_path).expect("read state after staging open");
+        assert_eq!(before_bytes, after_bytes);
+    }
+
+    #[test]
+    fn corrupt_state_is_integrity_failure_under_production() {
+        let root = TempDir::new().expect("state root");
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("empty service");
+        let store = service.store.as_ref().expect("state store");
+        unix::persist_tls_state_bytes(&store.directory, b"{\"corrupt\": true}")
+            .expect("persist corrupt state");
+
+        assert!(matches!(
+            McpEndpointTlsService::for_authorized_hostname(
+                Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+                HOSTNAME.to_owned(),
+                McpEndpointCertificateEnvironment::Production,
+                false,
+            ),
+            Err(McpEndpointTlsError::State)
+        ));
+
+        let cache = McpEndpointAcmeCache {
+            service: service.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "production"))
+                .is_err(),
+            "corrupt state must fail load_cert, never return miss"
+        );
+    }
+
+    #[test]
+    fn hostname_mismatched_state_is_integrity_failure_under_production() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, _) = state_fixture();
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("empty service");
+        let other_hostname = "cd56ef78.solstone.me";
+        let state = StoredCertificateState {
+            environment: "production".to_owned(),
+            hostname: other_hostname.to_owned(),
+            certificate_chain: chain
+                .into_iter()
+                .map(|value| base64::engine::general_purpose::STANDARD.encode(value))
+                .collect(),
+            private_key: base64::engine::general_purpose::STANDARD.encode(private_key),
+            not_before,
+            not_after,
+        };
+        let encoded = serde_json::to_vec(&state).expect("state JSON");
+        let store = service.store.as_ref().expect("state store");
+        unix::persist_tls_state_bytes(&store.directory, &encoded)
+            .expect("persist mismatched state");
+
+        assert!(matches!(
+            McpEndpointTlsService::for_authorized_hostname(
+                Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+                HOSTNAME.to_owned(),
+                McpEndpointCertificateEnvironment::Production,
+                false,
+            ),
+            Err(McpEndpointTlsError::State)
+        ));
+
+        let cache = McpEndpointAcmeCache {
+            service: service.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "production"))
+                .is_err(),
+            "hostname mismatch must fail load_cert, never return miss"
+        );
+    }
+
+    #[test]
+    fn tls_permissions_failure_is_integrity_failure_under_production() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, _) = state_fixture();
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("service");
+        service
+            .install_ordinary_certificate(chain, private_key, not_before, not_after)
+            .expect("install state");
+
+        let state_path = root.path().join("mcp-endpoint/tls/state.json");
+        fs::set_permissions(&state_path, fs::Permissions::from_mode(0o644))
+            .expect("chmod state.json to invalid 0o644");
+
+        assert!(matches!(
+            McpEndpointTlsService::for_authorized_hostname(
+                Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+                HOSTNAME.to_owned(),
+                McpEndpointCertificateEnvironment::Production,
+                false,
+            ),
+            Err(McpEndpointTlsError::State)
+        ));
+
+        let cache = McpEndpointAcmeCache {
+            service: service.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "production"))
+                .is_err(),
+            "invalid permissions must fail load_cert, never return miss"
+        );
+    }
+
+    #[test]
+    fn expired_foreign_state_is_not_served_and_yields_cache_miss_under_production() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after) = expired_state_fixture();
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Staging,
+            false,
+        )
+        .expect("empty service");
+        let state = StoredCertificateState {
+            environment: "staging".to_owned(),
+            hostname: HOSTNAME.to_owned(),
+            certificate_chain: chain
+                .into_iter()
+                .map(|value| base64::engine::general_purpose::STANDARD.encode(value))
+                .collect(),
+            private_key: base64::engine::general_purpose::STANDARD.encode(private_key),
+            not_before,
+            not_after,
+        };
+        let encoded = serde_json::to_vec(&state).expect("state JSON");
+        let store = service.store.as_ref().expect("state store");
+        unix::persist_tls_state_bytes(&store.directory, &encoded)
+            .expect("persist expired staging state");
+
+        let prod_service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("expired foreign state is structurally valid and opens cleanly");
+        assert!(prod_service.resolver.ordinary.load_full().is_none());
+
+        let cache = McpEndpointAcmeCache {
+            service: prod_service.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "production"))
+                .expect("expired foreign cert load_cert")
+                .is_none(),
+            "expired foreign cert is a cache miss and must not be returned to ACME"
+        );
+    }
+
+    #[test]
+    fn unknown_environment_string_is_integrity_failure() {
+        let root = TempDir::new().expect("state root");
+        let (chain, private_key, not_before, not_after, _) = state_fixture();
+        let service = McpEndpointTlsService::for_authorized_hostname(
+            Arc::new(JournalRoot::open(root.path()).expect("journal root")),
+            HOSTNAME.to_owned(),
+            McpEndpointCertificateEnvironment::Production,
+            false,
+        )
+        .expect("empty service");
+        let state = StoredCertificateState {
+            environment: "test".to_owned(),
+            hostname: HOSTNAME.to_owned(),
+            certificate_chain: chain
+                .into_iter()
+                .map(|value| base64::engine::general_purpose::STANDARD.encode(value))
+                .collect(),
+            private_key: base64::engine::general_purpose::STANDARD.encode(private_key),
+            not_before,
+            not_after,
+        };
+        let encoded = serde_json::to_vec(&state).expect("state JSON");
+        let store = service.store.as_ref().expect("state store");
+        unix::persist_tls_state_bytes(&store.directory, &encoded)
+            .expect("persist unknown env state");
+
+        assert!(matches!(
+            McpEndpointTlsService::for_authorized_hostname(
+                Arc::new(JournalRoot::open(root.path()).expect("reopened journal root")),
+                HOSTNAME.to_owned(),
+                McpEndpointCertificateEnvironment::Production,
+                false,
+            ),
+            Err(McpEndpointTlsError::State)
+        ));
+
+        let cache = McpEndpointAcmeCache {
+            service: service.lifecycle_copy(),
+            production: true,
+            force_staging_renewal: false,
+        };
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime");
+        assert!(
+            runtime
+                .block_on(CertCache::load_cert(&cache, &[], "production"))
+                .is_err(),
+            "unknown environment string must fail load_cert"
+        );
     }
 
     #[test]

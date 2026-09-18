@@ -945,6 +945,35 @@ struct BuildLane<'a> {
     ffmpeg_run_id: &'a str,
 }
 
+fn cargo_argv(triple: &str, bins: &[(String, String)]) -> Vec<String> {
+    let mut args = [
+        "build",
+        "--manifest-path",
+        "core/Cargo.toml",
+        "--locked",
+        "--offline",
+        "--release",
+        "--target",
+        triple,
+        "--message-format=json",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    for (package, bin) in bins {
+        args.extend(["-p".into(), package.clone(), "--bin".into(), bin.clone()]);
+    }
+    if bins
+        .iter()
+        .any(|(package, bin)| package == "solstone-core" && bin == "solstone-core")
+    {
+        args.extend([
+            "--features".into(),
+            "solstone-core/journal-mcp-endpoint".into(),
+        ]);
+    }
+    args
+}
+
 fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, ProduceError> {
     if lane.bins.is_empty() {
         return Ok(BTreeMap::new());
@@ -973,20 +1002,7 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
                 None => env::var("PATH").unwrap_or_default(),
             },
         )
-        .args([
-            "build",
-            "--manifest-path",
-            "core/Cargo.toml",
-            "--locked",
-            "--offline",
-            "--release",
-            "--target",
-            lane.triple,
-            "--message-format=json",
-        ]);
-    for (package, bin) in lane.bins {
-        command.arg("-p").arg(package).arg("--bin").arg(bin);
-    }
+        .args(cargo_argv(lane.triple, lane.bins));
     let host_arch = lane.host.split('-').next().unwrap_or_default();
     let target_arch = lane.triple.split('-').next().unwrap_or_default();
     for (key, value) in lane.vars {
@@ -2201,6 +2217,119 @@ mod tests {
         let error =
             inspect_bin("solstone-core", "unknown", &musl, elf::machine_x86_64()).unwrap_err();
         assert!(error.to_string().contains("unexpected:"));
+    }
+
+    #[test]
+    fn cargo_argv_adds_package_qualified_mcp_feature_for_solstone_core() {
+        let inventory_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../distribution/inventory.toml")
+            .canonicalize()
+            .unwrap();
+        let inventory = crate::load_inventory(&inventory_path).unwrap();
+
+        let target_linux = inventory
+            .target
+            .iter()
+            .find(|t| t.id == "linux-x86_64")
+            .expect("linux-x86_64 target");
+
+        let musl_bins = bins_for_resolved_lane(&inventory, target_linux, "musl-static");
+        let musl_argv = cargo_argv(&target_linux.triple_musl, &musl_bins);
+        assert!(
+            musl_argv
+                .windows(2)
+                .any(|pair| pair == ["-p", "solstone-core"])
+        );
+        assert!(
+            musl_argv
+                .windows(2)
+                .any(|pair| pair == ["--bin", "solstone-core"])
+        );
+        let musl_feature_matches: Vec<_> = musl_argv
+            .windows(2)
+            .filter(|pair| *pair == ["--features", "solstone-core/journal-mcp-endpoint"])
+            .collect();
+        assert_eq!(
+            musl_feature_matches.len(),
+            1,
+            "musl-static argv must include solstone-core/journal-mcp-endpoint exactly once"
+        );
+        assert!(
+            !musl_argv.iter().any(|s| s == "journal-mcp-endpoint"),
+            "argv must never contain bare journal-mcp-endpoint token"
+        );
+
+        let zig_bins = bins_for_resolved_lane(&inventory, target_linux, "zig-gnu-2.27");
+        let zig_argv = cargo_argv(&target_linux.triple_gnu, &zig_bins);
+        assert!(
+            !zig_argv
+                .iter()
+                .any(|s| s == "solstone-core/journal-mcp-endpoint"),
+            "helper-only lane must not contain mcp feature"
+        );
+        assert!(
+            !zig_argv.iter().any(|s| s == "journal-mcp-endpoint"),
+            "helper-only lane must not contain bare mcp feature"
+        );
+        assert!(
+            !zig_argv.iter().any(|s| s == "--features"),
+            "helper-only lane must not have --features argument"
+        );
+        assert!(
+            !zig_argv
+                .windows(2)
+                .any(|pair| pair == ["-p", "solstone-core"]),
+            "helper-only lane must not build solstone-core"
+        );
+
+        let target_macos = inventory
+            .target
+            .iter()
+            .find(|t| t.id == "macos-arm64")
+            .expect("macos-arm64 target");
+        let macos_bins = bins_for_resolved_lane(&inventory, target_macos, "apple-native");
+        let macos_argv = cargo_argv(&target_macos.triple_apple, &macos_bins);
+        assert!(
+            macos_argv
+                .windows(2)
+                .any(|pair| pair == ["-p", "solstone-core"])
+        );
+        assert!(
+            macos_argv
+                .windows(2)
+                .any(|pair| pair == ["--bin", "solstone-core"])
+        );
+        let macos_feature_matches: Vec<_> = macos_argv
+            .windows(2)
+            .filter(|pair| *pair == ["--features", "solstone-core/journal-mcp-endpoint"])
+            .collect();
+        assert_eq!(
+            macos_feature_matches.len(),
+            1,
+            "apple-native argv must include solstone-core/journal-mcp-endpoint exactly once"
+        );
+
+        let synthetic_helpers = vec![
+            (
+                "solstone-core-describe".to_owned(),
+                "solstone-core-describe".to_owned(),
+            ),
+            (
+                "solstone-core-pdf".to_owned(),
+                "solstone-core-pdf".to_owned(),
+            ),
+        ];
+        let synthetic_argv = cargo_argv("x86_64-unknown-linux-musl", &synthetic_helpers);
+        assert!(
+            !synthetic_argv.iter().any(|s| s == "--features"),
+            "synthetic helper list must not grow feature tokens"
+        );
+        assert!(
+            !synthetic_argv
+                .iter()
+                .any(|s| s.contains("journal-mcp-endpoint")),
+            "synthetic helper list must not contain mcp feature"
+        );
     }
 
     fn windows_stage_fixture() -> (
