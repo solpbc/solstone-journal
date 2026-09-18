@@ -345,14 +345,6 @@ impl ParentLossLedger {
         )
     }
 
-    /// Preserve a pointer we cannot parse, so healing is recoverable evidence
-    /// rather than a silent delete. Mirrors the `parent-loss.wedged-*` shape an
-    /// operator already produces by hand.
-    fn set_aside_active_pointer(&self, active_path: &Path) -> Result<(), ParentLossLedgerError> {
-        crate::durability::set_aside(active_path)?;
-        Ok(())
-    }
-
     /// The highest generation with a directory on disk, so a healed ledger never
     /// reissues a number an existing generation already owns.
     fn highest_recorded_generation(&self) -> Result<ParentLossGeneration, ParentLossLedgerError> {
@@ -427,14 +419,19 @@ impl ParentLossLedger {
         // prove anything. It is taken because an unbootable journal is the worse
         // failure, and because the supervisor's own singleton guards sit above
         // this ledger.
-        let pointer = match read_json_optional::<ActiveGeneration>(&active_path) {
-            Ok(pointer) => pointer,
-            Err(ParentLossLedgerError::Json(_)) => {
-                self.set_aside_active_pointer(&active_path)?;
-                None
-            }
-            Err(error) => return Err(error),
-        };
+        let pointer =
+            match solstone_core_journal_io::durability::read_json_durable::<ActiveGeneration>(
+                solstone_core_journal_io::durability::ArtifactId::ParentLossActive,
+                &active_path,
+            ) {
+                Ok(solstone_core_journal_io::durability::DurableRead::Present(pointer)) => {
+                    Some(pointer)
+                }
+                Ok(solstone_core_journal_io::durability::DurableRead::Absent) => None,
+                Ok(solstone_core_journal_io::durability::DurableRead::SetAside(_)) => None,
+                Ok(solstone_core_journal_io::durability::DurableRead::Unreadable { .. }) => None,
+                Err(error) => return Err(error.into()),
+            };
         let floor = self.highest_recorded_generation()?;
         let next = match pointer {
             None => {

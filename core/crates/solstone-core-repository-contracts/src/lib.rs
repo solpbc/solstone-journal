@@ -60,6 +60,9 @@ mod hosted_launch_admission_boundary;
 #[path = "contracts/installation_binding_admission_surface.rs"]
 mod installation_binding_admission_surface;
 #[cfg(test)]
+#[path = "contracts/journal_artifact_durability.rs"]
+mod journal_artifact_durability;
+#[cfg(test)]
 #[path = "contracts/journal_windows_target_gate.rs"]
 mod journal_windows_target_gate;
 #[cfg(test)]

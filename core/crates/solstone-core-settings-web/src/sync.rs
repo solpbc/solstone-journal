@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::path::PathBuf;
 
 use axum::{body::Bytes, response::Response};
 use serde_json::{Value, json};
-use solstone_core_journal_io::{LockOptions, MalformedPolicy, hold_lock, read_json};
+use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
+use solstone_core_journal_io::{LockOptions, hold_lock};
 
 use crate::{
     config::truthy,
@@ -15,11 +15,11 @@ use crate::{
 };
 
 pub async fn get(journal_root: PathBuf) -> Response {
-    let schedules = fs::read(journal_root.join("config/schedules.json"))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|value| value.as_object().cloned())
-        .unwrap_or_default();
+    let schedules_path = journal_root.join("config/schedules.json");
+    let schedules = match read_json_durable::<Value>(ArtifactId::SchedulesConfig, &schedules_path) {
+        Ok(DurableRead::Present(Value::Object(map))) => map,
+        _ => serde_json::Map::new(),
+    };
     let config = solstone_core_journal_config::read_journal_config(&journal_root)
         .expect("session gate handled corrupt config")
         .config
@@ -52,9 +52,10 @@ pub async fn update(journal_root: PathBuf, body: Bytes) -> Response {
         Ok(lock) => lock,
         Err(_) => return settings_operation_failed(),
     };
-    let Ok(Value::Object(mut schedules)) = read_json(&path, json!({}), MalformedPolicy::Raise)
-    else {
-        return settings_operation_failed();
+    let mut schedules = match read_json_durable::<Value>(ArtifactId::SchedulesConfig, &path) {
+        Ok(DurableRead::Present(Value::Object(map))) => map,
+        Ok(DurableRead::Absent) => serde_json::Map::new(),
+        _ => return settings_operation_failed(),
     };
     let mut changed_fields = serde_json::Map::new();
     for (service, entry_name) in [("plaud", "sync:plaud"), ("obsidian", "sync:obsidian")] {

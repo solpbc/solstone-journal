@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
-    AppendError, AtomicWriteError, JsonWriteOptions, LockError, LockOptions, MalformedPolicy,
-    ReadError, append_jsonl, hold_lock, read_json, read_jsonl, write_json,
+    AppendError, AtomicWriteError, JsonWriteOptions, LockError, LockOptions, ReadError,
+    append_jsonl, hold_lock, write_json,
 };
 
 use crate::{FacetTrustLockError, hold_facet_trust_lock};
@@ -67,12 +67,17 @@ impl Error for AwarenessStoreError {
 /// Python's `get_journal()` creates this directory as a side effect. Native GET
 /// paths deliberately do not reproduce that mutation.
 pub fn load_current(journal_root: &Path) -> Result<Value, AwarenessStoreError> {
-    read_json(
-        current_path(journal_root),
-        json!({}),
-        MalformedPolicy::WarnAndSkip,
-    )
-    .map_err(AwarenessStoreError::Read)
+    use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
+    let path = current_path(journal_root);
+    match read_json_durable::<Value>(ArtifactId::AwarenessCurrent, &path) {
+        Ok(DurableRead::Present(val)) => Ok(val),
+        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
+            Ok(json!({}))
+        }
+        Err(e) => Err(AwarenessStoreError::Read(
+            solstone_core_journal_io::ReadError::Io { path, source: e },
+        )),
+    }
 }
 
 /// Return the current import-tracking section or its Python-compatible default.
@@ -86,12 +91,15 @@ pub fn load_imports(journal_root: &Path) -> Result<Value, AwarenessStoreError> {
 
 /// Read one awareness daily log without creating the awareness directory.
 pub fn read_log(journal_root: &Path, day: &str) -> Result<Vec<Value>, AwarenessStoreError> {
-    read_jsonl(
-        log_path(journal_root, day),
-        Vec::new(),
-        MalformedPolicy::WarnAndSkip,
-    )
-    .map_err(AwarenessStoreError::Read)
+    use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
+    let path = log_path(journal_root, day);
+    let durable = read_jsonl_durable::<Value>(ArtifactId::AwarenessLog, &path).map_err(|e| {
+        AwarenessStoreError::Read(solstone_core_journal_io::ReadError::Io {
+            path: path.clone(),
+            source: e,
+        })
+    })?;
+    Ok(durable.records)
 }
 
 /// Append one entry to an awareness daily log using caller-provided time values.

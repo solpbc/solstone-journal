@@ -737,11 +737,12 @@ pub(crate) fn replay_activity_state(
             continue;
         };
         let sense_path = segment_dir.join("talents/sense.json");
-        let Ok(bytes) = std::fs::read(&sense_path) else {
-            continue;
-        };
-        let Ok(sense) = serde_json::from_slice::<Value>(&bytes) else {
-            continue;
+        let sense = match solstone_core_journal_io::durability::read_json_durable::<Value>(
+            solstone_core_journal_io::durability::ArtifactId::SegmentSense,
+            &sense_path,
+        ) {
+            Ok(solstone_core_journal_io::durability::DurableRead::Present(sense)) => sense,
+            _ => continue,
         };
         if !valid_activity_sense(&sense) {
             continue;

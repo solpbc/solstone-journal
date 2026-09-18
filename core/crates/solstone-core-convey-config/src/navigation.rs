@@ -4,9 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{
-    JsonWriteOptions, LockOptions, MalformedPolicy, hold_lock, read_json, write_json,
-};
+use solstone_core_journal_io::{JsonWriteOptions, LockOptions, hold_lock, write_json};
 
 const DEFAULT_RAIL_APPS: [&str; 8] = [
     "home",
@@ -142,12 +140,26 @@ fn mutate(
         },
     )
     .map_err(|error| ConveyConfigError::Io(error.to_string()))?;
-    let mut root =
-        match read_json::<Value>(&path, Value::Object(Map::new()), MalformedPolicy::Raise) {
-            Ok(Value::Object(root)) => root,
-            Ok(_) => Map::new(),
-            Err(error) => return Err(ConveyConfigError::Malformed(error.to_string())),
-        };
+    let mut root = match solstone_core_journal_io::durability::read_json_durable_validated::<Value>(
+        solstone_core_journal_io::durability::ArtifactId::ConveyConfig,
+        &path,
+        |val| {
+            if val.is_object() {
+                Ok(())
+            } else {
+                Err("convey config must be object".to_owned())
+            }
+        },
+    ) {
+        Ok(solstone_core_journal_io::durability::DurableRead::Present(Value::Object(root))) => root,
+        Ok(solstone_core_journal_io::durability::DurableRead::Present(_)) => unreachable!(),
+        Ok(
+            solstone_core_journal_io::durability::DurableRead::Absent
+            | solstone_core_journal_io::durability::DurableRead::SetAside(_)
+            | solstone_core_journal_io::durability::DurableRead::Unreadable { .. },
+        ) => Map::new(),
+        Err(error) => return Err(ConveyConfigError::Io(error.to_string())),
+    };
     let changed = transform(&mut root);
     if changed {
         write_json(

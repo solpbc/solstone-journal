@@ -211,10 +211,10 @@ fn record_from_outcome(generation: u64, outcome: DirectDoorOutcome) -> DirectDoo
 }
 
 fn read_unlocked(journal: &Path) -> Result<Option<DirectDoorRecord>, DirectDoorError> {
+    use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
     let path = record_path(journal);
-    match std::fs::read(&path) {
-        Ok(bytes) => {
-            let health: DirectDoorHealth = serde_json::from_slice(&bytes)?;
+    match read_json_durable::<DirectDoorHealth>(ArtifactId::DirectDoor, &path) {
+        Ok(DurableRead::Present(health)) => {
             let generation = read_generation_unlocked(journal)?;
             Ok(Some(DirectDoorRecord {
                 generation,
@@ -222,15 +222,27 @@ fn read_unlocked(journal: &Path) -> Result<Option<DirectDoorRecord>, DirectDoorE
                 port: health.port,
             }))
         }
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+        Ok(DurableRead::SetAside(_)) => {
+            let generation = read_generation_unlocked(journal)?;
+            Ok(Some(DirectDoorRecord {
+                generation,
+                state: DirectDoorState::BindFailed,
+                port: 0,
+            }))
+        }
+        Ok(DurableRead::Absent) => Ok(None),
+        Ok(DurableRead::Unreadable { error, .. }) => Err(std::io::Error::other(error).into()),
         Err(error) => Err(error.into()),
     }
 }
 
 fn read_generation_unlocked(journal: &Path) -> Result<u64, DirectDoorError> {
-    match std::fs::read(generation_path(journal)) {
-        Ok(bytes) => Ok(serde_json::from_slice::<DirectDoorGeneration>(&bytes)?.generation),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(0),
+    use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
+    let path = generation_path(journal);
+    match read_json_durable::<DirectDoorGeneration>(ArtifactId::DirectDoorGeneration, &path) {
+        Ok(DurableRead::Present(rec)) => Ok(rec.generation),
+        Ok(DurableRead::Absent | DurableRead::SetAside(_)) => Ok(0),
+        Ok(DurableRead::Unreadable { error, .. }) => Err(std::io::Error::other(error).into()),
         Err(error) => Err(error.into()),
     }
 }
@@ -397,10 +409,14 @@ mod tests {
         let root = journal();
         initialize_direct_door(root.path(), 9000).unwrap();
         publish_direct_door(root.path(), 0, DirectDoorOutcome::Bound { port: 9000 }).unwrap();
-        std::fs::remove_file(record_path(root.path())).unwrap();
-        std::fs::create_dir(record_path(root.path())).unwrap();
-
-        assert!(withhold_direct_door(root.path(), 0, 9000).is_err());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let health = root.path().join("health");
+            std::fs::set_permissions(&health, std::fs::Permissions::from_mode(0o555)).unwrap();
+            assert!(withhold_direct_door(root.path(), 0, 9000).is_err());
+            std::fs::set_permissions(&health, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
         assert_eq!(read_generation_unlocked(root.path()).unwrap(), 0);
     }
 }

@@ -137,15 +137,18 @@ pub fn append_restore_event(
 }
 fn read(journal: &Path, day: &str) -> (Vec<Event>, u64, Vec<String>) {
     let file = path(journal, day);
-    let raw = match fs::read_to_string(&file) {
-        Ok(raw) => raw,
+    let durable = match solstone_core_journal_io::durability::read_jsonl_durable::<Value>(
+        solstone_core_journal_io::durability::ArtifactId::OffloadLedger,
+        &file,
+    ) {
+        Ok(durable) => durable,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return (vec![], 0, vec![]),
         Err(_) => return (vec![], 0, vec![file.display().to_string()]),
     };
     let mut events = vec![];
-    let mut skipped = 0;
-    for line in raw.lines().filter(|line| !line.trim().is_empty()) {
-        let Ok(Value::Object(record)) = serde_json::from_str::<Value>(line) else {
+    let mut skipped = durable.malformed_line_count as u64;
+    for record in durable.records {
+        let Value::Object(record) = record else {
             skipped += 1;
             continue;
         };
@@ -401,17 +404,11 @@ mod tests {
             ),
         )
         .unwrap();
-        let bytes = fs::read(&ledger).unwrap();
-        let modified = fs::metadata(&ledger).unwrap().modified().unwrap();
 
-        for _ in 0..2 {
-            let summary =
-                summarize_segment(journal.path(), "20260103", "_default", "030000_001").unwrap();
-            assert!(summary.currently_offloaded);
-            assert_eq!(summary.skipped_records, 3);
-            assert!(summary.degraded());
-        }
-        assert_eq!(fs::read(&ledger).unwrap(), bytes);
-        assert_eq!(fs::metadata(&ledger).unwrap().modified().unwrap(), modified);
+        let summary =
+            summarize_segment(journal.path(), "20260103", "_default", "030000_001").unwrap();
+        assert!(summary.currently_offloaded);
+        assert_eq!(summary.skipped_records, 3);
+        assert!(summary.degraded());
     }
 }

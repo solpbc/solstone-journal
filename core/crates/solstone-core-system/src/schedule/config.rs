@@ -6,9 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use serde_json::{Map, Value, json};
-use solstone_core_journal_io::{
-    AtomicWriteOptions, MalformedPolicy, ReadError, atomic_replace, hold_lock, read_json,
-};
+use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace, hold_lock};
 
 use super::ScheduleError;
 
@@ -48,26 +46,29 @@ pub(crate) struct ConfigLoad {
 }
 
 pub(crate) fn load_runtime(path: &Path) -> Result<ConfigLoad, ScheduleError> {
-    if !path.exists() {
-        return Ok(ConfigLoad::default());
-    }
-    let raw = match read_json::<Value>(path, Value::Null, MalformedPolicy::Raise) {
-        Ok(raw) => raw,
-        Err(ReadError::Malformed(_)) => {
-            return Ok(ConfigLoad {
-                config: ScheduleConfig::default(),
-                diagnostics: vec![diagnostic("malformed schedules config")],
-            });
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
+    match read_json_durable_validated::<Value>(ArtifactId::SchedulesConfig, path, |val| {
+        if val.is_object() {
+            Ok(())
+        } else {
+            Err("schedules config must be a JSON object".to_owned())
         }
-        Err(error) => return Err(io_error(error)),
-    };
-    let Value::Object(raw) = raw else {
-        return Ok(ConfigLoad {
+    }) {
+        Ok(DurableRead::Present(Value::Object(raw))) => Ok(validate(raw)),
+        Ok(DurableRead::Present(_)) => unreachable!(),
+        Ok(DurableRead::Absent) => Ok(ConfigLoad::default()),
+        Ok(DurableRead::SetAside(_)) => Ok(ConfigLoad {
             config: ScheduleConfig::default(),
-            diagnostics: vec![diagnostic("schedules config must be a JSON object")],
-        });
-    };
-    Ok(validate(raw))
+            diagnostics: vec![diagnostic("malformed schedules config")],
+        }),
+        Ok(DurableRead::Unreadable { .. }) => Ok(ConfigLoad {
+            config: ScheduleConfig::default(),
+            diagnostics: vec![diagnostic("unreadable schedules config")],
+        }),
+        Err(error) => Err(ScheduleError::Io(error.to_string())),
+    }
 }
 
 /// Read one enabled entry from current configuration without changing scheduler state.
@@ -249,19 +250,25 @@ pub fn publish_daily_time(
 }
 
 fn read_strict_raw(path: &Path) -> Result<Map<String, Value>, ScheduleError> {
-    let raw = read_json::<Value>(path, Value::Object(Map::new()), MalformedPolicy::Raise).map_err(
-        |error| match error {
-            ReadError::Malformed(_) => ScheduleError::MalformedConfig {
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableRead, read_json_durable_validated,
+    };
+    match read_json_durable_validated::<Value>(ArtifactId::SchedulesConfig, path, |val| {
+        if val.is_object() {
+            Ok(())
+        } else {
+            Err("schedules config must be a JSON object".to_owned())
+        }
+    }) {
+        Ok(DurableRead::Present(Value::Object(raw))) => Ok(raw),
+        Ok(DurableRead::Present(_)) => unreachable!(),
+        Ok(DurableRead::Absent) => Ok(Map::new()),
+        Ok(DurableRead::SetAside(_)) | Ok(DurableRead::Unreadable { .. }) => {
+            Err(ScheduleError::MalformedConfig {
                 path: path.to_path_buf(),
-            },
-            error => io_error(error),
-        },
-    )?;
-    match raw {
-        Value::Object(raw) => Ok(raw),
-        _ => Err(ScheduleError::MalformedConfig {
-            path: path.to_path_buf(),
-        }),
+            })
+        }
+        Err(error) => Err(ScheduleError::Io(error.to_string())),
     }
 }
 

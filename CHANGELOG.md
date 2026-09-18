@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- a damaged bookkeeping file no longer stops the journal from starting or finishing its day; the damaged file is kept beside the original and journal doctor lists it
 - days with a lot of context about a person or thing no longer get stuck while your journal considers new memories. it now fits source excerpts and existing memories within the available space before asking the model.
 
 ## [2.0.8] - 2026-09-16

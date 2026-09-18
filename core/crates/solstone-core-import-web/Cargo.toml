@@ -30,6 +30,7 @@ solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
 solstone-core-journal-archive.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-journal-config-write.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-entity-matching.workspace = true

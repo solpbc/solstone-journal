@@ -8,7 +8,6 @@ pub mod cap;
 pub mod catchup;
 pub mod daily_coverage;
 pub mod direct_door;
-pub mod durability;
 pub mod error;
 pub mod lifecycle;
 pub mod memory_admission;

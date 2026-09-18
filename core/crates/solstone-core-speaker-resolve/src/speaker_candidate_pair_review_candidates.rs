@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
+use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, MalformedPolicy, ReadError,
-    hold_lock, read_jsonl, write_jsonl,
+    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, ReadError, hold_lock, write_jsonl,
 };
 use thiserror::Error;
 
@@ -43,6 +43,23 @@ pub struct CandidatePairSuggestion {
     pub target_samples: Vec<Value>,
 }
 
+/// Load candidate-pair review candidates, skipping malformed JSONL rows.
+pub fn load_candidates(
+    journal_root: &Path,
+) -> Result<Vec<Value>, SpeakerCandidatePairReviewCandidateError> {
+    let path = review_candidates_path(journal_root);
+    let result = read_jsonl_durable::<Value>(ArtifactId::SpeakerPairReviewCandidates, &path)
+        .map_err(|e| ReadError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+    Ok(result
+        .records
+        .into_iter()
+        .filter(Value::is_object)
+        .collect())
+}
+
 /// Record a pair while preserving prior decisions, including after pool merges.
 pub fn record_candidate_pair(
     journal_root: &Path,
@@ -57,7 +74,7 @@ pub fn record_candidate_pair(
     let path = review_candidates_path(journal_root);
     create_parent(&path)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
-    let mut rows: Vec<Value> = read_jsonl(&path, Vec::new(), MalformedPolicy::Raise)?;
+    let mut rows = load_candidates(journal_root)?;
     if rows.iter().any(|row| !row.is_object()) {
         return Err(SpeakerCandidatePairReviewCandidateError::InvalidRow(
             "expected JSON objects",
@@ -110,17 +127,6 @@ pub fn record_candidate_pair(
     }
     write_jsonl(&path, rows, AtomicWriteOptions::default())?;
     Ok((Some(row), created, false))
-}
-
-/// Load candidate-pair review candidates, skipping malformed JSONL rows.
-pub fn load_candidates(
-    journal_root: &Path,
-) -> Result<Vec<Value>, SpeakerCandidatePairReviewCandidateError> {
-    Ok(read_jsonl(
-        review_candidates_path(journal_root),
-        Vec::new(),
-        MalformedPolicy::WarnAndSkip,
-    )?)
 }
 
 /// Mark one candidate-pair review candidate accepted when it exists.

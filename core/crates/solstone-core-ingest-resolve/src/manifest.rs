@@ -7,9 +7,10 @@ use std::io;
 use std::path::Path;
 
 use serde_json::{Map, Value};
+use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
 use solstone_core_journal_io::{
-    DetailedAtomicOutcome, JsonWriteOptions, LockOptions, MalformedPolicy, atomic_replace_detailed,
-    hold_lock, read_json, write_json,
+    DetailedAtomicOutcome, JsonWriteOptions, LockOptions, atomic_replace_detailed, hold_lock,
+    write_json,
 };
 use solstone_core_segment::SegmentDir;
 
@@ -19,6 +20,33 @@ use crate::{ApplyPlan, FileDisposition};
 
 const ADVANCE_PENDING: &str = "stream_advance_pending";
 const NOTIFIED_FILES: &str = "notified_files";
+
+fn read_ingest_json(path: &Path) -> Result<Option<Value>, ApplyError> {
+    match read_json_durable(ArtifactId::SegmentIngest, path).map_err(|e| {
+        ApplyError::Read(solstone_core_journal_io::ReadError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })
+    })? {
+        DurableRead::Present(value) => Ok(Some(value)),
+        DurableRead::Absent => Ok(None),
+        DurableRead::SetAside(aside) => {
+            Err(ApplyError::Read(solstone_core_journal_io::ReadError::Io {
+                path: path.to_path_buf(),
+                source: io::Error::other(format!(
+                    "ingest manifest was damaged and set aside as {}",
+                    aside.display()
+                )),
+            }))
+        }
+        DurableRead::Unreadable { path, error } => {
+            Err(ApplyError::Read(solstone_core_journal_io::ReadError::Io {
+                path,
+                source: io::Error::other(error),
+            }))
+        }
+    }
+}
 
 /// Invalidate delivery receipts before restoring raw bytes. The source mutation
 /// lock held by the ingest caller serializes this with notification completion.
@@ -33,9 +61,7 @@ pub(crate) fn prepare_ingest_notifications(plan: &ApplyPlan) -> Result<(), Apply
     }
     let path = plan.segment.path().join("ingest.json");
     let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
-    let Some(mut value) = read_json::<Option<Value>>(&path, None, MalformedPolicy::Raise)
-        .map_err(ApplyError::Read)?
-    else {
+    let Some(mut value) = read_ingest_json(&path)? else {
         return Ok(());
     };
     let mut changed = false;
@@ -59,8 +85,7 @@ pub fn pending_ingest_notifications(
     files: &[AppliedFile],
 ) -> Result<Vec<String>, ApplyError> {
     let path = segment.path().join("ingest.json");
-    let value: Option<Value> =
-        read_json(&path, None, MalformedPolicy::Raise).map_err(ApplyError::Read)?;
+    let value = read_ingest_json(&path)?;
     let mut pending = Vec::new();
     for file in files {
         if file.disposition == AppliedDisposition::Unwritten {
@@ -106,8 +131,9 @@ pub fn record_ingest_notification(
 ) -> Result<(), ApplyError> {
     let path = segment.path().join("ingest.json");
     let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
-    let mut value: Map<String, Value> =
-        read_json(&path, Map::new(), MalformedPolicy::Raise).map_err(ApplyError::Read)?;
+    let mut value: Map<String, Value> = read_ingest_json(&path)?
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default();
     let receipts = value
         .entry(NOTIFIED_FILES)
         .or_insert_with(|| serde_json::json!({}))
@@ -137,9 +163,7 @@ pub(crate) fn prepare_stream_advance(
 ) -> Result<bool, ApplyError> {
     let path = segment.path().join("ingest.json");
     let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
-    if let Some(value) =
-        read_json::<Option<Value>>(&path, None, MalformedPolicy::Raise).map_err(ApplyError::Read)?
-    {
+    if let Some(value) = read_ingest_json(&path)? {
         let pending = value.get(ADVANCE_PENDING).and_then(Value::as_bool) == Some(true);
         if pending {
             // A prior attempt may have renamed this proof but failed its sync.
@@ -157,7 +181,11 @@ pub(crate) fn prepare_stream_advance(
             path: segment.path().to_owned(),
             source,
         })?;
-        if entry.file_name() == "ingest.json.lock" {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str == "ingest.json.lock"
+            || name_str.contains(solstone_core_journal_io::durability::SET_ASIDE_MARKER)
+        {
             continue;
         }
         // A freshly resolved target may contain directories that block a later
@@ -217,9 +245,7 @@ fn publish_manifest_proof(path: &Path, value: &Value) -> Result<(), ApplyError> 
 pub fn complete_stream_advance(segment: &SegmentDir) -> Result<(), ApplyError> {
     let path = segment.path().join("ingest.json");
     let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
-    let Some(mut value) = read_json::<Option<Value>>(&path, None, MalformedPolicy::Raise)
-        .map_err(ApplyError::Read)?
-    else {
+    let Some(mut value) = read_ingest_json(&path)? else {
         return Ok(());
     };
     if value.get(ADVANCE_PENDING).and_then(Value::as_bool) != Some(true) {
@@ -245,8 +271,7 @@ pub fn write_ingest_manifest(
 ) -> Result<(), ApplyError> {
     let path = segment.path().join("ingest.json");
     let _lock = hold_lock(&path, LockOptions::default()).map_err(ApplyError::Lock)?;
-    let prior: Option<Value> =
-        read_json(&path, None, MalformedPolicy::Raise).map_err(ApplyError::Read)?;
+    let prior: Option<Value> = read_ingest_json(&path)?;
     let mut merged: BTreeMap<String, Map<String, Value>> = read_lenient_manifest(segment.path())
         .into_iter()
         .map(|(name, entry)| (name, manifest_fields(entry)))

@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
-use solstone_core_journal_io::{MalformedPolicy, read_json};
+use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
 use solstone_core_system::schedule::{
     ScheduleMutation, initialize_schedule_config, mutate_schedule_entries,
 };
@@ -210,11 +210,17 @@ fn is_retired_schedule_entry(id: &str) -> bool {
 }
 
 fn read_raw_schedules(path: &Path) -> Result<Map<String, Value>, String> {
-    let raw = read_json(path, Value::Object(Map::new()), MalformedPolicy::Raise)
-        .map_err(|error| format!("{}: {error}", path.display()))?;
-    raw.as_object()
-        .cloned()
-        .ok_or_else(|| format!("{}: schedules config must be a JSON object", path.display()))
+    match read_json_durable::<Value>(ArtifactId::SchedulesConfig, path) {
+        Ok(DurableRead::Present(Value::Object(map))) => Ok(map),
+        Ok(DurableRead::Absent) => Ok(Map::new()),
+        Ok(DurableRead::SetAside(_))
+        | Ok(DurableRead::Unreadable { .. })
+        | Ok(DurableRead::Present(_)) => Err(format!(
+            "{}: schedules config must be a JSON object",
+            path.display()
+        )),
+        Err(error) => Err(format!("{}: {error}", path.display())),
+    }
 }
 
 fn classify<'a>(

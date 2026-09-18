@@ -9,9 +9,11 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::durability::{DurabilityClass, DurableRead, read_json_durable};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
+use solstone_core_journal_io::durability::{
+    ArtifactId, DurableRead, read_json_durable, read_json_durable_validated,
+};
 use solstone_core_journal_io::{
     HealthMarkerError, HealthMarkerKind, HealthMarkerState, day_marker_pair_status,
     read_health_marker,
@@ -92,17 +94,17 @@ fn empty_catchup_state() -> Value {
 
 fn read_catchup_state(journal: &Path) -> Value {
     let path = catchup_state_path(journal);
-    match fs::read(&path) {
-        Ok(bytes) => match serde_json::from_slice::<Value>(&bytes) {
-            Ok(value) => {
-                json!({"version": CATCHUP_STATE_VERSION, "entries": normalized_catchup_entries(&value)})
-            }
-            Err(error) => {
-                eprintln!("failed to read catchup state: {error}");
-                empty_catchup_state()
-            }
-        },
-        Err(error) if error.kind() == io::ErrorKind::NotFound => empty_catchup_state(),
+    match read_json_durable_validated::<Value>(ArtifactId::CatchupState, &path, |val| {
+        strict_catchup_entries(val)
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }) {
+        Ok(DurableRead::Present(value)) => {
+            json!({"version": CATCHUP_STATE_VERSION, "entries": normalized_catchup_entries(&value)})
+        }
+        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
+            empty_catchup_state()
+        }
         Err(error) => {
             eprintln!("failed to read catchup state {}: {error}", path.display());
             empty_catchup_state()
@@ -1063,15 +1065,9 @@ fn read_entries(journal: &Path) -> Result<Map<String, Value>, CatchupError> {
     // recorded. Losing the history costs one early retry per day; keeping the
     // error costs the whole ledger, permanently. The damaged bytes are set
     // aside beside the file, where `journal doctor` names them.
-    let value = match read_json_durable::<Value>(&path, DurabilityClass::Wipeable) {
+    let value = match read_json_durable::<Value>(ArtifactId::CatchupState, &path) {
         Ok(DurableRead::Present(value)) => value,
-        Ok(DurableRead::Absent) => return Ok(Map::new()),
-        Ok(DurableRead::SetAside(aside)) => {
-            eprintln!(
-                "catchup: {} could not be read and was set aside at {}",
-                path.display(),
-                aside.display()
-            );
+        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
             return Ok(Map::new());
         }
         Err(source) => return Err(CatchupError::Io { path, source }),

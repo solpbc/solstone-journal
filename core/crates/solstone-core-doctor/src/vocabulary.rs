@@ -88,6 +88,8 @@ pub struct CheckResult {
     pub execution_error: Option<ExecutionError>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_delivery: Option<ClientDeliveryFacts>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub heals: Option<Vec<String>>,
 }
 pub fn make_result(
     check: Check,
@@ -104,6 +106,7 @@ pub fn make_result(
         platform: None,
         execution_error: None,
         client_delivery: None,
+        heals: None,
     }
 }
 pub fn truncate(text: &str, limit: usize) -> String {
@@ -150,6 +153,7 @@ pub fn run_check(
                     message,
                 }),
                 client_delivery: None,
+                heals: None,
             }
         }
     }

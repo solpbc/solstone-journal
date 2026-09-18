@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
@@ -14,18 +13,23 @@ pub(crate) struct CadenceState {
 
 impl CadenceState {
     pub(crate) fn load(journal: &Path) -> Self {
+        use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
         let path = path(journal);
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Self::default(),
+        let value = match read_json_durable::<Value>(ArtifactId::Cadence, &path) {
+            Ok(DurableRead::Present(value)) => value,
+            Ok(DurableRead::Absent) => return Self::default(),
+            Ok(DurableRead::SetAside(_)) => {
+                log::warn!("Failed to load cadence state: corrupt artifact set aside");
+                return Self::default();
+            }
+            Ok(DurableRead::Unreadable { error, .. }) => {
+                log::warn!("Failed to load cadence state: {error}");
+                return Self::default();
+            }
             Err(error) => {
                 log::warn!("Failed to load cadence state: {error}");
                 return Self::default();
             }
-        };
-        let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-            log::warn!("Failed to load cadence state: invalid JSON");
-            return Self::default();
         };
         let Some(values) = value.as_object().cloned() else {
             return Self::default();

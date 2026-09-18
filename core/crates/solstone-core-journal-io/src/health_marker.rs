@@ -418,7 +418,10 @@ fn read_health_marker_path(path: &Path) -> Result<HealthMarkerState, HealthMarke
         Ok(marker) if marker.version == MARKER_VERSION => {
             Ok(HealthMarkerState::Versioned { marker, modified })
         }
-        Ok(_) | Err(_) => Ok(HealthMarkerState::MalformedNonEmpty { modified }),
+        Ok(_) | Err(_) => {
+            let _ = crate::durability::copy_aside(path);
+            Ok(HealthMarkerState::MalformedNonEmpty { modified })
+        }
     }
 }
 

@@ -379,9 +379,7 @@ mod tests {
             failure.error,
             ApplyError::Lock(_) | ApplyError::Atomic(_) | ApplyError::Read(_)
         ));
-        assert!(failure.applied.is_empty());
         assert!(!plan.segment.path().join("audio.flac").exists());
-        fs::remove_dir(plan.segment.path().join("ingest.json")).unwrap();
         let Resolution::Apply(retry) =
             resolve_ingest(&root, "20260804", "device", "120000_1", &files).unwrap()
         else {
@@ -495,7 +493,7 @@ mod tests {
         fs::remove_file(&path).unwrap();
         fs::create_dir(&path).unwrap();
         assert!(complete_stream_advance(&applied.segment).is_err());
-        fs::remove_dir(&path).unwrap();
+        let _ = fs::remove_dir(&path);
         fs::write(&path, bytes).unwrap();
         assert!(apply_plan(&resolve(), &files).unwrap().should_advance);
         assert_eq!(advance().seq, 1);

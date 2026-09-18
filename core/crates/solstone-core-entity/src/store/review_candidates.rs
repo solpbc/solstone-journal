@@ -13,9 +13,8 @@ use solstone_core_journal_io::AtomicWriteError;
 use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::LockError;
 use solstone_core_journal_io::LockOptions;
-use solstone_core_journal_io::MalformedPolicy;
+use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::hold_lock;
-use solstone_core_journal_io::read_jsonl;
 use solstone_core_journal_io::write_text;
 
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
@@ -300,8 +299,15 @@ pub fn load_merge_candidates(
     status: Option<&str>,
 ) -> Result<Vec<Value>, EntityStoreError> {
     let path = review_candidates_path(journal_root)?;
-    let rows = read_jsonl(&path, Vec::<Value>::new(), MalformedPolicy::WarnAndSkip)?;
-    Ok(rows
+    let result =
+        read_jsonl_durable::<Value>(ArtifactId::EntityReviewCandidates, &path).map_err(|e| {
+            EntityStoreError::from(solstone_core_journal_io::ReadError::Io {
+                path: path.clone(),
+                source: e,
+            })
+        })?;
+    Ok(result
+        .records
         .into_iter()
         .filter(Value::is_object)
         .filter(|row| {
@@ -326,11 +332,17 @@ fn mutate_candidates<T>(
         },
     )
     .map_err(EntityReviewCandidateError::Lock)?;
-    let mut rows = read_jsonl(&path, Vec::<Value>::new(), MalformedPolicy::WarnAndSkip)
-        .map_err(|error| EntityReviewCandidateError::Store(EntityStoreError::from(error)))?
-        .into_iter()
-        .filter(Value::is_object)
-        .collect();
+    let rows = read_jsonl_durable::<Value>(ArtifactId::EntityReviewCandidates, &path).map_err(
+        |error| {
+            EntityReviewCandidateError::Store(EntityStoreError::from(
+                solstone_core_journal_io::ReadError::Io {
+                    path: path.clone(),
+                    source: error,
+                },
+            ))
+        },
+    )?;
+    let mut rows: Vec<Value> = rows.records.into_iter().filter(Value::is_object).collect();
     let result = mutate(&mut rows)?;
     let contents = rows
         .iter()

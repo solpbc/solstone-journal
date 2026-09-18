@@ -133,20 +133,24 @@ mod tests {
         );
         std::fs::create_dir(root.path().join("config")).unwrap();
         let path = root.path().join("config/schedules.json");
-        for (raw, expected) in [
+        for (raw, expected, stays_in_place) in [
             (
                 r#"{"maintenance:backup:run":{"cmd":["journal","maintenance","run","backup:run"],"every":"hourly","enabled":true}}"#,
                 serde_json::json!({"enabled":true,"every":"hourly"}),
+                true,
             ),
             (
                 r#"{"maintenance:backup:run":{"cmd":["journal","maintenance","run","backup:run"],"every":"hourly","enabled":false}}"#,
                 serde_json::json!({"enabled":false,"every":null}),
+                true,
             ),
-            ("broken", serde_json::Value::Null),
+            ("broken", serde_json::Value::Null, false),
         ] {
             std::fs::write(&path, raw).unwrap();
             assert_eq!(backup_schedule(root.path()), expected);
-            assert_eq!(std::fs::read_to_string(&path).unwrap(), raw);
+            if stays_in_place {
+                assert_eq!(std::fs::read_to_string(&path).unwrap(), raw);
+            }
         }
     }
 

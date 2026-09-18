@@ -46,6 +46,7 @@ pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
 
 /// Coverage admission must distinguish absent classification from unreadable classification.
 pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<String>, String> {
+    use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
     let segments = solstone_core_journal_io::iter_segments(
         journal,
         solstone_core_journal_io::PathOrDay::Day(day),
@@ -54,13 +55,15 @@ pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<Strin
     let mut facets = BTreeSet::new();
     for segment in segments {
         let path = segment.path().join("talents/facets.json");
-        let bytes = match fs::read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(format!("{}: {error}", path.display())),
-        };
         let rows: Vec<Value> =
-            serde_json::from_slice(&bytes).map_err(|e| format!("{}: {e}", path.display()))?;
+            match read_json_durable::<Vec<Value>>(ArtifactId::SegmentFacets, &path) {
+                Ok(DurableRead::Present(rows)) => rows,
+                Ok(DurableRead::Absent | DurableRead::SetAside(_)) => continue,
+                Ok(DurableRead::Unreadable { path: p, error }) => {
+                    return Err(format!("{}: {error}", p.display()));
+                }
+                Err(e) => return Err(format!("{}: {e}", path.display())),
+            };
         for row in rows {
             let facet = row
                 .get("facet")
@@ -195,14 +198,14 @@ pub struct ActivityStateMachine {
 impl ActivityStateMachine {
     /// Hydrate either historical shape. This never writes activity_state.json.
     pub fn hydrate(journal: Option<&Path>) -> Self {
+        use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
         let Some(journal) = journal else {
             return Self::default();
         };
-        let Ok(bytes) = fs::read(journal.join("awareness/activity_state.json")) else {
-            return Self::default();
-        };
-        let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
-            return Self::default();
+        let path = journal.join("awareness/activity_state.json");
+        let value = match read_json_durable::<Value>(ArtifactId::ActivityState, &path) {
+            Ok(DurableRead::Present(val)) => val,
+            _ => return Self::default(),
         };
         let mut machine = Self::default();
         let active = if let Some(list) = value.as_array() {

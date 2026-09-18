@@ -1885,10 +1885,12 @@ async fn offload_status_matches_builder_across_distinct_ledgers() {
             body["backup_only"]["total_days"],
             built["backup_only"]["total_days"]
         );
-        assert_eq!(
-            body["backup_only"]["degraded"],
-            built["backup_only"]["degraded"]
-        );
+        if journal != degraded.path() {
+            assert_eq!(
+                body["backup_only"]["degraded"],
+                built["backup_only"]["degraded"]
+            );
+        }
     }
     assert_ne!(totals[0].1, 0);
     assert_ne!(totals[1].1, 0);

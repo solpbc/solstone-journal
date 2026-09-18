@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::{MalformedPolicy, read_json};
+use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable, set_aside};
 
 use super::error::FacetStoreError;
 use super::paths::declaration_path;
@@ -38,12 +38,24 @@ pub fn read_facet_declaration(
     facet_dir: &str,
 ) -> Result<Option<FacetDeclarationSnapshot>, FacetStoreError> {
     let path = declaration_path(journal_root, facet_dir)?;
-    let value: Value = read_json(&path, Value::Null, MalformedPolicy::Raise)?;
+    let value: Value =
+        match read_json_durable(ArtifactId::FacetDeclaration, &path).map_err(|e| {
+            FacetStoreError::from(solstone_core_journal_io::ReadError::Io {
+                path: path.clone(),
+                source: e,
+            })
+        })? {
+            DurableRead::Present(val) => val,
+            DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. } => {
+                return Ok(None);
+            }
+        };
     if value.is_null() {
         return Ok(None);
     }
     let Some(object) = value.as_object() else {
-        return Err(FacetStoreError::DeclarationNotObject { path });
+        let _ = set_aside(&path);
+        return Ok(None);
     };
     Ok(Some(FacetDeclarationSnapshot {
         title: string_field(object.get("title")),

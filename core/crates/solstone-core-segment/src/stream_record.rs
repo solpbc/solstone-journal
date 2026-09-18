@@ -565,7 +565,26 @@ fn replayable_unbound_advance(
 }
 
 fn read_stream_marker(path: &Path) -> Result<Option<StreamMarker>, SegmentError> {
-    read_json(path, None::<StreamMarker>, MalformedPolicy::Raise).map_err(SegmentError::Read)
+    match solstone_core_journal_io::durability::read_json_durable(
+        solstone_core_journal_io::durability::ArtifactId::SegmentStream,
+        path,
+    )
+    .map_err(|e| {
+        SegmentError::Read(solstone_core_journal_io::ReadError::Io {
+            path: path.to_path_buf(),
+            source: e,
+        })
+    })? {
+        solstone_core_journal_io::durability::DurableRead::Present(marker) => Ok(Some(marker)),
+        solstone_core_journal_io::durability::DurableRead::Absent
+        | solstone_core_journal_io::durability::DurableRead::SetAside(_) => Ok(None),
+        solstone_core_journal_io::durability::DurableRead::Unreadable { path, error } => Err(
+            SegmentError::Read(solstone_core_journal_io::ReadError::Io {
+                path,
+                source: std::io::Error::other(error),
+            }),
+        ),
+    }
 }
 
 fn find_unbound_predecessor(
@@ -1373,10 +1392,6 @@ mod tests {
         // Remove the marker half of a real domain advance to model interrupted publication.
         fs::remove_file(second.path().join("stream.json")).unwrap();
         assert_eq!(load_record(root, "phone").seq, 2);
-        fs::create_dir(second.path().join("stream.json")).unwrap();
-        assert!(advance("120200_60").is_err());
-        assert_eq!(load_record(root, "phone").seq, 2);
-        fs::remove_dir(second.path().join("stream.json")).unwrap();
         assert_eq!(advance("120200_60").unwrap().seq, 3);
         let repaired = read_stream_marker(&second.path().join("stream.json"))
             .unwrap()
@@ -1658,25 +1673,6 @@ mod tests {
         let next_marker = temporary
             .path()
             .join("chronicle/20260804/import.apple/120200_60/stream.json");
-        assert!(
-            advance_unbound_stream(
-                temporary.path(),
-                "import.apple",
-                "20260804",
-                "120200_60",
-                StreamHints::default(),
-            )
-            .is_err()
-        );
-        let still_partial: StreamRecord = serde_json::from_slice(
-            &fs::read(stream_record_path(temporary.path(), "import.apple")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(still_partial.seq, 2);
-        assert_eq!(still_partial.last_segment.as_deref(), Some("120100_60"));
-        assert!(!next_marker.exists());
-
-        fs::remove_dir(&partial_marker).unwrap();
         let advanced = advance_unbound_stream(
             temporary.path(),
             "import.apple",
