@@ -84,10 +84,23 @@ where
         &mut signal,
     )?;
 
-    // This second complete census is mandatory: a child forked while a direct
-    // parent was receiving TERM remains in the owned set for the escalation pass.
-    let after_term = exact_descendant_tree(root, owner_uid, source)?;
-    remember_descendants(&mut owned, &after_term)?;
+    // While the root remains live this second complete census is mandatory: a
+    // child forked while a direct parent was receiving TERM remains in the
+    // owned set for the escalation pass.
+    match exact_descendant_tree(root, owner_uid, source) {
+        Ok(after_term) => remember_descendants(&mut owned, &after_term)?,
+        Err(
+            DescendantObservationFailure::RootNotSameOrExited
+            | DescendantObservationFailure::Missing,
+        ) if tracked_descendants_are_gone(&owned, owner_uid, source)? => {
+            // A shell-style service root can exit as soon as its last child
+            // accepts TERM. The root's exact disappearance is safe only when
+            // every descendant captured immediately before TERM is also
+            // positively gone; no other observation failure is softened.
+            return Ok(DescendantTerminationOutcome::Graceful);
+        }
+        Err(error) => return Err(error),
+    }
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if tracked_descendants_are_gone(&owned, owner_uid, source)? {
