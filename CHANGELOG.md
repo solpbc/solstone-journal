@@ -23,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - first-run setup and the network page now show the plain "your journal" mark instead of an error message when your journal's mark isn't ready yet or can't be read.
 - `solstone link status` now says "unknown journal seen at" an address, matching the wording used elsewhere.
 - turning on "keep audio with no speech" now clears matching audio from your pending removal list, not just future recordings.
+- transcribing everything at once now finds audio that was stored directly under a day instead of grouped by device, rather than silently skipping it; and a day the journal could not scan for recordings is now reported instead of silently counting as nothing to transcribe.
 
 ## [2.0.8] - 2026-09-16
 

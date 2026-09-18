@@ -191,8 +191,11 @@ fn run_all(
     on_day: &mut dyn FnMut(&Path),
     #[cfg(windows)] generation: &solstone_core_system::process::ChildLaunchContext,
 ) -> Result<CliRun, CliRunError> {
-    run_all_with(
-        discover_audio_files(journal_path, on_day),
+    let mut day_errors = Vec::new();
+    let mut result = run_all_with(
+        discover_audio_files(journal_path, on_day, &mut |day, detail| {
+            day_errors.push(format!("{}: {detail}", day.display()));
+        }),
         redo,
         |audio_path| {
             stage::process_one(
@@ -206,7 +209,23 @@ fn run_all(
                 generation,
             )
         },
-    )
+    )?;
+    if !day_errors.is_empty() {
+        result.exit_code = 1;
+        let mut block = format!(
+            "transcribe --all: {} day(s) could not be read\n",
+            day_errors.len()
+        );
+        for line in &day_errors {
+            block.push_str(line);
+            block.push('\n');
+        }
+        result.stderr = Some(match result.stderr.take() {
+            Some(existing) => format!("{existing}{block}"),
+            None => block,
+        });
+    }
+    Ok(result)
 }
 
 fn run_all_with<I, F>(audio_paths: I, redo: bool, mut process: F) -> Result<CliRun, CliRunError>
@@ -269,36 +288,50 @@ where
 ///
 /// Days are walked newest-first, and `on_day` fires as each day's walk begins, so a
 /// caller can report progress without waiting for the whole tree.
+///
+/// Visits both chronicle segment layouts (a segment directly under the day, and a
+/// segment under a named stream directory) via the shared [`iter_segments`]
+/// layout reader, rather than a hand-rolled walk that only reaches the named-stream
+/// shape. A day whose segment listing cannot be read (for example, a permission
+/// error) reports that failure through `on_day_error` instead of silently yielding
+/// zero files for the day; discovery of the remaining days is unaffected.
 fn discover_audio_files<'a>(
-    journal_path: &Path,
+    journal_path: &'a Path,
     on_day: &'a mut dyn FnMut(&Path),
+    on_day_error: &'a mut dyn FnMut(&Path, String),
 ) -> impl Iterator<Item = PathBuf> + 'a {
     let mut days = read_child_directories(&journal_path.join("chronicle"));
     days.sort_by(|left, right| right.cmp(left));
     days.into_iter().flat_map(move |day| {
         on_day(&day);
         let mut day_files = Vec::new();
-        for stream in read_child_directories(&day) {
-            for segment in read_child_directories(&stream) {
-                let Ok(entries) = std::fs::read_dir(&segment) else {
-                    continue;
-                };
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    let extension = path
-                        .extension()
-                        .and_then(|value| value.to_str())
-                        .map(str::to_ascii_lowercase);
-                    if path.is_file()
-                        && matches!(
-                            extension.as_deref(),
-                            Some("flac" | "m4a" | "mp3" | "ogg" | "opus" | "wav")
-                        )
-                    {
-                        day_files.push(path);
+        match solstone_core_journal_io::paths::iter_segments(
+            journal_path,
+            solstone_core_journal_io::paths::PathOrDay::Directory(&day),
+        ) {
+            Ok(segments) => {
+                for segment in segments {
+                    let Ok(entries) = std::fs::read_dir(segment.path()) else {
+                        continue;
+                    };
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let extension = path
+                            .extension()
+                            .and_then(|value| value.to_str())
+                            .map(str::to_ascii_lowercase);
+                        if path.is_file()
+                            && matches!(
+                                extension.as_deref(),
+                                Some("flac" | "m4a" | "mp3" | "ogg" | "opus" | "wav")
+                            )
+                        {
+                            day_files.push(path);
+                        }
                     }
                 }
             }
+            Err(error) => on_day_error(&day, error.to_string()),
         }
         day_files.sort();
         day_files
@@ -638,7 +671,7 @@ mod tests {
             std::cmp::Reverse(day)
         });
 
-        let streamed: Vec<_> = discover_audio_files(root, &mut |_| {}).collect();
+        let streamed: Vec<_> = discover_audio_files(root, &mut |_| {}, &mut |_, _| {}).collect();
         assert_eq!(streamed, expected);
         // `notes.txt` is not transcribable and must not appear.
         assert!(
@@ -652,7 +685,7 @@ mod tests {
     fn discovery_yields_nothing_when_the_chronicle_is_absent() {
         let temporary = tempfile::TempDir::new().unwrap();
         assert_eq!(
-            discover_audio_files(temporary.path(), &mut |_| {}).count(),
+            discover_audio_files(temporary.path(), &mut |_| {}, &mut |_, _| {}).count(),
             0
         );
     }
@@ -715,6 +748,23 @@ mod tests {
             .join(day)
             .join(stream)
             .join(segment);
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join(filename);
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    /// A direct-layout segment: `chronicle/<day>/<key>/<filename>`, no stream
+    /// subdirectory. `key` must parse as `HHMMSS_LEN` for `iter_segments` to
+    /// recognize it as a segment rather than a named-stream directory.
+    fn write_direct_layout_file(
+        journal: &Path,
+        day: &str,
+        key: &str,
+        filename: &str,
+        contents: &[u8],
+    ) -> PathBuf {
+        let directory = journal.join("chronicle").join(day).join(key);
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join(filename);
         fs::write(&path, contents).unwrap();
@@ -913,7 +963,12 @@ mod tests {
         let mut fired = Vec::new();
         // The walk is lazy: without consuming the iterator `on_day` never fires and
         // this test would pass while exercising nothing.
-        discover_audio_files(journal, &mut |day| fired.push(day.to_path_buf())).for_each(drop);
+        discover_audio_files(
+            journal,
+            &mut |day| fired.push(day.to_path_buf()),
+            &mut |_, _| {},
+        )
+        .for_each(drop);
 
         let expected = ["20260401", "20260315", "20260201", "20260101"]
             .map(|day| journal.join("chronicle").join(day));
@@ -947,11 +1002,131 @@ mod tests {
         let march_late =
             write_chronicle_file(journal, "20260315", "audio", "120000_1", "b.wav", b"audio");
 
-        let files: Vec<_> = discover_audio_files(journal, &mut |_| {}).collect();
+        let files: Vec<_> = discover_audio_files(journal, &mut |_| {}, &mut |_, _| {}).collect();
 
         let mut march = vec![march_early, march_late, march_screen];
         march.sort();
         let expected = [march, vec![february], vec![january]].concat();
         assert_eq!(files, expected);
+    }
+
+    /// Regression: `discover_audio_files` used to hand-walk `day -> stream -> segment`
+    /// only, so a direct-layout segment's key directory was mistaken for a stream
+    /// directory and its contents (files, not subdirectories) were invisible to the
+    /// old `read_child_directories` grandchild scan -- confirmed by reading the prior
+    /// implementation, which filtered for directories two levels below the day and so
+    /// could never reach a file sitting one level below it. Routing through the shared
+    /// `iter_segments` layout reader reaches both layouts.
+    #[test]
+    fn discovery_reaches_direct_layout_segments_alongside_named_stream() {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path();
+        let direct = write_direct_layout_file(journal, "20260410", "090000_60", "audio.flac", b"a");
+        let named =
+            write_chronicle_file(journal, "20260410", "watch", "110000_60", "audio.m4a", b"a");
+
+        let files: Vec<_> = discover_audio_files(journal, &mut |_| {}, &mut |_, _| {}).collect();
+
+        assert!(
+            files.contains(&direct),
+            "direct-layout segment must be discovered: {files:?}"
+        );
+        assert!(
+            files.contains(&named),
+            "named-stream segment must still be discovered: {files:?}"
+        );
+    }
+
+    /// A day containing only a direct-layout segment (no named-stream segment at all)
+    /// must still be discovered -- guards a fix that only unions results when both
+    /// shapes are present in the same day.
+    #[test]
+    fn discovery_reaches_a_day_with_only_direct_layout_segments() {
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path();
+        let direct = write_direct_layout_file(journal, "20260410", "090000_60", "audio.flac", b"a");
+
+        let files: Vec<_> = discover_audio_files(journal, &mut |_| {}, &mut |_, _| {}).collect();
+
+        assert_eq!(files, vec![direct]);
+    }
+
+    /// A day whose segment layout cannot be read (permission error) must not be
+    /// silently treated as "zero segments, nothing else happened": the failure is
+    /// reported through `on_day_error`, and discovery of the other days is
+    /// unaffected. This is the "no unwrap_or_default" requirement -- a naive port of
+    /// the offload/restore precedent (which discards this same `Result`) would pass
+    /// the file-discovery half of this test while failing the error-visibility half.
+    #[cfg(unix)]
+    #[test]
+    fn discovery_read_error_on_one_day_is_reported_and_other_days_still_yield() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path();
+        let readable_day =
+            write_chronicle_file(journal, "20260420", "watch", "090000_60", "audio.m4a", b"a");
+        let unreadable_dir = journal.join("chronicle").join("20260410");
+        write_chronicle_file(journal, "20260410", "watch", "090000_60", "audio.m4a", b"a");
+        fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let mut errors = Vec::new();
+        let mut on_day = |_: &Path| {};
+        let mut on_day_error =
+            |day: &Path, detail: String| errors.push((day.to_path_buf(), detail));
+        let files: Vec<_> = discover_audio_files(journal, &mut on_day, &mut on_day_error).collect();
+
+        // Restore permissions so the tempdir can be cleaned up.
+        fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert_eq!(
+            files,
+            vec![readable_day],
+            "the readable day's file must still be yielded"
+        );
+        assert_eq!(
+            errors.len(),
+            1,
+            "exactly one day-level error expected: {errors:?}"
+        );
+        assert_eq!(errors[0].0, unreadable_dir);
+        assert!(
+            !errors[0].1.is_empty(),
+            "the error detail must not be empty"
+        );
+    }
+
+    /// Laziness guard: the newest (readable) day's file must be yielded by the
+    /// iterator before the older (unreadable) day is even walked -- i.e. discovery
+    /// does not regress to a full-tree preload that would surface the error before
+    /// any file is produced.
+    #[cfg(unix)]
+    #[test]
+    fn discovery_yields_the_newest_day_before_touching_an_older_unreadable_day() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temporary = tempfile::tempdir().unwrap();
+        let journal = temporary.path();
+        let newest =
+            write_chronicle_file(journal, "20260501", "watch", "090000_60", "audio.m4a", b"a");
+        let unreadable_dir = journal.join("chronicle").join("20260401");
+        write_chronicle_file(journal, "20260401", "watch", "090000_60", "audio.m4a", b"a");
+        fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let mut errors = Vec::new();
+        let mut on_day = |_: &Path| {};
+        let mut on_day_error =
+            |day: &Path, detail: String| errors.push((day.to_path_buf(), detail));
+        let mut iterator = discover_audio_files(journal, &mut on_day, &mut on_day_error);
+        let first = iterator.next();
+
+        fs::set_permissions(&unreadable_dir, fs::Permissions::from_mode(0o755)).unwrap();
+        drop(iterator);
+
+        assert_eq!(first, Some(newest));
+        assert!(
+            errors.is_empty(),
+            "the older day's read error must not have surfaced yet: {errors:?}"
+        );
     }
 }
