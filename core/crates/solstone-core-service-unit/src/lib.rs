@@ -12,6 +12,7 @@ mod windows_action;
 mod windows_task;
 mod windows_task_readback;
 mod windows_task_reason;
+mod windows_update;
 
 pub use env::build_service_environment;
 pub use plist::{launchd_plist_port, render_launchd_plist};
@@ -30,3 +31,5 @@ pub use windows_task_readback::{
 };
 
 pub use windows_task_reason::{WINDOWS_TASK_FAILURE_SCHEMA, windows_task_failure_reason};
+
+pub use windows_update::{WindowsServiceUpdatePlan, windows_service_update_plan};

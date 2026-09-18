@@ -792,6 +792,44 @@ fn parse_pin(text: &str) -> Result<PublicKey, ManifestVerifyError> {
     })
 }
 
+/// Environment entries a signed-package helper needs so that it resolves the
+/// same manifest pin its parent just resolved.
+///
+/// Empty on a production build, where the pin is compiled in and
+/// [`resolve_pin`] reads no environment at all.
+///
+/// It is not empty on a `test-fixture-pin` build, and that difference is
+/// load-bearing. A helper that re-verifies the signed payload for itself --
+/// `solstone-core-ced-analyze` does, before it will load `ced.dll` -- runs
+/// under a bounded helper that clears the environment down to `SystemRoot`.
+/// Without this, the parent resolves the fixture pin and admits a test-signed
+/// package while its own child resolves the PRODUCT pin and refuses the same
+/// bytes, so a test-signed package can never report that capability ready.
+/// Measured on the Windows checkpoint guest 2026-09-18: identical invocation,
+/// environment differing only in this one entry, `{"ok":true}` with it and
+/// `signature-pin-mismatch` without it.
+#[must_use]
+pub fn signed_package_pin_environment() -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    #[cfg(feature = "test-fixture-pin")]
+    {
+        pin_environment_from(std::env::var_os(PIN_OVERRIDE_ENV))
+    }
+    #[cfg(not(feature = "test-fixture-pin"))]
+    {
+        Vec::new()
+    }
+}
+
+#[cfg(feature = "test-fixture-pin")]
+fn pin_environment_from(
+    value: Option<std::ffi::OsString>,
+) -> Vec<(std::ffi::OsString, std::ffi::OsString)> {
+    value
+        .filter(|path| !path.is_empty())
+        .map(|path| vec![(std::ffi::OsString::from(PIN_OVERRIDE_ENV), path)])
+        .unwrap_or_default()
+}
+
 #[cfg(not(feature = "test-fixture-pin"))]
 pub fn resolve_pin() -> Result<PublicKey, ManifestVerifyError> {
     parse_pin(PRODUCT_PIN)
@@ -844,6 +882,39 @@ mod tests {
         let resolved = resolve_pin().expect("compiled pin parses");
         let expected = parse_pin(PRODUCT_PIN).expect("product pin parses");
         assert_eq!(resolved, expected);
+    }
+
+    #[test]
+    fn a_product_build_hands_a_signed_package_helper_no_pin_environment() {
+        // The pin is compiled in, so there is nothing to pass down and the
+        // hardened helper environment stays exactly as narrow as it was.
+        assert!(super::signed_package_pin_environment().is_empty());
+    }
+}
+
+#[cfg(all(test, feature = "test-fixture-pin"))]
+mod fixture_pin_environment_tests {
+    use std::ffi::OsString;
+
+    use super::{PIN_OVERRIDE_ENV, pin_environment_from};
+
+    #[test]
+    fn a_fixture_build_passes_the_override_down_to_the_helper() {
+        assert_eq!(
+            pin_environment_from(Some(OsString::from("C:/pins/checkpoint.pub"))),
+            vec![(
+                OsString::from(PIN_OVERRIDE_ENV),
+                OsString::from("C:/pins/checkpoint.pub"),
+            )]
+        );
+    }
+
+    #[test]
+    fn an_unset_or_empty_override_adds_nothing() {
+        // Both spellings of "not overridden" leave the helper resolving the
+        // product pin, which is the same thing its parent just did.
+        assert!(pin_environment_from(None).is_empty());
+        assert!(pin_environment_from(Some(OsString::new())).is_empty());
     }
 }
 

@@ -973,16 +973,43 @@ fn run_admitted_backup(
 }
 
 fn backup_run_result(result: BackupResult) -> CliRun {
-    match result.status.as_str() {
-        "ok" => success(format!(
+    match (result.status.as_str(), result.error_reason.as_deref()) {
+        ("ok", _) => success(format!(
             "Backup complete (snapshot {}).\n",
             result.snapshot_id.as_deref().unwrap_or_default()
         )),
-        "skipped" => success("Backup skipped (not enabled or not configured).\n".into()),
-        _ => runtime_error(format!(
-            "Backup failed: {}.",
-            result.error_reason.as_deref().unwrap_or("failed")
-        )),
+        ("skipped", _) => success("Backup skipped (not enabled or not configured).\n".into()),
+        // `incomplete` is the one failure where the backup partly worked:
+        // restic wrote a snapshot and could not read every source file. The
+        // owner used to be told only "incomplete", which names neither the
+        // snapshot they now have, nor what was left out of it, nor what to do
+        // -- measured on the Windows checkpoint guest, where a real repository
+        // and ~740 KB of data landed under a message that reads like nothing
+        // happened.
+        (_, Some("incomplete")) => {
+            runtime_error(incomplete_backup_message(result.snapshot_id.as_deref()))
+        }
+        (_, reason) => runtime_error(format!("Backup failed: {}.", reason.unwrap_or("failed"))),
+    }
+}
+
+/// The owner-facing sentence for a partial backup.
+///
+/// Split out from [`backup_run_result`] so it can be asserted verbatim.
+fn incomplete_backup_message(snapshot_id: Option<&str>) -> String {
+    match snapshot_id {
+        // "incomplete" is only honest where a partial artifact exists, and the
+        // re-run only helps once the files it could not read are closed, so
+        // neither sentence promises more than it can keep.
+        Some(id) => format!(
+            "Backup incomplete: snapshot {id} was written, but some files couldn't be read and \
+             aren't in it. Files that are open in another app can't be read. If any were open, \
+             close them and run `journal backup run` again."
+        ),
+        None => "Backup failed: some files couldn't be read, and no snapshot was written. Files \
+                 that are open in another app can't be read. If any were open, close them and run \
+                 `journal backup run` again."
+            .to_owned(),
     }
 }
 
@@ -1492,6 +1519,39 @@ mod tests {
             error_reason: Some("timeout".into()),
         });
         assert_eq!(error.stderr, "Error: Backup failed: timeout.\n");
+    }
+
+    #[test]
+    fn a_partial_backup_names_its_snapshot_what_is_missing_and_the_next_step() {
+        // The refusal an owner reads when restic wrote a snapshot and could
+        // not read every source file. "incomplete" alone told them none of
+        // those three things, and it is the exact state a running journal on
+        // Windows produces.
+        let partial = backup_run_result(BackupResult {
+            status: "error".into(),
+            snapshot_id: Some("ab12cd34".into()),
+            error_reason: Some("incomplete".into()),
+        });
+        assert_eq!(
+            partial.stderr,
+            "Error: Backup incomplete: snapshot ab12cd34 was written, but some files couldn't \
+             be read and aren't in it. Files that are open in another app can't be read. If any \
+             were open, close them and run `journal backup run` again.\n"
+        );
+        assert_eq!(partial.exit_code, 1);
+        // Without a snapshot there is no partial artifact, so the headline word
+        // is "failed": "incomplete" would name something the owner does not have.
+        let without_snapshot = backup_run_result(BackupResult {
+            status: "error".into(),
+            snapshot_id: None,
+            error_reason: Some("incomplete".into()),
+        });
+        assert_eq!(
+            without_snapshot.stderr,
+            "Error: Backup failed: some files couldn't be read, and no snapshot was written. \
+             Files that are open in another app can't be read. If any were open, close them and \
+             run `journal backup run` again.\n"
+        );
     }
 
     #[test]

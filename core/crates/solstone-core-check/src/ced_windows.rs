@@ -78,13 +78,21 @@ pub fn invoke(
     let stdin = serde_json::to_vec(&request).map_err(|error| CedAnalyzeError::Io {
         detail: error.to_string(),
     })?;
+    // The helper re-verifies this same signed payload for itself before it
+    // will load the engine, so it has to resolve the manifest pin the way we
+    // just did. Production adds nothing here; a fixture-pin build adds the one
+    // entry that stops a test-signed package from being admitted by the parent
+    // and refused by its own child.
+    let mut environment = BTreeMap::from([(OsString::from("SystemRoot"), system_root)]);
+    environment
+        .extend(solstone_core_distribution::manifest_verify::signed_package_pin_environment());
     let output = run_bounded_helper(BoundedHelperRequest {
         resources,
         current_directory: package.root.join("bin"),
         package_root: package.root,
         executable: package.helper,
         arguments: leading_args.iter().map(|arg| (*arg).to_owned()).collect(),
-        environment: BTreeMap::from([(OsString::from("SystemRoot"), system_root)]),
+        environment,
         stdin,
         budget: BoundedHelperBudget {
             timeout,

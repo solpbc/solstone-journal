@@ -18,7 +18,7 @@ use solstone_core_installation_identity::{
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
     WindowsServiceAction, WindowsTaskDefinition, WindowsTaskInput, encode_windows_task_xml,
-    parse_windows_task_xml, render_windows_task_xml,
+    parse_windows_task_xml, render_windows_task_xml, windows_service_update_plan,
 };
 use solstone_core_system::lifecycle::wait_ready;
 mod native_process;
@@ -240,17 +240,54 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         working_directory: journal_display,
     })
     .map_err(task_error)?;
-    let operation = if before.present {
-        Operation::Update {
-            before: &before,
-            xml: &xml,
-        }
+    // The Scheduler accepts an update only against an idle task, so a
+    // registration that is running is stopped first and started again after
+    // the new profile reads back -- and one the owner had already stopped
+    // stays stopped. Each phase proves itself before the next begins, and a
+    // failed phase returns nonzero carrying the operation's own diagnostic.
+    let plan = windows_service_update_plan(before.instances.len());
+    let stopped;
+    let after = if before.present {
+        let current = if plan.stop_before_update {
+            stop_task(ctx)?;
+            let idle = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
+            validate_task(ctx, &idle)?;
+            if !same_task_profile(&before, &idle) {
+                // The owner is left with a stopped service and no update, so
+                // the line says both, in the same words the rest of this
+                // surface uses for the thing that was stopped.
+                return Err(task_error(
+                    "background support for your journal was stopped so it could be updated. \
+                     its registration with windows changed first, so the update didn't happen, \
+                     and background support is stopped now.\n\
+                     run `journal service status` to check it, then `journal service install` \
+                     again.",
+                ));
+            }
+            stopped = idle;
+            &stopped
+        } else {
+            &before
+        };
+        task_scheduler::execute_until(
+            &ctx.sid,
+            &ctx.guard.id.as_hex(),
+            Operation::Update {
+                before: current,
+                xml: &xml,
+            },
+            Instant::now() + STOP_TIMEOUT,
+        )
+        .map_err(task_error)?
     } else {
-        Operation::Create { xml: &xml }
+        task_scheduler::execute_until(
+            &ctx.sid,
+            &ctx.guard.id.as_hex(),
+            Operation::Create { xml: &xml },
+            Instant::now() + STOP_TIMEOUT,
+        )
+        .map_err(task_error)?
     };
-    let after =
-        task_scheduler::execute_until(&ctx.sid, &ctx.guard.id.as_hex(), operation, deadline)
-            .map_err(task_error)?;
     let installed = validate_task(ctx, &after)?;
     if installed.action != action {
         return Err(task_error(
@@ -282,6 +319,9 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         .map_err(task_error)?,
     )
     .map_err(task_error)?;
+    if plan.start_after_update {
+        start_task(ctx)?;
+    }
     Ok(())
 }
 

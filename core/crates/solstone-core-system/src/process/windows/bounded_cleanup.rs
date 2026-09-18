@@ -764,7 +764,13 @@ impl Reservation {
             process_id,
             state: self.state.clone(),
         };
-        eprintln!("native launch cleanup incomplete: {cleanup:?}");
+        // Name the cause, not only the leftover. This line is the entire
+        // operator-visible record of a failed bounded-helper launch, and until
+        // now it printed the process that could not be cleaned up and nothing
+        // about why the launch failed -- which is why the Windows checkpoint's
+        // `native-10` row was re-diagnosed from the same sentence on three
+        // separate legs without the mechanism ever being named.
+        eprintln!("native launch cleanup incomplete: {cleanup:?}; cause: {cause:?}");
         BoundedHelperFailure {
             cause,
             cleanup: Some(cleanup),
