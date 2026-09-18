@@ -314,7 +314,7 @@ With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 
 ## Done
 
-Once it is running, the solstone app takes in what you share with it and all of it goes into your journal. Conversations are transcribed, people and projects are surfaced, a knowledge graph is built, and everything is searchable at http://localhost:5015. Your journal is one folder per day on a device you own. See [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it.
+Once it is running, the solstone app takes in what you share with it and all of it goes into your journal. Conversations are transcribed, people and projects are surfaced, a knowledge graph is built, and you can search indexed journal content at http://localhost:5015. Your journal is one folder per day on a device you own. See [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it.
 
 Source code: https://github.com/solpbc/solstone-journal
 company: https://solpbc.org
