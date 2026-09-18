@@ -12,7 +12,7 @@ use crate::store_tests::{
 };
 use crate::{
     FacetEntityWriteError, add_entity_aka, attach_or_reactivate_entity, detach_facet_entity,
-    list_scoped_facet_entities, update_facet_entity_identity,
+    list_scoped_facet_entities, publish_review_aliases, update_facet_entity_identity,
 };
 
 #[test]
@@ -455,6 +455,129 @@ fn promotion_reuses_a_punctuated_link_already_attached_to_the_facet() {
             .and_then(|b| b.get("description")),
         Some(&json!("before"))
     );
+}
+
+#[test]
+fn review_alias_publication_ignores_inherited_conflicts_but_rechecks_additions() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for (dir, id, name, aliases) in [
+        ("target", "target", "Target", vec!["Inherited"]),
+        ("claimant", "claimant", "Inherited", vec![]),
+    ] {
+        write_identity(
+            temporary.path(),
+            dir,
+            json!({"id":id,"name":name,"type":"Person","aka":aliases}),
+        );
+        write_facet_relationship(temporary.path(), "scope", dir, json!({"entity_id":id}));
+    }
+
+    let before = crate::read_facet_entity_link(temporary.path(), "scope", "target")
+        .unwrap()
+        .expect("target relationship");
+    assert_eq!(before.value()["entity_id"], "target");
+    let current = solstone_core_entity::read_entity_identity(temporary.path(), "target")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    let mut after = current.clone();
+    after["aka"] = json!(["Inherited", "One", "Two", "Three", "Four"]);
+    let change = solstone_core_entity::prepare_identity_changes(
+        temporary.path(),
+        "target",
+        &[current, after.clone()],
+    )
+    .unwrap()
+    .into_iter()
+    .find(|candidate| candidate.after == after)
+    .expect("prepared alias change");
+
+    let mut committed = false;
+    publish_review_aliases(temporary.path(), "scope", &change, true, || {
+        committed = true;
+        Ok(())
+    })
+    .unwrap();
+    assert!(committed);
+    let stored = solstone_core_entity::read_entity_identity(temporary.path(), "target")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.value(), &after);
+
+    let mut later_after = after.clone();
+    later_after["aka"] = json!(["Inherited", "One", "Two", "Three", "Four", "Late Claim"]);
+    let later = solstone_core_entity::prepare_identity_changes(
+        temporary.path(),
+        "target",
+        &[after.clone(), later_after],
+    )
+    .unwrap()
+    .into_iter()
+    .next()
+    .expect("prepared later alias change");
+    write_identity(
+        temporary.path(),
+        "late_claimant",
+        json!({"id":"late_claimant","name":"Other","type":"Person","aka":["Late Claim"]}),
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "scope",
+        "late_claimant",
+        json!({"entity_id":"late_claimant"}),
+    );
+    let mut refused_receipt = false;
+    let error = publish_review_aliases(temporary.path(), "scope", &later, true, || {
+        refused_receipt = true;
+        Ok(())
+    })
+    .unwrap_err();
+    assert_eq!(
+        error,
+        "conflict: promotion alias was claimed after preparation"
+    );
+    assert!(!refused_receipt);
+    let unchanged = solstone_core_entity::read_entity_identity(temporary.path(), "target")
+        .unwrap()
+        .unwrap();
+    assert_eq!(unchanged.value(), &after);
+}
+
+#[test]
+fn review_alias_delta_membership_uses_resolution_normalization() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    for (dir, id, name, aliases) in [
+        ("target", "target", "Target", vec!["Straße"]),
+        ("claimant", "claimant", "STRASSE", vec![]),
+    ] {
+        write_identity(
+            temporary.path(),
+            dir,
+            json!({"id":id,"name":name,"type":"Person","aka":aliases}),
+        );
+        write_facet_relationship(temporary.path(), "scope", dir, json!({"entity_id":id}));
+    }
+    let before = json!({"id":"target","name":"Target","type":"Person","aka":["Straße"]});
+    let after =
+        json!({"id":"target","name":"Target","type":"Person","aka":["STRASSE","Safe Alias"]});
+    let change = solstone_core_entity::prepare_identity_changes(
+        temporary.path(),
+        "target",
+        &[before, after.clone()],
+    )
+    .unwrap()
+    .into_iter()
+    .find(|candidate| candidate.after == after)
+    .expect("prepared normalized alias change");
+
+    publish_review_aliases(temporary.path(), "scope", &change, true, || Ok(())).unwrap();
+    let stored = solstone_core_entity::read_entity_identity(temporary.path(), "target")
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.value(), &after);
 }
 
 #[test]
