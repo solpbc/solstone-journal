@@ -305,10 +305,10 @@ pub async fn run_hosted(
             };
         }
     };
-    // Acquired before any supervisor lifecycle admission artifact exists
-    // (heartbeat, readiness, parent-loss state): a refusal here must leave
-    // zero such artifacts, so this must happen strictly before
-    // `SupervisorBootAdmission::acquire`.
+    // Windows has no parent-loss coordinator that can retire a prior
+    // generation's inherited Unix descriptor, so preserve its established
+    // pre-lifecycle acquisition order.
+    #[cfg(windows)]
     let speakers_analyze_generation =
         match solstone_core_transcribe::enter_speakers_analyze_generation(
             journal,
@@ -369,6 +369,49 @@ pub async fn run_hosted(
             };
         }
     };
+    #[cfg(unix)]
+    let parent_loss_coordinator = match runtime::bootstrap_parent_loss_before_speakers(
+        journal,
+        &options,
+        lifecycle.heartbeat_filename().to_owned(),
+    )
+    .await
+    {
+        Ok(session) => session,
+        Err(error) => {
+            let reason = match error {
+                runtime::RuntimeBootError::BootstrapRecoveryRequired(reason) => {
+                    SupervisorBootRefusal::LifecycleRecovery(format_lifecycle_recovery_copy(
+                        journal, reason,
+                    ))
+                }
+                other => {
+                    SupervisorBootRefusal::Lifecycle(LifecycleBootError::Failed(other.to_string()))
+                }
+            };
+            let _ = lifecycle.abort_pre_ready();
+            return SupervisorHostOutcome::Refused { reason };
+        }
+    };
+    // On Unix the closer must run first: a dead generation's exact child may
+    // still hold the inherited speakers-analysis lease. Coordinator readiness
+    // proves that child is gone before this generation attempts acquisition.
+    #[cfg(unix)]
+    let speakers_analyze_generation =
+        match solstone_core_transcribe::enter_speakers_analyze_generation(
+            journal,
+            SpeakersAnalyzeOwnerRole::Supervisor,
+        ) {
+            Ok(generation) => generation,
+            Err(error) => {
+                let _ = lifecycle.abort_pre_ready();
+                return SupervisorHostOutcome::Refused {
+                    reason: SupervisorBootRefusal::SpeakersAnalyzeGeneration(
+                        error.message().unwrap_or_default().to_owned(),
+                    ),
+                };
+            }
+        };
     let sense_child_environment = speakers_analyze_generation.child_launch_context();
     let admitted = HostedSupervisorAdmission {
         lifecycle,
@@ -382,6 +425,8 @@ pub async fn run_hosted(
         options,
         journal_binary,
         admitted.parent_watch,
+        #[cfg(unix)]
+        parent_loss_coordinator,
         sense_child_environment,
         #[cfg(windows)]
         binding.guard,

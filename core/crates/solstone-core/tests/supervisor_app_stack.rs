@@ -409,11 +409,11 @@ fn app_fixture_receives_supervisor_spawned_environment() {
 }
 
 /// When the supervisor's own speakers-analyze generation acquisition fails,
-/// the supervisor refuses before any lifecycle admission artifact exists and
-/// exits 78 — distinct from the ordinary `EXIT_TEMPFAIL=75` mapping every
-/// other named boot refusal uses.
+/// the parent-loss closer has already had its chance to retire an abandoned
+/// generation, but no app or readiness artifact is published. The dedicated
+/// installation refusal remains exit 78.
 #[test]
-fn speakers_analyze_generation_failure_refuses_before_any_lifecycle_artifact() {
+fn speakers_analyze_generation_failure_follows_parent_loss_recovery_before_app_artifacts() {
     let journal = TempJournal::new();
     let fixture = env!("CARGO_BIN_EXE_solstone-core-system-test-child");
     let home = installation_binding::admit_for(&journal.0);
@@ -468,8 +468,8 @@ fn speakers_analyze_generation_failure_refuses_before_any_lifecycle_artifact() {
         );
     }
     assert!(
-        !journal.0.join("health/parent-loss").exists(),
-        "unexpected parent-loss lifecycle artifacts"
+        journal.0.join("health/parent-loss").is_dir(),
+        "parent-loss recovery must precede speakers-generation acquisition"
     );
 }
 

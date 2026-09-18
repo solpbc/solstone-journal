@@ -235,13 +235,30 @@ pub(crate) struct ParentLossCoordinatorSession {
     generation: u64,
     supervisor: ProcessInstance,
     capability: Vec<u8>,
+    journal: PathBuf,
+    retirement_requested: AtomicBool,
 }
 
 #[cfg(unix)]
 impl ParentLossCoordinatorSession {
     pub(crate) fn write_retire_expected(&self, journal: &Path) -> Result<(), String> {
-        write_retire_expected_control(journal, self.generation, self.supervisor, &self.capability)
-            .map_err(|error| error.to_string())
+        if self
+            .retirement_requested
+            .swap(true, std::sync::atomic::Ordering::AcqRel)
+        {
+            return Ok(());
+        }
+        if let Err(error) = write_retire_expected_control(
+            journal,
+            self.generation,
+            self.supervisor,
+            &self.capability,
+        ) {
+            self.retirement_requested
+                .store(false, std::sync::atomic::Ordering::Release);
+            return Err(error.to_string());
+        }
+        Ok(())
     }
 
     /// Wait only for the coordinator's durable graceful-retirement
@@ -280,6 +297,16 @@ impl ParentLossCoordinatorSession {
             }
             std::thread::sleep(remaining.min(Duration::from_millis(10)));
         }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ParentLossCoordinatorSession {
+    fn drop(&mut self) {
+        // The session now starts before the speakers-generation gate. Any
+        // later pre-ready refusal must not strand its coordinator merely
+        // because `run_hosted` returned to a process that remains alive.
+        let _ = self.write_retire_expected(&self.journal);
     }
 }
 
@@ -487,6 +514,8 @@ async fn bootstrap_parent_loss_coordinator(
                     generation: ready.generation,
                     supervisor,
                     capability,
+                    journal: journal.to_path_buf(),
+                    retirement_requested: AtomicBool::new(false),
                 });
             }
             Ok(_) => {}
@@ -1149,6 +1178,23 @@ fn app_processes(
     convey_port: u16,
     fast_fixture_timing: bool,
 ) -> Vec<ManagedAppProcess> {
+    app_service_enablement(options)
+        .into_iter()
+        .map(|(service, enabled)| {
+            ManagedAppProcess::new(
+                service,
+                enabled,
+                journal,
+                fixture_binary,
+                journal_binary,
+                convey_port,
+                fast_fixture_timing,
+            )
+        })
+        .collect()
+}
+
+fn app_service_enablement(options: &SupervisorOptions) -> Vec<(AppService, bool)> {
     let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     let services = vec![
         (AppService::Convey, !remote && !options.no_convey),
@@ -1165,19 +1211,27 @@ fn app_processes(
         services
     };
     services
-        .into_iter()
-        .map(|(service, enabled)| {
-            ManagedAppProcess::new(
-                service,
-                enabled,
-                journal,
-                fixture_binary,
-                journal_binary,
-                convey_port,
-                fast_fixture_timing,
-            )
-        })
-        .collect()
+}
+
+#[cfg(unix)]
+pub(crate) async fn bootstrap_parent_loss_before_speakers(
+    journal: &Path,
+    options: &SupervisorOptions,
+    supervisor_heartbeat_filename: String,
+) -> Result<ParentLossCoordinatorSession, RuntimeBootError> {
+    let supervisor = current_supervisor_instance().map_err(RuntimeBootError::Startup)?;
+    bootstrap_parent_loss_coordinator(
+        journal,
+        supervisor,
+        app_service_enablement(options)
+            .into_iter()
+            .filter(|(_, enabled)| *enabled)
+            .map(|(service, _)| service.hosted_service_kind())
+            .collect(),
+        supervisor_heartbeat_filename,
+    )
+    .await
+    .map_err(RuntimeBootError::BootstrapRecoveryRequired)
 }
 
 pub(crate) fn spawn_app_process(
@@ -1425,6 +1479,7 @@ pub(crate) async fn boot_and_tick(
     options: SupervisorOptions,
     journal_binary: Option<PathBuf>,
     parent_watch: Option<ParentWatch>,
+    #[cfg(unix)] parent_loss_coordinator: ParentLossCoordinatorSession,
     sense_child_environment: solstone_core_system::process::ChildLaunchContext,
     #[cfg(windows)] service_guard: solstone_core_installation_identity::GuardFields,
     #[cfg(windows)] installed_task: Option<
@@ -1652,41 +1707,7 @@ pub(crate) async fn boot_and_tick(
         fast_fixture_timing,
     );
     #[cfg(unix)]
-    let supervisor_generation = match current_supervisor_instance() {
-        Ok(instance) => instance,
-        Err(error) => {
-            return Err(
-                abort_published_setup(&lifecycle, &queue, &mut connection, &server, error).await,
-            );
-        }
-    };
-    #[cfg(unix)]
-    let supervisor_heartbeat_filename = lifecycle.heartbeat_filename().to_owned();
-    #[cfg(unix)]
-    let parent_loss_coordinator = match bootstrap_parent_loss_coordinator(
-        &journal,
-        supervisor_generation,
-        app_processes
-            .iter()
-            .filter(|app| app.enabled)
-            .map(|app| app.service.hosted_service_kind())
-            .collect(),
-        supervisor_heartbeat_filename,
-    )
-    .await
-    {
-        Ok(session) => Some(session),
-        Err(error) => {
-            return Err(abort_published_setup_with_error(
-                &lifecycle,
-                &queue,
-                &mut connection,
-                &server,
-                RuntimeBootError::BootstrapRecoveryRequired(error),
-            )
-            .await);
-        }
-    };
+    let parent_loss_coordinator = Some(parent_loss_coordinator);
     #[cfg(windows)]
     let parent_loss_coordinator = None;
     let direct_port = match selected_direct_door_port(&journal, options.direct_port) {
@@ -2076,6 +2097,8 @@ mod tests {
     #[cfg(unix)]
     use std::path::{Path, PathBuf};
     #[cfg(unix)]
+    use std::sync::atomic::AtomicBool;
+    #[cfg(unix)]
     use std::time::Duration;
 
     #[cfg(unix)]
@@ -2155,6 +2178,8 @@ mod tests {
             generation: coordinator.generation(),
             supervisor,
             capability,
+            journal: journal.path().to_path_buf(),
+            retirement_requested: AtomicBool::new(false),
         };
 
         session
@@ -2167,6 +2192,42 @@ mod tests {
                 .wait_for_retire_expected_ack(journal.path(), Duration::from_secs(2))
                 .expect("read coordinator acknowledgement")
         );
+        assert_eq!(
+            coordinator
+                .join()
+                .expect("coordinator thread")
+                .expect("coordinator retirement"),
+            ParentLossTerminalDisposition::RetiredExpected
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn dropping_pre_ready_session_retires_coordinator_while_supervisor_stays_live() {
+        let journal = tempfile::TempDir::new().expect("temporary journal");
+        let supervisor = DeclaredParent::capture_current()
+            .expect("live direct parent")
+            .instance();
+        let capability = b"pre-ready-session-drop-capability".to_vec();
+        let (coordinator, _) = ParentLossCoordinator::bootstrap(CoordinatorBootstrap {
+            journal: journal.path().to_path_buf(),
+            supervisor,
+            enabled: Vec::new(),
+            supervisor_heartbeat_filename: "solstone-v2-test-test.check".to_owned(),
+            capability: capability.clone(),
+        })
+        .expect("coordinator bootstrap");
+        let session = ParentLossCoordinatorSession {
+            generation: coordinator.generation(),
+            supervisor,
+            capability,
+            journal: journal.path().to_path_buf(),
+            retirement_requested: AtomicBool::new(false),
+        };
+        let coordinator = std::thread::spawn(move || coordinator.run());
+
+        drop(session);
+
         assert_eq!(
             coordinator
                 .join()

@@ -974,13 +974,10 @@ fn ac7_second_instance_refused_first_survives() {
         journal.system_test_child(),
     );
     let second = command.status().expect("second supervisor runs");
-    // The second instance's speakers-analyze generation acquisition contends
-    // with the first's held lease and fails, refusing boot with
-    // EXIT_SPEAKERS_ANALYZE_GENERATION_REFUSED=78 (main.rs) rather than the
-    // ordinary EXIT_TEMPFAIL=75 every other named boot refusal uses; see
-    // supervisor_app_stack.rs's speakers_analyze_generation_failure_refuses_before_any_lifecycle_artifact
-    // for the same contract in isolation.
-    assert_eq!(second.code(), Some(78));
+    // The singleton journal admission precedes speakers-generation
+    // acquisition on Unix, so a real first supervisor produces the ordinary
+    // already-running refusal without probing its inherited child lease.
+    assert_eq!(second.code(), Some(75));
     assert!(nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid), None).is_ok());
     assert!(first.try_wait().expect("first status").is_none());
 }
