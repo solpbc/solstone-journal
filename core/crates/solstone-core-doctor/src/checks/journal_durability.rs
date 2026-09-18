@@ -259,7 +259,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Ok,
-            "no bookkeeping has needed healing",
+            "no recovery was needed",
             None::<String>,
         ));
     }
@@ -274,7 +274,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     }
     if !report.unresolved_generations.is_empty() {
         sections.push(named(
-            "runs that ended without a proven clean stop",
+            "runs that did not stop cleanly",
             &report.unresolved_generations,
         ));
         heals.extend(report.unresolved_generations.clone());
@@ -297,8 +297,8 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         status,
         truncate(&detail, 4096),
         Some(
-            "nothing needs doing: these records are kept beside your journal's bookkeeping so a \
-             heal is never silent; they hold none of your memories",
+            "nothing needs doing: these records are kept beside your journal's bookkeeping so \
+             recovery is always listed; they hold none of your memories",
         ),
     );
     if !heals.is_empty() {
