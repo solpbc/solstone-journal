@@ -302,11 +302,11 @@ fn owner_denial_reason(reason: &'static str) -> &'static str {
 /// worded accurately rather than left to imply a path that does not exist.
 ///
 /// ⛔ **Never name the journal's derived index as "the journal index".**
-/// `cmo/brand/system-anatomy.md` puts "the index" on the journal's never-list by
-/// name, and this is the failure the ban exists for: an owner reading *"the
-/// journal index is empty"* reads it as **their journal** being empty, when a
-/// full journal with an unbuilt search index reports exactly that. ✅ Name the
-/// mechanism — the search index — and leave the journal out of the compound.
+/// Owner-facing copy reserves "the journal" for the owner's files. An owner
+/// reading *"the journal index is empty"* can read it as **their journal** being
+/// empty, when a full journal with an unbuilt search index reports exactly
+/// that. ✅ Name the mechanism — the search index — and leave the journal out
+/// of the compound.
 fn owner_error_reason(error: DispatchError) -> &'static str {
     match error {
         DispatchError::Tool(ToolError::IndexAbsent) => "the search index does not exist",

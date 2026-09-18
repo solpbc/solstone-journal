@@ -153,15 +153,13 @@ pub(super) fn execute_until(
         // terminal. Bound and sanitize it here rather than in the extractor,
         // which stays a pure text function; the raw streams remain in the
         // operation's own captured output for support.
-        return Err(format!(
-            "task operation failed; scheduler state must be re-inspected: {}",
-            solstone_core_system_health::sanitize_str_for_terminal_bounded(
-                &solstone_core_service_unit::windows_task_failure_reason(
-                    &output.stdout,
-                    &output.stderr
-                )
-            )
-        ));
+        let reason = solstone_core_system_health::sanitize_str_for_terminal_bounded(
+            &solstone_core_service_unit::windows_task_failure_reason(
+                &output.stdout,
+                &output.stderr,
+            ),
+        );
+        return Err(render_operation_failure(name, &reason));
     }
     let snapshot: Snapshot = serde_json::from_slice(&output.stdout)
         .map_err(|_| "task operation returned invalid JSON")?;
@@ -196,4 +194,60 @@ pub(super) fn execute_until(
         return Err("task operation returned inconsistent evidence".to_owned());
     }
     Ok(snapshot)
+}
+
+fn render_operation_failure(operation: &str, reason: &str) -> String {
+    let reason = if reason == "windows gave no reason" {
+        "windows gave no reason."
+    } else {
+        reason
+    };
+    if operation == "inspect" {
+        format!(
+            "background support for your journal couldn't be checked.\n\
+             try again in a moment. if it keeps failing, include the details below in a support request.\n\
+             details: {reason}"
+        )
+    } else {
+        format!(
+            "background support for your journal couldn't be changed.\n\
+             run `journal service status` to check it.\n\
+             details: {reason}"
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::render_operation_failure;
+
+    #[test]
+    fn a_change_failure_names_the_status_recovery_and_keeps_details_separate() {
+        assert_eq!(
+            render_operation_failure("update", "powershell.exe: access is denied"),
+            "background support for your journal couldn't be changed.\n\
+             run `journal service status` to check it.\n\
+             details: powershell.exe: access is denied"
+        );
+    }
+
+    #[test]
+    fn an_inspect_failure_does_not_send_the_owner_back_into_the_failed_read() {
+        assert_eq!(
+            render_operation_failure("inspect", "task-read-refused"),
+            "background support for your journal couldn't be checked.\n\
+             try again in a moment. if it keeps failing, include the details below in a support request.\n\
+             details: task-read-refused"
+        );
+    }
+
+    #[test]
+    fn an_empty_worker_reason_keeps_the_locked_honest_fallback() {
+        assert_eq!(
+            render_operation_failure("run", "windows gave no reason"),
+            "background support for your journal couldn't be changed.\n\
+             run `journal service status` to check it.\n\
+             details: windows gave no reason."
+        );
+    }
 }

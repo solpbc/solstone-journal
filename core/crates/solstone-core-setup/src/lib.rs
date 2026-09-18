@@ -319,9 +319,8 @@ fn report_identity_failure<W: Write>(
         Ok(paths) => (paths, None),
         Err(error) => (Vec::new(), Some(error)),
     };
-    // Shape follows the locked recovery copy in
-    // `vpx/design-system/journal-service-install-recovery-copy.md`: the owner-visible
-    // line first, the internal reason under `details:`.
+    // Shape follows the shared setup/service-install recovery copy: the
+    // owner-visible line first, the internal reason under `details:`.
     //
     // ⚠ It deliberately DIVERGES from that lock's prescribed second line ("run
     // `journal setup` to check it. if setup finishes successfully, try again"),
@@ -330,8 +329,7 @@ fn report_identity_failure<W: Write>(
     // `--clean-uninstall` is not the way out either: `admit_clean_uninstall` runs
     // against the same registry and answers "installation identity does not
     // exist" in exactly this state. An amendment adding a row for the
-    // no-bootstrap-evidence state is filed with VPX; until it lands this string
-    // and the lock are knowingly in tension, which is better than a loop.
+    // no-bootstrap-evidence state is the dedicated recovery for this branch.
     let steps = recovery
         .iter()
         .map(|(path, flag)| format!("\n    rm {flag} {}", path.display()))

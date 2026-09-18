@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 use solstone_core_format::segment::segment_key;
 use thiserror::Error;
 
+#[cfg(windows)]
+const DISPATCHER_FILE_NAME: &str = "journal.exe";
+#[cfg(not(windows))]
+const DISPATCHER_FILE_NAME: &str = "solstone-core-journal";
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandlerSpec {
     pub name: &'static str,
@@ -55,7 +60,7 @@ pub fn default_registry(describe_jobs: usize) -> Vec<HandlerSpec> {
 }
 
 pub(crate) fn resolve_dispatcher_in(dir: &Path) -> Result<PathBuf, DispatcherResolveError> {
-    let candidate = dir.join("solstone-core-journal");
+    let candidate = dir.join(DISPATCHER_FILE_NAME);
     match fs::metadata(&candidate) {
         Ok(metadata) if metadata.is_file() => {
             if dispatcher_is_executable(&metadata) {
@@ -267,6 +272,18 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn resolve_dispatcher_in_returns_the_windows_public_executable_sibling() {
+        let temp = tempfile::tempdir().expect("dir");
+        let candidate = temp.path().join("journal.exe");
+        fs::write(&candidate, b"").expect("write candidate");
+        assert_eq!(
+            resolve_dispatcher_in(temp.path()).expect("executable sibling"),
+            candidate
+        );
+    }
+
     #[test]
     fn resolve_dispatcher_in_reports_missing_without_searching_path() {
         let temp = tempfile::tempdir().expect("dir");
@@ -274,7 +291,7 @@ mod tests {
         assert_eq!(
             reported,
             DispatcherResolveError::Missing {
-                path: temp.path().join("solstone-core-journal"),
+                path: temp.path().join(DISPATCHER_FILE_NAME),
             }
         );
     }
@@ -282,7 +299,7 @@ mod tests {
     #[test]
     fn resolve_dispatcher_in_rejects_a_non_regular_candidate() {
         let temp = tempfile::tempdir().expect("dir");
-        let candidate = temp.path().join("solstone-core-journal");
+        let candidate = temp.path().join(DISPATCHER_FILE_NAME);
         fs::create_dir(&candidate).expect("directory candidate");
         assert_eq!(
             resolve_dispatcher_in(temp.path()).expect_err("non-regular"),
