@@ -132,9 +132,9 @@ pub struct ActivityPage {
     pub next: Option<ActivityAnchor>,
     /// Records opened while filling this page.
     pub examined: usize,
-    /// False when [`MAX_EXAMINED_RECORDS`] stopped the walk before the corpus
-    /// did. ⚠ An empty page with this false means "not found yet", ⛔ never
-    /// "there are none".
+    /// False when either the result limit or [`MAX_EXAMINED_RECORDS`] stopped
+    /// the walk before the corpus did. ⚠ An empty page with this false means
+    /// "not found yet", ⛔ never "there are none".
     pub examination_complete: bool,
     /// Admissions present on disk that could not be parsed. ⛔ Never silently
     /// skipped: in an audit reader a dropped record is a false clean.
@@ -323,6 +323,7 @@ pub fn read_activity(
                 break 'days;
             }
             if entries.len() >= limit {
+                examination_complete = false;
                 next = Some(position);
                 break 'days;
             }
@@ -653,6 +654,19 @@ mod tests {
         unique.dedup();
         assert_eq!(seen.len(), 7, "no record repeated: {seen:?}");
         assert_eq!(unique.len(), 7, "no record skipped: {seen:?}");
+    }
+
+    #[test]
+    fn a_limit_truncated_page_is_not_a_complete_examination() {
+        let journal = fixture();
+        admit(&journal, "bearer:one", ToolName::Search, 10, 0);
+        admit(&journal, "bearer:one", ToolName::Fetch, 11, 0);
+
+        let page = read_activity(journal.path(), &query(1)).unwrap();
+        assert_eq!(page.entries.len(), 1);
+        assert_eq!(page.examined, 1);
+        assert!(page.next.is_some());
+        assert!(!page.examination_complete);
     }
 
     #[test]

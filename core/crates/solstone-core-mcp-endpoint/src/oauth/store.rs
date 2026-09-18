@@ -89,6 +89,12 @@ pub(crate) struct RegisteredClient {
     pub(crate) created_at: DateTime<Utc>,
 }
 
+/// Stored context needed to faithfully re-render a pending consent request.
+pub(crate) struct PendingAuthorization {
+    pub(crate) client: RegisteredClient,
+    pub(crate) redirect_uri: String,
+}
+
 /// Non-secret metadata suitable for listing registered OAuth clients.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthClientSummary {
@@ -794,16 +800,28 @@ impl OAuthStore {
         })
     }
 
-    /// True when a pending authorization transaction still exists.
-    pub(crate) fn pending_transaction_exists(
+    /// Resolve the client and return target bound to a pending authorization.
+    pub(crate) fn pending_authorization(
         &self,
         transaction_id: &str,
-    ) -> Result<bool, OAuthStoreError> {
-        Ok(self
-            .read_store()?
+    ) -> Result<Option<PendingAuthorization>, OAuthStoreError> {
+        let store = self.read_store()?;
+        let Some(pending) = store
             .pending
             .iter()
-            .any(|pending| pending.transaction_id == transaction_id))
+            .find(|pending| pending.transaction_id == transaction_id)
+        else {
+            return Ok(None);
+        };
+        let client = store
+            .clients
+            .iter()
+            .find(|client| client.id == pending.client_record_id)
+            .ok_or(OAuthStoreError::ClientNotFound)?;
+        Ok(Some(PendingAuthorization {
+            client: registered_from(client),
+            redirect_uri: pending.redirect_uri.clone(),
+        }))
     }
 
     /// Look up a registered client by CIMD URL.

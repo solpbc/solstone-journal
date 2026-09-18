@@ -20,23 +20,28 @@ pub(crate) fn encode_pairing_code(bytes: &[u8; 5]) -> String {
     encoded
 }
 
-/// Uppercase and admit an 8-character Crockford pairing code.
+/// Remove paste separators, uppercase, and admit an 8-character Crockford
+/// pairing code.
 ///
 /// Characters outside the Crockford alphabet (including I, L, O, and U) are
 /// rejected rather than mapped.
 pub(crate) fn canonicalize_pairing_code(raw: &str) -> Option<String> {
-    if raw.len() != PAIRING_CODE_CHARS {
-        return None;
-    }
     let mut canonical = String::with_capacity(PAIRING_CODE_CHARS);
-    for byte in raw.bytes() {
-        let upper = byte.to_ascii_uppercase();
+    for character in raw
+        .chars()
+        .filter(|character| !character.is_whitespace() && *character != '-')
+    {
+        let upper = character.to_ascii_uppercase();
+        if !upper.is_ascii() {
+            return None;
+        }
+        let upper = upper as u8;
         if !CROCKFORD.contains(&upper) {
             return None;
         }
         canonical.push(char::from(upper));
     }
-    Some(canonical)
+    (canonical.len() == PAIRING_CODE_CHARS).then_some(canonical)
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
@@ -56,6 +61,10 @@ mod tests {
     fn canonicalize_accepts_lowercase_and_rejects_other_bytes() {
         assert_eq!(
             canonicalize_pairing_code("ab12cd3e").as_deref(),
+            Some("AB12CD3E")
+        );
+        assert_eq!(
+            canonicalize_pairing_code("ab12-cd3e\n").as_deref(),
             Some("AB12CD3E")
         );
         assert!(canonicalize_pairing_code("AB12CD3I").is_none());

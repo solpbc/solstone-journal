@@ -199,12 +199,13 @@ Command names are lowercase single words, or hyphenated multi-word
 
 ## Journal MCP Endpoint
 
-The journal MCP endpoint is a loopback-only, TLS-protected MCP server for seven
-read-only journal tools: `list_facets`, `search`, `fetch`, `list_transcripts`,
-`get_transcript`, `list_entities`, and `get_entity`. It is available only in
-builds compiled with the `journal-mcp-endpoint` Cargo feature and only when the
-journal runtime capability is enabled; without either condition, the endpoint
-does not start.
+The journal MCP endpoint is a TLS-protected MCP server for seven read-only
+journal tools: `list_facets`, `search`, `fetch`, `list_transcripts`,
+`get_transcript`, `list_entities`, and `get_entity`. The journal listener binds
+to loopback, while the owner-authorized bridge carries remote agent traffic
+to it. It is available only in builds compiled with the `journal-mcp-endpoint`
+Cargo feature and only when the journal runtime capability is enabled; without
+either condition, the endpoint does not start.
 
 ### Enable or disable the endpoint
 
@@ -251,13 +252,13 @@ not a listener-liveness check.
 ### MCP client connection
 
 The Streamable HTTP target is `/mcp`. The listener physically binds the
-loopback address and fixed port above, but TLS requires the account-authorized
+loopback address and fixed port above, but TLS requires the owner-authorized
 hostname as both the TLS server name (SNI) and certificate-validation name; a
 client that sends `127.0.0.1`, `localhost`, or no SNI will not complete the
 handshake. A client that dials loopback must therefore support configuring its
 connection address independently from its TLS server name and HTTP host.
 
-That account-authorized hostname is intentionally opaque and is not exposed by
+That owner-authorized hostname is intentionally opaque and is not exposed by
 `journal mcp status` or another operator command. Direct loopback setup for a
 generic MCP client is consequently not currently practical from the local CLI;
 use the account bridge/tunnel path rather than assuming `127.0.0.1:7658` is a
