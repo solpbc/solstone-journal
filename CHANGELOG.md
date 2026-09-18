@@ -6,6 +6,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- `solstone link join` now shows your journal's mark right after pairing, so you can confirm you connected to the journal you meant.
+- your journal's mark is now read aloud by screen readers on first-run setup and the network page, not just shown.
+
 ### Changed
 
 - settings now name updates.solstone.app as the source for the parakeet-cpp server and speech model, along with their licenses and where to find the notices.
@@ -13,6 +18,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - days with a lot of context about a person or thing no longer get stuck while your journal considers new memories. it now fits source excerpts and existing memories within the available space before asking the model.
+- the network page's pairing confirmation no longer asks you to compare a fingerprint nothing else shows; it points at the journal mark shown on the same page instead.
+- first-run setup and the network page now show the plain "your journal" mark instead of an error message when your journal's mark isn't ready yet or can't be read.
+- `solstone link status` now says "unknown journal seen at" an address, matching the wording used elsewhere.
 
 ## [2.0.8] - 2026-09-16
 

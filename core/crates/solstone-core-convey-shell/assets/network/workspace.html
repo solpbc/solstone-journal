@@ -8,7 +8,7 @@
 
   <section id="link-identity-header" class="link-identity" hidden>
     <p class="link-identity-title" data-copy="IDENTITY_HEADER_LABEL"></p>
-    <div id="link-identity-mark" class="link-identity-mark" aria-hidden="true"></div>
+    <div id="link-identity-mark" class="link-identity-mark"></div>
     <details class="link-identity-id-disclosure">
       <summary data-copy="IDENTITY_ID_LABEL"></summary>
       <div class="link-identity-id">
@@ -263,6 +263,8 @@
   .link-mark-chips { display: flex; gap: 0.7em; justify-content: center; }
   .link-mark-chip { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; border: 2px solid #ccc; border-radius: 12px; box-sizing: border-box; }
   .link-mark-chip svg { width: 28px; height: 28px; display: block; }
+  .link-mark-chip-generic { width: 48px; height: 48px; }
+  .link-mark-chip-generic svg { display: block; }
   .link-mark-words { display: flex; align-items: center; justify-content: center; gap: 0.5em; margin-top: 0.55em; font-family: var(--font-display); font-size: 1.1rem; letter-spacing: .3px; color: #222; }
   .link-mark-words .link-mark-sep { color: #c2b9a6; }
   .link-identity-id-disclosure { margin-top: 0.9em; font-size: 0.85rem; }
@@ -989,6 +991,8 @@
     const validIcons = icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex);
     if (!validIcons || words.length !== 2) return false;
     markEl.innerHTML = '<div class="link-mark-chips"><div class="link-mark-chip"></div><div class="link-mark-chip"></div></div><div class="link-mark-words"><span></span><span class="link-mark-sep">·</span><span></span></div>';
+    markEl.setAttribute('role', 'img');
+    markEl.setAttribute('aria-label', `${icons[0].color.name}, ${icons[1].color.name} · ${words[0]} ${words[1]}`);
     const chips = markEl.querySelectorAll('.link-mark-chip');
     chips.forEach((chip, index) => {
       const icon = icons[index];
@@ -1003,18 +1007,44 @@
     return true;
   }
 
+  // The org-wide no-identity-yet treatment (journal-mark.md § 4.3): dashed,
+  // glyph-less chips in the locked mark palette plus the words "your" /
+  // "journal", spoken as one accessible unit. Renders in place of hiding the
+  // section, whether the identity fetch failed, the identity isn't committed
+  // yet, or the served spec is malformed.
+  function renderGenericIdentityMark() {
+    const markEl = document.getElementById('link-identity-mark');
+    if (!markEl) return;
+    markEl.innerHTML = '<div class="link-mark-chips">' +
+      '<div class="link-mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="#E8913A" fill-opacity="0.07" stroke="#E8913A" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+      '<div class="link-mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="#D4A017" fill-opacity="0.07" stroke="#D4A017" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+      '</div><div class="link-mark-words"><span>your</span><span class="link-mark-sep">·</span><span>journal</span></div>';
+    markEl.setAttribute('role', 'img');
+    markEl.setAttribute('aria-label', 'your journal, not set up yet');
+  }
+
   async function loadIdentity() {
     const section = document.getElementById('link-identity-header');
     if (!section) return;
+    const idDisclosure = section.querySelector('.link-identity-id-disclosure');
     let data;
     try {
       data = await window.apiJson('/app/network/api/identity');
     } catch (err) {
       window.logError?.(err, { context: 'link: identity load failed' });
-      return; // stays hidden/empty — quiet failure
+      renderGenericIdentityMark();
+      if (idDisclosure) idDisclosure.hidden = true;
+      section.hidden = false;
+      return;
     }
-    if (!data || !data.committed || !data.mark) return; // quiet not-committed branch
-    if (!renderIdentityMark(data.mark)) return;          // malformed spec → stays hidden
+    if (!data || !data.committed || !data.mark || !renderIdentityMark(data.mark)) {
+      // not-committed, or a malformed spec that renderIdentityMark refused.
+      renderGenericIdentityMark();
+      if (idDisclosure) idDisclosure.hidden = true;
+      section.hidden = false;
+      return;
+    }
+    if (idDisclosure) idDisclosure.hidden = false;
     const idValue = document.getElementById('link-identity-id-value');
     if (idValue && typeof data.instance_id === 'string') idValue.textContent = data.instance_id;
     section.hidden = false;

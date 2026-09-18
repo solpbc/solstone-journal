@@ -199,6 +199,8 @@
     .mark-permanence { text-align: center; }
     .mark-locked { display: flex; align-items: center; justify-content: center; gap: 0.4rem; color: var(--success-ink); font-size: 0.92rem; margin-top: 0.5rem; font-weight: 600; }
     .mark-locked svg { width: 16px; height: 16px; flex: none; }
+    .mark-chip-generic { width: 48px; height: 48px; }
+    .mark-chip-generic svg { display: block; }
     @media (prefers-reduced-motion: no-preference) {
       .mark-card.pop { animation: mark-pop .26s ease-out; }
       @keyframes mark-pop { from { opacity: 0; transform: translateY(4px) scale(.98); } to { opacity: 1; transform: none; } }
@@ -629,6 +631,29 @@
       errorEl.hidden = false;
     }
 
+    // The org-wide no-identity-yet treatment (journal-mark.md § 4.3): dashed,
+    // glyph-less chips in the locked mark palette plus the words "your" /
+    // "journal", spoken as one accessible unit. Renders in place of an error
+    // state whenever the served spec is malformed, absent, or not yet
+    // committed — never a hidden section, never a retry affordance.
+    function renderGenericMark(display) {
+      if (!display) return;
+      display.innerHTML = '<div class="mark-card generic" role="img" aria-label="your journal, not set up yet">' +
+        '<div class="mark-chips">' +
+        '<div class="mark-chip-generic"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="#E8913A" fill-opacity="0.07" stroke="#E8913A" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+        '<div class="mark-chip-generic" style="transform: rotate(45deg)"><svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true"><rect x="1" y="1" width="46" height="46" rx="12" ry="12" fill="#D4A017" fill-opacity="0.07" stroke="#D4A017" stroke-width="2" stroke-dasharray="5.7 4.3"/></svg></div>' +
+        '</div>' +
+        '<div class="mark-words"><span>your</span><span class="mark-sep">·</span><span>journal</span></div>' +
+        '</div>';
+      const errorEl = document.getElementById('journal-mark-error');
+      if (errorEl) {
+        errorEl.textContent = '';
+        errorEl.hidden = true;
+      }
+      const retryButton = document.getElementById('journal-mark-retry');
+      if (retryButton) retryButton.hidden = true;
+    }
+
     function applyLockState(locked) {
       journalMarkLocked = locked === true;
       const regenerateButton = document.getElementById('journal-mark-regenerate');
@@ -652,12 +677,17 @@
       const words = Array.isArray(spec && spec.words) ? spec.words : [];
       const validIcons = icons.length === 2 && icons.every(icon => icon && icon.svg && icon.color && icon.color.hex);
 
-      if (!display || !validIcons || words.length !== 2) {
-        showMarkError("couldn't draw your mark. try again.");
+      if (!display) return;
+      if (!validIcons || words.length !== 2) {
+        renderGenericMark(display);
         return;
       }
 
-      display.innerHTML = '<div class="mark-card' + (locked ? ' locked' : '') + ' pop"><div class="mark-chips"><div class="mark-chip"></div><div class="mark-chip"></div></div><div class="mark-words"><span></span><span class="mark-sep">·</span><span></span></div></div>';
+      display.innerHTML = '<div class="mark-card' + (locked ? ' locked' : '') + ' pop" role="img"><div class="mark-chips"><div class="mark-chip"></div><div class="mark-chip"></div></div><div class="mark-words"><span></span><span class="mark-sep">·</span><span></span></div></div>';
+      const card = display.querySelector('.mark-card');
+      if (card) {
+        card.setAttribute('aria-label', `${icons[0].color.name}, ${icons[1].color.name} · ${words[0]} ${words[1]}`);
+      }
       const chips = display.querySelectorAll('.mark-chip');
       chips.forEach((chip, index) => {
         const icon = icons[index];

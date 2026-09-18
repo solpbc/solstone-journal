@@ -226,8 +226,16 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     let _ = fs::remove_file(bundle_dir.join("journal_metadata.json"));
     let _ = fs::remove_file(bundle_dir.join("serve_runtime.json"));
 
+    let mark_line = match spl_core::mark::mark_from_jid(&credential.instance_id) {
+        Ok(mark) => format!(
+            "journal mark: {}\n",
+            format_spoken_mark(&mark.to_render_spec())
+        ),
+        Err(_) => "journal mark: could not be shown\n".to_string(),
+    };
+
     CommandOutput::success(format!(
-        "Linked {label}.\nCredentials: {}\n",
+        "Linked {label}.\nCredentials: {}\n{mark_line}",
         bundle_dir.display()
     ))
 }
@@ -426,8 +434,8 @@ fn format_sighting_block(
     local_instance_id: &str,
 ) -> String {
     let header = match &sighting.address {
-        Some(addr) => format!("Unknown journal at {addr}:"),
-        None => "Unknown journal seen through the relay:".to_string(),
+        Some(addr) => format!("unknown journal seen at {addr}:"),
+        None => "unknown journal seen through the relay:".to_string(),
     };
     let what_answered = match &sighting.jid {
         Some(jid) => match spl_core::mark::mark_from_jid(jid) {
@@ -2458,7 +2466,10 @@ mod tests {
         let bundle = config.join("solstone-observer").join("spl").join("laptop");
         assert_eq!(
             output.stdout,
-            format!("Linked laptop.\nCredentials: {}\n", bundle.display())
+            format!(
+                "Linked laptop.\nCredentials: {}\njournal mark: could not be shown\n",
+                bundle.display()
+            )
         );
         assert_eq!(output.exit, 0);
         assert_eq!(
@@ -2475,6 +2486,44 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_bundle_files_exist(&bundle);
         assert!(!path_lexists(&root.join("peers")));
+        seam.assert_done();
+    }
+
+    #[test]
+    fn observer_success_prints_paired_journal_mark() {
+        let temp = temp_dir("observer-success-mark");
+        let config = temp.join("config");
+        let env = base_env(&config, &temp.join("home"));
+        let root = temp.join("journal");
+        let expected = expected_direct_request("laptop");
+        let instance_id = "f30ed159-ef46-8e9c-913f-e49f0fe7d201";
+        let mut paired_credential = credential(Value::Null);
+        paired_credential.instance_id = instance_id.to_string();
+        let seam = ScriptedLinkJoinPairingSeam::new(vec![ExpectedLinkJoinPairingCall::Direct {
+            expected,
+            result: Ok(paired_credential),
+        }]);
+        let clock = FakeClock::at_unix(0);
+
+        let output = run(
+            &["--code", &direct_pair_link(), "--label", "laptop"],
+            &env,
+            &root,
+            &seam,
+            &clock,
+        );
+
+        let bundle = config.join("solstone-observer").join("spl").join("laptop");
+        let mark = spl_core::mark::mark_from_jid(instance_id).expect("mark");
+        let spoken = format_spoken_mark(&mark.to_render_spec());
+        assert_eq!(
+            output.stdout,
+            format!(
+                "Linked laptop.\nCredentials: {}\njournal mark: {spoken}\n",
+                bundle.display()
+            )
+        );
+        assert_eq!(output.exit, 0);
         seam.assert_done();
     }
 
@@ -3676,7 +3725,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3735,7 +3784,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal seen through the relay:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nA relay sighting is weaker evidence than a LAN address.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen through the relay:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nA relay sighting is weaker evidence than a LAN address.\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3791,7 +3840,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
         );
         assert_eq!(output.stdout, expected);
         assert!(!output.stdout.contains("(claimed, not verified)"));
@@ -3849,7 +3898,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  claimed identity could not be shown (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  claimed identity could not be shown (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3906,7 +3955,7 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let expected = format!(
-            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   could not be shown\n\nIf you recently reset this journal, pair this device again.\n"
+            "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   could not be shown\n\nIf you recently reset this journal, pair this device again.\n"
         );
         assert_eq!(output.stdout, expected);
     }
@@ -3971,10 +4020,10 @@ mod tests {
         let output = run_status(&[], &env, Some(&probe));
         assert_eq!(output.exit, 0);
         let block1 = format!(
-            "\nUnknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "\nunknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
         );
         let block2 = format!(
-            "\nUnknown journal seen through the relay:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
+            "\nunknown journal seen through the relay:\n\nwhat answered:  no identity presented\nyour journal:   {local_spoken}\n"
         );
         let expected = format!(
             "Label: alpha\nStatus: connected\nJournal version: 2026.07.26\n{block1}{block2}"
@@ -4044,7 +4093,7 @@ mod tests {
         };
 
         let expected_sighting = format!(
-            "Unknown journal at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
+            "unknown journal seen at 192.168.1.50:7657:\n\nwhat answered:  {other_spoken} (claimed, not verified)\nyour journal:   {local_spoken}\n\nIf you recently reset this journal, pair this device again.\n"
         );
 
         // 1. Connected state
