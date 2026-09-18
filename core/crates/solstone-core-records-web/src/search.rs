@@ -15,8 +15,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_indexer_query::{
-    IndexAccessError, IndexedEntry, OwnerBoundary, QueryBoundary, SearchRequest,
-    read_indexed_entry, search, search_counts,
+    IndexAccessError, IndexedEntry, OwnerBoundary, OwnerIndex, QueryBoundary, SearchRequest,
+    open_owner_index, read_indexed_entry,
 };
 use solstone_core_journal_io::bounded_read::{JournalReadError, MAX_BYTES, read_text};
 
@@ -63,17 +63,17 @@ pub async fn workspace() -> Response {
         .expect("embedded search workspace response")
 }
 
-#[derive(Default, Deserialize)]
-struct SearchQuery {
-    q: Option<String>,
-    limit: Option<usize>,
-    offset: Option<usize>,
-    facet: Option<String>,
-    agent: Option<String>,
-    stream: Option<String>,
-    time_bucket: Option<String>,
-    day_from: Option<String>,
-    day_to: Option<String>,
+#[derive(Clone, Default, Deserialize)]
+pub(crate) struct SearchQuery {
+    pub(crate) q: Option<String>,
+    pub(crate) limit: Option<usize>,
+    pub(crate) offset: Option<usize>,
+    pub(crate) facet: Option<String>,
+    pub(crate) agent: Option<String>,
+    pub(crate) stream: Option<String>,
+    pub(crate) time_bucket: Option<String>,
+    pub(crate) day_from: Option<String>,
+    pub(crate) day_to: Option<String>,
 }
 
 async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> Response {
@@ -83,7 +83,19 @@ async fn search_api(journal_root: PathBuf, Query(query): Query<SearchQuery>) -> 
     }
 }
 
-fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
+pub(crate) fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
+    let mut owner_index = match open_owner_index(&journal_root, OwnerBoundary) {
+        Ok(index) => index,
+        Err(error) => return search_failed(&error),
+    };
+    search_response_with_index(&journal_root, &mut owner_index, query)
+}
+
+pub(crate) fn search_response_with_index(
+    journal_root: &std::path::Path,
+    owner_index: &mut OwnerIndex,
+    query: SearchQuery,
+) -> Response {
     let (day_from, day_to) = match day_range(query.day_from.as_deref(), query.day_to.as_deref()) {
         Ok(range) => range,
         Err(detail) => return invalid_day(&detail),
@@ -104,17 +116,29 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
         order: Default::default(),
     };
     let reference = today();
-    let mut base_request = request.clone();
-    base_request.facet = None;
-    base_request.agent = None;
-    let base = match search_counts(&journal_root, OwnerBoundary, &base_request, reference) {
-        Ok(counts) => counts,
-        Err(error) => return search_failed(&error),
+    let is_unscoped = request.facet.is_none() && request.agent.is_none();
+    let (base, filtered_resolved) = if is_unscoped {
+        let resolved = match owner_index.resolve_counts(&request, reference) {
+            Ok(resolved) => resolved,
+            Err(error) => return search_failed(&error),
+        };
+        (resolved.counts.clone(), resolved)
+    } else {
+        let mut base_request = request.clone();
+        base_request.facet = None;
+        base_request.agent = None;
+        let base_resolved = match owner_index.resolve_counts(&base_request, reference) {
+            Ok(resolved) => resolved,
+            Err(error) => return search_failed(&error),
+        };
+        let filtered_resolved = match owner_index.resolve_counts(&request, reference) {
+            Ok(resolved) => resolved,
+            Err(error) => return search_failed(&error),
+        };
+        (base_resolved.counts, filtered_resolved)
     };
-    let filtered = match search_counts(&journal_root, OwnerBoundary, &request, reference) {
-        Ok(counts) => counts,
-        Err(error) => return search_failed(&error),
-    };
+
+    let filtered = filtered_resolved.counts;
     let mut days = filtered
         .days
         .iter()
@@ -130,18 +154,19 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
     let total_days = days.len();
     let offset = query.offset.unwrap_or(0);
     let page = days.into_iter().skip(offset).take(20).collect::<Vec<_>>();
-    let mut day_results = Vec::new();
-    let facets = facets(&journal_root);
-    for (day, total) in &page {
-        let mut per_day = request.clone();
-        per_day.day = Some(day.clone());
-        per_day.limit = request.limit;
-        let response = match search(&journal_root, OwnerBoundary, &per_day, reference) {
-            Ok(response) => response,
+
+    let page_days: Vec<String> = page.iter().map(|(day, _)| day.clone()).collect();
+    let day_hits_vec =
+        match owner_index.fetch_day_hits(&filtered_resolved.plan, &page_days, request.limit) {
+            Ok(hits) => hits,
             Err(error) => return search_failed(&error),
         };
-        let results = response
-            .results
+    debug_assert_eq!(page.len(), day_hits_vec.len());
+
+    let mut day_results = Vec::new();
+    let facets = facets(journal_root);
+    for ((day, total), (_hit_day, hits)) in page.into_iter().zip(day_hits_vec) {
+        let results = hits
             .into_iter()
             .map(|hit| {
                 let readable = readable_record(&hit.text);
@@ -173,7 +198,7 @@ fn search_response(journal_root: PathBuf, query: SearchQuery) -> Response {
             .collect::<Vec<_>>();
         day_results.push(json!({
             "day": day,
-            "date": format_date(day),
+            "date": format_date(&day),
             "total": total,
             "showing": results.len(),
             "results": results,

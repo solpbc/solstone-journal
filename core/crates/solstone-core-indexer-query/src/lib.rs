@@ -28,8 +28,9 @@ pub use edges::{
     load_entity_network, load_network_overview, open_edges_reader,
 };
 pub use execute::{
-    IndexedEntry, agents, coverage, hit_at, indexed_entity_ids, read_indexed_entry, search,
-    search_connection, search_counts, search_counts_connection,
+    IndexedEntry, OwnerIndex, QueryCounters, ResolvedCounts, SearchPlan, agents, coverage, hit_at,
+    indexed_entity_ids, open_owner_index, read_indexed_entry, search, search_connection,
+    search_counts, search_counts_connection,
 };
 pub use predicate::{EffectiveDateConstraint, PredicateInput, QueryPredicate};
 pub use temporal::{TemporalExtraction, extract_temporal_references};

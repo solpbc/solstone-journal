@@ -19,8 +19,8 @@ use crate::{
     CompileOutcome, ConnectionBoundary, ConnectionCorpusRefusal, ConnectionScope,
     ConnectionSearchRequest, CoverageState, IndexAccessError, IndexBuildCounts, IndexDegraded,
     Order, OwnerBoundary, QueryBoundary, SearchRequest, compile_query, coverage as owner_coverage,
-    hit_at as owner_hit_at, indexed_entity_ids as owner_indexed_entity_ids, search as owner_search,
-    search_counts as owner_search_counts,
+    hit_at as owner_hit_at, indexed_entity_ids as owner_indexed_entity_ids, open_owner_index,
+    search as owner_search, search_counts as owner_search_counts,
 };
 
 const REFERENCE_DATE: &str = "2026-01-07";
@@ -2147,5 +2147,453 @@ fn search_reads_committed_rows_while_an_index_writer_is_active() {
         1
     );
     drop(connection);
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_day_hits_one_statement_no_union() {
+    let (root, connection) = seeded_root("fetch-day-hits-one-stmt");
+    insert(
+        &connection,
+        "statementterm entry alpha",
+        "20260101/pulse.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    insert(
+        &connection,
+        "statementterm entry beta",
+        "20260102/pulse.md",
+        "20260102",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    insert(
+        &connection,
+        "statementterm entry gamma",
+        "20260103/pulse.md",
+        "20260103",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    let req = request("statementterm");
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+    assert_eq!(resolved.counts.total, 3);
+
+    owner_index.trace_v2(TraceEventCodes::SQLITE_TRACE_STMT, Some(record_sql));
+    SQL_TRACE.lock().expect("trace lock").clear();
+
+    let days = vec![
+        "20260103".to_string(),
+        "20260102".to_string(),
+        "20260101".to_string(),
+    ];
+    let hits = owner_index
+        .fetch_day_hits(&resolved.plan, &days, 5)
+        .expect("fetch day hits");
+
+    let trace = SQL_TRACE.lock().expect("trace lock").clone();
+    owner_index.trace_v2(
+        TraceEventCodes::SQLITE_TRACE_STMT,
+        None::<fn(TraceEvent<'_>)>,
+    );
+
+    let fetch_stmts: Vec<&String> = trace
+        .iter()
+        .filter(|sql| sql.contains("SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid FROM chunks WHERE"))
+        .collect();
+
+    assert_eq!(fetch_stmts.len(), 1, "exactly one fetch statement executed");
+    assert!(
+        fetch_stmts[0].contains("day IN (?, ?, ?)"),
+        "fetch statement must use day IN (?, ?, ?)"
+    );
+    assert!(
+        !fetch_stmts[0].to_uppercase().contains("UNION"),
+        "fetch statement must not contain UNION"
+    );
+
+    let counters = owner_index.query_counters();
+    assert_eq!(counters.aggregate_calls, 1);
+    assert_eq!(counters.fetch_hits_calls, 1);
+    assert_eq!(hits.len(), 3);
+    assert_eq!(hits[0].0, "20260103");
+    assert_eq!(hits[1].0, "20260102");
+    assert_eq!(hits[2].0, "20260101");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_day_hits_per_day_limit_and_row_bound() {
+    let (root, connection) = seeded_root("fetch-day-hits-bound");
+    for i in 0..10 {
+        insert(
+            &connection,
+            &format!("boundterm alpha {i}"),
+            &format!("20260101/item_{i}.md"),
+            "20260101",
+            "work",
+            "pulse",
+            "stream",
+            i,
+        );
+        insert(
+            &connection,
+            &format!("boundterm beta {i}"),
+            &format!("20260102/item_{i}.md"),
+            "20260102",
+            "work",
+            "pulse",
+            "stream",
+            i,
+        );
+    }
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    let req = request("boundterm");
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+    assert_eq!(resolved.counts.total, 20);
+
+    let days = vec!["20260102".to_string(), "20260101".to_string()];
+    let hits = owner_index
+        .fetch_day_hits(&resolved.plan, &days, 3)
+        .expect("fetch day hits");
+
+    assert_eq!(hits.len(), 2);
+    assert_eq!(hits[0].0, "20260102");
+    assert_eq!(hits[0].1.len(), 3);
+    assert_eq!(hits[1].0, "20260101");
+    assert_eq!(hits[1].1.len(), 3);
+
+    let total_fetched: usize = hits.iter().map(|(_, h)| h.len()).sum();
+    assert_eq!(total_fetched, 6);
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_day_hits_preserves_day_and_relevance_order() {
+    let (root, connection) = seeded_root("fetch-day-hits-order");
+    insert(
+        &connection,
+        "orderterm match on day 1",
+        "20260101/item.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    insert(
+        &connection,
+        "orderterm match on day 2",
+        "20260102/item.md",
+        "20260102",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    insert(
+        &connection,
+        "orderterm match on day 3",
+        "20260103/item.md",
+        "20260103",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    let req = request("orderterm");
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+
+    let requested_days = vec![
+        "20260102".to_string(),
+        "20260101".to_string(),
+        "20260103".to_string(),
+    ];
+    let hits = owner_index
+        .fetch_day_hits(&resolved.plan, &requested_days, 5)
+        .expect("fetch day hits");
+
+    assert_eq!(hits.len(), 3);
+    assert_eq!(hits[0].0, "20260102");
+    assert_eq!(hits[1].0, "20260101");
+    assert_eq!(hits[2].0, "20260103");
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_day_hits_reuses_resolved_plan_without_reresolve() {
+    let (root, connection) = seeded_root("fetch-day-hits-reuse");
+    insert(
+        &connection,
+        "reuseterm match a",
+        "20260101/item.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    insert(
+        &connection,
+        "reuseterm match b",
+        "20260102/item.md",
+        "20260102",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    let req = request("reuseterm");
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+
+    let counters_before = owner_index.query_counters();
+    assert_eq!(counters_before.aggregate_calls, 1);
+    assert_eq!(counters_before.fetch_hits_calls, 0);
+
+    let subset_a = vec!["20260101".to_string()];
+    let hits_a = owner_index
+        .fetch_day_hits(&resolved.plan, &subset_a, 5)
+        .expect("fetch day hits a");
+    assert_eq!(hits_a.len(), 1);
+
+    let subset_b = vec!["20260102".to_string()];
+    let hits_b = owner_index
+        .fetch_day_hits(&resolved.plan, &subset_b, 5)
+        .expect("fetch day hits b");
+    assert_eq!(hits_b.len(), 1);
+
+    let counters_after = owner_index.query_counters();
+    assert_eq!(
+        counters_after.aggregate_calls, 1,
+        "no re-aggregation occurred"
+    );
+    assert_eq!(
+        counters_after.fetch_hits_calls, 2,
+        "two fetch_day_hits calls"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn resolve_counts_identical_requests_are_not_implicitly_deduped() {
+    let (root, connection) = seeded_root("resolve-counts-no-hidden-cache");
+    insert(
+        &connection,
+        "dedupetest match",
+        "20260101/item.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    let req = request("dedupetest");
+
+    let _res1 = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("first resolve");
+    let _res2 = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("second resolve");
+
+    let counters = owner_index.query_counters();
+    assert_eq!(
+        counters.aggregate_calls, 2,
+        "indexer-query executes each resolve_counts independently without implicit cache"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn has_rows_does_not_count_as_fetch_or_aggregate() {
+    let (root, connection) = seeded_root("has-rows-probe-counting");
+    insert(
+        &connection,
+        "firstterm unmatchedsecond",
+        "20260101/item.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    // "firstterm missingterm" relaxes ladder, executing has_rows probe(s)
+    let mut req = request("firstterm missingterm");
+    req.relax = true;
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+
+    assert!(resolved.counts.relaxed);
+    let counters = owner_index.query_counters();
+    assert_eq!(counters.aggregate_calls, 1);
+    assert_eq!(
+        counters.fetch_hits_calls, 0,
+        "probes must not count as fetch_hits_calls"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_day_hits_empty_days_does_not_query() {
+    let (root, connection) = seeded_root("fetch-day-hits-empty");
+    insert(
+        &connection,
+        "emptytest match",
+        "20260101/item.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    let req = request("emptytest");
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+
+    let counters_before = owner_index.query_counters();
+    let hits = owner_index
+        .fetch_day_hits(&resolved.plan, &[], 5)
+        .expect("fetch empty days");
+
+    assert!(hits.is_empty());
+    let counters_after = owner_index.query_counters();
+    assert_eq!(
+        counters_after.fetch_hits_calls, counters_before.fetch_hits_calls,
+        "empty days must not dispatch fetch query"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn fetch_day_hits_without_live_match_uses_recency() {
+    let (root, connection) = seeded_root("fetch-day-hits-no-match");
+    insert(
+        &connection,
+        "first entry on day",
+        "20260101/pulse_1.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        0,
+    );
+    insert(
+        &connection,
+        "second entry on day",
+        "20260101/pulse_2.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        1,
+    );
+    insert(
+        &connection,
+        "third entry on day",
+        "20260101/pulse_3.md",
+        "20260101",
+        "work",
+        "pulse",
+        "stream",
+        2,
+    );
+    drop(connection);
+
+    let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
+    // Filter-only query has no live MATCH expression
+    let mut req = SearchRequest::default();
+    req.facet = Some("work".to_string());
+    let resolved = owner_index
+        .resolve_counts(&req, reference_date())
+        .expect("resolve counts");
+    assert_eq!(resolved.counts.total, 3);
+    assert!(!resolved.plan.0.has_live_match_expression);
+
+    owner_index.trace_v2(TraceEventCodes::SQLITE_TRACE_STMT, Some(record_sql));
+    SQL_TRACE.lock().expect("trace lock").clear();
+
+    let days = vec!["20260101".to_string()];
+    let hits = owner_index
+        .fetch_day_hits(&resolved.plan, &days, 10)
+        .expect("fetch day hits");
+
+    let trace = SQL_TRACE.lock().expect("trace lock").clone();
+    owner_index.trace_v2(
+        TraceEventCodes::SQLITE_TRACE_STMT,
+        None::<fn(TraceEvent<'_>)>,
+    );
+
+    let fetch_stmts: Vec<&String> = trace
+        .iter()
+        .filter(|sql| sql.contains("SELECT content, path, day, facet, agent, stream, idx,"))
+        .collect();
+
+    assert_eq!(fetch_stmts.len(), 1, "exactly one fetch statement executed");
+    assert!(
+        fetch_stmts[0].contains("ORDER BY day DESC, rowid DESC"),
+        "must order by recency (rowid DESC) when no live match: {}",
+        fetch_stmts[0]
+    );
+    assert!(
+        !fetch_stmts[0].contains("bm25"),
+        "must not contain bm25 when no live match: {}",
+        fetch_stmts[0]
+    );
+
+    assert_eq!(hits.len(), 1);
+    let day_hits = &hits[0].1;
+    assert_eq!(day_hits.len(), 3);
+    // Verify rowid DESC order within the day (third inserted -> highest rowid -> first in results)
+    assert!(day_hits[0].row_id > day_hits[1].row_id);
+    assert!(day_hits[1].row_id > day_hits[2].row_id);
+    assert_eq!(day_hits[0].metadata.path, "20260101/pulse_3.md");
+    assert_eq!(day_hits[1].metadata.path, "20260101/pulse_2.md");
+    assert_eq!(day_hits[2].metadata.path, "20260101/pulse_1.md");
+
     fs::remove_dir_all(root).unwrap();
 }

@@ -56,15 +56,9 @@ pub fn search_counts(
     request: &SearchRequest,
     reference_date: NaiveDate,
 ) -> Result<CountsResponse, IndexAccessError> {
-    let compilation = compile_query(&request.query, reference_date);
-    if matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm) {
-        return Ok(CountsResponse::default());
-    }
-    let mut connection = open_index_reader(journal, &QueryBoundary::Owner)?;
-    let (plan, relaxed) = resolve_plan(&mut connection, request, reference_date, compilation)?;
-    let mut counts = connection.aggregate_counts(&plan, relaxed)?;
-    counts.degraded = connection.index_degraded()?;
-    Ok(counts)
+    let mut owner_index = open_owner_index(journal, OwnerBoundary)?;
+    let resolved = owner_index.resolve_counts(request, reference_date)?;
+    Ok(resolved.counts)
 }
 
 /// Connection aggregation is deliberately not a scoped approximation of the
@@ -450,13 +444,97 @@ pub(crate) struct SqlPlan {
     pub(crate) has_live_match_expression: bool,
 }
 
+/// An opaque resolved query plan.
+pub struct SearchPlan(pub(crate) SqlPlan);
+
+/// Resolved counts and corresponding opaque query plan.
+pub struct ResolvedCounts {
+    pub counts: CountsResponse,
+    pub plan: SearchPlan,
+}
+
+/// A shared reader session for owner index queries.
+pub struct OwnerIndex {
+    pub(crate) connection: QueryConnection,
+}
+
+/// Open an owner index reader session.
+pub fn open_owner_index(
+    journal_root: &Path,
+    _boundary: OwnerBoundary,
+) -> Result<OwnerIndex, IndexAccessError> {
+    let connection = open_index_reader(journal_root, &QueryBoundary::Owner)?;
+    Ok(OwnerIndex { connection })
+}
+
+impl OwnerIndex {
+    pub fn resolve_counts(
+        &mut self,
+        request: &SearchRequest,
+        reference: NaiveDate,
+    ) -> Result<ResolvedCounts, IndexAccessError> {
+        let compilation = compile_query(&request.query, reference);
+        if matches!(compilation.outcome, CompileOutcome::NoTokenizableTerm) {
+            let plan = plan_from_outcome(compilation.outcome, &compilation.temporal, request);
+            return Ok(ResolvedCounts {
+                counts: CountsResponse::default(),
+                plan: SearchPlan(plan),
+            });
+        }
+        let (plan, relaxed) = resolve_plan(&mut self.connection, request, reference, compilation)?;
+        let mut counts = self.connection.aggregate_counts(&plan, relaxed)?;
+        counts.degraded = self.connection.index_degraded()?;
+        Ok(ResolvedCounts {
+            counts,
+            plan: SearchPlan(plan),
+        })
+    }
+
+    pub fn fetch_day_hits(
+        &mut self,
+        plan: &SearchPlan,
+        days: &[String],
+        per_day_limit: usize,
+    ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
+        self.connection.fetch_day_hits(&plan.0, days, per_day_limit)
+    }
+
+    pub fn query_counters(&self) -> QueryCounters {
+        QueryCounters {
+            aggregate_calls: self.connection.aggregate_calls,
+            fetch_hits_calls: self.connection.fetch_hits_calls,
+            agents_calls: self.connection.agents_calls,
+        }
+    }
+
+    pub fn inject_aggregate_failure(&mut self) {
+        self.connection.injected_aggregate_failure = true;
+    }
+
+    pub fn inject_fetch_failure(&mut self) {
+        self.connection.injected_fetch_failure = true;
+    }
+}
+
+#[cfg(test)]
+impl OwnerIndex {
+    pub(crate) fn trace_v2(
+        &self,
+        flags: rusqlite::trace::TraceEventCodes,
+        callback: Option<fn(rusqlite::trace::TraceEvent<'_>)>,
+    ) {
+        self.connection.connection.trace_v2(flags, callback);
+    }
+}
+
 pub(crate) struct QueryConnection {
     connection: Connection,
     path: PathBuf,
-    #[cfg(test)]
     aggregate_calls: usize,
-    #[cfg(test)]
+    fetch_hits_calls: usize,
     agents_calls: usize,
+    injected_aggregate_failure: bool,
+    injected_fetch_failure: bool,
 }
 
 fn visible_rows(clause: &str) -> String {
@@ -576,14 +654,15 @@ pub fn read_indexed_entry(
 }
 
 impl QueryConnection {
-    fn new(connection: Connection, path: PathBuf) -> Self {
+    pub(crate) fn new(connection: Connection, path: PathBuf) -> Self {
         Self {
             connection,
             path,
-            #[cfg(test)]
             aggregate_calls: 0,
-            #[cfg(test)]
+            fetch_hits_calls: 0,
             agents_calls: 0,
+            injected_aggregate_failure: false,
+            injected_fetch_failure: false,
         }
     }
 
@@ -762,6 +841,14 @@ impl QueryConnection {
         offset: usize,
         ordering: &str,
     ) -> Result<Vec<SearchHit>, IndexAccessError> {
+        if self.injected_fetch_failure {
+            self.injected_fetch_failure = false;
+            return Err(IndexAccessError::Unreadable {
+                path: self.path.clone(),
+                detail: "injected fetch failure".to_string(),
+            });
+        }
+        self.fetch_hits_calls += 1;
         let sql = format!(
             "SELECT content, path, day, facet, agent, stream, idx, bm25(chunks), rowid FROM chunks WHERE {} {ordering} LIMIT ? OFFSET ?",
             plan.where_clause
@@ -805,6 +892,107 @@ impl QueryConnection {
         Ok(rows)
     }
 
+    fn fetch_day_hits(
+        &mut self,
+        plan: &SqlPlan,
+        days: &[String],
+        per_day_limit: usize,
+    ) -> Result<Vec<(String, Vec<SearchHit>)>, IndexAccessError> {
+        if days.is_empty() {
+            return Ok(Vec::new());
+        }
+        if self.injected_fetch_failure {
+            self.injected_fetch_failure = false;
+            return Err(IndexAccessError::Unreadable {
+                path: self.path.clone(),
+                detail: "injected fetch failure".to_string(),
+            });
+        }
+        self.fetch_hits_calls += 1;
+        if per_day_limit == 0 {
+            return Ok(days.iter().map(|day| (day.clone(), Vec::new())).collect());
+        }
+
+        let placeholders = std::iter::repeat_n("?", days.len())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let (score_expr, order_clause) = if plan.has_live_match_expression {
+            (
+                "bm25(chunks)",
+                "ORDER BY day DESC, bm25(chunks) ASC, rowid ASC",
+            )
+        } else {
+            ("0.0", "ORDER BY day DESC, rowid DESC")
+        };
+        let sql = format!(
+            "SELECT content, path, day, facet, agent, stream, idx, {score_expr}, rowid FROM chunks WHERE {} AND day IN ({placeholders}) {order_clause}",
+            plan.where_clause
+        );
+        let mut values = plan.params.clone();
+        values.extend(days.iter().cloned());
+
+        let mut statement = self
+            .connection
+            .prepare(&sql)
+            .map_err(|error| self.classify(error))?;
+
+        let mut day_hits_map: BTreeMap<String, Vec<SearchHit>> =
+            days.iter().map(|d| (d.clone(), Vec::new())).collect();
+        let mut filled_days = 0_usize;
+        let total_days_needed = days.len();
+
+        let rows = statement
+            .query_map(params_from_iter(values.iter()), |row| {
+                let content: String = row.get(0)?;
+                let path: String = row.get(1)?;
+                let day: Option<String> = row.get(2)?;
+                let facet: Option<String> = row.get(3)?;
+                let agent: Option<String> = row.get(4)?;
+                let stream: Option<String> = row.get(5)?;
+                let idx: i64 = row.get(6)?;
+                let score: f64 = row.get(7)?;
+                let agent = agent.unwrap_or_default();
+                Ok(SearchHit {
+                    row_id: row.get(8)?,
+                    id: format!("{path}:{idx}"),
+                    text: content,
+                    metadata: SearchMetadata {
+                        day: day.unwrap_or_default(),
+                        facet: facet.unwrap_or_default(),
+                        agent: agent.clone(),
+                        stream: stream.unwrap_or_default(),
+                        path,
+                        idx,
+                    },
+                    score,
+                })
+            })
+            .map_err(|error| self.classify(error))?;
+
+        for hit_res in rows {
+            let hit = hit_res.map_err(|error| self.classify(error))?;
+            let day = &hit.metadata.day;
+            if let Some(list) = day_hits_map.get_mut(day)
+                && list.len() < per_day_limit
+            {
+                list.push(hit);
+                if list.len() == per_day_limit {
+                    filled_days += 1;
+                    if filled_days == total_days_needed {
+                        break;
+                    }
+                }
+            }
+        }
+
+        let mut result = Vec::with_capacity(days.len());
+        for day in days {
+            let hits = day_hits_map.remove(day).unwrap_or_default();
+            result.push((day.clone(), hits));
+        }
+        Ok(result)
+    }
+
     fn hit_at(&mut self, path: &str, idx: i64) -> Result<bool, IndexAccessError> {
         let found: Option<i64> = self
             .connection
@@ -826,10 +1014,14 @@ impl QueryConnection {
         plan: &SqlPlan,
         relaxed: bool,
     ) -> Result<CountsResponse, IndexAccessError> {
-        #[cfg(test)]
-        {
-            self.aggregate_calls += 1;
+        if self.injected_aggregate_failure {
+            self.injected_aggregate_failure = false;
+            return Err(IndexAccessError::Unreadable {
+                path: self.path.clone(),
+                detail: "injected aggregate failure".to_string(),
+            });
         }
+        self.aggregate_calls += 1;
         let sql = format!(
             "SELECT facet, agent, day, stream FROM chunks WHERE {}",
             plan.where_clause
@@ -866,10 +1058,7 @@ impl QueryConnection {
     }
 
     fn agents(&mut self) -> Result<Vec<String>, IndexAccessError> {
-        #[cfg(test)]
-        {
-            self.agents_calls += 1;
-        }
+        self.agents_calls += 1;
         let mut statement = self
             .connection
             .prepare(&format!(
@@ -961,11 +1150,12 @@ fn classify_sql_error(path: PathBuf, error: Error) -> IndexAccessError {
     }
 }
 
-#[cfg(test)]
+/// Counters for observable query execution phases.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct QueryCounters {
-    pub(crate) aggregate_calls: usize,
-    pub(crate) agents_calls: usize,
+pub struct QueryCounters {
+    pub aggregate_calls: usize,
+    pub fetch_hits_calls: usize,
+    pub agents_calls: usize,
 }
 
 #[cfg(test)]
@@ -982,6 +1172,7 @@ pub(crate) fn search_with_connection_for_test(
         response,
         QueryCounters {
             aggregate_calls: connection.aggregate_calls,
+            fetch_hits_calls: connection.fetch_hits_calls,
             agents_calls: connection.agents_calls,
         },
     ))
@@ -998,6 +1189,7 @@ pub(crate) fn agents_with_connection_for_test(
         agents,
         QueryCounters {
             aggregate_calls: connection.aggregate_calls,
+            fetch_hits_calls: connection.fetch_hits_calls,
             agents_calls: connection.agents_calls,
         },
     ))

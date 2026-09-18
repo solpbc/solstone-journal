@@ -12,6 +12,8 @@ mod talent_outputs;
 
 #[cfg(test)]
 mod corpus;
+#[cfg(test)]
+mod search_page_oracle;
 
 /// Build the native Search route surface for one journal root.
 pub fn api_router(journal_root: PathBuf) -> Router {
