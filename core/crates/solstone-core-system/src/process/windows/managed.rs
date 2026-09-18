@@ -807,6 +807,41 @@ pub fn launch_managed_request(
     })
 }
 
+/// Launch a generation child through Windows' atomic Job boundary.
+///
+/// Unix needs the parent-loss admission ledger to close the gap between spawn
+/// and acquiring exact process identity. Windows has no equivalent gap: the
+/// root process is enrolled in the kill-on-close Job by CreateProcessW's
+/// `PROC_THREAD_ATTRIBUTE_JOB_LIST` transaction. If its parent disappears at
+/// any point, closing the Job retires the complete tree. Keep the
+/// generation-shaped API for shared callers while delegating to that stronger
+/// native ownership boundary.
+pub fn launch_managed_generation_child(
+    disposition: Disposition,
+    _journal: &std::path::Path,
+    _launch_id: String,
+    request: ManagedLaunchRequest,
+) -> Result<LaunchAuthority, LaunchError> {
+    launch_managed_request(disposition, request)
+}
+
+/// Preserve the shared generation-child entry point for raw launches.
+///
+/// Raw `std::process::Child` launches cannot be atomically enrolled in the
+/// Windows Job and therefore remain fail-closed through [`launch`].
+pub fn launch_generation_child<F>(
+    disposition: Disposition,
+    _journal: &std::path::Path,
+    _launch_id: String,
+    spawn: F,
+    terminate_fn: BoxedTerminateFn,
+) -> Result<LaunchAuthority, LaunchError>
+where
+    F: FnOnce() -> io::Result<Child>,
+{
+    launch(disposition, spawn, terminate_fn)
+}
+
 pub fn launch_managed_hosted(
     disposition: Disposition,
     request: ManagedLaunchRequest,
