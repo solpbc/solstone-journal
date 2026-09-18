@@ -19,6 +19,7 @@ solstone-core-artifact-download.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime.workspace = true
 solstone-core-callosum.workspace = true
+solstone-core-convey-http.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-handoff-nonce.workspace = true
 solstone-core-journal-config-write.workspace = true
@@ -32,7 +33,6 @@ tokio = { workspace = true, features = ["rt", "time"] }
 nix = { workspace = true, features = ["fs"] }
 
 [target.'cfg(windows)'.dev-dependencies]
-solstone-core-convey-http.workspace = true
 solstone-core-sol-link.workspace = true
 solstone-core-system = { workspace = true, features = ["test-hooks"] }
 

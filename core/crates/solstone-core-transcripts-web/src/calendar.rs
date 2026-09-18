@@ -19,10 +19,15 @@ use crate::{AppState, TranscriptError, legacy_error_response};
 
 pub(crate) async fn index(State(state): State<Arc<AppState>>) -> Response {
     let now = state.clock.now();
-    match counts(&state.journal_root, now) {
-        Ok(value) => Json(date_nav_index(&value)).into_response(),
-        Err(error) => error.response(),
-    }
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsIndex,
+        move || match counts(&journal_root, now) {
+            Ok(value) => Json(date_nav_index(&value)).into_response(),
+            Err(error) => error.response(),
+        },
+    )
+    .await
 }
 pub(crate) async fn stats(
     State(state): State<Arc<AppState>>,
@@ -38,16 +43,21 @@ pub(crate) async fn stats(
         .into_response();
     }
     let now = state.clock.now();
-    match counts(&state.journal_root, now) {
-        Ok(counts) => Json(
-            counts
-                .into_iter()
-                .filter(|(day, count)| day.starts_with(&month) && *count > 0)
-                .collect::<BTreeMap<_, _>>(),
-        )
-        .into_response(),
-        Err(error) => error.response(),
-    }
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsMonthStats,
+        move || match counts(&journal_root, now) {
+            Ok(counts) => Json(
+                counts
+                    .into_iter()
+                    .filter(|(day, count)| day.starts_with(&month) && *count > 0)
+                    .collect::<BTreeMap<_, _>>(),
+            )
+            .into_response(),
+            Err(error) => error.response(),
+        },
+    )
+    .await
 }
 pub(crate) fn counts(
     root: &Path,

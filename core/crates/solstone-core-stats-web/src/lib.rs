@@ -7,6 +7,7 @@ use axum::{Json, Router, extract::Query, http::StatusCode, response::IntoRespons
 use chrono::Datelike;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use std::path::{Path, PathBuf};
 
 mod assets;
@@ -47,7 +48,12 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
 struct UsageQuery {
     day: Option<String>,
 }
-async fn usage(root: PathBuf, clock: Clock, Query(query): Query<UsageQuery>) -> impl IntoResponse {
+
+async fn usage(
+    root: PathBuf,
+    clock: Clock,
+    Query(query): Query<UsageQuery>,
+) -> axum::response::Response {
     let day = query.day.unwrap_or_else(|| {
         format!(
             "{:04}{:02}{:02}",
@@ -64,46 +70,53 @@ async fn usage(root: PathBuf, clock: Clock, Query(query): Query<UsageQuery>) -> 
             "Invalid day format",
         );
     }
-    match tokens::aggregate(&root, &day) {
-        Ok(value) => (StatusCode::OK, Json(value)).into_response(),
-        Err(_) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "file_read_failed",
-            "that file couldn't be read.",
-            "Failed to read token data",
-        ),
-    }
-}
-async fn index(root: PathBuf) -> impl IntoResponse {
-    match tokens::usage_stats(&root, None) {
-        Ok(days) => {
-            let mut months = Map::new();
-            for (day, tokens) in days.as_object().expect("usage rows") {
-                let month = &day[..6];
-                let total = months.get(month).and_then(Value::as_f64).unwrap_or(0.0)
-                    + tokens.as_f64().unwrap_or(0.0);
-                months.insert(month.to_owned(), json!(total));
-            }
-            let coverage = days
-                .as_object()
-                .and_then(|rows| rows.keys().min().zip(rows.keys().max()))
-                .map(|(start, end)| json!({"start":start,"end":end}))
-                .unwrap_or(Value::Null);
-            (
-                StatusCode::OK,
-                Json(json!({"coverage":coverage,"months":months})),
-            )
-                .into_response()
+    spawn_blocking_response(OwnerReadRole::StatsUsage, move || {
+        match tokens::aggregate(&root, &day) {
+            Ok(value) => (StatusCode::OK, Json(value)).into_response(),
+            Err(_) => api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "file_read_failed",
+                "that file couldn't be read.",
+                "Failed to read token data",
+            ),
         }
-        Err(_) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "file_read_failed",
-            "that file couldn't be read.",
-            "Failed to read token data",
-        ),
-    }
+    })
+    .await
 }
-async fn month_stats(root: PathBuf, month: String) -> impl IntoResponse {
+async fn index(root: PathBuf) -> axum::response::Response {
+    spawn_blocking_response(
+        OwnerReadRole::StatsIndex,
+        move || match tokens::usage_stats(&root, None) {
+            Ok(days) => {
+                let mut months = Map::new();
+                for (day, tokens) in days.as_object().expect("usage rows") {
+                    let month = &day[..6];
+                    let total = months.get(month).and_then(Value::as_f64).unwrap_or(0.0)
+                        + tokens.as_f64().unwrap_or(0.0);
+                    months.insert(month.to_owned(), json!(total));
+                }
+                let coverage = days
+                    .as_object()
+                    .and_then(|rows| rows.keys().min().zip(rows.keys().max()))
+                    .map(|(start, end)| json!({"start":start,"end":end}))
+                    .unwrap_or(Value::Null);
+                (
+                    StatusCode::OK,
+                    Json(json!({"coverage":coverage,"months":months})),
+                )
+                    .into_response()
+            }
+            Err(_) => api_error(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "file_read_failed",
+                "that file couldn't be read.",
+                "Failed to read token data",
+            ),
+        },
+    )
+    .await
+}
+async fn month_stats(root: PathBuf, month: String) -> axum::response::Response {
     if !digits(&month, 6) {
         return api_error(
             StatusCode::BAD_REQUEST,
@@ -112,111 +125,118 @@ async fn month_stats(root: PathBuf, month: String) -> impl IntoResponse {
             "Invalid month format, expected YYYYMM",
         );
     }
-    match tokens::usage_stats(&root, Some(&month)) {
-        Ok(value) => (StatusCode::OK, Json(value)).into_response(),
-        Err(_) => api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "file_read_failed",
-            "that file couldn't be read.",
-            "Failed to read token data",
-        ),
-    }
-}
-async fn stats_data(root: PathBuf) -> impl IntoResponse {
-    let mut response = json!({"stats":{}});
-    let path = match solstone_core_journal_io::resolve_journal_path(&root, "stats.json") {
-        Ok(path) => path,
-        Err(_) => {
-            return api_error(
+    spawn_blocking_response(
+        OwnerReadRole::StatsMonthStats,
+        move || match tokens::usage_stats(&root, Some(&month)) {
+            Ok(value) => (StatusCode::OK, Json(value)).into_response(),
+            Err(_) => api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "file_read_failed",
                 "that file couldn't be read.",
-                "Failed to read stats data",
-            );
-        }
-    };
-    if path.is_file() {
-        let text = match solstone_core_journal_io::read_text(&path, String::new()) {
-            Ok(text) => text,
-            Err(_) => {
-                return api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "file_read_failed",
-                    "that file couldn't be read.",
-                    "Failed to read stats data",
-                );
-            }
-        };
-        let stats = match serde_json::from_str::<Value>(&text) {
-            Ok(value) => value,
-            Err(_) => {
-                return api_error(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "file_read_failed",
-                    "that file couldn't be read.",
-                    "Failed to read stats data",
-                );
-            }
-        };
-        if let Ok(mtime) = std::fs::metadata(&path)
-            .and_then(|meta| meta.modified())
-            .and_then(|time| {
-                time.duration_since(std::time::UNIX_EPOCH)
-                    .map_err(std::io::Error::other)
-            })
-            .map(|value| value.as_secs_f64())
-        {
-            response["file_mtime"] = json!(mtime);
-        }
-        response["stats"] = stats;
-    }
-    // The owner named these facets; the raw storage slug is not their name.
-    // Same source the thinking app's talent-runs facet filter already reads
-    // from, so the two surfaces agree on one facet's display name (G2-35).
-    response["facet_titles"] = facet_titles(&root);
-    let Some(package_root) = std::env::current_exe().ok().and_then(|executable| {
-        executable
-            .parent()
-            .and_then(solstone_core_journal::resolve_installation_root_from_executable_dir)
-    }) else {
-        return api_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "file_read_failed",
-            "that file couldn't be read.",
-            "Failed to read stats data",
-        );
-    };
-    let talent_root = package_root.join("solstone/talent");
-    let apps_root = package_root.join("solstone/apps");
-    let overrides = solstone_core_talent_config::read_talent_overrides(&root)
-        .ok()
-        .flatten();
-    let configs = match solstone_core_talent_config::load_talent_configs(
-        &talent_root,
-        &apps_root,
-        overrides.as_ref(),
-        solstone_core_talent_config::TalentFilter {
-            r#type: Some("generate"),
-            schedule: None,
-            include_disabled: false,
+                "Failed to read token data",
+            ),
         },
-    ) {
-        Ok(configs) => configs,
-        Err(_) => {
+    )
+    .await
+}
+async fn stats_data(root: PathBuf) -> axum::response::Response {
+    spawn_blocking_response(OwnerReadRole::StatsData, move || {
+        let mut response = json!({"stats":{}});
+        let path = match solstone_core_journal_io::resolve_journal_path(&root, "stats.json") {
+            Ok(path) => path,
+            Err(_) => {
+                return api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "file_read_failed",
+                    "that file couldn't be read.",
+                    "Failed to read stats data",
+                );
+            }
+        };
+        if path.is_file() {
+            let text = match solstone_core_journal_io::read_text(&path, String::new()) {
+                Ok(text) => text,
+                Err(_) => {
+                    return api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "file_read_failed",
+                        "that file couldn't be read.",
+                        "Failed to read stats data",
+                    );
+                }
+            };
+            let stats = match serde_json::from_str::<Value>(&text) {
+                Ok(value) => value,
+                Err(_) => {
+                    return api_error(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "file_read_failed",
+                        "that file couldn't be read.",
+                        "Failed to read stats data",
+                    );
+                }
+            };
+            if let Ok(mtime) = std::fs::metadata(&path)
+                .and_then(|meta| meta.modified())
+                .and_then(|time| {
+                    time.duration_since(std::time::UNIX_EPOCH)
+                        .map_err(std::io::Error::other)
+                })
+                .map(|value| value.as_secs_f64())
+            {
+                response["file_mtime"] = json!(mtime);
+            }
+            response["stats"] = stats;
+        }
+        // The owner named these facets; the raw storage slug is not their name.
+        // Same source the thinking app's talent-runs facet filter already reads
+        // from, so the two surfaces agree on one facet's display name (G2-35).
+        response["facet_titles"] = facet_titles(&root);
+        let Some(package_root) = std::env::current_exe().ok().and_then(|executable| {
+            executable
+                .parent()
+                .and_then(solstone_core_journal::resolve_installation_root_from_executable_dir)
+        }) else {
             return api_error(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "file_read_failed",
                 "that file couldn't be read.",
                 "Failed to read stats data",
             );
-        }
-    };
-    let generators = configs
-        .into_iter()
-        .map(|config| (config.key, Value::Object(config.metadata)))
-        .collect::<Map<_, _>>();
-    response["generators"] = Value::Object(generators);
-    (StatusCode::OK, Json(response)).into_response()
+        };
+        let talent_root = package_root.join("solstone/talent");
+        let apps_root = package_root.join("solstone/apps");
+        let overrides = solstone_core_talent_config::read_talent_overrides(&root)
+            .ok()
+            .flatten();
+        let configs = match solstone_core_talent_config::load_talent_configs(
+            &talent_root,
+            &apps_root,
+            overrides.as_ref(),
+            solstone_core_talent_config::TalentFilter {
+                r#type: Some("generate"),
+                schedule: None,
+                include_disabled: false,
+            },
+        ) {
+            Ok(configs) => configs,
+            Err(_) => {
+                return api_error(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "file_read_failed",
+                    "that file couldn't be read.",
+                    "Failed to read stats data",
+                );
+            }
+        };
+        let generators = configs
+            .into_iter()
+            .map(|config| (config.key, Value::Object(config.metadata)))
+            .collect::<Map<_, _>>();
+        response["generators"] = Value::Object(generators);
+        (StatusCode::OK, Json(response)).into_response()
+    })
+    .await
 }
 /// Facet display names, keyed by the same slug the stats corpus counts by.
 /// A missing or unreadable declaration is skipped, not fabricated — the

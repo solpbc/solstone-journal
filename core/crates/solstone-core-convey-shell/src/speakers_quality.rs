@@ -27,23 +27,27 @@ use solstone_core_speaker_resolve::segment_catalog::{
 const QUALITY_WINDOW_DAYS: usize = 30;
 
 pub async fn quality(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    match quality_status(&root.0) {
-        Ok(status) => Json(status).into_response(),
-        Err(QualityError::IdentityInvalid) => error_envelope(
-            "speaker_owner_identity_invalid",
-            "speaker quality couldn't be loaded because your configured owner identity needs attention.",
-            "configured owner identity is not admitted",
-            StatusCode::BAD_REQUEST,
-        )
-        .into_response(),
-        Err(QualityError::Catalog(error)) => error_envelope(
-            "speaker_command_failed",
-            "that speaker command didn't finish.",
-            error.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response(),
-    }
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersQuality,
+        move || match quality_status(&root.0) {
+            Ok(status) => Json(status).into_response(),
+            Err(QualityError::IdentityInvalid) => error_envelope(
+                "speaker_owner_identity_invalid",
+                "speaker quality couldn't be loaded because your configured owner identity needs attention.",
+                "configured owner identity is not admitted",
+                StatusCode::BAD_REQUEST,
+            )
+            .into_response(),
+            Err(QualityError::Catalog(error)) => error_envelope(
+                "speaker_command_failed",
+                "that speaker command didn't finish.",
+                error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response(),
+        },
+    )
+    .await
 }
 
 #[derive(Debug)]

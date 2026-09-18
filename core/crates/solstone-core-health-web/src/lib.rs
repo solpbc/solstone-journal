@@ -5,9 +5,11 @@
 
 use axum::{
     Json, Router,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
 use serde_json::json;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use std::path::PathBuf;
 
 mod actions;
@@ -57,13 +59,17 @@ pub fn api_router(journal_root: PathBuf) -> Router {
     journal_data::api_router(journal_root)
 }
 
-async fn state(root: PathBuf) -> Json<serde_json::Value> {
-    let backlog = backlog::load(&root);
-    let (items, ok) = talent_failures::today(&root);
-    let count = items.len();
-    Json(
-        json!({"backlog":{"verdict":backlog::verdict(backlog.as_ref()),"pending_days":backlog::pending_days(backlog.as_ref()),"oldest_pending_day":backlog::oldest_pending_day(backlog.as_ref()),"stuck_rows":backlog::stuck_rows(backlog.as_ref()),"copy":backlog::copy()},"agent_errors":{"items":items,"ok":ok,"count":count,"label":errors_today_label(count,ok)}}),
-    )
+async fn state(root: PathBuf) -> Response {
+    spawn_blocking_response(OwnerReadRole::HealthState, move || {
+        let backlog = backlog::load(&root);
+        let (items, ok) = talent_failures::today(&root);
+        let count = items.len();
+        Json(
+            json!({"backlog":{"verdict":backlog::verdict(backlog.as_ref()),"pending_days":backlog::pending_days(backlog.as_ref()),"oldest_pending_day":backlog::oldest_pending_day(backlog.as_ref()),"stuck_rows":backlog::stuck_rows(backlog.as_ref()),"copy":backlog::copy()},"agent_errors":{"items":items,"ok":ok,"count":count,"label":errors_today_label(count,ok)}}),
+        )
+        .into_response()
+    })
+    .await
 }
 
 fn errors_today_label(count: usize, ok: bool) -> &'static str {
@@ -73,8 +79,11 @@ fn errors_today_label(count: usize, ok: bool) -> &'static str {
         "errors today"
     }
 }
-async fn info(root: PathBuf) -> Json<serde_json::Value> {
-    Json(json!({"hostname":host::hostname(),"brain":brain::snapshot(&root)}))
+async fn info(root: PathBuf) -> Response {
+    spawn_blocking_response(OwnerReadRole::HealthInfo, move || {
+        Json(json!({"hostname":host::hostname(),"brain":brain::snapshot(&root)})).into_response()
+    })
+    .await
 }
 
 #[cfg(test)]

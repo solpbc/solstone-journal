@@ -15,6 +15,7 @@ use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
@@ -68,25 +69,28 @@ pub async fn segments(
             );
         }
     };
-    let mut segments = match scan_segment_embeddings(&root.0, &day) {
-        Ok(segments) => segments,
-        Err(error) => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    segments.sort_by(|left, right| left.key.cmp(&right.key));
-    let total = segments.len();
-    let values = segments
-        .into_iter()
-        .take(limit)
-        .map(|segment| segment.payload)
-        .collect::<Vec<_>>();
-    Json(json!({"success":true,"day":day,"segments":values,"returned":values.len(),"limit":limit,"total":total})).into_response()
+    spawn_blocking_response(OwnerReadRole::SpeakersSegmentsCli, move || {
+        let mut segments = match scan_segment_embeddings(&root.0, &day) {
+            Ok(segments) => segments,
+            Err(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
+        segments.sort_by(|left, right| left.key.cmp(&right.key));
+        let total = segments.len();
+        let values = segments
+            .into_iter()
+            .take(limit)
+            .map(|segment| segment.payload)
+            .collect::<Vec<_>>();
+        Json(json!({"success":true,"day":day,"segments":values,"returned":values.len(),"limit":limit,"total":total})).into_response()
+    })
+    .await
 }
 
 pub async fn review(
@@ -102,144 +106,150 @@ pub async fn review(
             StatusCode::BAD_REQUEST,
         );
     }
-    let layout = decode_stream_layout(query.stream_layout.as_deref());
-    let segment = match lookup_segment(
-        &root.0,
-        &day,
-        &stream,
-        &segment_key,
-        layout,
-        DirectSupport::Allow,
-    ) {
-        SegmentLookup::Present(path) => path,
-        SegmentLookup::Absent => {
+    spawn_blocking_response(OwnerReadRole::SpeakersReviewCli, move || {
+        let layout = decode_stream_layout(query.stream_layout.as_deref());
+        let segment = match lookup_segment(
+            &root.0,
+            &day,
+            &stream,
+            &segment_key,
+            layout,
+            DirectSupport::Allow,
+        ) {
+            SegmentLookup::Present(path) => path,
+            SegmentLookup::Absent => {
+                return err(
+                    "speaker_review_unavailable",
+                    "that speaker review couldn't be loaded.",
+                    "No transcript found",
+                    StatusCode::NOT_FOUND,
+                );
+            }
+            SegmentLookup::MalformedLayout => {
+                return err(
+                    "invalid_segment_or_stream",
+                    "that segment or stream couldn't be used.",
+                    "Invalid segment key or stream",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+            SegmentLookup::Failed(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+            SegmentLookup::UnsupportedLayout => {
+                return err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    "segment layout is not readable",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
+        let transcript = segment.join(format!("{source}.jsonl"));
+        let Ok(raw) = fs::read_to_string(transcript) else {
             return err(
                 "speaker_review_unavailable",
                 "that speaker review couldn't be loaded.",
                 "No transcript found",
                 StatusCode::NOT_FOUND,
             );
-        }
-        SegmentLookup::MalformedLayout => {
-            return err(
-                "invalid_segment_or_stream",
-                "that segment or stream couldn't be used.",
-                "Invalid segment key or stream",
-                StatusCode::BAD_REQUEST,
-            );
-        }
-        SegmentLookup::Failed(error) => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-        SegmentLookup::UnsupportedLayout => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                "segment layout is not readable",
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let transcript = segment.join(format!("{source}.jsonl"));
-    let Ok(raw) = fs::read_to_string(transcript) else {
-        return err(
-            "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
-            "No transcript found",
-            StatusCode::NOT_FOUND,
-        );
-    };
-    let embedded = embedded_sentence_ids(&segment.join(format!("{source}.npz")));
-    let labels = labels_by_sentence(&segment);
-    let admitted_speaker_ids = journal_entities(&root.0)
-        .iter()
-        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
-        .map(|(entity_id, _)| entity_id.clone())
-        .collect::<BTreeSet<_>>();
-    let sentences = raw
-        .lines()
-        .skip(1)
-        .enumerate()
-        .filter_map(|(index, line)| {
-            let entry: Value = serde_json::from_str(line).ok()?;
-            let id = i64::try_from(index + 1).ok()?;
-            let label = labels.get(&id);
-            let active_label = active_speaker_label(label, &admitted_speaker_ids);
-            let speaker = active_label
-                .and_then(|value| value.get("speaker"))
-                .cloned()
-                .unwrap_or(Value::Null);
-            let confidence = active_label
-                .and_then(|value| value.get("confidence"))
-                .cloned()
-                .unwrap_or(Value::Null);
-            let method = active_label
-                .and_then(|value| value.get("method"))
-                .cloned()
-                .unwrap_or(Value::Null);
-            let needs_review = label.is_none() || speaker.is_null();
-            Some(json!({
-                "sentence_id": id,
-                "text": entry.get("text").cloned().unwrap_or_else(|| json!("")),
-                "has_embedding": embedded.contains(&id),
-                "speaker": speaker,
-                "confidence": confidence,
-                "method": method,
-                "needs_review": needs_review,
-            }))
-        })
-        .collect::<Vec<_>>();
-    Json(json!({"success":true,"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"stream":stream,"segment_key":segment_key,"source":source,"sentences":sentences})).into_response()
+        };
+        let embedded = embedded_sentence_ids(&segment.join(format!("{source}.npz")));
+        let labels = labels_by_sentence(&segment);
+        let admitted_speaker_ids = journal_entities(&root.0)
+            .iter()
+            .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+            .map(|(entity_id, _)| entity_id.clone())
+            .collect::<BTreeSet<_>>();
+        let sentences = raw
+            .lines()
+            .skip(1)
+            .enumerate()
+            .filter_map(|(index, line)| {
+                let entry: Value = serde_json::from_str(line).ok()?;
+                let id = i64::try_from(index + 1).ok()?;
+                let label = labels.get(&id);
+                let active_label = active_speaker_label(label, &admitted_speaker_ids);
+                let speaker = active_label
+                    .and_then(|value| value.get("speaker"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let confidence = active_label
+                    .and_then(|value| value.get("confidence"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let method = active_label
+                    .and_then(|value| value.get("method"))
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                let needs_review = label.is_none() || speaker.is_null();
+                Some(json!({
+                    "sentence_id": id,
+                    "text": entry.get("text").cloned().unwrap_or_else(|| json!("")),
+                    "has_embedding": embedded.contains(&id),
+                    "speaker": speaker,
+                    "confidence": confidence,
+                    "method": method,
+                    "needs_review": needs_review,
+                }))
+            })
+            .collect::<Vec<_>>();
+        Json(json!({"success":true,"day":day,"stream_layout":layout_name(layout.expect("successful lookup decoded layout")),"stream":stream,"segment_key":segment_key,"source":source,"sentences":sentences})).into_response()
+    })
+    .await
 }
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let owner_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0)
-    {
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
-        solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
-            return err(
-                "speaker_owner_identity_invalid",
-                "speaker status couldn't be loaded because your configured owner identity needs attention.",
-                "configured owner identity is not admitted",
-                StatusCode::BAD_REQUEST,
-            );
-        }
-    };
-    let entities = journal_entities(&root.0);
-    let admitted_speaker_ids = entities
-        .iter()
-        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
-        .map(|(entity_id, _)| entity_id.clone())
-        .collect::<BTreeSet<_>>();
-    let voiceprint = awareness_voiceprint(&root.0);
-    let segments = match catalog_journal(&root.0) {
-        Ok(segments) => segments,
-        Err(error) => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let owner = owner_section(&root.0, &voiceprint, &owner_id);
-    Json(json!({
-        "embeddings": embeddings_section(&segments),
-        "owner": owner,
-        "speakers": speakers_section(&root.0, &entities, &admitted_speaker_ids),
-        "pool": pool_section(&root.0),
-        "clusters": clusters_section(&root.0),
-        "imports": imports_section(&segments),
-        "attribution": attribution_section(&segments, &admitted_speaker_ids),
-        "quality": quality_section(&root.0, &segments, &voiceprint, &admitted_speaker_ids, &owner_id),
-    }))
-    .into_response()
+    spawn_blocking_response(OwnerReadRole::SpeakersStatus, move || {
+        let owner_id = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0)
+        {
+            solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
+            solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {
+                return err(
+                    "speaker_owner_identity_invalid",
+                    "speaker status couldn't be loaded because your configured owner identity needs attention.",
+                    "configured owner identity is not admitted",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+        };
+        let entities = journal_entities(&root.0);
+        let admitted_speaker_ids = entities
+            .iter()
+            .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+            .map(|(entity_id, _)| entity_id.clone())
+            .collect::<BTreeSet<_>>();
+        let voiceprint = awareness_voiceprint(&root.0);
+        let segments = match catalog_journal(&root.0) {
+            Ok(segments) => segments,
+            Err(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
+        let owner = owner_section(&root.0, &voiceprint, &owner_id);
+        Json(json!({
+            "embeddings": embeddings_section(&segments),
+            "owner": owner,
+            "speakers": speakers_section(&root.0, &entities, &admitted_speaker_ids),
+            "pool": pool_section(&root.0),
+            "clusters": clusters_section(&root.0),
+            "imports": imports_section(&segments),
+            "attribution": attribution_section(&segments, &admitted_speaker_ids),
+            "quality": quality_section(&root.0, &segments, &voiceprint, &admitted_speaker_ids, &owner_id),
+        }))
+        .into_response()
+    })
+    .await
 }
 
 pub async fn suggest(
@@ -263,38 +273,47 @@ pub async fn suggest(
             );
         }
     };
-    let segments = match catalog_journal(&root.0) {
-        Ok(segments) => segments,
-        Err(error) => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    let mut suggestions = Vec::new();
-    suggestions.extend(import_linkable(&root.0, &segments));
-    suggestions.extend(candidate_pair_suggestions(&root.0));
-    suggestions.extend(low_confidence_suggestions(&segments));
-    suggestions.sort_by_key(suggestion_sort_key);
-    let items = suggestions.into_iter().take(limit).collect::<Vec<_>>();
-    Json(json!({"status":"ok","items":items,"issues":[],"markdown":format_suggestions(&items)}))
-        .into_response()
+    spawn_blocking_response(OwnerReadRole::SpeakersSuggest, move || {
+        let segments = match catalog_journal(&root.0) {
+            Ok(segments) => segments,
+            Err(error) => {
+                return err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                );
+            }
+        };
+        let mut suggestions = Vec::new();
+        suggestions.extend(import_linkable(&root.0, &segments));
+        suggestions.extend(candidate_pair_suggestions(&root.0));
+        suggestions.extend(low_confidence_suggestions(&segments));
+        suggestions.sort_by_key(suggestion_sort_key);
+        let items = suggestions.into_iter().take(limit).collect::<Vec<_>>();
+        Json(json!({"status":"ok","items":items,"issues":[],"markdown":format_suggestions(&items)}))
+            .into_response()
+    })
+    .await
 }
 
 pub async fn keep_separate(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let assertions =
-        fold_keep_separate(&jsonl_values(&root.0.join("speakers/keep-separate.jsonl")));
-    Json(json!({"assertions":assertions,"total":assertions.len()})).into_response()
+    spawn_blocking_response(OwnerReadRole::SpeakersKeepSeparate, move || {
+        let assertions =
+            fold_keep_separate(&jsonl_values(&root.0.join("speakers/keep-separate.jsonl")));
+        Json(json!({"assertions":assertions,"total":assertions.len()})).into_response()
+    })
+    .await
 }
 
 pub async fn dismissals(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let dismissals = fold_dismissals(&jsonl_values(
-        &root.0.join("speakers/cluster-dismissals.jsonl"),
-    ));
-    Json(json!({"dismissals":dismissals,"total":dismissals.len()})).into_response()
+    spawn_blocking_response(OwnerReadRole::SpeakersDismissals, move || {
+        let dismissals = fold_dismissals(&jsonl_values(
+            &root.0.join("speakers/cluster-dismissals.jsonl"),
+        ));
+        Json(json!({"dismissals":dismissals,"total":dismissals.len()})).into_response()
+    })
+    .await
 }
 
 fn err(code: &str, message: &str, detail: &str, status: StatusCode) -> Response {

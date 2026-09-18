@@ -36,6 +36,8 @@ pub struct StreamLayoutQuery {
     stream_layout: Option<String>,
 }
 
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+
 pub async fn segment_speakers(
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath((day, stream, segment_key)): RoutePath<(String, String, String)>,
@@ -48,43 +50,46 @@ pub async fn segment_speakers(
             "Invalid day format",
         );
     }
-    let segment_dir = match lookup_read_segment(
-        &root.0,
-        &day,
-        &stream,
-        &segment_key,
-        query.stream_layout.as_deref(),
-    ) {
-        Ok(Some(path)) => path,
-        Ok(None) => {
+    spawn_blocking_response(OwnerReadRole::SpeakersSegmentSpeakers, move || {
+        let segment_dir = match lookup_read_segment(
+            &root.0,
+            &day,
+            &stream,
+            &segment_key,
+            query.stream_layout.as_deref(),
+        ) {
+            Ok(Some(path)) => path,
+            Ok(None) => {
+                return Json(json!({"matched": [], "unmatched": []})).into_response();
+            }
+            Err(response) => return response,
+        };
+
+        let speakers = load_segment_speakers(&segment_dir);
+        if speakers.is_empty() {
             return Json(json!({"matched": [], "unmatched": []})).into_response();
         }
-        Err(response) => return response,
-    };
 
-    let speakers = load_segment_speakers(&segment_dir);
-    if speakers.is_empty() {
-        return Json(json!({"matched": [], "unmatched": []})).into_response();
-    }
-
-    let entities = load_all_journal_entities(&root.0)
-        .into_iter()
-        .filter(|(_, entity)| !entity.get("blocked").is_some_and(value_truthy))
-        .collect::<Vec<_>>();
-    let mut matched = Vec::new();
-    let mut unmatched = Vec::new();
-    for speaker in speakers {
-        if let Some(entity) = find_matching_entity(&speaker, &entities) {
-            matched.push(json!({
-                "detected_name": speaker,
-                "entity_name": entity.get("name").cloned().unwrap_or(Value::Null),
-                "entity_type": entity.get("type").cloned().unwrap_or(Value::Null),
-            }));
-        } else {
-            unmatched.push(Value::String(speaker));
+        let entities = load_all_journal_entities(&root.0)
+            .into_iter()
+            .filter(|(_, entity)| !entity.get("blocked").is_some_and(value_truthy))
+            .collect::<Vec<_>>();
+        let mut matched = Vec::new();
+        let mut unmatched = Vec::new();
+        for speaker in speakers {
+            if let Some(entity) = find_matching_entity(&speaker, &entities) {
+                matched.push(json!({
+                    "detected_name": speaker,
+                    "entity_name": entity.get("name").cloned().unwrap_or(Value::Null),
+                    "entity_type": entity.get("type").cloned().unwrap_or(Value::Null),
+                }));
+            } else {
+                unmatched.push(Value::String(speaker));
+            }
         }
-    }
-    Json(json!({"matched": matched, "unmatched": unmatched})).into_response()
+        Json(json!({"matched": matched, "unmatched": unmatched})).into_response()
+    })
+    .await
 }
 
 pub async fn review(
@@ -99,16 +104,30 @@ pub async fn review(
             "Invalid day format",
         );
     }
-    let layout = decode_stream_layout(query.stream_layout.as_deref());
-    let segment_dir = match lookup_read_segment(
-        &root.0,
-        &day,
-        &stream,
-        &segment_key,
-        query.stream_layout.as_deref(),
-    ) {
-        Ok(Some(path)) => path,
-        Ok(None) => {
+    spawn_blocking_response(OwnerReadRole::SpeakersReview, move || {
+        let layout = decode_stream_layout(query.stream_layout.as_deref());
+        let segment_dir = match lookup_read_segment(
+            &root.0,
+            &day,
+            &stream,
+            &segment_key,
+            query.stream_layout.as_deref(),
+        ) {
+            Ok(Some(path)) => path,
+            Ok(None) => {
+                return error_envelope(
+                    "speaker_review_unavailable",
+                    "that speaker review couldn't be loaded.",
+                    "No transcript found",
+                    StatusCode::NOT_FOUND,
+                )
+                .into_response();
+            }
+            Err(response) => return response,
+        };
+        let time_key = parsed_time_key(&segment_key).unwrap_or_else(|| segment_key.clone());
+        let (sentences, embeddings) = load_sentences(&segment_dir, &time_key, &source);
+        if sentences.is_empty() {
             return error_envelope(
                 "speaker_review_unavailable",
                 "that speaker review couldn't be loaded.",
@@ -117,150 +136,139 @@ pub async fn review(
             )
             .into_response();
         }
-        Err(response) => return response,
-    };
-    let time_key = parsed_time_key(&segment_key).unwrap_or_else(|| segment_key.clone());
-    let (sentences, embeddings) = load_sentences(&segment_dir, &time_key, &source);
-    if sentences.is_empty() {
-        return error_envelope(
-            "speaker_review_unavailable",
-            "that speaker review couldn't be loaded.",
-            "No transcript found",
-            StatusCode::NOT_FOUND,
-        )
-        .into_response();
-    }
 
-    let labels_data = load_speaker_labels(&segment_dir);
-    let label_map = sentence_map(labels_data.as_ref(), "labels");
-    let corrections_data = load_speaker_corrections(&segment_dir);
-    let correction_map = sentence_map(corrections_data.as_ref(), "corrections");
-    let duration_map = embeddings.as_ref().map(duration_map).unwrap_or_default();
-    let principal_id = journal_principal_id(&root.0);
-    let entities = load_all_journal_entities(&root.0);
-    let entity_map = entities
-        .iter()
-        .map(|(entity_id, entity)| (entity_id.clone(), entity))
-        .collect::<BTreeMap<_, _>>();
-    let admitted_speaker_ids = entities
-        .iter()
-        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
-        .map(|(entity_id, _)| entity_id.clone())
-        .collect::<BTreeSet<_>>();
+        let labels_data = load_speaker_labels(&segment_dir);
+        let label_map = sentence_map(labels_data.as_ref(), "labels");
+        let corrections_data = load_speaker_corrections(&segment_dir);
+        let correction_map = sentence_map(corrections_data.as_ref(), "corrections");
+        let duration_map = embeddings.as_ref().map(duration_map).unwrap_or_default();
+        let principal_id = journal_principal_id(&root.0);
+        let entities = load_all_journal_entities(&root.0);
+        let entity_map = entities
+            .iter()
+            .map(|(entity_id, entity)| (entity_id.clone(), entity))
+            .collect::<BTreeMap<_, _>>();
+        let admitted_speaker_ids = entities
+            .iter()
+            .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+            .map(|(entity_id, _)| entity_id.clone())
+            .collect::<BTreeSet<_>>();
 
-    let mut review_sentences = sentences
-        .into_iter()
-        .filter(|sentence| sentence.get("has_embedding") == Some(&Value::Bool(true)))
-        .collect::<Vec<_>>();
-    let mut needs_review_count = 0;
-    let mut corrections_count = 0;
-    for sentence in &mut review_sentences {
-        let sentence_id = sentence_id(sentence);
-        let sentence_object = sentence
-            .as_object_mut()
-            .expect("review sentence is an object");
-        sentence_object.insert(
-            "duration_s".to_owned(),
-            json!(duration_map.get(&sentence_id).copied().unwrap_or(0.0)),
-        );
-
-        let label = label_map.get(&sentence_id);
-        if let Some(label) = label {
-            add_label_fields(sentence_object, label, &entity_map, principal_id.as_deref());
-        } else {
-            add_empty_label_fields(sentence_object);
-        }
-        let needs_review = speaker_sentence_needs_review(
-            label.copied(),
-            labels_data.as_ref(),
-            &admitted_speaker_ids,
-        );
-        sentence_object.insert("needs_review".to_owned(), json!(needs_review));
-
-        let is_correction = sentence_object
-            .get("method")
-            .and_then(Value::as_str)
-            .is_some_and(|method| matches!(method, "user_corrected" | "user_assigned"));
-        sentence_object.insert("is_correction".to_owned(), json!(is_correction));
-        if let Some(correction) = correction_map.get(&sentence_id).filter(|_| is_correction) {
-            add_original_speaker_fields(
-                sentence_object,
-                correction,
-                &entity_map,
-                principal_id.as_deref(),
+        let mut review_sentences = sentences
+            .into_iter()
+            .filter(|sentence| sentence.get("has_embedding") == Some(&Value::Bool(true)))
+            .collect::<Vec<_>>();
+        let mut needs_review_count = 0;
+        let mut corrections_count = 0;
+        for sentence in &mut review_sentences {
+            let sentence_id = sentence_id(sentence);
+            let sentence_object = sentence
+                .as_object_mut()
+                .expect("review sentence is an object");
+            sentence_object.insert(
+                "duration_s".to_owned(),
+                json!(duration_map.get(&sentence_id).copied().unwrap_or(0.0)),
             );
-            corrections_count += 1;
-        } else {
-            sentence_object.insert("original_speaker_entity_id".to_owned(), Value::Null);
-            sentence_object.insert("original_speaker_name".to_owned(), Value::Null);
-        }
-        if needs_review {
-            needs_review_count += 1;
-        }
-    }
 
-    let mut all_entities = entities
-        .iter()
-        .filter(|(_, entity)| is_admissible_speaker_entity(entity))
-        .map(|(entity_id, entity)| {
-            json!({
-                "entity_id": entity_id,
-                "name": entity.get("name").cloned().unwrap_or_else(|| json!(entity_id)),
-                "is_principal": entity.get("is_principal") == Some(&Value::Bool(true)),
+            let label = label_map.get(&sentence_id);
+            if let Some(label) = label {
+                add_label_fields(sentence_object, label, &entity_map, principal_id.as_deref());
+            } else {
+                add_empty_label_fields(sentence_object);
+            }
+            let needs_review = speaker_sentence_needs_review(
+                label.copied(),
+                labels_data.as_ref(),
+                &admitted_speaker_ids,
+            );
+            sentence_object.insert("needs_review".to_owned(), json!(needs_review));
+
+            let is_correction = sentence_object
+                .get("method")
+                .and_then(Value::as_str)
+                .is_some_and(|method| matches!(method, "user_corrected" | "user_assigned"));
+            sentence_object.insert("is_correction".to_owned(), json!(is_correction));
+            if let Some(correction) = correction_map.get(&sentence_id).filter(|_| is_correction) {
+                add_original_speaker_fields(
+                    sentence_object,
+                    correction,
+                    &entity_map,
+                    principal_id.as_deref(),
+                );
+                corrections_count += 1;
+            } else {
+                sentence_object.insert("original_speaker_entity_id".to_owned(), Value::Null);
+                sentence_object.insert("original_speaker_name".to_owned(), Value::Null);
+            }
+            if needs_review {
+                needs_review_count += 1;
+            }
+        }
+
+        let mut all_entities = entities
+            .iter()
+            .filter(|(_, entity)| is_admissible_speaker_entity(entity))
+            .map(|(entity_id, entity)| {
+                json!({
+                    "entity_id": entity_id,
+                    "name": entity.get("name").cloned().unwrap_or_else(|| json!(entity_id)),
+                    "is_principal": entity.get("is_principal") == Some(&Value::Bool(true)),
+                })
             })
-        })
-        .collect::<Vec<_>>();
-    if !entities
-        .iter()
-        .any(|(_, entity)| entity.get("is_principal") == Some(&Value::Bool(true)))
-        && let Some((entity_id, name)) = configured_principal_identity(&root.0)
-        && !entities.iter().any(|(id, _)| id == &entity_id)
-    {
-        all_entities.push(json!({
-            "entity_id": entity_id,
-            "name": name,
-            "is_principal": true,
-        }));
-    }
-    all_entities.sort_by(|left, right| {
-        let left_principal = left["is_principal"].as_bool().unwrap_or(false);
-        let right_principal = right["is_principal"].as_bool().unwrap_or(false);
-        (
-            !left_principal,
-            left["name"].as_str().unwrap_or_default().to_lowercase(),
-        )
-            .cmp(&(
-                !right_principal,
-                right["name"].as_str().unwrap_or_default().to_lowercase(),
-            ))
-    });
+            .collect::<Vec<_>>();
+        if !entities
+            .iter()
+            .any(|(_, entity)| entity.get("is_principal") == Some(&Value::Bool(true)))
+            && let Some((entity_id, name)) = configured_principal_identity(&root.0)
+            && !entities.iter().any(|(id, _)| id == &entity_id)
+        {
+            all_entities.push(json!({
+                "entity_id": entity_id,
+                "name": name,
+                "is_principal": true,
+            }));
+        }
+        all_entities.sort_by(|left, right| {
+            let left_principal = left["is_principal"].as_bool().unwrap_or(false);
+            let right_principal = right["is_principal"].as_bool().unwrap_or(false);
+            (
+                !left_principal,
+                left["name"].as_str().unwrap_or_default().to_lowercase(),
+            )
+                .cmp(&(
+                    !right_principal,
+                    right["name"].as_str().unwrap_or_default().to_lowercase(),
+                ))
+        });
 
-    let (audio_file, audio_mimetype) = audio_info(
-        &segment_dir,
-        &day,
-        &stream,
-        &segment_key,
-        &source,
-        layout.unwrap_or(SegmentLayout::Named),
-    );
-    let (start, end) = parse_segment(&time_key)
-        .map(|(start, end, _)| (start, end))
-        .unwrap_or_default();
-    Json(json!({
-        "segment": {"key": segment_key, "time_key": time_key, "stream": stream, "stream_layout": layout_name(layout.unwrap_or(SegmentLayout::Named)), "start": start, "end": end},
-        "source": source,
-        "sentences": review_sentences,
-        "all_entities": all_entities,
-        "audio_file": audio_file,
-        "audio_mimetype": audio_mimetype,
-        "has_labels": labels_data.is_some(),
-        "summary": {
-            "total": review_sentences.len(),
-            "needs_review": needs_review_count,
-            "corrections": corrections_count,
-        },
-    }))
-    .into_response()
+        let (audio_file, audio_mimetype) = audio_info(
+            &segment_dir,
+            &day,
+            &stream,
+            &segment_key,
+            &source,
+            layout.unwrap_or(SegmentLayout::Named),
+        );
+        let (start, end) = parse_segment(&time_key)
+            .map(|(start, end, _)| (start, end))
+            .unwrap_or_default();
+        Json(json!({
+            "segment": {"key": segment_key, "time_key": time_key, "stream": stream, "stream_layout": layout_name(layout.unwrap_or(SegmentLayout::Named)), "start": start, "end": end},
+            "source": source,
+            "sentences": review_sentences,
+            "all_entities": all_entities,
+            "audio_file": audio_file,
+            "audio_mimetype": audio_mimetype,
+            "has_labels": labels_data.is_some(),
+            "summary": {
+                "total": review_sentences.len(),
+                "needs_review": needs_review_count,
+                "corrections": corrections_count,
+            },
+        }))
+        .into_response()
+    })
+    .await
 }
 
 fn bad_request(reason_code: &str, message: &str, detail: &str) -> Response {

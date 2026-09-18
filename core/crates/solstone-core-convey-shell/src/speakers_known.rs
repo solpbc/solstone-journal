@@ -50,9 +50,16 @@ pub async fn known(
         )
         .into_response();
     }
-    let mut speakers = known_speakers(&root.0);
-    sort_speakers(&mut speakers, &sort);
-    Json(json!({"speakers": speakers, "total": speakers.len(), "sort": sort})).into_response()
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersKnown,
+        move || {
+            let mut speakers = known_speakers(&root.0);
+            sort_speakers(&mut speakers, &sort);
+            Json(json!({"speakers": speakers, "total": speakers.len(), "sort": sort}))
+                .into_response()
+        },
+    )
+    .await
 }
 
 #[derive(Serialize)]

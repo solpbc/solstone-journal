@@ -107,63 +107,80 @@ pub async fn identify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
 }
 
 pub async fn operations(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let path = root.0.join("speakers/identify-operations.jsonl");
-    let rows = match solstone_core_speaker_resolve::identify_operations::load_operations(&path) {
-        Ok(rows) => rows,
-        Err(error) => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    match solstone_core_speaker_resolve::identify_operations::fold_all_operations(&rows) {
-        Ok(states) => {
-            let operations = states.iter().map(summary).collect::<Vec<_>>();
-            Json(json!({"operations":operations,"total":operations.len()})).into_response()
-        }
-        Err(error) => err(
-            "speaker_command_failed",
-            "that speaker command didn't finish.",
-            &error.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ),
-    }
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersIdentifyOperations,
+        move || {
+            let path = root.0.join("speakers/identify-operations.jsonl");
+            let rows =
+                match solstone_core_speaker_resolve::identify_operations::load_operations(&path) {
+                    Ok(rows) => rows,
+                    Err(error) => {
+                        return err(
+                            "speaker_command_failed",
+                            "that speaker command didn't finish.",
+                            &error.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        );
+                    }
+                };
+            match solstone_core_speaker_resolve::identify_operations::fold_all_operations(&rows) {
+                Ok(states) => {
+                    let operations = states.iter().map(summary).collect::<Vec<_>>();
+                    Json(json!({"operations":operations,"total":operations.len()})).into_response()
+                }
+                Err(error) => err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ),
+            }
+        },
+    )
+    .await
 }
 
 pub async fn operation(
     Extension(root): Extension<Arc<JournalRoot>>,
     RoutePath(operation_id): RoutePath<String>,
 ) -> Response {
-    let path = root.0.join("speakers/identify-operations.jsonl");
-    let rows = match solstone_core_speaker_resolve::identify_operations::load_operations(&path) {
-        Ok(rows) => rows,
-        Err(error) => {
-            return err(
-                "speaker_command_failed",
-                "that speaker command didn't finish.",
-                &error.to_string(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            );
-        }
-    };
-    match solstone_core_speaker_resolve::identify_operations::fold_operation(&rows, &operation_id) {
-        Ok(Some(state)) => Json(json!({"operation":summary(&state)})).into_response(),
-        Ok(None) => err(
-            "speaker_identify_operation_not_found",
-            "that speaker identify operation couldn't be found.",
-            &format!("operation_id={operation_id}"),
-            StatusCode::NOT_FOUND,
-        ),
-        Err(error) => err(
-            "speaker_command_failed",
-            "that speaker command didn't finish.",
-            &error.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        ),
-    }
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersIdentifyOperation,
+        move || {
+            let path = root.0.join("speakers/identify-operations.jsonl");
+            let rows =
+                match solstone_core_speaker_resolve::identify_operations::load_operations(&path) {
+                    Ok(rows) => rows,
+                    Err(error) => {
+                        return err(
+                            "speaker_command_failed",
+                            "that speaker command didn't finish.",
+                            &error.to_string(),
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                        );
+                    }
+                };
+            match solstone_core_speaker_resolve::identify_operations::fold_operation(
+                &rows,
+                &operation_id,
+            ) {
+                Ok(Some(state)) => Json(json!({"operation":summary(&state)})).into_response(),
+                Ok(None) => err(
+                    "speaker_identify_operation_not_found",
+                    "that speaker identify operation couldn't be found.",
+                    &format!("operation_id={operation_id}"),
+                    StatusCode::NOT_FOUND,
+                ),
+                Err(error) => err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error.to_string(),
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                ),
+            }
+        },
+    )
+    .await
 }
 
 fn summary(state: &solstone_core_speaker_resolve::identify_operations::OperationState) -> Value {
