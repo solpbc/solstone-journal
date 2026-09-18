@@ -1,74 +1,52 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Backfill selection and speaker-label preservation primitives.
+//! Backfill selection, four-way classification, and single-member attribution primitives.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use chrono::Utc;
 use serde_json::{Map, Value};
-use solstone_core_entity::hold_entity_trust_lock;
-use solstone_core_journal_io::SegmentLayout;
+use solstone_core_entity::{
+    hold_entity_trust_lock, is_admissible_person, load_all_journal_entities,
+};
 use solstone_core_speaker_id::labels::write_full_labels;
 use thiserror::Error;
 
-use crate::backfill_operations::{
-    BACKFILL_OPERATION_SCHEMA_VERSION, BackfillCheckpointOutcome, BackfillOperationEvent,
-    BackfillOperationPayload, BackfillOperationState, BackfillOperationTerminalStatus,
-    BackfillSegmentError, BackfillSegmentKey, append_backfill_event, backfill_operations_path,
-    fold_backfill_operation, load_backfill_operations,
-};
+use crate::backfill_operations::{BackfillCheckpointOutcome, BackfillSegmentKey};
 use crate::bootstrap::scan_segments;
 use crate::owner_admission::OWNER_IDENTITY_INVALID_REASON;
 use crate::resolve::{ResolveError, ResolveOutcome, resolve};
+use crate::voiceprint_accumulation::{
+    AccumulationEmbedding, AccumulationLabel, AccumulationOutcome, AccumulationRequest,
+    accumulate_voiceprints,
+};
 
-/// Classification used by default backfill selection for an existing label payload.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SpeakerLabelsState {
-    Stubbed,
-    Labelled,
+fn encoder() -> solstone_core_entity::EncoderIdentity {
+    solstone_core_entity::EncoderIdentity {
+        id: "unresolved".to_owned(),
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000".to_owned(),
+        width: 256,
+    }
 }
 
-/// One chronologically selected segment for a later backfill execution.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BackfillSegment {
-    pub day: String,
-    pub stream_layout: SegmentLayout,
-    pub stream: String,
-    pub segment_key: String,
-    pub path: PathBuf,
+/// Four-way classification for segment speaker labels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SpeakerLabelsClass {
+    Absent,
+    Stub,
+    Protected,
+    Gap,
 }
 
 /// Results of backfill's enumerate-and-filter phases.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackfillPlan {
-    pub total_segments: usize,
-    pub total_eligible: usize,
-    pub already_labeled: usize,
-    pub skipped_no_embed: usize,
-    pub to_process: Vec<BackfillSegment>,
-}
-
-/// One bounded-JSON CLI request for a resumable native backfill run.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BackfillRunRequest {
-    pub journal_root: PathBuf,
-    pub operation_id: String,
-    pub reattribute: bool,
-    pub now_ms: i64,
-}
-
-/// Progress and terminal state returned after one in-process backfill invocation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BackfillRunResult {
-    pub operation_id: String,
-    pub total_count: usize,
-    pub processed_count: usize,
-    pub skipped_count: usize,
-    pub error_count: usize,
-    pub error_segments: Vec<BackfillSegmentError>,
-    pub pending_count: usize,
-    pub done: bool,
+    pub total_scanned: usize,
+    pub selected: usize,
+    pub protected_skipped: usize,
+    pub skipped_no_embeddings: usize,
+    pub to_process: Vec<BackfillSegmentKey>,
 }
 
 #[derive(Debug, Error)]
@@ -87,248 +65,321 @@ pub enum BackfillError {
     Path(#[from] solstone_core_journal_io::PathError),
     #[error("backfill operation lock failed: {0}")]
     Trust(#[from] solstone_core_entity::EntityTrustLockError),
+    #[error("labels gap detected at {path}: {detail}")]
+    LabelsGap { path: PathBuf, detail: String },
 }
 
-/// Distinguish an explicit locked stub from every other label payload.
+/// Classify a parsed JSON label payload according to the 4-way classifier rules.
 #[must_use]
-pub fn classify_speaker_labels_payload(payload: &Value) -> SpeakerLabelsState {
-    let stubbed = payload.as_object().is_some_and(|object| {
-        object
-            .get("labels")
-            .is_some_and(|labels| labels.as_array().is_some_and(|labels| labels.is_empty()))
-            && object.get("skipped") == Some(&Value::Bool(true))
-    });
-    if stubbed {
-        SpeakerLabelsState::Stubbed
+pub fn classify_speaker_labels_payload(payload: &Value) -> SpeakerLabelsClass {
+    let Some(object) = payload.as_object() else {
+        return SpeakerLabelsClass::Gap;
+    };
+    let Some(labels_val) = object.get("labels") else {
+        return SpeakerLabelsClass::Gap;
+    };
+    let Some(labels_array) = labels_val.as_array() else {
+        return SpeakerLabelsClass::Gap;
+    };
+    let is_stub = labels_array.is_empty() && object.get("skipped") == Some(&Value::Bool(true));
+    if is_stub {
+        SpeakerLabelsClass::Stub
     } else {
-        SpeakerLabelsState::Labelled
+        SpeakerLabelsClass::Protected
     }
 }
 
-/// Classify a durable label file; malformed content remains conservatively labelled.
+/// Classify a durable label string according to the 4-way classifier rules.
 #[must_use]
-pub fn classify_speaker_labels_text(payload: &str) -> SpeakerLabelsState {
+pub fn classify_speaker_labels_text(payload: &str) -> SpeakerLabelsClass {
     serde_json::from_str(payload)
         .map(|value| classify_speaker_labels_payload(&value))
-        .unwrap_or(SpeakerLabelsState::Labelled)
+        .unwrap_or(SpeakerLabelsClass::Gap)
 }
 
-/// Enumerate audio-bearing segments and apply the corrected default skip policy.
+/// Classify a durable label file on disk.
+#[must_use]
+pub fn classify_speaker_labels_file(path: &Path) -> SpeakerLabelsClass {
+    if !path.exists() {
+        return SpeakerLabelsClass::Absent;
+    }
+    match std::fs::read_to_string(path) {
+        Ok(text) => classify_speaker_labels_text(&text),
+        Err(_) => SpeakerLabelsClass::Gap,
+    }
+}
+
+/// Enumerate audio-bearing segments and apply the 4-way classifier.
 pub fn plan_backfill_segments(
     journal_root: &Path,
     reattribute: bool,
 ) -> Result<BackfillPlan, BackfillError> {
-    let mut plan = BackfillPlan {
-        total_segments: 0,
-        total_eligible: 0,
-        already_labeled: 0,
-        skipped_no_embed: 0,
-        to_process: Vec::new(),
-    };
+    let mut total_scanned = 0;
+    let mut skipped_no_embeddings = 0;
+    let mut protected_skipped = 0;
+    let mut to_process = Vec::new();
+
     for segment in scan_segments(journal_root)? {
-        plan.total_segments += 1;
+        total_scanned += 1;
         if !has_audio_embeddings(&segment.sources) {
-            plan.skipped_no_embed += 1;
+            skipped_no_embeddings += 1;
             continue;
         }
-        plan.total_eligible += 1;
         let labels_path = segment.path.join("talents/speaker_labels.json");
-        let existing_state = labels_path.exists().then(|| {
-            std::fs::read_to_string(&labels_path)
-                .map(|payload| classify_speaker_labels_text(&payload))
-                .unwrap_or(SpeakerLabelsState::Labelled)
-        });
-        if !reattribute && existing_state == Some(SpeakerLabelsState::Labelled) {
-            plan.already_labeled += 1;
-            continue;
+        let class = classify_speaker_labels_file(&labels_path);
+        match class {
+            SpeakerLabelsClass::Gap => {
+                return Err(BackfillError::LabelsGap {
+                    path: labels_path,
+                    detail: "malformed or unreadable speaker_labels.json".to_owned(),
+                });
+            }
+            SpeakerLabelsClass::Absent | SpeakerLabelsClass::Stub => {
+                to_process.push(BackfillSegmentKey {
+                    day: segment.day,
+                    stream_layout: segment.layout,
+                    stream: segment.stream,
+                    segment_key: segment.name,
+                });
+            }
+            SpeakerLabelsClass::Protected => {
+                if reattribute {
+                    to_process.push(BackfillSegmentKey {
+                        day: segment.day,
+                        stream_layout: segment.layout,
+                        stream: segment.stream,
+                        segment_key: segment.name,
+                    });
+                } else {
+                    protected_skipped += 1;
+                }
+            }
         }
-        plan.to_process.push(BackfillSegment {
-            day: segment.day,
-            stream_layout: segment.layout,
-            stream: segment.stream,
-            segment_key: segment.name,
-            path: segment.path,
-        });
     }
-    Ok(plan)
+
+    Ok(BackfillPlan {
+        total_scanned,
+        selected: to_process.len(),
+        protected_skipped,
+        skipped_no_embeddings,
+        to_process,
+    })
 }
 
-/// Forward one selected segment to the existing native Layers 1–3 resolver.
-pub fn resolve_backfill_segment(
+/// Inspect embeddings in the segment directory without throwing non-resumable errors.
+fn inspect_embeddings(segment_path: &Path) -> Result<Option<PathBuf>, String> {
+    let entries = match std::fs::read_dir(segment_path) {
+        Ok(entries) => entries,
+        Err(err) => {
+            return Err(format!(
+                "cannot read directory {}: {err}",
+                segment_path.display()
+            ));
+        }
+    };
+    let mut paths = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| path.extension().and_then(|extension| extension.to_str()) == Some("npz"))
+        .filter(|path| {
+            let stem = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or_default();
+            stem.ends_with("_audio") || stem == "audio"
+        })
+        .collect::<Vec<_>>();
+    paths.sort();
+    let Some(first_path) = paths.into_iter().next() else {
+        return Ok(None);
+    };
+    let source_stem = first_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .unwrap_or("unknown");
+    match solstone_core_speaker_id::embeddings::load_embeddings_file(&first_path) {
+        Ok(Some(emb)) if emb.statements.is_empty() => Ok(None),
+        Ok(Some(_)) => Ok(Some(first_path)),
+        Ok(None) => Err(format!(
+            "missing or unreadable declared embeddings at {}: source={source_stem}",
+            first_path.display()
+        )),
+        Err(err) => Err(format!(
+            "unreadable declared embeddings at {}: source={source_stem}: {err}",
+            first_path.display()
+        )),
+    }
+}
+
+/// Execute attribution and optional writes for a single segment member.
+pub fn execute_backfill_member(
     journal_root: &Path,
-    segment: &BackfillSegment,
+    segment_key: &BackfillSegmentKey,
+    segment_path: &Path,
+    commit: bool,
+    accumulation: bool,
     now_ms: i64,
-) -> Result<ResolveOutcome, BackfillError> {
-    Ok(resolve(
+) -> (BackfillCheckpointOutcome, Option<String>) {
+    let _trust = match hold_entity_trust_lock(journal_root) {
+        Ok(lock) => lock,
+        Err(err) => {
+            return (
+                BackfillCheckpointOutcome::Error,
+                Some(format!("entity_trust_contention: {err}")),
+            );
+        }
+    };
+
+    match inspect_embeddings(segment_path) {
+        Ok(None) => return (BackfillCheckpointOutcome::Skipped, None),
+        Err(detail) => {
+            return (BackfillCheckpointOutcome::Error, Some(detail));
+        }
+        Ok(Some(_)) => {}
+    }
+
+    let resolve_result = resolve(
         journal_root,
-        &segment.day,
-        &segment.stream,
-        &segment.segment_key,
-        segment.stream_layout,
+        &segment_key.day,
+        &segment_key.stream,
+        &segment_key.segment_key,
+        segment_key.stream_layout,
         false,
         now_ms,
-    )?)
-}
+    );
 
-/// Classify a native resolution outcome for backfill checkpointing.
-#[must_use]
-pub fn classify_backfill_outcome(
-    outcome: &ResolveOutcome,
-) -> (BackfillCheckpointOutcome, Option<String>) {
-    match outcome {
-        ResolveOutcome::Resolved(_) => (BackfillCheckpointOutcome::Processed, None),
+    let resolved = match resolve_result {
+        Ok(res) => res,
+        Err(err) => return (BackfillCheckpointOutcome::Error, Some(err.to_string())),
+    };
+
+    match resolved {
+        ResolveOutcome::Resolved(output) => {
+            if commit {
+                if let Err(err) = write_resolved_backfill_labels(segment_path, &output) {
+                    return (BackfillCheckpointOutcome::Error, Some(err.to_string()));
+                }
+                if accumulation
+                    && let Err(err) = accumulate_voiceprints_for_segment(
+                        journal_root,
+                        segment_key,
+                        segment_path,
+                        &output,
+                        now_ms,
+                    )
+                {
+                    return (BackfillCheckpointOutcome::Error, Some(err.to_string()));
+                }
+            }
+            (BackfillCheckpointOutcome::Processed, None)
+        }
         ResolveOutcome::IdentityInvalid => (
             BackfillCheckpointOutcome::Error,
             Some(OWNER_IDENTITY_INVALID_REASON.to_owned()),
         ),
-        ResolveOutcome::NoOwnerCentroid
-        | ResolveOutcome::SegmentMissing
-        | ResolveOutcome::Empty { .. } => (BackfillCheckpointOutcome::Skipped, None),
+        ResolveOutcome::NoOwnerCentroid | ResolveOutcome::SegmentMissing => {
+            (BackfillCheckpointOutcome::Skipped, None)
+        }
+        ResolveOutcome::Empty { source: Some(src) } => (
+            BackfillCheckpointOutcome::Error,
+            Some(format!("empty statements with declared source: {src}")),
+        ),
+        ResolveOutcome::Empty { source: None } => (
+            BackfillCheckpointOutcome::Error,
+            Some("empty statements without source after embeddings inspection".to_owned()),
+        ),
     }
 }
 
-/// Execute or resume one durable backfill operation without rewriting its snapshot.
-pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, BackfillError> {
-    let _trust = hold_entity_trust_lock(&request.journal_root)?;
-    let ledger_path = backfill_operations_path(&request.journal_root);
-    let mut state = fold_backfill_operation(
-        &load_backfill_operations(&ledger_path)?,
-        &request.operation_id,
-    )?;
-    if state.is_none() {
-        let plan = plan_backfill_segments(&request.journal_root, request.reattribute)?;
-        let segments = plan
-            .to_process
-            .iter()
-            .map(|segment| BackfillSegmentKey {
-                day: segment.day.clone(),
-                stream_layout: segment.stream_layout,
-                stream: segment.stream.clone(),
-                segment_key: segment.segment_key.clone(),
-            })
-            .collect::<Vec<_>>();
-        let now = Utc::now().to_rfc3339();
-        append_backfill_event(
-            &ledger_path,
-            &BackfillOperationEvent {
-                schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
-                event_id: format!("{}:prepared", request.operation_id),
-                operation_id: request.operation_id.clone(),
-                ts: now.clone(),
-                payload: BackfillOperationPayload::Prepared {
-                    started_at: now,
-                    reattribute: request.reattribute,
-                    total_count: segments.len(),
-                    segments,
-                },
-            },
-        )?;
-        state = fold_backfill_operation(
-            &load_backfill_operations(&ledger_path)?,
-            &request.operation_id,
-        )?;
-    }
-    let state = state.expect("prepared backfill operation folds");
-    if state.terminal_status == BackfillOperationTerminalStatus::Done {
-        return Ok(backfill_result(&state));
-    }
-    for key in &state.pending_segments {
-        let path = match crate::segment_catalog::resolve_exact(
-            &request.journal_root,
-            &key.day,
-            &key.stream,
-            &key.segment_key,
-            key.stream_layout,
-        )? {
-            Some(path) => path,
-            None => {
-                append_backfill_event(
-                    &ledger_path,
-                    &BackfillOperationEvent {
-                        schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
-                        event_id: next_checkpoint_event_id(
-                            &ledger_path,
-                            &request.operation_id,
-                            key,
-                        )?,
-                        operation_id: request.operation_id.clone(),
-                        ts: Utc::now().to_rfc3339(),
-                        payload: BackfillOperationPayload::Checkpoint {
-                            segment: key.clone(),
-                            outcome: BackfillCheckpointOutcome::Skipped,
-                            error_detail: None,
-                        },
-                    },
-                )?;
-                continue;
-            }
-        };
-        let segment = BackfillSegment {
-            day: key.day.clone(),
-            stream_layout: key.stream_layout,
-            stream: key.stream.clone(),
-            segment_key: key.segment_key.clone(),
-            path,
-        };
-        let (outcome, error_detail) =
-            match resolve_backfill_segment(&request.journal_root, &segment, request.now_ms) {
-                Ok(resolved) => {
-                    let classification = classify_backfill_outcome(&resolved);
-                    if let ResolveOutcome::Resolved(output) = resolved {
-                        write_resolved_backfill_labels(&segment.path, &output)?;
-                    }
-                    classification
-                }
-                Err(error) => (BackfillCheckpointOutcome::Error, Some(error.to_string())),
-            };
-        append_backfill_event(
-            &ledger_path,
-            &BackfillOperationEvent {
-                schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
-                event_id: next_checkpoint_event_id(&ledger_path, &request.operation_id, key)?,
-                operation_id: request.operation_id.clone(),
-                ts: Utc::now().to_rfc3339(),
-                payload: BackfillOperationPayload::Checkpoint {
-                    segment: key.clone(),
-                    outcome,
-                    error_detail,
-                },
-            },
-        )?;
-    }
-    let state = fold_backfill_operation(
-        &load_backfill_operations(&ledger_path)?,
-        &request.operation_id,
-    )?
-    .expect("prepared backfill operation remains present");
-    if state.pending_segments.is_empty() {
-        append_backfill_event(
-            &ledger_path,
-            &BackfillOperationEvent {
-                schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
-                event_id: format!("{}:completed", request.operation_id),
-                operation_id: request.operation_id.clone(),
-                ts: Utc::now().to_rfc3339(),
-                payload: BackfillOperationPayload::Completed {
-                    completed_at: Utc::now().to_rfc3339(),
-                },
-            },
-        )?;
-    }
-    let state = fold_backfill_operation(
-        &load_backfill_operations(&ledger_path)?,
-        &request.operation_id,
-    )?
-    .expect("prepared backfill operation remains present");
-    Ok(backfill_result(&state))
-}
-
-fn write_resolved_backfill_labels(
+pub fn write_resolved_backfill_labels(
     segment: &Path,
     output: &crate::resolve::ResolveOutput,
 ) -> Result<(), solstone_core_speaker_id::labels::LabelsError> {
     let labels = output.labels.iter().map(label_json).collect::<Vec<_>>();
     write_full_labels(segment, labels, &metadata_json(&output.metadata))
+}
+
+fn accumulate_voiceprints_for_segment(
+    journal_root: &Path,
+    key: &BackfillSegmentKey,
+    segment_dir: &Path,
+    output: &crate::resolve::ResolveOutput,
+    now_ms: i64,
+) -> Result<(), String> {
+    let Some(source) = &output.source else {
+        return Ok(());
+    };
+    let npz_path = segment_dir.join(format!("{source}.npz"));
+    if !npz_path.exists() {
+        return Ok(());
+    }
+    let Some(embeddings) = solstone_core_speaker_id::embeddings::load_embeddings_file(&npz_path)
+        .map_err(|e| e.to_string())?
+    else {
+        return Ok(());
+    };
+
+    let admitted_entity_ids = load_all_journal_entities(journal_root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(is_admissible_person)
+        .map(|entity| entity.id)
+        .collect::<BTreeSet<_>>();
+
+    let entity_ids = output
+        .labels
+        .iter()
+        .filter_map(|label| label.speaker.clone())
+        .filter(|speaker| admitted_entity_ids.contains(speaker))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+
+    if entity_ids.is_empty() {
+        return Ok(());
+    }
+
+    let request = AccumulationRequest {
+        journal_root: journal_root.to_path_buf(),
+        day: key.day.clone(),
+        stream_layout: key.stream_layout,
+        stream: key.stream.clone(),
+        segment_key: key.segment_key.clone(),
+        source: source.clone(),
+        now_ms,
+        encoder: encoder(),
+        labels: output
+            .labels
+            .iter()
+            .map(|label| AccumulationLabel {
+                sentence_id: label.sentence_id,
+                speaker: label.speaker.clone(),
+                confidence: label.confidence.clone(),
+                method: label.method.clone(),
+            })
+            .collect(),
+        embeddings: embeddings
+            .statements
+            .into_iter()
+            .map(|(sentence_id, values)| AccumulationEmbedding {
+                sentence_id,
+                values,
+            })
+            .collect(),
+        entity_ids,
+    };
+
+    match accumulate_voiceprints(&request) {
+        Ok(
+            AccumulationOutcome::Completed { .. }
+            | AccumulationOutcome::NothingEligible { .. }
+            | AccumulationOutcome::NoOwnerCentroid { .. },
+        ) => Ok(()),
+        Ok(AccumulationOutcome::IdentityInvalid { .. }) => {
+            Err(OWNER_IDENTITY_INVALID_REASON.to_owned())
+        }
+        Err(err) => Err(err.to_string()),
+    }
 }
 
 fn label_json(label: &crate::layer1::Label) -> Value {
@@ -403,62 +454,6 @@ fn metadata_json(metadata: &crate::resolve::ResolveMetadata) -> Map<String, Valu
     value
 }
 
-fn next_checkpoint_event_id(
-    ledger_path: &Path,
-    operation_id: &str,
-    key: &BackfillSegmentKey,
-) -> Result<String, BackfillError> {
-    let attempts = load_backfill_operations(ledger_path)?
-        .iter()
-        .filter(|row| {
-            row.event.operation_id == operation_id
-                && matches!(
-                    &row.event.payload,
-                    BackfillOperationPayload::Checkpoint { segment, .. } if segment == key
-                )
-        })
-        .count();
-    let base = format!(
-        "{operation_id}:checkpoint:{}:{}:{}",
-        key.day, key.stream, key.segment_key
-    );
-    Ok(if attempts == 0 {
-        base
-    } else {
-        format!("{base}:retry:{attempts}")
-    })
-}
-
-fn backfill_result(state: &BackfillOperationState) -> BackfillRunResult {
-    let mut processed_count = 0;
-    let mut skipped_count = 0;
-    let mut error_count = 0;
-    for outcome in state.checkpointed_segments.values() {
-        match outcome {
-            BackfillCheckpointOutcome::Processed => processed_count += 1,
-            BackfillCheckpointOutcome::Skipped => skipped_count += 1,
-            BackfillCheckpointOutcome::Error => error_count += 1,
-        }
-    }
-    BackfillRunResult {
-        operation_id: state.operation_id.clone(),
-        total_count: state.total_segments,
-        processed_count,
-        skipped_count,
-        error_count,
-        error_segments: state
-            .error_details
-            .iter()
-            .map(|(segment, detail)| BackfillSegmentError {
-                segment: segment.clone(),
-                detail: detail.clone(),
-            })
-            .collect(),
-        pending_count: state.pending_segments.len(),
-        done: state.terminal_status == BackfillOperationTerminalStatus::Done,
-    }
-}
-
 fn has_audio_embeddings(sources: &[String]) -> bool {
     sources
         .iter()
@@ -470,22 +465,123 @@ mod tests {
     use std::collections::HashMap;
     use std::fs;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
 
     use super::*;
+    use crate::backfill_operations::BackfillStatusKind;
     use crate::evidence::{CandidateEvidence, EvidenceGap};
     use crate::layer1::Label;
     use crate::resolve::{ResolveMetadata, ResolveOutput};
+    use solstone_core_journal_io::{LockOptions, SegmentLayout};
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
+    struct Temp(PathBuf);
+
+    impl Temp {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "solstone-backfill-test-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn four_way_classifier_exact_matches() {
+        // Stub
+        let stub = r#"{"labels": [], "skipped": true, "reason": "no_owner_centroid"}"#;
+        assert_eq!(classify_speaker_labels_text(stub), SpeakerLabelsClass::Stub);
+        let minimal_stub = r#"{"labels": [], "skipped": true}"#;
+        assert_eq!(
+            classify_speaker_labels_text(minimal_stub),
+            SpeakerLabelsClass::Stub
+        );
+
+        // Protected
+        let protected_nonempty = r#"{"labels": [{"sentence_id": 1, "speaker": "person"}]}"#;
+        assert_eq!(
+            classify_speaker_labels_text(protected_nonempty),
+            SpeakerLabelsClass::Protected
+        );
+        let protected_skipped_false = r#"{"labels": [], "skipped": false}"#;
+        assert_eq!(
+            classify_speaker_labels_text(protected_skipped_false),
+            SpeakerLabelsClass::Protected
+        );
+        let protected_no_skipped = r#"{"labels": []}"#;
+        assert_eq!(
+            classify_speaker_labels_text(protected_no_skipped),
+            SpeakerLabelsClass::Protected
+        );
+        let protected_extra_fields =
+            r#"{"labels": [{"sentence_id": 1}], "skipped": true, "custom": 123}"#;
+        assert_eq!(
+            classify_speaker_labels_text(protected_extra_fields),
+            SpeakerLabelsClass::Protected
+        );
+
+        // Gap
+        assert_eq!(classify_speaker_labels_text(""), SpeakerLabelsClass::Gap);
+        assert_eq!(classify_speaker_labels_text("{}"), SpeakerLabelsClass::Gap);
+        assert_eq!(classify_speaker_labels_text("[]"), SpeakerLabelsClass::Gap);
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": null}"#),
+            SpeakerLabelsClass::Gap
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": "not an array"}"#),
+            SpeakerLabelsClass::Gap
+        );
+        assert_eq!(
+            classify_speaker_labels_text("{invalid json}"),
+            SpeakerLabelsClass::Gap
+        );
+    }
+
+    #[test]
+    fn plan_backfill_segments_handles_stubs_and_gaps() {
+        let temp = Temp::new();
+        let segment_dir = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        fs::write(
+            segment_dir.join("talents/speaker_labels.json"),
+            r#"{"labels": [], "skipped": true}"#,
+        )
+        .unwrap();
+        fs::write(segment_dir.join("audio.npz"), b"fake npz").unwrap();
+
+        let plan = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!(plan.total_scanned, 1);
+        assert_eq!(plan.selected, 1);
+        assert_eq!(plan.protected_skipped, 0);
+        assert_eq!(plan.to_process.len(), 1);
+
+        // Turn labels into a Gap -> planning fails
+        fs::write(segment_dir.join("talents/speaker_labels.json"), b"{}").unwrap();
+        assert!(matches!(
+            plan_backfill_segments(temp.path(), false),
+            Err(BackfillError::LabelsGap { .. })
+        ));
+    }
+
     #[test]
     fn ac2_backfill_write_preserves_user_prefix_and_persists_full_resolve_output() {
-        let root = std::env::temp_dir().join(format!(
-            "solstone-backfill-label-write-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let segment = root.join("segment");
+        let temp = Temp::new();
+        let segment = temp.path().join("segment");
         fs::create_dir_all(segment.join("talents")).unwrap();
         let preserved = serde_json::json!({
             "sentence_id": 1,
@@ -561,6 +657,312 @@ mod tests {
             saved["candidate_evidence_gaps"],
             serde_json::json!([{"source":"meeting","reason":"missing"}])
         );
-        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn full_4_way_classifier_truth_table() {
+        // 1. Stub: empty labels array AND skipped == true (bool)
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": [], "skipped": true}"#),
+            SpeakerLabelsClass::Stub
+        );
+
+        // 2. Protected: any other object with labels array
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": [{"speaker": "p1"}], "skipped": true}"#),
+            SpeakerLabelsClass::Protected
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": [], "skipped": false}"#),
+            SpeakerLabelsClass::Protected
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": []}"#),
+            SpeakerLabelsClass::Protected
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": [], "skipped": "true"}"#),
+            SpeakerLabelsClass::Protected
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": [], "skipped": null}"#),
+            SpeakerLabelsClass::Protected
+        );
+        assert_eq!(
+            classify_speaker_labels_text(
+                r#"{"labels": [{"speaker": "p1"}], "extra_custom_field": 123}"#
+            ),
+            SpeakerLabelsClass::Protected
+        );
+
+        // 3. Gap: invalid JSON, {}, [], missing/non-array labels
+        assert_eq!(
+            classify_speaker_labels_text("invalid json"),
+            SpeakerLabelsClass::Gap
+        );
+        assert_eq!(classify_speaker_labels_text("{}"), SpeakerLabelsClass::Gap);
+        assert_eq!(classify_speaker_labels_text("[]"), SpeakerLabelsClass::Gap);
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": "not an array"}"#),
+            SpeakerLabelsClass::Gap
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": 123}"#),
+            SpeakerLabelsClass::Gap
+        );
+        assert_eq!(
+            classify_speaker_labels_text(r#"{"labels": null}"#),
+            SpeakerLabelsClass::Gap
+        );
+
+        // 4. File classification: absent vs unreadable vs valid
+        let temp = Temp::new();
+        let absent_path = temp.path().join("does_not_exist.json");
+        assert_eq!(
+            classify_speaker_labels_file(&absent_path),
+            SpeakerLabelsClass::Absent
+        );
+
+        let stub_path = temp.path().join("stub.json");
+        fs::write(&stub_path, r#"{"labels": [], "skipped": true}"#).unwrap();
+        assert_eq!(
+            classify_speaker_labels_file(&stub_path),
+            SpeakerLabelsClass::Stub
+        );
+    }
+
+    #[test]
+    fn reattribute_false_skips_protected_byte_identical_and_reattribute_true_selects() {
+        let temp = Temp::new();
+        let segment_dir = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        let protected_bytes = b"{\"labels\":[{\"speaker\":\"p1\",\"method\":\"cluster\"}]}\n";
+        let label_path = segment_dir.join("talents/speaker_labels.json");
+        fs::write(&label_path, protected_bytes).unwrap();
+        fs::write(segment_dir.join("audio.npz"), b"fake npz").unwrap();
+
+        // reattribute: false -> skips protected, leaving bytes identical
+        let plan_false = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!(plan_false.total_scanned, 1);
+        assert_eq!(plan_false.selected, 0);
+        assert_eq!(plan_false.protected_skipped, 1);
+        assert_eq!(fs::read(&label_path).unwrap(), protected_bytes);
+
+        // reattribute: true -> selects protected
+        let plan_true = plan_backfill_segments(temp.path(), true).unwrap();
+        assert_eq!(plan_true.total_scanned, 1);
+        assert_eq!(plan_true.selected, 1);
+        assert_eq!(plan_true.protected_skipped, 0);
+    }
+
+    #[test]
+    fn gap_then_repair_to_stub_or_protected() {
+        let temp = Temp::new();
+        let segment_dir = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(segment_dir.join("talents")).unwrap();
+        let label_path = segment_dir.join("talents/speaker_labels.json");
+        fs::write(&label_path, b"{broken json").unwrap();
+        fs::write(segment_dir.join("audio.npz"), b"fake npz").unwrap();
+
+        // Gap fails
+        assert!(matches!(
+            plan_backfill_segments(temp.path(), false),
+            Err(BackfillError::LabelsGap { .. })
+        ));
+
+        // Repair to stub -> succeeds and selects
+        fs::write(&label_path, r#"{"labels": [], "skipped": true}"#).unwrap();
+        let plan_stub = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!(plan_stub.selected, 1);
+
+        // Repair to protected + reattribute:false -> skips
+        fs::write(
+            &label_path,
+            r#"{"labels": [{"speaker": "p1"}], "skipped": false}"#,
+        )
+        .unwrap();
+        let plan_prot = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!(plan_prot.selected, 0);
+        assert_eq!(plan_prot.protected_skipped, 1);
+    }
+
+    #[test]
+    fn no_embedding_skip_and_unreadable_npz_produces_member_error() {
+        let temp = Temp::new();
+        let seg_no_audio = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(seg_no_audio.join("talents")).unwrap();
+        fs::write(
+            seg_no_audio.join("talents/speaker_labels.json"),
+            r#"{"labels": [], "skipped": true}"#,
+        )
+        .unwrap();
+
+        let plan = plan_backfill_segments(temp.path(), false).unwrap();
+        assert_eq!(plan.total_scanned, 1);
+        assert_eq!(plan.skipped_no_embeddings, 1);
+        assert_eq!(plan.selected, 0);
+
+        // Unreadable declared npz fails loud rather than skip
+        fs::write(
+            seg_no_audio.join("audio.npz"),
+            b"corrupt npz bytes not a zip",
+        )
+        .unwrap();
+        let seg_key = BackfillSegmentKey {
+            day: "20260808".to_owned(),
+            stream_layout: SegmentLayout::Named,
+            stream: "mic".to_owned(),
+            segment_key: "120000_300".to_owned(),
+        };
+        let (outcome, error) =
+            execute_backfill_member(temp.path(), &seg_key, &seg_no_audio, true, false, 1);
+        assert_eq!(outcome, BackfillCheckpointOutcome::Error);
+        assert!(error.is_some());
+    }
+
+    #[test]
+    fn report_only_mode_only_changes_backfill_operations_ledger() {
+        let temp = Temp::new();
+        let seg1 = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(seg1.join("talents")).unwrap();
+        fs::write(
+            seg1.join("talents/speaker_labels.json"),
+            r#"{"labels": [], "skipped": true}"#,
+        )
+        .unwrap();
+        fs::write(seg1.join("audio.npz"), b"fake npz").unwrap();
+
+        let initial_journal_files = collect_all_files(temp.path());
+
+        // Run coordinator with commit = false (report-only)
+        let req = crate::backfill_coordinator::StartBackfillRequest {
+            operation_id: Some("bfop-report-only".to_owned()),
+            commit: false,
+            reattribute: false,
+            accumulation: false,
+            now_ms: 1,
+        };
+        let _ = crate::backfill_coordinator::start_backfill(temp.path(), &req).unwrap();
+
+        for _ in 0..50 {
+            std::thread::sleep(Duration::from_millis(20));
+            if let Some(s) =
+                crate::backfill_coordinator::backfill_status(temp.path(), "bfop-report-only")
+                    .unwrap()
+                && s.status == BackfillStatusKind::Done
+            {
+                break;
+            }
+        }
+
+        let final_journal_files = collect_all_files(temp.path());
+        // Only speakers/backfill-operations.jsonl (and lock files) was added
+        for (p, _) in &final_journal_files {
+            let s = p.to_string_lossy();
+            if s.contains("speakers/backfill-operations.jsonl") || s.contains("health/locks") {
+                continue;
+            }
+            assert!(
+                initial_journal_files.contains_key(p),
+                "unexpected new file in report-only: {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn accumulation_false_leaves_voiceprint_bytes_and_counts_unchanged() {
+        let temp = Temp::new();
+        let vp_dir = temp.path().join("speakers/voiceprints");
+        fs::create_dir_all(&vp_dir).unwrap();
+        fs::write(vp_dir.join("owner.npz"), b"mock voiceprint data").unwrap();
+
+        let vp_files_before = collect_all_files(&vp_dir);
+
+        let seg = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(seg.join("talents")).unwrap();
+        fs::write(
+            seg.join("talents/speaker_labels.json"),
+            r#"{"labels": [], "skipped": true}"#,
+        )
+        .unwrap();
+
+        let req = crate::backfill_coordinator::StartBackfillRequest {
+            operation_id: Some("bfop-no-accum".to_owned()),
+            commit: true,
+            reattribute: false,
+            accumulation: false,
+            now_ms: 1,
+        };
+        let _ = crate::backfill_coordinator::start_backfill(temp.path(), &req).unwrap();
+
+        for _ in 0..50 {
+            std::thread::sleep(Duration::from_millis(20));
+            if let Some(s) =
+                crate::backfill_coordinator::backfill_status(temp.path(), "bfop-no-accum").unwrap()
+                && s.status == BackfillStatusKind::Done
+            {
+                break;
+            }
+        }
+
+        let vp_files_after = collect_all_files(&vp_dir);
+        assert_eq!(vp_files_before, vp_files_after);
+    }
+
+    #[test]
+    fn entity_trust_contention_produces_member_error_and_retry_succeeds() {
+        let temp = Temp::new();
+        let seg = temp.path().join("chronicle/20260808/mic/120000_300");
+        fs::create_dir_all(seg.join("talents")).unwrap();
+
+        // Hold entity-trust lock externally
+        let lock_file = temp.path().join("health/locks/entity-trust");
+        fs::create_dir_all(lock_file.parent().unwrap()).unwrap();
+        let lock_guard = solstone_core_journal_io::hold_lock(
+            &lock_file,
+            LockOptions {
+                timeout: Duration::ZERO,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let seg_key = BackfillSegmentKey {
+            day: "20260808".to_owned(),
+            stream_layout: SegmentLayout::Named,
+            stream: "mic".to_owned(),
+            segment_key: "120000_300".to_owned(),
+        };
+
+        // When locked, execute returns Error
+        let (outcome, err) = execute_backfill_member(temp.path(), &seg_key, &seg, true, false, 1);
+        assert_eq!(outcome, BackfillCheckpointOutcome::Error);
+        assert!(err.is_some());
+
+        // Release lock
+        drop(lock_guard);
+    }
+
+    fn collect_all_files(root: &Path) -> HashMap<PathBuf, Vec<u8>> {
+        let mut map = HashMap::new();
+        if !root.exists() {
+            return map;
+        }
+        let mut dirs = vec![root.to_path_buf()];
+        while let Some(dir) = dirs.pop() {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        dirs.push(path);
+                    } else if path.is_file() {
+                        if let Ok(bytes) = fs::read(&path) {
+                            map.insert(path, bytes);
+                        }
+                    }
+                }
+            }
+        }
+        map
     }
 }

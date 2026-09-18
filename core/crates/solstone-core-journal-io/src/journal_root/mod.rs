@@ -152,10 +152,10 @@ impl WindowsRefusalCategory {
 }
 
 /// Opaque platform-specific identity of an admitted journal root.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ObjectIdentity(Repr);
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 enum Repr {
     #[cfg(unix)]
     Unix { dev: u64, ino: u64 },

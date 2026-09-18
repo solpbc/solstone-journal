@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 151
-FINAL_HTTP_TOTAL = 145
+FINAL_ORACLE_TOTAL = 153
+FINAL_HTTP_TOTAL = 147
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 3
@@ -71,7 +71,7 @@ FINAL_HTTP_GROUP_COUNTS = {
     "profile": 4,
     "settings": 12,
     "sol": 2,
-    "speakers": 30,
+    "speakers": 32,
     "thinking": 19,
     "transcripts": 5,
 }
@@ -237,6 +237,62 @@ ORACLE_GRAMMAR_TRANSFORMS: dict[tuple[str, ...], dict[str, Any]] = {
             },
         ],
     },
+    ("speakers", "backfill"): {
+        "path": ("speakers", "backfill"),
+        "help": (
+            "Run speaker attribution across all segments with embeddings.\n\n"
+            "Processes segments oldest-first for progressive voiceprint building.\n"
+            "Skips segments that already have speaker_labels.json (safe to re-run)."
+        ),
+        "drop_params": {"json_output"},
+        "add_params": [
+            {
+                "name": "accumulation",
+                "default": False,
+                "flag_value": True,
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--accumulation"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+            },
+            {
+                "name": "operation_id",
+                "default": None,
+                "flag_value": None,
+                "kind": "option",
+                "type": "text",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--operation-id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "json_output",
+                "default": False,
+                "flag_value": True,
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--json"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+            },
+        ],
+    },
     ("speakers", "correct"): {
         "path": ("speakers", "correct"),
         "help": "Correct one speaker attribution immediately.",
@@ -370,6 +426,76 @@ ADDITIONAL_NATIVE_ORACLE_ENTRIES: list[dict[str, Any]] = [
                 "multiple": False,
                 "default": False,
                 "options": ["--clear"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+        ],
+    },
+    {
+        "path": ["speakers", "backfill-status"],
+        "kind": "command",
+        "help": "Show status of a speaker attribution backfill operation.",
+        "params": [
+            {
+                "name": "operation_id",
+                "kind": "argument",
+                "type": "text",
+                "required": True,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["operation_id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "json_output",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--json"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+        ],
+    },
+    {
+        "path": ["speakers", "backfill-resume"],
+        "kind": "command",
+        "help": "Resume an interrupted or failed speaker attribution backfill operation.",
+        "params": [
+            {
+                "name": "operation_id",
+                "kind": "argument",
+                "type": "text",
+                "required": True,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["operation_id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "json_output",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--json"],
                 "secondary": [],
                 "hidden": False,
                 "is_flag": True,

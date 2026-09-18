@@ -355,10 +355,11 @@ pub fn propagate_correction(ctx: CommandContext<'_>) -> CommandOutput {
 pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
-        &[],
+        &[("--operation-id", None)],
         &[
             FlagSpec::true_flag("--commit"),
             FlagSpec::true_flag("--reattribute"),
+            FlagSpec::true_flag("--accumulation"),
             FlagSpec::true_flag("--json"),
         ],
     ) {
@@ -367,31 +368,194 @@ pub fn backfill(ctx: CommandContext<'_>) -> CommandOutput {
     };
     let commit = parsed.flag("--commit");
     let reattribute = parsed.flag("--reattribute");
+    let accumulation = parsed.flag("--accumulation");
+    let operation_id = parsed.value("--operation-id").map(str::to_owned);
     let json_output = parsed.flag("--json");
     let mut out = String::new();
     if !commit && !json_output {
         emit(&mut out, REPORT_ONLY);
     }
     if !json_output {
-        emit(&mut out, "Scanning journal for segments with embeddings...");
+        emit(&mut out, "Starting speaker attribution backfill...");
     }
     let start = monotonic_seconds(ctx);
+    let mut body = json!({
+        "commit": commit,
+        "reattribute": reattribute,
+        "accumulation": accumulation,
+    });
+    if let Some(id) = &operation_id {
+        body["operation_id"] = json!(id);
+    }
     let stats = match request_json(
         ctx,
         HttpMethod::Post,
         "/app/speakers/api/backfill",
         vec![],
-        Some(json!({"commit": commit, "reattribute": reattribute})),
+        Some(body),
+    ) {
+        Ok(stats) => stats,
+        Err(error) => {
+            if let Some(id) = &operation_id {
+                let err_msg = error.to_string();
+                if err_msg.contains("flags mismatch") || err_msg.contains("conflict") {
+                    let extra = format!(
+                        "Note: backfill operation {id} has immutable flags.\nTo resume with compatible settings, try:\n  solstone call speakers backfill --operation-id {id} --commit\n"
+                    );
+                    return CommandOutput {
+                        stdout: out,
+                        stderr: format!("{err_msg}\n{extra}"),
+                        exit: 1,
+                    };
+                }
+            }
+            return speaker_error_preserving_stdout(out, error);
+        }
+    };
+    let op_id = string_field(&stats, "operation_id").unwrap_or_default();
+    follow_backfill(ctx, &op_id, out, json_output, start)
+}
+
+#[must_use]
+pub fn backfill_status(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(operation_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument OPERATION_ID");
+    };
+    let json_output = parsed.flag("--json");
+    let stats = match request_json(
+        ctx,
+        HttpMethod::Get,
+        &format!("/app/speakers/api/backfill/operations/{operation_id}"),
+        vec![],
+        None,
+    ) {
+        Ok(stats) => stats,
+        Err(error) => return speaker_error(error),
+    };
+    if json_output {
+        return stdout_json(&stats);
+    }
+    let mut out = String::new();
+    render_backfill(&mut out, &stats, 0.0);
+    CommandOutput::success(out)
+}
+
+#[must_use]
+pub fn backfill_resume(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(operation_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument OPERATION_ID");
+    };
+    let json_output = parsed.flag("--json");
+    let out = String::new();
+    let start = monotonic_seconds(ctx);
+    let _ = match request_json(
+        ctx,
+        HttpMethod::Post,
+        &format!("/app/speakers/api/backfill/operations/{operation_id}/resume"),
+        vec![],
+        None,
     ) {
         Ok(stats) => stats,
         Err(error) => return speaker_error_preserving_stdout(out, error),
     };
-    let elapsed = monotonic_seconds(ctx) - start;
-    if json_output {
-        return stdout_json(&stats);
+    follow_backfill(ctx, operation_id, out, json_output, start)
+}
+
+const BACKFILL_POLL_INTERVAL: Duration = Duration::from_secs(30);
+
+fn sleep(ctx: CommandContext<'_>, duration: Duration) {
+    if let Some(clock) = ctx.clock {
+        clock.sleep(duration);
+    } else {
+        std::thread::sleep(duration);
     }
-    render_backfill(&mut out, &stats, elapsed);
-    CommandOutput::success(out)
+}
+
+fn follow_backfill(
+    ctx: CommandContext<'_>,
+    operation_id: &str,
+    mut out: String,
+    json_output: bool,
+    start: f64,
+) -> CommandOutput {
+    loop {
+        let stats = match request_json(
+            ctx,
+            HttpMethod::Get,
+            &format!("/app/speakers/api/backfill/operations/{operation_id}"),
+            vec![],
+            None,
+        ) {
+            Ok(stats) => stats,
+            Err(error) => {
+                if json_output {
+                    return CommandOutput {
+                        stdout: String::new(),
+                        stderr: error.to_string(),
+                        exit: 1,
+                    };
+                }
+                return speaker_error_preserving_stdout(out, error);
+            }
+        };
+
+        let status_kind = string_field(&stats, "status").unwrap_or_default();
+        let done =
+            stats.get("done").and_then(Value::as_bool).unwrap_or(false) || status_kind == "done";
+        let is_active = status_kind == "active_preparing" || status_kind == "active_running";
+
+        if done {
+            let elapsed = monotonic_seconds(ctx) - start;
+            if json_output {
+                return stdout_json(&stats);
+            }
+            render_backfill(&mut out, &stats, elapsed);
+            return CommandOutput::success(out);
+        }
+
+        if !is_active {
+            let elapsed = monotonic_seconds(ctx) - start;
+            let advice = format!(
+                "\nBackfill not completed (status: {status_kind}).\nTo check status:\n  solstone call speakers backfill-status {operation_id}\nTo resume:\n  solstone call speakers backfill-resume {operation_id}\n"
+            );
+            if json_output {
+                return CommandOutput {
+                    stdout: serde_json::to_string(&stats).unwrap_or_default(),
+                    stderr: advice,
+                    exit: 1,
+                };
+            }
+            render_backfill(&mut out, &stats, elapsed);
+            emit(&mut out, advice);
+            return CommandOutput {
+                stdout: out,
+                stderr: String::new(),
+                exit: 1,
+            };
+        }
+
+        if !json_output {
+            let total = value_to_string(stats.get("total_count"));
+            let completed = value_to_string(stats.get("completed_count"));
+            let pending = value_to_string(stats.get("pending_count"));
+            emit(
+                &mut out,
+                format!(
+                    "Backfill in progress: status={status_kind}, completed={completed}/{total}, pending={pending}"
+                ),
+            );
+        }
+
+        sleep(ctx, BACKFILL_POLL_INTERVAL);
+    }
 }
 
 #[must_use]
@@ -1652,57 +1816,69 @@ fn render_propagate(out: &mut String, result: &Value, commit: bool) {
 
 fn render_backfill(out: &mut String, stats: &Value, elapsed: f64) {
     emit(out, "\n");
+    if let Some(op_id) = string_field(stats, "operation_id") {
+        emit(out, format!("Operation ID:              {op_id}"));
+    }
+    if let Some(status) = string_field(stats, "status") {
+        emit(out, format!("Status:                    {status}"));
+    }
     emit(
         out,
         format!(
             "Total segments scanned:    {}",
-            value_to_string(stats.get("total_segments"))
+            value_to_string(stats.get("total_scanned"))
         ),
     );
     emit(
         out,
         format!(
-            "With embeddings:           {}",
-            value_to_string(stats.get("total_eligible"))
+            "Selected for backfill:     {}",
+            value_to_string(stats.get("selected_count"))
         ),
     );
     emit(
         out,
         format!(
-            "Without embeddings:        {}",
-            value_to_string(stats.get("skipped_no_embed"))
+            "Protected (skipped):       {}",
+            value_to_string(stats.get("protected_skipped"))
         ),
     );
     emit(
         out,
         format!(
-            "Already labeled (skipped): {}",
-            value_to_string(stats.get("already_labeled"))
+            "Total planned count:       {}",
+            value_to_string(stats.get("total_count"))
         ),
     );
     emit(
         out,
         format!(
-            "Processed this run:        {}",
-            value_to_string(stats.get("processed"))
+            "Completed count:           {}",
+            value_to_string(stats.get("completed_count"))
         ),
     );
-    emit(out, format!("Elapsed:                   {elapsed:.1}s"));
-    if let Some(speakers) = stats.get("speakers_seen").and_then(Value::as_object)
-        && !speakers.is_empty()
-    {
-        emit(out, format!("\nSpeakers identified ({}):", speakers.len()));
-        let mut pairs = speakers.iter().collect::<Vec<_>>();
-        pairs.sort_by_key(|item| Reverse(item.1.as_i64()));
-        for (entity_id, count) in pairs.into_iter().take(20) {
-            emit(
-                out,
-                format!(
-                    "  {entity_id}: {} attributions",
-                    value_to_string(Some(count))
-                ),
-            );
-        }
+    emit(
+        out,
+        format!(
+            "Pending count:             {}",
+            value_to_string(stats.get("pending_count"))
+        ),
+    );
+    emit(
+        out,
+        format!(
+            "Error count:               {}",
+            value_to_string(stats.get("error_count"))
+        ),
+    );
+    if elapsed > 0.0 {
+        emit(out, format!("Elapsed:                   {elapsed:.1}s"));
+    }
+    if let Some(stage) = string_field(stats, "failure_stage") {
+        emit(out, format!("Failure stage:             {stage}"));
+    }
+    if let Some(detail) = string_field(stats, "failure_detail") {
+        emit(out, format!("Failure detail:            {detail}"));
     }
     render_backfill_errors(out, stats.get("error_segments"), 10);
 }
@@ -2110,13 +2286,14 @@ fn render_backfill_errors(out: &mut String, value: Option<&Value>, limit: usize)
     if !errors.is_empty() {
         emit(out, format!("\nErrors ({}):", errors.len()));
         for error in errors.iter().take(limit) {
+            let seg = error.get("segment").unwrap_or(error);
             emit(
                 out,
                 format!(
                     "  {}/{}/{}: {}",
-                    value_to_string(error.get("day")),
-                    value_to_string(error.get("stream")),
-                    value_to_string(error.get("segment_key")),
+                    value_to_string(seg.get("day")),
+                    value_to_string(seg.get("stream")),
+                    value_to_string(seg.get("segment_key")),
                     value_to_string(error.get("detail")),
                 ),
             );
@@ -2184,9 +2361,13 @@ fn monotonic_seconds(ctx: CommandContext<'_>) -> f64 {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::time::Duration;
 
     use super::*;
-    use crate::seam::ScriptedHttpTransport;
+    use crate::error::ClientError;
+    use crate::seam::{Clock, ExpectedHttpCall, FakeClock, ScriptedHttpTransport};
+    use crate::transport::{ApiRequest, HttpMethod, HttpResponse, TimeoutPolicy};
+    use serde_json::json;
 
     #[test]
     fn parse_stream_layout_option_accepts_omitted_named_and_direct() {
@@ -2343,5 +2524,267 @@ mod tests {
         assert!(output.stderr.contains("--version is required"));
         assert!(transport.recorded().is_empty());
         transport.assert_done();
+    }
+
+    fn string_args(args: &[&str]) -> Vec<String> {
+        args.iter().map(|arg| (*arg).to_string()).collect()
+    }
+
+    fn json_response(value: Value, policy: TimeoutPolicy) -> HttpResponse {
+        HttpResponse {
+            status: 200,
+            headers: vec![],
+            body: serde_json::to_vec(&value).expect("json response"),
+            policy,
+        }
+    }
+
+    #[test]
+    fn backfill_follow_polls_with_30s_interval_until_done() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Post,
+                    path: "/app/speakers/api/backfill".to_string(),
+                    params: vec![],
+                    json: Some(
+                        json!({"commit": true, "reattribute": false, "accumulation": false}),
+                    ),
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-follow1",
+                        "status": "active_running",
+                        "done": false,
+                        "total_count": 2,
+                        "completed_count": 0,
+                        "pending_count": 2,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/speakers/api/backfill/operations/bfop-follow1".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-follow1",
+                        "status": "active_running",
+                        "done": false,
+                        "total_count": 2,
+                        "completed_count": 0,
+                        "pending_count": 2,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/speakers/api/backfill/operations/bfop-follow1".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-follow1",
+                        "status": "active_running",
+                        "done": false,
+                        "total_count": 2,
+                        "completed_count": 1,
+                        "pending_count": 1,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/speakers/api/backfill/operations/bfop-follow1".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-follow1",
+                        "status": "done",
+                        "done": true,
+                        "total_count": 2,
+                        "completed_count": 2,
+                        "pending_count": 0,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+        ]);
+
+        let args = string_args(&["--commit"]);
+        let env = BTreeMap::new();
+        let ctx = CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260808",
+            transport: &transport,
+            clock: Some(&clock),
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        };
+
+        let output = backfill(ctx);
+        assert_eq!(output.exit, 0);
+        assert!(clock.monotonic() >= Duration::from_secs(60));
+    }
+
+    #[test]
+    fn backfill_follow_inactive_status_exits_nonzero_with_diagnostics() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Post,
+                    path: "/app/speakers/api/backfill".to_string(),
+                    params: vec![],
+                    json: Some(
+                        json!({"commit": true, "reattribute": false, "accumulation": false}),
+                    ),
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-inactive1",
+                        "status": "active_running",
+                        "done": false,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/speakers/api/backfill/operations/bfop-inactive1".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-inactive1",
+                        "status": "inactive_interrupted",
+                        "done": false,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+        ]);
+
+        let args = string_args(&["--commit", "--json"]);
+        let env = BTreeMap::new();
+        let ctx = CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260808",
+            transport: &transport,
+            clock: Some(&clock),
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        };
+
+        let output = backfill(ctx);
+        assert_ne!(output.exit, 0);
+        assert!(output.stderr.contains("backfill-status"));
+        assert!(output.stderr.contains("backfill-resume"));
+        assert!(output.stderr.contains("bfop-inactive1"));
+        let parsed_stdout: Value =
+            serde_json::from_str(&output.stdout).expect("valid json in stdout");
+        assert_eq!(parsed_stdout["status"], "inactive_interrupted");
+    }
+
+    #[test]
+    fn backfill_follow_transport_failure_produces_empty_stdout_and_nonzero_exit() {
+        let clock = FakeClock::at_unix(0);
+        let transport = ScriptedHttpTransport::new(vec![
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Post,
+                    path: "/app/speakers/api/backfill".to_string(),
+                    params: vec![],
+                    json: Some(
+                        json!({"commit": true, "reattribute": false, "accumulation": false}),
+                    ),
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Ok(json_response(
+                    json!({
+                        "operation_id": "bfop-failtrans",
+                        "status": "active_running",
+                        "done": false,
+                    }),
+                    TimeoutPolicy::Api,
+                )),
+            },
+            ExpectedHttpCall::Request {
+                expected: ApiRequest {
+                    method: HttpMethod::Get,
+                    path: "/app/speakers/api/backfill/operations/bfop-failtrans".to_string(),
+                    params: vec![],
+                    json: None,
+                    headers: vec![],
+                    policy: TimeoutPolicy::Api,
+                },
+                result: Err(ClientError::unreachable(Some(
+                    "connection refused".to_string(),
+                ))),
+            },
+        ]);
+
+        let args = string_args(&["--commit", "--json"]);
+        let env = BTreeMap::new();
+        let ctx = CommandContext {
+            args: &args,
+            env: &env,
+            stdin: "",
+            today: "20260808",
+            transport: &transport,
+            clock: Some(&clock),
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        };
+
+        let output = backfill(ctx);
+        assert_ne!(output.exit, 0);
+        assert_eq!(output.stdout.trim(), "");
     }
 }

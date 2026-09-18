@@ -1,10 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[path = "backfill.rs"]
-mod backfill;
-#[path = "backfill_operations.rs"]
-mod backfill_operations;
 #[path = "discovery_cache.rs"]
 mod discovery_cache;
 #[path = "identify_forward_phases.rs"]

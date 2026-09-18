@@ -38,6 +38,38 @@ handler = "backfill"
 params = [
   { name = "commit", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--commit"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "reattribute", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--reattribute"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "accumulation", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--accumulation"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "operation_id", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--operation-id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
+path = ["speakers", "backfill-status"]
+kind = "command"
+help = "Show status of a speaker attribution backfill operation."
+operation_id = "speakers.backfill-status"
+entry_type = "http"
+method = "GET"
+route = "/app/speakers/api/backfill/operations/{operation_id}"
+contract_operation_id = "speakers.backfill-status"
+handler = "backfill_status"
+params = [
+  { name = "operation_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["operation_id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
+path = ["speakers", "backfill-resume"]
+kind = "command"
+help = "Resume an interrupted or failed speaker attribution backfill operation."
+operation_id = "speakers.backfill-resume"
+entry_type = "http"
+method = "POST"
+route = "/app/speakers/api/backfill/operations/{operation_id}/resume"
+contract_operation_id = "speakers.backfill-resume"
+handler = "backfill_resume"
+params = [
+  { name = "operation_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["operation_id"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 

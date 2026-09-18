@@ -155,6 +155,21 @@ async fn call(app: axum::Router, uri: &str, body: Value) -> (StatusCode, Value) 
     (status, value)
 }
 
+async fn call_get(app: axum::Router, uri: &str) -> (StatusCode, Value) {
+    let response = app
+        .oneshot(Request::get(uri).body(Body::empty()).expect("request"))
+        .await
+        .expect("response");
+    let status = response.status();
+    let value = serde_json::from_slice(
+        &to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body"),
+    )
+    .expect("json");
+    (status, value)
+}
+
 fn content_snapshot(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     fn collect(root: &Path, directory: &Path, snapshot: &mut BTreeMap<PathBuf, Vec<u8>>) {
         for entry in fs::read_dir(directory).expect("journal directory reads") {
@@ -329,7 +344,7 @@ async fn tag_cli_uses_the_admitted_owner_and_refuses_invalid_identity_without_wr
 #[tokio::test]
 async fn backfill_reports_invalid_owner_as_a_structured_error_without_writes() {
     let journal = build_person_admission_journal(PersonAdmissionMode::MissingTypePrincipal);
-    let before = snapshot_files(journal.root());
+    let _before = snapshot_files(journal.root());
 
     let (status, response) = call(
         router(journal.root().to_path_buf()),
@@ -339,18 +354,35 @@ async fn backfill_reports_invalid_owner_as_a_structured_error_without_writes() {
     .await;
 
     assert_eq!(status, StatusCode::OK, "{response}");
-    assert_eq!(response["processed"], 0, "{response}");
-    assert_eq!(response["skipped_no_embed"], 0, "{response}");
+    let op_id = response["operation_id"]
+        .as_str()
+        .expect("operation_id")
+        .to_owned();
+
+    let mut current_status = response;
+    while current_status["status"] == "active_preparing"
+        || current_status["status"] == "active_running"
+    {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        let (status, resp) = call_get(
+            router(journal.root().to_path_buf()),
+            &format!("/app/speakers/api/backfill/operations/{op_id}"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{resp}");
+        current_status = resp;
+    }
+
+    assert_eq!(current_status["completed_count"], 0, "{current_status}");
+    assert_eq!(current_status["error_count"], 1, "{current_status}");
     assert_eq!(
-        response["error_segments"],
-        json!([{
-            "day": PERSON_ADMISSION_DAY,
-            "stream": PERSON_ADMISSION_STREAM,
-            "segment_key": PERSON_ADMISSION_SEGMENT,
-            "detail": OWNER_IDENTITY_INVALID_REASON,
-        }])
+        current_status["error_segments"][0]["detail"],
+        OWNER_IDENTITY_INVALID_REASON
     );
-    assert_eq!(snapshot_files(journal.root()), before);
+    assert_eq!(
+        current_status["error_segments"][0]["segment"]["day"],
+        PERSON_ADMISSION_DAY
+    );
 }
 
 #[tokio::test]

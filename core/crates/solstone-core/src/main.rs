@@ -1962,7 +1962,9 @@ fn merge_names_request(value: Value) -> Result<Value, String> {
 }
 
 fn backfill_request(value: Value) -> Result<Value, String> {
-    use solstone_core_speaker_resolve::backfill::{BackfillRunRequest, run_backfill};
+    use solstone_core_speaker_resolve::backfill_coordinator::{
+        StartBackfillRequest, backfill_status, start_backfill,
+    };
     let request_object = request_object(
         value,
         "solstone-speaker-resolve-backfill-request-v1",
@@ -1975,30 +1977,49 @@ fn backfill_request(value: Value) -> Result<Value, String> {
         ],
     )?;
     let object = &request_object;
-    let result = run_backfill(&BackfillRunRequest {
-        journal_root: PathBuf::from(required_string(object, "journal_root")?),
-        operation_id: required_string(object, "operation_id")?,
-        reattribute: required_bool(object, "reattribute")?,
-        now_ms: required_i64(object, "now_ms")?,
-    })
+    let root = PathBuf::from(required_string(object, "journal_root")?);
+    let operation_id = required_string(object, "operation_id")?;
+    let reattribute = required_bool(object, "reattribute")?;
+    let now_ms = required_i64(object, "now_ms")?;
+
+    let mut status = start_backfill(
+        &root,
+        &StartBackfillRequest {
+            operation_id: Some(operation_id.clone()),
+            commit: true,
+            reattribute,
+            accumulation: false,
+            now_ms,
+        },
+    )
     .map_err(|error| error.to_string())?;
+
+    while !status.done {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        if let Some(s) = backfill_status(&root, &operation_id).map_err(|error| error.to_string())? {
+            status = s;
+        }
+    }
+
     Ok(json!({
-        "operation_id":result.operation_id, "total_count":result.total_count,
-        "processed_count":result.processed_count, "skipped_count":result.skipped_count,
-        "error_count":result.error_count,
-        "error_segments":result.error_segments.into_iter().map(|error| json!({
-            "day":error.segment.day, "stream":error.segment.stream,
-            "segment_key":error.segment.segment_key, "detail":error.detail,
+        "operation_id": status.operation_id,
+        "total_count": status.total_count,
+        "processed_count": status.completed_count,
+        "skipped_count": status.protected_skipped,
+        "error_count": status.error_count,
+        "error_segments": status.error_segments.into_iter().map(|error| json!({
+            "day": error.segment.day,
+            "stream": error.segment.stream,
+            "segment_key": error.segment.segment_key,
+            "detail": error.detail,
         })).collect::<Vec<_>>(),
-        "pending_count":result.pending_count,
-        "done":result.done,
+        "pending_count": status.pending_count,
+        "done": status.done,
     }))
 }
 
 fn backfill_status_request(value: Value) -> Result<Value, String> {
-    use solstone_core_speaker_resolve::backfill_operations::{
-        backfill_operation_status, backfill_operations_path, load_backfill_operations,
-    };
+    use solstone_core_speaker_resolve::backfill_coordinator::backfill_status;
     let request_object = request_object(
         value,
         "solstone-speaker-resolve-backfill-status-request-v1",
@@ -2007,25 +2028,24 @@ fn backfill_status_request(value: Value) -> Result<Value, String> {
     let object = &request_object;
     let root = PathBuf::from(required_string(object, "journal_root")?);
     let operation_id = required_string(object, "operation_id")?;
-    let status = backfill_operation_status(
-        &load_backfill_operations(&backfill_operations_path(&root))
-            .map_err(|error| error.to_string())?,
-        &operation_id,
-    )
-    .map_err(|error| error.to_string())?;
+    let status = backfill_status(&root, &operation_id).map_err(|error| error.to_string())?;
     Ok(status.map_or_else(
-        || json!({"status":"not_found","operation_id":operation_id}),
+        || json!({"status": "not_found", "operation_id": operation_id}),
         |status| {
             json!({
-                "status":if status.done { "done" } else { "resumable" },
-                "operation_id":operation_id, "total_count":status.total_count,
-                "completed_count":status.completed_count, "pending_count":status.pending_count,
-                "error_count":status.error_count,
-                "error_segments":status.error_segments.into_iter().map(|error| json!({
-                    "day":error.segment.day, "stream":error.segment.stream,
-                    "segment_key":error.segment.segment_key, "detail":error.detail,
+                "status": if status.done { "done" } else { "resumable" },
+                "operation_id": operation_id,
+                "total_count": status.total_count,
+                "completed_count": status.completed_count,
+                "pending_count": status.pending_count,
+                "error_count": status.error_count,
+                "error_segments": status.error_segments.into_iter().map(|error| json!({
+                    "day": error.segment.day,
+                    "stream": error.segment.stream,
+                    "segment_key": error.segment.segment_key,
+                    "detail": error.detail,
                 })).collect::<Vec<_>>(),
-                "resumable":status.resumable, "done":status.done,
+                "done": status.done,
             })
         },
     ))

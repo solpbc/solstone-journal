@@ -7,11 +7,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::sync::Arc;
 
+use axum::Json;
 use axum::body::to_bytes;
-use axum::extract::Request;
+use axum::extract::{Extension, Path as RoutePath, Request};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::{Extension, Json};
 use chrono::Utc;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -271,94 +271,105 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
         .and_then(Value::as_bool)
         .unwrap_or(false);
     let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
-    let plan =
-        match solstone_core_speaker_resolve::backfill::plan_backfill_segments(&root.0, reattribute)
-        {
-            Ok(plan) => plan,
-            Err(error) => {
-                return err(
-                    "speaker_command_failed",
-                    "that speaker command didn't finish.",
-                    &error.to_string(),
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                );
-            }
-        };
-    let mut processed = 0usize;
-    let mut error_segments = Vec::new();
-    let mut speakers = BTreeSet::new();
-    for segment in &plan.to_process {
-        match solstone_core_speaker_resolve::backfill::resolve_backfill_segment(
-            &root.0,
-            segment,
-            Utc::now().timestamp_millis(),
-        ) {
-            Ok(outcome) => {
-                let (checkpoint_outcome, error_detail) =
-                    solstone_core_speaker_resolve::backfill::classify_backfill_outcome(&outcome);
-                match checkpoint_outcome {
-                    solstone_core_speaker_resolve::backfill_operations::BackfillCheckpointOutcome::Processed => {
-                        let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = outcome else {
-                            unreachable!("processed backfill outcome is resolved");
-                        };
-                        for label in &output.labels {
-                            if let Some(speaker) = &label.speaker {
-                                speakers.insert(speaker.clone());
-                            }
-                        }
-                        let metadata = metadata(&output);
-                        if commit {
-                            if let Err(error) = solstone_core_speaker_id::labels::write_full_labels(
-                                &segment.path,
-                                labels(&output),
-                                &metadata,
-                            ) {
-                                error_segments.push(backfill_error_segment(segment, error.to_string()));
-                                continue;
-                            }
-                            if output.source.is_some()
-                                && let Err(error) = accumulate(
-                                    &root.0,
-                                    &segment.path,
-                                    &segment.day,
-                                    segment.stream_layout,
-                                    &segment.stream,
-                                    &segment.segment_key,
-                                    &output,
-                                    Utc::now().timestamp_millis(),
-                                )
-                            {
-                                error_segments.push(backfill_error_segment(segment, error.to_string()));
-                                continue;
-                            }
-                        }
-                        processed += 1;
-                    }
-                    solstone_core_speaker_resolve::backfill_operations::BackfillCheckpointOutcome::Skipped => processed += 1,
-                    solstone_core_speaker_resolve::backfill_operations::BackfillCheckpointOutcome::Error => {
-                        error_segments.push(backfill_error_segment(
-                            segment,
-                            error_detail.expect("error checkpoint retains a detail"),
-                        ));
-                    }
-                }
-            }
-            Err(error) => error_segments.push(backfill_error_segment(segment, error.to_string())),
-        }
+    let accumulation = body
+        .get("accumulation")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let operation_id = body
+        .get("operation_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
+    let req = solstone_core_speaker_resolve::backfill_coordinator::StartBackfillRequest {
+        operation_id,
+        commit,
+        reattribute,
+        accumulation,
+        now_ms: Utc::now().timestamp_millis(),
+    };
+
+    match solstone_core_speaker_resolve::backfill_coordinator::start_backfill(&root.0, &req) {
+        Ok(status) => Json(serde_json::to_value(&status).unwrap_or_else(|_| json!({}))).into_response(),
+        Err(solstone_core_speaker_resolve::backfill_coordinator::BackfillCoordinatorError::ImmutableFlagsMismatch {
+            operation_id,
+            expected_commit,
+            expected_reattribute,
+            expected_accumulation,
+            got_commit,
+            got_reattribute,
+            got_accumulation,
+        }) => err(
+            "speaker_operation_conflict",
+            "operation flags do not match existing backfill operation.",
+            &format!(
+                "backfill operation {operation_id} flags mismatch: expected commit={expected_commit}, reattribute={expected_reattribute}, accumulation={expected_accumulation}; got commit={got_commit}, reattribute={got_reattribute}, accumulation={got_accumulation}"
+            ),
+            StatusCode::CONFLICT,
+        ),
+        Err(error) => err(
+            "speaker_command_failed",
+            "that speaker command didn't finish.",
+            &error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
     }
-    Json(json!({"total_segments":plan.total_segments,"total_eligible":plan.total_eligible,"already_labeled":plan.already_labeled,"processed":processed,"skipped_no_embed":plan.skipped_no_embed,"error_segments":error_segments,"speakers_seen":speakers})).into_response()
 }
 
-fn backfill_error_segment(
-    segment: &solstone_core_speaker_resolve::backfill::BackfillSegment,
-    detail: String,
-) -> Value {
-    json!({
-        "day": segment.day,
-        "stream": segment.stream,
-        "segment_key": segment.segment_key,
-        "detail": detail,
-    })
+pub async fn backfill_status(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    RoutePath(operation_id): RoutePath<String>,
+) -> Response {
+    match solstone_core_speaker_resolve::backfill_coordinator::backfill_status(
+        &root.0,
+        &operation_id,
+    ) {
+        Ok(Some(status)) => {
+            Json(serde_json::to_value(&status).unwrap_or_else(|_| json!({}))).into_response()
+        }
+        Ok(None) => err(
+            "speaker_operation_not_found",
+            "that speaker operation wasn't found.",
+            &format!("backfill operation {operation_id} not found"),
+            StatusCode::NOT_FOUND,
+        ),
+        Err(error) => err(
+            "speaker_command_failed",
+            "that speaker command didn't finish.",
+            &error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
+pub async fn backfill_resume(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    RoutePath(operation_id): RoutePath<String>,
+) -> Response {
+    match solstone_core_speaker_resolve::backfill_coordinator::resume_backfill(
+        &root.0,
+        &operation_id,
+        Utc::now().timestamp_millis(),
+    ) {
+        Ok(status) => {
+            Json(serde_json::to_value(&status).unwrap_or_else(|_| json!({}))).into_response()
+        }
+        Err(
+            solstone_core_speaker_resolve::backfill_coordinator::BackfillCoordinatorError::NotFound(
+                id,
+            ),
+        ) => err(
+            "speaker_operation_not_found",
+            "that speaker operation wasn't found.",
+            &format!("backfill operation {id} not found"),
+            StatusCode::NOT_FOUND,
+        ),
+        Err(error) => err(
+            "speaker_command_failed",
+            "that speaker command didn't finish.",
+            &error.to_string(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
 }
 
 pub async fn backfill_last_seen(
