@@ -40,82 +40,88 @@ pub(crate) async fn serve_file(
             );
         }
     };
-    if !path.is_file() {
-        return error(
-            "file_not_found",
-            "that file isn't available.",
-            "File not found",
-            StatusCode::NOT_FOUND,
-        );
-    }
-    let Some(mime) = mime_type(&path) else {
-        return error(
-            "invalid_request_value",
-            "one of those values couldn't be used.",
-            "Unregistered media extension",
-            StatusCode::BAD_REQUEST,
-        );
-    };
-    let total = match path.metadata().map(|metadata| metadata.len()) {
-        Ok(total) => total,
-        Err(_) => {
-            return error(
-                "file_not_found",
-                "that file isn't available.",
-                "File not found",
-                StatusCode::NOT_FOUND,
-            );
-        }
-    };
-    if total == 0 {
-        return media(StatusCode::OK, mime, &path, Vec::new(), None);
-    }
-    let Ok(total) = usize::try_from(total) else {
-        return error(
-            "file_not_found",
-            "that file isn't available.",
-            "File not found",
-            StatusCode::NOT_FOUND,
-        );
-    };
-    match headers
-        .get(header::RANGE)
-        .and_then(|v| v.to_str().ok())
-        .map(|v| parse_range(v, total))
-    {
-        Some(ParsedRange::Valid { start, end }) => {
-            match read_bytes(&path, start, end - start + 1) {
-                Ok(bytes) => media(
-                    StatusCode::PARTIAL_CONTENT,
-                    mime,
-                    &path,
-                    bytes,
-                    Some(format!("bytes {start}-{end}/{total}")),
-                ),
-                Err(_) => error(
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsServeFile,
+        move || {
+            if !path.is_file() {
+                return error(
                     "file_not_found",
                     "that file isn't available.",
                     "File not found",
                     StatusCode::NOT_FOUND,
-                ),
+                );
             }
-        }
-        Some(ParsedRange::Unsatisfiable) => error(
-            "http_error",
-            "that request didn't finish.",
-            "",
-            StatusCode::RANGE_NOT_SATISFIABLE,
-        ),
-        _ => match read_bytes(&path, 0, total) {
-            Ok(bytes) => media(StatusCode::OK, mime, &path, bytes, None),
-            Err(_) => error(
-                "file_not_found",
-                "that file isn't available.",
-                "File not found",
-                StatusCode::NOT_FOUND,
-            ),
+            let Some(mime) = mime_type(&path) else {
+                return error(
+                    "invalid_request_value",
+                    "one of those values couldn't be used.",
+                    "Unregistered media extension",
+                    StatusCode::BAD_REQUEST,
+                );
+            };
+            let total = match path.metadata().map(|metadata| metadata.len()) {
+                Ok(total) => total,
+                Err(_) => {
+                    return error(
+                        "file_not_found",
+                        "that file isn't available.",
+                        "File not found",
+                        StatusCode::NOT_FOUND,
+                    );
+                }
+            };
+            if total == 0 {
+                return media(StatusCode::OK, mime, &path, Vec::new(), None);
+            }
+            let Ok(total) = usize::try_from(total) else {
+                return error(
+                    "file_not_found",
+                    "that file isn't available.",
+                    "File not found",
+                    StatusCode::NOT_FOUND,
+                );
+            };
+            match headers
+                .get(header::RANGE)
+                .and_then(|v| v.to_str().ok())
+                .map(|v| parse_range(v, total))
+            {
+                Some(ParsedRange::Valid { start, end }) => {
+                    match read_bytes(&path, start, end - start + 1) {
+                        Ok(bytes) => media(
+                            StatusCode::PARTIAL_CONTENT,
+                            mime,
+                            &path,
+                            bytes,
+                            Some(format!("bytes {start}-{end}/{total}")),
+                        ),
+                        Err(_) => error(
+                            "file_not_found",
+                            "that file isn't available.",
+                            "File not found",
+                            StatusCode::NOT_FOUND,
+                        ),
+                    }
+                }
+                Some(ParsedRange::Unsatisfiable) => error(
+                    "http_error",
+                    "that request didn't finish.",
+                    "",
+                    StatusCode::RANGE_NOT_SATISFIABLE,
+                ),
+                _ => match read_bytes(&path, 0, total) {
+                    Ok(bytes) => media(StatusCode::OK, mime, &path, bytes, None),
+                    Err(_) => error(
+                        "file_not_found",
+                        "that file isn't available.",
+                        "File not found",
+                        StatusCode::NOT_FOUND,
+                    ),
+                },
+            }
         },
-    }
+    )
+    .await
 }
 
 fn read_bytes(path: &Path, start: usize, length: usize) -> std::io::Result<Vec<u8>> {

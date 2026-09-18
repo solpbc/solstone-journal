@@ -13,6 +13,7 @@ use axum::{Extension, Json};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
@@ -37,26 +38,34 @@ pub(crate) struct Segment {
 type DayCounts = BTreeMap<String, usize>;
 
 pub async fn index(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    match speaker_segment_counts(&root.0, None) {
-        Ok(counts) => Json(date_nav_index(&counts)).into_response(),
-        Err(error) => catalog_failure(error),
-    }
+    spawn_blocking_response(
+        OwnerReadRole::SpeakersIndex,
+        move || match speaker_segment_counts(&root.0, None) {
+            Ok(counts) => Json(date_nav_index(&counts)).into_response(),
+            Err(error) => catalog_failure(error),
+        },
+    )
+    .await
 }
 
 pub async fn grid(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    match speaker_grid_counts(&root.0) {
-        Ok((days, activity)) => {
-            let watermark = days.keys().next_back().cloned();
-            Json(day_grid_payload(
-                &days,
-                watermark.as_deref(),
-                coverage_from_counts(&activity),
-                &activity,
-            ))
-            .into_response()
-        }
-        Err(error) => catalog_failure(error),
-    }
+    spawn_blocking_response(
+        OwnerReadRole::SpeakersGrid,
+        move || match speaker_grid_counts(&root.0) {
+            Ok((days, activity)) => {
+                let watermark = days.keys().next_back().cloned();
+                Json(day_grid_payload(
+                    &days,
+                    watermark.as_deref(),
+                    coverage_from_counts(&activity),
+                    &activity,
+                ))
+                .into_response()
+            }
+            Err(error) => catalog_failure(error),
+        },
+    )
+    .await
 }
 
 pub async fn stats(
@@ -70,10 +79,14 @@ pub async fn stats(
             "Invalid month format, expected YYYYMM",
         );
     }
-    match speaker_segment_counts(&root.0, Some(&month)) {
-        Ok(counts) => Json(counts).into_response(),
-        Err(error) => catalog_failure(error),
-    }
+    spawn_blocking_response(
+        OwnerReadRole::SpeakersMonthStats,
+        move || match speaker_segment_counts(&root.0, Some(&month)) {
+            Ok(counts) => Json(counts).into_response(),
+            Err(error) => catalog_failure(error),
+        },
+    )
+    .await
 }
 
 pub async fn segments(
@@ -123,32 +136,37 @@ pub async fn segments(
         None => None,
     };
 
-    let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(&root.0));
-    let mut rows = match scan_segment_embeddings(&root.0, &day) {
-        Ok(rows) => rows,
-        Err(error) => return catalog_failure(error),
-    };
-    rows.sort_by(|left, right| left.key.cmp(&right.key));
-    if let Some(speaker) = speaker.as_deref() {
-        rows.retain(|segment| segment_has_speaker(&segment.path, speaker, &admitted_speaker_ids));
-    }
-    let total = rows.len();
-    let principal_id = journal_principal_id(&root.0);
-    let page = rows
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .map(|mut segment| {
-            add_attribution_counts(
-                &mut segment.payload,
-                load_speaker_labels(&segment.path).as_ref(),
-                principal_id.as_deref(),
-                &admitted_speaker_ids,
-            );
-            segment.payload
-        })
-        .collect::<Vec<_>>();
-    Json(json!({"segments": page, "total": total})).into_response()
+    spawn_blocking_response(OwnerReadRole::SpeakersSegments, move || {
+        let admitted_speaker_ids = admitted_speaker_ids(&load_all_journal_entities(&root.0));
+        let mut rows = match scan_segment_embeddings(&root.0, &day) {
+            Ok(rows) => rows,
+            Err(error) => return catalog_failure(error),
+        };
+        rows.sort_by(|left, right| left.key.cmp(&right.key));
+        if let Some(speaker) = speaker.as_deref() {
+            rows.retain(|segment| {
+                segment_has_speaker(&segment.path, speaker, &admitted_speaker_ids)
+            });
+        }
+        let total = rows.len();
+        let principal_id = journal_principal_id(&root.0);
+        let page = rows
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|mut segment| {
+                add_attribution_counts(
+                    &mut segment.payload,
+                    load_speaker_labels(&segment.path).as_ref(),
+                    principal_id.as_deref(),
+                    &admitted_speaker_ids,
+                );
+                segment.payload
+            })
+            .collect::<Vec<_>>();
+        Json(json!({"segments": page, "total": total})).into_response()
+    })
+    .await
 }
 
 fn refusal(reason_code: &str, message: &str, detail: &str) -> Response {

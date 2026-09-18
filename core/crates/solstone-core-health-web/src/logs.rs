@@ -27,39 +27,46 @@ pub async fn get(
         )
         .into_response();
     }
-    let root = match root.canonicalize() {
-        Ok(root) => root,
-        Err(_) => root,
-    };
-    let file = root.join(path);
-    let Ok(file) = file.canonicalize() else {
-        return error_envelope(
-            "file_not_found",
-            "that file isn't available.",
-            "Log file not found",
-            StatusCode::NOT_FOUND,
-        )
-        .into_response();
-    };
-    if !file.starts_with(&root) {
-        return error_envelope(
-            "invalid_path",
-            "that path couldn't be used.",
-            "Invalid path",
-            StatusCode::BAD_REQUEST,
-        )
-        .into_response();
-    }
-    match std::fs::read_to_string(file) {
-        Ok(content) => Json(json!({"content":content,"path":path})).into_response(),
-        Err(_) => error_envelope(
-            "file_read_failed",
-            "that file couldn't be read.",
-            "Failed to read log file",
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response(),
-    }
+    let path = path.to_owned();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::HealthLog,
+        move || {
+            let root = match root.canonicalize() {
+                Ok(root) => root,
+                Err(_) => root,
+            };
+            let file = root.join(&path);
+            let Ok(file) = file.canonicalize() else {
+                return error_envelope(
+                    "file_not_found",
+                    "that file isn't available.",
+                    "Log file not found",
+                    StatusCode::NOT_FOUND,
+                )
+                .into_response();
+            };
+            if !file.starts_with(&root) {
+                return error_envelope(
+                    "invalid_path",
+                    "that path couldn't be used.",
+                    "Invalid path",
+                    StatusCode::BAD_REQUEST,
+                )
+                .into_response();
+            }
+            match std::fs::read_to_string(file) {
+                Ok(content) => Json(json!({"content":content,"path":path})).into_response(),
+                Err(_) => error_envelope(
+                    "file_read_failed",
+                    "that file couldn't be read.",
+                    "Failed to read log file",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+                .into_response(),
+            }
+        },
+    )
+    .await
 }
 fn valid(path: &str) -> bool {
     let mut parts = path.split('/');

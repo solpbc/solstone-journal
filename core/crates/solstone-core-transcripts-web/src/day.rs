@@ -22,36 +22,66 @@ pub(crate) async fn ranges(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    if !valid_day(&day) {
+        return invalid_day();
+    }
     let now = state.clock.now();
-    let prepared = match checked_prepare(&state.journal_root, &day, now) {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen")})).into_response()
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsRanges,
+        move || {
+            let prepared = match checked_prepare(&journal_root, &day, now) {
+                Ok(value) => value,
+                Err(response) => return response,
+            };
+            Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen")})).into_response()
+        },
+    )
+    .await
 }
 
 pub(crate) async fn segments(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    if !valid_day(&day) {
+        return invalid_day();
+    }
     let now = state.clock.now();
-    let prepared = match checked_prepare(&state.journal_root, &day, now) {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    Json(json!({"segments": prepared.segments})).into_response()
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsSegments,
+        move || {
+            let prepared = match checked_prepare(&journal_root, &day, now) {
+                Ok(value) => value,
+                Err(response) => return response,
+            };
+            Json(json!({"segments": prepared.segments})).into_response()
+        },
+    )
+    .await
 }
 
 pub(crate) async fn day(
     State(state): State<Arc<AppState>>,
     RoutePath(day): RoutePath<String>,
 ) -> Response {
+    if !valid_day(&day) {
+        return invalid_day();
+    }
     let now = state.clock.now();
-    let prepared = match checked_prepare(&state.journal_root, &day, now) {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
-    Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen"), "segments": prepared.segments})).into_response()
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsDay,
+        move || {
+            let prepared = match checked_prepare(&journal_root, &day, now) {
+                Ok(value) => value,
+                Err(response) => return response,
+            };
+            Json(json!({"audio": attach_visible_streams_to_ranges(&prepared.audio, &prepared.segments, "audio"), "screen": attach_visible_streams_to_ranges(&prepared.screen, &prepared.segments, "screen"), "segments": prepared.segments})).into_response()
+        },
+    )
+    .await
 }
 
 pub(crate) struct PreparedDay {

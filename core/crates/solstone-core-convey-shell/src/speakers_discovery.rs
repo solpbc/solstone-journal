@@ -15,6 +15,7 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
@@ -92,23 +93,26 @@ type Evidence = Vec<(String, Vec<String>)>;
 type EvidenceGaps = Vec<(String, String)>;
 
 pub async fn cache(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    let Some(cache) = load_discovery_cache(&root.0) else {
-        return Json(json!({"status": "cache_unavailable", "clusters": []})).into_response();
-    };
-    let clusters = cache
-        .get("clusters")
-        .and_then(Value::as_object)
-        .expect("discovery cache was structurally validated");
-    match serialize_clusters(&root.0, clusters) {
-        Ok(clusters) => Json(json!({"status": "ok", "clusters": clusters})).into_response(),
-        Err(detail) => error_envelope(
-            "speaker_command_failed",
-            "that speaker command didn't finish.",
-            detail,
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response(),
-    }
+    spawn_blocking_response(OwnerReadRole::SpeakersDiscoveryCache, move || {
+        let Some(cache) = load_discovery_cache(&root.0) else {
+            return Json(json!({"status": "cache_unavailable", "clusters": []})).into_response();
+        };
+        let clusters = cache
+            .get("clusters")
+            .and_then(Value::as_object)
+            .expect("discovery cache was structurally validated");
+        match serialize_clusters(&root.0, clusters) {
+            Ok(clusters) => Json(json!({"status": "ok", "clusters": clusters})).into_response(),
+            Err(detail) => error_envelope(
+                "speaker_command_failed",
+                "that speaker command didn't finish.",
+                detail,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response(),
+        }
+    })
+    .await
 }
 
 pub async fn presence(
@@ -129,17 +133,21 @@ pub async fn presence(
     let Some(cluster_id) = cluster_id else {
         return cluster_not_found(&raw_cluster_id);
     };
-    match cluster_presence(&root.0, cluster_id) {
-        Ok(Some(payload)) => Json(payload).into_response(),
-        Ok(None) => cluster_not_found(&cluster_id.to_string()),
-        Err(detail) => error_envelope(
-            "speaker_command_failed",
-            "that speaker command didn't finish.",
-            detail,
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response(),
-    }
+    spawn_blocking_response(
+        OwnerReadRole::SpeakersDiscoveryPresence,
+        move || match cluster_presence(&root.0, cluster_id) {
+            Ok(Some(payload)) => Json(payload).into_response(),
+            Ok(None) => cluster_not_found(&cluster_id.to_string()),
+            Err(detail) => error_envelope(
+                "speaker_command_failed",
+                "that speaker command didn't finish.",
+                detail,
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response(),
+        },
+    )
+    .await
 }
 
 pub async fn resolve_statement(
@@ -214,16 +222,22 @@ pub async fn resolve_statement(
     else {
         unreachable!("missing required query values returned above");
     };
-    Json(resolve_statement_cluster(
-        &root.0,
-        &day,
-        &stream,
-        &segment_key,
-        &source,
-        sentence_id,
-        layout,
-    ))
-    .into_response()
+    spawn_blocking_response(
+        OwnerReadRole::SpeakersDiscoveryResolveStatement,
+        move || {
+            Json(resolve_statement_cluster(
+                &root.0,
+                &day,
+                &stream,
+                &segment_key,
+                &source,
+                sentence_id,
+                layout,
+            ))
+            .into_response()
+        },
+    )
+    .await
 }
 
 fn load_discovery_cache(root: &Path) -> Option<Value> {

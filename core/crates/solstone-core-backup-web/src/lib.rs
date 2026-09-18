@@ -283,11 +283,19 @@ fn offload_response(deps: &BackupWebDeps) -> axum::response::Response {
 }
 
 async fn get_status(deps: BackupWebDeps) -> axum::response::Response {
-    status_response(&deps)
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::BackupStatus,
+        move || status_response(&deps),
+    )
+    .await
 }
 
 async fn get_offload(deps: BackupWebDeps) -> axum::response::Response {
-    offload_response(&deps)
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::BackupOffloadStatus,
+        move || offload_response(&deps),
+    )
+    .await
 }
 
 async fn generate_keys(deps: BackupWebDeps) -> axum::response::Response {

@@ -41,50 +41,57 @@ pub(crate) async fn api_read(
             StatusCode::NOT_FOUND,
         );
     }
-    let sources = Sources {
-        transcripts: query.transcripts.as_deref() == Some("1"),
-        percepts: query.percepts.as_deref() == Some("1"),
-        talents: if query.agents.as_deref() == Some("1") {
-            TalentSource::All
-        } else {
-            TalentSource::Disabled
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsRead,
+        move || {
+            let sources = Sources {
+                transcripts: query.transcripts.as_deref() == Some("1"),
+                percepts: query.percepts.as_deref() == Some("1"),
+                talents: if query.agents.as_deref() == Some("1") {
+                    TalentSource::All
+                } else {
+                    TalentSource::Disabled
+                },
+            };
+            let markdown =
+                if let (Some(start), Some(end)) = (query.start.as_deref(), query.end.as_deref()) {
+                    cluster_range(&journal_root, &day, start, end, &sources).map_err(error_response)
+                } else if let Some(segments) = query.segments.as_deref() {
+                    let span = segments
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty())
+                        .collect::<Vec<_>>();
+                    match cluster_span(
+                        &journal_root,
+                        &day,
+                        &span,
+                        &sources,
+                        query.stream.as_deref(),
+                    ) {
+                        Ok((markdown, _)) => Ok(markdown),
+                        Err(detail) => Err(invalid(&detail)),
+                    }
+                } else if let Some(segment) = query.segment.as_deref() {
+                    Ok(cluster_period(
+                        &journal_root,
+                        &day,
+                        segment,
+                        &sources,
+                        query.stream.as_deref(),
+                    )
+                    .0)
+                } else {
+                    Ok(cluster(&journal_root, &day, &sources).0)
+                };
+            match markdown {
+                Ok(markdown) => Json(json!({"markdown":markdown})).into_response(),
+                Err(response) => response,
+            }
         },
-    };
-    let markdown = if let (Some(start), Some(end)) = (query.start.as_deref(), query.end.as_deref())
-    {
-        cluster_range(&state.journal_root, &day, start, end, &sources).map_err(error_response)
-    } else if let Some(segments) = query.segments.as_deref() {
-        let span = segments
-            .split(',')
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .collect::<Vec<_>>();
-        match cluster_span(
-            &state.journal_root,
-            &day,
-            &span,
-            &sources,
-            query.stream.as_deref(),
-        ) {
-            Ok((markdown, _)) => Ok(markdown),
-            Err(detail) => Err(invalid(&detail)),
-        }
-    } else if let Some(segment) = query.segment.as_deref() {
-        Ok(cluster_period(
-            &state.journal_root,
-            &day,
-            segment,
-            &sources,
-            query.stream.as_deref(),
-        )
-        .0)
-    } else {
-        Ok(cluster(&state.journal_root, &day, &sources).0)
-    };
-    match markdown {
-        Ok(markdown) => Json(json!({"markdown":markdown})).into_response(),
-        Err(response) => response,
-    }
+    )
+    .await
 }
 
 fn invalid(detail: &str) -> Response {

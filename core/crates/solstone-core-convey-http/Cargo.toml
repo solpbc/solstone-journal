@@ -13,6 +13,10 @@ workspace = true
 name = "convey_http_loopback"
 path = "tests/convey_http_loopback.rs"
 
+[features]
+default = []
+test-hooks = []
+
 [dependencies]
 axum.workspace = true
 hyper.workspace = true

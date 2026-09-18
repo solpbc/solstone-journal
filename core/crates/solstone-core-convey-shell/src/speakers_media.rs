@@ -27,6 +27,8 @@ pub struct PeopleSearchQuery {
     q: Option<String>,
 }
 
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
+
 pub async fn people_search(
     Extension(root): Extension<Arc<JournalRoot>>,
     Query(query): Query<PeopleSearchQuery>,
@@ -35,38 +37,41 @@ pub async fn people_search(
     if query.is_empty() {
         return Json(json!({"query": "", "people": []})).into_response();
     }
-    // The frozen fixture is ASCII; lowercase is the intentionally narrow stand-in
-    // for Python's Unicode-aware casefold on this wave's read-only surface.
-    let folded_query = query.to_lowercase();
-    let principal_id = journal_principal_id(&root.0);
-    let mut people = load_all_journal_entities(&root.0)
-        .into_iter()
-        .filter_map(|(directory_id, entity)| {
-            let entity_id = entity.get("id").and_then(Value::as_str)?.to_owned();
-            let name = entity.get("name").and_then(Value::as_str)?.to_owned();
-            is_speaker_attach_candidate(&entity, &entity_id, principal_id.as_deref()).then_some((directory_id, entity_id, name, entity))
-        })
-        .filter(|(_, _, _, entity)| person_search_strings(entity).iter().any(|value| value.to_lowercase().contains(&folded_query)))
-        .map(|(_, entity_id, name, _)| {
-            // Read-only presence badge. Merge bookkeeping resolves through
-            // entity_memory_path; this listing does not write.
-            json!({
-                "entity_id": entity_id,
-                "name": name,
-                "has_voice": root.0.join("entities").join(&entity_id).join("voiceprints.npz").is_file(),
+    spawn_blocking_response(OwnerReadRole::SpeakersPeopleSearch, move || {
+        // The frozen fixture is ASCII; lowercase is the intentionally narrow stand-in
+        // for Python's Unicode-aware casefold on this wave's read-only surface.
+        let folded_query = query.to_lowercase();
+        let principal_id = journal_principal_id(&root.0);
+        let mut people = load_all_journal_entities(&root.0)
+            .into_iter()
+            .filter_map(|(directory_id, entity)| {
+                let entity_id = entity.get("id").and_then(Value::as_str)?.to_owned();
+                let name = entity.get("name").and_then(Value::as_str)?.to_owned();
+                is_speaker_attach_candidate(&entity, &entity_id, principal_id.as_deref()).then_some((directory_id, entity_id, name, entity))
             })
-        })
-        .collect::<Vec<_>>();
-    people.sort_by(|left, right| {
-        left["name"]
-            .as_str()
-            .unwrap_or_default()
-            .to_lowercase()
-            .cmp(&right["name"].as_str().unwrap_or_default().to_lowercase())
-            .then_with(|| left["entity_id"].as_str().cmp(&right["entity_id"].as_str()))
-    });
-    people.truncate(PEOPLE_SEARCH_LIMIT);
-    Json(json!({"query": query, "people": people})).into_response()
+            .filter(|(_, _, _, entity)| person_search_strings(entity).iter().any(|value| value.to_lowercase().contains(&folded_query)))
+            .map(|(_, entity_id, name, _)| {
+                // Read-only presence badge. Merge bookkeeping resolves through
+                // entity_memory_path; this listing does not write.
+                json!({
+                    "entity_id": entity_id,
+                    "name": name,
+                    "has_voice": root.0.join("entities").join(&entity_id).join("voiceprints.npz").is_file(),
+                })
+            })
+            .collect::<Vec<_>>();
+        people.sort_by(|left, right| {
+            left["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_lowercase()
+                .cmp(&right["name"].as_str().unwrap_or_default().to_lowercase())
+                .then_with(|| left["entity_id"].as_str().cmp(&right["entity_id"].as_str()))
+        });
+        people.truncate(PEOPLE_SEARCH_LIMIT);
+        Json(json!({"query": query, "people": people})).into_response()
+    })
+    .await
 }
 
 pub async fn serve_audio(
@@ -96,29 +101,8 @@ pub async fn serve_audio(
             .into_response();
         }
     };
-    if !path.is_file() {
-        return media_error(
-            "file_not_found",
-            "that file isn't available.",
-            "File not found",
-            StatusCode::NOT_FOUND,
-        )
-        .into_response();
-    }
-    let Some(mimetype) = mime_type(&path) else {
-        // Declared frozen-oracle deviation: Python lets this unregistered,
-        // existing file reach a global 500. Refuse cleanly instead of panicking.
-        return media_error(
-            "invalid_request_value",
-            "one of those values couldn't be used.",
-            "Unregistered media extension",
-            StatusCode::BAD_REQUEST,
-        )
-        .into_response();
-    };
-    let bytes = match fs::read(&path) {
-        Ok(bytes) => bytes,
-        Err(_) => {
+    spawn_blocking_response(OwnerReadRole::SpeakersServeAudio, move || {
+        if !path.is_file() {
             return media_error(
                 "file_not_found",
                 "that file isn't available.",
@@ -127,36 +111,60 @@ pub async fn serve_audio(
             )
             .into_response();
         }
-    };
-    if bytes.is_empty() {
-        return media_response(StatusCode::OK, mimetype, &path, Vec::new(), None);
-    }
-    match headers
-        .get(header::RANGE)
-        .and_then(|value| value.to_str().ok())
-        .map(|value| parse_range(value, bytes.len()))
-    {
-        Some(ParsedRange::Valid { start, end }) => {
-            let total = bytes.len();
-            media_response(
-                StatusCode::PARTIAL_CONTENT,
-                mimetype,
-                &path,
-                bytes[start..=end].to_vec(),
-                Some(format!("bytes {start}-{end}/{total}")),
+        let Some(mimetype) = mime_type(&path) else {
+            // Declared frozen-oracle deviation: Python lets this unregistered,
+            // existing file reach a global 500. Refuse cleanly instead of panicking.
+            return media_error(
+                "invalid_request_value",
+                "one of those values couldn't be used.",
+                "Unregistered media extension",
+                StatusCode::BAD_REQUEST,
             )
+            .into_response();
+        };
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return media_error(
+                    "file_not_found",
+                    "that file isn't available.",
+                    "File not found",
+                    StatusCode::NOT_FOUND,
+                )
+                .into_response();
+            }
+        };
+        if bytes.is_empty() {
+            return media_response(StatusCode::OK, mimetype, &path, Vec::new(), None);
         }
-        Some(ParsedRange::Unsatisfiable) => media_error(
-            "http_error",
-            "that request didn't finish.",
-            "",
-            StatusCode::RANGE_NOT_SATISFIABLE,
-        )
-        .into_response(),
-        Some(ParsedRange::Ignore) | None => {
-            media_response(StatusCode::OK, mimetype, &path, bytes, None)
+        match headers
+            .get(header::RANGE)
+            .and_then(|value| value.to_str().ok())
+            .map(|value| parse_range(value, bytes.len()))
+        {
+            Some(ParsedRange::Valid { start, end }) => {
+                let total = bytes.len();
+                media_response(
+                    StatusCode::PARTIAL_CONTENT,
+                    mimetype,
+                    &path,
+                    bytes[start..=end].to_vec(),
+                    Some(format!("bytes {start}-{end}/{total}")),
+                )
+            }
+            Some(ParsedRange::Unsatisfiable) => media_error(
+                "http_error",
+                "that request didn't finish.",
+                "",
+                StatusCode::RANGE_NOT_SATISFIABLE,
+            )
+            .into_response(),
+            Some(ParsedRange::Ignore) | None => {
+                media_response(StatusCode::OK, mimetype, &path, bytes, None)
+            }
         }
-    }
+    })
+    .await
 }
 
 fn is_speaker_attach_candidate(

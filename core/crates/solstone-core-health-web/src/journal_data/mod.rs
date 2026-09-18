@@ -15,6 +15,7 @@ use axum::{
 use chrono::Local;
 use serde::Deserialize;
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 
 mod pipeline;
 mod report;
@@ -57,14 +58,17 @@ pub(crate) fn api_router(journal_root: PathBuf) -> Router {
 
 async fn summary(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
     let now = Local::now();
-    let result = query
-        .day
-        .as_deref()
-        .map(resolve_day)
-        .transpose()
-        .map(|day| day.unwrap_or_else(|| now.date_naive()))
-        .and_then(|day| build_health_report(&root, (day, day), now));
-    report_response(result)
+    let day_res = query.day.as_deref().map(resolve_day).transpose();
+    let day_opt = match day_res {
+        Ok(day) => day,
+        Err(err) => return error_response(err),
+    };
+    spawn_blocking_response(OwnerReadRole::HealthSummary, move || {
+        let day = day_opt.unwrap_or_else(|| now.date_naive());
+        let result = build_health_report(&root, (day, day), now);
+        report_response(result)
+    })
+    .await
 }
 
 async fn full(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
@@ -73,24 +77,39 @@ async fn full(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
 
 async fn for_range(root: PathBuf, Query(query): Query<RangeQuery>) -> Response {
     let now = Local::now();
-    let result = resolve_range(query.day_from.as_deref(), query.day_to.as_deref(), now)
-        .and_then(|range| build_health_report(&root, range, now));
-    report_response(result)
+    let range = match resolve_range(query.day_from.as_deref(), query.day_to.as_deref(), now) {
+        Ok(range) => range,
+        Err(err) => return error_response(err),
+    };
+    spawn_blocking_response(OwnerReadRole::HealthRange, move || {
+        let result = build_health_report(&root, range, now);
+        report_response(result)
+    })
+    .await
 }
 
 async fn pipeline_route(root: PathBuf, Query(query): Query<DayQuery>) -> Response {
     let now = Local::now();
-    let result = match query.day.as_deref() {
-        None | Some("") => Err(HealthError::MissingRequiredField(
-            "day is required".to_owned(),
-        )),
-        Some(day) => pipeline::resolve_pipeline_day(day)
-            .and_then(|day| pipeline::summarize_pipeline_day(&root, day, now)),
+    let day_str = match query.day.as_deref() {
+        None | Some("") => {
+            return error_response(HealthError::MissingRequiredField(
+                "day is required".to_owned(),
+            ));
+        }
+        Some(day) => day,
     };
-    match result {
-        Ok(report) => Json(report).into_response(),
-        Err(error) => error_response(error),
-    }
+    let day = match pipeline::resolve_pipeline_day(day_str) {
+        Ok(day) => day,
+        Err(err) => return error_response(err),
+    };
+    spawn_blocking_response(OwnerReadRole::HealthPipeline, move || {
+        let result = pipeline::summarize_pipeline_day(&root, day, now);
+        match result {
+            Ok(report) => Json(report).into_response(),
+            Err(error) => error_response(error),
+        }
+    })
+    .await
 }
 
 fn report_response(result: Result<report::HealthReport, HealthError>) -> Response {

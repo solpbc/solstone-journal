@@ -46,10 +46,15 @@ pub(crate) async fn segment_content(
     RoutePath((day, stream, key)): RoutePath<(String, String, String)>,
 ) -> Response {
     let now = state.clock.now();
-    match prepare_segment(&state.journal_root, &day, &stream, &key, now) {
-        Ok(value) => Json(value).into_response(),
-        Err(response) => response,
-    }
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsSegment,
+        move || match prepare_segment(&journal_root, &day, &stream, &key, now) {
+            Ok(value) => Json(value).into_response(),
+            Err(response) => response,
+        },
+    )
+    .await
 }
 
 #[allow(clippy::result_large_err)]

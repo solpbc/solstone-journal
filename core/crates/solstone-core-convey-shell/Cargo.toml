@@ -30,6 +30,12 @@ required-features = ["test-hooks"]
 name = "convey_speaker_contracts"
 path = "tests/convey_speaker_contracts.rs"
 
+# Cargo auto-discovery is disabled; required-features because the expensive-work hook is not in the default graph.
+[[test]]
+name = "owner_read_isolation"
+path = "tests/owner_read_isolation.rs"
+required-features = ["test-hooks"]
+
 # Cargo auto-discovery is disabled for this package, so this route-contract target is explicit.
 [[test]]
 name = "thinking_sol_reads"
@@ -78,7 +84,10 @@ workspace = true
 
 [features]
 default = ["host"]
-test-hooks = ["solstone-core-speaker-resolve/test-hooks"]
+test-hooks = [
+    "solstone-core-speaker-resolve/test-hooks",
+    "solstone-core-convey-http/test-hooks",
+]
 host = [
     "dep:percent-encoding",
     "dep:solstone-core-callosum",

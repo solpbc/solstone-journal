@@ -7,9 +7,10 @@ use axum::{
     Extension, Json, Router,
     body::Body,
     http::{StatusCode, header},
-    response::Response,
+    response::{IntoResponse, Response},
     routing::{get, post},
 };
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 
 mod assets;
 mod clock;
@@ -44,14 +45,22 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
         .with_state(journal_root)
 }
 
-async fn pulse(journal_root: PathBuf, clock: Clock) -> Json<serde_json::Value> {
-    let context = solstone_core_home::HomeContext::new(journal_root, clock.now());
-    Json(solstone_core_home::pulse::pulse_payload(&context))
+async fn pulse(journal_root: PathBuf, clock: Clock) -> Response {
+    let now = clock.now();
+    spawn_blocking_response(OwnerReadRole::HomePulse, move || {
+        let context = solstone_core_home::HomeContext::new(journal_root, now);
+        Json(solstone_core_home::pulse::pulse_payload(&context)).into_response()
+    })
+    .await
 }
 
-async fn briefing(journal_root: PathBuf, clock: Clock) -> Json<serde_json::Value> {
-    let context = solstone_core_home::HomeContext::new(journal_root, clock.now());
-    Json(solstone_core_home::pulse::briefing_payload(&context))
+async fn briefing(journal_root: PathBuf, clock: Clock) -> Response {
+    let now = clock.now();
+    spawn_blocking_response(OwnerReadRole::HomeBriefing, move || {
+        let context = solstone_core_home::HomeContext::new(journal_root, now);
+        Json(solstone_core_home::pulse::briefing_payload(&context)).into_response()
+    })
+    .await
 }
 
 async fn shell_redirect() -> Response {

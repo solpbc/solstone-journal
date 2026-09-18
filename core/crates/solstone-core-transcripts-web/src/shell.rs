@@ -16,22 +16,29 @@ use crate::{AppState, workspace_response};
 
 pub(crate) async fn root(State(state): State<Arc<AppState>>) -> Response {
     let now = state.clock.now();
-    let target = match redirect_target_from_journal(&state.journal_root, now) {
-        Ok(target) => target,
-        Err(error) => return error.response(),
-    };
-    let location = format!("/app/transcripts/{target}");
-    // Flask's redirect body is part of the frozen Convey corpus contract.
-    let body = format!(
-        "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"{location}\">{location}</a>. If not, click the link.\n"
-    );
-    Response::builder()
-        .status(StatusCode::FOUND)
-        .header(header::LOCATION, location)
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CONTENT_LENGTH, body.len())
-        .body(axum::body::Body::from(body))
-        .expect("redirect builds")
+    let journal_root = state.journal_root.clone();
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::TranscriptsRoot,
+        move || {
+            let target = match redirect_target_from_journal(&journal_root, now) {
+                Ok(target) => target,
+                Err(error) => return error.response(),
+            };
+            let location = format!("/app/transcripts/{target}");
+            // Flask's redirect body is part of the frozen Convey corpus contract.
+            let body = format!(
+                "<!doctype html>\n<html lang=en>\n<title>Redirecting...</title>\n<h1>Redirecting...</h1>\n<p>You should be redirected automatically to the target URL: <a href=\"{location}\">{location}</a>. If not, click the link.\n"
+            );
+            Response::builder()
+                .status(StatusCode::FOUND)
+                .header(header::LOCATION, location)
+                .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
+                .header(header::CONTENT_LENGTH, body.len())
+                .body(axum::body::Body::from(body))
+                .expect("redirect builds")
+        },
+    )
+    .await
 }
 
 fn redirect_target_from_journal(

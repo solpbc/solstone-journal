@@ -28,23 +28,27 @@ const OWNER_REJECTION_COOLDOWN_GUIDANCE: &str = "Wait for the owner voice reject
 or run solstone call speakers detect --force to look now.";
 
 pub async fn status(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
-    match owner_status(&root.0) {
-        Ok(status) => Json(status).into_response(),
-        Err(OwnerStatusError::IdentityInvalid) => error_envelope(
-            "speaker_owner_identity_invalid",
-            "your owner voice couldn't be loaded because your configured owner identity needs attention.",
-            "configured owner identity is not admitted",
-            StatusCode::BAD_REQUEST,
-        )
-        .into_response(),
-        Err(OwnerStatusError::Catalog(error)) => error_envelope(
-            "speaker_command_failed",
-            "that speaker command didn't finish.",
-            error.to_string(),
-            StatusCode::INTERNAL_SERVER_ERROR,
-        )
-        .into_response(),
-    }
+    solstone_core_convey_http::owner_read::spawn_blocking_response(
+        solstone_core_convey_http::owner_read::OwnerReadRole::SpeakersOwnerStatus,
+        move || match owner_status(&root.0) {
+            Ok(status) => Json(status).into_response(),
+            Err(OwnerStatusError::IdentityInvalid) => error_envelope(
+                "speaker_owner_identity_invalid",
+                "your owner voice couldn't be loaded because your configured owner identity needs attention.",
+                "configured owner identity is not admitted",
+                StatusCode::BAD_REQUEST,
+            )
+            .into_response(),
+            Err(OwnerStatusError::Catalog(error)) => error_envelope(
+                "speaker_command_failed",
+                "that speaker command didn't finish.",
+                error.to_string(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            )
+            .into_response(),
+        },
+    )
+    .await
 }
 
 enum OwnerStatusError {
