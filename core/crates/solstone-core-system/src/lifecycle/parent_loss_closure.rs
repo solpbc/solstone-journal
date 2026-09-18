@@ -32,10 +32,12 @@ use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{LockOptions, hold_lock, write_json};
 
 use super::HostedServiceKind;
+#[cfg(target_os = "linux")]
+use super::parent_loss_admission::AdmissionIdentity;
 use super::parent_loss_admission::{
-    AdmissionIdentity, AdmissionResultState, admission_directory,
-    read_parent_loss_admission_acknowledgement_in, read_parent_loss_admission_intent,
-    read_parent_loss_admission_result, read_parent_loss_admission_spawn_identity_in,
+    AdmissionResultState, admission_directory, read_parent_loss_admission_acknowledgement_in,
+    read_parent_loss_admission_intent, read_parent_loss_admission_result,
+    read_parent_loss_admission_spawn_identity_in,
 };
 use super::parent_loss_coordinator::{SealedAdmission, clear_supervisor_heartbeat};
 use super::parent_loss_ledger::{
@@ -43,10 +45,13 @@ use super::parent_loss_ledger::{
     ParentLossGenerationRecord, ParentLossLedger, ParentLossLedgerError,
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, digest_bytes, json_options,
 };
+#[cfg(target_os = "linux")]
+use crate::process::InspectResult;
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+use crate::process::{DescendantTerminationOutcome, terminate_descendants_exact};
 use crate::process::{
-    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner,
-    SignalKind, SystemProcessInstanceSource, TerminationError, process_owner,
-    signal_exact_instance, terminate_descendants_exact,
+    InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner, SignalKind,
+    SystemProcessInstanceSource, TerminationError, process_owner, signal_exact_instance,
 };
 
 pub const PARENT_LOSS_CLOSURE_SCHEMA_V1: u32 = 1;
@@ -564,30 +569,36 @@ fn retire_live_admissions(
             }
             InstanceVerdict::SameLive { .. } => {
                 #[cfg(any(target_os = "linux", target_os = "macos"))]
-                if let Some(uid) = admission.uid {
+                let descendant_escalated = if let Some(uid) = admission.uid {
                     let descendant_budget = kill_at.saturating_duration_since(Instant::now());
-                    if terminate_descendants_exact(
+                    match terminate_descendants_exact(
                         instance,
                         uid,
                         descendant_budget,
                         authority.source,
                         || {},
-                    )
-                    .is_err()
-                    {
-                        // Retiring the recorded root after an incomplete tree
-                        // observation could orphan an escaped descendant that
-                        // still owns the very resource blocking this start.
-                        // Preserve the open generation and retry once exact
-                        // descendant coverage is available.
-                        unverifiable = true;
-                        continue;
+                    ) {
+                        Ok(DescendantTerminationOutcome::Graceful) => false,
+                        Ok(DescendantTerminationOutcome::EscalatedAndReaped) => true,
+                        Err(_) => {
+                            // Retiring the recorded root after an incomplete tree
+                            // observation could orphan an escaped descendant that
+                            // still owns the very resource blocking this start.
+                            // Preserve the open generation and retry once exact
+                            // descendant coverage is available.
+                            unverifiable = true;
+                            continue;
+                        }
                     }
-                }
+                } else {
+                    false
+                };
+                #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+                let descendant_escalated = false;
                 // A failed signal here means the exact instance was gone by the
                 // time the guard re-observed it; the wait below settles it.
                 let _ = authority.retirer.signal(instance, SignalKind::Terminate);
-                pending.push((index, instance));
+                pending.push((index, instance, descendant_escalated));
             }
         }
     }
@@ -603,7 +614,7 @@ fn retire_live_admissions(
     if pending.is_empty() {
         return None;
     }
-    for (_, instance) in &pending {
+    for (_, instance, _) in &pending {
         let _ = authority.retirer.signal(*instance, SignalKind::Kill);
     }
     let pending = wait_for_exit(admissions, pending, authority, authority.deadline, true);
@@ -616,17 +627,19 @@ fn retire_live_admissions(
 
 fn wait_for_exit(
     admissions: &mut [AdmissionClosure],
-    mut pending: Vec<(usize, ProcessInstance)>,
+    mut pending: Vec<(usize, ProcessInstance, bool)>,
     authority: &ClosingAuthority<'_>,
     until: Instant,
     escalated: bool,
-) -> Vec<(usize, ProcessInstance)> {
+) -> Vec<(usize, ProcessInstance, bool)> {
     loop {
-        pending.retain(
-            |(index, instance)| match authority.source.observe(instance) {
+        pending.retain(|(index, instance, descendant_escalated)| {
+            match authority.source.observe(instance) {
                 InstanceVerdict::SameLive { .. } => true,
                 InstanceVerdict::NotSameOrExited => {
-                    admissions[*index].finding = AdmissionFinding::Retired { escalated };
+                    admissions[*index].finding = AdmissionFinding::Retired {
+                        escalated: escalated || *descendant_escalated,
+                    };
                     false
                 }
                 InstanceVerdict::Unverifiable => {
@@ -640,8 +653,8 @@ fn wait_for_exit(
                         None => true,
                     }
                 }
-            },
-        );
+            }
+        });
         if pending.is_empty() || Instant::now() >= until {
             return pending;
         }

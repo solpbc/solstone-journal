@@ -52,13 +52,19 @@ mod tests {
     }
 
     fn spawn_child(ignore_sigterm: bool) -> (Child, ProcessInstance) {
-        let script = if ignore_sigterm {
-            "trap '' TERM; sleep 60"
+        let mut command = if ignore_sigterm {
+            let mut command = Command::new("python3");
+            command.args([
+                "-c",
+                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)",
+            ]);
+            command
         } else {
-            "sleep 60"
+            let mut command = Command::new("sh");
+            command.args(["-c", "sleep 60"]);
+            command
         };
-        let child = Command::new("sh")
-            .args(["-c", script])
+        let child = command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -275,6 +281,19 @@ mod tests {
             .mark_admitting(active_a.generation, coord_a)
             .expect("admitting a");
 
+        let ledger_b = ParentLossLedger::open(&journal_b.root).expect("ledger b");
+        let active_b = ledger_b
+            .reserve_generation(synth_instance(110, 11), [])
+            .expect("reserve b");
+        ledger_b.initialize_record(&active_b).expect("record b");
+        let coord_b = synth_instance(120, 12);
+        ledger_b
+            .persist_coordinator_identity(active_b.generation, coord_b)
+            .expect("coord b");
+        ledger_b
+            .mark_admitting(active_b.generation, coord_b)
+            .expect("admitting b");
+
         // Journal A child (to be retired)
         let (mut child_a, instance_a) = spawn_child(false);
         let launch_id_a = generate_helper_launch_id("task-worker");
@@ -293,8 +312,23 @@ mod tests {
         write_parent_loss_admission_spawn_identity(&journal_a.root, &identity_a)
             .expect("spawn identity a");
 
-        // Journal B child (must stay alive!)
+        // Same-named journal B child, recorded by B's own generation (must stay alive).
         let (mut child_b, instance_b) = spawn_child(false);
+        let launch_id_b = generate_helper_launch_id("task-worker");
+        write_parent_loss_admission_intent(
+            &journal_b.root,
+            &AdmissionIntent::new(active_b.generation, &launch_id_b, None, None),
+        )
+        .expect("intent b");
+        let identity_b = AdmissionIdentity {
+            generation: active_b.generation,
+            launch_id: launch_id_b,
+            instance: instance_b,
+            uid: nix::unistd::getuid().as_raw(),
+            parent_launch_id: None,
+        };
+        write_parent_loss_admission_spawn_identity(&journal_b.root, &identity_b)
+            .expect("spawn identity b");
 
         // Close journal A
         let succ_a = close_with_budget(&ledger_a, Duration::from_secs(5)).expect("close a");

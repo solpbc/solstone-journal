@@ -89,15 +89,12 @@ where
     // owned set for the escalation pass.
     match exact_descendant_tree(root, owner_uid, source) {
         Ok(after_term) => remember_descendants(&mut owned, &after_term)?,
-        Err(
-            DescendantObservationFailure::RootNotSameOrExited
-            | DescendantObservationFailure::Missing,
-        ) if tracked_descendants_are_gone(&owned, owner_uid, source)? => {
-            // A shell-style service root can exit as soon as its last child
-            // accepts TERM. The root's exact disappearance is safe only when
-            // every descendant captured immediately before TERM is also
-            // positively gone; no other observation failure is softened.
-            return Ok(DescendantTerminationOutcome::Graceful);
+        Err(error) if root_disappeared(error, root, source) => {
+            // A shell-style service root can exit as soon as one child accepts
+            // TERM while another inherited the ignored signal. The complete
+            // pre-TERM census is still authoritative: prove all of its exact
+            // descendants gone, escalating the survivors, before succeeding.
+            return finish_tracked_after_root_exit(&owned, owner_uid, source, &mut signal);
         }
         Err(error) => return Err(error),
     }
@@ -107,8 +104,13 @@ where
             return Ok(DescendantTerminationOutcome::Graceful);
         }
         std::thread::sleep(Duration::from_millis(10));
-        let tree = exact_descendant_tree(root, owner_uid, source)?;
-        remember_descendants(&mut owned, &tree)?;
+        match exact_descendant_tree(root, owner_uid, source) {
+            Ok(tree) => remember_descendants(&mut owned, &tree)?,
+            Err(error) if root_disappeared(error, root, source) => {
+                return finish_tracked_after_root_exit(&owned, owner_uid, source, &mut signal);
+            }
+            Err(error) => return Err(error),
+        }
     }
     if tracked_descendants_are_gone(&owned, owner_uid, source)? {
         return Ok(DescendantTerminationOutcome::Graceful);
@@ -117,12 +119,57 @@ where
     signal_tracked_descendants(&owned, owner_uid, source, SignalKind::Kill, &mut signal)?;
     let kill_deadline = Instant::now() + KILL_REAP_GRACE;
     loop {
-        let tree = exact_descendant_tree(root, owner_uid, source)?;
-        remember_descendants(&mut owned, &tree)?;
+        match exact_descendant_tree(root, owner_uid, source) {
+            Ok(tree) => remember_descendants(&mut owned, &tree)?,
+            Err(error) if root_disappeared(error, root, source) => {
+                return finish_tracked_after_root_exit(&owned, owner_uid, source, &mut signal);
+            }
+            Err(error) => return Err(error),
+        }
         if tracked_descendants_are_gone(&owned, owner_uid, source)? {
             return Ok(DescendantTerminationOutcome::EscalatedAndReaped);
         }
         if Instant::now() >= kill_deadline {
+            return Err(DescendantObservationFailure::Stale);
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn root_disappeared(
+    error: DescendantObservationFailure,
+    root: ProcessInstance,
+    source: &dyn ProcessInstanceSource,
+) -> bool {
+    matches!(
+        error,
+        DescendantObservationFailure::RootNotSameOrExited
+            | DescendantObservationFailure::Missing
+            | DescendantObservationFailure::CensusIncomplete
+    ) && matches!(source.observe(&root), InstanceVerdict::NotSameOrExited)
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn finish_tracked_after_root_exit<S>(
+    owned: &[TrackedDescendant],
+    owner_uid: u32,
+    source: &dyn ProcessInstanceSource,
+    signal: &mut S,
+) -> Result<DescendantTerminationOutcome, DescendantObservationFailure>
+where
+    S: FnMut(i32, nix::sys::signal::Signal),
+{
+    if tracked_descendants_are_gone(owned, owner_uid, source)? {
+        return Ok(DescendantTerminationOutcome::Graceful);
+    }
+    signal_tracked_descendants(owned, owner_uid, source, SignalKind::Kill, signal)?;
+    let deadline = Instant::now() + KILL_REAP_GRACE;
+    loop {
+        if tracked_descendants_are_gone(owned, owner_uid, source)? {
+            return Ok(DescendantTerminationOutcome::EscalatedAndReaped);
+        }
+        if Instant::now() >= deadline {
             return Err(DescendantObservationFailure::Stale);
         }
         std::thread::sleep(Duration::from_millis(10));
