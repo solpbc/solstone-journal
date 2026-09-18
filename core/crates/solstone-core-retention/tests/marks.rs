@@ -34,7 +34,8 @@ use solstone_core_journal_io::{LockOptions, hold_lock};
 use solstone_core_retention::Target;
 use solstone_core_retention::marks::{
     Failure, MarkId, MarkState, PreflightRefusal, Proposal, Register, RemovalClass, StoreError,
-    load, preflight, reconcile, reconcile_recovered, record_failure, resolve, upsert,
+    decline_offload, load, preflight, reconcile, reconcile_recovered, record_failure, resolve,
+    upsert, upsert_offload,
 };
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -580,4 +581,72 @@ fn every_reconcile_branch_is_exercised_in_one_fixture() {
     assert_eq!(after.marks[&marked_id].marked_at, "2026-08-06T12:00:00Z");
     let new_id = mark_id(RemovalClass::PolicyRawRelease, &new_target);
     assert_eq!(after.marks[&new_id].marked_at, "2026-08-06T12:00:01Z");
+}
+
+// The next two tests guard the reconciliation `run_offload_body` performs when
+// retention policy no longer agrees with a pending `OffloadRawRelease` mark
+// (`req_ysgdq4ik`, journal-reliability-trio, media-lifecycle candidate 2). Unlike
+// `reconcile`, `decline_offload` touches exactly one mark by its derived id and
+// never treats its caller's view of the register as the authoritative full state
+// for the class — these prove that design choice actually holds, not just that it
+// was intended.
+
+#[test]
+fn decline_offload_on_a_never_marked_target_creates_no_phantom_mark() {
+    let bed = Bed::new();
+    let never_marked = target("20260805", "field.audio", "070000_17");
+    let names = proposal("test").names;
+
+    assert!(load(bed.path()).unwrap().marks.is_empty());
+
+    let outcome = decline_offload(bed.path(), &never_marked, &names);
+
+    assert!(matches!(outcome, Err(PreflightRefusal::Missing { .. })));
+    assert!(
+        load(bed.path()).unwrap().marks.is_empty(),
+        "a decline on content that was never marked must not insert anything"
+    );
+}
+
+#[test]
+fn decline_offload_does_not_disturb_a_concurrently_inserted_mark() {
+    let bed = Bed::new();
+    let stale = target("20260805", "field.audio", "070000_17");
+    let survivor = target("20260806", "field.audio", "070100_18");
+    let stale_id = mark_id(RemovalClass::OffloadRawRelease, &stale);
+    let survivor_id = mark_id(RemovalClass::OffloadRawRelease, &survivor);
+
+    upsert_offload(
+        bed.path(),
+        &stale,
+        proposal("stale").names,
+        proposal("stale").bytes,
+        "stale".to_owned(),
+        mark_at("first"),
+    )
+    .unwrap();
+    // Models a mark landing from run_offload_body's own concurrent writer between
+    // the reconciliation's view of the register and its decline call — the
+    // survivor's target/id is entirely independent of the one being declined.
+    let survivor_after_insert = upsert_offload(
+        bed.path(),
+        &survivor,
+        proposal("survivor").names,
+        proposal("survivor").bytes,
+        "survivor".to_owned(),
+        mark_at("second"),
+    )
+    .unwrap();
+
+    let after_decline = decline_offload(bed.path(), &stale, &proposal("stale").names).unwrap();
+
+    assert!(
+        !after_decline.marks.contains_key(&stale_id),
+        "the stale mark must be gone"
+    );
+    assert_eq!(
+        after_decline.marks[&survivor_id], survivor_after_insert.marks[&survivor_id],
+        "the concurrently-inserted legitimate mark must survive byte-for-byte"
+    );
+    assert_eq!(after_decline.marks.len(), 1);
 }

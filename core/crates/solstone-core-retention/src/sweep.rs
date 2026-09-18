@@ -209,6 +209,53 @@ pub fn plan(
     built
 }
 
+/// Whether current retention policy would still release an already-proven,
+/// **entirely empty-audio** segment's raw media. Deliberately narrower than
+/// [`plan`]'s two-sided evaluation: ordinary (non-empty-audio) media, and any
+/// segment mixing the two, is out of scope and always answers `true` here.
+///
+/// `PolicyRawRelease` marks are created by an age-driven sweep that is already
+/// policy-gated at mark time (`plan`, above). `OffloadRawRelease` marks are not:
+/// they come from a budget-driven mechanism whose whole purpose is recovering
+/// disk space independently of the general `retention.raw_media` age policy —
+/// whose product default is `Rule::keep()`, i.e. keep forever, until an owner
+/// opts into an age rule. Applying the general policy to an offload mark's
+/// ordinary-media side here would decline nearly every offload-marked
+/// ordinary-media item on an unconfigured journal, and the segment/day loop
+/// that owns new marking would simply re-mark and re-archive it on the very
+/// next run — an unbounded mark/decline/remark cycle, not a fix. The one
+/// policy dimension `OffloadRawRelease` marking was ever meant to react to is
+/// `empty_audio_rule` (the "keep audio with no speech" toggle), which is what
+/// this function checks. Read-only, assumes the caller already established
+/// processing proof; shares [`crate::class::classify`],
+/// [`crate::class::partition_empty_audio`] and [`crate::age::segment_age`]
+/// with [`plan`], so this and a fresh `PolicyRawRelease` proposal are judged by
+/// the identical rule rather than two hand-kept copies of it.
+pub fn would_empty_audio_offload_mark_still_release(
+    policy: &Policy,
+    registry: &dyn HandlerRegistry,
+    found: Vec<FoundContent>,
+    stream: &str,
+    day: &str,
+    today: NaiveDate,
+    now: DateTime<Utc>,
+) -> bool {
+    if found.is_empty() {
+        return true;
+    }
+    let (empty, ordinary) = partition_empty_audio(found, registry);
+    if !ordinary.is_empty() {
+        return true;
+    }
+    let records: Vec<Option<&serde_json::Value>> = empty
+        .iter()
+        .map(|item| item.sidecar.record.as_ref())
+        .collect();
+    let age = crate::age::segment_age(day, &records, today, now);
+    let class = classify(&empty, registry);
+    policy.evaluate(stream, age, class).is_eligible()
+}
+
 enum SideOutcome {
     None,
     Policy(Eligibility),

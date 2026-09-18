@@ -20,8 +20,10 @@ use solstone_core_retention::{
     RawRelease, Target,
     content::{ClosedHandlerSet, JournalMedia},
     eligibility::resolve as resolve_segment_gate,
-    marks::load as load_marks,
+    marks::{decline_offload, load as load_marks},
+    policy::policy_from_journal_config,
     scan::scan_segment,
+    sweep::would_empty_audio_offload_mark_still_release,
     upsert_offload,
 };
 
@@ -309,6 +311,84 @@ fn run_offload_body(
         Ok(register) => OffloadMarkIndex::from_register(&register),
         Err(_) => return stall(OFFLOAD_STALL_UNEXPECTED_ERROR, dry_run, vec![], 0, 0, 0, 0),
     };
+    // Policy for reconciling stale OffloadRawRelease marks below. ⚠ `config`
+    // above is `get_backup_config`'s backup-scoped view (only the "backup" key,
+    // merged with backup's own defaults) — it never carries "retention" or
+    // "transcribe", so a policy built from it would silently see every owner's
+    // policy as the untouched default. Read the real top-level journal config
+    // instead, same as `health::mark_raw` does. An unreadable config falls back
+    // to the default policy (release-once-processed) rather than failing the
+    // run: the only consumer below is a decline, so the safe failure direction
+    // is "reconcile nothing this pass," identical to today's behaviour.
+    let retention_config = solstone_core_journal_config::read_journal_config(journal)
+        .ok()
+        .and_then(|read| read.config)
+        .unwrap_or_default();
+    let policy = policy_from_journal_config(&retention_config);
+    // `today` is a UTC calendar date rather than the owner's configured
+    // timezone: the primary case this reconciles — `empty_audio_rule` toggled
+    // to keep-forever — has a `None` period and returns `KeptForever` without
+    // consulting age at all, so the imprecision only ever reaches an age-based
+    // ordinary-media rule, and both anchors already round toward keeping
+    // content longer.
+    let now =
+        DateTime::<Utc>::from_timestamp(services.clock.now_unix(), 0).unwrap_or_else(Utc::now);
+    let today = now.date_naive();
+    // Withdraw any existing OffloadRawRelease mark for an entirely empty-audio
+    // segment that the "keep audio with no speech" policy no longer agrees with
+    // (e.g. the owner turned it on after this segment was marked) —
+    // unconditionally, before the budget check below, because once budget is
+    // satisfied the day/segment loop that owns the rest of this function never
+    // runs again for an already-marked segment. Release was always safe either
+    // way (it re-checks policy at approval time); this is about the owner's
+    // review list staying honest, not a data-safety gap.
+    //
+    // Deliberately empty-audio-only: see `would_empty_audio_offload_mark_still_release`'s
+    // own doc for why applying the *general* retention.raw_media age policy to
+    // ordinary-media offload marks here would create an unbounded
+    // mark/decline/remark cycle instead of a fix, given that policy's shipped
+    // default is keep-forever.
+    //
+    // Deliberately does not touch `mark_index`, `files_already_marked` or
+    // `bytes_already_marked` below, which the day/segment loop's own
+    // already-marked skip and this run's budget accounting still read from the
+    // pre-reconciliation snapshot: re-deriving them here would let the segment
+    // loop immediately re-mark, in this same pass, exactly what this step just
+    // withdrew for failing today's policy.
+    if !dry_run {
+        for mark in &mark_index.entries {
+            let Ok(segments) = iter_segments(journal, PathOrDay::Day(&mark.day)) else {
+                continue;
+            };
+            let Some(segment) = segments.iter().find(|segment| {
+                segment.record_identity().is_ok_and(|identity| {
+                    identity.stream == mark.stream && identity.key == mark.dir
+                })
+            }) else {
+                continue;
+            };
+            let registry = ClosedHandlerSet;
+            let classifier = JournalMedia;
+            let found = scan_segment(segment.path(), &registry, &classifier);
+            if would_empty_audio_offload_mark_still_release(
+                &policy,
+                &registry,
+                found,
+                &mark.stream,
+                &mark.day,
+                today,
+                now,
+            ) {
+                continue;
+            }
+            let target = Target {
+                day: mark.day.clone(),
+                stream: mark.stream.clone(),
+                dir: mark.dir.clone(),
+            };
+            let _ = decline_offload(journal, &target, &mark.names);
+        }
+    }
     let files_already_marked = mark_index
         .entries
         .iter()
@@ -722,6 +802,23 @@ mod tests {
         fs::write(raw.with_extension("jsonl"), format!("{header}\n")).unwrap();
     }
 
+    /// Same shape as `write_eligible_sidecar`, but the `MediaClass::NoDecodableAudio`
+    /// side: `.flac` extension and `no_decodable_audio` reason code, so `retention`'s
+    /// `empty_audio_rule` (not the ordinary-media default rule) is what a policy
+    /// check against this file consults.
+    fn write_empty_audio_sidecar(raw: &Path) {
+        let size = raw.metadata().unwrap().len();
+        let header = json!({"_solstone_processing": {
+            "schema":"solstone.processing.v1",
+            "state":"empty",
+            "reason_code":"no_decodable_audio",
+            "handler":"transcribe",
+            "attempted_at":"2026-01-01T00:00:00Z",
+            "input_size":size
+        }});
+        fs::write(raw.with_extension("jsonl"), format!("{header}\n")).unwrap();
+    }
+
     fn configure_offload(journal: &Path, now: i64, budget_bytes: Option<u64>) {
         set_destination(
             journal,
@@ -980,6 +1077,120 @@ mod tests {
         assert_eq!(second.files_already_marked, 2);
         assert_eq!(second.bytes_already_marked, 10);
         assert!(runner.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn a_stale_offload_mark_is_declined_when_the_owner_turns_on_keep() {
+        // media-lifecycle candidate 2 (req_ysgdq4ik): an OffloadRawRelease mark
+        // must not keep looking approvable once retention policy would no
+        // longer release it. `.flac` + `no_decodable_audio` puts this segment on
+        // the empty-audio side of the policy split, not the ordinary-media side.
+        let journal = tempfile::tempdir().unwrap();
+        let raw = journal
+            .path()
+            .join("chronicle/20260101/010000_001/audio.flac");
+        fs::create_dir_all(raw.parent().unwrap()).unwrap();
+        fs::write(&raw, b"silence").unwrap();
+        write_empty_audio_sidecar(&raw);
+        let raw_bytes = fs::read(&raw).unwrap();
+
+        configure_offload(journal.path(), 100, Some(1));
+
+        let nodes = json!([
+            {"message_type":"snapshot","id":"snapshot"},
+            {"message_type":"node","path":raw.display().to_string(),"size":7}
+        ]);
+        let runner = Script {
+            outputs: RefCell::new(VecDeque::from([
+                output(String::new()),
+                output("[{\"message_type\":\"summary\",\"snapshot_id\":\"snapshot\"}]".into()),
+                output(nodes.to_string()),
+            ])),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock { now: 100 };
+        let maintenance = Maintenance;
+        let first = run_offload(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            false,
+        );
+        assert_eq!(first.status, "ok");
+        assert_eq!(first.files_marked, 1);
+        assert_eq!(
+            load_marks(journal.path()).unwrap().marks.len(),
+            1,
+            "the segment should be marked, pending owner approval"
+        );
+
+        // The owner turns on "keep audio with no speech" between runs. Merge
+        // into the existing config rather than replacing it wholesale --
+        // `configure_offload` already wrote the backup/destination settings the
+        // second run still needs to reach the reconciliation code at all.
+        let config_path = journal.path().join("config/journal.json");
+        let mut config: serde_json::Map<String, Value> =
+            serde_json::from_slice(&fs::read(&config_path).unwrap()).unwrap();
+        config.insert("retention".to_owned(), json!({"empty_audio": "keep"}));
+        fs::write(&config_path, serde_json::to_string(&config).unwrap()).unwrap();
+
+        let second_runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            calls: RefCell::new(vec![]),
+        };
+        let second = run_offload(
+            journal.path(),
+            &services(&second_runner, &http, &clock, &maintenance),
+            false,
+        );
+
+        assert_eq!(second.status, "ok");
+        assert_eq!(
+            second.files_marked, 0,
+            "declining a stale mark must not archive anything new"
+        );
+        assert!(
+            second_runner.calls.borrow().is_empty(),
+            "declining a stale mark must not touch the archive tool at all"
+        );
+        assert!(
+            load_marks(journal.path()).unwrap().marks.is_empty(),
+            "the stale mark must be withdrawn once policy says keep"
+        );
+        // Declining a mark never touches the byte it was pending on.
+        assert_eq!(fs::read(&raw).unwrap(), raw_bytes);
+    }
+
+    #[test]
+    fn a_still_eligible_offload_mark_survives_reconciliation() {
+        // Negative twin of the test above: an unrelated ordinary-media mark
+        // (not empty-audio) must not be declined just because reconciliation ran.
+        let (journal, files, first) = successful_offload(1);
+        assert_eq!(first.status, "ok");
+        assert_eq!(load_marks(journal.path()).unwrap().marks.len(), 2);
+
+        let second_runner = Script {
+            outputs: RefCell::new(VecDeque::new()),
+            calls: RefCell::new(vec![]),
+        };
+        let http = Http;
+        let clock = TestClock { now: 100 };
+        let maintenance = Maintenance;
+        let second = run_offload(
+            journal.path(),
+            &services(&second_runner, &http, &clock, &maintenance),
+            false,
+        );
+
+        assert_eq!(second.status, "ok");
+        assert_eq!(
+            load_marks(journal.path()).unwrap().marks.len(),
+            2,
+            "still-eligible marks must survive a reconciliation pass"
+        );
+        for (path, expected) in files {
+            assert_eq!(fs::read(path).unwrap(), expected);
+        }
     }
 
     #[test]

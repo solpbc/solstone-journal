@@ -19,6 +19,7 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime.workspace = true
+solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
 solstone-core-retention.workspace = true
 

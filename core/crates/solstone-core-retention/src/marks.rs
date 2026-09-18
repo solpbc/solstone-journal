@@ -259,6 +259,24 @@ pub fn resolve_offload(
     )
 }
 
+/// Withdraw a pending offload proposal for the target's exact file names, e.g.
+/// because current retention policy no longer agrees with it.
+///
+/// Unlike [`reconcile`], this touches exactly one mark by its derived id and never
+/// treats a caller's view of the register as authoritative for the whole class —
+/// safe to call from a writer (`run_offload_body`) that is not this class's only
+/// source of new marks, without risking a phantom mark or a lost concurrent insert.
+pub fn decline_offload(
+    journal: &Path,
+    target: &Target,
+    names: &[String],
+) -> Result<Register, PreflightRefusal> {
+    decline(
+        journal,
+        &MarkId::derive(RemovalClass::OffloadRawRelease, target, names),
+    )
+}
+
 impl Register {
     pub fn empty() -> Self {
         Self {

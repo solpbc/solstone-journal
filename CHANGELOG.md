@@ -22,6 +22,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the network page's pairing confirmation no longer asks you to compare a fingerprint nothing else shows; it points at the journal mark shown on the same page instead.
 - first-run setup and the network page now show the plain "your journal" mark instead of an error message when your journal's mark isn't ready yet or can't be read.
 - `solstone link status` now says "unknown journal seen at" an address, matching the wording used elsewhere.
+- turning on "keep audio with no speech" now clears matching audio from your pending removal list, not just future recordings.
 
 ## [2.0.8] - 2026-09-16
 
