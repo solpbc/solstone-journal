@@ -183,7 +183,7 @@ with the allowlisted fields `name`, `stream_type`, `version`, `uptime`,
 when healthy-idle, contains no captured content or file paths, and is distinct
 from linked-device uploads and journal-detected ingest rejections.
 
-The supervisor checks for `observe.status` event freshness and includes `stale_heartbeats` in its own status.
+`stale_heartbeats` in the supervisor's own status does **not** come from `observe.status` — it comes from the supervisor's own peer-heartbeat sync files (`SyncCheckResult.peer_observations`, staleness derived via `sync::native_mtime_seconds`/`HeartbeatClassification`; see `core/crates/solstone-core-system/src/lifecycle/mod.rs`'s `StaleHeartbeatGc`). `observe.status` freshness is a separate, capture-side signal (see the `hear`/`see` staleness table above).
 
 See [CALLOSUM.md](CALLOSUM.md) Tract Registry for event schemas.
 
@@ -230,8 +230,8 @@ See [CORTEX.md](CORTEX.md) for complete event schemas and agent configuration.
 # Check sense log for errors
 tail -50 journal/health/sense.log | grep -i error
 
-# Check if sense is emitting status (supervisor.status will show stale_heartbeats)
-# Health is derived from solstone.observe.status Callosum events
+# Check if sense is emitting status via observe.status (see the hear/see staleness table above)
+# Note: supervisor.status's stale_heartbeats reflects peer heartbeat sync files, not observe.status
 ```
 
 Causes: DBus issues, screencast permissions, audio device unavailable.
