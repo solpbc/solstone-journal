@@ -2546,8 +2546,10 @@ fn fetch_day_hits_without_live_match_uses_recency() {
 
     let mut owner_index = open_owner_index(&root, OwnerBoundary).expect("open index");
     // Filter-only query has no live MATCH expression
-    let mut req = SearchRequest::default();
-    req.facet = Some("work".to_string());
+    let req = SearchRequest {
+        facet: Some("work".to_string()),
+        ..SearchRequest::default()
+    };
     let resolved = owner_index
         .resolve_counts(&req, reference_date())
         .expect("resolve counts");

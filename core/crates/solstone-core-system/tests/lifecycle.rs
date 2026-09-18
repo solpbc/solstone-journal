@@ -30,8 +30,6 @@ use solstone_core_system::lifecycle::{
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 use solstone_core_system::process::{ProcessBirth, ProcessInstance, SystemProcessInstanceSource};
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
-
 struct Bed {
     root: PathBuf,
 }
@@ -127,7 +125,7 @@ fn coordinator_bootstrap_publication_preserves_an_in_progress_read() {
 fn parent_loss_coordinator_survives_group_term_until_its_own_terminal_decision() {
     let bed = Bed::new("parent-loss-term-guard");
     let ready = bed.root.join("ready");
-    let mut coordinator = Command::new(FIXTURE)
+    let mut coordinator = Command::new(crate::fixture_binary::path())
         .args([
             "parent-loss-termination-guard",
             ready.to_str().expect("utf8 ready path"),
@@ -161,7 +159,7 @@ fn parent_loss_coordinator_survives_group_term_until_its_own_terminal_decision()
 
 #[cfg(target_os = "linux")]
 fn spawn_orphan(journal: &std::path::Path, ready: &std::path::Path, holder_mode: &str) {
-    let status = Command::new(FIXTURE)
+    let status = Command::new(crate::fixture_binary::path())
         .args([
             "orphan-sweep-spawner",
             journal.to_str().expect("utf8 journal"),
@@ -291,7 +289,7 @@ fn ac6_ac7_singleton_admission_is_real_process_safe() {
 
     let bed = Bed::new("singleton");
     let ready = bed.root.join("first-ready");
-    let mut first = Command::new(FIXTURE)
+    let mut first = Command::new(crate::fixture_binary::path())
         .args([
             "hold-supervisor-lock",
             bed.root.to_str().expect("utf8"),
@@ -301,7 +299,7 @@ fn ac6_ac7_singleton_admission_is_real_process_safe() {
         .expect("first fixture");
     wait_for(&ready);
     let result = bed.root.join("second-result");
-    let second = Command::new(FIXTURE)
+    let second = Command::new(crate::fixture_binary::path())
         .args([
             "try-supervisor-lock",
             bed.root.to_str().expect("utf8"),
@@ -568,7 +566,7 @@ fn ac28_orphan_sweep_matches_journal_before_signalling() {
     let first_ready = first.root.join("first.pid");
     let second_ready = second.root.join("second.pid");
     for (journal, ready) in [(&first.root, &first_ready), (&second.root, &second_ready)] {
-        let status = Command::new(FIXTURE)
+        let status = Command::new(crate::fixture_binary::path())
             .args([
                 "orphan-sweep-spawner",
                 journal.to_str().expect("utf8"),
@@ -625,7 +623,7 @@ fn ac30_orphan_sweep_reports_reaped_survivor_and_unresolvable_candidates() {
         ),
         (&missing_journal, &unresolved_ready, "orphan-sweep-holder"),
     ] {
-        let status = Command::new(FIXTURE)
+        let status = Command::new(crate::fixture_binary::path())
             .args([
                 "orphan-sweep-spawner",
                 journal.to_str().expect("utf8"),
@@ -1324,18 +1322,40 @@ mod abandoned_generation_closer {
     }
 
     fn spawn_child(ignore_sigterm: bool) -> (Child, ProcessInstance) {
-        let script = if ignore_sigterm {
-            "trap '' TERM; sleep 60"
+        let child = if ignore_sigterm {
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let ready = std::env::temp_dir().join(format!(
+                "solstone-stubborn-child-{}-{stamp}",
+                std::process::id()
+            ));
+            let child = Command::new(crate::fixture_binary::path())
+                .args(["block-term-sleep", ready.to_str().expect("utf8 path")])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn stubborn child");
+            for _ in 0..200 {
+                if ready.exists() {
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(ready.exists(), "stubborn child installed SIGTERM mask");
+            let _ = std::fs::remove_file(ready);
+            child
         } else {
-            "sleep 60"
+            Command::new("sh")
+                .args(["-c", "sleep 60"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn child")
         };
-        let child = Command::new("sh")
-            .args(["-c", script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn child");
         let instance = match SystemProcessInstanceSource.inspect(child.id()) {
             InspectResult::Present { instance, .. } => instance,
             other => panic!("own child must be inspectable: {other:?}"),
@@ -1448,9 +1468,6 @@ mod abandoned_generation_closer {
     fn a_child_that_ignores_sigterm_is_escalated() {
         let bed = super::Bed::new("closer-escalates-stubborn-child");
         let (mut child, child_instance) = spawn_child(true);
-        // The trap is installed by the shell before `sleep` runs; give it the
-        // moment it needs so the SIGTERM lands on an ignoring process.
-        thread::sleep(Duration::from_millis(200));
         let (ledger, generation) =
             abandoned_generation_with(&bed, child_instance, "cortex-stubborn");
 
@@ -1558,7 +1575,10 @@ mod abandoned_generation_closer {
         let mut authority = launch_managed_hosted(
             Disposition::InheritedParentScope,
             ManagedLaunchRequest {
-                command: vec![super::FIXTURE.to_owned(), "always-tempfail".to_owned()],
+                command: vec![
+                    crate::fixture_binary::string(),
+                    "always-tempfail".to_owned(),
+                ],
                 options: SpawnOptions {
                     journal_root: bed.root.clone(),
                     reference: launch_id.to_owned(),

@@ -41,6 +41,7 @@ enum Leaf {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[allow(clippy::enum_variant_names)]
 enum RaceClass {
     FifoSubstitutionBeforeOpen,
     UnixSocketSubstitutionBeforeOpen,

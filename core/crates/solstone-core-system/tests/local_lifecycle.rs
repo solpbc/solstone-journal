@@ -18,8 +18,6 @@ use solstone_core_system::provider_runtime::{
     StopCleanupStatus,
 };
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
-
 struct TestClock {
     millis: AtomicU64,
 }
@@ -76,7 +74,7 @@ fn nvidia() -> NvidiaProbe {
 fn cuda(model_path: &str) -> LocalLaunchConfig {
     LocalLaunchConfig::Cuda {
         common: common(model_path),
-        binary_path: Some(FIXTURE.into()),
+        binary_path: Some(crate::fixture_binary::string()),
         lib_dir: None,
         nvidia_probe: nvidia(),
         cuda_embedded_arch_set: vec!["sm_89".into()],
@@ -102,14 +100,25 @@ fn state() -> ProviderRuntimeState {
     state
 }
 
-fn lifecycle(shared: Arc<LocalRuntimeShared>, termination_timeout: Duration) -> LocalLifecycleSeam {
-    LocalLifecycleSeam::with_timeouts(
+fn lifecycle(
+    shared: Arc<LocalRuntimeShared>,
+    termination_timeout: Duration,
+) -> (
+    LocalLifecycleSeam,
+    tempfile::TempDir,
+    crate::fixture_binary::TestGeneration,
+) {
+    let journal = tempfile::tempdir().expect("temporary journal");
+    let generation = crate::fixture_binary::TestGeneration::admit(journal.path());
+    let lifecycle = LocalLifecycleSeam::with_timeouts(
         shared,
         clock(),
         Duration::from_secs(10),
         Duration::from_millis(1),
         termination_timeout,
     )
+    .with_journal(journal.path());
+    (lifecycle, journal, generation)
 }
 
 fn start(
@@ -236,7 +245,8 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
     ];
     for (attempt, launch) in configs.into_iter().enumerate() {
         let shared = Arc::new(LocalRuntimeShared::default());
-        let mut lifecycle = lifecycle(shared.clone(), Duration::from_secs(1));
+        let (mut lifecycle, _journal, _generation) =
+            lifecycle(shared.clone(), Duration::from_secs(1));
         let start_fence = fence(u32::try_from(attempt).unwrap());
         let outcome = start(&mut lifecycle, &shared, launch, &start_fence);
         assert_eq!(outcome.status, LaunchOutcomeStatus::LaunchFailed);
@@ -247,7 +257,7 @@ fn each_backend_plan_rejection_maps_to_launch_failed() {
 #[test]
 fn missing_launch_request_maps_to_launch_failed() {
     let shared = Arc::new(LocalRuntimeShared::default());
-    let mut lifecycle = lifecycle(shared.clone(), Duration::from_secs(1));
+    let (mut lifecycle, _journal, _generation) = lifecycle(shared.clone(), Duration::from_secs(1));
     let start_fence = fence(0);
     lifecycle.dispatch_start(&state(), &start_fence);
     let outcome = wait_launch(&shared, &start_fence);
@@ -268,7 +278,8 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
     ];
     for (attempt, (model_path, status, reason)) in cases.into_iter().enumerate() {
         let shared = Arc::new(LocalRuntimeShared::default());
-        let mut lifecycle = lifecycle(shared.clone(), Duration::from_secs(1));
+        let (mut lifecycle, _journal, _generation) =
+            lifecycle(shared.clone(), Duration::from_secs(1));
         let start_fence = fence(u32::try_from(attempt).unwrap());
         let outcome = start(&mut lifecycle, &shared, cuda(model_path), &start_fence);
         assert_eq!(outcome.status, status);
@@ -289,7 +300,7 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
 #[test]
 fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
     let shared = Arc::new(LocalRuntimeShared::default());
-    let mut seam = lifecycle(shared.clone(), Duration::from_secs(1));
+    let (mut seam, _journal, _generation) = lifecycle(shared.clone(), Duration::from_secs(1));
     let start_fence = fence(1);
     let started = start(&mut seam, &shared, cuda("test-ready"), &start_fence)
         .managed
@@ -301,7 +312,8 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
         StopCleanupStatus::Stopped
     );
 
-    let mut failing = lifecycle(shared.clone(), Duration::ZERO);
+    let (mut failing, _failing_journal, _failing_generation) =
+        lifecycle(shared.clone(), Duration::ZERO);
     let failing_start_fence = fence(3);
     let managed = start(
         &mut failing,
@@ -355,7 +367,7 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
 fn ac9_linux_sigkill_of_spawner_kills_direct_child() {
     let root = tempfile::tempdir().expect("temporary journal");
     let ready = root.path().join("host-death-ready");
-    let mut spawner = std::process::Command::new(FIXTURE)
+    let mut spawner = std::process::Command::new(crate::fixture_binary::path())
         .args(["host-death-direct", ready.to_str().expect("utf8")])
         .spawn()
         .expect("spawn host-death-direct fixture");

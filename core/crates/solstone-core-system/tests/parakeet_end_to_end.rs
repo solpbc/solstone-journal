@@ -29,8 +29,6 @@ use solstone_core_system::provider_runtime::{
     ReconcileContext, RuntimeClock, RuntimePhase, VecEventSink,
 };
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
-
 struct TestClock {
     millis: AtomicU64,
 }
@@ -70,7 +68,7 @@ fn fixture_launch_paths(
     std::fs::create_dir_all(&bin).expect("fixture package bin");
     std::fs::create_dir_all(&models).expect("fixture package models");
     let binary = bin.join("parakeet-server.exe");
-    std::fs::copy(FIXTURE, &binary).expect("copy fixture into package bin");
+    std::fs::copy(crate::fixture_binary::path(), &binary).expect("copy fixture into package bin");
     let model = models.join("model.bin");
     std::fs::write(&model, "test-ready-auth").expect("write fixture model marker");
     (
@@ -86,7 +84,7 @@ fn fixture_launch_paths(
     _: &std::path::Path,
 ) -> (PathBuf, PathBuf, Option<PathBuf>, BTreeMap<String, String>) {
     (
-        PathBuf::from(FIXTURE),
+        crate::fixture_binary::path().to_path_buf(),
         PathBuf::from("test-ready"),
         None,
         BTreeMap::new(),
@@ -136,6 +134,7 @@ fn pump(
 #[test]
 fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
     let journal = journal();
+    let _generation = crate::fixture_binary::TestGeneration::admit(&journal);
     let (binary_path, model_path, package_root, env_updates) = fixture_launch_paths(&journal);
     let shared = Arc::new(ParakeetRuntimeShared::default());
     let clock: Arc<dyn RuntimeClock> = Arc::new(TestClock {
@@ -148,7 +147,8 @@ fn parakeet_launches_through_the_real_lifecycle_seam_and_reaches_ready() {
         Duration::from_secs(5),
         Duration::from_millis(1),
         Duration::from_secs(1),
-    );
+    )
+    .with_journal(&journal);
     let mut probe = ParakeetProbeSeam::new(shared.clone(), journal.clone());
     let mut store = FileRuntimeStore::new(
         journal.clone(),

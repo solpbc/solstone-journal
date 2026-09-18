@@ -679,49 +679,45 @@ fn damage_via_truncated_source(root: &Path, day: &str) {
 /// happens to run as root cannot turn the falsifier green.
 #[test]
 fn a_day_that_cannot_be_scanned_is_named_and_the_rest_still_scan() {
-    for (label, damage) in [(
-        "truncated source file",
-        damage_via_truncated_source as fn(&Path, &str),
-    )] {
-        let (temporary, system, apps) = setup();
-        let root = temporary.path();
-        daily_talent(&system);
-        fs::create_dir_all(root.join("chronicle").join(OTHER_DAY)).unwrap();
-        damage(root, DAY);
+    let label = "truncated source file";
+    let (temporary, system, apps) = setup();
+    let root = temporary.path();
+    daily_talent(&system);
+    fs::create_dir_all(root.join("chronicle").join(OTHER_DAY)).unwrap();
+    damage_via_truncated_source(root, DAY);
 
-        let reader = EmptyBacklog;
-        let writer = RecordingWriter::default();
-        let result = run_with(root, &system, &apps, &[], &reader, &writer);
+    let reader = EmptyBacklog;
+    let writer = RecordingWriter::default();
+    let result = run_with(root, &system, &apps, &[], &reader, &writer);
 
-        assert_eq!(result.exit_code, 0, "{label}: {}", result.stderr);
-        let document = writer.document();
-        assert_eq!(
-            document.evidence_unreadable_days.len(),
-            1,
-            "{label}: expected exactly one damaged day"
-        );
-        assert_eq!(document.evidence_unreadable_days[0].day, DAY, "{label}");
-        assert!(
-            !document.evidence_unreadable_days[0].cause.is_empty(),
-            "{label}: a damaged day must carry its cause"
-        );
-        assert!(
-            document.days.contains_key(OTHER_DAY),
-            "{label}: the healthy day must still be scanned"
-        );
-        assert!(
-            !document.days.contains_key(DAY),
-            "{label}: a damaged day contributes no statistics"
-        );
-        assert_eq!(
-            document.day_count, 1,
-            "{label}: day_count counts days that scanned"
-        );
-        assert!(
-            !root.join("chronicle").join(DAY).join("stats.json").exists(),
-            "{label}: a damaged day must publish no cache, or the damage outlives its repair"
-        );
-    }
+    assert_eq!(result.exit_code, 0, "{label}: {}", result.stderr);
+    let document = writer.document();
+    assert_eq!(
+        document.evidence_unreadable_days.len(),
+        1,
+        "{label}: expected exactly one damaged day"
+    );
+    assert_eq!(document.evidence_unreadable_days[0].day, DAY, "{label}");
+    assert!(
+        !document.evidence_unreadable_days[0].cause.is_empty(),
+        "{label}: a damaged day must carry its cause"
+    );
+    assert!(
+        document.days.contains_key(OTHER_DAY),
+        "{label}: the healthy day must still be scanned"
+    );
+    assert!(
+        !document.days.contains_key(DAY),
+        "{label}: a damaged day contributes no statistics"
+    );
+    assert_eq!(
+        document.day_count, 1,
+        "{label}: day_count counts days that scanned"
+    );
+    assert!(
+        !root.join("chronicle").join(DAY).join("stats.json").exists(),
+        "{label}: a damaged day must publish no cache, or the damage outlives its repair"
+    );
 }
 
 #[test]

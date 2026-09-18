@@ -20,10 +20,9 @@ use solstone_core_system::queue::{
 };
 use solstone_core_system::request::{BusTaskRequest, ExecutionRequest, TaskArgv};
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
-
 struct Bed {
     root: PathBuf,
+    _generation: crate::fixture_binary::TestGeneration,
 }
 
 impl Bed {
@@ -34,7 +33,11 @@ impl Bed {
             .as_nanos();
         let root = std::env::temp_dir().join(format!("solstone-task-queue-{name}-{stamp}"));
         fs::create_dir_all(&root).expect("temporary journal");
-        Self { root }
+        let generation = crate::fixture_binary::TestGeneration::admit(&root);
+        Self {
+            root,
+            _generation: generation,
+        }
     }
 }
 
@@ -216,7 +219,7 @@ fn request(
 }
 
 fn command(args: &[&str]) -> Vec<String> {
-    let mut command = vec![FIXTURE.to_owned()];
+    let mut command = vec![crate::fixture_binary::string()];
     command.extend(args.iter().map(|arg| (*arg).to_owned()));
     command
 }
@@ -276,8 +279,9 @@ fn ac7_different_partitions_do_not_block_each_other() {
     let bed = Bed::new("ac7");
     let first = bed.root.join("first-child");
     let second = bed.root.join("second-child");
-    std::os::unix::fs::symlink(FIXTURE, &first).expect("first fixture link");
-    std::os::unix::fs::symlink(FIXTURE, &second).expect("second fixture link");
+    std::os::unix::fs::symlink(crate::fixture_binary::path(), &first).expect("first fixture link");
+    std::os::unix::fs::symlink(crate::fixture_binary::path(), &second)
+        .expect("second fixture link");
     let queue = queue(&bed, Duration::from_secs(5), true, None, None);
     let ready_a = bed.root.join("first-ready");
     let ready_b = bed.root.join("second-ready");
@@ -466,6 +470,7 @@ fn ac14_pre_ready_identical_requests_deterministically_make_two_runs() {
     assert_eq!(queue.collect_queue_counts().get("pending"), Some(&4));
     queue.set_ready();
     wait_for_history(&queue, 2);
+    wait_until(|| started_references(&sink).len() == 2 && stopped_references(&sink).len() == 4);
     assert_eq!(started_references(&sink).len(), 2);
     assert_eq!(stopped_references(&sink).len(), 4);
 }
@@ -945,8 +950,10 @@ fn phase_a_snapshot_does_not_wait_for_a_terminating_process_mutex() {
     let bed = Bed::new("phase-a-process-lock");
     let blocker = bed.root.join("blocker-child");
     let probe_child = bed.root.join("probe-child");
-    std::os::unix::fs::symlink(FIXTURE, &blocker).expect("blocker fixture link");
-    std::os::unix::fs::symlink(FIXTURE, &probe_child).expect("probe fixture link");
+    std::os::unix::fs::symlink(crate::fixture_binary::path(), &blocker)
+        .expect("blocker fixture link");
+    std::os::unix::fs::symlink(crate::fixture_binary::path(), &probe_child)
+        .expect("probe fixture link");
     let mut caps = BTreeMap::new();
     caps.insert("blocker-child".to_owned(), Duration::from_millis(10));
     caps.insert("probe-child".to_owned(), Duration::from_secs(5));

@@ -28,7 +28,7 @@ use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
 use super::error::EntityStoreError;
 use super::history::read_prepared_history;
-use super::identity::read_entity_identity;
+use super::identity::read_entity_identity_repairing;
 use super::paths::identity_path;
 use super::write::write_identity_snapshot;
 
@@ -254,7 +254,7 @@ pub fn repair_entity_identities(
                 source: Box::new(source.into()),
             }
         })?;
-        let identity = match read_entity_identity(journal_root, &entity_dir) {
+        let identity = match read_entity_identity_repairing(journal_root, &entity_dir) {
             Ok(identity) => identity,
             Err(source) if is_malformed_identity(&source) => {
                 report.refused.push(EntityIdentityRepairRefusal {

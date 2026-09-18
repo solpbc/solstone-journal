@@ -456,6 +456,56 @@ pub enum DurableRead<T> {
     },
 }
 
+/// Result of a durability-authorized observation that never changes the
+/// artifact. Mutation-refusal and preview paths use this form so inspecting a
+/// malformed input cannot itself violate their no-write contract.
+#[derive(Debug)]
+pub enum DurableObservation<T> {
+    Present(T),
+    Absent,
+    Malformed {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    Unreadable {
+        path: PathBuf,
+        source: io::Error,
+    },
+}
+
+/// Observe a whole JSON artifact under its declared identity without taking
+/// repair authority. This still binds the read to [`JOURNAL_ARTIFACTS`], but
+/// leaves malformed or unreadable evidence byte-identical for an explicit
+/// repair/startup owner.
+pub fn observe_json_durable<T: DeserializeOwned>(
+    id: ArtifactId,
+    path: &Path,
+) -> DurableObservation<T> {
+    let _declaration = artifact(id);
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(source) if source.kind() == io::ErrorKind::NotFound => {
+            return DurableObservation::Absent;
+        }
+        Err(source) => {
+            return DurableObservation::Unreadable {
+                path: path.to_path_buf(),
+                source,
+            };
+        }
+    };
+    if bytes.trim_ascii().is_empty() {
+        return DurableObservation::Absent;
+    }
+    match serde_json::from_slice(&bytes) {
+        Ok(value) => DurableObservation::Present(value),
+        Err(source) => DurableObservation::Malformed {
+            path: path.to_path_buf(),
+            source,
+        },
+    }
+}
+
 /// Result of reading a record-framed JSONL artifact.
 #[derive(Debug)]
 pub struct DurableJsonl<T> {
@@ -691,6 +741,28 @@ mod tests {
             .expect("read"),
             DurableRead::Absent
         ));
+    }
+
+    #[test]
+    fn observation_preserves_malformed_artifact_bytes_and_path() {
+        let directory = TempDir::new().expect("temporary root");
+        let path = directory.path().join("entity.json");
+        let malformed = b"{ not json\n";
+        fs::write(&path, malformed).expect("write");
+
+        let observed = observe_json_durable::<serde_json::Value>(ArtifactId::Entity, &path);
+        assert!(matches!(
+            observed,
+            DurableObservation::Malformed { path: error_path, .. } if error_path == path
+        ));
+        assert_eq!(fs::read(&path).expect("preserved artifact"), malformed);
+        assert_eq!(
+            fs::read_dir(directory.path())
+                .expect("read directory")
+                .count(),
+            1,
+            "observation must not create set-aside evidence"
+        );
     }
 
     #[test]

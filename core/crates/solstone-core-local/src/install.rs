@@ -1664,6 +1664,19 @@ fn failure(kind: &str, reason: &str, message: impl ToString, exit_code: u8) -> D
     }
 }
 
+#[cfg(all(test, feature = "test-fixture-pin"))]
+fn windows_payload_test_keys() -> &'static minisign::KeyPair {
+    static KEYS: std::sync::OnceLock<minisign::KeyPair> = std::sync::OnceLock::new();
+    KEYS.get_or_init(|| {
+        let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+        let pin_dir = tempfile::tempdir().unwrap();
+        let pin = pin_dir.path().join("fixture.pub");
+        std::fs::write(&pin, keys.pk.to_box().unwrap().to_bytes()).unwrap();
+        solstone_core_distribution::manifest_verify::install_test_fixture_pin(&pin).unwrap();
+        keys
+    })
+}
+
 #[cfg(test)]
 mod nvidia_probe_retry_tests {
     use super::live_nvidia_probe_is_transient_undetected;
@@ -1715,17 +1728,4 @@ mod nvidia_probe_retry_tests {
             true, None
         )));
     }
-}
-
-#[cfg(all(test, feature = "test-fixture-pin"))]
-fn windows_payload_test_keys() -> &'static minisign::KeyPair {
-    static KEYS: std::sync::OnceLock<minisign::KeyPair> = std::sync::OnceLock::new();
-    KEYS.get_or_init(|| {
-        let keys = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
-        let pin_dir = tempfile::tempdir().unwrap();
-        let pin = pin_dir.path().join("fixture.pub");
-        std::fs::write(&pin, keys.pk.to_box().unwrap().to_bytes()).unwrap();
-        solstone_core_distribution::manifest_verify::install_test_fixture_pin(&pin).unwrap();
-        keys
-    })
 }

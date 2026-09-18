@@ -4,8 +4,10 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
-use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable, set_aside};
-use solstone_core_journal_io::{contained_path, path_lexists};
+use solstone_core_journal_io::durability::{
+    ArtifactId, DurableObservation, DurableRead, observe_json_durable, read_json_durable, set_aside,
+};
+use solstone_core_journal_io::{MalformedDataError, ReadError, contained_path, path_lexists};
 
 use super::error::EntityStoreError;
 use super::paths::identity_path;
@@ -41,23 +43,53 @@ pub fn read_entity_identity(
     entity_dir: &str,
 ) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
     let path = identity_path(journal_root, entity_dir)?;
-    let mut value: Value = match read_json_durable(ArtifactId::Entity, &path).map_err(|e| {
-        EntityStoreError::from(solstone_core_journal_io::ReadError::Io {
+    let value = match observe_json_durable(ArtifactId::Entity, &path) {
+        DurableObservation::Present(value) => value,
+        DurableObservation::Absent => return Ok(None),
+        DurableObservation::Malformed { path, source } => {
+            return Err(ReadError::Malformed(MalformedDataError {
+                path,
+                line: None,
+                source,
+            })
+            .into());
+        }
+        DurableObservation::Unreadable { path, source } => {
+            return Err(ReadError::Io { path, source }.into());
+        }
+    };
+    identity_snapshot(path, entity_dir, value)
+}
+
+pub(super) fn read_entity_identity_repairing(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
+    let path = identity_path(journal_root, entity_dir)?;
+    let value: Value = match read_json_durable(ArtifactId::Entity, &path).map_err(|source| {
+        EntityStoreError::from(ReadError::Io {
             path: path.clone(),
-            source: e,
+            source,
         })
     })? {
-        DurableRead::Present(val) => val,
+        DurableRead::Present(value) => value,
         DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. } => {
             return Ok(None);
         }
     };
+    identity_snapshot_repairing(path, entity_dir, value)
+}
+
+fn identity_snapshot(
+    path: PathBuf,
+    entity_dir: &str,
+    mut value: Value,
+) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
     if value.is_null() {
         return Ok(None);
     }
     let Some(object) = value.as_object_mut() else {
-        let _ = set_aside(&path);
-        return Ok(None);
+        return Err(EntityStoreError::IdentityNotObject { path });
     };
     let written = object
         .get("id")
@@ -71,6 +103,26 @@ pub fn read_entity_identity(
         written: written.is_some(),
         value,
     }))
+}
+
+fn identity_snapshot_repairing(
+    path: PathBuf,
+    entity_dir: &str,
+    value: Value,
+) -> Result<Option<IdentitySnapshot>, EntityStoreError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+    if !value.is_object() {
+        set_aside(&path).map_err(|source| {
+            EntityStoreError::from(ReadError::Io {
+                path: path.clone(),
+                source,
+            })
+        })?;
+        return Ok(None);
+    }
+    identity_snapshot(path, entity_dir, value)
 }
 
 /// Return whether the literal identity destination exists, including an empty

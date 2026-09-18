@@ -195,10 +195,11 @@ async fn seed_same_partition_backlog(
             let bytes = reader.read_line(&mut line).await.expect("event line");
             assert!(bytes > 0, "connection closed while seeding backlog");
             let value: Value = serde_json::from_str(&line).expect("event JSON");
-            if value["tract"] == "supervisor" && value["event"] == "started" {
-                if let Some(pid) = value["pid"].as_i64() {
-                    running_pid = Some(pid as i32);
-                }
+            if value["tract"] == "supervisor"
+                && value["event"] == "started"
+                && let Some(pid) = value["pid"].as_i64()
+            {
+                running_pid = Some(pid as i32);
             }
             if value["tract"] == "supervisor" && value["event"] == "queue" {
                 queued_depth =

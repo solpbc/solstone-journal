@@ -16,7 +16,7 @@ use solstone_core_system::request::{
     BusTaskRequest, ExecutionRequest, ScheduledArgv, ScheduledRequest, WireTaskRequest,
 };
 use solstone_core_system::schedule::{
-    ScheduleConfig, ScheduleEngine, ScheduleEntry, ScheduleError, ScheduleMutation, ScheduleNow,
+    ScheduleConfig, ScheduleEngine, ScheduleEntry, ScheduleMutation, ScheduleNow,
     ScheduleSubmissionSink, add_missing_schedule_entries, baseline_cap_contributions, daily_mark,
     hour_mark, initialize_schedule_config, is_due, mutate_schedule_entries, remove_schedule_entry,
     weekly_mark,
@@ -401,7 +401,7 @@ fn fresh_schedule_defaults_are_staggered_without_backfilling_existing_configs() 
 }
 
 #[test]
-fn ac15_malformed_runtime_config_is_loud_while_missing_config_is_quiet() {
+fn ac15_malformed_runtime_config_is_reported_set_aside_and_rebuilt() {
     let bed = Bed::new("malformed");
     let (_, diagnostics) =
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("missing");
@@ -411,7 +411,19 @@ fn ac15_malformed_runtime_config_is_loud_while_missing_config_is_quiet() {
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0))
             .expect("runtime degrade");
     assert_eq!(diagnostics.len(), 1);
-    assert!(engine.register_defaults().is_err());
+    assert!(!bed.config().exists(), "damaged config was set aside");
+    assert!(
+        fs::read_dir(bed.config().parent().unwrap())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("schedules.wedged-")),
+        "damaged config remains discoverable by journal doctor"
+    );
+    assert!(engine.register_defaults().is_ok());
+    assert!(bed.config().exists(), "defaults rebuilt a valid config");
 }
 
 #[test]
@@ -597,28 +609,40 @@ fn ac20_completion_preserves_other_state_and_recovers_missing_file() {
 }
 
 #[test]
-fn ac20_non_object_runtime_state_is_loud_from_init_and_check() {
+fn ac20_non_object_runtime_state_is_set_aside_from_init_and_check() {
     let bed = Bed::new("state-shape");
     fs::write(bed.state(), b"[]").expect("state shape");
-    assert!(matches!(
-        ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)),
-        Err(ScheduleError::StateShape { .. })
-    ));
+    ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0))
+        .expect("invalid state degrades to an empty runtime state");
+    assert!(!bed.state().exists(), "invalid state was set aside");
 
     fs::write(bed.state(), b"{}").expect("valid state");
     let (mut engine, _) =
         ScheduleEngine::init(bed.config(), bed.state(), now(2026, 3, 22, 10, 0)).expect("init");
     fs::write(bed.state(), b"[]").expect("state shape");
-    assert!(matches!(
-        engine.check(
+    engine
+        .check(
             now(2026, 3, 22, 10, 1),
             &Sink {
                 accepted: true,
                 ..Sink::default()
-            }
-        ),
-        Err(ScheduleError::StateShape { .. })
-    ));
+            },
+        )
+        .expect("invalid state degrades during a runtime check");
+    assert!(
+        !bed.state().exists(),
+        "runtime check set invalid state aside"
+    );
+    assert!(
+        fs::read_dir(bed.state().parent().unwrap())
+            .unwrap()
+            .flatten()
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("scheduler.wedged-")),
+        "invalid state remains discoverable by journal doctor"
+    );
 }
 
 #[test]

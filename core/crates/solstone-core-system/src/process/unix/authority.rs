@@ -544,12 +544,31 @@ fn finish_generation_child_admission(
                 authority.bind_exact_identity(id)?;
                 id
             }
-            InspectResult::Absent | InspectResult::Unverifiable => {
-                let _ = authority.terminate_exact(Duration::from_secs(2));
-                return Err(LaunchError::Admission(
-                    "exact launch identity unavailable".to_owned(),
-                ));
-            }
+            InspectResult::Absent | InspectResult::Unverifiable => match authority.poll() {
+                Ok(Some(exit_code)) => {
+                    record_unidentified_admission_result(
+                        journal,
+                        generation,
+                        launch_id,
+                        AdmissionResultState::RejectedAndReaped {
+                            exit_code: Some(exit_code),
+                        },
+                    )?;
+                    return Ok(());
+                }
+                Ok(None) => {
+                    let _ = authority.terminate_exact(Duration::from_secs(2));
+                    return Err(LaunchError::Admission(
+                        "exact launch identity unavailable".to_owned(),
+                    ));
+                }
+                Err(error) => {
+                    let _ = authority.terminate_exact(Duration::from_secs(2));
+                    return Err(LaunchError::Admission(format!(
+                        "failed to poll child without an exact identity: {error}"
+                    )));
+                }
+            },
         },
     };
 

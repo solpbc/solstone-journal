@@ -685,37 +685,39 @@ fn ac3_no_schedule_skips_invalid_schedule_state_and_reaches_readiness() {
 
     let mut ordinary_child = start(&ordinary, None, &[]);
     let ordinary_ready = ordinary_health.join("supervisor.ready");
-    let mut ordinary_exit = None;
     let outcome = await_outcome(
         WaitPolarity::Positive,
         Duration::from_millis(5),
         1_600,
         Instant::now,
         || match ordinary_child.try_wait() {
-            Ok(Some(status)) => {
-                ordinary_exit = Some(status);
-                PollState::Held
-            }
-            Ok(None) if ordinary_ready.exists() => {
-                PollState::HardFail("ordinary supervisor reached readiness".to_owned())
-            }
+            Ok(Some(status)) => PollState::HardFail(format!(
+                "ordinary supervisor exited instead of recovering schedule state: {status}"
+            )),
+            Ok(None) if ordinary_ready.exists() => PollState::Held,
             Ok(None) => PollState::Pending,
             Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
         },
         thread::sleep,
     );
     panic_for_wait(
-        "ordinary supervisor did not exit for invalid schedule state",
+        "ordinary supervisor did not recover schedule state",
         outcome,
     );
-    assert_eq!(
-        ordinary_exit.expect("ordinary supervisor exit").code(),
-        Some(75)
+    assert!(ordinary_ready.exists());
+    assert!(
+        !ordinary_scheduler.exists(),
+        "invalid schedule state was set aside"
     );
-    assert!(!ordinary_ready.exists());
-    assert_eq!(
-        fs::read(&ordinary_scheduler).expect("ordinary schedule state"),
-        b"[]"
+    assert!(
+        fs::read_dir(&ordinary_health)
+            .expect("health directory")
+            .flatten()
+            .any(|entry| entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("scheduler.wedged-")),
+        "invalid schedule state remains discoverable by journal doctor"
     );
 
     let disabled = TempJournal::new();

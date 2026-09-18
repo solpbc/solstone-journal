@@ -17,7 +17,11 @@ use solstone_core_system::process::{
     describe_exit, exit_status_for_code,
 };
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
+// This file is both a standalone integration target and a module of
+// `system_lifecycle`; the standalone target needs its own fixture module.
+#[allow(clippy::duplicate_mod)]
+#[path = "fixture_binary.rs"]
+mod fixture_binary;
 
 struct Bed {
     root: PathBuf,
@@ -35,7 +39,7 @@ impl Bed {
     }
 
     fn spawn(&self, reference: &str, args: &[&str]) -> ManagedProcess {
-        let mut cmd = vec![FIXTURE.to_owned()];
+        let mut cmd = vec![fixture_binary::string()];
         cmd.extend(args.iter().map(|value| (*value).to_owned()));
         ManagedProcess::spawn(
             cmd,
@@ -60,7 +64,7 @@ impl Bed {
         args: &[&str],
         environment: BTreeMap<OsString, OsString>,
     ) -> ManagedProcess {
-        let mut cmd = vec![FIXTURE.to_owned()];
+        let mut cmd = vec![fixture_binary::string()];
         cmd.extend(args.iter().map(|value| (*value).to_owned()));
         ManagedProcess::spawn_exact(
             cmd,
@@ -391,7 +395,7 @@ fn ac20_spawn_line_and_exit_events_are_emitted_by_a_caller_owned_sink() {
     let bed = Bed::new("events");
     let collector = Arc::new(Collector::default());
     let mut process = ManagedProcess::spawn(
-        vec![FIXTURE.to_owned(), "lines".to_owned()],
+        vec![fixture_binary::string(), "lines".to_owned()],
         SpawnOptions {
             journal_root: bed.root.clone(),
             reference: "events".to_owned(),
@@ -485,7 +489,7 @@ fn ac26_drop_after_reap_does_not_attempt_termination() {
 fn ac27_linux_sigkill_of_spawner_kills_direct_child() {
     let bed = Bed::new("host-death-managed");
     let ready = bed.root.join("host-death-ready");
-    let mut spawner = std::process::Command::new(FIXTURE)
+    let mut spawner = std::process::Command::new(fixture_binary::path())
         .args([
             "host-death-managed",
             ready.to_str().expect("utf8"),

@@ -395,10 +395,17 @@ fn history_guards_preserve_required_messages() {
     );
 
     write_text(temporary.path(), "entities/not_object/entity.json", "[]");
-    assert!(
+    assert_eq!(
         read_entity_identity(temporary.path(), "not_object")
-            .unwrap()
-            .is_none()
+            .unwrap_err()
+            .to_string(),
+        format!(
+            "entity identity is not an object: {}",
+            temporary
+                .path()
+                .join("entities/not_object/entity.json")
+                .display()
+        )
     );
 
     write_text(

@@ -20,8 +20,6 @@ use solstone_core_system::provider_runtime::{
     VecEventSink,
 };
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
-
 /// A synthetic probe, never the real one: this test drives a CUDA launch to
 /// `Ready`, so calling `probe_nvidia_gpu()` would make the assertion a
 /// statement about the host's graphics card rather than about the coordinator.
@@ -131,6 +129,7 @@ fn pump(
 #[test]
 fn ac18_real_coordinator_seams_and_store() {
     let journal = journal();
+    let _generation = crate::fixture_binary::TestGeneration::admit(&journal);
     let shared = Arc::new(LocalRuntimeShared::default());
     let clock: Arc<dyn RuntimeClock> = Arc::new(TestClock {
         millis: AtomicU64::new(0),
@@ -150,7 +149,8 @@ fn ac18_real_coordinator_seams_and_store() {
         Duration::from_secs(5),
         Duration::from_millis(1),
         Duration::from_secs(1),
-    );
+    )
+    .with_journal(&journal);
     let mut probe = LocalProbeSeam::new(shared.clone(), journal.clone());
     let mut store =
         FileRuntimeStore::new(journal.clone(), ProviderName::Local, shared.clone(), clock);
@@ -194,7 +194,7 @@ fn ac18_real_coordinator_seams_and_store() {
                 model_path: "test-ready".into(),
                 mmproj_path: None,
             },
-            binary_path: Some(FIXTURE.into()),
+            binary_path: Some(crate::fixture_binary::string()),
             lib_dir: None,
             nvidia_probe: nvidia(),
             cuda_embedded_arch_set: vec!["sm_89".into()],

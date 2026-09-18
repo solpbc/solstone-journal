@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#[path = "fixture_binary.rs"]
+mod fixture_binary;
 #[cfg(unix)]
 #[path = "local_end_to_end.rs"]
 mod local_end_to_end;

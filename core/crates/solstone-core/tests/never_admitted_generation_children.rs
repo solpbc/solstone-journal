@@ -4,7 +4,7 @@
 #[cfg(unix)]
 mod tests {
     use std::fs;
-    use std::net::TcpListener;
+    use std::io::{BufRead, BufReader};
     use std::path::PathBuf;
     use std::process::{Child, Command, Stdio};
     use std::thread;
@@ -56,7 +56,7 @@ mod tests {
             let mut command = Command::new("python3");
             command.args([
                 "-c",
-                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)",
+                "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); print('ready', flush=True); time.sleep(60)",
             ]);
             command
         } else {
@@ -66,15 +66,41 @@ mod tests {
         };
         let child = command
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
+            .stdout(if ignore_sigterm {
+                Stdio::piped()
+            } else {
+                Stdio::null()
+            })
             .stderr(Stdio::null())
             .spawn()
             .expect("spawn child");
+        let mut child = child;
+        if ignore_sigterm {
+            let mut ready = String::new();
+            BufReader::new(child.stdout.take().expect("stubborn child stdout"))
+                .read_line(&mut ready)
+                .expect("stubborn child readiness");
+            assert_eq!(ready.trim(), "ready");
+        }
         let instance = match SystemProcessInstanceSource.inspect(child.id()) {
             InspectResult::Present { instance, .. } => instance,
             other => panic!("own child must be inspectable: {other:?}"),
         };
         (child, instance)
+    }
+
+    fn lock_is_available(path: &std::path::Path) -> bool {
+        Command::new("python3")
+            .args([
+                "-c",
+                "import fcntl,sys; f=open(sys.argv[1], 'a+'); fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)",
+            ])
+            .arg(path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success())
     }
 
     fn close_with_budget(
@@ -176,7 +202,7 @@ mod tests {
 
     // B. Descendant-holds-resource: recorded task-worker root spawned a descendant holding bound resource
     #[test]
-    fn descendant_holding_resource_is_terminated_allowing_successor_to_bind() {
+    fn descendant_holding_resource_is_terminated_allowing_successor_to_acquire() {
         let journal = TempJournal::new("descendant-resource");
         let ledger = ParentLossLedger::open(&journal.root).expect("ledger");
         let active = ledger
@@ -191,17 +217,17 @@ mod tests {
             .mark_admitting(active.generation, coordinator)
             .expect("admitting state");
 
-        // Find an open port first
-        let listener = TcpListener::bind("127.0.0.1:0").expect("find port");
-        let port = listener.local_addr().unwrap().port();
-        drop(listener);
-
-        // Spawn a shell child (task worker) that spawns a background listener holding the port
-        let script = format!(
-            "python3 -c \"import socket, time; s = socket.socket(); s.bind(('127.0.0.1', {port})); s.listen(1); time.sleep(60)\" & sleep 60"
-        );
-        let mut root_child = Command::new("sh")
-            .args(["-c", &script])
+        // Spawn a task-worker root that creates a descendant holding an advisory
+        // lock. A readiness file removes the bind-before-probe race the former
+        // ephemeral-port fixture carried under a loaded host.
+        let lock_path = journal.root.join("descendant-resource.lock");
+        let ready_path = journal.root.join("descendant-resource.ready");
+        let descendant = "import fcntl,sys,time; f=open(sys.argv[1], 'a+'); fcntl.flock(f, fcntl.LOCK_EX); open(sys.argv[2], 'w').write('ready'); time.sleep(60)";
+        let root = "import subprocess,sys,time; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2], sys.argv[3]]); time.sleep(60)";
+        let mut root_child = Command::new("python3")
+            .args(["-c", root, descendant])
+            .arg(&lock_path)
+            .arg(&ready_path)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -212,16 +238,16 @@ mod tests {
             other => panic!("own child inspectable: {other:?}"),
         };
 
-        // Wait briefly for descendant to bind the port
-        let mut bound = false;
-        for _ in 0..100 {
-            if TcpListener::bind(format!("127.0.0.1:{port}")).is_err() {
-                bound = true;
+        // Wait for the descendant to report that the lock is held.
+        let mut held = false;
+        for _ in 0..200 {
+            if ready_path.exists() && !lock_is_available(&lock_path) {
+                held = true;
                 break;
             }
             thread::sleep(Duration::from_millis(10));
         }
-        assert!(bound, "descendant must have bound the port");
+        assert!(held, "descendant must have acquired the resource lock");
 
         let launch_id = generate_helper_launch_id("task-worker");
         write_parent_loss_admission_intent(
@@ -246,10 +272,10 @@ mod tests {
 
         let _ = root_child.wait();
 
-        // Successor can now bind the port because the descendant was terminated
+        // Successor can now acquire the resource because the descendant was terminated.
         let mut reacquired = false;
-        for _ in 0..100 {
-            if TcpListener::bind(format!("127.0.0.1:{port}")).is_ok() {
+        for _ in 0..200 {
+            if lock_is_available(&lock_path) {
                 reacquired = true;
                 break;
             }
@@ -257,7 +283,7 @@ mod tests {
         }
         assert!(
             reacquired,
-            "successor must be able to bind the port released by descendant termination"
+            "successor must be able to acquire the resource released by descendant termination"
         );
     }
 
@@ -442,8 +468,6 @@ mod tests {
 
         // Spawn child ignoring SIGTERM
         let (mut stubborn_child, stubborn_instance) = spawn_child(true);
-        thread::sleep(Duration::from_millis(200));
-
         let launch_id = generate_helper_launch_id("task-worker");
         write_parent_loss_admission_intent(
             &journal.root,

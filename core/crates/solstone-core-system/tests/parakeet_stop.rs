@@ -15,8 +15,6 @@ use solstone_core_system::provider_runtime::{
     RuntimeClock, RuntimePhase, StopCleanupStatus, SystemRuntimeClock,
 };
 
-const FIXTURE: &str = env!("CARGO_BIN_EXE_solstone-system-test-child");
-
 fn fence(attempt: u32) -> ProviderFence {
     ProviderFence {
         incarnation: "test".to_owned(),
@@ -31,7 +29,7 @@ fn launch(model_path: &str) -> ParakeetLaunchConfig {
         binary_backend: "cpu".to_owned(),
         env_updates: BTreeMap::new(),
         gpu_index: None,
-        binary_path: PathBuf::from(FIXTURE),
+        binary_path: crate::fixture_binary::path().to_path_buf(),
         model_path: PathBuf::from(model_path),
         package_root: None,
         journal_path: PathBuf::from("test-journal"),
@@ -46,15 +44,23 @@ fn seam(
     shared: Arc<ParakeetRuntimeShared>,
     warmup_timeout: Duration,
     termination_timeout: Duration,
-) -> ParakeetLifecycleSeam {
+) -> (
+    ParakeetLifecycleSeam,
+    tempfile::TempDir,
+    crate::fixture_binary::TestGeneration,
+) {
+    let journal = tempfile::tempdir().expect("temporary journal");
+    let generation = crate::fixture_binary::TestGeneration::admit(journal.path());
     let clock: Arc<dyn RuntimeClock> = Arc::new(SystemRuntimeClock::default());
-    ParakeetLifecycleSeam::with_timeouts(
+    let seam = ParakeetLifecycleSeam::with_timeouts(
         shared,
         clock,
         warmup_timeout,
         Duration::from_millis(1),
         termination_timeout,
     )
+    .with_journal(journal.path());
+    (seam, journal, generation)
 }
 
 fn start(
@@ -87,7 +93,7 @@ fn stop_state(managed: ManagedProcess) -> ProviderRuntimeState {
 #[test]
 fn stopping_the_same_managed_process_twice_is_idempotent() {
     let shared = Arc::new(ParakeetRuntimeShared::default());
-    let mut lifecycle = seam(
+    let (mut lifecycle, _journal, _generation) = seam(
         shared.clone(),
         Duration::from_millis(200),
         Duration::from_secs(2),
@@ -114,7 +120,7 @@ fn stopping_the_same_managed_process_twice_is_idempotent() {
 #[test]
 fn dispatch_stop_reports_cleanup_failed_for_a_term_resistant_child() {
     let shared = Arc::new(ParakeetRuntimeShared::default());
-    let mut starting = seam(
+    let (mut starting, _journal, _generation) = seam(
         shared.clone(),
         Duration::from_secs(5),
         Duration::from_secs(1),
@@ -123,7 +129,8 @@ fn dispatch_stop_reports_cleanup_failed_for_a_term_resistant_child() {
     assert_eq!(started.status, LaunchOutcomeStatus::Ready);
     let managed = started.managed.expect("ready child");
 
-    let mut failing = seam(shared.clone(), Duration::from_secs(5), Duration::ZERO);
+    let (mut failing, _failing_journal, _failing_generation) =
+        seam(shared.clone(), Duration::from_secs(5), Duration::ZERO);
     let stop_fence = fence(2);
     failing.dispatch_stop(&stop_state(managed), &stop_fence);
     let failed = shared.wait_for_stop_cleanup_result(&stop_fence);
@@ -137,7 +144,7 @@ fn dispatch_stop_reports_cleanup_failed_for_a_term_resistant_child() {
 #[test]
 fn dispatch_stop_reports_cancelled_without_a_child() {
     let shared = Arc::new(ParakeetRuntimeShared::default());
-    let mut lifecycle = seam(
+    let (mut lifecycle, _journal, _generation) = seam(
         shared.clone(),
         Duration::from_secs(1),
         Duration::from_secs(1),
@@ -181,7 +188,7 @@ fn process_is_gone(pid: u32) -> bool {
 fn linux_sigkill_of_spawner_kills_direct_child() {
     let root = tempfile::tempdir().expect("temporary journal");
     let ready = root.path().join("host-death-ready");
-    let mut spawner = std::process::Command::new(FIXTURE)
+    let mut spawner = std::process::Command::new(crate::fixture_binary::path())
         .args(["host-death-direct", ready.to_str().expect("utf8")])
         .spawn()
         .expect("spawn host-death-direct fixture");

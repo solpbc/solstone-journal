@@ -265,7 +265,7 @@ fn independent_clients_at_the_same_clock_keep_durable_outcomes_separate() {
 }
 
 #[test]
-fn damaged_counter_refuses_before_request_publication() {
+fn damaged_counter_is_set_aside_before_request_publication() {
     let journal = tempfile::tempdir().unwrap();
     let listener = bind(journal.path());
     listener.set_nonblocking(true).unwrap();
@@ -274,11 +274,28 @@ fn damaged_counter_refuses_before_request_publication() {
         CortexRequestClient::new(journal.path(), CortexRequestPolicy::interactive())
             .dispatch(&CortexRequest::new("prompt", "steward")),
     );
-    assert_eq!(result, Err(DispatchError::Unavailable));
-    assert!(matches!(listener.accept(), Err(error) if error.kind() == io::ErrorKind::WouldBlock));
-    assert_eq!(
-        fs::read(journal.path().join("health/cortex-use-id.json")).unwrap(),
-        b"damaged"
+    assert!(matches!(result, Err(DispatchError::NotClaimed { .. })));
+    assert!(
+        listener.accept().is_ok(),
+        "the recovered request was published"
+    );
+    let health = journal.path().join("health");
+    assert!(
+        fs::read_dir(&health).unwrap().flatten().any(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("cortex-use-id.wedged-")
+        }),
+        "the damaged counter is retained for journal doctor"
+    );
+    assert!(
+        fs::read_to_string(health.join("cortex-use-id.json"))
+            .unwrap()
+            .trim()
+            .parse::<i64>()
+            .is_ok(),
+        "recovery publishes a valid replacement counter"
     );
 }
 
