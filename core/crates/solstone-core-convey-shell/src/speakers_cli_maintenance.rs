@@ -454,6 +454,7 @@ pub async fn backfill_last_seen(
     Json(json!({"dry_run":dry_run,"labels_read":labels_read,"entities_seen":entity_max_ts.len(),"entities_pending":pending.len(),"rows_scanned":rows_scanned,"rows_pending":rows_pending,"rows_written":rows_written,"pending":pending,"skipped_ineligible":skipped_ineligible,"skipped_ineligible_count":skipped_ineligible_count,"errors":errors})).into_response()
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn accumulate(
     root: &std::path::Path,
     segment_dir: &std::path::Path,

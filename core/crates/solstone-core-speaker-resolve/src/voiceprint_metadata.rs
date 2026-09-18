@@ -49,6 +49,7 @@ pub enum VoiceprintMetadataError {
 impl VoiceprintMetadata {
     /// Construct a new-format nine-key metadata record.
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         day: impl Into<String>,
         stream_layout: SegmentLayout,

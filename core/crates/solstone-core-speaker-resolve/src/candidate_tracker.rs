@@ -651,6 +651,7 @@ pub fn eligible_for_pair_suggestion(
 pub fn pool_section(candidates: &[CandidateProfile]) -> Value {
     json!({"total":candidates.len(),"dense_count":candidates.iter().filter(|c|c.n_intervals>=CONSOLIDATE_MIN_INTERVALS).count()})
 }
+#[allow(clippy::too_many_arguments)]
 pub fn retroactive_voiceprint_metadata(
     day: &str,
     stream_layout: SegmentLayout,
