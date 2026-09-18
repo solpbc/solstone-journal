@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2015,SC2016,SC2317
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright (c) 2026 sol pbc
 #
@@ -39,6 +40,11 @@
 #   version-order-unknown
 #   retention-policy-unsupported
 #   prune-unsafe
+#   role-invalid
+#   role-conflict
+#   transaction-policy-conflict
+#   compatibility-unknown
+#   candidate-invalid
 
 set -eu
 
@@ -52,13 +58,16 @@ MINISIGN_PUBLIC_KEY=RWRE2eBJv3NAtN0mF5+kqygYyP/ocYNw1Ng9yJhAKgyTflNV9NabMMjq
 RECEIPT_SCHEMA_VERSION=1
 SUPPORTED_UPGRADE_EPOCH=journal-v2
 SUPPORTED_RETENTION_WINDOW=3
+# shellcheck disable=SC2034
+SUPPORTED_STATE_READER_MIN=1.0.0
 # This installer script's own revision — bump it when install.sh changes in a
 # way that would behave incorrectly against a release requiring the fix.
 # Invariant: a promoted release's min_bootstrap_revision must never exceed the
 # BOOTSTRAP_REVISION of the installer live at https://solstone.app/install.sh
 # at promotion time (solstone-core-distribution's inspect.rs::MIN_BOOTSTRAP_REVISION
 # mirrors this floor).
-BOOTSTRAP_REVISION=1
+BOOTSTRAP_REVISION=2
+BOOTSTRAP_CONTRACT_VERSION=2
 
 refuse() {
 	_name=$1
@@ -76,7 +85,7 @@ refuse() {
 }
 
 usage() {
-	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--lane LANE] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--manifest FILE] [--minisig FILE] [--skip-signature] [--upgrade] [--prune] [--no-path]"
+	printf '%s\n' "usage: install.sh [--prefix DIR] [--version VER] [--lane LANE] [--origin URL] [--archive FILE] [--sha256 FILE] [--release FILE] [--manifest FILE] [--minisig FILE] [--skip-signature] [--upgrade] [--prune] [--no-path] [--role ROLE] [--no-start]"
 }
 
 PREFIX=
@@ -94,6 +103,18 @@ SKIP_SIGNATURE=0
 UPGRADE=0
 PRUNE=0
 NO_PATH=0
+ROLE=journal
+ROLE_EXPLICIT=0
+NO_START=0
+INSTALLED_LANE=
+INSTALLED_ROLE=journal
+INSTALLED_JOURNAL_STATE=unknown
+INSTALLED_SERVICE_POLICY=start
+INSTALLED_SETUP_STATUS=pending
+INSTALLED_STATE_READER_MIN=
+INSTALLED_STATE_READER_MAX=
+RELEASE_STATE_READER_MIN=
+RELEASE_STATE_READER_MAX=
 WORK=
 PARTIAL=
 RECEIPT_PARTIAL=
@@ -173,6 +194,7 @@ publish_signal_receipt() {
 	current_selects_destination || return 1
 	grep -Fqx 'setup_status=pending' "$RECEIPT_PARTIAL" \
 		|| grep -Fqx 'setup_status=complete' "$RECEIPT_PARTIAL" \
+		|| grep -Fqx 'setup_status=not-applicable' "$RECEIPT_PARTIAL" \
 		|| return 1
 	mv -f "$RECEIPT_PARTIAL" "$PREFIX/install-receipt" || return 1
 	RECEIPT_PARTIAL=
@@ -196,7 +218,7 @@ path_is_transaction_owned() {
 		&& [ -d "$_owned_path" ] && [ ! -L "$_owned_path" ] \
 		&& [ -f "$_owned_marker" ] && [ ! -L "$_owned_marker" ] \
 		|| return 1
-	[ "$(cat "$_owned_marker")" = "$ROUTE_LOCK_TOKEN" ]
+	grep -Fqx "token=${ROUTE_LOCK_TOKEN}" "$_owned_marker" >/dev/null 2>&1
 }
 
 parse_args() {
@@ -265,6 +287,16 @@ parse_args() {
 			NO_PATH=1
 			shift
 			;;
+		--role)
+			[ "$#" -ge 2 ] || refuse role-invalid "--role requires a value"
+			ROLE=$2
+			ROLE_EXPLICIT=1
+			shift 2
+			;;
+		--no-start)
+			NO_START=1
+			shift
+			;;
 		--help | -h)
 			usage
 			exit 0
@@ -274,6 +306,15 @@ parse_args() {
 			;;
 		esac
 	done
+
+	case $ROLE in
+	journal | cli) ;;
+	*) refuse role-invalid "$ROLE" ;;
+	esac
+	# --no-start changes journal setup only. Canonicalize it away for CLI
+	# installs so interrupted CLI transactions can be retried with either
+	# spelling of the same effective policy.
+	[ "$ROLE" != cli ] || NO_START=0
 
 	case $LANE in
 	release | staging | dev) ;;
@@ -406,7 +447,7 @@ check_origin_url() {
 	_scheme=$(origin_scheme "$_url")
 	_host=$(origin_host "$_url")
 	case ${_scheme}://${_host} in
-	https://${ORIGIN_HOST}) return 0 ;;
+	https://"$ORIGIN_HOST") return 0 ;;
 	http://127.0.0.1 | https://127.0.0.1) return 0 ;;
 	*) refuse origin-refused "${_scheme}://${_host}" ;;
 	esac
@@ -576,8 +617,8 @@ validate_release() {
 	_want_target=$3
 	_lines=$(printf '%s\n' "$_text" | awk 'NF{c++} END{print c+0}')
 	case $_lines in
-	5 | 8 | 11) ;;
-	*) refuse release-invalid "expected 5 legacy, 8 current, or 11 macos fields" ;;
+	5 | 8 | 11 | 12 | 15) ;;
+	*) refuse release-invalid "expected 5 legacy, 8/11 v1, or 12/15 v2 fields" ;;
 	esac
 	_product=
 	_version=
@@ -587,6 +628,10 @@ validate_release() {
 	_epoch=
 	_window=
 	_min_bootstrap=
+	_bootstrap_contract=
+	_bootstrap_filename=
+	_state_reader_min=
+	_state_reader_max=
 	_archive_prebuild=
 	_archive_delivery=
 	_archive_invocation=
@@ -612,6 +657,10 @@ validate_release() {
 		upgrade_epoch) _epoch=$_val ;;
 		retention_window) _window=$_val ;;
 		min_bootstrap_revision) _min_bootstrap=$_val ;;
+		bootstrap_contract_version) _bootstrap_contract=$_val ;;
+		bootstrap_filename) _bootstrap_filename=$_val ;;
+		state_reader_min) _state_reader_min=$_val ;;
+		state_reader_max) _state_reader_max=$_val ;;
 		archive_prebuild_input_sha256) _archive_prebuild=$_val ;;
 		archive_delivery_contract_sha256) _archive_delivery=$_val ;;
 		archive_final_invocation_sha256) _archive_invocation=$_val ;;
@@ -647,8 +696,24 @@ EOF
 		'' | *[!0-9]*) refuse release-invalid "min_bootstrap_revision" ;;
 		esac
 	fi
+	if [ "$_lines" -ge 12 ]; then
+		[ "$_bootstrap_contract" = "$BOOTSTRAP_CONTRACT_VERSION" ] \
+			|| refuse release-invalid "bootstrap_contract_version"
+		[ "$_bootstrap_filename" = "solstone-journal-${_version}-install.sh" ] \
+			|| refuse release-invalid "bootstrap_filename"
+		[ "$(printf '%s' "$_state_reader_min" | awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { print "yes" }')" = yes ] \
+			|| refuse release-invalid "state_reader_min must be numeric MAJOR.MINOR.PATCH"
+		[ "$(printf '%s' "$_state_reader_max" | awk -F. 'NF == 3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/ { print "yes" }')" = yes ] \
+			|| refuse release-invalid "state_reader_max must be numeric MAJOR.MINOR.PATCH"
+		if version_is_older "$_state_reader_max" "$_state_reader_min"; then
+			refuse release-invalid "state_reader_min cannot exceed state_reader_max"
+		fi
+		if version_is_older "$_version" "$_state_reader_min" || version_is_older "$_state_reader_max" "$_version"; then
+			refuse release-invalid "version must fall within state_reader range"
+		fi
+	fi
 	[ "$_target" = "$_want_target" ] || refuse release-invalid "target"
-	if [ "$_lines" -eq 11 ]; then
+	if [ "$_lines" -eq 11 ] || [ "$_lines" -eq 15 ]; then
 		[ "$_target" = macos-arm64 ] \
 			|| refuse release-invalid "archive-chain fields are macos-only"
 		is_hex "$_archive_prebuild" 64 || refuse release-invalid "archive_prebuild_input_sha256"
@@ -666,6 +731,8 @@ EOF
 	RELEASE_COMMIT=$_commit
 	RELEASE_EPOCH=$_epoch
 	RELEASE_RETENTION_WINDOW=$_window
+	RELEASE_STATE_READER_MIN=$_state_reader_min
+	RELEASE_STATE_READER_MAX=$_state_reader_max
 }
 
 member_has_dotdot() {
@@ -897,6 +964,8 @@ positive_tree_release() {
 	INSTALLED_DEST=$_dest
 	INSTALLED_EPOCH=$RELEASE_EPOCH
 	INSTALLED_RETENTION_WINDOW=$RELEASE_RETENTION_WINDOW
+	INSTALLED_STATE_READER_MIN=$RELEASE_STATE_READER_MIN
+	INSTALLED_STATE_READER_MAX=$RELEASE_STATE_READER_MAX
 	return 0
 }
 
@@ -957,6 +1026,7 @@ within_retention_window() {
 	_oldifs=$IFS
 	IFS='
 '
+	# shellcheck disable=SC2045
 	for _candidate in $(ls -1dt -- "$PREFIX"/versions/* 2>/dev/null); do
 		[ "$_candidate" = "$_current" ] && continue
 		_kept=$((_kept + 1))
@@ -1010,6 +1080,7 @@ prune_versions() {
 	_oldifs=$IFS
 	IFS='
 '
+	# shellcheck disable=SC2045
 	for _candidate in $(ls -1dt -- "$PREFIX"/versions/* 2>/dev/null); do
 		[ "$_candidate" = "$INSTALLED_DEST" ] && continue
 		if [ "$_kept" -lt "$SUPPORTED_RETENTION_WINDOW" ]; then
@@ -1030,6 +1101,79 @@ prune_versions() {
 	printf 'retained %s version directories; current -> %s\n' \
 		"$_count" "$(readlink "$PREFIX/current")"
 }
+DEST_IS_INTERRUPTED_CLI_RETRY=0
+
+check_journal_to_cli_transition() {
+	_prefix=$1
+	[ "$ROUTE" = tree ] || return 0
+	if [ "$DEST_IS_INTERRUPTED_CLI_RETRY" -eq 1 ]; then
+		return 0
+	fi
+	if [ "$RECEIPT_FOUND" -eq 0 ]; then
+		refuse role-conflict "adopted receipt-less tree cannot transition to role=cli; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+	fi
+	if [ "$RECEIPT_HAS_ROLE" -eq 0 ]; then
+		refuse role-conflict "legacy installation cannot transition to role=cli; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+	fi
+	for _bin in "$HOME/.local/bin/journal" "$HOME/.local/bin/solstone"; do
+		if [ -e "$_bin" ] || [ -L "$_bin" ]; then
+			if [ ! -f "$_bin" ] || [ -L "$_bin" ]; then
+				refuse role-conflict "wrapper $_bin is not a regular file; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+			fi
+			if grep -F "$_prefix" "$_bin" >/dev/null 2>&1; then
+				refuse role-conflict "wrapper $_bin remains bound to this prefix; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+			fi
+			if grep -E '(SOL_BIN=|exec )' "$_bin" >/dev/null 2>&1; then
+				: # foreign wrapper
+			else
+				refuse role-conflict "ambiguous or malformed wrapper at $_bin; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+			fi
+		fi
+	done
+	_systemd_svc="$HOME/.config/systemd/user/solstone.service"
+	if [ -e "$_systemd_svc" ] || [ -L "$_systemd_svc" ]; then
+		if [ -f "$_systemd_svc" ] && grep -F "$_prefix" "$_systemd_svc" >/dev/null 2>&1; then
+			refuse role-conflict "systemd service $_systemd_svc remains bound to this prefix; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+		fi
+	fi
+	_launch_agent="$HOME/Library/LaunchAgents/org.solpbc.solstone.plist"
+	if [ -e "$_launch_agent" ] || [ -L "$_launch_agent" ]; then
+		if [ -f "$_launch_agent" ] && grep -F "$_prefix" "$_launch_agent" >/dev/null 2>&1; then
+			refuse role-conflict "launchd unit $_launch_agent remains bound to this prefix; run 'journal setup --clean-uninstall' then install with --role cli (clean-uninstall removes setup/service ownership without deleting journal records or the verified payload tree)"
+		fi
+	fi
+}
+
+verify_candidate_launchers() {
+	_dest=$1
+	_ver=$2
+	[ -x "$_dest/bin/journal" ] || refuse candidate-invalid "missing or non-executable bin/journal"
+	[ -x "$_dest/bin/solstone" ] || refuse candidate-invalid "missing or non-executable bin/solstone"
+	_j_out=$("$_dest/bin/journal" --version 2>&1) || refuse candidate-invalid "bin/journal --version failed"
+	[ "$_j_out" = "journal (solstone) ${_ver}" ] || refuse candidate-invalid "bin/journal version mismatch: expected 'journal (solstone) ${_ver}', got '${_j_out}'"
+	_s_out=$("$_dest/bin/solstone" --version 2>&1) || refuse candidate-invalid "bin/solstone --version failed"
+	[ "$_s_out" = "solstone ${_ver}" ] || refuse candidate-invalid "bin/solstone version mismatch: expected 'solstone ${_ver}', got '${_s_out}'"
+}
+
+check_existing_destination_marker() {
+	_dest=$1
+	DEST_IS_INTERRUPTED_CLI_RETRY=0
+	for _m in "$_dest"/.install-transaction-*; do
+		[ -f "$_m" ] || continue
+		_marker_role=$(awk -F= '$1=="requested_role"{print $2}' "$_m")
+		_marker_no_start=$(awk -F= '$1=="requested_no_start"{print $2}' "$_m")
+		[ "$_marker_role" != cli ] || _marker_no_start=0
+		if [ -n "$_marker_role" ] && [ "$_marker_role" != "$ROLE" ]; then
+			refuse transaction-policy-conflict "prior transaction was for role ${_marker_role}, but requested role is ${ROLE}"
+		fi
+		if [ -n "$_marker_no_start" ] && [ "$_marker_no_start" != "$NO_START" ]; then
+			refuse transaction-policy-conflict "prior transaction requested_no_start was ${_marker_no_start}, but requested no-start is ${NO_START}"
+		fi
+		if [ "$_marker_role" = "cli" ]; then
+			DEST_IS_INTERRUPTED_CLI_RETRY=1
+		fi
+	done
+}
 
 read_receipt() {
 	_receipt=$1
@@ -1041,9 +1185,26 @@ read_receipt() {
 	RECEIPT_SCHEMA=
 	RECEIPT_LANE=
 	RECEIPT_ROUTE=
+	RECEIPT_ROLE=
+	RECEIPT_JOURNAL_STATE=
+	RECEIPT_SERVICE_POLICY=
+	RECEIPT_SETUP_STATUS=
+	RECEIPT_HAS_ROLE=0
+
 	_seen_schema=0
+	_seen_version=0
 	_seen_lane=0
+	_seen_origin=0
+	_seen_arch=0
+	_seen_installer_rev=0
+	_seen_bootstrap_rev=0
 	_seen_route=0
+	_seen_sig=0
+	_seen_role=0
+	_seen_journal_state=0
+	_seen_service_policy=0
+	_seen_setup_status=0
+
 	while IFS= read -r _line || [ -n "$_line" ]; do
 		case $_line in
 		*=*) ;;
@@ -1057,31 +1218,129 @@ read_receipt() {
 			RECEIPT_SCHEMA=$_value
 			_seen_schema=1
 			;;
+		journal_version)
+			[ "$_seen_version" -eq 0 ] || refuse receipt-invalid "duplicate journal_version"
+			_seen_version=1
+			;;
 		lane)
 			[ "$_seen_lane" -eq 0 ] || refuse receipt-invalid "duplicate lane"
 			RECEIPT_LANE=$_value
 			_seen_lane=1
+			;;
+		origin)
+			[ "$_seen_origin" -eq 0 ] || refuse receipt-invalid "duplicate origin"
+			_seen_origin=1
+			;;
+		architecture)
+			[ "$_seen_arch" -eq 0 ] || refuse receipt-invalid "duplicate architecture"
+			_seen_arch=1
+			;;
+		installer_revision)
+			[ "$_seen_installer_rev" -eq 0 ] || refuse receipt-invalid "duplicate installer_revision"
+			_seen_installer_rev=1
+			;;
+		bootstrap_revision)
+			[ "$_seen_bootstrap_rev" -eq 0 ] || refuse receipt-invalid "duplicate bootstrap_revision"
+			_seen_bootstrap_rev=1
 			;;
 		route)
 			[ "$_seen_route" -eq 0 ] || refuse receipt-invalid "duplicate route"
 			RECEIPT_ROUTE=$_value
 			_seen_route=1
 			;;
-		*) : ;; # Forward-compatible: unknown keys are dispatch hints, not authority.
+		signature_verification)
+			[ "$_seen_sig" -eq 0 ] || refuse receipt-invalid "duplicate signature_verification"
+			_seen_sig=1
+			;;
+		role)
+			[ "$_seen_role" -eq 0 ] || refuse receipt-invalid "duplicate role"
+			RECEIPT_ROLE=$_value
+			_seen_role=1
+			RECEIPT_HAS_ROLE=1
+			;;
+		journal_state)
+			[ "$_seen_journal_state" -eq 0 ] || refuse receipt-invalid "duplicate journal_state"
+			RECEIPT_JOURNAL_STATE=$_value
+			_seen_journal_state=1
+			;;
+		service_policy)
+			[ "$_seen_service_policy" -eq 0 ] || refuse receipt-invalid "duplicate service_policy"
+			RECEIPT_SERVICE_POLICY=$_value
+			_seen_service_policy=1
+			;;
+		setup_status)
+			[ "$_seen_setup_status" -eq 0 ] || refuse receipt-invalid "duplicate setup_status"
+			RECEIPT_SETUP_STATUS=$_value
+			_seen_setup_status=1
+			;;
+		*)
+			refuse receipt-invalid "unexpected key ${_key}"
+			;;
 		esac
 	done <"$_receipt"
+
 	[ "$_seen_schema" -eq 1 ] || refuse receipt-invalid "schema_version missing"
 	[ "$RECEIPT_SCHEMA" = "$RECEIPT_SCHEMA_VERSION" ] \
 		|| refuse receipt-schema-unsupported "schema_version=${RECEIPT_SCHEMA}"
+	[ "$RECEIPT_ROUTE" = tree ] || refuse receipt-invalid "route=${RECEIPT_ROUTE}"
+
 	case $RECEIPT_LANE in
 	release | staging | dev | unknown) ;;
 	*) refuse receipt-invalid "lane=${RECEIPT_LANE}" ;;
 	esac
-	[ "$RECEIPT_ROUTE" = tree ] || refuse receipt-invalid "route=${RECEIPT_ROUTE}"
+
+	if [ "$_seen_role" -eq 0 ]; then
+		RECEIPT_ROLE=journal
+	fi
+	if [ "$_seen_journal_state" -eq 0 ]; then
+		RECEIPT_JOURNAL_STATE=unknown
+	fi
+	if [ "$_seen_service_policy" -eq 0 ]; then
+		RECEIPT_SERVICE_POLICY=start
+	fi
+	if [ "$_seen_setup_status" -eq 0 ]; then
+		RECEIPT_SETUP_STATUS=pending
+	fi
+
+	case $RECEIPT_ROLE in
+	journal | cli) ;;
+	*) refuse receipt-invalid "role=${RECEIPT_ROLE}" ;;
+	esac
+
+	case $RECEIPT_JOURNAL_STATE in
+	present | unknown) ;;
+	*) refuse receipt-invalid "journal_state=${RECEIPT_JOURNAL_STATE}" ;;
+	esac
+
+	case $RECEIPT_SERVICE_POLICY in
+	start | no-start | none) ;;
+	*) refuse receipt-invalid "service_policy=${RECEIPT_SERVICE_POLICY}" ;;
+	esac
+
+	case $RECEIPT_SETUP_STATUS in
+	complete | pending | not-applicable) ;;
+	*) refuse receipt-invalid "setup_status=${RECEIPT_SETUP_STATUS}" ;;
+	esac
+
+	case "${RECEIPT_ROLE}:${RECEIPT_SETUP_STATUS}:${RECEIPT_SERVICE_POLICY}" in
+	cli:not-applicable:none) ;;
+	journal:pending:none | journal:pending:start | journal:pending:no-start) ;;
+	journal:complete:start | journal:complete:no-start) ;;
+	*)
+		refuse receipt-invalid "invalid role/setup_status/service_policy combination: ${RECEIPT_ROLE}/${RECEIPT_SETUP_STATUS}/${RECEIPT_SERVICE_POLICY}"
+		;;
+	esac
+
+	INSTALLED_LANE=$RECEIPT_LANE
+	INSTALLED_ROLE=$RECEIPT_ROLE
+	INSTALLED_JOURNAL_STATE=$RECEIPT_JOURNAL_STATE
+	INSTALLED_SERVICE_POLICY=$RECEIPT_SERVICE_POLICY
+	INSTALLED_SETUP_STATUS=$RECEIPT_SETUP_STATUS
 }
 
 detect_existing_route() {
 	ROUTE=fresh
+	RECEIPT_FOUND=0
 	_package_command=
 	if _package_command=$(package_upgrade_command); then
 		_package_present=1
@@ -1097,6 +1356,7 @@ detect_existing_route() {
 		[ "$_package_present" -eq 0 ] || refuse route-unknown "both tree and package routes are present; leave both untouched and choose one"
 		ROUTE=tree
 		if [ -e "$PREFIX/install-receipt" ] || [ -L "$PREFIX/install-receipt" ]; then
+			RECEIPT_FOUND=1
 			read_receipt "$PREFIX/install-receipt"
 			if [ "$LANE_EXPLICIT" -eq 0 ]; then
 				LANE=$RECEIPT_LANE
@@ -1129,21 +1389,25 @@ detect_existing_route() {
 run_setup() {
 	_dest=$1
 	[ -x "$_dest/bin/journal" ] || return 1
-	if [ "$NO_PATH" -eq 1 ]; then
-		PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup --yes --skip-path --installer-transaction
-	else
-		PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup --yes --installer-transaction
-	fi
+	_args="--yes --installer-transaction"
+	[ "$NO_START" -eq 0 ] || _args="$_args --skip-service"
+	[ "$NO_PATH" -eq 0 ] || _args="$_args --skip-path"
+	# shellcheck disable=SC2086
+	PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup $_args
 }
 
 stage_receipt() {
 	_prefix=$1
 	_setup_status=${2:-pending}
+	_role=${3:-$ROLE}
+	_service_policy=${4:-start}
+	_journal_state=${5:-unknown}
+
 	_status=verified
 	[ "$SKIP_SIGNATURE" -eq 0 ] || _status=skipped
 	_origin=${ORIGIN%/}
 	[ -n "$ARCHIVE" ] && _origin=local
-	_line_count=$(printf '%s' "${VERSION}${LANE}${_origin}${TARGET}${RELEASE_COMMIT}" | wc -l | tr -d ' ')
+	_line_count=$(printf '%s' "${VERSION}${LANE}${_origin}${TARGET}${RELEASE_COMMIT}${_role}${_journal_state}${_service_policy}${_setup_status}" | wc -l | tr -d ' ')
 	[ "$_line_count" -eq 0 ] || refuse receipt-invalid "receipt fields contain a newline"
 	RECEIPT_PARTIAL=$(mktemp "$_prefix/.install-receipt-XXXXXX") \
 		|| refuse receipt-invalid "cannot stage receipt"
@@ -1154,21 +1418,24 @@ stage_receipt() {
 		printf 'origin=%s\n' "$_origin"
 		printf 'architecture=%s\n' "$TARGET"
 		printf 'installer_revision=%s\n' "$RELEASE_COMMIT"
-		# bootstrap_revision is install.sh's own BOOTSTRAP_REVISION, not the
-		# release commit above — do not copy the installer_revision value here.
 		printf 'bootstrap_revision=%s\n' "$BOOTSTRAP_REVISION"
 		printf 'route=tree\n'
 		printf 'signature_verification=%s\n' "$_status"
+		printf 'role=%s\n' "$_role"
+		printf 'journal_state=%s\n' "$_journal_state"
+		printf 'service_policy=%s\n' "$_service_policy"
 		printf 'setup_status=%s\n' "$_setup_status"
 	} >"$RECEIPT_PARTIAL" || refuse receipt-invalid "could not stage receipt"
 }
 
 mark_receipt_complete() {
 	_prefix=$1
+	_final_service_policy=$2
 	[ -n "$RECEIPT_PARTIAL" ] && [ -f "$RECEIPT_PARTIAL" ] && [ ! -L "$RECEIPT_PARTIAL" ] \
 		|| return 1
 	_complete_receipt=$(mktemp "$_prefix/.install-receipt-complete-XXXXXX") || return 1
-	if ! sed 's/^setup_status=pending$/setup_status=complete/' \
+	if ! sed -e 's/^setup_status=pending$/setup_status=complete/' \
+		-e "s/^service_policy=.*/service_policy=${_final_service_policy}/" \
 		"$RECEIPT_PARTIAL" >"$_complete_receipt" \
 		|| ! grep -Fqx 'setup_status=complete' "$_complete_receipt"; then
 		rm -f -- "$_complete_receipt"
@@ -1204,7 +1471,8 @@ main() {
 			&& [ -z "$MANIFEST_FILE" ] && [ -z "$MINISIG_FILE" ] && [ -z "$VERSION" ] \
 			&& [ "$UPGRADE" -eq 0 ] && [ "$LANE_EXPLICIT" -eq 0 ] \
 			&& [ "$ORIGIN_EXPLICIT" -eq 0 ] && [ "$SKIP_SIGNATURE" -eq 0 ] \
-			&& [ "$NO_PATH" -eq 0 ] \
+			&& [ "$NO_PATH" -eq 0 ] && [ "$ROLE_EXPLICIT" -eq 0 ] \
+			&& [ "$NO_START" -eq 0 ] \
 			|| refuse prune-unsafe "--prune must be used by itself (plus --prefix if needed)"
 		prune_versions
 		exit 0
@@ -1294,6 +1562,7 @@ CURRENT=$PREFIX/current
 
 if [ -e "$DEST" ] || [ -L "$DEST" ]; then
 	validate_installed_destination "$DEST" "$ACTUAL" "$RELEASE_TEXT"
+	check_existing_destination_marker "$DEST"
 fi
 
 DOWNGRADE=0
@@ -1307,6 +1576,13 @@ if [ "$ROUTE" = tree ] && [ "$VERSION" != "$INSTALLED_VERSION" ]; then
 	fi
 fi
 if [ "$DOWNGRADE" -eq 1 ]; then
+	[ "$INSTALLED_JOURNAL_STATE" = present ] \
+		|| refuse compatibility-unknown "cannot downgrade when journal state is unknown"
+	if [ -n "$INSTALLED_STATE_READER_MIN" ] && [ -n "$INSTALLED_STATE_READER_MAX" ]; then
+		if version_is_older "$VERSION" "$INSTALLED_STATE_READER_MIN" || version_is_older "$INSTALLED_STATE_READER_MAX" "$VERSION"; then
+			refuse compatibility-unknown "target version ${VERSION} is outside state reader range [${INSTALLED_STATE_READER_MIN}, ${INSTALLED_STATE_READER_MAX}]"
+		fi
+	fi
 	[ "$INSTALLED_EPOCH" = "$SUPPORTED_UPGRADE_EPOCH" ] \
 		&& [ "$RELEASE_EPOCH" = "$INSTALLED_EPOCH" ] \
 		|| refuse downgrade-epoch "install the current version or another ${SUPPORTED_UPGRADE_EPOCH} release"
@@ -1337,38 +1613,35 @@ fi
 if [ -e "$DEST" ] && [ -L "$CURRENT" ]; then
 	_now=$(readlink "$CURRENT")
 	_want=versions/${VERSION}-${DIGEST12}
-	if [ "$_now" = "$_want" ]; then
+	if [ "$_now" = "$_want" ] && [ "$ROUTE" = tree ] && [ "$LANE" = "$INSTALLED_LANE" ]; then
 		# Validated no-op: re-read release, do not rewrite current.
 		validate_release "$(cat "$DEST/.release")" "$VERSION" "$TARGET"
-		stage_receipt "$PREFIX"
-		SETUP_TRANSACTION_ACTIVE=1
-		if run_setup "$DEST"; then
-			:
-		else
-			_setup_status=$?
-			case $_setup_status in
-			1 | 2)
-				SETUP_TRANSACTION_ACTIVE=0
-				;;
-			*)
-				publish_receipt "$PREFIX"
-				SETUP_TRANSACTION_ACTIVE=0
-				;;
-			esac
-			refuse setup-failed "rerun this same install.sh command; setup status was ${_setup_status}"
+		verify_candidate_launchers "$DEST" "$VERSION"
+		if [ "$ROLE" = cli ]; then
+			if [ "$INSTALLED_ROLE" = cli ] && [ "$INSTALLED_SETUP_STATUS" = not-applicable ]; then
+				if [ "$NO_PATH" -eq 0 ]; then
+					write_profile "$PREFIX"
+				fi
+				report_success "$PREFIX"
+				exit 0
+			fi
+		elif [ "$ROLE" = journal ]; then
+			if [ "$INSTALLED_ROLE" = journal ] && [ "$INSTALLED_SETUP_STATUS" = complete ]; then
+				if [ "$INSTALLED_SERVICE_POLICY" = start ]; then
+					if [ "$NO_PATH" -eq 0 ]; then
+						write_profile "$PREFIX"
+					fi
+					report_success "$PREFIX"
+					exit 0
+				elif [ "$INSTALLED_SERVICE_POLICY" = no-start ] && [ "$NO_START" -eq 1 ]; then
+					if [ "$NO_PATH" -eq 0 ]; then
+						write_profile "$PREFIX"
+					fi
+					report_success "$PREFIX"
+					exit 0
+				fi
+			fi
 		fi
-		if ! mark_receipt_complete "$PREFIX"; then
-			publish_receipt "$PREFIX"
-			SETUP_TRANSACTION_ACTIVE=0
-			refuse receipt-invalid "setup completed but its receipt remains pending; rerun this same install.sh command"
-		fi
-		publish_receipt "$PREFIX"
-		SETUP_TRANSACTION_ACTIVE=0
-		if [ "$NO_PATH" -eq 0 ]; then
-			write_profile "$PREFIX"
-		fi
-		report_success "$PREFIX"
-		exit 0
 	fi
 fi
 
@@ -1383,11 +1656,27 @@ fi
 printf '%s\n' "$RELEASE_TEXT" >"$PARTIAL/.release"
 printf '%s\n' "$ACTUAL" >"$PARTIAL/.archive-sha256"
 
+OLD_CURRENT=
+if [ -L "$CURRENT" ]; then
+	OLD_CURRENT=$(readlink "$CURRENT")
+fi
+
 if [ -e "$DEST" ]; then
 	rm -rf "$PARTIAL"
 else
 	DEST_OWNER_FILE=$DEST/.install-transaction-${ROUTE_LOCK_TOKEN}
-	printf '%s\n' "$ROUTE_LOCK_TOKEN" >"$PARTIAL/.install-transaction-${ROUTE_LOCK_TOKEN}"
+	{
+		printf 'token=%s\n' "$ROUTE_LOCK_TOKEN"
+		printf 'old_current=%s\n' "${OLD_CURRENT:-}"
+		printf 'old_receipt_role=%s\n' "$INSTALLED_ROLE"
+		printf 'old_receipt_status=%s\n' "$INSTALLED_SETUP_STATUS"
+		printf 'candidate_dest=%s\n' "$DEST"
+		printf 'candidate_digest=%s\n' "$ACTUAL"
+		printf 'requested_role=%s\n' "$ROLE"
+		printf 'requested_no_start=%s\n' "$NO_START"
+		printf 'prior_service_policy=%s\n' "$INSTALLED_SERVICE_POLICY"
+		printf 'phase=%s\n' "extract"
+	} >"$PARTIAL/.install-transaction-${ROUTE_LOCK_TOKEN}"
 	_partial_name=${PARTIAL##*/}
 	DEST_NESTED_PARTIAL=$DEST/$_partial_name
 	DEST_NESTED_MARKER=$DEST_NESTED_PARTIAL/.install-transaction-${ROUTE_LOCK_TOKEN}
@@ -1414,11 +1703,29 @@ else
 fi
 PARTIAL=
 
-stage_receipt "$PREFIX"
-OLD_CURRENT=
-if [ -L "$CURRENT" ]; then
-	OLD_CURRENT=$(readlink "$CURRENT")
+if [ "$ROLE" = cli ]; then
+	check_journal_to_cli_transition "$PREFIX"
+	verify_candidate_launchers "$DEST" "$VERSION"
+	_final_journal_state=$INSTALLED_JOURNAL_STATE
+	stage_receipt "$PREFIX" "not-applicable" "cli" "none" "$_final_journal_state"
+	if ! flip_current "$PREFIX" "$DEST"; then
+		if ! restore_previous_current; then
+			refuse_after_rollback_failure "the current flip failed"
+		fi
+		refuse release-invalid "current flip failed"
+	fi
+	publish_receipt "$PREFIX"
+	rm -f -- "$DEST"/.install-transaction-*
+	if [ "$NO_PATH" -eq 0 ]; then
+		write_profile "$PREFIX"
+	fi
+	report_success "$PREFIX"
+	exit 0
 fi
+
+verify_candidate_launchers "$DEST" "$VERSION"
+_init_journal_state=present
+stage_receipt "$PREFIX" "pending" "journal" "none" "$_init_journal_state"
 SETUP_TRANSACTION_ACTIVE=1
 if ! flip_current "$PREFIX" "$DEST"; then
 	if ! restore_previous_current; then
@@ -1444,12 +1751,15 @@ else
 	SETUP_TRANSACTION_ACTIVE=0
 	refuse setup-failed "current remains on the candidate and its receipt marks setup pending; rerun this same install.sh command"
 fi
-if ! mark_receipt_complete "$PREFIX"; then
+_final_service_policy=start
+[ "$NO_START" -eq 0 ] || _final_service_policy=no-start
+if ! mark_receipt_complete "$PREFIX" "$_final_service_policy"; then
 	publish_receipt "$PREFIX"
 	SETUP_TRANSACTION_ACTIVE=0
 	refuse receipt-invalid "setup completed but its receipt remains pending; rerun this same install.sh command"
 fi
 publish_receipt "$PREFIX"
+rm -f -- "$DEST"/.install-transaction-*
 SETUP_TRANSACTION_ACTIVE=0
 if [ "$NO_PATH" -eq 0 ]; then
 	write_profile "$PREFIX"

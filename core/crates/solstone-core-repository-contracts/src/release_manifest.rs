@@ -14,7 +14,7 @@ const PRODUCT: &str = "solstone-journal";
 const CARGO_DENY_VERSION: &str = "cargo-deny 0.20.2";
 const SCHEMA_ID: &str = "https://solpbc.org/schemas/rust-release-manifest/v1.json";
 const SCHEMA_DIALECT: &str = "https://json-schema.org/draft/2020-12/schema";
-const SCHEMA_SHA256: &str = "d4eabf52bcc68b56945912d351f818e5444fe8c6461cb5c48b096f87b17a875c";
+const SCHEMA_SHA256: &str = "5676a92cca380bd0f30ae778ff3cdc5fe8c52d42d7e1747c2322489abaee8d4f";
 const SCHEMA_BYTES: &[u8] = include_bytes!("../../../../schemas/rust-release-manifest/v1.json");
 
 #[derive(Clone, Debug)]
@@ -30,6 +30,12 @@ struct Manifest {
     schema_version: u64,
     product: String,
     version: String,
+    bootstrap_contract_version: u32,
+    bootstrap_filename: String,
+    upgrade_epoch: String,
+    state_reader_min: String,
+    state_reader_max: String,
+    retention_window: u32,
     source_commit: String,
     source_dirty: bool,
     cargo_lock_sha256: String,
@@ -189,6 +195,35 @@ fn validate_semantics(repo: &Path, parent: &Path, manifest: &Manifest) -> Result
         return Err(format!("manifest product must be {PRODUCT}"));
     }
     require_nonempty("version", &manifest.version)?;
+    if manifest.bootstrap_contract_version != 2 {
+        return Err("manifest bootstrap_contract_version must be 2".to_owned());
+    }
+    let expected_bootstrap_filename = format!("solstone-journal-{}-install.sh", manifest.version);
+    if manifest.bootstrap_filename != expected_bootstrap_filename {
+        return Err(format!(
+            "manifest bootstrap_filename must be {expected_bootstrap_filename}"
+        ));
+    }
+    if manifest.upgrade_epoch != "journal-v2" {
+        return Err("manifest upgrade_epoch must be journal-v2".to_owned());
+    }
+    if manifest.retention_window != 3 {
+        return Err("manifest retention_window must be 3".to_owned());
+    }
+    let (min_maj, min_min, min_patch) = parse_semver(&manifest.state_reader_min)
+        .ok_or_else(|| "manifest state_reader_min must be valid semver".to_owned())?;
+    let (max_maj, max_min, max_patch) = parse_semver(&manifest.state_reader_max)
+        .ok_or_else(|| "manifest state_reader_max must be valid semver".to_owned())?;
+    let (ver_maj, ver_min, ver_patch) = parse_semver(&manifest.version)
+        .ok_or_else(|| "manifest version must be valid semver".to_owned())?;
+    if (min_maj, min_min, min_patch) > (max_maj, max_min, max_patch) {
+        return Err("manifest state_reader_min cannot exceed state_reader_max".to_owned());
+    }
+    if (ver_maj, ver_min, ver_patch) < (min_maj, min_min, min_patch)
+        || (ver_maj, ver_min, ver_patch) > (max_maj, max_min, max_patch)
+    {
+        return Err("manifest version must fall within state_reader range".to_owned());
+    }
     if !is_lower_hex(&manifest.source_commit, &[40, 64]) {
         return Err("manifest source_commit must be one full lowercase Git object id".to_owned());
     }
@@ -335,7 +370,13 @@ fn run_self_test_in(repo: &Path, root: &Path) -> Result<(usize, usize, usize), S
     let mut manifest = Manifest {
         schema_version: 1,
         product: PRODUCT.to_owned(),
-        version: "0.0.0-selftest".to_owned(),
+        version: "1.0.22".to_owned(),
+        bootstrap_contract_version: 2,
+        bootstrap_filename: "solstone-journal-1.0.22-install.sh".to_owned(),
+        upgrade_epoch: "journal-v2".to_owned(),
+        state_reader_min: "1.0.0".to_owned(),
+        state_reader_max: "1.0.22".to_owned(),
+        retention_window: 3,
         source_commit: "0123456789abcdef0123456789abcdef01234567".to_owned(),
         source_dirty: false,
         cargo_lock_sha256: sha256_hex(&lock),
@@ -385,6 +426,21 @@ fn run_self_test_in(repo: &Path, root: &Path) -> Result<(usize, usize, usize), S
     manifest.product = "solstone-windows".to_owned();
     reject("product", &manifest)?;
     manifest.product = PRODUCT.to_owned();
+    manifest.bootstrap_contract_version = 1;
+    reject("bootstrap-contract-version", &manifest)?;
+    manifest.bootstrap_contract_version = 2;
+    manifest.bootstrap_filename = "install.sh".to_owned();
+    reject("bootstrap-filename", &manifest)?;
+    manifest.bootstrap_filename = "solstone-journal-1.0.22-install.sh".to_owned();
+    manifest.upgrade_epoch = "journal-v1".to_owned();
+    reject("upgrade-epoch", &manifest)?;
+    manifest.upgrade_epoch = "journal-v2".to_owned();
+    manifest.retention_window = 2;
+    reject("retention-window", &manifest)?;
+    manifest.retention_window = 3;
+    manifest.state_reader_min = "2.0.0".to_owned();
+    reject("state-reader-min-exceeds-max", &manifest)?;
+    manifest.state_reader_min = "1.0.0".to_owned();
     manifest.source_dirty = true;
     reject("dirty-source", &manifest)?;
     manifest.source_dirty = false;
@@ -456,6 +512,17 @@ fn validate_relative_artifact_path(value: &str) -> Result<(), String> {
         return Err("manifest artifact path is not a safe relative path".to_owned());
     }
     Ok(())
+}
+
+fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = s.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
 }
 
 fn require_nonempty(field: &str, value: &str) -> Result<(), String> {

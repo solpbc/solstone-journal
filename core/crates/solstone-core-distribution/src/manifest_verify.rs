@@ -35,6 +35,12 @@ const RELEASE_KEYS: &[&str] = &[
     "retention_window",
     "min_bootstrap_revision",
 ];
+const BOOTSTRAP_CONTRACT_RELEASE_KEYS: &[&str] = &[
+    "bootstrap_contract_version",
+    "bootstrap_filename",
+    "state_reader_min",
+    "state_reader_max",
+];
 const ARCHIVE_CHAIN_RELEASE_KEYS: &[&str] = &[
     "archive_prebuild_input_sha256",
     "archive_delivery_contract_sha256",
@@ -674,13 +680,24 @@ fn validate_release_declaration(
     let pair_count = pairs.len();
     let fields = pairs.into_iter().collect::<BTreeMap<_, _>>();
     let macos_target = manifest.manifest.target.starts_with("macos");
-    let mut expected_keys = RELEASE_KEYS.iter().copied().collect::<BTreeSet<_>>();
+    let mut expected_v2_keys = RELEASE_KEYS.iter().copied().collect::<BTreeSet<_>>();
+    expected_v2_keys.extend(BOOTSTRAP_CONTRACT_RELEASE_KEYS.iter().copied());
     if macos_target {
-        expected_keys.extend(ARCHIVE_CHAIN_RELEASE_KEYS.iter().copied());
+        expected_v2_keys.extend(ARCHIVE_CHAIN_RELEASE_KEYS.iter().copied());
     }
+    let mut expected_v1_keys = RELEASE_KEYS.iter().copied().collect::<BTreeSet<_>>();
+    if macos_target {
+        expected_v1_keys.extend(ARCHIVE_CHAIN_RELEASE_KEYS.iter().copied());
+    }
+    let is_v2 = pair_count == expected_v2_keys.len();
+    let expected_keys = if is_v2 {
+        &expected_v2_keys
+    } else {
+        &expected_v1_keys
+    };
     if pair_count != expected_keys.len()
         || fields.len() != expected_keys.len()
-        || fields.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected_keys
+        || &fields.keys().map(String::as_str).collect::<BTreeSet<_>>() != expected_keys
         || fields.get("product") != Some(&manifest.manifest.product)
         || fields.get("version") != Some(&manifest.manifest.version)
         || fields.get("target") != Some(&manifest.manifest.target)
@@ -694,7 +711,62 @@ fn validate_release_declaration(
             release_name,
         ));
     }
+
+    if is_v2 {
+        let expected_bootstrap_filename =
+            format!("solstone-journal-{}-install.sh", manifest.manifest.version);
+        if fields.get("bootstrap_contract_version") != Some(&"2".to_owned())
+            || fields.get("bootstrap_filename") != Some(&expected_bootstrap_filename)
+            || fields.get("upgrade_epoch") != Some(&"journal-v2".to_owned())
+            || fields.get("retention_window") != Some(&"3".to_owned())
+        {
+            return Err(ManifestVerifyError::new(
+                ManifestVerifyRefusal::ReleaseDeclarationMismatch,
+                release_name,
+            ));
+        }
+        let Some(min_str) = fields.get("state_reader_min") else {
+            return Err(ManifestVerifyError::new(
+                ManifestVerifyRefusal::ReleaseDeclarationMismatch,
+                release_name,
+            ));
+        };
+        let Some(max_str) = fields.get("state_reader_max") else {
+            return Err(ManifestVerifyError::new(
+                ManifestVerifyRefusal::ReleaseDeclarationMismatch,
+                release_name,
+            ));
+        };
+        let (Some(min_semver), Some(max_semver), Some(ver_semver)) = (
+            parse_semver(min_str),
+            parse_semver(max_str),
+            parse_semver(&manifest.manifest.version),
+        ) else {
+            return Err(ManifestVerifyError::new(
+                ManifestVerifyRefusal::ReleaseDeclarationMismatch,
+                release_name,
+            ));
+        };
+        if min_semver > max_semver || ver_semver < min_semver || ver_semver > max_semver {
+            return Err(ManifestVerifyError::new(
+                ManifestVerifyRefusal::ReleaseDeclarationMismatch,
+                release_name,
+            ));
+        }
+    }
+
     Ok(())
+}
+
+fn parse_semver(s: &str) -> Option<(u64, u64, u64)> {
+    let mut parts = s.split('.');
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    let patch = parts.next()?.parse().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some((major, minor, patch))
 }
 
 fn is_safe_name(name: &str) -> bool {

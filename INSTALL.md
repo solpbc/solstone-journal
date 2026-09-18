@@ -75,6 +75,10 @@ sh install.sh --archive solstone-journal-<version>-linux-<arch>.tar.gz \
 
 With no `--prefix` it installs under `~/.local/solstone-journal`, keeps each version in its own directory, points `current` at the live one, and runs `journal setup --yes` from that build so the managed PATH wrapper and service follow it. It leaves a plain-text receipt at `~/.local/solstone-journal/install-receipt`. It adds `current/bin` to PATH by writing a block into `~/.profile` between `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, lane, prefix, and how to pick up PATH.
 
+Options:
+- `--role <journal|cli>`: installation role (default: `journal`). `journal` configures host background services, managed wrappers, and journal state via `journal setup`. `cli` installs the verified tree binaries and PATH integration only, without configuring or running background services (`journal setup` is never invoked, `setup_status=not-applicable`, `service_policy=none`). When transitioning a prefix previously configured as a journal host to `--role cli`, run `journal setup --clean-uninstall` first (which removes setup/service ownership without deleting journal records or the verified payload tree).
+- `--no-start`: during journal installation, skips starting the background supervisor (`journal setup --skip-service`), marking `service_policy=no-start` in the receipt while completing all other setup tasks. Has no effect on `--role cli`.
+
 `--prune` is a separate, explicit maintenance run. It keeps `current` plus the two newest other version directories; an install or upgrade never prunes as a side effect.
 
 ⚠ **`~/.profile` is read by login shells.** A new terminal window on most linux desktops is not one, and zsh does not read it at all. Either log out and back in, or:
@@ -310,7 +314,7 @@ With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 
 ## Done
 
-Once it is running, the solstone app takes in what you share with it and all of it goes into your journal. Conversations are transcribed, people and projects are surfaced, a knowledge graph is built, and everything is searchable at http://localhost:5015. Your journal is one folder per day on a device you own. See [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it.
+Once it is running, the solstone app takes in what you share with it and all of it goes into your journal. Conversations are transcribed, people and projects are surfaced, a knowledge graph is built, and you can search indexed journal content at http://localhost:5015. Your journal is one folder per day on a device you own. See [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it.
 
 Source code: https://github.com/solpbc/solstone-journal
 company: https://solpbc.org

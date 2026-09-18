@@ -176,6 +176,20 @@ fn shell_installer_upgrade_policy_matches_release_metadata() {
     assert!(script.lines().any(|line| {
         line == format!("SUPPORTED_RETENTION_WINDOW={}", inspect::RETENTION_WINDOW)
     }));
+    assert!(
+        script.lines().any(|line| {
+            line == format!("BOOTSTRAP_REVISION={}", inspect::MIN_BOOTSTRAP_REVISION)
+        })
+    );
+    assert!(script.lines().any(|line| {
+        line == format!(
+            "BOOTSTRAP_CONTRACT_VERSION={}",
+            inspect::BOOTSTRAP_CONTRACT_VERSION
+        )
+    }));
+    assert!(script.lines().any(|line| {
+        line == format!("SUPPORTED_STATE_READER_MIN={}", inspect::STATE_READER_MIN)
+    }));
 }
 
 pub fn helper_runtime_pair() -> (onnx_runtime::TargetSpec, Vec<u8>) {

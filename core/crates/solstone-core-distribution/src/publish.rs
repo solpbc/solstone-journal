@@ -456,8 +456,16 @@ fi
         let dir = served.join("solstone-journal").join(lane).join(version);
         fs::create_dir_all(&dir).expect("served version dir");
         let stage = served.join(format!("stage-{lane}-{version}"));
-        write_staged_file_mode(&stage, "bin/journal", b"#!/bin/sh\nexit 0\n", 0o755)
+        let journal_script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'journal (solstone) %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
+        );
+        let solstone_script = format!(
+            "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
+        );
+        write_staged_file_mode(&stage, "bin/journal", journal_script.as_bytes(), 0o755)
             .expect("stage journal");
+        write_staged_file_mode(&stage, "bin/solstone", solstone_script.as_bytes(), 0o755)
+            .expect("stage solstone");
         let archive = dir.join(format!("{base}.tar.gz"));
         write_tar_gz(&stage, &archive).expect("write archive");
         let digest = sha256_hex(&fs::read(&archive).expect("read archive"));
