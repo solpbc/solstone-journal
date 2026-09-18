@@ -927,7 +927,12 @@ mod tests {
     }
 
     #[test]
-    fn coupling_public_route_fallback_leaves_lan_unreachable_while_spl_parked_is_online() {
+    fn coupling_public_route_fallback_is_accessible_while_spl_parked_is_online() {
+        // A public route is a valid direct-pairing candidate (no LAN-only
+        // restriction — see the `is_allowed_direct_ipv4` removal note), so
+        // it now counts toward `lan_accessible` like any other detected
+        // candidate. Reachability itself is driven by the SPL relay state
+        // in this posture regardless.
         let snapshot = PairingSnapshot {
             endpoints: vec![],
             route_ipv4: Some(Ipv4Addr::new(203, 0, 113, 1)),
@@ -950,7 +955,7 @@ mod tests {
             direct_port: 7657,
         });
 
-        assert!(!status.lan_accessible);
+        assert!(status.lan_accessible);
         assert_ne!(status.reachability, Reachability::LanUnreachable.as_str());
         assert_eq!(status.reachability, Reachability::Online.as_str());
     }

@@ -1258,7 +1258,12 @@ mod tests {
     }
 
     #[test]
-    fn snapshot_mint_filters_invalid_addresses_and_keeps_only_allowed_ipv4_candidates() {
+    fn snapshot_mint_keeps_every_ipv4_candidate_including_public_and_drops_only_ipv6() {
+        // Public IPv4 addresses are as valid a direct-pairing candidate as a
+        // private one — no LAN-only allow-list (removed 2026-09-18, founder
+        // + CSO ruling, `req_xhwmvxvn`). The only structural exclusion left
+        // is type: a direct pair link is IPv4-only, so the ULA (IPv6)
+        // endpoint is still dropped for that reason alone.
         let temporary = TempDir::new();
         identity(temporary.path());
         let response = mint_pairing_from_snapshot(
@@ -1298,7 +1303,7 @@ mod tests {
                 .iter()
                 .map(|candidate| candidate.host.as_str())
                 .collect::<Vec<_>>(),
-            ["10.0.0.2"]
+            ["8.8.8.8", "172.32.0.1", "10.0.0.2"]
         );
     }
 
@@ -1866,7 +1871,9 @@ mod tests {
         let temporary = TempDir::new();
         identity(temporary.path());
 
-        // Case (a): docker0 dropped, eth0 dropped, en0 admitted ULA, no route.
+        // Case (a): docker0 dropped, eth0 dropped (link-local — the one
+        // class of IPv4 that is still never a candidate), en0 admitted
+        // ULA, no route.
         let raw_a = vec![
             RawInterfaceAddress {
                 interface: "docker0".into(),
@@ -1874,7 +1881,7 @@ mod tests {
             },
             RawInterfaceAddress {
                 interface: "eth0".into(),
-                address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9)),
+                address: IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1)),
             },
             RawInterfaceAddress {
                 interface: "en0".into(),
@@ -1904,16 +1911,16 @@ mod tests {
             .expect("diagnostic emitted for case (a)");
         assert_eq!(
             diag_a,
-            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:203.0.113.9:dropped,en0:fd00::1:ula] route=none candidates=[]"
+            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:169.254.1.1:dropped,en0:fd00::1:ula] route=none candidates=[]"
         );
 
-        // Case (b): eth0 dropped, route 203.0.113.9.
+        // Case (b): eth0 dropped (link-local), route also link-local.
         let raw_b = vec![RawInterfaceAddress {
             interface: "eth0".into(),
-            address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9)),
+            address: IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1)),
         }];
         let (raw_source_b, raw_calls_b) = Raw::success(raw_b);
-        let (route_source_b, route_calls_b) = Route::new(Some(Ipv4Addr::new(203, 0, 113, 9)));
+        let (route_source_b, route_calls_b) = Route::new(Some(Ipv4Addr::new(169, 254, 1, 1)));
         let outcome_b = mint_pairing_from_sources_detailed(
             temporary.path(),
             &request(),
@@ -1933,13 +1940,15 @@ mod tests {
         let diag_b = outcome_b
             .diagnostic
             .expect("diagnostic emitted for case (b)");
-        // The resolver range-checks its route fallback, so a public route is no
-        // longer a candidate and this host reports no candidates at all. The
-        // disallowed-address kind stays for a caller that encodes candidates the
-        // resolver did not filter; the builder test below covers its wording.
+        // Link-local is still never a candidate — it is the one class of
+        // IPv4 `is_usable_ipv4` itself excludes, unrelated to the removed
+        // private/public allow-list. The disallowed-address kind stays for
+        // a caller that encodes candidates the resolver did not filter
+        // (e.g. the unspecified address); the builder test in
+        // `addresses.rs` covers its wording.
         assert_eq!(
             diag_b,
-            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[eth0:203.0.113.9:dropped] route=203.0.113.9 candidates=[]"
+            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[eth0:169.254.1.1:dropped] route=169.254.1.1 candidates=[]"
         );
 
         // Case (c): interface enumeration error.

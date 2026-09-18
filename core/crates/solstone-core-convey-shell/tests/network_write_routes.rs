@@ -288,7 +288,7 @@ async fn host_address_refusals_and_identical_write_are_exact() {
 }
 
 #[tokio::test]
-async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() {
+async fn host_address_rejects_malformed_input_and_substitutes_port_copy() {
     let root = journal();
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let config_bytes = fs::read(manifest_dir.join("assets/pairing_config.json"))
@@ -314,7 +314,6 @@ async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() 
         "10.0.0.2:99999",
         "10.0.0.2:7658",
         "127.0.0.1:7657",
-        "203.0.113.9:7657",
     ] {
         let (status, rejected) = post(
             &root,
@@ -334,18 +333,12 @@ async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() 
     }
 
     // AC6: Exact boundary list at default port 7657
-    // Refused (400 invalid_config_value)
-    for refused_ip in [
-        "203.0.113.9",
-        "11.0.0.0",
-        "100.63.255.255",
-        "100.128.0.0",
-        "172.15.255.255",
-        "172.32.0.1",
-        "192.169.0.0",
-        "127.0.0.1",
-        "169.254.1.1",
-    ] {
+    // Refused (400 invalid_config_value) — only genuinely unusable
+    // addresses (loopback, link-local) are refused. There is no
+    // private/public range restriction: a direct pair link's trust anchor
+    // is the embedded CA-fingerprint pin, not the address's network
+    // locality (removed 2026-09-18, founder + CSO ruling, `req_xhwmvxvn`).
+    for refused_ip in ["127.0.0.1", "169.254.1.1"] {
         let (status, rej) = post(
             &root,
             "/app/network/host-address",
@@ -360,7 +353,8 @@ async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() 
         assert_eq!(rej["reason_code"], "invalid_config_value");
     }
 
-    // Accepted (200)
+    // Accepted (200) — private/CGNAT ranges plus public addresses just
+    // outside them, proving there is no LAN-only allow-list left.
     for accepted_ip in [
         "10.0.0.2",
         "172.16.0.0",
@@ -368,6 +362,13 @@ async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() 
         "192.168.1.20",
         "100.64.0.0",
         "100.127.255.255",
+        "203.0.113.9",
+        "11.0.0.0",
+        "100.63.255.255",
+        "100.128.0.0",
+        "172.15.255.255",
+        "172.32.0.1",
+        "192.169.0.0",
     ] {
         let payload = format!("{accepted_ip}:7657");
         let (status, body) = post(
@@ -402,7 +403,11 @@ async fn host_address_enforces_candidate_allow_list_and_substitutes_port_copy() 
     let (status, rejected_custom) = post(
         &root,
         "/app/network/host-address",
-        Body::from(r#"{"home_address":"203.0.113.9:9000"}"#),
+        // 127.0.0.1 is still refused (loopback, unaffected by the
+        // private/public allow-list removal) — any guaranteed-invalid
+        // input works here; the assertion below is about the port in
+        // the error message, not the address.
+        Body::from(r#"{"home_address":"127.0.0.1:9000"}"#),
     )
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);

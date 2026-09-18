@@ -366,14 +366,19 @@ fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
     let overlay = ["utun", "tun", "tailscale"]
         .iter()
         .any(|prefix| interface.starts_with(prefix));
+    // Direct-pairing candidates are not restricted to private/CGNAT ranges.
+    // That restriction was a historical artifact and adds no real security
+    // value: a pair link's trust anchor is the embedded CA-fingerprint pin,
+    // checked at TLS handshake time, not the network locality of the address
+    // it dials. Removed 2026-09-18 (founder + CSO ruling, `req_xhwmvxvn`).
     match entry.address {
-        IpAddr::V4(address) if is_rfc1918(address) && !overlay => Some(LocalEndpoint {
-            ip: IpAddr::V4(address),
-            scope: EndpointScope::Lan,
-        }),
         IpAddr::V4(address) if is_cgnat(address) && overlay => Some(LocalEndpoint {
             ip: IpAddr::V4(address),
             scope: EndpointScope::Vpn,
+        }),
+        IpAddr::V4(address) if is_usable_ipv4(address) && !overlay => Some(LocalEndpoint {
+            ip: IpAddr::V4(address),
+            scope: EndpointScope::Lan,
         }),
         IpAddr::V6(address) if is_ula(address) => Some(LocalEndpoint {
             ip: IpAddr::V6(address),
@@ -381,13 +386,6 @@ fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
         }),
         IpAddr::V4(_) | IpAddr::V6(_) => None,
     }
-}
-
-fn is_rfc1918(address: Ipv4Addr) -> bool {
-    let value = u32::from(address);
-    (0x0a00_0000..=0x0aff_ffff).contains(&value)
-        || (0xac10_0000..=0xac1f_ffff).contains(&value)
-        || (0xc0a8_0000..=0xc0a8_ffff).contains(&value)
 }
 
 fn is_cgnat(address: Ipv4Addr) -> bool {
@@ -398,19 +396,14 @@ fn is_ula(address: Ipv6Addr) -> bool {
     (address.octets()[0] & 0xfe) == 0xfc
 }
 
-/// Whether an IPv4 address is in the allow-list of direct pairing candidates.
+/// Whether an IPv4 address is usable as a direct pairing candidate.
+///
+/// No longer restricted to private/CGNAT/loopback ranges — see the removal
+/// note on `classify_one` above. `is_usable_ipv4` already excludes loopback,
+/// so it is re-added explicitly to preserve the pre-existing same-machine
+/// (127.0.0.1) allowance.
 pub fn is_allowed_direct_ipv4(address: Ipv4Addr) -> bool {
-    let value = u32::from(address);
-    [
-        (0x0a00_0000, 0x0aff_ffff),
-        (0xac10_0000, 0xac1f_ffff),
-        (0xc0a8_0000, 0xc0a8_ffff),
-        (0xa9fe_0000, 0xa9fe_ffff),
-        (0x6440_0000, 0x647f_ffff),
-        (0x7f00_0000, 0x7fff_ffff),
-    ]
-    .iter()
-    .any(|(low, high)| (*low..=*high).contains(&value))
+    is_usable_ipv4(address) || address.is_loopback()
 }
 
 /// The failure kind category for a pair-start address diagnostic line.
@@ -791,6 +784,22 @@ mod tests {
     }
 
     #[test]
+    fn classifier_admits_a_public_address_on_an_ordinary_interface() {
+        // No LAN-only restriction: a public IPv4 bound directly to a
+        // non-virtual, non-overlay interface is as valid a direct-pairing
+        // candidate as a private one — the trust anchor is the CA-fingerprint
+        // pin, not network locality.
+        let raw = vec![RawInterfaceAddress {
+            interface: "eth0".into(),
+            address: IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)),
+        }];
+        assert_eq!(
+            classify_interface_addresses(&raw),
+            vec![endpoint("203.0.113.7", EndpointScope::Lan)]
+        );
+    }
+
+    #[test]
     fn classifier_drops_windows_virtual_switches_and_keeps_the_real_adapter() {
         // Windows spells the same interface classes in friendly names, so the
         // classifier has to recognise them there too: before this, a host with
@@ -905,11 +914,12 @@ mod tests {
         );
         assert_eq!(
             resolve_pair_link_candidates(&[], Some(Ipv4Addr::new(203, 0, 113, 1))),
-            Vec::<Ipv4Addr>::new()
+            vec![Ipv4Addr::new(203, 0, 113, 1)],
+            "a public route is a valid direct-pairing candidate — no LAN-only restriction"
         );
         assert_eq!(
             resolve_pair_link_candidates(&[], Some(Ipv4Addr::new(8, 8, 8, 8))),
-            Vec::<Ipv4Addr>::new()
+            vec![Ipv4Addr::new(8, 8, 8, 8)]
         );
     }
 
@@ -939,14 +949,25 @@ mod tests {
                 );
             }
         }
-        assert_eq!(
+        assert!(
             encode_pair_link(
                 &[Ipv4Addr::new(8, 8, 8, 8)],
                 nonce,
                 pin,
                 spl_core::DEFAULT_DIRECT_PORT,
+            )
+            .is_ok(),
+            "a public IPv4 is an allowed direct-pairing candidate — no LAN-only restriction"
+        );
+        assert_eq!(
+            encode_pair_link(
+                &[Ipv4Addr::UNSPECIFIED],
+                nonce,
+                pin,
+                spl_core::DEFAULT_DIRECT_PORT,
             ),
-            Err(PairLinkEncodeError::DisallowedAddress)
+            Err(PairLinkEncodeError::DisallowedAddress),
+            "the unspecified address is still never a valid candidate"
         );
     }
 
@@ -1056,21 +1077,23 @@ mod tests {
         );
         assert_eq!(
             line,
-            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:203.0.113.9:dropped,en0:fd00::1:ula] route=none candidates=[]"
+            "pair-start address failed: kind=no_candidates saved_home=none interfaces=[docker0:172.17.0.1:dropped,eth0:203.0.113.9:lan,en0:fd00::1:ula] route=none candidates=[]"
         );
 
+        // A public IPv4 is no longer disallowed; the unspecified address
+        // still is (never a valid pairing destination).
         let disallowed_line = build_pair_start_diagnostic(
             DiagnosticKind::DisallowedAddress,
             "none",
             &[],
-            Some(Ipv4Addr::new(203, 0, 113, 9)),
-            &[Ipv4Addr::new(203, 0, 113, 9)],
+            Some(Ipv4Addr::UNSPECIFIED),
+            &[Ipv4Addr::UNSPECIFIED],
             None,
             false,
         );
         assert_eq!(
             disallowed_line,
-            "pair-start address failed: kind=disallowed_address saved_home=none interfaces=[] route=203.0.113.9 candidates=[203.0.113.9]"
+            "pair-start address failed: kind=disallowed_address saved_home=none interfaces=[] route=0.0.0.0 candidates=[0.0.0.0]"
         );
 
         let err = AddressError::Enumeration(io::Error::other("permission denied"));
@@ -1134,7 +1157,7 @@ mod tests {
             None,
             false,
         );
-        assert!(newline_line.contains("eth0\\nweird:203.0.113.9:dropped"));
+        assert!(newline_line.contains("eth0\\nweird:203.0.113.9:lan"));
         assert!(!newline_line.contains('\n'));
     }
 
