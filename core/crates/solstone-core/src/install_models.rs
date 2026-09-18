@@ -35,6 +35,21 @@ fn ced_download_disclosure(os_name: &str, arch: &str) -> String {
     }
 }
 
+/// The fixed owner-facing CED guidance stays the fixed sentence a person
+/// reads (`CED_UNAVAILABLE_GUIDANCE`'s own doc comment), but a `Degraded`
+/// verdict carries a specific `CapabilityStatus::detail()` -- a digest
+/// mismatch, a missing file, a probe helper's stderr -- that is otherwise
+/// discarded before it reaches `install-models`' own stderr, even though the
+/// same detail is already the operator-facing diagnostic on `journal check`
+/// (`cause` field). Appending it here closes that gap without changing the
+/// fixed sentence a person reads first.
+fn ced_unavailable_message(status: &CapabilityStatus) -> String {
+    match status.detail() {
+        Some(detail) => format!("{CED_UNAVAILABLE_GUIDANCE} ({detail})"),
+        None => CED_UNAVAILABLE_GUIDANCE.to_owned(),
+    }
+}
+
 /// RF-DETR assets are verified from the release tree, so this disclosure must
 /// describe the bundled payload rather than an upstream or mirror endpoint.
 fn rfdetr_bundled_asset_disclosure() -> String {
@@ -45,6 +60,7 @@ fn rfdetr_bundled_asset_disclosure() -> String {
 }
 
 use solstone_core_assets::canonical_host_pair;
+use solstone_core_local::install::capability_status::CapabilityStatus;
 use solstone_core_local::install::ced_readiness::{CED_UNAVAILABLE_GUIDANCE, CedVerdict};
 use solstone_core_local::install::rfdetr_readiness::RfdetrReadiness;
 use solstone_core_local::install::{
@@ -459,11 +475,11 @@ where
         CedVerdict::Ready { .. } if options.check || !options.force => {
             provider_stdout.push(ready_line(&ced_install::ced_model_path(&journal)));
         }
-        CedVerdict::Degraded(_) if options.check => {
+        CedVerdict::Degraded(status) if options.check => {
             return InstallModelsOutcome::failure_with_stdout(
                 variant,
                 EXIT_DATAERR,
-                CED_UNAVAILABLE_GUIDANCE.to_owned(),
+                ced_unavailable_message(&status),
                 provider_stdout,
             );
         }
@@ -512,11 +528,11 @@ where
                             provider_stdout
                                 .push(ready_line(&ced_install::ced_model_path(&journal)));
                         }
-                        CedVerdict::Degraded(_) => {
+                        CedVerdict::Degraded(status) => {
                             return InstallModelsOutcome::failure_with_stdout(
                                 variant,
                                 EXIT_DATAERR,
-                                CED_UNAVAILABLE_GUIDANCE.to_owned(),
+                                ced_unavailable_message(&status),
                                 provider_stdout,
                             );
                         }
@@ -1475,7 +1491,12 @@ mod tests {
             outcome.stdout,
             [ced_download_disclosure("windows", "x86_64")]
         );
-        assert_eq!(outcome.stderr, [CED_UNAVAILABLE_GUIDANCE]);
+        // The generic guidance sentence stays first, but a Degraded verdict's
+        // specific CapabilityStatus detail is now appended rather than
+        // discarded -- here, "not a real Windows package layout under test".
+        assert_eq!(outcome.stderr.len(), 1);
+        assert!(outcome.stderr[0].starts_with(CED_UNAVAILABLE_GUIDANCE));
+        assert!(outcome.stderr[0].len() > CED_UNAVAILABLE_GUIDANCE.len());
     }
 
     #[test]
@@ -1841,7 +1862,11 @@ mod tests {
             |_, _, _| panic!("degraded CED must short-circuit parakeet"),
         );
         assert_eq!(outcome.exit_code, EXIT_DATAERR);
-        assert_eq!(outcome.stderr, [CED_UNAVAILABLE_GUIDANCE]);
+        // The specific sidecar_missing detail is now appended after the
+        // fixed guidance sentence rather than discarded.
+        assert_eq!(outcome.stderr.len(), 1);
+        assert!(outcome.stderr[0].starts_with(CED_UNAVAILABLE_GUIDANCE));
+        assert!(outcome.stderr[0].contains("ced sidecar missing"));
     }
 
     #[test]

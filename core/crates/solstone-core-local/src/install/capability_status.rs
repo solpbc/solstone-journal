@@ -38,6 +38,25 @@ pub enum CapabilityStatus {
     },
 }
 
+impl CapabilityStatus {
+    /// The technical detail carried by any non-`Ready` variant, or `None` for
+    /// `Ready`. This is the specific failure text (a digest mismatch, a
+    /// missing file, a probe helper's stderr) behind a coarse `cause` bucket
+    /// or a fixed owner-facing sentence -- a caller that discards it and
+    /// reports only the fixed sentence loses the one thing an operator needs
+    /// to root-cause a `Degraded` verdict.
+    pub fn detail(&self) -> Option<&str> {
+        match self {
+            CapabilityStatus::Ready => None,
+            CapabilityStatus::Absent { detail, .. }
+            | CapabilityStatus::IntegrityInvalid { detail, .. }
+            | CapabilityStatus::UnloadableOrUnrunnable { detail, .. }
+            | CapabilityStatus::WrongAbiOrProtocol { detail, .. }
+            | CapabilityStatus::ResourceOrOwnerScopeUnavailable { detail, .. } => Some(detail),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::CapabilityStatus;
