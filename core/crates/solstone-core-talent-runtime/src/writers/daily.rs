@@ -626,25 +626,30 @@ pub fn publish_daily_publication(
                 .as_mut()
                 .ok_or("missing publication record")?
                 .receipts;
-            let prior = receipts
+            if let Some(prior) = receipts
                 .iter_mut()
                 .find(|item| item["kind"] == "owner_action" && item["action_id"] == action_id)
-                .ok_or("missing action start receipt")?;
-            prior["state"] = Value::String("committed".into());
+            {
+                prior["state"] = Value::String("committed".into());
+            } else {
+                receipts.push(json!({
+                    "kind": "owner_action",
+                    "action_id": action_id,
+                    "token": token,
+                    "state": "committed"
+                }));
+            }
             auth.checkpoint().map_err(|e| e.to_string())
         };
         let _facet_guard = if let Some((facet, id)) = action_facet(action) {
             let guard = solstone_core_facets::hold_facet_trust_lock(&context.journal)
                 .map_err(|e| make_error(e.to_string()))?;
             solstone_core_facets::require_facet_write_identity(&context.journal, facet, id)
-                .map_err(|_| {
+                .map_err(|error| {
                     if is_review {
-                        make_review(ReviewOwnerError::conflict(
-                            ReviewOwnerConflictKind::OwningFacetChanged,
-                            "conflict: owning facet changed after prompt preparation",
-                        ))
+                        make_review(error.into_review_owner_error())
                     } else {
-                        make_error("conflict: owning facet no longer exists".into())
+                        make_error(error.to_string())
                     }
                 })?;
             Some(guard)
@@ -777,8 +782,6 @@ fn publish_output(
         start().map_err(ReviewOwnerError::failed)?;
         atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-    } else {
-        start().map_err(ReviewOwnerError::failed)?;
     }
     receipt().map_err(ReviewOwnerError::failed)
 }
@@ -1997,5 +2000,198 @@ mod tests {
             assert_eq!(err.owner_conflict_kind(), Some(kind.as_str()));
             assert_eq!(err.reason_code(), "daily_owner_conflict");
         }
+    }
+
+    #[test]
+    fn output_noop_commits_without_started_receipt() {
+        let root = fixture();
+        let journal = root.path();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.into(),
+        };
+        let path = journal.join("facets/work/entities/20260910_review_outcome.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"{\"ok\":true}\n").unwrap();
+        let plan = PreparedDailyPublication {
+            actions: vec![PreparedDailyAction::Output {
+                path: "facets/work/entities/20260910_review_outcome.json".into(),
+                facet_identity: None,
+                before: Some(b"{\"ok\":true}\n".to_vec()),
+                after: b"{\"ok\":true}\n".to_vec(),
+            }],
+            no_output: false,
+        };
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("noop".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()?;
+            publish_daily_publication(authority, "noop", &plan, &context).unwrap();
+            let binding = authority.record();
+            let current = binding.as_ref().unwrap();
+            assert!(!current.has_uncommitted_started_receipt());
+            assert_eq!(current.receipts.len(), 1);
+            assert_eq!(current.receipts[0]["state"], "committed");
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn attachment_noop_does_not_call_started() {
+        let root = fixture();
+        let journal = root.path();
+        let promotion = solstone_core_facets::prepare_review_promotion(
+            journal,
+            "work",
+            "Person",
+            "Ada",
+            "Engineer",
+            &[],
+        )
+        .unwrap();
+        solstone_core_facets::publish_review_attachment(
+            journal,
+            &promotion.attachment,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        let mut started = false;
+        solstone_core_facets::publish_review_attachment(
+            journal,
+            &promotion.attachment,
+            true,
+            || {
+                started = true;
+                Ok(())
+            },
+            || Ok(()),
+        )
+        .unwrap();
+        assert!(!started, "attachment no-op must not checkpoint started");
+    }
+
+    #[test]
+    fn missing_facet_identity_is_typed_conflict_on_prepare_and_attachment() {
+        let root = tempfile::tempdir().unwrap();
+        let error = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "missing",
+            "Person",
+            "Ada",
+            "Engineer",
+            &[],
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            Some(solstone_core_entity::ReviewOwnerConflictKind::OwningFacetChanged)
+        );
+        let journal = fixture();
+        let promotion = solstone_core_facets::prepare_review_promotion(
+            journal.path(),
+            "work",
+            "Person",
+            "Ada",
+            "Engineer",
+            &[],
+        )
+        .unwrap();
+        solstone_core_facets::delete_facet(journal.path(), "work").unwrap();
+        let error = solstone_core_facets::publish_review_attachment(
+            journal.path(),
+            &promotion.attachment,
+            true,
+            || unreachable!("absent facet must refuse before start"),
+            || unreachable!("absent facet must refuse before receipt"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.kind(),
+            Some(solstone_core_entity::ReviewOwnerConflictKind::OwningFacetChanged)
+        );
+        let journal = fixture();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.path().into(),
+        };
+        let facet_id = solstone_core_facets::facet_write_identity(journal.path(), "work").unwrap();
+        let current = solstone_core_entity::read_entity_identity(journal.path(), "ada")
+            .unwrap()
+            .unwrap()
+            .value()
+            .clone();
+        let plan = PreparedDailyPublication {
+            actions: vec![PreparedDailyAction::Identity {
+                facet: "work".into(),
+                facet_id,
+                change: solstone_core_entity::PreparedIdentityChange {
+                    entity_id: "ada".into(),
+                    entity_dir: "ada".into(),
+                    before: Some(current.clone()),
+                    after: current,
+                },
+            }],
+            no_output: false,
+        };
+        solstone_core_facets::delete_facet(journal.path(), "work").unwrap();
+        with_daily_unit_authority(journal.path(), &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("guard".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()?;
+            let error = publish_daily_publication(authority, "guard", &plan, &context).unwrap_err();
+            assert_eq!(error.owner_conflict_kind(), Some("owning_facet_changed"));
+            assert!(
+                !authority
+                    .record()
+                    .as_ref()
+                    .unwrap()
+                    .has_uncommitted_started_receipt()
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn merge_proposal_noop_does_not_call_started() {
+        let root = fixture();
+        let proposal = json!({"facet":"work", "day":"20260910", "source":"Ada", "source_slug":"ada", "target":"Ada Lovelace", "target_slug":"ada-lovelace", "summary":"Name variant"});
+        let batch = solstone_core_entity::prepare_merge_proposals(
+            root.path(),
+            std::slice::from_ref(&proposal),
+        )
+        .unwrap();
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &batch,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
+        let mut started = false;
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &batch,
+            true,
+            || {
+                started = true;
+                Ok(())
+            },
+            || Ok(()),
+        )
+        .unwrap();
+        assert!(!started, "merge no-op must not checkpoint started");
     }
 }

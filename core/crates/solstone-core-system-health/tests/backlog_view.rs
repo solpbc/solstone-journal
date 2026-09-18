@@ -1073,4 +1073,25 @@ fn backlog_view_review_unit_lifecycle_states() {
         review_unit3.lifecycle_state.as_deref(),
         Some("ambiguous_started")
     );
+
+    // 4. Failed + talent_stage_failed + uncommitted started is still ambiguous.
+    record.status = solstone_core_journal_io::DailyUnitStatus::Failed;
+    record.reason_code = Some("talent_stage_failed".into());
+    record.owner_conflict_kind = None;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let result4 = view(root, 30);
+    let day_entry4 = result4.days.iter().find(|d| d.day == day).unwrap();
+    let review_unit4 = day_entry4
+        .why
+        .iter()
+        .find(|u| u.name == "entities:entities_review")
+        .unwrap();
+    assert_eq!(
+        review_unit4.lifecycle_state.as_deref(),
+        Some("ambiguous_started")
+    );
+    assert_eq!(
+        review_unit4.reason_code.as_deref(),
+        Some("talent_stage_failed")
+    );
 }

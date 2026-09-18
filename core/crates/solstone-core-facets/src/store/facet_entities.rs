@@ -594,13 +594,7 @@ pub fn publish_review_attachment(
         hold_facet_trust_lock(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(root)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-    super::declaration::require_facet_write_identity(root, &change.facet, &change.facet_id)
-        .map_err(|_| {
-            ReviewOwnerError::conflict(
-                ReviewOwnerConflictKind::OwningFacetChanged,
-                "conflict: owning facet changed after prompt preparation",
-            )
-        })?;
+    super::declaration::require_facet_write_identity(root, &change.facet, &change.facet_id)?;
     let map = read_identity_map(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let dir = map.resolved.get(&change.entity_id).ok_or_else(|| {
         ReviewOwnerError::conflict(
@@ -644,8 +638,6 @@ pub fn publish_review_attachment(
                 .ok_or("malformed prepared relationship")?,
         )
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-    } else {
-        start().map_err(ReviewOwnerError::failed)?;
     }
     receipt().map_err(ReviewOwnerError::failed)
 }

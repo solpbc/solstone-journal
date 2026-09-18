@@ -19,13 +19,14 @@ use solstone_core_journal_io::{
 use crate::{
     AmbiguityChoiceEntity, AmbiguityChoiceRequest, AmbiguityObservation, EntityIdentityRepairError,
     EntityIdentityRepairGuard, EntityIdentityRepairSkipReason, EntityWriteError,
-    IdentityMapLoserReason, PreparedHistoryOutcome, ambiguity_id, classify_prepared_history,
-    dismiss_ambiguity, guard_restore_does_not_cross_merge, guard_visible_event_collision,
-    load_all_journal_entities, load_resolved_ambiguity_choice, read_ambiguities,
-    read_entity_identity, read_identity_map, read_prepared_history, read_visible_history,
-    record_ambiguity_choice, record_ambiguity_observation, refresh_identity_map_cache,
-    repair_entity_identities, rescope_facet_ambiguities, save_entity_identity,
-    save_entity_identity_with_timeout, set_forced_identity_write_failure,
+    IdentityMapLoserReason, PreparedHistoryOutcome, PreparedIdentityChange, ReviewOwnerError,
+    ambiguity_id, classify_prepared_history, dismiss_ambiguity, guard_restore_does_not_cross_merge,
+    guard_visible_event_collision, load_all_journal_entities, load_resolved_ambiguity_choice,
+    publish_identity_change, read_ambiguities, read_entity_identity, read_identity_map,
+    read_prepared_history, read_visible_history, record_ambiguity_choice,
+    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
+    rescope_facet_ambiguities, save_entity_identity, save_entity_identity_with_timeout,
+    set_forced_history_apply_failure, set_forced_identity_write_failure,
     set_repair_identity_write_failure_on_attempt, write_history_event_json_for_test,
 };
 
@@ -2581,4 +2582,154 @@ fn direct_journal_entity_scan_skips_one_corrupt_identity() {
     let entities = load_all_journal_entities(temporary.path()).unwrap();
     assert_eq!(entities.len(), 1);
     assert_eq!(entities[0].id, "valid");
+}
+
+fn staged_identity_change(root: &Path, identity: Value) -> PreparedIdentityChange {
+    save_entity_identity(root, "staged", &identity, None).unwrap();
+    PreparedIdentityChange {
+        entity_id: "staged".into(),
+        entity_dir: "staged".into(),
+        before: Some(identity.clone()),
+        after: identity,
+    }
+}
+
+fn write_prepared_event(root: &Path, version_id: &str, before: Value, after: Value) {
+    let mut event = history_event(1, version_id, "update");
+    event["entity_id"] = json!("staged");
+    event["identity_before"] = before;
+    event["identity_after"] = after;
+    write_json(
+        root,
+        &format!("entities/staged/history/prepared/{version_id}/event.json"),
+        &event,
+    );
+}
+
+#[test]
+fn identity_publish_refuses_repair_required_before_started() {
+    let temporary = TempDir::new();
+    let current = json!({"id": "staged", "name": "Current"});
+    let change = staged_identity_change(temporary.path(), current.clone());
+    write_prepared_event(
+        temporary.path(),
+        "vh_repair",
+        json!({"id": "staged", "name": "Before"}),
+        json!({"id": "staged", "name": "After"}),
+    );
+    let mut started = false;
+    let error = publish_identity_change(
+        temporary.path(),
+        &change,
+        true,
+        || {
+            started = true;
+            Ok(())
+        },
+        || Ok(()),
+    )
+    .unwrap_err();
+    assert!(matches!(error, ReviewOwnerError::Failed { .. }), "{error}");
+    assert!(!started, "repair refusal must not checkpoint started");
+    assert_eq!(
+        read_prepared_history(temporary.path(), "staged")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn identity_publish_crash_after_start_before_history_publish_leaves_started() {
+    let temporary = TempDir::new();
+    let current = json!({"id": "staged", "name": "Current"});
+    let change = staged_identity_change(temporary.path(), current.clone());
+    write_prepared_event(
+        temporary.path(),
+        "vh_publish",
+        json!({"id": "staged", "name": "Before"}),
+        current,
+    );
+    let mut started = false;
+    set_forced_history_apply_failure(true);
+    let error = publish_identity_change(
+        temporary.path(),
+        &change,
+        true,
+        || {
+            started = true;
+            Ok(())
+        },
+        || unreachable!("receipt must not run after apply failure"),
+    )
+    .unwrap_err();
+    set_forced_history_apply_failure(false);
+    assert!(started);
+    assert!(matches!(error, ReviewOwnerError::Failed { .. }), "{error}");
+    assert_eq!(
+        read_prepared_history(temporary.path(), "staged")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn identity_publish_crash_after_start_before_history_discard_leaves_started() {
+    let temporary = TempDir::new();
+    let current = json!({"id": "staged", "name": "Current"});
+    let change = staged_identity_change(temporary.path(), current.clone());
+    write_prepared_event(
+        temporary.path(),
+        "vh_discard",
+        current,
+        json!({"id": "staged", "name": "After"}),
+    );
+    let mut started = false;
+    set_forced_history_apply_failure(true);
+    let error = publish_identity_change(
+        temporary.path(),
+        &change,
+        true,
+        || {
+            started = true;
+            Ok(())
+        },
+        || unreachable!("receipt must not run after apply failure"),
+    )
+    .unwrap_err();
+    set_forced_history_apply_failure(false);
+    assert!(started);
+    assert!(matches!(error, ReviewOwnerError::Failed { .. }), "{error}");
+    assert_eq!(
+        read_prepared_history(temporary.path(), "staged")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn identity_noop_without_history_skips_started() {
+    let temporary = TempDir::new();
+    let current = json!({"id": "staged", "name": "Current"});
+    let change = staged_identity_change(temporary.path(), current);
+    let mut started = false;
+    let mut receipted = false;
+    publish_identity_change(
+        temporary.path(),
+        &change,
+        true,
+        || {
+            started = true;
+            Ok(())
+        },
+        || {
+            receipted = true;
+            Ok(())
+        },
+    )
+    .unwrap();
+    assert!(!started, "identity no-op must not checkpoint started");
+    assert!(receipted);
 }

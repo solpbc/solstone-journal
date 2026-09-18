@@ -236,23 +236,18 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     let has_uncommitted_started = record
                         .as_ref()
                         .is_some_and(|r| r.has_uncommitted_started_receipt());
-                    let authentic_crash = is_review
-                        && record.as_ref().is_some_and(|r| {
-                            r.status == solstone_core_journal_io::DailyUnitStatus::Unfinished
-                                && r.reason_code.is_none()
-                                && r.has_uncommitted_started_receipt()
-                        });
                     let conflicting = record.as_ref().is_some_and(|r| {
                         r.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
                     });
-                    if !authentic_crash && unit.reason_code.is_none() {
+                    let ambiguous_started = is_review && has_uncommitted_started;
+                    if !ambiguous_started && unit.reason_code.is_none() {
                         continue;
                     }
                     let owner_conflict_kind =
                         record.as_ref().and_then(|r| r.owner_conflict_kind.clone());
-                    let lifecycle_state = if authentic_crash {
+                    let lifecycle_state = if ambiguous_started {
                         Some("ambiguous_started".to_owned())
-                    } else if is_review && conflicting && !has_uncommitted_started {
+                    } else if is_review && conflicting {
                         if record.as_ref().map_or(0, |r| r.failure_count) >= 2 {
                             Some("exhausted".to_owned())
                         } else {
@@ -276,11 +271,11 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                             .as_ref()
                             .map_or(0, |r| r.failure_count as usize),
                         last_fail_ts: record.as_ref().map(|r| r.updated_at_ms),
-                        stuck: conflicting || authentic_crash,
+                        stuck: conflicting || ambiguous_started,
                         owner_conflict_kind,
                         lifecycle_state,
                     });
-                    if conflicting || authentic_crash {
+                    if conflicting || ambiguous_started {
                         day.state = BACKLOG_STATE_STUCK.to_owned();
                         if let Some(reason) = unit.reason_code.as_ref() {
                             day.reason_code = Some(reason.clone());

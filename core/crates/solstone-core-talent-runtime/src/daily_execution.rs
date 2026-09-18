@@ -1186,5 +1186,17 @@ mod tests {
         apply_stage_failure(&mut record, &alias);
         assert_eq!(record.failure_count, 1);
         assert_eq!(record.evidence_revision, "E2");
+
+        let failed = StageError::new(
+            "publication",
+            "daily_publication",
+            "entities:entities_review",
+            "read failed",
+        )
+        .with_identity(&identity);
+        apply_stage_failure(&mut record, &failed);
+        assert_eq!(record.failure_count, 0);
+        assert_eq!(record.reason_code.as_deref(), Some("talent_stage_failed"));
+        assert_eq!(record.owner_conflict_kind.as_deref(), None);
     }
 }

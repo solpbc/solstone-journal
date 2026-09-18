@@ -46,7 +46,7 @@ pub use awareness::{
 };
 pub use connections_horizon::{ConnectionsHorizon, refresh_connections_horizon};
 pub use declaration::{
-    FacetDeclarationSnapshot, facet_write_identity, read_facet_declaration,
+    FacetDeclarationSnapshot, FacetIdentityError, facet_write_identity, read_facet_declaration,
     require_facet_write_identity,
 };
 pub use detected_entities::{

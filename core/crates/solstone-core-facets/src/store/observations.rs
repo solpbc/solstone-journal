@@ -91,8 +91,11 @@ pub fn prepare_observation_batch(
             });
         }
     };
-    let facet_id = super::declaration::facet_write_identity(root, facet)
-        .map_err(|message| ObservationWriteError::Conflict { message })?;
+    let facet_id = super::declaration::facet_write_identity(root, facet).map_err(|error| {
+        ObservationWriteError::Conflict {
+            message: error.to_string(),
+        }
+    })?;
     let scoped = list_scoped_facet_entities(root, facet, true, true)
         .map_err(|e| ObservationWriteError::Resolve(e.to_string()))?;
     let binding = scoped

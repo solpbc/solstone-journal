@@ -57,6 +57,8 @@ const CACHE_SCHEMA_VERSION: u64 = 1;
 static VERSION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 #[cfg(test)]
 thread_local! { static FORCE_IDENTITY_WRITE_FAILURE: Cell<bool> = const { Cell::new(false) }; }
+#[cfg(test)]
+thread_local! { static FORCE_HISTORY_APPLY_FAILURE: Cell<bool> = const { Cell::new(false) }; }
 
 /// Explicit history metadata for a durable identity write.
 #[derive(Debug, Clone, PartialEq)]
@@ -460,33 +462,42 @@ pub fn publish_identity_change(
             "conflict: promoted identity moved after preparation",
         ));
     }
-    reconcile_prepared_history(root, &change.entity_dir)
+    let planned = classify_prepared_history_plan(root, &change.entity_dir)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let current = read_entity_identity(root, &change.entity_dir)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
         .map(|s| s.value().clone());
-    if current.as_ref() != Some(&change.after) {
-        if !allow_before || current != change.before {
-            return Err(ReviewOwnerError::conflict(
-                ReviewOwnerConflictKind::IdentityChanged,
-                "conflict: promoted identity changed after preparation",
-            ));
-        }
+    let needs_identity_write = current.as_ref() != Some(&change.after);
+    if needs_identity_write && (!allow_before || current != change.before) {
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityChanged,
+            "conflict: promoted identity changed after preparation",
+        ));
+    }
+    let needs_history_apply = planned.iter().any(|(_, _, outcome)| {
+        matches!(
+            outcome,
+            PreparedHistoryOutcome::Publish | PreparedHistoryOutcome::Discard
+        )
+    });
+    if needs_identity_write || needs_history_apply {
         start().map_err(ReviewOwnerError::failed)?;
-        let operation = EntityOperationContext {
-            kind: if change.before.is_none() {
-                EntityOperationKind::Create
-            } else {
-                EntityOperationKind::Update
-            },
-            caller: serde_json::json!({"kind":"talent", "name":"entities:entities_review"}),
-            actor: serde_json::json!({"kind":"system"}),
-            metadata: serde_json::json!({}),
-        };
-        save_entity_identity(root, &change.entity_id, &change.after, Some(&operation))
+        apply_prepared_history_plan(root, &change.entity_dir, planned)
             .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-    } else {
-        start().map_err(ReviewOwnerError::failed)?;
+        if needs_identity_write {
+            let operation = EntityOperationContext {
+                kind: if change.before.is_none() {
+                    EntityOperationKind::Create
+                } else {
+                    EntityOperationKind::Update
+                },
+                caller: serde_json::json!({"kind":"talent", "name":"entities:entities_review"}),
+                actor: serde_json::json!({"kind":"system"}),
+                metadata: serde_json::json!({}),
+            };
+            save_entity_identity(root, &change.entity_id, &change.after, Some(&operation))
+                .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+        }
     }
     receipt().map_err(ReviewOwnerError::failed)
 }
@@ -766,6 +777,54 @@ pub fn refresh_identity_map_cache(
     })
 }
 
+fn classify_prepared_history_plan(
+    journal_root: &Path,
+    entity_dir: &str,
+) -> Result<Vec<(String, HistoryEvent, PreparedHistoryOutcome)>, EntityWriteError> {
+    let mut planned = Vec::new();
+    for PreparedHistoryEvent { staging_id, event } in
+        read_prepared_history(journal_root, entity_dir)?
+    {
+        let current = read_entity_identity(journal_root, entity_dir)?;
+        match classify_prepared_history(entity_dir, &event, current.as_ref())? {
+            PreparedHistoryOutcome::RepairRequired => {
+                return Err(EntityWriteError::ReconciliationRepairRequired {
+                    entity_dir: entity_dir.to_owned(),
+                    version_id: staging_id,
+                });
+            }
+            outcome => planned.push((staging_id, event, outcome)),
+        }
+    }
+    Ok(planned)
+}
+
+fn apply_prepared_history_plan(
+    journal_root: &Path,
+    entity_dir: &str,
+    planned: Vec<(String, HistoryEvent, PreparedHistoryOutcome)>,
+) -> Result<(), EntityWriteError> {
+    #[cfg(test)]
+    if FORCE_HISTORY_APPLY_FAILURE.with(Cell::get) {
+        return Err(EntityWriteError::InvalidIdentity {
+            identity_id: entity_dir.to_owned(),
+            detail: "forced history apply failure".into(),
+        });
+    }
+    for (staging_id, event, outcome) in planned {
+        match outcome {
+            PreparedHistoryOutcome::Publish => {
+                publish_staged_event(journal_root, entity_dir, &staging_id, event.value())?;
+            }
+            PreparedHistoryOutcome::Discard => {
+                discard_staged_event(journal_root, entity_dir, &staging_id)?;
+            }
+            PreparedHistoryOutcome::RepairRequired => unreachable!("repair refused before start"),
+        }
+    }
+    Ok(())
+}
+
 fn reconcile_prepared_history(
     journal_root: &Path,
     entity_dir: &str,
@@ -776,10 +835,10 @@ fn reconcile_prepared_history(
         let current = read_entity_identity(journal_root, entity_dir)?;
         match classify_prepared_history(entity_dir, &event, current.as_ref())? {
             PreparedHistoryOutcome::Publish => {
-                publish_staged_event(journal_root, entity_dir, &staging_id, event.value())?
+                publish_staged_event(journal_root, entity_dir, &staging_id, event.value())?;
             }
             PreparedHistoryOutcome::Discard => {
-                discard_staged_event(journal_root, entity_dir, &staging_id)?
+                discard_staged_event(journal_root, entity_dir, &staging_id)?;
             }
             PreparedHistoryOutcome::RepairRequired => {
                 return Err(EntityWriteError::ReconciliationRepairRequired {
@@ -1061,6 +1120,11 @@ pub(super) fn write_identity_snapshot(
 #[cfg(test)]
 pub(crate) fn set_forced_identity_write_failure(enabled: bool) {
     FORCE_IDENTITY_WRITE_FAILURE.with(|value| value.set(enabled));
+}
+
+#[cfg(test)]
+pub(crate) fn set_forced_history_apply_failure(enabled: bool) {
+    FORCE_HISTORY_APPLY_FAILURE.with(|value| value.set(enabled));
 }
 
 fn history_json_options() -> JsonWriteOptions {

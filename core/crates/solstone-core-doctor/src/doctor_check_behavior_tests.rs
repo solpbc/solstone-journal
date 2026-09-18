@@ -3082,8 +3082,12 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
         "retrying fix must contain kind: {fix}"
     );
     assert!(
-        fix.contains("retry"),
-        "retrying fix should mention retry: {fix}"
+        fix.contains("will retry automatically on the next run"),
+        "retrying fix should mention automatic retry: {fix}"
+    );
+    assert!(
+        fix.contains("you can also prioritize it from health"),
+        "retrying fix should mention health: {fix}"
     );
 
     // 2. Exhausted case (failure_count == 2, no started receipts)
@@ -3112,6 +3116,10 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     assert!(
         !fix.contains("catches up on its own"),
         "exhausted fix must not say catches up on its own: {fix}"
+    );
+    assert!(
+        fix.contains("exhausted its automatic retry"),
+        "exhausted fix must use voice-gate copy: {fix}"
     );
     assert!(
         fix.contains("--from-scratch"),
@@ -3167,6 +3175,18 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
         !fix2.contains("--from-scratch"),
         "started fix must NOT recommend --from-scratch: {fix2}"
     );
+
+    // 4. Failed + talent_stage_failed + started is still the started copy.
+    record.status = solstone_core_journal_io::DailyUnitStatus::Failed;
+    record.reason_code = Some("talent_stage_failed".into());
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row3 = result("journal_caught_up", &c);
+    let fix3 = row3.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix3.contains("may have started but not finished"),
+        "Failed plus started must stay ambiguous_started: {fix3}"
+    );
+    assert!(!fix3.contains("exhausted its automatic retry"), "{fix3}");
 }
 
 #[test]
@@ -3266,7 +3286,7 @@ fn journal_caught_up_selects_highest_review_severity() {
     let row = result("journal_caught_up", &c);
     let fix = row.fix.as_deref().unwrap_or_default();
     assert!(
-        fix.contains("exhausted automatic retries"),
+        fix.contains("exhausted its automatic retry"),
         "exhausted outranks retrying: {fix}"
     );
     assert!(fix.contains("20251229"), "{fix}");

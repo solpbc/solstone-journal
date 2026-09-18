@@ -104,6 +104,6 @@ pub(crate) use repair::set_repair_identity_write_failure_on_attempt;
 pub(crate) use undo::undo_entity_merge_with_injector;
 #[cfg(test)]
 pub(crate) use write::{
-    save_entity_identity_with_timeout, set_forced_identity_write_failure,
-    write_history_event_json_for_test,
+    save_entity_identity_with_timeout, set_forced_history_apply_failure,
+    set_forced_identity_write_failure, write_history_event_json_for_test,
 };

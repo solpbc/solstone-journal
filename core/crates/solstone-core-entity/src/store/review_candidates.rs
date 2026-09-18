@@ -230,8 +230,6 @@ pub fn publish_merge_proposals(
             AtomicWriteOptions { mode: Some(0o600) },
         )
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-    } else {
-        start().map_err(ReviewOwnerError::failed)?;
     }
     receipt().map_err(ReviewOwnerError::failed)
 }

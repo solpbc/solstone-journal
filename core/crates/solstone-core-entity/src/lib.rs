@@ -73,8 +73,9 @@ pub use trust_lock::{
 
 #[cfg(test)]
 pub(crate) use store::{
-    save_entity_identity_with_timeout, set_forced_identity_write_failure,
-    set_repair_identity_write_failure_on_attempt, write_history_event_json_for_test,
+    save_entity_identity_with_timeout, set_forced_history_apply_failure,
+    set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
+    write_history_event_json_for_test,
 };
 
 #[cfg(test)]

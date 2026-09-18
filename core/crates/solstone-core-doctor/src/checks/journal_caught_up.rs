@@ -111,7 +111,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                         format!("facet {facet}, ")
                     };
                     format!(
-                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) exhausted automatic retries; inspect with journal health or reprocess with journal reprocess {day} --from-scratch"
+                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) exhausted its automatic retry; inspect with journal health or reprocess with journal reprocess {day} --from-scratch"
                     )
                 }
                 Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("retrying") => {
@@ -123,7 +123,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                         format!("facet {facet}, ")
                     };
                     format!(
-                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) will automatically retry once on next run; or prioritize from health"
+                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) will retry automatically on the next run; you can also prioritize it from health"
                     )
                 }
                 _ => "solstone catches up on its own; reprocess a day from the health surface to prioritize it".to_owned(),

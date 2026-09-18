@@ -1072,6 +1072,15 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
                 "error": error.to_string(),
                 "reason_code": error.reason_code(),
             });
+            if !error.day().is_empty() {
+                event["day"] = json!(error.day());
+            }
+            if let Some(facet) = error.facet() {
+                event["facet"] = json!(facet);
+            }
+            if let Some(kind) = error.owner_conflict_kind() {
+                event["owner_conflict_kind"] = json!(kind);
+            }
             if let Some(usage) = error.usage {
                 event["usage"] = *usage;
             }
@@ -3393,5 +3402,37 @@ mod tests {
         let outcome = execute_request(request, &paths, &context, &client, &cogitate, &mut output);
         assert!(matches!(outcome, RuntimeOutcome::StageFailed(_)));
         assert!(!out_path.exists());
+    }
+
+    #[test]
+    fn stage_failed_json_includes_structured_review_identity_fields() {
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260910",
+            "entities:entities_review",
+            Some("work".into()),
+        );
+        let error = StageError::owner_conflict(
+            &identity,
+            "daily_publication",
+            solstone_core_entity::ReviewOwnerConflictKind::AliasClaimed,
+            "conflict: promotion alias was claimed after preparation",
+        );
+        let mut output = Vec::new();
+        emit_outcome(&mut output, RuntimeOutcome::StageFailed(error));
+        let events = events(&output);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0],
+            json!({
+                "event": "error",
+                "terminal": true,
+                "name": "entities:entities_review",
+                "error": "conflict hook 'daily_publication' for talent 'entities:entities_review': conflict: promotion alias was claimed after preparation",
+                "reason_code": "daily_owner_conflict",
+                "day": "20260910",
+                "facet": "work",
+                "owner_conflict_kind": "alias_claimed",
+            })
+        );
     }
 }

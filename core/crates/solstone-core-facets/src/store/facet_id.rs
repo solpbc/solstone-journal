@@ -20,7 +20,7 @@ pub fn ensure_daily_facet_id(root: &Path, facet: &str) -> Result<String, String>
         .map_err(|e| e.to_string())?
         .ok_or("conflict: owning facet no longer exists")?;
     if declaration.value().get("id").is_some() {
-        return facet_write_identity(root, facet);
+        return facet_write_identity(root, facet).map_err(|e| e.to_string());
     }
     let mut value = declaration.into_value();
     let id = assign_new_facet_id_locked(&mut value, root).map_err(|e| e.to_string())?;
