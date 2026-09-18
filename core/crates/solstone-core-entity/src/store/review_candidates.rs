@@ -208,26 +208,32 @@ pub fn publish_merge_proposals(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-    let path = review_candidates_path(root).map_err(|e| e.to_string())?;
-    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
-    let current = proposal_bytes(&path)?;
+) -> Result<(), crate::ReviewOwnerError> {
+    use crate::{ReviewOwnerConflictKind, ReviewOwnerError};
+    let _trust =
+        hold_entity_trust_lock(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let path = review_candidates_path(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let _lock = hold_lock(&path, LockOptions::default())
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let current = proposal_bytes(&path).map_err(ReviewOwnerError::failed)?;
     if current.as_deref() != Some(batch.after.as_str()) {
         if !allow_before || current != batch.before {
-            return Err("conflict: merge proposals changed after preparation".into());
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::MergeProposalsChanged,
+                "conflict: merge proposals changed after preparation",
+            ));
         }
-        start()?;
+        start().map_err(ReviewOwnerError::failed)?;
         write_text(
             &path,
             &batch.after,
             AtomicWriteOptions { mode: Some(0o600) },
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     } else {
-        start()?;
+        start().map_err(ReviewOwnerError::failed)?;
     }
-    receipt()
+    receipt().map_err(ReviewOwnerError::failed)
 }
 
 /// Mark one entity merge-review candidate accepted, when it exists.

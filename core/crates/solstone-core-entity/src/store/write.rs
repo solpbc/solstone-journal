@@ -445,25 +445,34 @@ pub fn publish_identity_change(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-    let map = read_identity_map(root).map_err(|e| e.to_string())?;
+) -> Result<(), crate::ReviewOwnerError> {
+    use crate::{ReviewOwnerConflictKind, ReviewOwnerError};
+    let _trust =
+        hold_entity_trust_lock(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let map = read_identity_map(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     if map
         .resolved
         .get(&change.entity_id)
         .is_some_and(|dir| dir != &change.entity_dir)
     {
-        return Err("conflict: promoted identity moved after preparation".into());
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityMoved,
+            "conflict: promoted identity moved after preparation",
+        ));
     }
-    start()?;
-    reconcile_prepared_history(root, &change.entity_dir).map_err(|e| e.to_string())?;
+    reconcile_prepared_history(root, &change.entity_dir)
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let current = read_entity_identity(root, &change.entity_dir)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
         .map(|s| s.value().clone());
     if current.as_ref() != Some(&change.after) {
         if !allow_before || current != change.before {
-            return Err("conflict: promoted identity changed after preparation".into());
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::IdentityChanged,
+                "conflict: promoted identity changed after preparation",
+            ));
         }
+        start().map_err(ReviewOwnerError::failed)?;
         let operation = EntityOperationContext {
             kind: if change.before.is_none() {
                 EntityOperationKind::Create
@@ -475,9 +484,11 @@ pub fn publish_identity_change(
             metadata: serde_json::json!({}),
         };
         save_entity_identity(root, &change.entity_id, &change.after, Some(&operation))
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    } else {
+        start().map_err(ReviewOwnerError::failed)?;
     }
-    receipt()
+    receipt().map_err(ReviewOwnerError::failed)
 }
 
 /// Create or update an ambiguity observation under the trust and file locks.

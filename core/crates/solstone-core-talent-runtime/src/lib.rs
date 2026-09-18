@@ -127,6 +127,13 @@ pub fn check_segment_has_no_input(
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct StageErrorExtra {
+    day: String,
+    facet: Option<String>,
+    owner_conflict_kind: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StageError {
     pub phase: &'static str,
     pub stage: &'static str,
@@ -134,7 +141,7 @@ pub struct StageError {
     pub detail: String,
     pub usage: Option<Box<Value>>,
     pub degraded: Option<Box<Value>>,
-    pub owner_conflict_kind: Option<&'static str>,
+    extra: Option<Box<StageErrorExtra>>,
 }
 
 impl StageError {
@@ -146,6 +153,23 @@ impl StageError {
         } else {
             "talent_stage_failed"
         }
+    }
+
+    pub fn day(&self) -> &str {
+        self.extra
+            .as_ref()
+            .map(|extra| extra.day.as_str())
+            .unwrap_or("")
+    }
+
+    pub fn facet(&self) -> Option<&str> {
+        self.extra.as_ref().and_then(|extra| extra.facet.as_deref())
+    }
+
+    pub fn owner_conflict_kind(&self) -> Option<&'static str> {
+        self.extra
+            .as_ref()
+            .and_then(|extra| extra.owner_conflict_kind)
     }
 
     pub fn new(
@@ -161,14 +185,14 @@ impl StageError {
             detail: detail.into(),
             usage: None,
             degraded: None,
-            owner_conflict_kind: None,
+            extra: None,
         }
     }
 
     pub fn owner_conflict(
         identity: &solstone_core_journal_io::DailyUnitIdentity,
         stage: &'static str,
-        kind: &'static str,
+        kind: solstone_core_entity::ReviewOwnerConflictKind,
         detail: impl Into<String>,
     ) -> Self {
         Self {
@@ -178,8 +202,23 @@ impl StageError {
             detail: detail.into(),
             usage: None,
             degraded: None,
-            owner_conflict_kind: Some(kind),
+            extra: Some(Box::new(StageErrorExtra {
+                day: identity.day.clone(),
+                facet: identity.facet.clone(),
+                owner_conflict_kind: Some(kind.as_str()),
+            })),
         }
+    }
+
+    pub fn with_identity(mut self, identity: &solstone_core_journal_io::DailyUnitIdentity) -> Self {
+        self.talent = identity.name.clone();
+        let kind = self.owner_conflict_kind();
+        self.extra = Some(Box::new(StageErrorExtra {
+            day: identity.day.clone(),
+            facet: identity.facet.clone(),
+            owner_conflict_kind: kind,
+        }));
+        self
     }
 }
 

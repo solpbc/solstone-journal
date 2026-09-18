@@ -561,6 +561,10 @@ fn review_alias_publication_ignores_inherited_conflicts_but_rechecks_additions()
         error,
         "conflict: promotion alias was claimed after preparation"
     );
+    assert_eq!(
+        error.kind(),
+        Some(solstone_core_entity::ReviewOwnerConflictKind::AliasClaimed)
+    );
     assert!(!refused_start);
     assert!(!refused_receipt);
     let unchanged = solstone_core_entity::read_entity_identity(temporary.path(), "target")
@@ -658,8 +662,12 @@ fn promotion_still_refuses_a_blocked_identity_reached_through_the_id_namespace()
         &[],
     )
     .unwrap_err();
-    assert!(error.starts_with("conflict:"), "{error}");
-    assert!(error.contains("blocked"), "{error}");
+    assert!(error.to_string().starts_with("conflict:"), "{error}");
+    assert!(error.to_string().contains("blocked"), "{error}");
+    assert_eq!(
+        error.kind(),
+        Some(solstone_core_entity::ReviewOwnerConflictKind::PromotedEntityBlocked)
+    );
 }
 
 #[test]
@@ -762,6 +770,10 @@ fn promotion_still_refuses_a_duplicate_name_family_no_member_can_claim() {
         error,
         "conflict: promotion \"Weekly Reflection\" matches 2 identities by name"
     );
+    assert_eq!(
+        error.kind(),
+        Some(solstone_core_entity::ReviewOwnerConflictKind::NameMatchesMultiple)
+    );
 }
 
 #[test]
@@ -791,5 +803,9 @@ fn promotion_still_refuses_a_shared_name_held_by_an_identity_map_collision_loser
     assert_eq!(
         error,
         "conflict: promotion \"Weekly Reflection\" matches \"beta_dir\", which lost its identity-map group"
+    );
+    assert_eq!(
+        error.kind(),
+        Some(solstone_core_entity::ReviewOwnerConflictKind::IdentityMapGroupLost)
     );
 }

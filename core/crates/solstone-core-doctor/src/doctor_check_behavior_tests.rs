@@ -3118,7 +3118,10 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
         "exhausted fix may recommend --from-scratch: {fix}"
     );
 
-    // 3. Ambiguous uncommitted started unit
+    // 3. Authentic crash: Unfinished, no reason_code, uncommitted started receipt
+    record.status = solstone_core_journal_io::DailyUnitStatus::Unfinished;
+    record.reason_code = None;
+    record.owner_conflict_kind = None;
     record.receipts.push(serde_json::json!({
         "kind": "owner_action",
         "action_id": "0:test",
@@ -3141,8 +3144,20 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
         "started fix must contain facet: {fix2}"
     );
     assert!(
-        fix2.contains("alias_claimed"),
-        "started fix must contain kind: {fix2}"
+        fix2.contains("may have started but not finished"),
+        "started fix must use started-but-not-finished copy: {fix2}"
+    );
+    assert!(
+        !fix2.contains("owner conflict"),
+        "started fix must not say owner conflict: {fix2}"
+    );
+    assert!(
+        !fix2.contains("write in-doubt"),
+        "started fix must not say write in-doubt: {fix2}"
+    );
+    assert!(
+        !fix2.contains("unit record"),
+        "started fix must not say unit record: {fix2}"
     );
     assert!(
         !fix2.contains("catches up on its own"),
@@ -3152,4 +3167,108 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
         !fix2.contains("--from-scratch"),
         "started fix must NOT recommend --from-scratch: {fix2}"
     );
+}
+
+#[test]
+fn journal_caught_up_selects_highest_review_severity() {
+    let c = fixture();
+    let root = &c.journal_path;
+    configure_daily_work(root, Some("entities:entities_review"));
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(root.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+
+    let seed_day = |day: &str| {
+        let seg_dir = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(seg_dir.join("talents")).unwrap();
+        fs::write(seg_dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+        incomplete(&c, day);
+    };
+    seed_day("20251228");
+    seed_day("20251229");
+    seed_day("20251230");
+
+    let save = |day: &str,
+                status: solstone_core_journal_io::DailyUnitStatus,
+                reason: Option<&str>,
+                kind: Option<&str>,
+                count: u32,
+                started: bool| {
+        let coverage =
+            solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+        let unit = coverage
+            .units
+            .iter()
+            .find(|unit| unit.identity.name == "entities:entities_review")
+            .unwrap();
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+            unit.identity.clone(),
+            &unit.evidence_revision,
+            &unit.contract_digest,
+        );
+        record.status = status;
+        record.reason_code = reason.map(str::to_owned);
+        record.owner_conflict_kind = kind.map(str::to_owned);
+        record.failure_count = count;
+        if started {
+            record.receipts.push(serde_json::json!({
+                "kind": "owner_action",
+                "action_id": "0:test",
+                "token": "tok",
+                "state": "started"
+            }));
+        }
+        solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    };
+
+    save(
+        "20251228",
+        solstone_core_journal_io::DailyUnitStatus::Conflicting,
+        Some("daily_owner_conflict"),
+        Some("alias_claimed"),
+        1,
+        false,
+    );
+    save(
+        "20251229",
+        solstone_core_journal_io::DailyUnitStatus::Conflicting,
+        Some("daily_owner_conflict"),
+        Some("identity_changed"),
+        2,
+        false,
+    );
+    save(
+        "20251230",
+        solstone_core_journal_io::DailyUnitStatus::Unfinished,
+        None,
+        None,
+        0,
+        true,
+    );
+
+    let row = result("journal_caught_up", &c);
+    let fix = row.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix.contains("may have started but not finished"),
+        "ambiguous started outranks exhausted and retrying: {fix}"
+    );
+    assert!(fix.contains("20251230"), "{fix}");
+    assert!(!fix.contains("exhausted"), "{fix}");
+    assert!(!fix.contains("retry once"), "{fix}");
+
+    save(
+        "20251230",
+        solstone_core_journal_io::DailyUnitStatus::Committed,
+        None,
+        None,
+        0,
+        false,
+    );
+    let row = result("journal_caught_up", &c);
+    let fix = row.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix.contains("exhausted automatic retries"),
+        "exhausted outranks retrying: {fix}"
+    );
+    assert!(fix.contains("20251229"), "{fix}");
+    assert!(!fix.contains("retry once"), "{fix}");
 }

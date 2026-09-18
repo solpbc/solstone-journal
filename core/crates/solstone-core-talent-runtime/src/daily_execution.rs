@@ -21,6 +21,26 @@ fn failure(name: &str, error: impl std::fmt::Display) -> StageError {
     StageError::new("write", "daily_publication", name, error.to_string())
 }
 
+fn apply_stage_failure(record: &mut DailyUnitRecord, error: &StageError) {
+    record.status = if error.phase == "conflict" {
+        DailyUnitStatus::Conflicting
+    } else {
+        DailyUnitStatus::Failed
+    };
+    record.error_detail = Some(error.to_string());
+    let reason = error.reason_code();
+    let kind_changed = record.owner_conflict_kind.as_deref() != error.owner_conflict_kind();
+    let reason_changed = record.reason_code.as_deref() != Some(reason);
+    if kind_changed || reason_changed {
+        record.failure_count = 0;
+    }
+    record.reason_code = Some(reason.to_owned());
+    record.owner_conflict_kind = error.owner_conflict_kind().map(str::to_owned);
+    if error.phase == "conflict" && record.identity.name == "entities:entities_review" {
+        record.failure_count = record.failure_count.saturating_add(1);
+    }
+}
+
 fn retained_response(value: &Value) -> Result<crate::GeneratedTalentResponse, String> {
     let response = value
         .get("response")
@@ -201,21 +221,7 @@ pub(crate) fn execute(
                     record.generated_result = None;
                     error.stage = "daily_output_validation";
                 }
-                record.status = if error.phase == "conflict" {
-                    DailyUnitStatus::Conflicting
-                } else {
-                    DailyUnitStatus::Failed
-                };
-                record.error_detail = Some(error.to_string());
-                record.owner_conflict_kind = error.owner_conflict_kind.map(str::to_owned);
-                let reason = error.reason_code();
-                if record.reason_code.as_deref() != Some(reason) {
-                    record.failure_count = 0;
-                }
-                record.reason_code = Some(reason.to_owned());
-                if error.phase == "conflict" && identity.name == "entities:entities_review" {
-                    record.failure_count = record.failure_count.saturating_add(1);
-                }
+                apply_stage_failure(record, &error);
                 authority.checkpoint()?;
                 if error.usage.is_none() {
                     error.usage = usage;
@@ -1141,5 +1147,44 @@ mod tests {
             assert_eq!(after.failure_count, expected_count);
             assert!(after.generated_result.is_none());
         }
+    }
+
+    #[test]
+    fn review_conflict_retry_budget_resets_on_kind_or_evidence_change() {
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        let alias = StageError::owner_conflict(
+            &identity,
+            "daily_publication",
+            solstone_core_entity::ReviewOwnerConflictKind::AliasClaimed,
+            "alias",
+        );
+        apply_stage_failure(&mut record, &alias);
+        assert_eq!(record.failure_count, 1);
+        assert_eq!(record.owner_conflict_kind.as_deref(), Some("alias_claimed"));
+        apply_stage_failure(&mut record, &alias);
+        assert_eq!(record.failure_count, 2);
+
+        let moved = StageError::owner_conflict(
+            &identity,
+            "daily_publication",
+            solstone_core_entity::ReviewOwnerConflictKind::IdentityChanged,
+            "identity",
+        );
+        apply_stage_failure(&mut record, &moved);
+        assert_eq!(
+            record.failure_count, 1,
+            "a distinct later conflict kind must not inherit exhaustion"
+        );
+        assert_eq!(
+            record.owner_conflict_kind.as_deref(),
+            Some("identity_changed")
+        );
+
+        record = DailyUnitRecord::new(identity.clone(), "E2", "C2");
+        apply_stage_failure(&mut record, &alias);
+        assert_eq!(record.failure_count, 1);
+        assert_eq!(record.evidence_revision, "E2");
     }
 }

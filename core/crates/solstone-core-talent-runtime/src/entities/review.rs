@@ -419,9 +419,14 @@ pub fn prepare_publication(
     facet: &str,
     day: &str,
     prepared: &PreparedTalent,
-) -> Result<Vec<crate::writers::PreparedDailyAction>, String> {
+) -> Result<Vec<crate::writers::PreparedDailyAction>, solstone_core_entity::ReviewOwnerError> {
     use crate::writers::PreparedDailyAction;
-    let facet_id = solstone_core_facets::facet_write_identity(journal, facet)?;
+    let facet_id = solstone_core_facets::facet_write_identity(journal, facet).map_err(|_| {
+        solstone_core_entity::ReviewOwnerError::conflict(
+            solstone_core_entity::ReviewOwnerConflictKind::OwningFacetChanged,
+            "conflict: owning facet changed after prompt preparation",
+        )
+    })?;
     let data: Value = serde_json::from_str(output).map_err(|e| e.to_string())?;
     let promotions = data
         .get("promotions")
@@ -506,7 +511,10 @@ pub fn prepare_publication(
         if &solstone_core_facets::review_promotion_snapshot(journal, facet, canonical_name)?
             != expected
         {
-            return Err("conflict: promotion owner state changed after prompt preparation".into());
+            return Err(solstone_core_entity::ReviewOwnerError::conflict(
+                solstone_core_entity::ReviewOwnerConflictKind::PromotionOwnerState,
+                "conflict: promotion owner state changed after prompt preparation",
+            ));
         }
         let promotion = solstone_core_facets::prepare_review_promotion(
             journal,
@@ -606,7 +614,10 @@ pub fn prepare_publication(
                 continue;
             }
             if actual != expected {
-                return Err("conflict: merge proposal changed after prompt preparation".into());
+                return Err(solstone_core_entity::ReviewOwnerError::conflict(
+                    solstone_core_entity::ReviewOwnerConflictKind::MergeProposalPreparation,
+                    "conflict: merge proposal changed after prompt preparation",
+                ));
             }
         }
         actions.push(PreparedDailyAction::MergeProposals {

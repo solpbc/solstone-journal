@@ -9,8 +9,8 @@ use std::path::Path;
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{
-    EntityOperationContext, EntityOperationKind, read_entity_identity, read_identity_group_map,
-    read_identity_map, save_entity_identity,
+    EntityOperationContext, EntityOperationKind, ReviewOwnerConflictKind, ReviewOwnerError,
+    read_entity_identity, read_identity_group_map, read_identity_map, save_entity_identity,
 };
 use solstone_core_entity_matching::{entity_slug, normalize_resolution_query};
 
@@ -377,7 +377,7 @@ pub fn prepare_review_promotion(
     name: &str,
     description: &str,
     aliases: &[String],
-) -> Result<PreparedReviewPromotion, String> {
+) -> Result<PreparedReviewPromotion, ReviewOwnerError> {
     let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
     let facet_id = super::declaration::facet_write_identity(root, facet)?;
@@ -405,7 +405,10 @@ pub fn prepare_review_promotion(
     let now = now_iso();
     let (entity_id, mut identity) = if let Some(existing) = existing {
         if existing.blocked {
-            return Err(format!("conflict: promoted entity {name:?} is blocked"));
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::PromotedEntityBlocked,
+                format!("conflict: promoted entity {name:?} is blocked"),
+            ));
         }
         relationship_dir = existing.relationship_dir.clone();
         before_link = Some(existing.relationship.clone());
@@ -422,8 +425,11 @@ pub fn prepare_review_promotion(
                 };
                 if identity_name(identity.value()) == query {
                     if index != 0 {
-                        return Err(format!(
-                            "conflict: promotion {name:?} matches {directory:?}, which lost its identity-map group"
+                        return Err(ReviewOwnerError::conflict(
+                            ReviewOwnerConflictKind::IdentityMapGroupLost,
+                            format!(
+                                "conflict: promotion {name:?} matches {directory:?}, which lost its identity-map group"
+                            ),
                         ));
                     }
                     matches.push((identity.entity_id().to_owned(), identity.value().clone()));
@@ -439,9 +445,12 @@ pub fn prepare_review_promotion(
             // unpromotable; refusing when no member holds the id keeps the
             // ambiguity refusal where it is still the honest answer.
             let Some(index) = matches.iter().position(|(id, _)| *id == slug) else {
-                return Err(format!(
-                    "conflict: promotion {name:?} matches {} identities by name",
-                    matches.len()
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::NameMatchesMultiple,
+                    format!(
+                        "conflict: promotion {name:?} matches {} identities by name",
+                        matches.len()
+                    ),
                 ));
             };
             Some(matches.swap_remove(index))
@@ -451,8 +460,9 @@ pub fn prepare_review_promotion(
         if let Some(found) = found {
             found
         } else if slug.is_empty() {
-            return Err(format!(
-                "conflict: promotion {name:?} has no usable entity id"
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::NoUsableEntityId,
+                format!("conflict: promotion {name:?} has no usable entity id"),
             ));
         } else if let Some(directories) = groups.groups.get(&slug) {
             // The id namespace already holds this promotion.  `entity_slug` is
@@ -465,8 +475,11 @@ pub fn prepare_review_promotion(
             let directory = directories.first().ok_or("malformed identity group")?;
             let Some(owner) = read_entity_identity(root, directory).map_err(|e| e.to_string())?
             else {
-                return Err(format!(
-                    "conflict: promotion {name:?} derives entity id {slug:?}, whose identity {directory:?} cannot be read"
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::IdentityUnreadable,
+                    format!(
+                        "conflict: promotion {name:?} derives entity id {slug:?}, whose identity {directory:?} cannot be read"
+                    ),
                 ));
             };
             (owner.entity_id().to_owned(), owner.value().clone())
@@ -478,7 +491,10 @@ pub fn prepare_review_promotion(
         }
     };
     if identity.get("blocked") == Some(&Value::Bool(true)) {
-        return Err("conflict: promoted entity is blocked".into());
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::PromotedEntityBlocked,
+            "conflict: promoted entity is blocked",
+        ));
     }
     if before_link
         .as_ref()
@@ -493,8 +509,11 @@ pub fn prepare_review_promotion(
         let actual =
             read_facet_entity_link(root, facet, &relationship_dir).map_err(|e| e.to_string())?;
         if actual.is_some() {
-            return Err(format!(
-                "conflict: promotion {name:?} needs relationship directory {relationship_dir:?}, which is already occupied"
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::RelationshipOccupied,
+                format!(
+                    "conflict: promotion {name:?} needs relationship directory {relationship_dir:?}, which is already occupied"
+                ),
             ));
         }
     }
@@ -570,29 +589,50 @@ pub fn publish_review_attachment(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
-    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-    super::declaration::require_facet_write_identity(root, &change.facet, &change.facet_id)?;
-    let map = read_identity_map(root).map_err(|e| e.to_string())?;
-    let dir = map
-        .resolved
-        .get(&change.entity_id)
-        .ok_or("conflict: promotion identity disappeared")?;
+) -> Result<(), ReviewOwnerError> {
+    let _facet =
+        hold_facet_trust_lock(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root)
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    super::declaration::require_facet_write_identity(root, &change.facet, &change.facet_id)
+        .map_err(|_| {
+            ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::OwningFacetChanged,
+                "conflict: owning facet changed after prompt preparation",
+            )
+        })?;
+    let map = read_identity_map(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let dir = map.resolved.get(&change.entity_id).ok_or_else(|| {
+        ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityDisappeared,
+            "conflict: promotion identity disappeared",
+        )
+    })?;
     let identity = read_entity_identity(root, dir)
-        .map_err(|e| e.to_string())?
-        .ok_or("conflict: promotion identity disappeared")?;
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
+        .ok_or_else(|| {
+            ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::IdentityDisappeared,
+                "conflict: promotion identity disappeared",
+            )
+        })?;
     if identity.value().get("blocked") == Some(&Value::Bool(true)) {
-        return Err("conflict: promotion identity blocked".into());
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityBlocked,
+            "conflict: promotion identity blocked",
+        ));
     }
     let current = read_facet_entity_link(root, &change.facet, &change.relationship_dir)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?
         .map(|s| s.value().clone());
     if current.as_ref() != Some(&change.after) {
         if !allow_before || current != change.before {
-            return Err("conflict: promotion relationship changed after preparation".into());
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::RelationshipChanged,
+                "conflict: promotion relationship changed after preparation",
+            ));
         }
-        start()?;
+        start().map_err(ReviewOwnerError::failed)?;
         save_facet_entity_link(
             root,
             &change.facet,
@@ -603,11 +643,11 @@ pub fn publish_review_attachment(
                 .as_object()
                 .ok_or("malformed prepared relationship")?,
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     } else {
-        start()?;
+        start().map_err(ReviewOwnerError::failed)?;
     }
-    receipt()
+    receipt().map_err(ReviewOwnerError::failed)
 }
 
 pub fn publish_review_aliases(
@@ -617,15 +657,21 @@ pub fn publish_review_aliases(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
-    let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
-    let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-    let scoped = list_scoped_facet_entities(root, facet, true, true).map_err(|e| e.to_string())?;
+) -> Result<(), ReviewOwnerError> {
+    let _facet =
+        hold_facet_trust_lock(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let _entity = solstone_core_entity::hold_entity_trust_lock(root)
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let scoped = list_scoped_facet_entities(root, facet, true, true)
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     if !scoped
         .iter()
         .any(|entity| entity.entity_id == change.entity_id && !entity.detached && !entity.blocked)
     {
-        return Err("conflict: alias target is no longer attached".into());
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::AliasTargetDetached,
+            "conflict: alias target is no longer attached",
+        ));
     }
     let inherited = change
         .before
@@ -649,7 +695,10 @@ pub fn publish_review_aliases(
                         .iter()
                         .any(|aka| normalize_resolution_query(aka) == query))
         }) {
-            return Err("conflict: promotion alias was claimed after preparation".into());
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::AliasClaimed,
+                "conflict: promotion alias was claimed after preparation",
+            ));
         }
     }
     solstone_core_entity::publish_identity_change(root, change, allow_before, start, receipt)

@@ -13,6 +13,7 @@ use solstone_core_journal_io::{
 use super::WriteIntent;
 use crate::contract::{CommitDisposition, CommitPlan};
 use crate::{ExecutionContext, PreparedTalent, StageError};
+use solstone_core_entity::{ReviewOwnerConflictKind, ReviewOwnerError};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PreparedDailyPublication {
@@ -120,7 +121,7 @@ fn action_facet(action: &PreparedDailyAction) -> Option<(&str, &str)> {
 fn verify_frozen_facet(
     action: &PreparedDailyAction,
     prepared: &PreparedTalent,
-) -> Result<(), String> {
+) -> Result<(), ReviewOwnerError> {
     if let Some((facet, id)) = action_facet(action) {
         let expected = prepared
             .config
@@ -129,7 +130,10 @@ fn verify_frozen_facet(
             .and_then(Value::as_str)
             .ok_or("missing frozen facet identity")?;
         if id != expected {
-            return Err("conflict: owning facet changed after prompt preparation".into());
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::OwningFacetChanged,
+                "conflict: owning facet changed after prompt preparation",
+            ));
         }
     }
     Ok(())
@@ -165,7 +169,7 @@ pub(crate) fn prepare_frozen_output_action(
     path: &Path,
     after: Vec<u8>,
     prepared: &PreparedTalent,
-) -> Result<PreparedDailyAction, String> {
+) -> Result<PreparedDailyAction, ReviewOwnerError> {
     let action = prepare_output_action(root, path, after)?;
     let PreparedDailyAction::Output { path, before, .. } = &action else {
         unreachable!()
@@ -179,7 +183,7 @@ fn verify_artifact_before(
     prepared: &PreparedTalent,
     path: &str,
     actual: Option<&[u8]>,
-) -> Result<(), String> {
+) -> Result<(), ReviewOwnerError> {
     let expected = prepared
         .config
         .get("_daily_artifact_before")
@@ -189,7 +193,10 @@ fn verify_artifact_before(
     let expected: Option<Vec<u8>> = serde_json::from_value(expected.clone())
         .map_err(|e| format!("invalid frozen artifact snapshot: {e}"))?;
     if expected.as_deref() != actual {
-        return Err("conflict: required artifact changed after prompt preparation".into());
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::ArtifactBeforeChanged,
+            "conflict: required artifact changed after prompt preparation",
+        ));
     }
     Ok(())
 }
@@ -211,7 +218,7 @@ pub fn prepare_daily_output(
         output.as_bytes().to_vec(),
         prepared,
     )
-    .map_err(error)?;
+    .map_err(|e| error(e.to_string()))?;
     Ok(PreparedDailyPublication {
         actions: vec![action],
         no_output: false,
@@ -308,7 +315,7 @@ pub fn prepare_daily_publication(
                     format!("{output}\n").into_bytes(),
                     prepared,
                 )
-                .map_err(error)?,
+                .map_err(|e| error(e.to_string()))?,
             );
         }
         CommitPlan::Write(WriteIntent::EntityObserver {
@@ -326,7 +333,8 @@ pub fn prepare_daily_publication(
                 .join("entities")
                 .join(format!("{day}_observer_outcome.json"));
             // Owner drift must be classified before retryable model-reference errors.
-            prepare_frozen_output_action(root, &path, Vec::new(), prepared).map_err(error)?;
+            prepare_frozen_output_action(root, &path, Vec::new(), prepared)
+                .map_err(|e| error(e.to_string()))?;
             let (batches, outcome) = crate::entities::observer::prepare_publication(
                 root,
                 &output,
@@ -336,7 +344,7 @@ pub fn prepare_daily_publication(
                 &shown_observation_ids,
                 prepared,
             )
-            .map_err(error)?;
+            .map_err(|e| error(e.to_string()))?;
             actions.extend(
                 batches
                     .into_iter()
@@ -349,7 +357,7 @@ pub fn prepare_daily_publication(
                     format!("{outcome}\n").into_bytes(),
                     prepared,
                 )
-                .map_err(error)?,
+                .map_err(|e| error(e.to_string()))?,
             );
         }
         CommitPlan::Write(WriteIntent::Schedule { output, day }) => {
@@ -388,7 +396,7 @@ pub fn prepare_daily_publication(
                     &format!("facets/{}/news/{}", batch.facet, batch.relative_path),
                     batch.before.as_ref().map(|s| s.as_bytes()),
                 )
-                .map_err(error)?;
+                .map_err(|e| error(e.to_string()))?;
                 actions.push(PreparedDailyAction::Newsletter { batch });
             }
         }
@@ -425,7 +433,7 @@ pub fn prepare_daily_publication(
                         output.into_bytes(),
                         prepared,
                     )
-                    .map_err(error)?,
+                    .map_err(|e| error(e.to_string()))?,
                 );
             }
         }
@@ -437,7 +445,7 @@ pub fn prepare_daily_publication(
             );
             actions.extend(
                 crate::entities::review::prepare_publication(root, &output, &facet, &day, prepared)
-                    .map_err(|e| review_error(&identity, e))?,
+                    .map_err(|e| review_owner_error(&identity, e))?,
             );
         }
         CommitPlan::Write(_) => {
@@ -464,9 +472,9 @@ pub fn prepare_daily_publication(
     for action in &actions {
         verify_frozen_facet(action, prepared).map_err(|e| {
             if let Some(id) = &review_identity {
-                review_error(id, e)
+                review_owner_error(id, e)
             } else {
-                error(e)
+                error(e.to_string())
             }
         })?;
     }
@@ -503,51 +511,18 @@ pub fn required_artifact_receipts(publication: &PreparedDailyPublication) -> Vec
 /// The caller checkpointed generated_result and this entire typed plan before
 /// entry. Each action starts durably, commits under its owner's lock, then
 /// checkpoints the receipt while both owner and unit authority remain held.
-fn review_conflict_kind(detail: &str) -> Option<&'static str> {
-    match detail {
-        "conflict: promotion alias was claimed after preparation" => Some("alias_claimed"),
-        "conflict: alias target is no longer attached" => Some("alias_target_detached"),
-        "conflict: promotion owner state changed after prompt preparation" => {
-            Some("promotion_owner_state")
-        }
-        "conflict: promoted identity moved after preparation" => Some("identity_moved"),
-        "conflict: promoted identity changed after preparation" => Some("identity_changed"),
-        "conflict: promotion identity disappeared" => Some("identity_disappeared"),
-        "conflict: promotion identity blocked" => Some("identity_blocked"),
-        "conflict: promotion relationship changed after preparation" => {
-            Some("relationship_changed")
-        }
-        "conflict: merge proposal changed after prompt preparation" => {
-            Some("merge_proposal_preparation")
-        }
-        "conflict: merge proposals changed after preparation" => Some("merge_proposals_changed"),
-        "conflict: required output changed after preparation" => Some("output_artifact_changed"),
-        "conflict: owning facet changed after prompt preparation" => Some("owning_facet_changed"),
-        "conflict: required artifact changed after prompt preparation" => {
-            Some("artifact_before_changed")
-        }
-        _ => None,
-    }
-}
-
-fn review_error(
+fn review_owner_error(
     identity: &solstone_core_journal_io::DailyUnitIdentity,
-    detail: impl Into<String>,
+    error: ReviewOwnerError,
 ) -> StageError {
-    let detail = detail.into();
-    if let Some(kind) = review_conflict_kind(&detail) {
-        StageError::owner_conflict(identity, "daily_publication", kind, detail)
-    } else if detail.starts_with("conflict:") {
-        StageError::new(
-            "unmapped_review_conflict",
-            "daily_publication",
-            &identity.name,
-            format!("unmapped review owner conflict: {detail}"),
-        )
-    } else if detail.starts_with("validation:") {
-        StageError::new("parse", "daily_publication", &identity.name, detail)
-    } else {
-        StageError::new("publication", "daily_publication", &identity.name, detail)
+    match error {
+        ReviewOwnerError::Conflict { kind, detail } => {
+            StageError::owner_conflict(identity, "daily_publication", kind, detail)
+        }
+        ReviewOwnerError::Failed { detail } => {
+            StageError::new("publication", "daily_publication", &identity.name, detail)
+                .with_identity(identity)
+        }
     }
 }
 
@@ -564,9 +539,16 @@ pub fn publish_daily_publication(
     let is_review = record.identity.name == "entities:entities_review";
     let make_error = |detail: String| -> StageError {
         if is_review {
-            review_error(&record.identity, detail)
+            review_owner_error(&record.identity, ReviewOwnerError::failed(detail))
         } else {
             error(detail)
+        }
+    };
+    let make_review = |err: ReviewOwnerError| -> StageError {
+        if is_review {
+            review_owner_error(&record.identity, err)
+        } else {
+            error(err.to_string())
         }
     };
 
@@ -657,7 +639,10 @@ pub fn publish_daily_publication(
             solstone_core_facets::require_facet_write_identity(&context.journal, facet, id)
                 .map_err(|_| {
                     if is_review {
-                        make_error("conflict: owning facet changed after prompt preparation".into())
+                        make_review(ReviewOwnerError::conflict(
+                            ReviewOwnerConflictKind::OwningFacetChanged,
+                            "conflict: owning facet changed after prompt preparation",
+                        ))
                     } else {
                         make_error("conflict: owning facet no longer exists".into())
                     }
@@ -666,7 +651,7 @@ pub fn publish_daily_publication(
         } else {
             None
         };
-        let result = match action {
+        match action {
             PreparedDailyAction::Observation { batch } => {
                 solstone_core_facets::publish_observation_batch(
                     &context.journal,
@@ -674,6 +659,7 @@ pub fn publish_daily_publication(
                     allow_before,
                     receipt,
                 )
+                .map_err(make_error)?
             }
             PreparedDailyAction::Anticipation { batch } => {
                 solstone_core_facets::publish_anticipation_batch(
@@ -682,6 +668,7 @@ pub fn publish_daily_publication(
                     allow_before,
                     receipt,
                 )
+                .map_err(make_error)?
             }
             PreparedDailyAction::Newsletter { batch } => {
                 solstone_core_facets::publish_news_replacement(
@@ -690,6 +677,7 @@ pub fn publish_daily_publication(
                     allow_before,
                     receipt,
                 )
+                .map_err(make_error)?
             }
             PreparedDailyAction::Identity { change, .. } => {
                 solstone_core_entity::publish_identity_change(
@@ -699,6 +687,7 @@ pub fn publish_daily_publication(
                     start,
                     receipt,
                 )
+                .map_err(make_review)?
             }
             PreparedDailyAction::Attachment { change } => {
                 solstone_core_facets::publish_review_attachment(
@@ -708,6 +697,7 @@ pub fn publish_daily_publication(
                     start,
                     receipt,
                 )
+                .map_err(make_review)?
             }
             PreparedDailyAction::Aliases { facet, change, .. } => {
                 solstone_core_facets::publish_review_aliases(
@@ -718,6 +708,7 @@ pub fn publish_daily_publication(
                     start,
                     receipt,
                 )
+                .map_err(make_review)?
             }
             PreparedDailyAction::MergeProposals { batch, .. } => {
                 solstone_core_entity::publish_merge_proposals(
@@ -727,6 +718,7 @@ pub fn publish_daily_publication(
                     start,
                     receipt,
                 )
+                .map_err(make_review)?
             }
             PreparedDailyAction::DailyTime { batch } => {
                 solstone_core_system::schedule::publish_daily_time(
@@ -735,6 +727,7 @@ pub fn publish_daily_publication(
                     allow_before,
                     receipt,
                 )
+                .map_err(make_error)?
             }
             PreparedDailyAction::Output {
                 path,
@@ -749,9 +742,9 @@ pub fn publish_daily_publication(
                 allow_before,
                 start,
                 receipt,
-            ),
-        };
-        result.map_err(make_error)?;
+            )
+            .map_err(make_review)?,
+        }
     }
     Ok(if publication.no_output {
         CommitDisposition::CommittedNoOutput
@@ -768,22 +761,26 @@ fn publish_output(
     allow_before: bool,
     start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
-) -> Result<(), String> {
+) -> Result<(), ReviewOwnerError> {
     let path = root.join(relative);
     relative_output(root, &path)?;
-    let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
-    let current = read_optional(&path)?;
+    let _lock = hold_lock(&path, LockOptions::default())
+        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+    let current = read_optional(&path).map_err(ReviewOwnerError::failed)?;
     if current.as_deref() != Some(after) {
         if !allow_before || &current != before {
-            return Err("conflict: required output changed after preparation".into());
+            return Err(ReviewOwnerError::conflict(
+                ReviewOwnerConflictKind::OutputArtifactChanged,
+                "conflict: required output changed after preparation",
+            ));
         }
-        start()?;
+        start().map_err(ReviewOwnerError::failed)?;
         atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     } else {
-        start()?;
+        start().map_err(ReviewOwnerError::failed)?;
     }
-    receipt()
+    receipt().map_err(ReviewOwnerError::failed)
 }
 
 #[cfg(test)]
@@ -1114,8 +1111,10 @@ mod tests {
             let err =
                 publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
             assert_eq!(err.talent, "entities:entities_review");
+            assert_eq!(err.day(), "20260910");
+            assert_eq!(err.facet(), Some("work"));
             assert_eq!(err.phase, "conflict");
-            assert_eq!(err.owner_conflict_kind.as_deref(), Some("alias_claimed"));
+            assert_eq!(err.owner_conflict_kind(), Some("alias_claimed"));
 
             let binding = authority.record();
             let current_record = binding.as_ref().unwrap();
@@ -1923,5 +1922,80 @@ mod tests {
                 .join("facets/work/entities/beta/observations.jsonl")
                 .exists()
         );
+    }
+
+    #[test]
+    fn identity_publisher_refuses_changed_identity_before_start() {
+        let root = fixture();
+        let journal = root.path();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.into(),
+        };
+        let facet_id = solstone_core_facets::facet_write_identity(journal, "work").unwrap();
+        let before = json!({"id":"ada","name":"Ada","type":"Person"});
+        let after = json!({"id":"ada","name":"Ada Lovelace","type":"Person"});
+        solstone_core_entity::save_entity_identity(journal, "ada", &before, None).unwrap();
+        let action = PreparedDailyAction::Identity {
+            facet: "work".into(),
+            facet_id,
+            change: solstone_core_entity::PreparedIdentityChange {
+                entity_id: "ada".into(),
+                entity_dir: "ada".into(),
+                before: Some(before),
+                after,
+            },
+        };
+        let plan = PreparedDailyPublication {
+            actions: vec![action],
+            no_output: false,
+        };
+        solstone_core_entity::save_entity_identity(
+            journal,
+            "ada",
+            &json!({"id":"ada","name":"Owner edit","type":"Person"}),
+            None,
+        )
+        .unwrap();
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("attempt-1".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()?;
+            let err =
+                publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
+            assert_eq!(err.phase, "conflict");
+            assert_eq!(err.talent, "entities:entities_review");
+            assert_eq!(err.day(), "20260910");
+            assert_eq!(err.facet(), Some("work"));
+            assert_eq!(err.owner_conflict_kind(), Some("identity_changed"));
+            let binding = authority.record();
+            let current = binding.as_ref().unwrap();
+            assert!(
+                !current.has_uncommitted_started_receipt(),
+                "pre-write identity refusal must not leave a started receipt"
+            );
+            assert!(current.receipts.is_empty());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn every_review_owner_conflict_kind_is_carried_with_identity() {
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        for kind in solstone_core_entity::ReviewOwnerConflictKind::ALL {
+            let err = StageError::owner_conflict(&identity, "daily_publication", *kind, "detail");
+            assert_eq!(err.phase, "conflict");
+            assert_eq!(err.talent, "entities:entities_review");
+            assert_eq!(err.day(), "20260910");
+            assert_eq!(err.facet(), Some("work"));
+            assert_eq!(err.owner_conflict_kind(), Some(kind.as_str()));
+            assert_eq!(err.reason_code(), "daily_owner_conflict");
+        }
     }
 }

@@ -70,31 +70,39 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             if let Some(day) = view.oldest_pending_day {
                 detail.push_str(&format!("; oldest outstanding {day}"));
             }
-            let review_unit = view.days.iter().rev().find_map(|day| {
-                day.why.iter().find_map(|unit| {
-                    if unit.name == "entities:entities_review" && unit.lifecycle_state.is_some() {
-                        Some((&day.day, unit))
-                    } else {
-                        None
-                    }
+            let review_unit = view
+                .days
+                .iter()
+                .flat_map(|day| {
+                    day.why.iter().filter_map(move |unit| {
+                        if unit.name != "entities:entities_review" {
+                            return None;
+                        }
+                        let severity = match unit.lifecycle_state.as_deref() {
+                            Some("ambiguous_started") => 3u8,
+                            Some("exhausted") => 2,
+                            Some("retrying") => 1,
+                            _ => return None,
+                        };
+                        Some((severity, day.day.as_str(), unit))
+                    })
                 })
-            });
+                .max_by(|left, right| left.0.cmp(&right.0).then(right.1.cmp(left.1)));
             let fix = match review_unit {
-                Some((day, unit))
+                Some((_, day, unit))
                     if unit.lifecycle_state.as_deref() == Some("ambiguous_started") =>
                 {
                     let facet = unit.facet.as_deref().unwrap_or("");
-                    let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
                     let facet_desc = if facet.is_empty() {
                         String::new()
                     } else {
-                        format!("facet {facet}, ")
+                        format!(" (facet {facet})")
                     };
                     format!(
-                        "entities:entities_review write in-doubt on {day} ({facet_desc}conflict {kind}) — inspect unit record at chronicle/{day}/health/; resolve before reprocessing"
+                        "entities:entities_review: an entity review change may have started but not finished on {day}{facet_desc}; inspect with journal health; resolve before reprocessing"
                     )
                 }
-                Some((day, unit)) if unit.lifecycle_state.as_deref() == Some("exhausted") => {
+                Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("exhausted") => {
                     let facet = unit.facet.as_deref().unwrap_or("");
                     let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
                     let facet_desc = if facet.is_empty() {
@@ -103,10 +111,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                         format!("facet {facet}, ")
                     };
                     format!(
-                        "entities:entities_review owner conflict on {day} ({facet_desc}conflict {kind}) exhausted automatic retries; inspect with journal health or reprocess with journal reprocess {day} --from-scratch"
+                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) exhausted automatic retries; inspect with journal health or reprocess with journal reprocess {day} --from-scratch"
                     )
                 }
-                Some((day, unit)) if unit.lifecycle_state.as_deref() == Some("retrying") => {
+                Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("retrying") => {
                     let facet = unit.facet.as_deref().unwrap_or("");
                     let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
                     let facet_desc = if facet.is_empty() {
@@ -115,7 +123,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                         format!("facet {facet}, ")
                     };
                     format!(
-                        "entities:entities_review owner conflict on {day} ({facet_desc}conflict {kind}) will automatically retry once on next run; or prioritize from health"
+                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) will automatically retry once on next run; or prioritize from health"
                     )
                 }
                 _ => "solstone catches up on its own; reprocess a day from the health surface to prioritize it".to_owned(),

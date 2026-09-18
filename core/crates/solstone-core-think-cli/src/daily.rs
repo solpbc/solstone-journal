@@ -404,8 +404,9 @@ fn queue_daily(
         None => crate::snapshot::prepare_daily_packet(context, config, facet, &extra)?,
     };
     let mut reservation_error = None;
+    let mut review_exhausted = false;
     let mut prepare = |reserved_use: &str| -> std::io::Result<()> {
-        let outcome = reserve_daily_attempt(
+        match reserve_daily_attempt(
             &context.journal,
             &identity,
             &evidence_rev,
@@ -416,12 +417,19 @@ fn queue_daily(
             from_scratch,
             retry,
             context.event_now_ms(),
-        );
-        if let Err(error) = outcome {
-            reservation_error = Some(error.to_string());
-            return Err(std::io::Error::other(error.to_string()));
+        ) {
+            Ok(()) => Ok(()),
+            Err(solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted) => {
+                review_exhausted = true;
+                Err(std::io::Error::other(
+                    "entities_review conflict retry exhausted",
+                ))
+            }
+            Err(error) => {
+                reservation_error = Some(error.to_string());
+                Err(std::io::Error::other(error.to_string()))
+            }
         }
-        Ok(())
     };
 
     match dispatch_prepared(
@@ -488,6 +496,9 @@ fn queue_daily(
             result.failed_names.push(label(&config.key, facet, "send"));
         }
     }
+    if review_exhausted {
+        return Ok(());
+    }
     if let Some(error) = reservation_error {
         return Err(error);
     }
@@ -522,6 +533,14 @@ fn reserve_daily_attempt(
         }
         let same =
             record.evidence_revision == evidence_rev && record.contract_digest == contract_dig;
+        if identity.name == "entities:entities_review"
+            && same
+            && !from_scratch
+            && record.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
+            && record.failure_count >= 2
+        {
+            return Err(solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted);
+        }
         if same
             && !from_scratch
             && !retry
@@ -2471,5 +2490,81 @@ cat "${0%/*}/response-$kind.json"
             0,
             "started receipt must block queue_daily even from_scratch"
         );
+    }
+
+    #[test]
+    fn exhausted_review_conflict_is_refused_inside_locked_reserve() {
+        let root = tempfile::tempdir().unwrap();
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260910",
+            "entities:entities_review",
+            Some("work".into()),
+        );
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        record.reason_code = Some("daily_owner_conflict".into());
+        record.owner_conflict_kind = Some("alias_claimed".into());
+        record.failure_count = 2;
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
+        let packet = Value::Object(Default::default());
+        let journal = root.path().to_path_buf();
+        let identity_one = identity.clone();
+        let identity_two = identity.clone();
+        let packet_one = packet.clone();
+        let packet_two = packet.clone();
+        let first = std::thread::spawn(move || {
+            reserve_daily_attempt(
+                &journal,
+                &identity_one,
+                "E",
+                "C",
+                &packet_one,
+                "20260910",
+                "worker-a",
+                false,
+                false,
+                3,
+            )
+        });
+        let journal = root.path().to_path_buf();
+        let second = std::thread::spawn(move || {
+            reserve_daily_attempt(
+                &journal,
+                &identity_two,
+                "E",
+                "C",
+                &packet_two,
+                "20260910",
+                "worker-b",
+                false,
+                false,
+                4,
+            )
+        });
+        let first_err = first.join().unwrap().unwrap_err();
+        let second_err = second.join().unwrap().unwrap_err();
+        assert!(
+            matches!(
+                first_err,
+                solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted
+            ),
+            "{first_err}"
+        );
+        assert!(
+            matches!(
+                second_err,
+                solstone_core_journal_io::DailyUnitError::ReviewOwnerConflictExhausted
+            ),
+            "{second_err}"
+        );
+        let stored = solstone_core_journal_io::load_daily_unit_record(root.path(), &identity)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            stored.status,
+            solstone_core_journal_io::DailyUnitStatus::Conflicting
+        );
+        assert_eq!(stored.failure_count, 2);
+        assert_eq!(stored.lock_token, None);
     }
 }

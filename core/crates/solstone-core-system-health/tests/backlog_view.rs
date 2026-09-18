@@ -1050,7 +1050,10 @@ fn backlog_view_review_unit_lifecycle_states() {
         Some("alias_claimed")
     );
 
-    // 3. Ambiguous started review unit
+    // 3. Authentic crash: Unfinished, no reason_code, uncommitted started receipt
+    record.status = solstone_core_journal_io::DailyUnitStatus::Unfinished;
+    record.reason_code = None;
+    record.owner_conflict_kind = None;
     record.receipts.push(json!({
         "kind": "owner_action",
         "action_id": "0:test",
