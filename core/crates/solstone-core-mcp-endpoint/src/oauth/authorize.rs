@@ -31,6 +31,31 @@ const AUTHORIZE_CSS: &str = r#"@font-face{font-family:Comfortaa;src:url('/author
 :root{--paper:#f4f2e9;--surface:#fbfaf5;--ink:#292923;--muted:#6e6c63;--line:#dedbd0;--danger:#8b3030}
 body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.mark{width:68px;height:68px;border:2px solid var(--ink);border-radius:50%;display:flex;align-items:center;justify-content:center;gap:3px;overflow:hidden}.mark svg{width:30px;height:30px}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}.check{display:block;padding:5px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid #999;border-radius:8px}button{background:var(--ink);color:white;border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:#fff0ee;border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
 "#;
+
+struct ConsentSelection {
+    scope: Option<&'static str>,
+    facets: Vec<String>,
+    categories: Vec<String>,
+}
+
+impl ConsentSelection {
+    fn initial() -> Self {
+        Self {
+            scope: None,
+            facets: Vec::new(),
+            categories: vec![
+                "transcripts".to_owned(),
+                "entities".to_owned(),
+                "facets".to_owned(),
+            ],
+        }
+    }
+}
+
+fn checked(selected: bool) -> &'static str {
+    if selected { " checked" } else { "" }
+}
+
 const COMFORTAA: &[u8] =
     include_bytes!("../../../solstone-core-convey-shell/assets/static/Comfortaa-Variable.woff2");
 
@@ -138,7 +163,14 @@ fn finish_authorize_get(
         state,
         &canonicalize_ip(source).to_string(),
     ) {
-        Ok(transaction_id) => consent_page(&client, redirect_uri, &transaction_id, oauth, false),
+        Ok(transaction_id) => consent_page(
+            &client,
+            redirect_uri,
+            &transaction_id,
+            oauth,
+            false,
+            &ConsentSelection::initial(),
+        ),
         Err(OAuthStoreError::Quota) => {
             error_redirect(redirect_uri, "temporarily_unavailable", state)
         }
@@ -201,8 +233,8 @@ pub(crate) fn post_authorize(
     if categories.is_empty() {
         return local_error("choose what this agent may see before connecting");
     }
-    let scope = match field(&pairs, "scope") {
-        Some("whole_journal") => ReadScope::WholeJournal,
+    let (scope, selected_scope, selected_facets) = match field(&pairs, "scope") {
+        Some("whole_journal") => (ReadScope::WholeJournal, "whole_journal", Vec::new()),
         Some("facets") => {
             let names: Vec<String> = pairs
                 .iter()
@@ -213,7 +245,7 @@ pub(crate) fn post_authorize(
                 return local_error("choose at least one facet before connecting");
             }
             match resolve_permission_facet_names(&oauth.journal_root, &names) {
-                Ok(ids) => ReadScope::Facets { ids },
+                Ok(ids) => (ReadScope::Facets { ids }, "facets", names),
                 Err(_) => {
                     return local_error(
                         "the chosen facets could not be verified; return to your journal and try again",
@@ -222,6 +254,11 @@ pub(crate) fn post_authorize(
             }
         }
         _ => return local_error("choose what this agent may see before connecting"),
+    };
+    let selection = ConsentSelection {
+        scope: Some(selected_scope),
+        facets: selected_facets,
+        categories: categories.clone(),
     };
     let permission = ReadPermission { categories, scope };
     match oauth.store.complete_pairing_with_permission(
@@ -236,16 +273,19 @@ pub(crate) fn post_authorize(
             {
                 let _ = oauth.store.lock_pairing_code();
             }
-            let still_pending = oauth
-                .store
-                .pending_transaction_exists(transaction_id)
-                .unwrap_or(false);
-            if still_pending {
-                retry_page(transaction_id, oauth)
-            } else {
-                local_error(
+            match oauth.store.pending_authorization(transaction_id) {
+                Ok(Some(pending)) => consent_page(
+                    &pending.client,
+                    &pending.redirect_uri,
+                    transaction_id,
+                    oauth,
+                    true,
+                    &selection,
+                ),
+                Ok(None) => local_error(
                     "too many attempts for this request; restart authorization from the client",
-                )
+                ),
+                Err(_) => local_error("authorization is temporarily unavailable"),
             }
         }
         Err(OAuthStoreError::PairingLocked) => local_error(
@@ -363,7 +403,9 @@ fn html_status(status: u16, reason: &'static str, body: &str) -> HttpResponse {
     HttpResponse::html(
         status,
         reason,
-        format!("<!DOCTYPE html><html><body>{body}</body></html>"),
+        format!(
+            "<!DOCTYPE html><html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><link rel=\"stylesheet\" href=\"/authorize/assets/design.css\"></head><body><main>{body}</main></body></html>"
+        ),
     )
     .with_header("Cache-Control", "no-store".to_owned())
     .with_header("Content-Security-Policy", AUTHORIZE_CSP.to_owned())
@@ -378,16 +420,13 @@ fn local_error(message: &str) -> HttpResponse {
     )
 }
 
-fn retry_page(transaction_id: &str, oauth: &OAuthRuntime) -> HttpResponse {
-    consent_page_named("this agent", "the agent", transaction_id, oauth, true)
-}
-
 fn consent_page(
     client: &RegisteredClient,
     redirect_uri: &str,
     transaction_id: &str,
     oauth: &OAuthRuntime,
     wrong_code: bool,
+    selection: &ConsentSelection,
 ) -> HttpResponse {
     let host = parse_redirect_uri(redirect_uri)
         .map(|parsed| redirect_host_label(&parsed))
@@ -396,7 +435,14 @@ fn consent_page(
         .client_name
         .as_deref()
         .unwrap_or(client.client_id.as_str());
-    consent_page_named(client_label, &host, transaction_id, oauth, wrong_code)
+    consent_page_named(
+        client_label,
+        &host,
+        transaction_id,
+        oauth,
+        wrong_code,
+        selection,
+    )
 }
 
 fn consent_page_named(
@@ -405,6 +451,7 @@ fn consent_page_named(
     transaction_id: &str,
     oauth: &OAuthRuntime,
     wrong_code: bool,
+    selection: &ConsentSelection,
 ) -> HttpResponse {
     let facets =
         solstone_core_facets::list_declared_facet_names(&oauth.journal_root).unwrap_or_default();
@@ -424,7 +471,8 @@ fn consent_page_named(
                 .map(|value| value.color.as_str())
                 .filter(|value| !value.is_empty())
                 .unwrap_or("#76746b");
-            format!("<label class=\"check\"><input type=\"checkbox\" name=\"facet\" value=\"{}\"> <span style=\"color:{}\">●</span> {}</label>", html_escape(&facet), html_escape(color), html_escape(title))
+            let facet_checked = checked(selection.facets.contains(&facet));
+            format!("<label class=\"check\"><input type=\"checkbox\" name=\"facet\" value=\"{}\"{facet_checked}> <span style=\"color:{}\">●</span> {}</label>", html_escape(&facet), html_escape(color), html_escape(title))
         })
         .collect::<String>();
     let mark = solstone_core_sol_link::establish::load_committed(&oauth.journal_root)
@@ -447,13 +495,25 @@ fn consent_page_named(
         200,
         "OK",
         &format!(
-            r#"<link rel="stylesheet" href="/authorize/assets/design.css"><main>{mark_html}<p class="muted">this is your journal. if the mark doesn't match the one in your journal, close this tab.</p><h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2><fieldset><label class="check"><input type="radio" name="scope" value="whole_journal" checked> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets"> <strong>only the facets you choose</strong><br><span class="muted">just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset><details><summary>choose facets</summary>{facets}</details><fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts" checked> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen frames themselves.</span></label><label class="check"><input type="checkbox" name="category" value="entities" checked> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets" checked> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label></fieldset><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form></main>"#,
+            r#"{mark_html}<p class="muted">this is your journal. if the mark doesn't match the one in your journal, close this tab.</p><h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2><fieldset><label class="check"><input type="radio" name="scope" value="whole_journal"{whole_checked}> <strong>your whole journal</strong><br><span class="muted">everything in your journal now, and anything added later, including facets you create later.</span></label><label class="check"><input type="radio" name="scope" value="facets"{facets_checked}> <strong>only the facets you choose</strong><br><span class="muted">just the facets you pick, now and as they grow. facets you create later are not included.</span></label></fieldset><details><summary>choose facets</summary>{facets}</details><fieldset><legend>what kinds of material</legend><label class="check"><input type="checkbox" name="category" value="transcripts"{transcripts_checked}> <strong>transcripts</strong><br><span class="muted">what was said in your recordings and imports, as text. never the audio or the screen frames themselves.</span></label><label class="check"><input type="checkbox" name="category" value="entities"{entities_checked}> <strong>entities</strong><br><span class="muted">the people, places and projects your journal knows, and what it has noted about them.</span></label><label class="check"><input type="checkbox" name="category" value="facets"{category_facets_checked}> <strong>facets</strong><br><span class="muted">the shape of your journal: facet names and descriptions, and the activities, events and summaries filed in them.</span></label></fieldset><h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
             mark_html = mark_html,
             client = html_escape(client_label),
             host = html_escape(return_host),
             transaction = html_escape(transaction_id),
             facets = facet_options,
-            wrong = wrong
+            wrong = wrong,
+            whole_checked = checked(selection.scope == Some("whole_journal")),
+            facets_checked = checked(selection.scope == Some("facets")),
+            transcripts_checked = checked(
+                selection
+                    .categories
+                    .iter()
+                    .any(|value| value == "transcripts")
+            ),
+            entities_checked =
+                checked(selection.categories.iter().any(|value| value == "entities")),
+            category_facets_checked =
+                checked(selection.categories.iter().any(|value| value == "facets")),
         ),
     )
 }
@@ -717,6 +777,8 @@ mod tests {
         let body = body_text(&response);
         assert_eq!(body.matches("name=\"pairing_code\"").count(), 1);
         assert!(body.contains("/authorize/assets/design.css"));
+        assert!(body.contains("<meta name=\"viewport\""));
+        assert!(!body.contains("value=\"whole_journal\" checked"));
         assert!(body.contains("name=\"transaction_id\""));
         assert!(!body.contains("name=\"client_id\""));
         assert!(!body.contains("name=\"redirect_uri\""));
@@ -946,6 +1008,47 @@ mod tests {
         assert!(!page.contains("name=\"transaction_id\""));
         let sixth = post_authorize(&post_request(&body), SOURCE, &oauth);
         assert!(body_text(&sixth).contains("no longer valid"));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn post_wrong_code_preserves_client_and_narrowed_selection() {
+        let journal = journal_root();
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "#123456", "", None)
+            .unwrap();
+        solstone_core_facets::create_facet(
+            journal.path(),
+            "personal",
+            "Personal",
+            "",
+            "#654321",
+            "",
+            None,
+        )
+        .unwrap();
+        let oauth = runtime(&journal);
+        oauth.store.generate_pairing_code().unwrap();
+        let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        let transaction_id = hidden_transaction_id(&body_text(&get));
+        let response = post_authorize(
+            &post_request(&format!(
+                "transaction_id={}&pairing_code=00000000&scope=facets&facet=work&facet=personal&category=transcripts&category=facets",
+                query_value_encode(&transaction_id)
+            )),
+            SOURCE,
+            &oauth,
+        );
+
+        let page = body_text(&response);
+        assert!(page.contains("fixture wants to connect"));
+        assert!(page.contains("returns to <strong>127.0.0.1</strong>"));
+        assert!(page.contains("name=\"scope\" value=\"whole_journal\""));
+        assert!(!page.contains("name=\"scope\" value=\"whole_journal\" checked"));
+        assert!(page.contains("name=\"scope\" value=\"facets\" checked"));
+        assert!(page.contains("name=\"facet\" value=\"work\" checked"));
+        assert!(page.contains("name=\"facet\" value=\"personal\" checked"));
+        assert!(page.contains("name=\"category\" value=\"transcripts\" checked"));
+        assert!(!page.contains("name=\"category\" value=\"entities\" checked"));
+        assert!(page.contains("name=\"category\" value=\"facets\" checked"));
     }
 
     #[tokio::test(start_paused = true)]
