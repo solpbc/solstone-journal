@@ -3292,3 +3292,81 @@ fn journal_caught_up_selects_highest_review_severity() {
     assert!(fix.contains("20251229"), "{fix}");
     assert!(!fix.contains("retry once"), "{fix}");
 }
+
+#[test]
+fn journal_caught_up_treats_committed_or_capped_started_receipt_as_ambiguous() {
+    let c = fixture();
+    let root = &c.journal_path;
+    configure_daily_work(root, Some("entities:entities_review"));
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(root.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+    let day = "20251230";
+    let seg_dir = root.join("chronicle").join(day).join("120000_60");
+    fs::create_dir_all(seg_dir.join("talents")).unwrap();
+    fs::write(seg_dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+    incomplete(&c, day);
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+    let unit = coverage
+        .units
+        .iter()
+        .find(|unit| unit.identity.name == "entities:entities_review")
+        .unwrap();
+    let started = serde_json::json!({
+        "kind": "owner_action",
+        "action_id": "0:test",
+        "token": "tok",
+        "state": "started"
+    });
+    for (status, reason, count) in [
+        (
+            solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            None,
+            0u32,
+        ),
+        (
+            solstone_core_journal_io::DailyUnitStatus::Capped,
+            Some("schema_invalid"),
+            3u32,
+        ),
+    ] {
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+            unit.identity.clone(),
+            &unit.evidence_revision,
+            &unit.contract_digest,
+        );
+        record.status = status;
+        record.reason_code = reason.map(str::to_owned);
+        record.failure_count = count;
+        record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: unit.evidence_revision.clone(),
+            contract_digest: unit.contract_digest.clone(),
+            status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(serde_json::json!({"response":"[]","output":"[]"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        record.receipts.push(started.clone());
+        solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+        let coverage =
+            solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+        let review = coverage
+            .units
+            .iter()
+            .find(|unit| unit.identity.name == "entities:entities_review")
+            .unwrap();
+        assert_eq!(
+            review.state,
+            solstone_core_system::daily_coverage::CoverageState::Outstanding
+        );
+        assert!(!review.state.is_current());
+        let row = result("journal_caught_up", &c);
+        assert_ne!(row.status, Status::Ok, "{status:?}");
+        let fix = row.fix.as_deref().unwrap_or_default();
+        assert!(
+            fix.contains("may have started but not finished"),
+            "{status:?}: {fix}"
+        );
+        assert!(!fix.contains("caught up"), "{status:?}: {fix}");
+    }
+}

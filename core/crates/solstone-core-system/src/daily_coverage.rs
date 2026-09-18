@@ -229,7 +229,10 @@ pub fn read_unit_coverage(
             if record.evidence_revision == e && record.contract_digest == contract {
                 reason = record.reason_code.clone();
             }
-            if record.status == DailyUnitStatus::Conflicting {
+            if record.status == DailyUnitStatus::Conflicting
+                || (identity.name == "entities:entities_review"
+                    && record.has_uncommitted_started_receipt())
+            {
                 CoverageState::Outstanding
             } else if record.status.is_terminal_success()
                 && record.is_reusable_for(&e, &contract)
@@ -766,5 +769,92 @@ mod tests {
             reconcile_days_with_roots(root, &["20260801".to_owned()], now, &talent, &apps).unwrap();
         assert!(pending.contains(&"20260801".to_owned()));
         assert!(!pending.contains(&"20260914".to_owned()));
+    }
+
+    #[test]
+    fn review_uncommitted_started_receipt_is_outstanding_when_committed_or_capped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let (talent, apps) = package_roots().unwrap();
+        let overrides = daily_configs(root, &talent, &apps)
+            .unwrap()
+            .into_iter()
+            .map(|config| {
+                let key = match config.key.split_once(':') {
+                    Some((app, name)) => format!("talent.{app}.{name}"),
+                    None => format!("talent.system.{}", config.key),
+                };
+                (
+                    key,
+                    serde_json::json!({"disabled": config.key != "entities:entities_review"}),
+                )
+            })
+            .collect::<serde_json::Map<String, Value>>();
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "identity":{"timezone":"UTC"}, "talent_overrides": overrides
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        fs::create_dir_all(root.join("facets/work")).unwrap();
+        fs::write(root.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+        let day = "20260910";
+        let seg = root.join("chronicle").join(day).join("120000_60");
+        fs::create_dir_all(seg.join("talents")).unwrap();
+        fs::write(seg.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+        let coverage = read_daily_coverage_with_roots(root, day, &talent, &apps).unwrap();
+        let unit = coverage
+            .units
+            .iter()
+            .find(|unit| unit.identity.name == "entities:entities_review")
+            .expect("review unit");
+        let started = serde_json::json!({
+            "kind": "owner_action",
+            "action_id": "0:test",
+            "token": "tok",
+            "state": "started"
+        });
+        let mut committed = DailyUnitRecord::new(
+            unit.identity.clone(),
+            &unit.evidence_revision,
+            &unit.contract_digest,
+        );
+        committed.status = DailyUnitStatus::CommittedNoOutput;
+        committed.accepted = Some(AcceptedDailyResult {
+            evidence_revision: unit.evidence_revision.clone(),
+            contract_digest: unit.contract_digest.clone(),
+            status: DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(serde_json::json!({"response":"[]","output":"[]"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        committed.receipts.push(started.clone());
+        save_daily_unit_record(root, &committed).unwrap();
+        let after = read_daily_coverage_with_roots(root, day, &talent, &apps).unwrap();
+        let review = after
+            .units
+            .iter()
+            .find(|unit| unit.identity.name == "entities:entities_review")
+            .unwrap();
+        assert_eq!(review.state, CoverageState::Outstanding);
+        assert!(!review.state.is_current());
+
+        let mut capped = committed;
+        capped.status = DailyUnitStatus::Capped;
+        capped.reason_code = Some("schema_invalid".into());
+        capped.failure_count = 3;
+        save_daily_unit_record(root, &capped).unwrap();
+        let after = read_daily_coverage_with_roots(root, day, &talent, &apps).unwrap();
+        let review = after
+            .units
+            .iter()
+            .find(|unit| unit.identity.name == "entities:entities_review")
+            .unwrap();
+        assert_eq!(review.state, CoverageState::Outstanding);
+        assert!(!review.state.is_current());
     }
 }

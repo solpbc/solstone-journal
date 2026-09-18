@@ -4,7 +4,9 @@
 use std::path::Path;
 
 use serde_json::Value;
-use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable, set_aside};
+use solstone_core_journal_io::durability::{
+    ArtifactId, DurableObservation, DurableRead, observe_json_durable, read_json_durable, set_aside,
+};
 
 use super::error::FacetStoreError;
 use super::paths::declaration_path;
@@ -152,6 +154,53 @@ pub fn require_facet_write_identity(
     Ok(())
 }
 
+/// Non-mutating facet identity observation for the review owner lifecycle.
+/// Missing is Absent; a present object with a missing/invalid id is Invalid;
+/// malformed, non-object, unreadable, or I/O is Failed. Never sets aside.
+pub fn observe_facet_write_identity(
+    root: &Path,
+    facet: &str,
+) -> Result<String, FacetIdentityError> {
+    let path =
+        declaration_path(root, facet).map_err(|e| FacetIdentityError::Failed(e.to_string()))?;
+    match observe_json_durable::<Value>(ArtifactId::FacetDeclaration, &path) {
+        DurableObservation::Absent => Err(FacetIdentityError::Absent),
+        DurableObservation::Malformed { path, source } => Err(FacetIdentityError::Failed(format!(
+            "{}: {source}",
+            path.display()
+        ))),
+        DurableObservation::Unreadable { path, source } => Err(FacetIdentityError::Failed(
+            format!("{}: {source}", path.display()),
+        )),
+        DurableObservation::Present(value) => {
+            let Some(object) = value.as_object() else {
+                return Err(FacetIdentityError::Failed(format!(
+                    "{}: facet declaration is not an object",
+                    path.display()
+                )));
+            };
+            let id = object
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| super::facet_id::is_well_formed_facet_id(id))
+                .ok_or(FacetIdentityError::Invalid)?;
+            Ok(id.to_owned())
+        }
+    }
+}
+
+/// Non-mutating expected-id check for the review owner lifecycle.
+pub fn require_observed_facet_write_identity(
+    root: &Path,
+    facet: &str,
+    expected: &str,
+) -> Result<(), FacetIdentityError> {
+    if observe_facet_write_identity(root, facet)? != expected {
+        return Err(FacetIdentityError::Replaced);
+    }
+    Ok(())
+}
+
 fn string_field(value: Option<&Value>) -> String {
     value.and_then(Value::as_str).unwrap_or_default().to_owned()
 }
@@ -187,5 +236,31 @@ mod tests {
         let mapped = FacetIdentityError::Failed("read failed".into()).into_review_owner_error();
         assert!(matches!(mapped, ReviewOwnerError::Failed { .. }));
         assert_eq!(mapped.kind(), None);
+    }
+
+    #[test]
+    fn observe_facet_identity_leaves_malformed_and_unreadable_bytes_in_place() {
+        use super::observe_facet_write_identity;
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("facets/work/facet.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"{").unwrap();
+        let error = observe_facet_write_identity(root.path(), "work").unwrap_err();
+        assert!(matches!(error, FacetIdentityError::Failed(_)), "{error}");
+        assert_eq!(std::fs::read(&path).unwrap(), b"{");
+        assert_eq!(
+            std::fs::read_dir(path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains("wedged"))
+                .count(),
+            0
+        );
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let error = observe_facet_write_identity(root.path(), "work").unwrap_err();
+        assert!(matches!(error, FacetIdentityError::Failed(_)), "{error}");
+        assert!(path.is_dir());
     }
 }

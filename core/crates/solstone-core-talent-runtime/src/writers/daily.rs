@@ -644,14 +644,17 @@ pub fn publish_daily_publication(
         let _facet_guard = if let Some((facet, id)) = action_facet(action) {
             let guard = solstone_core_facets::hold_facet_trust_lock(&context.journal)
                 .map_err(|e| make_error(e.to_string()))?;
-            solstone_core_facets::require_facet_write_identity(&context.journal, facet, id)
-                .map_err(|error| {
-                    if is_review {
-                        make_review(error.into_review_owner_error())
-                    } else {
-                        make_error(error.to_string())
-                    }
-                })?;
+            if is_review {
+                solstone_core_facets::require_observed_facet_write_identity(
+                    &context.journal,
+                    facet,
+                    id,
+                )
+                .map_err(|error| make_review(error.into_review_owner_error()))?;
+            } else {
+                solstone_core_facets::require_facet_write_identity(&context.journal, facet, id)
+                    .map_err(|error| make_error(error.to_string()))?;
+            }
             Some(guard)
         } else {
             None
@@ -2161,6 +2164,96 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    #[test]
+    fn malformed_facet_identity_is_failed_publication_without_started_or_mutation() {
+        let root = fixture();
+        let journal = root.path();
+        let path = journal.join("facets/work/facet.json");
+        let original = std::fs::read(&path).unwrap();
+        std::fs::write(&path, b"{").unwrap();
+        let error = solstone_core_facets::prepare_review_promotion(
+            journal,
+            "work",
+            "Person",
+            "Ada",
+            "Engineer",
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, solstone_core_entity::ReviewOwnerError::Failed { .. }),
+            "{error:?}"
+        );
+        assert_eq!(error.kind(), None);
+        assert_eq!(std::fs::read(&path).unwrap(), b"{");
+
+        std::fs::write(&path, &original).unwrap();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.into(),
+        };
+        let facet_id = solstone_core_facets::observe_facet_write_identity(journal, "work").unwrap();
+        let current = solstone_core_entity::read_entity_identity(journal, "ada")
+            .unwrap()
+            .unwrap()
+            .value()
+            .clone();
+        let plan = PreparedDailyPublication {
+            actions: vec![PreparedDailyAction::Identity {
+                facet: "work".into(),
+                facet_id,
+                change: solstone_core_entity::PreparedIdentityChange {
+                    entity_id: "ada".into(),
+                    entity_dir: "ada".into(),
+                    before: Some(current.clone()),
+                    after: current,
+                },
+            }],
+            no_output: false,
+        };
+        std::fs::write(&path, b"{").unwrap();
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("malformed".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()?;
+            let error =
+                publish_daily_publication(authority, "malformed", &plan, &context).unwrap_err();
+            assert_eq!(error.phase, "publication");
+            assert_eq!(error.reason_code(), "talent_stage_failed");
+            assert_eq!(error.owner_conflict_kind(), None);
+            assert!(
+                !authority
+                    .record()
+                    .as_ref()
+                    .unwrap()
+                    .has_uncommitted_started_receipt()
+            );
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"{");
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let error = solstone_core_facets::prepare_review_promotion(
+            journal,
+            "work",
+            "Person",
+            "Ada",
+            "Engineer",
+            &[],
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, solstone_core_entity::ReviewOwnerError::Failed { .. }),
+            "{error:?}"
+        );
+        assert!(path.is_dir());
     }
 
     #[test]

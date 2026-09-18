@@ -1094,4 +1094,44 @@ fn backlog_view_review_unit_lifecycle_states() {
         review_unit4.reason_code.as_deref(),
         Some("talent_stage_failed")
     );
+
+    for (status, reason, count) in [
+        (
+            solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            None,
+            0u32,
+        ),
+        (
+            solstone_core_journal_io::DailyUnitStatus::Capped,
+            Some("schema_invalid"),
+            3u32,
+        ),
+    ] {
+        record.status = status;
+        record.reason_code = reason.map(str::to_owned);
+        record.failure_count = count;
+        record.accepted = Some(solstone_core_journal_io::AcceptedDailyResult {
+            evidence_revision: unit.evidence_revision.clone(),
+            contract_digest: unit.contract_digest.clone(),
+            status: solstone_core_journal_io::DailyUnitStatus::CommittedNoOutput,
+            packet_digest: Some("a".repeat(64)),
+            generated_result: Some(serde_json::json!({"response":"[]","output":"[]"})),
+            receipts: Vec::new(),
+            committed_at_ms: 1,
+        });
+        solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+        let result = view(root, 30);
+        let day_entry = result.days.iter().find(|d| d.day == day).unwrap();
+        let review_unit = day_entry
+            .why
+            .iter()
+            .find(|u| u.name == "entities:entities_review")
+            .unwrap();
+        assert_eq!(
+            review_unit.lifecycle_state.as_deref(),
+            Some("ambiguous_started"),
+            "{status:?}"
+        );
+        assert_eq!(day_entry.state, BACKLOG_STATE_STUCK, "{status:?}");
+    }
 }

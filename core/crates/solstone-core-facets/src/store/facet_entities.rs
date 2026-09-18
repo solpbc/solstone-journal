@@ -380,7 +380,7 @@ pub fn prepare_review_promotion(
 ) -> Result<PreparedReviewPromotion, ReviewOwnerError> {
     let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
-    let facet_id = super::declaration::facet_write_identity(root, facet)?;
+    let facet_id = super::declaration::observe_facet_write_identity(root, facet)?;
     let query = normalize_resolution_query(name);
     // A promotion resolves against two namespaces that do not agree.  A display
     // name is matched after `normalize_resolution_query`, which preserves
@@ -594,7 +594,11 @@ pub fn publish_review_attachment(
         hold_facet_trust_lock(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let _entity = solstone_core_entity::hold_entity_trust_lock(root)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
-    super::declaration::require_facet_write_identity(root, &change.facet, &change.facet_id)?;
+    super::declaration::require_observed_facet_write_identity(
+        root,
+        &change.facet,
+        &change.facet_id,
+    )?;
     let map = read_identity_map(root).map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let dir = map.resolved.get(&change.entity_id).ok_or_else(|| {
         ReviewOwnerError::conflict(

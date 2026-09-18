@@ -421,7 +421,7 @@ pub fn prepare_publication(
     prepared: &PreparedTalent,
 ) -> Result<Vec<crate::writers::PreparedDailyAction>, solstone_core_entity::ReviewOwnerError> {
     use crate::writers::PreparedDailyAction;
-    let facet_id = solstone_core_facets::facet_write_identity(journal, facet)?;
+    let facet_id = solstone_core_facets::observe_facet_write_identity(journal, facet)?;
     let data: Value = serde_json::from_str(output).map_err(|e| e.to_string())?;
     let promotions = data
         .get("promotions")
