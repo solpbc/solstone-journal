@@ -113,7 +113,7 @@ if [ "\${1:-}" = "--version" ]; then
 	printf 'journal (solstone) %s\n' "\$_ver"
 	exit 0
 fi
-[ -z "\${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "\$*" >"\$SOLSTONE_SETUP_ARGS_LOG"
+[ -z "\${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "\$@" >"\$SOLSTONE_SETUP_ARGS_LOG"
 [ -z "\${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "\$PATH" >"\$SOLSTONE_SETUP_PATH_LOG"
 ${_setup_script}
 EOF
@@ -1069,8 +1069,11 @@ if env HOME="$NO_PATH_HOME" SOLSTONE_SETUP_ARGS_LOG="$NO_PATH_ARGS" \
 	else
 		fail "no-path reports skip: $(cat "$BASE/nopath.out")"
 	fi
-	if grep -F -- '--skip-path' "$NO_PATH_ARGS" >/dev/null \
-		&& grep -F -- '--installer-transaction' "$NO_PATH_ARGS" >/dev/null; then
+	if [ "$(sed -n '1p' "$NO_PATH_ARGS")" = setup ] \
+		&& [ "$(sed -n '2p' "$NO_PATH_ARGS")" = --yes ] \
+		&& [ "$(sed -n '3p' "$NO_PATH_ARGS")" = --installer-transaction ] \
+		&& [ "$(sed -n '4p' "$NO_PATH_ARGS")" = --skip-path ] \
+		&& [ "$(wc -l <"$NO_PATH_ARGS" | tr -d ' ')" -eq 4 ]; then
 		pass "no-path is carried through setup"
 	else
 		fail "no-path setup arguments: $(cat "$NO_PATH_ARGS" 2>/dev/null)"

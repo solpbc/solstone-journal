@@ -1389,11 +1389,13 @@ detect_existing_route() {
 run_setup() {
 	_dest=$1
 	[ -x "$_dest/bin/journal" ] || return 1
-	_args="--yes --installer-transaction"
-	[ "$NO_START" -eq 0 ] || _args="$_args --skip-service"
-	[ "$NO_PATH" -eq 0 ] || _args="$_args --skip-path"
-	# shellcheck disable=SC2086
-	PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup $_args
+	# Build argv structurally. Archive validation intentionally changes IFS while
+	# inspecting member names, so a whitespace-packed scalar can become one
+	# literal argument if a caller's IFS is empty.
+	set -- --yes --installer-transaction
+	[ "$NO_START" -eq 0 ] || set -- "$@" --skip-service
+	[ "$NO_PATH" -eq 0 ] || set -- "$@" --skip-path
+	PATH="$_dest/bin:$PATH" "$_dest/bin/journal" setup "$@"
 }
 
 stage_receipt() {
