@@ -1168,7 +1168,6 @@ mod tests {
 
     #[test]
     fn v1_source_objects_preserved_and_v2_anchors_differentiate_coordinates() {
-        let journal = temporary_journal("v1-stability");
         let v1_src = json!({
             "day": "20260101",
             "segment_key": "seg-v1",

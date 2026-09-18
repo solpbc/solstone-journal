@@ -812,17 +812,4 @@ mod tests {
         assert_eq!(segments[1].name, "093000_300_b");
         assert_eq!(segments[1].key, "093000_300");
     }
-
-    #[test]
-    fn scan_segments_refuses_duplicate_exact_locator() {
-        let root = tempfile::tempdir().unwrap();
-        let dir = root.path().join("chronicle/20260101/080000_300");
-        fs::create_dir_all(&dir).unwrap();
-        let segments = scan_segments(root.path()).unwrap();
-        assert_eq!(segments.len(), 1);
-        let mut seen = HashSet::new();
-        seen.insert(("20260101".to_string(), SegmentLayout::Direct, "_default".to_string(), "080000_300".to_string()));
-        let is_dup = !seen.insert(("20260101".to_string(), SegmentLayout::Direct, "_default".to_string(), "080000_300".to_string()));
-        assert!(is_dup);
-    }
 }

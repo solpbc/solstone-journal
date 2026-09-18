@@ -959,7 +959,7 @@ pub enum IdentifyOperationError {
     InvalidActor,
     #[error("request_fingerprint must be a sha256 hex digest")]
     InvalidRequestFingerprint,
-    #[error("prepared_plan.plan_schema_version must be 1")]
+    #[error("prepared_plan.plan_schema_version must be 1 or 2")]
     InvalidPlanSchemaVersion,
     #[error("prepared_plan operation_id mismatch")]
     PreparedOperationIdMismatch,

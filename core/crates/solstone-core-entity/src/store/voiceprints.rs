@@ -122,7 +122,7 @@ pub struct VoiceprintKey(pub [CanonicalKeyField; 6]);
 /// One requested row removal with an optional expected complete metadata value.
 ///
 /// A present value provides the exact-match safety required by durable undo.
-/// `None` removes every row with the canonical four-field key, matching the
+/// `None` removes every row with the canonical six-field key `(day, segment_key, source, sentence_id, stream, stream_layout)`, matching the
 /// authenticated direct speaker-management operation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct VoiceprintRemoval {
@@ -523,7 +523,7 @@ pub fn remove_voiceprints_by_key(
     Ok(report)
 }
 
-/// Extract the normalized four-field key from one serialized metadata row.
+/// Extract the normalized six-field key `(day, segment_key, source, sentence_id, stream, stream_layout)` from one serialized metadata row.
 pub(crate) fn voiceprint_removal_key(
     metadata: &str,
 ) -> Result<VoiceprintKey, VoiceprintOperationError> {
