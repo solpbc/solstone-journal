@@ -2483,6 +2483,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::network_corpus"
+package = "solstone-core-convey-shell"
+target = "network_corpus"
+set = "component"
+areas = ["services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::shell_global_facet_contract_dom"
 package = "solstone-core-convey-shell"
 target = "shell_global_facet_contract_dom"
