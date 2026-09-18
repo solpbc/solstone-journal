@@ -238,6 +238,28 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     let conflicting = record.as_ref().is_some_and(|r| {
                         r.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
                     });
+                    let is_review = unit.identity.name == "entities:entities_review";
+                    let has_uncommitted_started = record
+                        .as_ref()
+                        .is_some_and(|r| r.has_uncommitted_started_receipt());
+                    let owner_conflict_kind =
+                        record.as_ref().and_then(|r| r.owner_conflict_kind.clone());
+                    let lifecycle_state = if is_review {
+                        if has_uncommitted_started {
+                            Some("ambiguous_started".to_owned())
+                        } else if conflicting {
+                            if record.as_ref().map_or(0, |r| r.failure_count) >= 2 {
+                                Some("exhausted".to_owned())
+                            } else {
+                                Some("retrying".to_owned())
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+
                     day.why.push(BacklogUnit {
                         mode: "daily".to_owned(),
                         name: unit.identity.name.clone(),
@@ -252,9 +274,11 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                             .as_ref()
                             .map_or(0, |r| r.failure_count as usize),
                         last_fail_ts: record.as_ref().map(|r| r.updated_at_ms),
-                        stuck: conflicting,
+                        stuck: conflicting || has_uncommitted_started,
+                        owner_conflict_kind,
+                        lifecycle_state,
                     });
-                    if conflicting {
+                    if conflicting || has_uncommitted_started {
                         day.state = BACKLOG_STATE_STUCK.to_owned();
                         day.reason_code = Some(reason.clone());
                     }
@@ -478,6 +502,8 @@ fn segment_backlog_units(
                     trailing_fail_count: 0,
                     last_fail_ts: Some(failed_at_ms),
                     stuck: true,
+                    owner_conflict_kind: None,
+                    lifecycle_state: None,
                 });
             }
             continue;
@@ -605,6 +631,8 @@ fn pending_unit(
         trailing_fail_count: 0,
         last_fail_ts,
         stuck: false,
+        owner_conflict_kind: None,
+        lifecycle_state: None,
     }
 }
 
@@ -626,6 +654,8 @@ fn failed_backlog_unit(
         trailing_fail_count: state.trailing_fail_count,
         last_fail_ts: state.last_fail_ts,
         stuck: is_stuck(state, stream_updated_ms),
+        owner_conflict_kind: None,
+        lifecycle_state: None,
     }
 }
 

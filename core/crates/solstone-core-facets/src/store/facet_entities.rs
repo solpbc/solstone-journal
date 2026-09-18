@@ -568,6 +568,7 @@ pub fn publish_review_attachment(
     root: &Path,
     change: &PreparedReviewAttachment,
     allow_before: bool,
+    start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
@@ -591,6 +592,7 @@ pub fn publish_review_attachment(
         if !allow_before || current != change.before {
             return Err("conflict: promotion relationship changed after preparation".into());
         }
+        start()?;
         save_facet_entity_link(
             root,
             &change.facet,
@@ -602,6 +604,8 @@ pub fn publish_review_attachment(
                 .ok_or("malformed prepared relationship")?,
         )
         .map_err(|e| e.to_string())?;
+    } else {
+        start()?;
     }
     receipt()
 }
@@ -611,6 +615,7 @@ pub fn publish_review_aliases(
     facet: &str,
     change: &solstone_core_entity::PreparedIdentityChange,
     allow_before: bool,
+    start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     let _facet = hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
@@ -647,7 +652,7 @@ pub fn publish_review_aliases(
             return Err("conflict: promotion alias was claimed after preparation".into());
         }
     }
-    solstone_core_entity::publish_identity_change(root, change, allow_before, receipt)
+    solstone_core_entity::publish_identity_change(root, change, allow_before, start, receipt)
 }
 
 pub fn add_entity_aka(

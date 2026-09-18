@@ -160,6 +160,8 @@ pub struct BacklogUnit {
     pub trailing_fail_count: usize,
     pub last_fail_ts: Option<i64>,
     pub stuck: bool,
+    pub owner_conflict_kind: Option<String>,
+    pub lifecycle_state: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -265,6 +267,12 @@ impl Serialize for BacklogUnit {
         map.serialize_entry("trailing_fail_count", &self.trailing_fail_count)?;
         map.serialize_entry("last_fail_ts", &self.last_fail_ts)?;
         map.serialize_entry("stuck", &self.stuck)?;
+        if let Some(kind) = nonempty(&self.owner_conflict_kind) {
+            map.serialize_entry("owner_conflict_kind", kind)?;
+        }
+        if let Some(lifecycle) = nonempty(&self.lifecycle_state) {
+            map.serialize_entry("lifecycle_state", lifecycle)?;
+        }
         map.end()
     }
 }

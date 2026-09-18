@@ -494,12 +494,24 @@ fn review_alias_publication_ignores_inherited_conflicts_but_rechecks_additions()
     .find(|candidate| candidate.after == after)
     .expect("prepared alias change");
 
+    let mut started = false;
     let mut committed = false;
-    publish_review_aliases(temporary.path(), "scope", &change, true, || {
-        committed = true;
-        Ok(())
-    })
+    publish_review_aliases(
+        temporary.path(),
+        "scope",
+        &change,
+        true,
+        || {
+            started = true;
+            Ok(())
+        },
+        || {
+            committed = true;
+            Ok(())
+        },
+    )
     .unwrap();
+    assert!(started);
     assert!(committed);
     let stored = solstone_core_entity::read_entity_identity(temporary.path(), "target")
         .unwrap()
@@ -528,16 +540,28 @@ fn review_alias_publication_ignores_inherited_conflicts_but_rechecks_additions()
         "late_claimant",
         json!({"entity_id":"late_claimant"}),
     );
+    let mut refused_start = false;
     let mut refused_receipt = false;
-    let error = publish_review_aliases(temporary.path(), "scope", &later, true, || {
-        refused_receipt = true;
-        Ok(())
-    })
+    let error = publish_review_aliases(
+        temporary.path(),
+        "scope",
+        &later,
+        true,
+        || {
+            refused_start = true;
+            Ok(())
+        },
+        || {
+            refused_receipt = true;
+            Ok(())
+        },
+    )
     .unwrap_err();
     assert_eq!(
         error,
         "conflict: promotion alias was claimed after preparation"
     );
+    assert!(!refused_start);
     assert!(!refused_receipt);
     let unchanged = solstone_core_entity::read_entity_identity(temporary.path(), "target")
         .unwrap()
@@ -573,7 +597,15 @@ fn review_alias_delta_membership_uses_resolution_normalization() {
     .find(|candidate| candidate.after == after)
     .expect("prepared normalized alias change");
 
-    publish_review_aliases(temporary.path(), "scope", &change, true, || Ok(())).unwrap();
+    publish_review_aliases(
+        temporary.path(),
+        "scope",
+        &change,
+        true,
+        || Ok(()),
+        || Ok(()),
+    )
+    .unwrap();
     let stored = solstone_core_entity::read_entity_identity(temporary.path(), "target")
         .unwrap()
         .unwrap();

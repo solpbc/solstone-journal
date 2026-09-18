@@ -134,6 +134,7 @@ pub struct StageError {
     pub detail: String,
     pub usage: Option<Box<Value>>,
     pub degraded: Option<Box<Value>>,
+    pub owner_conflict_kind: Option<&'static str>,
 }
 
 impl StageError {
@@ -160,6 +161,24 @@ impl StageError {
             detail: detail.into(),
             usage: None,
             degraded: None,
+            owner_conflict_kind: None,
+        }
+    }
+
+    pub fn owner_conflict(
+        identity: &solstone_core_journal_io::DailyUnitIdentity,
+        stage: &'static str,
+        kind: &'static str,
+        detail: impl Into<String>,
+    ) -> Self {
+        Self {
+            phase: "conflict",
+            stage,
+            talent: identity.name.clone(),
+            detail: detail.into(),
+            usage: None,
+            degraded: None,
+            owner_conflict_kind: Some(kind),
         }
     }
 }

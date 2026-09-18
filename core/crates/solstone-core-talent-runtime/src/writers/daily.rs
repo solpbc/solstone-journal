@@ -430,9 +430,14 @@ pub fn prepare_daily_publication(
             }
         }
         CommitPlan::Write(WriteIntent::EntitiesReview { output, facet, day }) => {
+            let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+                &day,
+                "entities:entities_review",
+                Some(facet.clone()),
+            );
             actions.extend(
                 crate::entities::review::prepare_publication(root, &output, &facet, &day, prepared)
-                    .map_err(error)?,
+                    .map_err(|e| review_error(&identity, e))?,
             );
         }
         CommitPlan::Write(_) => {
@@ -442,8 +447,28 @@ pub fn prepare_daily_publication(
             )));
         }
     }
+    let is_review = prepared.name == "entities:entities_review";
+    let review_identity = is_review.then(|| {
+        let facet = prepared
+            .config
+            .get("facet")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        let day = prepared
+            .config
+            .get("day")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        solstone_core_journal_io::DailyUnitIdentity::new(day, "entities:entities_review", facet)
+    });
     for action in &actions {
-        verify_frozen_facet(action, prepared).map_err(error)?;
+        verify_frozen_facet(action, prepared).map_err(|e| {
+            if let Some(id) = &review_identity {
+                review_error(id, e)
+            } else {
+                error(e)
+            }
+        })?;
     }
     Ok(PreparedDailyPublication {
         no_output: actions.is_empty(),
@@ -454,45 +479,116 @@ pub fn prepare_daily_publication(
 /// Required replacement files are checked when deciding currentness. Domain
 /// writes deliberately have only historical action receipts.
 pub fn required_artifact_receipts(publication: &PreparedDailyPublication) -> Vec<Value> {
-    publication.actions.iter().filter_map(|action| {
-        let (path, bytes) = match action {
-            PreparedDailyAction::Output { path, after, .. } => (path.clone(), after.as_slice()),
-            PreparedDailyAction::Newsletter { batch } => (format!("facets/{}/news/{}", batch.facet, batch.relative_path), batch.after.as_bytes()),
-            _ => return None,
-        };
-        Some(json!({"kind":"required_artifact", "path":path, "sha256":format!("{:x}", Sha256::digest(bytes))}))
-    }).collect()
+    publication
+        .actions
+        .iter()
+        .filter_map(|action| {
+            let (path, bytes) = match action {
+                PreparedDailyAction::Output { path, after, .. } => (path.clone(), after.as_slice()),
+                PreparedDailyAction::Newsletter { batch } => (
+                    format!("facets/{}/news/{}", batch.facet, batch.relative_path),
+                    batch.after.as_bytes(),
+                ),
+                _ => return None,
+            };
+            Some(json!({
+                "kind": "required_artifact",
+                "path": path,
+                "sha256": format!("{:x}", Sha256::digest(bytes))
+            }))
+        })
+        .collect()
 }
 
 /// The caller checkpointed generated_result and this entire typed plan before
 /// entry. Each action starts durably, commits under its owner's lock, then
 /// checkpoints the receipt while both owner and unit authority remain held.
+fn review_conflict_kind(detail: &str) -> Option<&'static str> {
+    match detail {
+        "conflict: promotion alias was claimed after preparation" => Some("alias_claimed"),
+        "conflict: alias target is no longer attached" => Some("alias_target_detached"),
+        "conflict: promotion owner state changed after prompt preparation" => {
+            Some("promotion_owner_state")
+        }
+        "conflict: promoted identity moved after preparation" => Some("identity_moved"),
+        "conflict: promoted identity changed after preparation" => Some("identity_changed"),
+        "conflict: promotion identity disappeared" => Some("identity_disappeared"),
+        "conflict: promotion identity blocked" => Some("identity_blocked"),
+        "conflict: promotion relationship changed after preparation" => {
+            Some("relationship_changed")
+        }
+        "conflict: merge proposal changed after prompt preparation" => {
+            Some("merge_proposal_preparation")
+        }
+        "conflict: merge proposals changed after preparation" => Some("merge_proposals_changed"),
+        "conflict: required output changed after preparation" => Some("output_artifact_changed"),
+        "conflict: owning facet changed after prompt preparation" => Some("owning_facet_changed"),
+        "conflict: required artifact changed after prompt preparation" => {
+            Some("artifact_before_changed")
+        }
+        _ => None,
+    }
+}
+
+fn review_error(
+    identity: &solstone_core_journal_io::DailyUnitIdentity,
+    detail: impl Into<String>,
+) -> StageError {
+    let detail = detail.into();
+    if let Some(kind) = review_conflict_kind(&detail) {
+        StageError::owner_conflict(identity, "daily_publication", kind, detail)
+    } else if detail.starts_with("conflict:") {
+        StageError::new(
+            "unmapped_review_conflict",
+            "daily_publication",
+            &identity.name,
+            format!("unmapped review owner conflict: {detail}"),
+        )
+    } else if detail.starts_with("validation:") {
+        StageError::new("parse", "daily_publication", &identity.name, detail)
+    } else {
+        StageError::new("publication", "daily_publication", &identity.name, detail)
+    }
+}
+
 pub fn publish_daily_publication(
     authority: &mut DailyUnitAuthority,
     token: &str,
     publication: &PreparedDailyPublication,
     context: &ExecutionContext,
 ) -> Result<CommitDisposition, StageError> {
-    authority
-        .require_token(token)
-        .map_err(|e| error(e.to_string()))?;
-    let serialized = serde_json::to_value(publication).map_err(|e| error(e.to_string()))?;
     let record = authority
         .record()
+        .cloned()
         .ok_or_else(|| error("missing publication record"))?;
+    let is_review = record.identity.name == "entities:entities_review";
+    let make_error = |detail: String| -> StageError {
+        if is_review {
+            review_error(&record.identity, detail)
+        } else {
+            error(detail)
+        }
+    };
+
+    authority
+        .require_token(token)
+        .map_err(|e| make_error(e.to_string()))?;
+    let serialized = serde_json::to_value(publication).map_err(|e| make_error(e.to_string()))?;
     if record.generated_result.is_none() || record.action_plan.as_ref() != Some(&serialized) {
-        return Err(error(
-            "publication requires the retained generated result and exact prepared plan",
+        return Err(make_error(
+            "publication requires the retained generated result and exact prepared plan".into(),
         ));
     }
     // Do not trust an in-memory assignment: checkpoint is required at entry,
     // before even the first start marker or owner action.
-    authority.checkpoint().map_err(|e| error(e.to_string()))?;
+    authority
+        .checkpoint()
+        .map_err(|e| make_error(e.to_string()))?;
     for (index, action) in publication.actions.iter().enumerate() {
         authority
             .require_token(token)
-            .map_err(|e| error(e.to_string()))?;
-        let action_bytes = serde_json::to_vec(action).map_err(|e| error(e.to_string()))?;
+            .map_err(|e| make_error(e.to_string()))?;
+        let action_bytes = serde_json::to_vec(action).map_err(|e| make_error(e.to_string()))?;
         let action_id = format!("{index}:{:x}", Sha256::digest(&action_bytes));
         let prior =
             authority.record().unwrap().receipts.iter().find(|receipt| {
@@ -502,13 +598,48 @@ pub fn publish_daily_publication(
             continue;
         }
         let allow_before = prior.is_none();
-        if allow_before {
+        let is_review_action = matches!(
+            action,
+            PreparedDailyAction::Identity { .. }
+                | PreparedDailyAction::Attachment { .. }
+                | PreparedDailyAction::Aliases { .. }
+                | PreparedDailyAction::MergeProposals { .. }
+        ) || (matches!(action, PreparedDailyAction::Output { .. })
+            && is_review);
+
+        if !is_review_action && allow_before {
             authority.record_mut().as_mut().unwrap().receipts.push(json!({"kind":"owner_action","action_id":action_id,"token":token,"state":"started"}));
-            authority.checkpoint().map_err(|e| error(e.to_string()))?;
+            authority
+                .checkpoint()
+                .map_err(|e| make_error(e.to_string()))?;
         }
+        let auth_cell = std::cell::RefCell::new(&mut *authority);
+        let start = || -> Result<(), String> {
+            let mut auth = auth_cell.borrow_mut();
+            auth.require_token(token).map_err(|e| e.to_string())?;
+            let receipts = &mut auth
+                .record_mut()
+                .as_mut()
+                .ok_or("missing publication record")?
+                .receipts;
+            if !receipts
+                .iter()
+                .any(|item| item["kind"] == "owner_action" && item["action_id"] == action_id)
+            {
+                receipts.push(json!({
+                    "kind": "owner_action",
+                    "action_id": action_id,
+                    "token": token,
+                    "state": "started"
+                }));
+                auth.checkpoint().map_err(|e| e.to_string())?;
+            }
+            Ok(())
+        };
         let receipt = || -> Result<(), String> {
-            authority.require_token(token).map_err(|e| e.to_string())?;
-            let receipts = &mut authority
+            let mut auth = auth_cell.borrow_mut();
+            auth.require_token(token).map_err(|e| e.to_string())?;
+            let receipts = &mut auth
                 .record_mut()
                 .as_mut()
                 .ok_or("missing publication record")?
@@ -518,13 +649,19 @@ pub fn publish_daily_publication(
                 .find(|item| item["kind"] == "owner_action" && item["action_id"] == action_id)
                 .ok_or("missing action start receipt")?;
             prior["state"] = Value::String("committed".into());
-            authority.checkpoint().map_err(|e| e.to_string())
+            auth.checkpoint().map_err(|e| e.to_string())
         };
         let _facet_guard = if let Some((facet, id)) = action_facet(action) {
             let guard = solstone_core_facets::hold_facet_trust_lock(&context.journal)
-                .map_err(|e| error(e.to_string()))?;
+                .map_err(|e| make_error(e.to_string()))?;
             solstone_core_facets::require_facet_write_identity(&context.journal, facet, id)
-                .map_err(error)?;
+                .map_err(|_| {
+                    if is_review {
+                        make_error("conflict: owning facet changed after prompt preparation".into())
+                    } else {
+                        make_error("conflict: owning facet no longer exists".into())
+                    }
+                })?;
             Some(guard)
         } else {
             None
@@ -559,6 +696,7 @@ pub fn publish_daily_publication(
                     &context.journal,
                     change,
                     allow_before,
+                    start,
                     receipt,
                 )
             }
@@ -567,6 +705,7 @@ pub fn publish_daily_publication(
                     &context.journal,
                     change,
                     allow_before,
+                    start,
                     receipt,
                 )
             }
@@ -576,6 +715,7 @@ pub fn publish_daily_publication(
                     facet,
                     change,
                     allow_before,
+                    start,
                     receipt,
                 )
             }
@@ -584,6 +724,7 @@ pub fn publish_daily_publication(
                     &context.journal,
                     batch,
                     allow_before,
+                    start,
                     receipt,
                 )
             }
@@ -600,9 +741,17 @@ pub fn publish_daily_publication(
                 before,
                 after,
                 ..
-            } => publish_output(&context.journal, path, before, after, allow_before, receipt),
+            } => publish_output(
+                &context.journal,
+                path,
+                before,
+                after,
+                allow_before,
+                start,
+                receipt,
+            ),
         };
-        result.map_err(error)?;
+        result.map_err(make_error)?;
     }
     Ok(if publication.no_output {
         CommitDisposition::CommittedNoOutput
@@ -617,6 +766,7 @@ fn publish_output(
     before: &Option<Vec<u8>>,
     after: &[u8],
     allow_before: bool,
+    start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     let path = root.join(relative);
@@ -627,8 +777,11 @@ fn publish_output(
         if !allow_before || &current != before {
             return Err("conflict: required output changed after preparation".into());
         }
+        start()?;
         atomic_replace(&path, after, AtomicWriteOptions { mode: Some(0o600) })
             .map_err(|e| e.to_string())?;
+    } else {
+        start()?;
     }
     receipt()
 }
@@ -860,6 +1013,190 @@ mod tests {
                 .join("facets/work/entities/ada/observations.jsonl")
                 .exists()
         );
+    }
+
+    #[test]
+    fn review_live_shaped_alias_refusal_keeps_prior_commits_and_no_uncommitted_started() {
+        let root = fixture();
+        let journal = root.path();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.into(),
+        };
+        let facet_id = solstone_core_facets::facet_write_identity(journal, "work").unwrap();
+
+        // 1. Setup claimant entity with alias "Late Claim" attached to "work"
+        let claimant_identity = json!({
+            "id": "late_claimant",
+            "name": "Other",
+            "type": "Person",
+            "aka": ["Late Claim"]
+        });
+        solstone_core_entity::save_entity_identity(
+            journal,
+            "late_claimant",
+            &claimant_identity,
+            None,
+        )
+        .unwrap();
+        solstone_core_facets::save_facet_entity_link(
+            journal,
+            "work",
+            "late_claimant",
+            "late_claimant",
+            &Default::default(),
+        )
+        .unwrap();
+
+        // 2. Action 0: Identity change for target (creates target entity)
+        let target_identity = json!({"id":"target","name":"Target","type":"Person","aka":[]});
+        let id_change = solstone_core_entity::PreparedIdentityChange {
+            entity_id: "target".into(),
+            entity_dir: "target".into(),
+            before: None,
+            after: target_identity.clone(),
+        };
+        let action_0 = PreparedDailyAction::Identity {
+            facet: "work".into(),
+            facet_id: facet_id.clone(),
+            change: id_change,
+        };
+
+        // 3. Action 1: Attachment for target to "work"
+        let att_change = solstone_core_facets::PreparedReviewAttachment {
+            facet: "work".into(),
+            facet_id: facet_id.clone(),
+            relationship_dir: "target".into(),
+            entity_id: "target".into(),
+            before: None,
+            after: json!({"entity_id":"target","type":"Person"}),
+        };
+        let action_1 = PreparedDailyAction::Attachment { change: att_change };
+
+        // 4. Action 2: Aliases change for target trying to claim "Late Claim" (which claimant owns)
+        let mut target_with_alias = target_identity.clone();
+        target_with_alias["aka"] = json!(["Late Claim"]);
+        let alias_id_change = solstone_core_entity::PreparedIdentityChange {
+            entity_id: "target".into(),
+            entity_dir: "target".into(),
+            before: Some(target_identity.clone()),
+            after: target_with_alias,
+        };
+        let action_2 = PreparedDailyAction::Aliases {
+            facet: "work".into(),
+            facet_id: facet_id.clone(),
+            change: alias_id_change,
+        };
+
+        // 5. Action 3: Output action for outcome json
+        let outcome_path = journal.join("facets/work/entities/20260910_review_outcome.json");
+        let action_3 = PreparedDailyAction::Output {
+            path: "facets/work/entities/20260910_review_outcome.json".into(),
+            facet_identity: None,
+            before: None,
+            after: b"{\"outcome\":\"ok\"}\n".to_vec(),
+        };
+
+        let plan = PreparedDailyPublication {
+            actions: vec![action_0, action_1, action_2, action_3],
+            no_output: false,
+        };
+
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("attempt-1".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()?;
+
+            let err =
+                publish_daily_publication(authority, "attempt-1", &plan, &context).unwrap_err();
+            assert_eq!(err.talent, "entities:entities_review");
+            assert_eq!(err.phase, "conflict");
+            assert_eq!(err.owner_conflict_kind.as_deref(), Some("alias_claimed"));
+
+            let binding = authority.record();
+            let current_record = binding.as_ref().unwrap();
+            assert!(!current_record.has_uncommitted_started_receipt());
+            // Must have exactly 2 committed receipts (actions 0 and 1), and NO receipt for action 2 or 3
+            assert_eq!(current_record.receipts.len(), 2);
+            assert_eq!(current_record.receipts[0]["state"], "committed");
+            assert_eq!(current_record.receipts[1]["state"], "committed");
+
+            // Identity and attachment created by actions 0 and 1 remain committed
+            assert!(
+                solstone_core_entity::read_entity_identity(journal, "target")
+                    .unwrap()
+                    .is_some()
+            );
+            assert!(
+                solstone_core_facets::read_facet_entity_link(journal, "work", "target")
+                    .unwrap()
+                    .is_some()
+            );
+
+            // Outcome file was never written
+            assert!(!outcome_path.exists());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn review_post_start_injected_fault_leaves_started_and_refuses_replay() {
+        let root = fixture();
+        let journal = root.path();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let context = ExecutionContext {
+            journal: journal.into(),
+        };
+
+        let facet_id = solstone_core_facets::facet_write_identity(journal, "work").unwrap();
+        let target_identity = json!({"id":"target2","name":"Target2","type":"Person","aka":[]});
+        let id_change = solstone_core_entity::PreparedIdentityChange {
+            entity_id: "target2".into(),
+            entity_dir: "target2".into(),
+            before: None,
+            after: target_identity.clone(),
+        };
+        let action = PreparedDailyAction::Identity {
+            facet: "work".into(),
+            facet_id,
+            change: id_change,
+        };
+        let plan = PreparedDailyPublication {
+            actions: vec![action],
+            no_output: false,
+        };
+
+        // Simulate a crash right after start() was called for an action:
+        let action_bytes = serde_json::to_vec(&plan.actions[0]).unwrap();
+        let id = format!("0:{:x}", Sha256::digest(&action_bytes));
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+            record.lock_token = Some("interrupted-token".into());
+            record.generated_result = Some(json!({"output":"retained"}));
+            record.action_plan = Some(serde_json::to_value(&plan).unwrap());
+            record.receipts.push(json!({"kind":"owner_action", "action_id":id, "token":"interrupted-token", "state":"started"}));
+            *authority.record_mut() = Some(record);
+            authority.checkpoint()
+        }).unwrap();
+
+        // Restart with new worker attempt must refuse replay due to ambiguous uncommitted started receipt
+        with_daily_unit_authority(journal, &identity, |authority| {
+            let binding = authority.record();
+            let record = binding.as_ref().unwrap();
+            assert!(record.has_uncommitted_started_receipt());
+            let err = publish_daily_publication(authority, "interrupted-token", &plan, &context)
+                .unwrap_err();
+            assert_eq!(err.phase, "conflict");
+            assert_eq!(err.talent, "entities:entities_review");
+            Ok(())
+        })
+        .unwrap();
     }
 
     #[test]
@@ -1181,6 +1518,7 @@ mod tests {
             plan.identity.as_ref().unwrap(),
             true,
             || Ok(()),
+            || Ok(()),
         )
         .unwrap();
         assert!(
@@ -1188,6 +1526,7 @@ mod tests {
                 root.path(),
                 &plan.attachment,
                 true,
+                || Ok(()),
                 || Err("interrupt".into())
             )
             .is_err()
@@ -1198,6 +1537,7 @@ mod tests {
             &plan.attachment,
             false,
             || Ok(()),
+            || Ok(()),
         )
         .unwrap();
         solstone_core_facets::publish_review_aliases(
@@ -1205,6 +1545,7 @@ mod tests {
             "work",
             plan.aliases.as_ref().unwrap(),
             true,
+            || Ok(()),
             || Ok(()),
         )
         .unwrap();
@@ -1223,18 +1564,36 @@ mod tests {
             std::slice::from_ref(&proposal),
         )
         .unwrap();
-        solstone_core_entity::publish_merge_proposals(root.path(), &batch, true, || Ok(()))
-            .unwrap();
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &batch,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
         solstone_core_entity::dismiss_merge_candidate(root.path(), "work", "ada", "ada-lovelace")
             .unwrap();
         assert!(
-            solstone_core_entity::publish_merge_proposals(root.path(), &batch, false, || Ok(()))
-                .is_err()
+            solstone_core_entity::publish_merge_proposals(
+                root.path(),
+                &batch,
+                false,
+                || Ok(()),
+                || Ok(())
+            )
+            .is_err()
         );
         let later =
             solstone_core_entity::prepare_merge_proposals(root.path(), &[proposal]).unwrap();
-        solstone_core_entity::publish_merge_proposals(root.path(), &later, true, || Ok(()))
-            .unwrap();
+        solstone_core_entity::publish_merge_proposals(
+            root.path(),
+            &later,
+            true,
+            || Ok(()),
+            || Ok(()),
+        )
+        .unwrap();
         assert_eq!(
             solstone_core_entity::load_merge_candidates(root.path(), Some("work"), None).unwrap()
                 [0]["status"],

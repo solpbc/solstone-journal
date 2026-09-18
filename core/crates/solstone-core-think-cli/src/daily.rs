@@ -272,49 +272,69 @@ fn queue_daily(
         solstone_core_journal_io::load_daily_unit_record(&context.journal, &identity)
             .map_err(|e| e.to_string())?;
     let retry = config.metadata.get("retry_on_deterministic_failure") == Some(&Value::Bool(true));
-    if !from_scratch && let Some(record) = &existing_record {
-        if record.status.is_terminal_success()
-            && record.is_reusable_for(&evidence_rev, &contract_dig)
-            && solstone_core_journal_io::accepted_daily_artifacts_valid(&context.journal, record)
+    if let Some(record) = &existing_record {
+        if record.has_uncommitted_started_receipt() {
+            // An in-doubt started write cannot be automatically retried, reset, or wiped.
+            return Ok(());
+        }
+        if !from_scratch {
+            if record.status.is_terminal_success()
+                && record.is_reusable_for(&evidence_rev, &contract_dig)
+                && solstone_core_journal_io::accepted_daily_artifacts_valid(
+                    &context.journal,
+                    record,
+                )
                 .map_err(|e| e.to_string())?
-        {
-            result.terminal_units.insert(unit);
-            log_skip(log, context, &config.key, "evidence_unchanged", facet);
-            return Ok(());
-        }
-        if record.status.is_terminal_success()
-            && record.is_reusable_for(&evidence_rev, &contract_dig)
-        {
-            log_daily_failure(
-                log,
-                context,
-                &config.key,
-                facet,
-                None,
-                "required_artifact_missing",
-                "required_artifact_missing",
-            );
-            if config.key != "daily_schedule" {
-                result.failed += 1;
+            {
+                result.terminal_units.insert(unit);
+                log_skip(log, context, &config.key, "evidence_unchanged", facet);
+                return Ok(());
             }
-            result
-                .failed_names
-                .push(label(&config.key, facet, "required_artifact_missing"));
-            return Ok(());
-        }
-        if !retry
-            && record.evidence_revision == evidence_rev
-            && record.contract_digest == contract_dig
-            && record.status == solstone_core_journal_io::DailyUnitStatus::Capped
-            && !(record
-                .reason_code
-                .as_deref()
-                .is_some_and(solstone_core_system::daily_coverage::environmental_failure)
-                && record.environmental_retry_day.as_deref() != Some(&today))
-        {
-            result.terminal_units.insert(unit.clone());
-            result.capped_units.insert(unit);
-            return Ok(());
+            if record.status.is_terminal_success()
+                && record.is_reusable_for(&evidence_rev, &contract_dig)
+            {
+                log_daily_failure(
+                    log,
+                    context,
+                    &config.key,
+                    facet,
+                    None,
+                    "required_artifact_missing",
+                    "required_artifact_missing",
+                );
+                if config.key != "daily_schedule" {
+                    result.failed += 1;
+                }
+                result
+                    .failed_names
+                    .push(label(&config.key, facet, "required_artifact_missing"));
+                return Ok(());
+            }
+            if !retry
+                && record.evidence_revision == evidence_rev
+                && record.contract_digest == contract_dig
+                && record.status == solstone_core_journal_io::DailyUnitStatus::Capped
+                && !(record
+                    .reason_code
+                    .as_deref()
+                    .is_some_and(solstone_core_system::daily_coverage::environmental_failure)
+                    && record.environmental_retry_day.as_deref() != Some(&today))
+            {
+                result.terminal_units.insert(unit.clone());
+                result.capped_units.insert(unit);
+                return Ok(());
+            }
+            if config.key == "entities:entities_review"
+                && record.evidence_revision == evidence_rev
+                && record.contract_digest == contract_dig
+                && record.status == solstone_core_journal_io::DailyUnitStatus::Conflicting
+                && record.failure_count >= 2
+            {
+                // One automatic retry of review conflict on unchanged evidence has exhausted.
+                // Do not dispatch, but do NOT insert into terminal_units or capped_units:
+                // the day stays uncertified / Outstanding.
+                return Ok(());
+            }
         }
     }
     let use_id = solstone_core_journal_io::cortex_use::allocate_cortex_use_id(
@@ -495,6 +515,11 @@ fn reserve_daily_attempt(
                 contract_dig,
             )
         });
+        if record.has_uncommitted_started_receipt() {
+            return Err(solstone_core_journal_io::DailyUnitError::Malformed(
+                "unit has ambiguous uncommitted owner action".to_owned(),
+            ));
+        }
         let same =
             record.evidence_revision == evidence_rev && record.contract_digest == contract_dig;
         if same
@@ -2108,6 +2133,343 @@ cat "${0%/*}/response-$kind.json"
         assert_eq!(
             record.accepted.unwrap().evidence_revision,
             "current-window-E"
+        );
+    }
+
+    #[test]
+    fn uncommitted_started_receipt_blocks_reserve_daily_attempt() {
+        let root = tempfile::tempdir().unwrap();
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260910",
+            "entities:entities_review",
+            Some("work".into()),
+        );
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.receipts.push(serde_json::json!({
+            "kind": "owner_action",
+            "action_id": "0:action_1",
+            "token": "old_token",
+            "state": "started"
+        }));
+        solstone_core_journal_io::save_daily_unit_record(root.path(), &record).unwrap();
+
+        let packet = Value::Object(Default::default());
+        let err = reserve_daily_attempt(
+            root.path(),
+            &identity,
+            "E",
+            "C",
+            &packet,
+            "20260910",
+            "worker-token",
+            false,
+            false,
+            3,
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("ambiguous uncommitted owner action"),
+            "expected started action refusal: {err}"
+        );
+
+        // Even with from_scratch: true, uncommitted started receipt must refuse and not wipe
+        let err_scratch = reserve_daily_attempt(
+            root.path(),
+            &identity,
+            "E",
+            "C",
+            &packet,
+            "20260910",
+            "worker-token",
+            true,
+            false,
+            3,
+        )
+        .unwrap_err();
+
+        assert!(
+            err_scratch
+                .to_string()
+                .contains("ambiguous uncommitted owner action"),
+            "expected started action refusal even from_scratch: {err_scratch}"
+        );
+
+        let stored = solstone_core_journal_io::load_daily_unit_record(root.path(), &identity)
+            .unwrap()
+            .unwrap();
+        assert!(
+            stored.has_uncommitted_started_receipt(),
+            "started receipts must not be wiped"
+        );
+    }
+
+    #[test]
+    fn entities_review_one_retry_then_suppress_and_fresh_attempt_resets() {
+        let root = tempfile::tempdir().unwrap();
+        let journal = root.path();
+        std::fs::create_dir_all(journal.join("chronicle/20260910/segments")).unwrap();
+        std::fs::create_dir_all(journal.join("facets/work")).unwrap();
+        std::fs::write(journal.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+        solstone_core_facets::ensure_daily_facet_id(journal, "work").unwrap();
+        std::fs::create_dir_all(journal.join("config")).unwrap();
+        std::fs::write(
+            journal.join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"},"providers":{"active":{"provider":"openai","model":"test-model"}}}"#,
+        )
+        .unwrap();
+
+        let talent_root = journal.join("payload/talent");
+        let apps_root = journal.join("payload/apps");
+        std::fs::create_dir_all(&talent_root).unwrap();
+        std::fs::create_dir_all(apps_root.join("entities/talent")).unwrap();
+        std::fs::write(
+            apps_root.join("entities/talent/entities_review.md"),
+            "{\n\"type\":\"generate\",\"schedule\":\"daily\",\"priority\":56,\"output\":\"json\",\"multi_facet\":true,\"hook\":{\"pre\":\"entities:entities_review\",\"post\":\"entities:entities_review\"}\n}\nprompt",
+        )
+        .unwrap();
+
+        struct MockCortex;
+        impl crate::context::CortexBoundary for MockCortex {
+            fn dispatch(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &solstone_core_cortex_client::CortexRequest,
+            ) -> Result<String, DispatchFailure> {
+                panic!("daily must reserve before send")
+            }
+            fn dispatch_prepared(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &solstone_core_cortex_client::CortexRequest,
+                reserved: Option<&str>,
+                prepare: &mut (dyn FnMut(&str) -> std::io::Result<()> + Send),
+            ) -> Result<String, DispatchFailure> {
+                let id = reserved.expect("durably allocated use id");
+                prepare(id).map_err(|_| DispatchFailure::Unavailable)?;
+                Ok(id.to_string())
+            }
+            fn wait(
+                &self,
+                _: &tokio::runtime::Runtime,
+                _: &[String],
+                _: Option<std::time::Duration>,
+            ) -> Result<solstone_core_cortex_client::WaitForUsesReport, String> {
+                Ok(solstone_core_cortex_client::WaitForUsesReport {
+                    completed: Default::default(),
+                    timed_out: Vec::new(),
+                })
+            }
+        }
+
+        let context = ThinkContext::new(
+            journal,
+            "20260910".to_owned(),
+            journal.join("chronicle/20260910"),
+            1789400000000,
+        )
+        .unwrap()
+        .with_talent_roots(talent_root, apps_root)
+        .with_boundary(std::sync::Arc::new(MockCortex));
+
+        let configs = load_talent_configs(
+            &context.talent_root,
+            &context.apps_root,
+            None,
+            TalentFilter {
+                r#type: None,
+                schedule: Some("daily"),
+                include_disabled: false,
+            },
+        )
+        .unwrap();
+        let config = configs
+            .into_iter()
+            .find(|c| c.key == "entities:entities_review")
+            .unwrap();
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let mut log = RunLogWriter::open(journal, &context.day, "daily");
+
+        let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+            "20260910",
+            "entities:entities_review",
+            Some("work".into()),
+        );
+
+        let (evidence_rev, contract_dig) = crate::snapshot::compute_daily_evidence_revision(
+            journal,
+            "20260910",
+            &config,
+            Some("work"),
+            None,
+        )
+        .unwrap();
+
+        // 1. Initial Conflicting failure (failure_count == 1)
+        let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+            identity.clone(),
+            &evidence_rev,
+            &contract_dig,
+        );
+        record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+        record.reason_code = Some("daily_owner_conflict".into());
+        record.owner_conflict_kind = Some("alias_claimed".into());
+        record.failure_count = 1;
+        solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+
+        let mut pending = Vec::new();
+        let mut result = ModeResult::default();
+        queue_daily(
+            &context,
+            &mut log,
+            &runtime,
+            &config,
+            Some("work"),
+            false,
+            &mut pending,
+            &mut result,
+        )
+        .unwrap();
+        assert_eq!(
+            pending.len(),
+            1,
+            "failure_count == 1 must dispatch once on retry"
+        );
+        assert!(result.terminal_units.is_empty());
+        assert!(result.capped_units.is_empty());
+
+        // 2. Second Conflicting failure (failure_count == 2) -> suppressed
+        record.failure_count = 2;
+        solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+
+        let mut pending2 = Vec::new();
+        let mut result2 = ModeResult::default();
+        queue_daily(
+            &context,
+            &mut log,
+            &runtime,
+            &config,
+            Some("work"),
+            false,
+            &mut pending2,
+            &mut result2,
+        )
+        .unwrap();
+        assert_eq!(
+            pending2.len(),
+            0,
+            "failure_count == 2 must be suppressed on unchanged evidence"
+        );
+        assert!(
+            result2.terminal_units.is_empty(),
+            "suppressed unit must not be terminal"
+        );
+        assert!(
+            result2.capped_units.is_empty(),
+            "suppressed unit must not be capped"
+        );
+        assert!(
+            !journal
+                .join("chronicle/20260910/health/daily.updated")
+                .exists()
+        );
+
+        // 3. Fresh attempt via from_scratch: true resets suppression
+        let mut pending_scratch = Vec::new();
+        let mut result_scratch = ModeResult::default();
+        queue_daily(
+            &context,
+            &mut log,
+            &runtime,
+            &config,
+            Some("work"),
+            true,
+            &mut pending_scratch,
+            &mut result_scratch,
+        )
+        .unwrap();
+        assert_eq!(
+            pending_scratch.len(),
+            1,
+            "from_scratch must reset suppression and dispatch"
+        );
+
+        // 4. Fresh attempt via evidence change resets suppression
+        std::fs::write(
+            journal.join("facets/work/facet.json"),
+            r#"{"name":"work","extra":"1"}"#,
+        )
+        .unwrap();
+        solstone_core_facets::ensure_daily_facet_id(journal, "work").unwrap();
+        let mut pending_ev = Vec::new();
+        let mut result_ev = ModeResult::default();
+        queue_daily(
+            &context,
+            &mut log,
+            &runtime,
+            &config,
+            Some("work"),
+            false,
+            &mut pending_ev,
+            &mut result_ev,
+        )
+        .unwrap();
+        assert_eq!(
+            pending_ev.len(),
+            1,
+            "evidence change must reset suppression and dispatch"
+        );
+
+        // 5. Uncommitted started receipt blocks dispatch under all conditions
+        record.receipts.push(serde_json::json!({
+            "kind": "owner_action",
+            "action_id": "0:test",
+            "token": "tok",
+            "state": "started"
+        }));
+        solstone_core_journal_io::save_daily_unit_record(journal, &record).unwrap();
+
+        let mut pending_started = Vec::new();
+        let mut result_started = ModeResult::default();
+        queue_daily(
+            &context,
+            &mut log,
+            &runtime,
+            &config,
+            Some("work"),
+            false,
+            &mut pending_started,
+            &mut result_started,
+        )
+        .unwrap();
+        assert_eq!(
+            pending_started.len(),
+            0,
+            "started receipt must block queue_daily"
+        );
+
+        let mut pending_started_scratch = Vec::new();
+        let mut result_started_scratch = ModeResult::default();
+        queue_daily(
+            &context,
+            &mut log,
+            &runtime,
+            &config,
+            Some("work"),
+            true,
+            &mut pending_started_scratch,
+            &mut result_started_scratch,
+        )
+        .unwrap();
+        assert_eq!(
+            pending_started_scratch.len(),
+            0,
+            "started receipt must block queue_daily even from_scratch"
         );
     }
 }

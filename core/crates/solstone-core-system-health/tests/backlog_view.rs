@@ -172,6 +172,8 @@ fn complete_pending_and_stuck_days_keep_python_state_and_counts() {
                 trailing_fail_count: 3,
                 last_fail_ts: Some(4_000),
                 stuck: true,
+                owner_conflict_kind: None,
+                lifecycle_state: None,
             }],
             reason: Some("failing_step".to_owned()),
             reason_code: Some("no_output".to_owned()),
@@ -700,6 +702,8 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
         trailing_fail_count: 3,
         last_fail_ts: None,
         stuck: true,
+        owner_conflict_kind: None,
+        lifecycle_state: None,
     };
     let day = BacklogDay {
         daily_coverage: None,
@@ -860,6 +864,8 @@ fn empty_strings_are_omitted_at_day_and_unit_levels() {
             trailing_fail_count: 0,
             last_fail_ts: None,
             stuck: false,
+            owner_conflict_kind: None,
+            lifecycle_state: None,
         }],
         reason: None,
         reason_code: Some(String::new()),
@@ -973,6 +979,95 @@ fn screen_marker_touch_does_not_mask_aged_audio() {
 }
 
 // Unreadable-mtime integration coverage is omitted: making metadata
+// Unreadable-mtime integration coverage is omitted: making metadata
 // unreadable is not portable. `missing_input_mtime_counts_as_backlog`
 // in backlog.rs proves the None → counts-as-backlog rule at
 // `aged_not_sensed_count`, which is the layer that implements it.
+
+#[test]
+fn backlog_view_review_unit_lifecycle_states() {
+    let temporary = TempDir::new().unwrap();
+    let root = temporary.path();
+    let day = "20260910";
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(
+        root.join("facets/work/facet.json"),
+        r#"{"id":"0191ebc2-0000-7000-8000-000000000001","name":"work"}"#,
+    )
+    .unwrap();
+    super::configure_daily_work(root, Some("entities:entities_review"));
+    incomplete(root, day, NOW_MS - MODALITY_INPUT_AGED_MS);
+    let seg = root.join("chronicle/20260910/segments/090000_60");
+    fs::create_dir_all(seg.join("talents")).unwrap();
+    fs::write(seg.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+    let unit = coverage
+        .units
+        .iter()
+        .find(|u| u.identity.name == "entities:entities_review")
+        .unwrap();
+
+    // 1. Retrying review unit (failure_count == 1)
+    let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+        unit.identity.clone(),
+        &unit.evidence_revision,
+        &unit.contract_digest,
+    );
+    record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+    record.reason_code = Some("daily_owner_conflict".into());
+    record.owner_conflict_kind = Some("alias_claimed".into());
+    record.failure_count = 1;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let result = view(root, 30);
+    let day_entry = result.days.iter().find(|d| d.day == day).unwrap();
+    let review_unit = day_entry
+        .why
+        .iter()
+        .find(|u| u.name == "entities:entities_review")
+        .unwrap();
+    assert_eq!(review_unit.lifecycle_state.as_deref(), Some("retrying"));
+    assert_eq!(
+        review_unit.owner_conflict_kind.as_deref(),
+        Some("alias_claimed")
+    );
+
+    // 2. Exhausted review unit (failure_count == 2)
+    record.failure_count = 2;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let result2 = view(root, 30);
+    let day_entry2 = result2.days.iter().find(|d| d.day == day).unwrap();
+    let review_unit2 = day_entry2
+        .why
+        .iter()
+        .find(|u| u.name == "entities:entities_review")
+        .unwrap();
+    assert_eq!(review_unit2.lifecycle_state.as_deref(), Some("exhausted"));
+    assert_eq!(
+        review_unit2.owner_conflict_kind.as_deref(),
+        Some("alias_claimed")
+    );
+
+    // 3. Ambiguous started review unit
+    record.receipts.push(json!({
+        "kind": "owner_action",
+        "action_id": "0:test",
+        "token": "tok",
+        "state": "started"
+    }));
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let result3 = view(root, 30);
+    let day_entry3 = result3.days.iter().find(|d| d.day == day).unwrap();
+    let review_unit3 = day_entry3
+        .why
+        .iter()
+        .find(|u| u.name == "entities:entities_review")
+        .unwrap();
+    assert_eq!(
+        review_unit3.lifecycle_state.as_deref(),
+        Some("ambiguous_started")
+    );
+}

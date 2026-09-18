@@ -207,11 +207,15 @@ pub(crate) fn execute(
                     DailyUnitStatus::Failed
                 };
                 record.error_detail = Some(error.to_string());
+                record.owner_conflict_kind = error.owner_conflict_kind.map(str::to_owned);
                 let reason = error.reason_code();
                 if record.reason_code.as_deref() != Some(reason) {
                     record.failure_count = 0;
                 }
                 record.reason_code = Some(reason.to_owned());
+                if error.phase == "conflict" && identity.name == "entities:entities_review" {
+                    record.failure_count = record.failure_count.saturating_add(1);
+                }
                 authority.checkpoint()?;
                 if error.usage.is_none() {
                     error.usage = usage;

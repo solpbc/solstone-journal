@@ -162,6 +162,8 @@ pub struct DailyUnitRecord {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_conflict_kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_detail: Option<String>,
     pub attempts: u32,
     #[serde(default)]
@@ -192,12 +194,42 @@ impl DailyUnitRecord {
             receipts: Vec::new(),
             accepted: None,
             reason_code: None,
+            owner_conflict_kind: None,
             error_detail: None,
             attempts: 0,
             failure_count: 0,
             environmental_retry_day: None,
             updated_at_ms: chrono::Utc::now().timestamp_millis(),
         }
+    }
+
+    /// True if there is an in-doubt started owner action that was never committed.
+    pub fn has_uncommitted_started_receipt(&self) -> bool {
+        let mut started_actions = std::collections::BTreeSet::new();
+        let mut committed_actions = std::collections::BTreeSet::new();
+        for receipt in &self.receipts {
+            if receipt.get("kind").and_then(serde_json::Value::as_str) == Some("owner_action") {
+                let action_id = receipt.get("action_id").and_then(serde_json::Value::as_str);
+                match receipt.get("state").and_then(serde_json::Value::as_str) {
+                    Some("started") => {
+                        if let Some(id) = action_id {
+                            started_actions.insert(id);
+                        } else {
+                            return true;
+                        }
+                    }
+                    Some("committed") => {
+                        if let Some(id) = action_id {
+                            committed_actions.insert(id);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        started_actions
+            .iter()
+            .any(|id| !committed_actions.contains(id))
     }
 
     /// Unit reuse is strictly evidence-bound (E + contract digest).
@@ -747,6 +779,7 @@ mod tests {
             receipts: Vec::new(),
             accepted: None,
             reason_code: None,
+            owner_conflict_kind: None,
             error_detail: None,
             attempts: 1,
             failure_count: 0,
@@ -930,5 +963,58 @@ mod tests {
         let loaded = load_daily_unit_record(journal, &identity).unwrap().unwrap();
         assert_eq!(loaded.status, DailyUnitStatus::Committed);
         assert_eq!(loaded.lock_token.as_deref(), Some("token-2"));
+    }
+
+    #[test]
+    fn uncommitted_started_receipt_detection_and_owner_conflict_kind_roundtrip() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let identity =
+            DailyUnitIdentity::new("20260910", "entities:entities_review", Some("work".into()));
+        let mut rec = DailyUnitRecord::new(identity.clone(), "ev1", "ct1");
+        assert!(!rec.has_uncommitted_started_receipt());
+
+        // Add a started receipt without matching committed receipt
+        rec.receipts.push(serde_json::json!({
+            "action_id": "1",
+            "kind": "owner_action",
+            "state": "started",
+            "timestamp_ms": 1000,
+        }));
+        assert!(rec.has_uncommitted_started_receipt());
+
+        // Add matching committed receipt -> no longer uncommitted
+        rec.receipts.push(serde_json::json!({
+            "action_id": "1",
+            "kind": "owner_action",
+            "state": "committed",
+            "timestamp_ms": 1001,
+            "outcome": "ok",
+        }));
+        assert!(!rec.has_uncommitted_started_receipt());
+
+        // Add another action with started only
+        rec.receipts.push(serde_json::json!({
+            "action_id": "2",
+            "kind": "owner_action",
+            "state": "started",
+            "timestamp_ms": 1002,
+        }));
+        assert!(rec.has_uncommitted_started_receipt());
+
+        // Test owner_conflict_kind roundtrip through save/load
+        rec.owner_conflict_kind = Some("candidate_target_alias_conflict".to_owned());
+        rec.status = DailyUnitStatus::Conflicting;
+        rec.failure_count = 2;
+        save_daily_unit_record(journal, &rec).unwrap();
+
+        let loaded = load_daily_unit_record(journal, &identity).unwrap().unwrap();
+        assert_eq!(
+            loaded.owner_conflict_kind.as_deref(),
+            Some("candidate_target_alias_conflict")
+        );
+        assert_eq!(loaded.status, DailyUnitStatus::Conflicting);
+        assert_eq!(loaded.failure_count, 2);
+        assert!(loaded.has_uncommitted_started_receipt());
     }
 }

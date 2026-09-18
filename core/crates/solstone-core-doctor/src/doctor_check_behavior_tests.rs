@@ -3029,3 +3029,127 @@ fn a_pathless_cause_does_not_promise_a_file() {
         result.detail
     );
 }
+
+#[test]
+fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
+    let c = fixture();
+    let root = &c.journal_path;
+    let day = "20251230";
+    configure_daily_work(root, Some("entities:entities_review"));
+    let seg_dir = root.join("chronicle").join(day).join("120000_60");
+    fs::create_dir_all(seg_dir.join("talents")).unwrap();
+    fs::write(seg_dir.join("talents/facets.json"), r#"[{"facet":"work"}]"#).unwrap();
+    fs::create_dir_all(root.join("facets/work")).unwrap();
+    fs::write(root.join("facets/work/facet.json"), r#"{"name":"work"}"#).unwrap();
+    incomplete(&c, day);
+
+    let coverage = solstone_core_system::daily_coverage::read_daily_coverage(root, day).unwrap();
+    let unit = coverage
+        .units
+        .iter()
+        .find(|unit| unit.identity.name == "entities:entities_review")
+        .unwrap();
+    let mut record = solstone_core_journal_io::DailyUnitRecord::new(
+        unit.identity.clone(),
+        &unit.evidence_revision,
+        &unit.contract_digest,
+    );
+    // 1. Retrying case (failure_count == 1, no started receipts)
+    record.status = solstone_core_journal_io::DailyUnitStatus::Conflicting;
+    record.reason_code = Some("daily_owner_conflict".into());
+    record.owner_conflict_kind = Some("alias_claimed".into());
+    record.failure_count = 1;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.contains("20251230"));
+    let fix = row.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix.contains("20251230"),
+        "retrying fix must contain day: {fix}"
+    );
+    assert!(
+        fix.contains("entities:entities_review"),
+        "retrying fix must contain talent: {fix}"
+    );
+    assert!(
+        fix.contains("work"),
+        "retrying fix must contain facet: {fix}"
+    );
+    assert!(
+        fix.contains("alias_claimed"),
+        "retrying fix must contain kind: {fix}"
+    );
+    assert!(
+        fix.contains("retry"),
+        "retrying fix should mention retry: {fix}"
+    );
+
+    // 2. Exhausted case (failure_count == 2, no started receipts)
+    record.failure_count = 2;
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Warn);
+    let fix = row.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix.contains("20251230"),
+        "exhausted fix must contain day: {fix}"
+    );
+    assert!(
+        fix.contains("entities:entities_review"),
+        "exhausted fix must contain talent: {fix}"
+    );
+    assert!(
+        fix.contains("work"),
+        "exhausted fix must contain facet: {fix}"
+    );
+    assert!(
+        fix.contains("alias_claimed"),
+        "exhausted fix must contain kind: {fix}"
+    );
+    assert!(
+        !fix.contains("catches up on its own"),
+        "exhausted fix must not say catches up on its own: {fix}"
+    );
+    assert!(
+        fix.contains("--from-scratch"),
+        "exhausted fix may recommend --from-scratch: {fix}"
+    );
+
+    // 3. Ambiguous uncommitted started unit
+    record.receipts.push(serde_json::json!({
+        "kind": "owner_action",
+        "action_id": "0:test",
+        "token": "tok",
+        "state": "started"
+    }));
+    solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
+    let row2 = result("journal_caught_up", &c);
+    let fix2 = row2.fix.as_deref().unwrap_or_default();
+    assert!(
+        fix2.contains("20251230"),
+        "started fix must contain day: {fix2}"
+    );
+    assert!(
+        fix2.contains("entities:entities_review"),
+        "started fix must contain talent: {fix2}"
+    );
+    assert!(
+        fix2.contains("work"),
+        "started fix must contain facet: {fix2}"
+    );
+    assert!(
+        fix2.contains("alias_claimed"),
+        "started fix must contain kind: {fix2}"
+    );
+    assert!(
+        !fix2.contains("catches up on its own"),
+        "started fix must not say catches up on its own: {fix2}"
+    );
+    assert!(
+        !fix2.contains("--from-scratch"),
+        "started fix must NOT recommend --from-scratch: {fix2}"
+    );
+}

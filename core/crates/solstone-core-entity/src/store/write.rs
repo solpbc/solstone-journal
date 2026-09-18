@@ -443,6 +443,7 @@ pub fn publish_identity_change(
     root: &Path,
     change: &PreparedIdentityChange,
     allow_before: bool,
+    start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
@@ -454,6 +455,7 @@ pub fn publish_identity_change(
     {
         return Err("conflict: promoted identity moved after preparation".into());
     }
+    start()?;
     reconcile_prepared_history(root, &change.entity_dir).map_err(|e| e.to_string())?;
     let current = read_entity_identity(root, &change.entity_dir)
         .map_err(|e| e.to_string())?

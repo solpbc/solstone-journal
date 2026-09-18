@@ -206,6 +206,7 @@ pub fn publish_merge_proposals(
     root: &Path,
     batch: &PreparedMergeProposals,
     allow_before: bool,
+    start: impl FnOnce() -> Result<(), String>,
     receipt: impl FnOnce() -> Result<(), String>,
 ) -> Result<(), String> {
     let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
@@ -216,12 +217,15 @@ pub fn publish_merge_proposals(
         if !allow_before || current != batch.before {
             return Err("conflict: merge proposals changed after preparation".into());
         }
+        start()?;
         write_text(
             &path,
             &batch.after,
             AtomicWriteOptions { mode: Some(0o600) },
         )
         .map_err(|e| e.to_string())?;
+    } else {
+        start()?;
     }
     receipt()
 }
