@@ -13,12 +13,14 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use solstone_core_journal_io::{AppendError, LockError, LockOptions, append_jsonl, hold_lock};
+use solstone_core_journal_io::{
+    AppendError, LockError, LockOptions, SegmentLayout, append_jsonl, hold_lock,
+};
 use thiserror::Error;
 
 use crate::owner_admission::OWNER_IDENTITY_INVALID_REASON;
 
-pub const IDENTIFY_OPERATION_SCHEMA_VERSION: i64 = 2;
+pub const IDENTIFY_OPERATION_SCHEMA_VERSION: i64 = 3;
 pub const FORWARD_PHASE_ORDER: [ForwardPhase; 7] = [
     ForwardPhase::Entity,
     ForwardPhase::KeepSeparate,
@@ -395,6 +397,7 @@ pub struct OperationState {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MemberProvenance {
     pub day: String,
+    pub stream_layout: SegmentLayout,
     pub stream: String,
     pub segment_key: String,
     pub source: String,
@@ -1042,6 +1045,7 @@ pub fn request_fingerprint(
                 .map(|member| {
                     Value::Array(vec![
                         Value::String(member.day.clone()),
+                        Value::String(member.stream_layout.as_str().to_owned()),
                         Value::String(member.stream.clone()),
                         Value::String(member.segment_key.clone()),
                         Value::String(member.source.clone()),
@@ -1077,7 +1081,7 @@ pub fn validate_row(row: &Value) -> Result<IdentifyOperationEvent, IdentifyOpera
         .as_object()
         .ok_or(IdentifyOperationError::MissingOrInvalidField { field: "row" })?;
     let schema_version = object.get("schema_version").and_then(Value::as_i64);
-    if !matches!(schema_version, Some(1 | IDENTIFY_OPERATION_SCHEMA_VERSION)) {
+    if !matches!(schema_version, Some(1 | 2 | IDENTIFY_OPERATION_SCHEMA_VERSION)) {
         return Err(IdentifyOperationError::InvalidSchemaVersion);
     }
     let schema_version = schema_version.expect("validated schema version");
@@ -1133,7 +1137,7 @@ pub fn validate_row(row: &Value) -> Result<IdentifyOperationEvent, IdentifyOpera
             }
         }
         EventKind::RepairResumed => {
-            if schema_version != IDENTIFY_OPERATION_SCHEMA_VERSION {
+            if schema_version != 2 && schema_version != IDENTIFY_OPERATION_SCHEMA_VERSION {
                 return Err(IdentifyOperationError::RepairResumeRequiresSchemaVersion2);
             }
             let repair_event_id = required_str(object, "repair_event_id")?;
@@ -1254,7 +1258,8 @@ fn validate_prepared(
         .ok_or(IdentifyOperationError::MissingOrInvalidField {
             field: "prepared_plan",
         })?;
-    if plan.get("plan_schema_version").and_then(Value::as_i64) != Some(1) {
+    let plan_schema_version = plan.get("plan_schema_version").and_then(Value::as_i64).unwrap_or(1);
+    if !matches!(plan_schema_version, 1 | 2) {
         return Err(IdentifyOperationError::InvalidPlanSchemaVersion);
     }
     if plan.get("operation_id").and_then(Value::as_str) != Some(operation_id) {
@@ -1302,7 +1307,7 @@ fn validate_prepared(
         let member = member
             .as_object()
             .ok_or(IdentifyOperationError::ClusterMemberNotObject)?;
-        let _ = member_provenance(member)?;
+        let _ = member_provenance(member, plan_schema_version)?;
     }
     let target = required_object(plan, "target")?;
     let _ = required_str(target, "entity_id")?;
@@ -1479,13 +1484,14 @@ fn fold_events(rows: &[&LedgerRow]) -> Result<OperationState, IdentifyOperationE
     let lifecycle = lifecycle(&events)?;
     let terminal_status = lifecycle.terminal_status;
     let plan = prepared_plan.as_object().expect("validated prepared plan");
+    let plan_schema_version = plan.get("plan_schema_version").and_then(Value::as_i64).unwrap_or(1);
     let request = plan["request"].as_object().expect("validated request");
     let target = plan["target"].as_object().expect("validated target");
     let members = plan["cluster"]["members"]
         .as_array()
         .expect("validated members")
         .iter()
-        .map(|member| member_provenance(member.as_object().expect("validated member")))
+        .map(|member| member_provenance(member.as_object().expect("validated member"), plan_schema_version))
         .collect::<Result<_, _>>()?;
     let pending_phases = pending_phases(
         terminal_status,
@@ -1684,20 +1690,52 @@ fn last_object_payload(events: &[&LedgerRow], kind: EventKind, field: &str) -> O
 
 fn member_provenance(
     member: &Map<String, Value>,
+    plan_schema_version: i64,
 ) -> Result<MemberProvenance, IdentifyOperationError> {
+    let day = required_str(member, "day")
+        .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?;
+    let stream = required_str(member, "stream")
+        .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?;
+    let segment_key = required_str(member, "segment_key")
+        .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?;
+    let source = required_str(member, "source")
+        .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?;
+    let sentence_id = member
+        .get("sentence_id")
+        .and_then(Value::as_i64)
+        .ok_or(IdentifyOperationError::InvalidClusterMemberProvenance)?;
+    let stream_layout = if plan_schema_version >= 2 {
+        let layout_str = member
+            .get("stream_layout")
+            .and_then(Value::as_str)
+            .ok_or(IdentifyOperationError::InvalidClusterMemberProvenance)?;
+        let layout = match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return Err(IdentifyOperationError::InvalidClusterMemberProvenance),
+        };
+        if layout == SegmentLayout::Direct && stream != "_default" {
+            return Err(IdentifyOperationError::InvalidClusterMemberProvenance);
+        }
+        layout
+    } else if let Some(layout_str) = member.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return Err(IdentifyOperationError::InvalidClusterMemberProvenance),
+        }
+    } else if stream == "_default" {
+        SegmentLayout::Direct
+    } else {
+        SegmentLayout::Named
+    };
     Ok(MemberProvenance {
-        day: required_str(member, "day")
-            .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?,
-        stream: required_str(member, "stream")
-            .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?,
-        segment_key: required_str(member, "segment_key")
-            .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?,
-        source: required_str(member, "source")
-            .map_err(|_| IdentifyOperationError::InvalidClusterMemberProvenance)?,
-        sentence_id: member
-            .get("sentence_id")
-            .and_then(Value::as_i64)
-            .ok_or(IdentifyOperationError::InvalidClusterMemberProvenance)?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     })
 }
 fn required_str(

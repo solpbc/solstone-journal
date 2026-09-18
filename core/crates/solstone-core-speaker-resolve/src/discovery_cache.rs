@@ -42,8 +42,13 @@ pub enum DiscoveryMemberError {
 /// Convert one cache member into its canonical provenance tuple representation.
 pub fn member_tuple(member: &Value) -> Result<MemberProvenance, DiscoveryMemberError> {
     let object = member.as_object().ok_or(DiscoveryMemberError::NotObject)?;
+    let stream_layout = crate::segment_catalog::decode_stream_layout_value(object.get("stream_layout"))
+        .map_err(|_| DiscoveryMemberError::InvalidField {
+            field: "stream_layout",
+        })?;
     Ok(MemberProvenance {
         day: required_member_string(object, "day")?,
+        stream_layout,
         stream: required_member_string(object, "stream")?,
         segment_key: required_member_string(object, "segment_key")?,
         source: required_member_string(object, "source")?,

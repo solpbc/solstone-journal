@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use chrono::{SecondsFormat, Utc};
 use serde_json::{Value, json};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
+    AtomicWriteOptions, LockError, LockOptions, SegmentLayout, atomic_replace, hold_lock,
 };
 use thiserror::Error;
 
@@ -653,6 +653,7 @@ pub fn pool_section(candidates: &[CandidateProfile]) -> Value {
 }
 pub fn retroactive_voiceprint_metadata(
     day: &str,
+    stream_layout: SegmentLayout,
     stream: &str,
     segment_key: &str,
     source: &str,
@@ -662,6 +663,7 @@ pub fn retroactive_voiceprint_metadata(
 ) -> Value {
     VoiceprintMetadata::new(
         day,
+        stream_layout,
         segment_key,
         source,
         stream,
@@ -682,7 +684,15 @@ pub(crate) fn source_segment_anchor(value: &Value) -> Option<String> {
     let stream = object.get("stream")?.as_str()?;
     let source = object.get("source")?.as_str()?;
     let cluster_label = object.get("cluster_label")?.as_i64()?;
-    Some(json!([day, segment_key, stream, source, cluster_label]).to_string())
+    if let Some(layout_val) = object.get("stream_layout") {
+        let layout_str = layout_val.as_str()?;
+        if layout_str != "direct" && layout_str != "named" {
+            return None;
+        }
+        Some(json!([2, day, layout_str, stream, segment_key, source, cluster_label]).to_string())
+    } else {
+        Some(json!([day, segment_key, stream, source, cluster_label]).to_string())
+    }
 }
 fn unique_segment_count(items: &[Value]) -> usize {
     items
@@ -690,12 +700,15 @@ fn unique_segment_count(items: &[Value]) -> usize {
         .filter_map(Value::as_object)
         .map(|o| {
             format!(
-                "{}:{}:{}:{}",
+                "{}:{}:{}:{}:{}",
                 o.get("day").and_then(Value::as_str).unwrap_or_default(),
-                o.get("segment_key")
+                o.get("stream_layout")
                     .and_then(Value::as_str)
                     .unwrap_or_default(),
                 o.get("stream").and_then(Value::as_str).unwrap_or_default(),
+                o.get("segment_key")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default(),
                 o.get("source").and_then(Value::as_str).unwrap_or_default()
             )
         })
@@ -1151,5 +1164,58 @@ mod tests {
         assert_eq!(persisted[0].n_intervals, 2);
         assert_eq!(persisted[0].merge_events.len(), 1);
         fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn v1_source_objects_preserved_and_v2_anchors_differentiate_coordinates() {
+        let journal = temporary_journal("v1-stability");
+        let v1_src = json!({
+            "day": "20260101",
+            "segment_key": "seg-v1",
+            "stream": "mic",
+            "source": "audio",
+            "cluster_label": 1
+        });
+        let v1_cand = CandidateProfile {
+            cand_id: 1,
+            centroid: vec![1.0, 0.0],
+            n_segments: 1,
+            n_intervals: 1,
+            total_duration_s: 1.0,
+            source_segments: vec![v1_src.clone()],
+            confirmed_entity: None,
+            status: "pending".to_owned(),
+            merge_events: Vec::new(),
+        };
+        let (journal_path, mut tracker) = tracker_with_candidates("v1-stability", vec![v1_cand]);
+        
+        // Add a new cluster
+        let new_input = ClusterInput {
+            source_segment: json!({
+                "day": "20260102",
+                "stream_layout": "named",
+                "stream": "mic",
+                "segment_key": "seg-v2",
+                "source": "audio",
+                "cluster_label": 2
+            }),
+            durations_s: vec![1.0],
+            embeddings: vec![vec![0.0, 1.0]],
+        };
+        tracker.process_segment(&[new_input]).unwrap();
+        
+        let loaded = CandidateTracker::new(&journal_path).candidates();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded[0].source_segments[0], v1_src);
+        assert_eq!(source_segment_anchor(&loaded[0].source_segments[0]).unwrap(), json!(["20260101", "seg-v1", "mic", "audio", 1]).to_string());
+
+        // Test v2 anchors differ when any coordinate differs
+        let a_direct = json!({"day":"20260101","stream_layout":"direct","stream":"_default","segment_key":"080000_300","source":"audio","cluster_label":1});
+        let a_named = json!({"day":"20260101","stream_layout":"named","stream":"_default","segment_key":"080000_300","source":"audio","cluster_label":1});
+        assert_eq!(source_segment_anchor(&a_direct).unwrap(), json!([2, "20260101", "direct", "_default", "080000_300", "audio", 1]).to_string());
+        assert_eq!(source_segment_anchor(&a_named).unwrap(), json!([2, "20260101", "named", "_default", "080000_300", "audio", 1]).to_string());
+        assert_ne!(source_segment_anchor(&a_direct).unwrap(), source_segment_anchor(&a_named).unwrap());
+
+        fs::remove_dir_all(journal_path).unwrap();
     }
 }

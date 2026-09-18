@@ -76,13 +76,24 @@ impl StreamLocation {
 /// Distinguishes a day-child segment ([`Direct`](Self::Direct)) from a child of
 /// a stream directory ([`Named`](Self::Named)), including a directory literally
 /// named `_default`. This is lossless; [`RecordIdentity`] is not.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SegmentLayout {
     /// Segment directory sits directly under the chronicle day.
     Direct,
     /// Segment directory sits under a stream-directory basename.
     Named,
+}
+
+impl SegmentLayout {
+    /// Static string representation of the segment layout.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Named => "named",
+        }
+    }
 }
 
 /// UTF-8 view of a segment for durable or wire records that already emit

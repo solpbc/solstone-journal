@@ -72,6 +72,7 @@ fn item(id: i64) -> VoiceprintItem {
         embedding: vector(0., 1.),
         metadata: retroactive_voiceprint_metadata(
             "20260808",
+            solstone_core_journal_io::SegmentLayout::Named,
             "mic",
             "120000_300",
             "audio",
@@ -108,7 +109,7 @@ fn candidate() -> CandidateProfile {
         n_intervals: 1,
         total_duration_s: 1.,
         source_segments: vec![
-            json!({"day":"20260808","segment_key":"120000_300","stream":"mic","source":"audio","sentence_ids":[7]}),
+            json!({"day":"20260808","stream_layout":"named","segment_key":"120000_300","stream":"mic","source":"audio","sentence_ids":[7]}),
         ],
         confirmed_entity: None,
         status: "pending".into(),
@@ -139,7 +140,7 @@ fn ac4_retroactive_apply_refuses_non_person_and_persists_person_confirmation() {
     let p = t.path().join("entities/tool/voiceprints.npz");
     let before = fs::read(&p).unwrap();
     let mut tracker = CandidateTracker::new(t.path());
-    tracker.process_segment(&[ClusterInput{source_segment:json!({"day":"d","segment_key":"s","stream":"m","source":"a","cluster_label":1}),embeddings:vec![vector(0.,1.)],durations_s:vec![1.]}]).unwrap();
+    tracker.process_segment(&[ClusterInput{source_segment:json!({"day":"d","stream_layout":"named","segment_key":"s","stream":"m","source":"a","cluster_label":1}),embeddings:vec![vector(0.,1.)],durations_s:vec![1.]}]).unwrap();
     let bad = RetroactiveConfirmPlan {
         matched: true,
         candidate_id: Some(1),
@@ -179,12 +180,19 @@ fn ac17_retroactive_plan_outlier_floor_and_threshold() {
         .map(|id| VoiceprintItem {
             embedding: vector(1., 0.),
             metadata: retroactive_voiceprint_metadata(
-                "20260808", "mic", "prior", "audio", id as i64, 1, 1,
+                "20260808",
+                solstone_core_journal_io::SegmentLayout::Named,
+                "mic",
+                "prior",
+                "audio",
+                id as i64,
+                1,
+                1,
             ),
         })
         .collect::<Vec<_>>();
     save_voiceprints_batch(t.path(), "target", &existing, &e).unwrap();
-    let below = plan_retroactive_confirm(t.path(), &c, &vector(0., 1.), "target", 1);
+    let below = plan_retroactive_confirm(t.path(), &c, &vector(0., 1.), "target", 1).unwrap();
     assert_eq!(below.items.len(), 1);
     save_voiceprints_batch(
         t.path(),
@@ -192,12 +200,19 @@ fn ac17_retroactive_plan_outlier_floor_and_threshold() {
         &[VoiceprintItem {
             embedding: vector(1., 0.),
             metadata: retroactive_voiceprint_metadata(
-                "20260808", "mic", "prior", "audio", 99, 1, 1,
+                "20260808",
+                solstone_core_journal_io::SegmentLayout::Named,
+                "mic",
+                "prior",
+                "audio",
+                99,
+                1,
+                1,
             ),
         }],
         &e,
     )
     .unwrap();
-    let at_floor = plan_retroactive_confirm(t.path(), &c, &vector(0., 1.), "target", 1);
+    let at_floor = plan_retroactive_confirm(t.path(), &c, &vector(0., 1.), "target", 1).unwrap();
     assert!(at_floor.items.is_empty());
 }

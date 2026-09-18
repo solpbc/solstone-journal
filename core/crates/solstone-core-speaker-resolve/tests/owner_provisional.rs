@@ -622,3 +622,86 @@ fn reasons_are_complete_and_identity_invalid_is_terminal() {
         OwnerTierOutcome::IdentityInvalid
     );
 }
+
+#[test]
+fn legacy_missing_stream_direct_only_is_gap_and_named_with_direct_decoy_resolves_named() {
+    let temporary = TempDir::new();
+    seed_principal(&temporary);
+    // Direct-only basename -> legacy missing-stream returns None (gap)
+    let direct_dir = temporary.path().join("chronicle").join(DAY).join(SEGMENT);
+    fs::create_dir_all(&direct_dir).unwrap();
+    let row = json!({
+        "schema_version": 1,
+        "day": DAY,
+        "segment_key": SEGMENT,
+        "source": SOURCE,
+        "sentence_id": 1,
+        "added_at": 1,
+    });
+    write_voiceprints(temporary.path(), &[row]);
+    assert_eq!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
+    );
+
+    // Named match + same-basename Direct decoy -> resolves Named source
+    let named_dir = temporary.path().join("chronicle").join(DAY).join("mic").join(SEGMENT);
+    fs::create_dir_all(&named_dir).unwrap();
+    write_embeddings(temporary.path(), "mic", &[1, 2, 3, 4, 5], (1.0, 0.0));
+    write_labels(
+        temporary.path(),
+        "mic",
+        labels("user_assigned", "principal"),
+    );
+    write_overlap(temporary.path(), "mic", "{}\n");
+    let mut rows = Vec::new();
+    for id in 1..=5 {
+        rows.push(json!({
+            "schema_version": 1,
+            "day": DAY,
+            "segment_key": SEGMENT,
+            "source": SOURCE,
+            "sentence_id": id,
+            "added_at": 1,
+        }));
+    }
+    write_voiceprints(temporary.path(), &rows);
+    assert!(matches!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::Provisional(_)
+    ));
+}
+
+#[test]
+fn current_version_layout_present_missing_stream_does_not_probe() {
+    let temporary = TempDir::new();
+    seed_principal(&temporary);
+    let named_dir = temporary.path().join("chronicle").join(DAY).join("mic").join(SEGMENT);
+    fs::create_dir_all(&named_dir).unwrap();
+    write_embeddings(temporary.path(), "mic", &[1, 2, 3, 4, 5], (1.0, 0.0));
+    write_labels(
+        temporary.path(),
+        "mic",
+        labels("user_assigned", "principal"),
+    );
+    write_overlap(temporary.path(), "mic", "{}\n");
+    let mut rows = Vec::new();
+    for id in 1..=5 {
+        rows.push(json!({
+            "schema_version": 1,
+            "stream_layout": "named",
+            // missing stream field
+            "day": DAY,
+            "segment_key": SEGMENT,
+            "source": SOURCE,
+            "sentence_id": id,
+            "added_at": 1,
+        }));
+    }
+    write_voiceprints(temporary.path(), &rows);
+    // Because stream is missing when stream_layout is Some, resolve_segment immediately returns None (no probe)
+    assert_eq!(
+        resolve_owner_tier(temporary.path()).unwrap(),
+        OwnerTierOutcome::None(OwnerTierReason::BelowRowFloor)
+    );
+}

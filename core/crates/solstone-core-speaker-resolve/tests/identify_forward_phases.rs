@@ -8,7 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 use solstone_core_entity::{EncoderIdentity, VoiceprintItem};
-use solstone_core_journal_io::segment_path;
+use solstone_core_journal_io::{SegmentLayout, segment_path};
 use solstone_core_speaker_resolve::candidate_tracker::{CandidateTracker, ClusterInput};
 use solstone_core_speaker_resolve::identify_forward_phases::RetroTrackerPhasePlan;
 use solstone_core_speaker_resolve::identify_forward_phases::{
@@ -161,6 +161,7 @@ fn phase_corrections_replays_identify_correction_without_duplicate_append() {
     segment(temporary.path());
     let plan = SegmentCorrectionPlan {
         day: "20260808".into(),
+        stream_layout: SegmentLayout::Named,
         stream: "mic".into(),
         segment_key: "120000_300".into(),
         rows_to_append: vec![
@@ -197,6 +198,7 @@ fn phase_labels_patches_matching_prior_and_repairs_concurrent_change() {
     .unwrap();
     let plan = SegmentLabelPlan {
         day: "20260808".into(),
+        stream_layout: SegmentLayout::Named,
         stream: "mic".into(),
         segment_key: "120000_300".into(),
         labels: vec![LabelPlanItem {
@@ -281,8 +283,17 @@ fn phase_retro_tracker_confirms_a_matching_candidate_and_repairs_a_missing_one()
     after.confirmed_entity = Some("target".to_owned());
     let item = VoiceprintItem {
         embedding: vector(),
-        metadata: VoiceprintMetadata::new("20260808", "120000_300", "audio", "mic", 7, 1, 1)
-            .to_json(),
+        metadata: VoiceprintMetadata::new(
+            "20260808",
+            solstone_core_journal_io::SegmentLayout::Named,
+            "120000_300",
+            "audio",
+            "mic",
+            7,
+            1,
+            1,
+        )
+        .to_json(),
     };
     let plan = RetroTrackerPhasePlan {
         matched: true,
@@ -295,6 +306,8 @@ fn phase_retro_tracker_confirms_a_matching_candidate_and_repairs_a_missing_one()
             solstone_core_speaker_resolve::identify_forward_phases::RetroVoiceprintEntry {
                 key: solstone_core_speaker_resolve::direct_voiceprints::DirectVoiceprintKey {
                     day: "20260808".into(),
+                    stream_layout: solstone_core_journal_io::SegmentLayout::Named,
+                    stream: "mic".into(),
                     segment_key: "120000_300".into(),
                     source: "audio".into(),
                     sentence_id: 7,
@@ -356,8 +369,17 @@ fn phase_retro_tracker_rescreens_frozen_embeddings_before_any_write() {
     after.confirmed_entity = Some("target".to_owned());
     let item = VoiceprintItem {
         embedding: vector(),
-        metadata: VoiceprintMetadata::new("20260808", "120000_300", "audio", "mic", 7, 1, 1)
-            .to_json(),
+        metadata: VoiceprintMetadata::new(
+            "20260808",
+            solstone_core_journal_io::SegmentLayout::Named,
+            "120000_300",
+            "audio",
+            "mic",
+            7,
+            1,
+            1,
+        )
+        .to_json(),
     };
     let plan = RetroTrackerPhasePlan {
         matched: true,
@@ -370,6 +392,8 @@ fn phase_retro_tracker_rescreens_frozen_embeddings_before_any_write() {
             solstone_core_speaker_resolve::identify_forward_phases::RetroVoiceprintEntry {
                 key: solstone_core_speaker_resolve::direct_voiceprints::DirectVoiceprintKey {
                     day: "20260808".into(),
+                    stream_layout: solstone_core_journal_io::SegmentLayout::Named,
+                    stream: "mic".into(),
                     segment_key: "120000_300".into(),
                     source: "audio".into(),
                     sentence_id: 7,

@@ -10,7 +10,6 @@ use std::fs;
 use std::path::Path;
 use std::sync::LazyLock;
 
-use crate::segment_path;
 use regex::Regex;
 use serde_json::{Value, json};
 use solstone_core_entity::{
@@ -18,7 +17,7 @@ use solstone_core_entity::{
     record_entity_resolution_from_name_evidence,
 };
 use solstone_core_journal_config::{ConfigLoadError, materialized_defaults, read_journal_config};
-use solstone_core_journal_io::PathError;
+use solstone_core_journal_io::{PathError, SegmentLayout};
 
 use crate::admission::{
     admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
@@ -60,12 +59,12 @@ pub struct CandidateEvidence {
     pub sources: Vec<String>,
 }
 
-/// Failure outside the Python-compatible per-source gap model.
 #[derive(Debug)]
 pub enum EvidenceError {
     Path(PathError),
     Entity(EntityStoreError),
     Config(ConfigLoadError),
+    ExactLookup(crate::segment_catalog::ExactLookupError),
 }
 
 impl fmt::Display for EvidenceError {
@@ -74,6 +73,7 @@ impl fmt::Display for EvidenceError {
             Self::Path(error) => error.fmt(formatter),
             Self::Entity(error) => error.fmt(formatter),
             Self::Config(error) => error.fmt(formatter),
+            Self::ExactLookup(error) => error.fmt(formatter),
         }
     }
 }
@@ -98,14 +98,25 @@ impl From<ConfigLoadError> for EvidenceError {
     }
 }
 
+impl From<crate::segment_catalog::ExactLookupError> for EvidenceError {
+    fn from(error: crate::segment_catalog::ExactLookupError) -> Self {
+        Self::ExactLookup(error)
+    }
+}
+
 /// Recompute per-segment candidate evidence without mutation.
 pub fn compute_segment_candidate_evidence_readonly(
     journal_root: &Path,
     day: &str,
     stream: &str,
     segment_key: &str,
+    stream_layout: SegmentLayout,
 ) -> Result<(Vec<CandidateEvidence>, Vec<EvidenceGap>), EvidenceError> {
-    let segment_dir = segment_path(journal_root, day, segment_key, stream, false)?;
+    let Some(segment_dir) =
+        crate::segment_catalog::resolve_exact(journal_root, day, stream, segment_key, stream_layout)?
+    else {
+        return Ok((Vec::new(), Vec::new()));
+    };
     if !segment_dir.is_dir() {
         return Ok((Vec::new(), Vec::new()));
     }

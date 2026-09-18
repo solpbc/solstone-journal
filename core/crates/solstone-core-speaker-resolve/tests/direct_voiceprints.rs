@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::json;
 use solstone_core_entity::{EncoderIdentity, load_entity_voiceprints_file, save_voiceprints_batch};
-use solstone_core_journal_io::segment_path;
+use solstone_core_journal_io::{SegmentLayout, segment_path};
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::direct_voiceprints::{
     DirectVoiceprintsError, execute_direct_voiceprints_phase, plan_direct_voiceprints,
@@ -105,6 +105,7 @@ fn admitted_owner(root: &Path) {
 fn member_embeddings(root: &Path) -> MemberProvenance {
     let member = MemberProvenance {
         day: "20260808".to_owned(),
+        stream_layout: SegmentLayout::Named,
         stream: "mic".to_owned(),
         segment_key: "120000_300".to_owned(),
         source: "audio".to_owned(),

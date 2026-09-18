@@ -7,7 +7,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::segment_path;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use solstone_core_entity::{
@@ -15,7 +14,7 @@ use solstone_core_entity::{
     create_journal_entity, load_entity_voiceprints_file, normalize_embedding, read_entity_identity,
     read_visible_history,
 };
-use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
+use solstone_core_journal_io::{AtomicWriteOptions, SegmentLayout, atomic_replace};
 use solstone_core_speaker_id::corrections::append_correction;
 use solstone_core_speaker_id::labels::patch_labels;
 use thiserror::Error;
@@ -50,6 +49,7 @@ pub struct KeepSeparatePhaseEntry {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SegmentCorrectionPlan {
     pub day: String,
+    pub stream_layout: SegmentLayout,
     pub stream: String,
     pub segment_key: String,
     pub rows_to_append: Vec<Value>,
@@ -66,6 +66,7 @@ pub struct LabelPlanItem {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SegmentLabelPlan {
     pub day: String,
+    pub stream_layout: SegmentLayout,
     pub stream: String,
     pub segment_key: String,
     pub labels: Vec<LabelPlanItem>,
@@ -117,6 +118,8 @@ pub enum ForwardPhaseError {
     Tracker(#[from] CandidateTrackerError),
     #[error("retroactive confirmation failed: {0}")]
     Retroactive(#[from] RetroactiveConfirmError),
+    #[error("segment resolution failed: {0}")]
+    Segment(#[from] crate::segment_catalog::SegmentResolutionError),
     #[error("segment path failed: {0}")]
     Path(#[from] solstone_core_journal_io::PathError),
     #[error("resolved-cluster cache I/O failed at {path}: {source}")]
@@ -280,12 +283,12 @@ pub fn phase_corrections(
     let mut skipped = 0usize;
     let mut segment_count = 0usize;
     for segment in segments {
-        let directory = segment_path(
+        let directory = crate::segment_catalog::resolve_exact_dir(
             journal_root,
             &segment.day,
-            &segment.segment_key,
             &segment.stream,
-            false,
+            &segment.segment_key,
+            segment.stream_layout,
         )?;
         let mut existing = load_corrections(&directory);
         let mut changed = false;
@@ -347,12 +350,12 @@ pub fn phase_labels(
     let mut already = 0usize;
     let mut segment_count = 0usize;
     for segment in segments {
-        let directory = segment_path(
+        let directory = crate::segment_catalog::resolve_exact_dir(
             journal_root,
             &segment.day,
-            &segment.segment_key,
             &segment.stream,
-            false,
+            &segment.segment_key,
+            segment.stream_layout,
         )?;
         let current = load_labels(&directory);
         let mut patches = Vec::<(i64, Map<String, Value>)>::new();
@@ -668,16 +671,26 @@ fn sorted_json(value: &Value) -> Value {
     }
 }
 fn sentence_key<T: SegmentIdentity>(segment: &T, sentence_id: i64) -> Value {
-    json!({"day":segment.day(),"segment_key":segment.segment_key(),"stream":segment.stream(),"sentence_id":sentence_id})
+    json!({
+        "day": segment.day(),
+        "stream_layout": segment.stream_layout().as_str(),
+        "stream": segment.stream(),
+        "segment_key": segment.segment_key(),
+        "sentence_id": sentence_id,
+    })
 }
 trait SegmentIdentity {
     fn day(&self) -> &str;
+    fn stream_layout(&self) -> SegmentLayout;
     fn stream(&self) -> &str;
     fn segment_key(&self) -> &str;
 }
 impl SegmentIdentity for SegmentCorrectionPlan {
     fn day(&self) -> &str {
         &self.day
+    }
+    fn stream_layout(&self) -> SegmentLayout {
+        self.stream_layout
     }
     fn stream(&self) -> &str {
         &self.stream
@@ -689,6 +702,9 @@ impl SegmentIdentity for SegmentCorrectionPlan {
 impl SegmentIdentity for SegmentLabelPlan {
     fn day(&self) -> &str {
         &self.day
+    }
+    fn stream_layout(&self) -> SegmentLayout {
+        self.stream_layout
     }
     fn stream(&self) -> &str {
         &self.stream
@@ -758,11 +774,31 @@ fn voiceprint_metadata(root: &Path, entity_id: &str) -> BTreeMap<DirectVoiceprin
         })
 }
 fn direct_key_from_metadata(value: &Value) -> Option<DirectVoiceprintKey> {
+    let day = value.get("day")?.as_str()?.to_owned();
+    let segment_key = value.get("segment_key")?.as_str()?.to_owned();
+    let source = value.get("source")?.as_str()?.to_owned();
+    let sentence_id = value.get("sentence_id")?.as_i64()?;
+    let stream = value.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        }
+    } else {
+        if stream == "_default" || stream.is_empty() {
+            SegmentLayout::Direct
+        } else {
+            SegmentLayout::Named
+        }
+    };
     Some(DirectVoiceprintKey {
-        day: value.get("day")?.as_str()?.to_owned(),
-        segment_key: value.get("segment_key")?.as_str()?.to_owned(),
-        source: value.get("source")?.as_str()?.to_owned(),
-        sentence_id: value.get("sentence_id")?.as_i64()?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     })
 }
 fn resolved_path(root: &Path) -> PathBuf {

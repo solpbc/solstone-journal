@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::EncoderIdentity;
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_id::calibration::OWNER_THRESHOLD;
 use solstone_core_speaker_resolve::owner_contamination_screen::{
@@ -169,6 +170,7 @@ fn write_embeddings(root: &Path, rows: &[(i32, Vec<f32>)]) {
 fn probe(sentence_id: i64) -> ContaminationProbe {
     ContaminationProbe {
         day: DAY.to_owned(),
+        stream_layout: Some(SegmentLayout::Named),
         stream: STREAM.to_owned(),
         segment_key: SEGMENT.to_owned(),
         source: SOURCE.to_owned(),

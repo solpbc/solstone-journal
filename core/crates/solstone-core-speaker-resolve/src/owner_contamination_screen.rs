@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Copyright (c) 2026 sol pbc
-
-//! Read-only screening of a probe embedding against the journal owner tier.
-
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
@@ -10,7 +5,7 @@ use std::path::Path;
 use crate::segment_path;
 use serde::{Deserialize, Serialize};
 use solstone_core_entity::{EncoderIdentity, normalize_embedding};
-use solstone_core_journal_io::PathError;
+use solstone_core_journal_io::{PathError, SegmentLayout};
 use solstone_core_speaker_id::calibration::OWNER_THRESHOLD;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 
@@ -22,6 +17,7 @@ use crate::owner_provisional::{
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ContaminationProbe {
     pub day: String,
+    pub stream_layout: Option<SegmentLayout>,
     pub stream: String,
     pub segment_key: String,
     pub source: String,
@@ -52,6 +48,7 @@ pub enum ContaminationScreen {
 pub enum OwnerContaminationScreenError {
     Owner(OwnerProvisionalError),
     Path(PathError),
+    Invalid(String),
     InvalidEncoderIdentity,
     InvalidEmbeddingWidth,
     NonFiniteEmbedding,
@@ -62,6 +59,7 @@ impl fmt::Display for OwnerContaminationScreenError {
         match self {
             Self::Owner(error) => error.fmt(formatter),
             Self::Path(error) => error.fmt(formatter),
+            Self::Invalid(detail) => formatter.write_str(detail),
             Self::InvalidEncoderIdentity => formatter.write_str("invalid encoder identity"),
             Self::InvalidEmbeddingWidth => {
                 formatter.write_str("probe embedding width does not match encoder")
@@ -143,14 +141,33 @@ pub fn screen_owner_contamination(
         Ok(tier) => tier,
         Err(indeterminate) => return Ok(indeterminate),
     };
-    let segment = segment_path(
-        journal_root,
-        &probe.day,
-        &probe.segment_key,
-        &probe.stream,
-        false,
-    )
-    .map_err(OwnerContaminationScreenError::Path)?;
+    let segment = match probe.stream_layout {
+        Some(layout) => match crate::segment_catalog::resolve_exact(
+            journal_root,
+            &probe.day,
+            &probe.stream,
+            &probe.segment_key,
+            layout,
+        ) {
+            Ok(Some(dir)) => dir,
+            Ok(None) => {
+                return Ok(ContaminationScreen::Indeterminate {
+                    reason: "probe_not_found".to_owned(),
+                });
+            }
+            Err(error) => {
+                return Err(OwnerContaminationScreenError::Invalid(error.to_string()));
+            }
+        },
+        None => segment_path(
+            journal_root,
+            &probe.day,
+            &probe.segment_key,
+            &probe.stream,
+            false,
+        )
+        .map_err(OwnerContaminationScreenError::Path)?,
+    };
     let path = segment.join(format!("{}.npz", probe.source));
     let Some(raw) = load_embeddings_file(&path)
         .ok()

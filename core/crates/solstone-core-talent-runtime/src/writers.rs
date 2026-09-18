@@ -82,6 +82,7 @@ pub enum WriteIntent {
     SpeakerAttribution {
         output: String,
         day: String,
+        stream_layout: solstone_core_journal_io::SegmentLayout,
         segment: String,
         stream: String,
         state: crate::speaker_attribution::SpeakerAttributionState,
@@ -268,6 +269,7 @@ pub fn apply(
         CommitPlan::Write(WriteIntent::SpeakerAttribution {
             output,
             day,
+            stream_layout,
             segment,
             stream,
             state,
@@ -278,6 +280,7 @@ pub fn apply(
                 &day,
                 &segment,
                 &stream,
+                stream_layout,
                 &state,
             )
             .map_err(|detail| {

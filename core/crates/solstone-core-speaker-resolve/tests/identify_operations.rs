@@ -7,11 +7,12 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::OWNER_IDENTITY_INVALID_REASON;
 use solstone_core_speaker_resolve::identify_operations::{
-    FORWARD_PHASE_ORDER, ForwardPhase, IDENTIFY_OPERATION_SCHEMA_VERSION, IdentifyOperationError,
-    MemberProvenance, OperationState, TerminalStatus, UNDO_PHASE_ORDER, UndoPhase, append_event,
-    expected_restored_correction_artifact_signatures, fold_operation,
+    EventPayload, FORWARD_PHASE_ORDER, ForwardPhase, IDENTIFY_OPERATION_SCHEMA_VERSION,
+    IdentifyOperationError, MemberProvenance, OperationState, TerminalStatus, UNDO_PHASE_ORDER,
+    UndoPhase, append_event, expected_restored_correction_artifact_signatures, fold_operation,
     identify_correction_artifact_signature, is_fully_restored_identify_operation, load_operations,
     operation_id_for_request, request_fingerprint, validate_row,
 };
@@ -299,6 +300,7 @@ fn fully_restored_operation_state() -> OperationState {
         request_fingerprint: "f".repeat(64),
         cluster_member_set: BTreeSet::from([MemberProvenance {
             day: "20260101".into(),
+            stream_layout: SegmentLayout::Named,
             stream: "mic".into(),
             segment_key: "seg-a".into(),
             source: "audio".into(),
@@ -358,7 +360,7 @@ fn ac7_malformed_row_fails_loudly_without_a_partial_append() {
         Err(IdentifyOperationError::MalformedJson { line: 1, .. })
     ));
     let mut invalid_event = validate_row(&prepared("invalid-append")).unwrap();
-    invalid_event.schema_version = 3;
+    invalid_event.schema_version = 4;
     assert!(matches!(
         append_event(&path, &invalid_event),
         Err(IdentifyOperationError::InvalidSchemaVersion)
@@ -694,6 +696,7 @@ fn request_fingerprint_matches_python_canonical_json_hash() {
     let members = [
         MemberProvenance {
             day: "20260101".into(),
+            stream_layout: SegmentLayout::Named,
             stream: "mic".into(),
             segment_key: "seg-b".into(),
             source: "audio".into(),
@@ -701,6 +704,7 @@ fn request_fingerprint_matches_python_canonical_json_hash() {
         },
         MemberProvenance {
             day: "20260101".into(),
+            stream_layout: SegmentLayout::Named,
             stream: "mic".into(),
             segment_key: "seg-a".into(),
             source: "audio".into(),
@@ -715,7 +719,7 @@ fn request_fingerprint_matches_python_canonical_json_hash() {
             "Person",
             &["ent-bob".into(), "ent-carol".into()],
         ),
-        "6ba95061df6ae83b04036eef7ce23dc7ab6de4b1bf272f87c4278429954e7628"
+        "e31e7869509ca001fa77d2794a955bc3fdf6dbad1599f0ccabae578294ab2e5b"
     );
 }
 
@@ -830,4 +834,107 @@ fn correction_artifact_signatures_match_the_restored_forward_and_undo_pair() {
             ],
         ],
     );
+}
+
+#[test]
+fn direct_vs_named_default_members_are_unequal_and_fingerprints_differ() {
+    let direct_member = MemberProvenance {
+        day: "20260101".into(),
+        stream_layout: SegmentLayout::Direct,
+        stream: "_default".into(),
+        segment_key: "080000_300".into(),
+        source: "audio".into(),
+        sentence_id: 1,
+    };
+    let named_member = MemberProvenance {
+        day: "20260101".into(),
+        stream_layout: SegmentLayout::Named,
+        stream: "_default".into(),
+        segment_key: "080000_300".into(),
+        source: "audio".into(),
+        sentence_id: 1,
+    };
+    assert_ne!(direct_member, named_member);
+    let fp_direct = request_fingerprint(&[direct_member.clone()], "ent-alice", false, "Person", &[]);
+    let fp_named = request_fingerprint(&[named_member.clone()], "ent-alice", false, "Person", &[]);
+    assert_ne!(fp_direct, fp_named);
+
+    let fp_both = request_fingerprint(&[direct_member, named_member], "ent-alice", false, "Person", &[]);
+    assert_ne!(fp_both, fp_direct);
+    assert_ne!(fp_both, fp_named);
+}
+
+#[test]
+fn historical_plan_v1_and_event_v1_remain_readable() {
+    let mut plan = json!({
+        "plan_schema_version": 1,
+        "operation_id": "idop_test",
+        "request_id": "request",
+        "planned_at": "2026-08-08T00:00:00Z",
+        "request": {"cluster_id": 1, "name": null, "entity_id": "alice", "resolve_only": false, "create_new": false, "entity_type": "Person", "reviewed_near_match_entity_ids": []},
+        "cluster": {
+            "member_count": 2,
+            "members": [
+                {
+                    "day": "20260808",
+                    "stream": "mic",
+                    "segment_key": "120000_300",
+                    "source": "audio",
+                    "sentence_id": 7,
+                },
+                {
+                    "day": "20260808",
+                    "stream": "_default",
+                    "segment_key": "120000_300",
+                    "source": "audio",
+                    "sentence_id": 8,
+                }
+            ]
+        },
+        "target": {"entity_id": "alice", "entity_name": "Alice", "will_create": false},
+        "entity_identity": {}, "direct_voiceprints": {}, "segments": [], "retro_confirm": {}, "sentinel": {}, "keep_separate_assertions": []
+    });
+    let mut event = base("idevt_historical1", "prepared");
+    event.insert("request_fingerprint".into(), json!("a".repeat(64)));
+    event.insert("prepared_plan".into(), plan);
+
+    let parsed = validate_row(&Value::Object(event)).expect("historical v1 prepared row parses");
+    if let EventPayload::Prepared { prepared_plan, .. } = parsed.payload {
+        let members = prepared_plan["cluster"]["members"].as_array().unwrap();
+        assert_eq!(members.len(), 2);
+    } else {
+        panic!("expected Prepared payload");
+    }
+}
+
+#[test]
+fn current_version_event3_plan2_missing_stream_layout_fails() {
+    let plan = json!({
+        "plan_schema_version": 2,
+        "operation_id": "idop_test",
+        "request_id": "request",
+        "planned_at": "2026-08-08T00:00:00Z",
+        "request": {"cluster_id": 1, "name": null, "entity_id": "alice", "resolve_only": false, "create_new": false, "entity_type": "Person", "reviewed_near_match_entity_ids": []},
+        "cluster": {
+            "member_count": 1,
+            "members": [
+                {
+                    "day": "20260808",
+                    "stream": "mic",
+                    "segment_key": "120000_300",
+                    "source": "audio",
+                    "sentence_id": 7,
+                }
+            ]
+        },
+        "target": {"entity_id": "alice", "entity_name": "Alice", "will_create": false},
+        "entity_identity": {}, "direct_voiceprints": {}, "segments": [], "retro_confirm": {}, "sentinel": {}, "keep_separate_assertions": []
+    });
+    let mut event = base("idevt_curr", "prepared");
+    event.insert("schema_version".into(), json!(3));
+    event.insert("request_fingerprint".into(), json!("a".repeat(64)));
+    event.insert("prepared_plan".into(), plan);
+
+    let err = validate_row(&Value::Object(event)).unwrap_err();
+    assert!(matches!(err, IdentifyOperationError::InvalidClusterMemberProvenance));
 }

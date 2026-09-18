@@ -10,7 +10,7 @@ use serde_json::json;
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, load_entity_voiceprints_file, save_voiceprints_batch,
 };
-use solstone_core_journal_io::segment_path;
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::owner_centroid::{
     OwnerCentroidWriteInput, write_owner_centroid,
 };
@@ -107,9 +107,12 @@ fn request(
     embeddings: Vec<AccumulationEmbedding>,
     entities: Vec<&str>,
 ) -> AccumulationRequest {
+    let dir = t.path().join("chronicle/20260808/main/120000_300");
+    let _ = fs::create_dir_all(&dir);
     AccumulationRequest {
         journal_root: t.path().to_path_buf(),
         day: "20260808".into(),
+        stream_layout: SegmentLayout::Named,
         stream: "main".into(),
         segment_key: "120000_300".into(),
         source: "transcript".into(),
@@ -135,7 +138,8 @@ fn embedding(id: i64, values: Vec<f32>) -> AccumulationEmbedding {
     }
 }
 fn source(t: &TempDir, header: &str) {
-    let dir = segment_path(t.path(), "20260808", "120000_300", "main", true).unwrap();
+    let dir = t.path().join("chronicle/20260808/main/120000_300");
+    fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("transcript.jsonl"), header).unwrap();
 }
 fn skip(outcome: &AccumulationOutcome, reason: AccumulationSkipReason) -> usize {
@@ -293,7 +297,7 @@ fn ac10_cross_call_idempotency_uses_day_segment_source_and_sentence_id() {
     let t = TempDir::new();
     owner(&t);
     entity(&t, "alice", "Person", false);
-    save_voiceprints_batch(t.path(), "alice", &[VoiceprintItem { embedding: vector(0.0, 1.0), metadata: json!({"day":"20260808","segment_key":"120000_300","source":"transcript","sentence_id":1}) }], &encoder()).unwrap();
+    save_voiceprints_batch(t.path(), "alice", &[VoiceprintItem { embedding: vector(0.0, 1.0), metadata: json!({"day":"20260808","stream":"main","segment_key":"120000_300","source":"transcript","sentence_id":1}) }], &encoder()).unwrap();
     let result = accumulate_voiceprints(&request(
         &t,
         vec![label(1, "alice")],

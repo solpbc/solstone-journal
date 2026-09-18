@@ -6,13 +6,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use crate::segment_path;
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, VoiceprintRemoval, VoiceprintRemovalReport,
     load_entity_voiceprints_file, load_existing_voiceprint_keys, normalize_embedding,
     remove_voiceprints_by_key, save_voiceprints_batch,
 };
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
@@ -21,10 +21,12 @@ use crate::owner_admission::{OWNER_IDENTITY_INVALID_REASON, OwnerAdmission, admi
 use crate::owner_centroid::{OwnerCentroid, OwnerCentroidError, load_owner_centroid};
 use crate::voiceprint_metadata::VoiceprintMetadata;
 
-/// The four metadata values that identify a direct voiceprint row.
+/// The six metadata values that identify a direct voiceprint row.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DirectVoiceprintKey {
     pub day: String,
+    pub stream_layout: SegmentLayout,
+    pub stream: String,
     pub segment_key: String,
     pub source: String,
     pub sentence_id: i64,
@@ -36,6 +38,8 @@ impl DirectVoiceprintKey {
     pub fn to_json(&self) -> Value {
         json!({
             "day": self.day,
+            "stream_layout": self.stream_layout.as_str(),
+            "stream": self.stream,
             "segment_key": self.segment_key,
             "source": self.source,
             "sentence_id": self.sentence_id,
@@ -99,6 +103,8 @@ pub enum DirectVoiceprintsError {
     Path(#[from] solstone_core_journal_io::PathError),
     #[error("voiceprint operation failed: {0}")]
     Voiceprint(#[from] solstone_core_entity::VoiceprintOperationError),
+    #[error("segment lookup failed: {0}")]
+    ExactLookup(#[from] crate::segment_catalog::ExactLookupError),
     #[error("repair required during {phase:?}: {code}")]
     RepairRequired {
         phase: ForwardPhase,
@@ -200,6 +206,7 @@ pub fn plan_direct_voiceprints(
         };
         let metadata = VoiceprintMetadata::new(
             &member.day,
+            member.stream_layout,
             &member.segment_key,
             &member.source,
             &member.stream,
@@ -320,13 +327,15 @@ fn load_member_embedding(
     member: &MemberProvenance,
     owner: Option<&OwnerCentroid>,
 ) -> Result<Option<Vec<f32>>, DirectVoiceprintsError> {
-    let segment = segment_path(
+    let Some(segment) = crate::segment_catalog::resolve_exact(
         journal_root,
         &member.day,
-        &member.segment_key,
         &member.stream,
-        false,
-    )?;
+        &member.segment_key,
+        member.stream_layout,
+    )? else {
+        return Ok(None);
+    };
     let Ok(Some(embeddings)) =
         load_embeddings_file(&segment.join(format!("{}.npz", member.source)))
     else {
@@ -371,6 +380,8 @@ fn entity_voiceprint_metadata(
 fn direct_key(member: &MemberProvenance) -> DirectVoiceprintKey {
     DirectVoiceprintKey {
         day: member.day.clone(),
+        stream_layout: member.stream_layout,
+        stream: member.stream.clone(),
         segment_key: member.segment_key.clone(),
         source: member.source.clone(),
         sentence_id: member.sentence_id,
@@ -378,11 +389,35 @@ fn direct_key(member: &MemberProvenance) -> DirectVoiceprintKey {
 }
 
 fn direct_key_from_metadata(metadata: &Value) -> Option<DirectVoiceprintKey> {
+    let day = metadata.get("day")?.as_str()?.to_owned();
+    let segment_key = metadata.get("segment_key")?.as_str()?.to_owned();
+    let source = metadata.get("source")?.as_str()?.to_owned();
+    let sentence_id = metadata.get("sentence_id")?.as_i64()?;
+    let stream_raw = metadata.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
+    let (stream_layout, stream) = if let Some(layout_str) = metadata.get("stream_layout").and_then(Value::as_str) {
+        let layout = match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        };
+        let stream = if layout == SegmentLayout::Direct && stream_raw.is_empty() {
+            "_default".to_owned()
+        } else {
+            stream_raw
+        };
+        (layout, stream)
+    } else if stream_raw == "_default" || stream_raw.is_empty() {
+        (SegmentLayout::Direct, "_default".to_owned())
+    } else {
+        (SegmentLayout::Named, stream_raw)
+    };
     Some(DirectVoiceprintKey {
-        day: metadata.get("day")?.as_str()?.to_owned(),
-        segment_key: metadata.get("segment_key")?.as_str()?.to_owned(),
-        source: metadata.get("source")?.as_str()?.to_owned(),
-        sentence_id: metadata.get("sentence_id")?.as_i64()?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     })
 }
 
@@ -391,24 +426,58 @@ fn direct_key_from_voiceprint_key(
 ) -> Option<DirectVoiceprintKey> {
     use solstone_core_entity::CanonicalKeyField;
 
-    let [day, segment_key, source, sentence_id] = &key.0;
+    let [day, segment_key, source, sentence_id, stream, stream_layout] = &key.0;
+    let day = match day {
+        CanonicalKeyField::Str(value) => value.clone(),
+        _ => return None,
+    };
+    let segment_key = match segment_key {
+        CanonicalKeyField::Str(value) => value.clone(),
+        _ => return None,
+    };
+    let source = match source {
+        CanonicalKeyField::Str(value) => value.clone(),
+        _ => return None,
+    };
+    let sentence_id = match sentence_id {
+        CanonicalKeyField::Int(value) => i64::try_from(*value).ok()?,
+        _ => return None,
+    };
+    let stream_raw = match stream {
+        CanonicalKeyField::Str(value) => value.clone(),
+        CanonicalKeyField::Absent => String::new(),
+        _ => return None,
+    };
+    let (stream_layout, stream) = match stream_layout {
+        CanonicalKeyField::Str(value) => {
+            let layout = match value.as_str() {
+                "direct" => SegmentLayout::Direct,
+                "named" => SegmentLayout::Named,
+                _ => return None,
+            };
+            let stream = if layout == SegmentLayout::Direct && stream_raw.is_empty() {
+                "_default".to_owned()
+            } else {
+                stream_raw
+            };
+            (layout, stream)
+        }
+        CanonicalKeyField::Absent => {
+            if stream_raw == "_default" || stream_raw.is_empty() {
+                (SegmentLayout::Direct, "_default".to_owned())
+            } else {
+                (SegmentLayout::Named, stream_raw)
+            }
+        }
+        _ => return None,
+    };
     Some(DirectVoiceprintKey {
-        day: match day {
-            CanonicalKeyField::Str(value) => value.clone(),
-            _ => return None,
-        },
-        segment_key: match segment_key {
-            CanonicalKeyField::Str(value) => value.clone(),
-            _ => return None,
-        },
-        source: match source {
-            CanonicalKeyField::Str(value) => value.clone(),
-            _ => return None,
-        },
-        sentence_id: match sentence_id {
-            CanonicalKeyField::Int(value) => i64::try_from(*value).ok()?,
-            _ => return None,
-        },
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     })
 }
 

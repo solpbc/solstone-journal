@@ -6,13 +6,13 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::{Path, PathBuf};
 
-use crate::segment_path;
 use chrono::Utc;
 use serde_json::{Value, json};
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, hold_entity_trust_lock, normalize_embedding,
     read_entity_identity,
 };
+use solstone_core_journal_io::{PathError, SegmentLayout};
 use thiserror::Error;
 
 use crate::candidate_tracker::{CandidateTracker, MERGE_THRESHOLD, best_matching_candidate};
@@ -74,6 +74,12 @@ pub enum IdentifyClusterError {
     Eligibility(#[from] crate::eligibility::EligibilityError),
     #[error("entity trust lock failed: {0}")]
     Trust(#[from] solstone_core_entity::EntityTrustLockError),
+    #[error("segment resolution failed: {0}")]
+    Segment(#[from] crate::segment_catalog::SegmentResolutionError),
+    #[error("retroactive confirm failed: {0}")]
+    Retroactive(#[from] crate::retroactive_confirm::RetroactiveConfirmError),
+    #[error("segment path resolution failed: {0}")]
+    Path(#[from] PathError),
 }
 
 #[derive(Debug, Clone)]
@@ -100,12 +106,13 @@ pub fn segment_plans(
     cluster_members: &[MemberProvenance],
     timestamp: i64,
     operation_id: &str,
-) -> Vec<Value> {
-    let mut grouped = BTreeMap::<(String, String, String), BTreeSet<i64>>::new();
-    let mut sources = BTreeMap::<(String, String, String), BTreeSet<String>>::new();
+) -> Result<Vec<Value>, IdentifyClusterError> {
+    let mut grouped = BTreeMap::<(String, SegmentLayout, String, String), BTreeSet<i64>>::new();
+    let mut sources = BTreeMap::<(String, SegmentLayout, String, String), BTreeSet<String>>::new();
     for member in cluster_members {
         let key = (
             member.day.clone(),
+            member.stream_layout,
             member.stream.clone(),
             member.segment_key.clone(),
         );
@@ -119,66 +126,75 @@ pub fn segment_plans(
             .insert(member.source.clone());
     }
 
-    grouped
-        .into_iter()
-        .filter_map(|((day, stream, segment_key), sentence_ids)| {
-            let directory = segment_path(journal_root, &day, &segment_key, &stream, false).ok()?;
-            if !directory.is_dir() {
-                return None;
-            }
-            let labels = load_labels(&directory);
-            let corrections = load_corrections(&directory);
-            let existing_keys = corrections
-                .iter()
-                .filter_map(|row| {
-                    row.get("sentence_id").and_then(Value::as_i64).map(|sentence_id| {
-                        json!({"sentence_id":sentence_id,"corrected_speaker":row.get("corrected_speaker").cloned().unwrap_or(Value::Null)})
-                    })
+    let mut plans = Vec::new();
+    for ((day, stream_layout, stream, segment_key), sentence_ids) in grouped {
+        let directory = crate::segment_catalog::resolve_exact_dir(
+            journal_root,
+            &day,
+            &stream,
+            &segment_key,
+            stream_layout,
+        )?;
+        let labels = load_labels(&directory);
+        let corrections = load_corrections(&directory);
+        let existing_keys = corrections
+            .iter()
+            .filter_map(|row| {
+                row.get("sentence_id").and_then(Value::as_i64).map(|sentence_id| {
+                    json!({"sentence_id":sentence_id,"corrected_speaker":row.get("corrected_speaker").cloned().unwrap_or(Value::Null)})
                 })
-                .collect::<Vec<_>>();
-            let existing = existing_keys
-                .iter()
-                .filter_map(|row| {
-                    Some((
-                        row.get("sentence_id")?.as_i64()?,
-                        row.get("corrected_speaker").cloned().unwrap_or(Value::Null),
-                    ))
-                })
-                .collect::<HashSet<_>>();
-            let mut label_entries = Vec::new();
-            let mut rows_to_append = Vec::new();
-            for sentence_id in sentence_ids {
-                let prior = labels.get(&sentence_id).cloned();
-                let intended = json!({"sentence_id":sentence_id,"speaker":target_id,"confidence":"high","method":"user_identified"});
-                label_entries.push(json!({
-                    "sentence_id": sentence_id,
-                    "prior_state": if prior.is_some() { "present" } else { "absent" },
-                    "prior_label": prior,
-                    "intended_label": intended,
+            })
+            .collect::<Vec<_>>();
+        let existing = existing_keys
+            .iter()
+            .filter_map(|row| {
+                Some((
+                    row.get("sentence_id")?.as_i64()?,
+                    row.get("corrected_speaker").cloned().unwrap_or(Value::Null),
+                ))
+            })
+            .collect::<HashSet<_>>();
+        let mut label_entries = Vec::new();
+        let mut rows_to_append = Vec::new();
+        for sentence_id in sentence_ids {
+            let prior = labels.get(&sentence_id).cloned();
+            let intended = json!({"sentence_id":sentence_id,"speaker":target_id,"confidence":"high","method":"user_identified"});
+            label_entries.push(json!({
+                "sentence_id": sentence_id,
+                "prior_state": if prior.is_some() { "present" } else { "absent" },
+                "prior_label": prior,
+                "intended_label": intended,
+            }));
+            if !existing.contains(&(sentence_id, Value::String(target_id.to_owned()))) {
+                let original = labels.get(&sentence_id);
+                rows_to_append.push(json!({
+                    "sentence_id":sentence_id,
+                    "original_speaker":original.and_then(|label| label.get("speaker")).cloned().unwrap_or(Value::Null),
+                    "corrected_speaker":target_id,
+                    "original_method":original.and_then(|label| label.get("method")).cloned().unwrap_or(Value::Null),
+                    "timestamp":timestamp,
+                    "operation_id":operation_id,
+                    "correction_kind":"identify",
                 }));
-                if !existing.contains(&(sentence_id, Value::String(target_id.to_owned()))) {
-                    let original = labels.get(&sentence_id);
-                    rows_to_append.push(json!({
-                        "sentence_id":sentence_id,
-                        "original_speaker":original.and_then(|label| label.get("speaker")).cloned().unwrap_or(Value::Null),
-                        "corrected_speaker":target_id,
-                        "original_method":original.and_then(|label| label.get("method")).cloned().unwrap_or(Value::Null),
-                        "timestamp":timestamp,
-                        "operation_id":operation_id,
-                        "correction_kind":"identify",
-                    }));
-                }
             }
-            let sources = sources.remove(&(day.clone(), stream.clone(), segment_key.clone()))?;
-            let sources = sources.into_iter().collect::<Vec<_>>();
-            let source = sources.first()?.clone();
-            Some(json!({
-                "day":day,"stream":stream,"segment_key":segment_key,"source":source,"sources":sources,
-                "labels":label_entries,
-                "corrections":{"existing_keys":existing_keys,"rows_to_append":rows_to_append},
-            }))
-        })
-        .collect()
+        }
+        let segment_sources = sources
+            .remove(&(day.clone(), stream_layout, stream.clone(), segment_key.clone()))
+            .unwrap_or_default();
+        let sources_vec = segment_sources.into_iter().collect::<Vec<_>>();
+        let source = sources_vec.first().cloned().unwrap_or_default();
+        plans.push(json!({
+            "day": day,
+            "stream_layout": stream_layout.as_str(),
+            "stream": stream,
+            "segment_key": segment_key,
+            "source": source,
+            "sources": sources_vec,
+            "labels": label_entries,
+            "corrections": {"existing_keys": existing_keys, "rows_to_append": rows_to_append},
+        }));
+    }
+    Ok(plans)
 }
 
 /// Execute an identify request, resuming its append-only operation ledger when needed.
@@ -446,19 +462,19 @@ fn plan_identify(
         &request.reviewed_near_match_entity_ids,
     );
     let plan = json!({
-        "plan_schema_version":1,
-        "operation_id":operation_id,
-        "request_id":request.request_id,
-        "planned_at":planned_at,
-        "request":raw_request(request),
-        "cluster":{"cluster_id":request.cluster_id,"member_count":members.len(),"members":members.iter().map(member_json).collect::<Vec<_>>()},
-        "target":{"entity_id":target.entity_id,"entity_name":target.entity_name,"entity_type":target.entity_type,"will_create":target.will_create},
-        "entity_identity":{"prior_identity":prior_identity,"intended_identity":intended_identity,"expected_history_operation":{"operation_kind":"speaker_identify","operation_id":operation_id}},
-        "direct_voiceprints":direct_plan_json(&direct.plan),
-        "segments":segment_plans(&request.journal_root, &target.entity_id, &members, added_at, operation_id),
-        "retro_confirm":retro,
-        "sentinel":{"cluster_key":cluster_key,"prior_entry":resolved.get(&cluster_key).cloned(),"intended_entry":{"entity_id":target.entity_id,"label":target.entity_name,"ts":planned_at}},
-        "keep_separate_assertions":assertions,
+        "plan_schema_version": 2,
+        "operation_id": operation_id,
+        "request_id": request.request_id,
+        "planned_at": planned_at,
+        "request": raw_request(request),
+        "cluster": {"cluster_id": request.cluster_id, "member_count": members.len(), "members": members.iter().map(member_json).collect::<Vec<_>>()},
+        "target": {"entity_id": target.entity_id, "entity_name": target.entity_name, "entity_type": target.entity_type, "will_create": target.will_create},
+        "entity_identity": {"prior_identity": prior_identity, "intended_identity": intended_identity, "expected_history_operation": {"operation_kind": "speaker_identify", "operation_id": operation_id}},
+        "direct_voiceprints": direct_plan_json(&direct.plan),
+        "segments": segment_plans(&request.journal_root, &target.entity_id, &members, added_at, operation_id)?,
+        "retro_confirm": retro,
+        "sentinel": {"cluster_key": cluster_key, "prior_entry": resolved.get(&cluster_key).cloned(), "intended_entry": {"entity_id": target.entity_id, "label": target.entity_name, "ts": planned_at}},
+        "keep_separate_assertions": assertions,
     });
     Ok(Ok(PlannedIdentify {
         fingerprint,
@@ -712,7 +728,14 @@ fn candidate_json(candidate: &crate::identify_target::IdentifyCandidateRow) -> V
     json!({"id":candidate.id,"name":candidate.name,"tier":candidate.tier,"score":candidate.score,"has_voice":candidate.has_voice})
 }
 fn member_json(member: &MemberProvenance) -> Value {
-    json!({"day":member.day,"stream":member.stream,"segment_key":member.segment_key,"source":member.source,"sentence_id":member.sentence_id})
+    json!({
+        "day": member.day,
+        "stream_layout": member.stream_layout.as_str(),
+        "stream": member.stream,
+        "segment_key": member.segment_key,
+        "source": member.source,
+        "sentence_id": member.sentence_id,
+    })
 }
 fn raw_request(request: &IdentifyClusterRequest) -> Value {
     let mut reviewed_ids = request.reviewed_near_match_entity_ids.clone();
@@ -807,7 +830,7 @@ fn build_retro_plan(
         return Ok(empty_retro_plan(planning_owner_entity_id));
     };
     let candidate = candidate.clone();
-    let planned = plan_retroactive_confirm(root, &candidate, &centroid, target, added_at);
+    let planned = plan_retroactive_confirm(root, &candidate, &centroid, target, added_at)?;
     let mut after = candidate.clone();
     after.status = "confirmed".to_owned();
     after.confirmed_entity = Some(target.to_owned());
@@ -873,20 +896,59 @@ fn direct_phase_plan(plan: &Value) -> Result<DirectVoiceprintsPlan, ExecuteError
     })
 }
 fn direct_key_from_json(value: &Value) -> Option<DirectVoiceprintKey> {
+    let day = value.get("day")?.as_str()?.to_owned();
+    let segment_key = value.get("segment_key")?.as_str()?.to_owned();
+    let source = value.get("source")?.as_str()?.to_owned();
+    let sentence_id = value.get("sentence_id")?.as_i64()?;
+    let stream = value.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        }
+    } else {
+        if stream == "_default" || stream.is_empty() {
+            SegmentLayout::Direct
+        } else {
+            SegmentLayout::Named
+        }
+    };
     Some(DirectVoiceprintKey {
-        day: value.get("day")?.as_str()?.to_owned(),
-        segment_key: value.get("segment_key")?.as_str()?.to_owned(),
-        source: value.get("source")?.as_str()?.to_owned(),
-        sentence_id: value.get("sentence_id")?.as_i64()?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     })
 }
 fn member_from_json(value: &Value) -> Option<MemberProvenance> {
+    let day = value.get("day")?.as_str()?.to_owned();
+    let stream = value.get("stream")?.as_str()?.to_owned();
+    let segment_key = value.get("segment_key")?.as_str()?.to_owned();
+    let source = value.get("source")?.as_str()?.to_owned();
+    let sentence_id = value.get("sentence_id")?.as_i64()?;
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        }
+    } else {
+        if stream == "_default" {
+            SegmentLayout::Direct
+        } else {
+            SegmentLayout::Named
+        }
+    };
     Some(MemberProvenance {
-        day: value.get("day")?.as_str()?.to_owned(),
-        stream: value.get("stream")?.as_str()?.to_owned(),
-        segment_key: value.get("segment_key")?.as_str()?.to_owned(),
-        source: value.get("source")?.as_str()?.to_owned(),
-        sentence_id: value.get("sentence_id")?.as_i64()?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     })
 }
 fn entity_phase_plan(plan: &Value) -> Result<EntityPhasePlan, ExecuteError> {
@@ -904,15 +966,30 @@ fn correction_plans(plan: &Value) -> Result<Vec<SegmentCorrectionPlan>, ExecuteE
     entries(plan, "segments")?
         .iter()
         .map(|s| {
+            let stream = s["stream"]
+                .as_str()
+                .ok_or_else(|| ExecuteError::Unexpected("segment stream".into()))?
+                .to_owned();
+            let stream_layout = if let Some(layout_str) = s.get("stream_layout").and_then(Value::as_str) {
+                match layout_str {
+                    "direct" => SegmentLayout::Direct,
+                    "named" => SegmentLayout::Named,
+                    _ => return Err(ExecuteError::Unexpected("invalid segment stream_layout".into())),
+                }
+            } else {
+                if stream == "_default" {
+                    SegmentLayout::Direct
+                } else {
+                    SegmentLayout::Named
+                }
+            };
             Ok(SegmentCorrectionPlan {
                 day: s["day"]
                     .as_str()
                     .ok_or_else(|| ExecuteError::Unexpected("segment day".into()))?
                     .into(),
-                stream: s["stream"]
-                    .as_str()
-                    .ok_or_else(|| ExecuteError::Unexpected("segment stream".into()))?
-                    .into(),
+                stream_layout,
+                stream,
                 segment_key: s["segment_key"]
                     .as_str()
                     .ok_or_else(|| ExecuteError::Unexpected("segment key".into()))?
@@ -926,6 +1003,23 @@ fn label_plans(plan: &Value) -> Result<Vec<SegmentLabelPlan>, ExecuteError> {
     entries(plan, "segments")?
         .iter()
         .map(|s| {
+            let stream = s["stream"]
+                .as_str()
+                .ok_or_else(|| ExecuteError::Unexpected("segment stream".into()))?
+                .to_owned();
+            let stream_layout = if let Some(layout_str) = s.get("stream_layout").and_then(Value::as_str) {
+                match layout_str {
+                    "direct" => SegmentLayout::Direct,
+                    "named" => SegmentLayout::Named,
+                    _ => return Err(ExecuteError::Unexpected("invalid segment stream_layout".into())),
+                }
+            } else {
+                if stream == "_default" {
+                    SegmentLayout::Direct
+                } else {
+                    SegmentLayout::Named
+                }
+            };
             let labels = entries(s, "labels")?
                 .iter()
                 .map(|label| {
@@ -945,10 +1039,8 @@ fn label_plans(plan: &Value) -> Result<Vec<SegmentLabelPlan>, ExecuteError> {
                     .as_str()
                     .ok_or_else(|| ExecuteError::Unexpected("segment day".into()))?
                     .into(),
-                stream: s["stream"]
-                    .as_str()
-                    .ok_or_else(|| ExecuteError::Unexpected("segment stream".into()))?
-                    .into(),
+                stream_layout,
+                stream,
                 segment_key: s["segment_key"]
                     .as_str()
                     .ok_or_else(|| ExecuteError::Unexpected("segment key".into()))?
@@ -1200,6 +1292,8 @@ mod tests {
     use super::*;
     use crate::candidate_tracker::ClusterInput;
     use crate::owner_centroid::{OwnerCentroidWriteInput, write_owner_centroid};
+    use crate::segment_path;
+    use solstone_core_journal_io::SegmentLayout;
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -1291,6 +1385,7 @@ mod tests {
     fn member() -> MemberProvenance {
         MemberProvenance {
             day: "20260808".into(),
+            stream_layout: SegmentLayout::Named,
             stream: "mic".into(),
             segment_key: "120000_300".into(),
             source: "audio".into(),
@@ -2326,5 +2421,111 @@ mod tests {
             assert!(!identify_ledger_path(temporary.path()).exists());
             assert_eq!(fs::read(&destination).unwrap(), contents);
         }
+    }
+
+    #[test]
+    fn cluster_plan_with_missing_member_dir_aborts_prepare_without_journal_mutation() {
+        let temporary = Temp::new();
+        write_cache(temporary.path());
+        materialize_entity_trust_lock(temporary.path());
+        let before = snapshot_files(temporary.path());
+        let request = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("New Person".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "req-missing-dir".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+        let error = identify_cluster(&request, &encoder()).unwrap_err();
+        assert!(matches!(error, IdentifyClusterError::Segment(_)));
+        assert_eq!(snapshot_files(temporary.path()), before);
+    }
+
+    #[test]
+    fn identify_and_undo_against_one_twin_leaves_other_twin_byte_identical() {
+        let temporary = Temp::new();
+        let direct_dir = temporary.path().join("chronicle/20260808/120000_300");
+        fs::create_dir_all(direct_dir.join("talents")).unwrap();
+        fs::write(direct_dir.join("talents/speaker_labels.jsonl"), b"direct_labels\n").unwrap();
+        fs::write(direct_dir.join("talents/speaker_corrections.jsonl"), b"direct_corrections\n").unwrap();
+
+        write_embeddings(temporary.path());
+        write_cache(temporary.path());
+        let direct_files_before = snapshot_files(&direct_dir);
+
+        let request = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("New Person".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "req-twin-test".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(result["operation_state"], "committed");
+        assert_eq!(snapshot_files(&direct_dir), direct_files_before);
+    }
+
+    #[test]
+    fn same_layout_suffix_siblings_hit_exact_directories() {
+        let temporary = Temp::new();
+        let sib_b = temporary.path().join("chronicle/20260808/mic/093000_300_b");
+        fs::create_dir_all(sib_b.join("talents")).unwrap();
+        fs::write(sib_b.join("talents/speaker_labels.jsonl"), b"sibling_b_labels\n").unwrap();
+        let sib_b_before = snapshot_files(&sib_b);
+
+        let member_a = MemberProvenance {
+            day: "20260808".into(),
+            stream_layout: SegmentLayout::Named,
+            stream: "mic".into(),
+            segment_key: "093000_300_a".into(),
+            source: "audio".into(),
+            sentence_id: 7,
+        };
+        let sib_a = temporary.path().join("chronicle/20260808/mic/093000_300_a");
+        fs::create_dir_all(sib_a.join("talents")).unwrap();
+        let mut archive = ZipWriter::new(Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+        archive.start_file("embeddings.npy", options).unwrap();
+        archive.write_all(&write_npy("<f4", "(1, 256)", &floats(&vector()))).unwrap();
+        archive.start_file("statement_ids.npy", options).unwrap();
+        archive.write_all(&write_npy("<i4", "(1,)", &ints(&[7]))).unwrap();
+        fs::write(sib_a.join("audio.npz"), archive.finish().unwrap().into_inner()).unwrap();
+
+        fs::create_dir_all(temporary.path().join("awareness")).unwrap();
+        fs::write(
+            temporary.path().join("awareness/discovery_clusters.json"),
+            json!({"clusters":{"1":[member_json(&member_a)]}}).to_string(),
+        ).unwrap();
+
+        let request = IdentifyClusterRequest {
+            journal_root: temporary.path().to_path_buf(),
+            cluster_id: 1,
+            name: Some("New Person".into()),
+            entity_id: None,
+            resolve_only: false,
+            create_new: true,
+            entity_type: "Person".into(),
+            request_id: "req-suffix-test".into(),
+            reviewed_near_match_entity_ids: vec![],
+            caller: String::new(),
+            actor: None,
+        };
+        let result = identify_cluster(&request, &encoder()).unwrap();
+        assert_eq!(result["status"], "identified", "{result}");
+        assert_eq!(result["operation_state"], "committed");
+        assert_eq!(snapshot_files(&sib_b), sib_b_before);
     }
 }

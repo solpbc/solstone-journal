@@ -46,7 +46,11 @@ pub mod voiceprint_metadata;
 
 pub use owner_admission::{OWNER_IDENTITY_INVALID_REASON, OWNER_TARGET_MISMATCH_REASON};
 
-/// Resolve a speaker record's segment, where `_default` denotes direct layout.
+/// Resolve a speaker record's segment using the legacy rule where `_default` denotes direct layout.
+///
+/// This is a historical `_default` -> Direct decoder only. New code must use
+/// `crate::segment_catalog::resolve_exact`, `crate::segment_catalog::catalog_day`,
+/// or `solstone_core_journal_io::resolve_segment_locator_exact`.
 pub fn segment_path(
     journal: &std::path::Path,
     day: &str,

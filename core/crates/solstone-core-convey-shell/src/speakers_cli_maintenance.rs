@@ -170,9 +170,16 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
                 );
             }
         };
+    let stream_layout = layout.unwrap_or(SegmentLayout::Named);
     let now = Utc::now().timestamp_millis();
     let outcome = match solstone_core_speaker_resolve::resolve::resolve(
-        &root.0, day, stream, segment, true, now,
+        &root.0,
+        day,
+        stream,
+        segment,
+        stream_layout,
+        true,
+        now,
     ) {
         Ok(outcome) => outcome,
         Err(error) => {
@@ -237,7 +244,7 @@ pub async fn attribute(Extension(root): Extension<Arc<JournalRoot>>, request: Re
         && let solstone_core_speaker_resolve::resolve::ResolveOutcome::Resolved(output) = &outcome
         && output.source.is_some()
     {
-        match accumulate(&root.0, &directory, day, stream, segment, output, now) {
+        match accumulate(&root.0, &directory, day, stream_layout, stream, segment, output, now) {
             Ok(value) => value,
             Err(error) => return accumulation_error(error),
         }
@@ -305,6 +312,7 @@ pub async fn backfill(Extension(root): Extension<Arc<JournalRoot>>, request: Req
                                     &root.0,
                                     &segment.path,
                                     &segment.day,
+                                    segment.stream_layout,
                                     &segment.stream,
                                     &segment.segment_key,
                                     &output,
@@ -441,6 +449,7 @@ pub(crate) fn accumulate(
     root: &std::path::Path,
     segment_dir: &std::path::Path,
     day: &str,
+    stream_layout: solstone_core_journal_io::SegmentLayout,
     stream: &str,
     segment_key: &str,
     output: &solstone_core_speaker_resolve::resolve::ResolveOutput,
@@ -469,6 +478,7 @@ pub(crate) fn accumulate(
     let request = solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationRequest {
         journal_root: root.to_path_buf(),
         day: day.to_owned(),
+        stream_layout,
         stream: stream.to_owned(),
         segment_key: segment_key.to_owned(),
         source: source.clone(),

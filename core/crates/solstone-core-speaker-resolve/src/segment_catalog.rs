@@ -8,8 +8,9 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
+pub use solstone_core_journal_io::ExactLookupError;
 use solstone_core_journal_io::{
-    ExactLookupError, PathError, PathOrDay, SegmentIdentityError, SegmentLayout,
+    PathError, PathOrDay, SegmentIdentityError, SegmentLayout,
     day_dirs as journal_day_dirs, iter_segments, resolve_segment_locator_exact,
 };
 
@@ -243,9 +244,6 @@ pub fn decode_stream_layout_value(raw: Option<&Value>) -> Result<SegmentLayout, 
     }
 }
 
-/// Thin adapter over [`resolve_segment_locator_exact`].
-///
-/// `segment_name` is the exact basename, never the parsed key.
 pub fn resolve_exact(
     journal_root: &Path,
     day: &str,
@@ -255,6 +253,44 @@ pub fn resolve_exact(
 ) -> Result<Option<PathBuf>, ExactLookupError> {
     resolve_segment_locator_exact(journal_root, day, stream, segment_name, layout)
 }
+
+/// Detailed resolution error when resolving a segment directory.
+#[derive(Debug, thiserror::Error)]
+pub enum SegmentResolutionError {
+    #[error("segment lookup failed: {0}")]
+    Lookup(#[from] ExactLookupError),
+    #[error("segment not found: day={day} layout={layout:?} stream={stream} name={name}")]
+    NotFound {
+        day: String,
+        layout: SegmentLayout,
+        stream: String,
+        name: String,
+    },
+    #[error("segment path is not a directory: {}", path.display())]
+    NotADirectory { path: PathBuf },
+}
+
+/// Helper that resolves exact segment locator and requires the result to be an existing directory.
+pub fn resolve_exact_dir(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    segment_name: &str,
+    layout: SegmentLayout,
+) -> Result<PathBuf, SegmentResolutionError> {
+    let path = resolve_exact(journal_root, day, stream, segment_name, layout)?
+        .ok_or_else(|| SegmentResolutionError::NotFound {
+            day: day.to_owned(),
+            layout,
+            stream: stream.to_owned(),
+            name: segment_name.to_owned(),
+        })?;
+    if !path.is_dir() {
+        return Err(SegmentResolutionError::NotADirectory { path });
+    }
+    Ok(path)
+}
+
 
 /// Resolve one identity and classify the result for Shell callers.
 pub fn lookup_segment(

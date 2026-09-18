@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::discovery_cache::{
     ReviewedNearMatchIdsError, canonical_members, discovery_cache_path, load_discovery_cache,
     normalize_reviewed_near_match_ids,
@@ -88,6 +89,7 @@ fn canonical_members_sort_the_shared_provenance_type() {
         vec![
             MemberProvenance {
                 day: "20260101".into(),
+                stream_layout: SegmentLayout::Named,
                 stream: "mic".into(),
                 segment_key: "seg-a".into(),
                 source: "audio".into(),
@@ -95,6 +97,7 @@ fn canonical_members_sort_the_shared_provenance_type() {
             },
             MemberProvenance {
                 day: "20260101".into(),
+                stream_layout: SegmentLayout::Named,
                 stream: "mic".into(),
                 segment_key: "seg-b".into(),
                 source: "audio".into(),

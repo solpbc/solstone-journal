@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use solstone_core_entity::{
     EntityLifecycleError, EntityResolutionError, EntityStoreError, load_all_journal_entities,
 };
-use solstone_core_journal_io::PathError;
+use solstone_core_journal_io::{PathError, SegmentLayout};
 
 use crate::admission::admissible_person_pool;
 use crate::evidence::{
@@ -73,6 +73,7 @@ pub enum ResolveError {
     Resolution(EntityResolutionError),
     Evidence(EvidenceError),
     Transcript(TranscriptError),
+    ExactLookup(crate::segment_catalog::ExactLookupError),
     Io { path: PathBuf, detail: String },
 }
 
@@ -85,6 +86,7 @@ impl fmt::Display for ResolveError {
             Self::Resolution(error) => error.fmt(formatter),
             Self::Evidence(error) => error.fmt(formatter),
             Self::Transcript(error) => error.fmt(formatter),
+            Self::ExactLookup(error) => error.fmt(formatter),
             Self::Io { path, detail } => write!(formatter, "{}: {detail}", path.display()),
         }
     }
@@ -120,6 +122,11 @@ impl From<TranscriptError> for ResolveError {
         Self::Transcript(value)
     }
 }
+impl From<crate::segment_catalog::ExactLookupError> for ResolveError {
+    fn from(value: crate::segment_catalog::ExactLookupError) -> Self {
+        Self::ExactLookup(value)
+    }
+}
 
 /// Attribute one segment through native Layers 1–3.
 pub fn resolve(
@@ -127,10 +134,15 @@ pub fn resolve(
     day: &str,
     stream: &str,
     segment_key: &str,
+    stream_layout: SegmentLayout,
     read_only: bool,
     now_ms: i64,
 ) -> Result<ResolveOutcome, ResolveError> {
-    let segment_dir = crate::segment_path(journal_root, day, segment_key, stream, false)?;
+    let Some(segment_dir) =
+        crate::segment_catalog::resolve_exact(journal_root, day, stream, segment_key, stream_layout)?
+    else {
+        return Ok(ResolveOutcome::SegmentMissing);
+    };
     if read_only && !segment_dir.is_dir() {
         return Ok(ResolveOutcome::SegmentMissing);
     }

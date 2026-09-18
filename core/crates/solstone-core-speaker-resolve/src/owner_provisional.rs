@@ -15,7 +15,7 @@ use solstone_core_entity::{
     EntityLifecycleError, VoiceprintArchive, entity_memory_path, normalize_embedding,
     try_load_entity_voiceprints_file,
 };
-use solstone_core_journal_io::day_path;
+use solstone_core_journal_io::{SegmentLayout, day_path};
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, OWNER_BOOTSTRAP_PROVISIONAL_GUARD_MIN_TAGS,
 };
@@ -82,6 +82,7 @@ impl Error for OwnerProvisionalError {}
 #[derive(Debug)]
 struct ManualTagCandidate {
     day: String,
+    stream_layout: Option<SegmentLayout>,
     stream: Option<String>,
     segment_key: String,
     source: String,
@@ -300,8 +301,14 @@ fn parse_voiceprint_candidates(metadata: &[String]) -> Vec<ManualTagCandidate> {
                 .and_then(Value::as_str)
                 .filter(|stream| !stream.is_empty())
                 .map(ToOwned::to_owned);
+            let stream_layout = row.get("stream_layout").and_then(Value::as_str).and_then(|s| match s {
+                "direct" => Some(SegmentLayout::Direct),
+                "named" => Some(SegmentLayout::Named),
+                _ => None,
+            });
             Some(ManualTagCandidate {
                 day,
+                stream_layout,
                 stream,
                 segment_key,
                 source,
@@ -333,14 +340,12 @@ fn dedupe_candidates(candidates: Vec<ManualTagCandidate>) -> Vec<ManualTagCandid
     candidates.sort_by(|left, right| {
         (
             &left.day,
-            left.stream.as_deref().unwrap_or_default(),
             &left.segment_key,
             &left.source,
             left.sentence_id,
         )
             .cmp(&(
                 &right.day,
-                right.stream.as_deref().unwrap_or_default(),
                 &right.segment_key,
                 &right.source,
                 right.sentence_id,
@@ -353,8 +358,23 @@ fn resolve_segment(
     journal_root: &Path,
     candidate: ManualTagCandidate,
 ) -> Option<ResolvedManualTag> {
-    let (stream, segment_dir) = match candidate.stream {
-        Some(stream) => {
+    let (stream, segment_dir) = match (candidate.stream_layout, candidate.stream) {
+        (Some(layout), Some(stream)) => {
+            let segment_dir = crate::segment_catalog::resolve_exact(
+                journal_root,
+                &candidate.day,
+                &stream,
+                &candidate.segment_key,
+                layout,
+            )
+            .ok()??;
+            if !segment_dir.is_dir() {
+                return None;
+            }
+            (stream, segment_dir)
+        }
+        (Some(_), None) => return None,
+        (None, Some(stream)) => {
             let segment_dir = segment_path(
                 journal_root,
                 &candidate.day,
@@ -365,7 +385,7 @@ fn resolve_segment(
             .ok()?;
             segment_dir.is_dir().then_some((stream, segment_dir))?
         }
-        None => {
+        (None, None) => {
             let day_dir = day_path(journal_root, Some(&candidate.day), false).ok()?;
             let matches = fs::read_dir(day_dir)
                 .ok()?

@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::{EncoderIdentity, VoiceprintItem, ambiguity_id, save_voiceprints_batch};
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_npy::write_npy;
 use solstone_core_speaker_resolve::resolve::{ResolveOutcome, resolve};
 use zip::write::SimpleFileOptions;
@@ -202,7 +203,16 @@ fn seed_owner_with_margin(root: &Path) {
 fn resolve_owner_statement(root: &Path) -> solstone_core_speaker_resolve::resolve::ResolveOutput {
     let segment = segment(root);
     embeddings(&segment.join("mic_audio.npz"), &[1], &[embedding(1.0, 0.0)]);
-    let outcome = resolve(root, "20260808", "mic", "120000_300", true, 1).expect("resolve");
+    let outcome = resolve(
+        root,
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+        true,
+        1,
+    )
+    .expect("resolve");
     let ResolveOutcome::Resolved(output) = outcome else {
         panic!("expected resolved");
     };
@@ -221,8 +231,16 @@ fn resolve_smoke_applies_owner_and_structural_layers() {
         &[embedding(1.0, 0.0), embedding(0.0, 1.0)],
     );
     fs::write(segment.join("talents/speakers.json"), "[\"Alice\"]").expect("speakers");
-    let outcome =
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve");
+    let outcome = resolve(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+        true,
+        1,
+    )
+    .expect("resolve");
     let ResolveOutcome::Resolved(output) = outcome else {
         panic!("expected resolved");
     };
@@ -256,6 +274,7 @@ fn direct_record_reads_speech_instead_of_named_default_decoy() {
         "20260808",
         "_default",
         "120000_300",
+        SegmentLayout::Direct,
         true,
         1,
     )
@@ -292,8 +311,16 @@ fn ac5_resolve_candidates_contain_only_admitted_person_names() {
     let speakers_path = segment.join("talents/speakers.json");
     fs::write(&speakers_path, "[\"Alice\", \"Terminal\"]").expect("speakers");
     let speakers_before = fs::read(&speakers_path).expect("read speakers before resolve");
-    let outcome =
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve");
+    let outcome = resolve(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+        true,
+        1,
+    )
+    .expect("resolve");
     let ResolveOutcome::Resolved(output) = outcome else {
         panic!("expected resolved");
     };
@@ -333,8 +360,16 @@ fn saved_choice_naming_a_blocked_entity_is_unmatched_without_rewriting_speakers(
     let speakers_path = segment.join("talents/speakers.json");
     fs::write(&speakers_path, "[\"Alice\"]").expect("speakers");
     let speakers_before = fs::read(&speakers_path).expect("read speakers before resolve");
-    let outcome =
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve");
+    let outcome = resolve(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+        true,
+        1,
+    )
+    .expect("resolve");
     let ResolveOutcome::Resolved(output) = outcome else {
         panic!("expected resolved");
     };
@@ -368,8 +403,16 @@ fn ac7_unmatched_texts_follow_resolved_transcript_sentence_ids() {
         &[embedding(0.0, 1.0), embedding(0.0, 1.0)],
     );
     fs::write(segment.join("audio.jsonl"), "{\"schema\":1}\n{\"sentence_id\":5,\"text\":\"persisted five\"}\n{\"text\":\"positional two\"}\n").expect("transcript");
-    let ResolveOutcome::Resolved(output) =
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve")
+    let ResolveOutcome::Resolved(output) = resolve(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+        true,
+        1,
+    )
+    .expect("resolve")
     else {
         panic!("expected resolved");
     };
@@ -389,17 +432,44 @@ fn resolve_short_circuits_missing_owner_and_embeddings() {
     let temporary = TempDir::new();
     let _ = segment(temporary.path());
     assert_eq!(
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
+        resolve(
+            temporary.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            SegmentLayout::Named,
+            true,
+            1
+        )
+        .expect("resolve"),
         ResolveOutcome::IdentityInvalid
     );
     entity(temporary.path(), "principal", "Principal", true);
     assert_eq!(
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
+        resolve(
+            temporary.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            SegmentLayout::Named,
+            true,
+            1
+        )
+        .expect("resolve"),
         ResolveOutcome::NoOwnerCentroid
     );
     seed_owner(temporary.path());
     assert_eq!(
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
+        resolve(
+            temporary.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            SegmentLayout::Named,
+            true,
+            1
+        )
+        .expect("resolve"),
         ResolveOutcome::Empty { source: None }
     );
 }
@@ -411,7 +481,16 @@ fn resolve_zero_row_embeddings_are_empty_with_source() {
     seed_owner(temporary.path());
     embeddings(&segment.join("mic_audio.npz"), &[], &[]);
     assert_eq!(
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
+        resolve(
+            temporary.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            SegmentLayout::Named,
+            true,
+            1
+        )
+        .expect("resolve"),
         ResolveOutcome::Empty {
             source: Some("mic_audio".to_owned())
         }
@@ -425,7 +504,16 @@ fn resolve_corrupt_embeddings_are_an_empty_source_result() {
     seed_owner(temporary.path());
     fs::write(segment.join("mic_audio.npz"), b"not an npz archive").expect("corrupt sidecar");
     assert_eq!(
-        resolve(temporary.path(), "20260808", "mic", "120000_300", true, 1).expect("resolve"),
+        resolve(
+            temporary.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            SegmentLayout::Named,
+            true,
+            1
+        )
+        .expect("resolve"),
         ResolveOutcome::Empty {
             source: Some("mic_audio".to_owned())
         }

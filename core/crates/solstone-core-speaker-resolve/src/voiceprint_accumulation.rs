@@ -9,22 +9,23 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use crate::segment_path;
 use chrono::{NaiveDate, TimeZone};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use solstone_core_entity::{
     EncoderIdentity, VoiceprintItem, is_admissible_person, load_all_journal_entities,
     load_entity_voiceprints_file, normalize_embedding, save_voiceprints_batch,
 };
 use solstone_core_journal_config::read_journal_config;
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_id::calibration::{
     NOISY_FLYWHEEL_OVERLAP_MAX, VP_OUTLIER_MIN_SAMPLES, VP_OUTLIER_MIN_SIMILARITY,
 };
 
 use crate::owner_admission::{OwnerAdmission, admitted_owner_id};
 use crate::owner_centroid::{OwnerCentroidError, load_owner_centroid};
+use crate::voiceprint_metadata::VoiceprintMetadata;
 
 const METHODS: [&str; 4] = [
     "structural_single_speaker",
@@ -37,6 +38,7 @@ const METHODS: [&str; 4] = [
 pub struct AccumulationRequest {
     pub journal_root: std::path::PathBuf,
     pub day: String,
+    pub stream_layout: SegmentLayout,
     pub stream: String,
     pub segment_key: String,
     pub source: String,
@@ -173,14 +175,15 @@ pub fn accumulate_voiceprints(
     };
     let mut skipped = BTreeMap::new();
     let mut reports = BTreeMap::new();
-    let segment_dir = segment_path(
+    let segment_dir = crate::segment_catalog::resolve_exact(
         &request.journal_root,
         &request.day,
-        &request.segment_key,
         &request.stream,
-        false,
+        &request.segment_key,
+        request.stream_layout,
     )
-    .map_err(AccumulationError::Path)?;
+    .map_err(|error| AccumulationError::Invalid(error.to_string()))?
+    .ok_or_else(|| AccumulationError::Invalid("segment not found".to_string()))?;
     let overlap = read_overlap_fraction(&segment_dir.join(format!("{}.jsonl", request.source)));
     if overlap > NOISY_FLYWHEEL_OVERLAP_MAX {
         increment(&mut skipped, AccumulationSkipReason::NoisyOverlap);
@@ -205,7 +208,7 @@ pub fn accumulate_voiceprints(
         .collect::<HashMap<_, _>>();
     let mut existing = HashMap::<String, ExistingVoiceprints>::new();
     let mut pending = BTreeMap::<String, Vec<VoiceprintItem>>::new();
-    let mut pending_keys = HashSet::<(String, String, String, String, i64)>::new();
+    let mut pending_keys = HashSet::<(String, String, String, String, String, String, i64)>::new();
 
     for label in &request.labels {
         if label.confidence.as_deref() != Some("high") {
@@ -267,6 +270,8 @@ pub fn accumulate_voiceprints(
             .or_insert_with(|| ExistingVoiceprints::load(&request.journal_root, speaker));
         let key = (
             request.day.clone(),
+            request.stream_layout.as_str().to_owned(),
+            request.stream.clone(),
             request.segment_key.clone(),
             request.source.clone(),
             label.sentence_id,
@@ -282,6 +287,8 @@ pub fn accumulate_voiceprints(
         if pending_keys.contains(&(
             speaker.to_owned(),
             request.day.clone(),
+            request.stream_layout.as_str().to_owned(),
+            request.stream.clone(),
             request.segment_key.clone(),
             request.source.clone(),
             label.sentence_id,
@@ -305,6 +312,8 @@ pub fn accumulate_voiceprints(
         pending_keys.insert((
             speaker.to_owned(),
             request.day.clone(),
+            request.stream_layout.as_str().to_owned(),
+            request.stream.clone(),
             request.segment_key.clone(),
             request.source.clone(),
             label.sentence_id,
@@ -314,15 +323,17 @@ pub fn accumulate_voiceprints(
             .or_default()
             .push(VoiceprintItem {
                 embedding: normalized,
-                metadata: json!({
-                    "day": request.day,
-                    "segment_key": request.segment_key,
-                    "source": request.source,
-                    "stream": request.stream,
-                    "sentence_id": label.sentence_id,
-                    "added_at": request.now_ms,
-                    "last_seen_ts": last_seen_ts,
-                }),
+                metadata: VoiceprintMetadata::new(
+                    &request.day,
+                    request.stream_layout,
+                    &request.segment_key,
+                    &request.source,
+                    &request.stream,
+                    label.sentence_id,
+                    request.now_ms,
+                    last_seen_ts,
+                )
+                .to_json(),
             });
     }
     let mut written_rows = 0;
@@ -368,7 +379,7 @@ pub fn accumulate_voiceprints(
 
 struct ExistingVoiceprints {
     count: usize,
-    keys: HashSet<(String, String, String, i64)>,
+    keys: HashSet<(String, String, String, String, String, i64)>,
     centroid: Option<Vec<f32>>,
 }
 
@@ -386,8 +397,28 @@ impl ExistingVoiceprints {
             .iter()
             .filter_map(|metadata| {
                 let value = serde_json::from_str::<Value>(metadata).ok()?;
+                let day = value.get("day")?.as_str()?.to_owned();
+                let stream_raw = value
+                    .get("stream")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let (layout, stream) = if let Some(layout_val) = value.get("stream_layout") {
+                    let layout_str = layout_val.as_str()?;
+                    match layout_str {
+                        "direct" => ("direct".to_owned(), stream_raw.to_owned()),
+                        "named" => ("named".to_owned(), stream_raw.to_owned()),
+                        _ => return None,
+                    }
+                } else if stream_raw.is_empty() || stream_raw == "_default" {
+                    ("direct".to_owned(), "_default".to_owned())
+                } else {
+                    ("named".to_owned(), stream_raw.to_owned())
+                };
+                let stream = if stream.is_empty() { "_default".to_owned() } else { stream };
                 Some((
-                    value.get("day")?.as_str()?.to_owned(),
+                    day,
+                    layout,
+                    stream,
                     value.get("segment_key")?.as_str()?.to_owned(),
                     value.get("source")?.as_str()?.to_owned(),
                     value.get("sentence_id")?.as_i64()?,

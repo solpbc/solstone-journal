@@ -13,7 +13,9 @@ use solstone_core_entity::{
     JournalEntity, VoiceprintItem, load_all_journal_entities, load_entity_voiceprints_file,
     record_entity_resolution_from_name_evidence, save_voiceprints_batch,
 };
-use solstone_core_journal_io::{PathOrDay, SegmentIdentityError, day_dirs, iter_segments};
+use solstone_core_journal_io::{
+    PathOrDay, SegmentIdentityError, SegmentLayout, day_dirs, iter_segments,
+};
 use solstone_core_speaker_id::embeddings::load_embeddings_file;
 use thiserror::Error;
 
@@ -102,8 +104,13 @@ pub enum BootstrapError {
         path.display()
     )]
     AmbiguousNamedDefault { path: PathBuf },
-    #[error("multiple segments share day {day:?} key {key:?}")]
-    DuplicateDayKey { day: String, key: String },
+    #[error("duplicate segment locator: day={day} layout={layout:?} stream={stream} name={name}")]
+    DuplicateLocator {
+        day: String,
+        layout: SegmentLayout,
+        stream: String,
+        name: String,
+    },
     #[error(transparent)]
     Identity(SegmentIdentityError),
 }
@@ -225,7 +232,14 @@ pub fn bootstrap_voiceprints(
                 continue;
             };
             for (sentence_id, values) in embeddings.statements {
-                let key = provenance_key(&segment.day, &segment.key, source, sentence_id);
+                let key = provenance_key(
+                    &segment.day,
+                    segment.layout.as_str(),
+                    &segment.stream,
+                    &segment.name,
+                    source,
+                    sentence_id,
+                );
                 if keys.contains(&key) {
                     stats.embeddings_skipped_duplicate += 1;
                     continue;
@@ -246,7 +260,8 @@ pub fn bootstrap_voiceprints(
                         embedding,
                         metadata: VoiceprintMetadata::new(
                             &segment.day,
-                            &segment.key,
+                            segment.layout,
+                            &segment.name,
                             source,
                             &segment.stream,
                             sentence_id,
@@ -400,7 +415,14 @@ pub fn seed_from_imports(
                         &entity_id,
                     ))
                 });
-                let key = provenance_key(&segment.day, &segment.key, source, sentence_id);
+                let key = provenance_key(
+                    &segment.day,
+                    segment.layout.as_str(),
+                    &segment.stream,
+                    &segment.name,
+                    source,
+                    sentence_id,
+                );
                 if keys.contains(&key) {
                     stats.embeddings_skipped_duplicate += 1;
                     continue;
@@ -418,7 +440,8 @@ pub fn seed_from_imports(
                     embedding,
                     metadata: VoiceprintMetadata::new(
                         &segment.day,
-                        &segment.key,
+                        segment.layout,
+                        &segment.name,
                         source,
                         &segment.stream,
                         sentence_id,
@@ -558,7 +581,9 @@ fn entity_id(entities: &[JournalEntity], index: Option<usize>) -> String {
 #[derive(Debug)]
 pub(crate) struct ScannedSegment {
     pub(crate) day: String,
+    pub(crate) layout: SegmentLayout,
     pub(crate) stream: String,
+    pub(crate) name: String,
     pub(crate) key: String,
     pub(crate) path: PathBuf,
     pub(crate) speakers: Vec<String>,
@@ -569,10 +594,10 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
     let mut days = day_dirs(journal_root)?.into_iter().collect::<Vec<_>>();
     days.sort_by(|left, right| left.0.cmp(&right.0));
     let mut scanned = Vec::new();
-    let mut seen = HashMap::<(String, String), ()>::new();
+    let mut seen = HashSet::<(String, SegmentLayout, String, String)>::new();
     for (day, path) in days {
         for segment in iter_segments(journal_root, PathOrDay::Directory(&path))? {
-            let identity = match segment.record_identity() {
+            let identity = match segment.locator_identity() {
                 Ok(identity) => identity,
                 Err(SegmentIdentityError::NotUtf8 { path }) => {
                     return Err(BootstrapError::NotUtf8 { path });
@@ -582,13 +607,17 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
                 }
                 Err(error) => return Err(BootstrapError::Identity(error)),
             };
-            if seen
-                .insert((day.clone(), identity.key.to_owned()), ())
-                .is_some()
-            {
-                return Err(BootstrapError::DuplicateDayKey {
+            if !seen.insert((
+                day.clone(),
+                identity.layout,
+                identity.stream.to_owned(),
+                identity.name.to_owned(),
+            )) {
+                return Err(BootstrapError::DuplicateLocator {
                     day: day.clone(),
-                    key: identity.key.to_owned(),
+                    layout: identity.layout,
+                    stream: identity.stream.to_owned(),
+                    name: identity.name.to_owned(),
                 });
             }
             let (speakers, _) = load_segment_speakers_with_gaps(segment.path());
@@ -608,7 +637,9 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
             sources.sort();
             scanned.push(ScannedSegment {
                 day: day.clone(),
+                layout: identity.layout,
                 stream: identity.stream.to_owned(),
+                name: identity.name.to_owned(),
                 key: identity.key.to_owned(),
                 path: segment.path().to_path_buf(),
                 speakers,
@@ -678,8 +709,25 @@ fn metadata_keys(archive: Option<solstone_core_entity::VoiceprintArchive>) -> Ha
         .flat_map(|archive| archive.metadata)
         .filter_map(|raw| serde_json::from_str::<Value>(&raw).ok())
         .filter_map(|value| {
+            let day = value.get("day")?.as_str()?;
+            let stream_raw = value.get("stream").and_then(Value::as_str).unwrap_or("");
+            let (layout, stream) = if let Some(layout_val) = value.get("stream_layout") {
+                let layout_str = layout_val.as_str()?;
+                match layout_str {
+                    "direct" => ("direct", stream_raw),
+                    "named" => ("named", stream_raw),
+                    _ => return None,
+                }
+            } else if stream_raw.is_empty() || stream_raw == "_default" {
+                ("direct", "_default")
+            } else {
+                ("named", stream_raw)
+            };
+            let stream = if stream.is_empty() { "_default" } else { stream };
             Some(provenance_key(
-                value.get("day")?.as_str()?,
+                day,
+                layout,
+                stream,
                 value.get("segment_key")?.as_str()?,
                 value.get("source")?.as_str()?,
                 value.get("sentence_id")?.as_i64()?,
@@ -688,8 +736,15 @@ fn metadata_keys(archive: Option<solstone_core_entity::VoiceprintArchive>) -> Ha
         .collect()
 }
 
-fn provenance_key(day: &str, segment_key: &str, source: &str, sentence_id: i64) -> String {
-    format!("{day}|{segment_key}|{source}|{sentence_id}")
+fn provenance_key(
+    day: &str,
+    layout: &str,
+    stream: &str,
+    segment_key: &str,
+    source: &str,
+    sentence_id: i64,
+) -> String {
+    format!("{day}|{layout}|{stream}|{segment_key}|{source}|{sentence_id}")
 }
 
 pub(crate) fn dot(left: &[f32], right: &[f32]) -> f32 {
@@ -704,19 +759,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn scan_segments_refuses_duplicate_day_keys() {
+    fn scan_segments_accepts_distinct_streams_same_day_key() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("chronicle/20260101/alpha/080000_300")).unwrap();
         fs::create_dir_all(root.path().join("chronicle/20260101/beta/080000_300")).unwrap();
-        let error = scan_segments(root.path()).unwrap_err();
-        assert!(
-            matches!(
-                error,
-                BootstrapError::DuplicateDayKey { ref day, ref key }
-                    if day == "20260101" && key == "080000_300"
-            ),
-            "{error:?}"
-        );
+        let segments = scan_segments(root.path()).unwrap();
+        assert_eq!(segments.len(), 2);
     }
 
     #[cfg(target_os = "linux")]
@@ -735,5 +783,46 @@ mod tests {
         .unwrap();
         let error = scan_segments(root.path()).unwrap_err();
         assert!(matches!(error, BootstrapError::NotUtf8 { .. }), "{error:?}");
+    }
+
+    #[test]
+    fn scan_segments_scans_direct_and_named_default_twins() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/080000_300")).unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/_default/080000_300")).unwrap();
+        let segments = scan_segments(root.path()).unwrap();
+        assert_eq!(segments.len(), 2);
+        let locators = segments
+            .iter()
+            .map(|s| (s.day.as_str(), s.layout, s.stream.as_str(), s.name.as_str()))
+            .collect::<HashSet<_>>();
+        assert!(locators.contains(&("20260101", SegmentLayout::Direct, "_default", "080000_300")));
+        assert!(locators.contains(&("20260101", SegmentLayout::Named, "_default", "080000_300")));
+    }
+
+    #[test]
+    fn scan_segments_scans_suffix_siblings() {
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/mic/093000_300_a")).unwrap();
+        fs::create_dir_all(root.path().join("chronicle/20260101/mic/093000_300_b")).unwrap();
+        let segments = scan_segments(root.path()).unwrap();
+        assert_eq!(segments.len(), 2);
+        assert_eq!(segments[0].name, "093000_300_a");
+        assert_eq!(segments[0].key, "093000_300");
+        assert_eq!(segments[1].name, "093000_300_b");
+        assert_eq!(segments[1].key, "093000_300");
+    }
+
+    #[test]
+    fn scan_segments_refuses_duplicate_exact_locator() {
+        let root = tempfile::tempdir().unwrap();
+        let dir = root.path().join("chronicle/20260101/080000_300");
+        fs::create_dir_all(&dir).unwrap();
+        let segments = scan_segments(root.path()).unwrap();
+        assert_eq!(segments.len(), 1);
+        let mut seen = HashSet::new();
+        seen.insert(("20260101".to_string(), SegmentLayout::Direct, "_default".to_string(), "080000_300".to_string()));
+        let is_dup = !seen.insert(("20260101".to_string(), SegmentLayout::Direct, "_default".to_string(), "080000_300".to_string()));
+        assert!(is_dup);
     }
 }

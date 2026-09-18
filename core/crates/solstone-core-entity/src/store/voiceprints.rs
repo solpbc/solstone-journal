@@ -115,9 +115,9 @@ pub enum CanonicalKeyField {
     Str(String),
 }
 
-/// The four metadata fields that identify a voiceprint row.
+/// The six metadata fields that identify a voiceprint row.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct VoiceprintKey(pub [CanonicalKeyField; 4]);
+pub struct VoiceprintKey(pub [CanonicalKeyField; 6]);
 
 /// One requested row removal with an optional expected complete metadata value.
 ///
@@ -643,11 +643,34 @@ fn key_from_metadata_value(value: &Value) -> Result<VoiceprintKey, VoiceprintOpe
     let object = value
         .as_object()
         .ok_or(VoiceprintOperationError::MetadataNotObject)?;
+    let stream_val = match object.get("stream").and_then(Value::as_str) {
+        Some(stream) if !stream.is_empty() => stream.to_owned(),
+        _ => "_default".to_owned(),
+    };
+    let layout_field = match object.get("stream_layout") {
+        Some(Value::String(layout)) if layout == "direct" || layout == "named" => {
+            CanonicalKeyField::Str(layout.clone())
+        }
+        None | Some(Value::Null) => {
+            if stream_val == "_default" {
+                CanonicalKeyField::Str("direct".to_owned())
+            } else {
+                CanonicalKeyField::Str("named".to_owned())
+            }
+        }
+        _ => {
+            return Err(VoiceprintOperationError::UnsupportedKeyField {
+                field: "stream_layout",
+            });
+        }
+    };
     Ok(VoiceprintKey([
         canonical_key_field(object.get("day"), "day")?,
         canonical_key_field(object.get("segment_key"), "segment_key")?,
         canonical_key_field(object.get("source"), "source")?,
         canonical_key_field(object.get("sentence_id"), "sentence_id")?,
+        CanonicalKeyField::Str(stream_val),
+        layout_field,
     ]))
 }
 

@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use chrono::Utc;
 use serde_json::{Map, Value, json};
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::admission::{
     admissible_person_pool, admissible_resolution_entities, saved_choice_excluded_by_admission,
 };
@@ -27,19 +28,27 @@ pub struct SpeakerAttributionState {
     resolved: Box<ResolveOutput>,
 }
 
-fn fields(prepared: &PreparedTalent) -> Option<(&str, &str, &str)> {
+fn fields(prepared: &PreparedTalent) -> Option<(&str, SegmentLayout, &str, &str)> {
     let day = prepared.config.get("day")?.as_str()?;
     let segment = prepared.config.get("segment")?.as_str()?;
-    (!day.is_empty() && !segment.is_empty()).then_some((
-        day,
-        segment,
-        prepared
-            .config
-            .get("stream")
-            .and_then(Value::as_str)
-            .filter(|stream| !stream.is_empty())
-            .unwrap_or(solstone_core_journal_io::DEFAULT_STREAM),
-    ))
+    let stream = prepared
+        .config
+        .get("stream")
+        .and_then(Value::as_str)
+        .filter(|stream| !stream.is_empty())
+        .unwrap_or(solstone_core_journal_io::DEFAULT_STREAM);
+    let layout = if let Some(layout_str) = prepared.config.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        }
+    } else if stream == solstone_core_journal_io::DEFAULT_STREAM {
+        SegmentLayout::Direct
+    } else {
+        SegmentLayout::Named
+    };
+    (!day.is_empty() && !segment.is_empty()).then_some((day, layout, segment, stream))
 }
 
 fn skipped(prepared: &PreparedTalent, reason: impl Into<String>) -> RuntimeOutcome {
@@ -53,12 +62,69 @@ fn skipped(prepared: &PreparedTalent, reason: impl Into<String>) -> RuntimeOutco
 fn segment_dir(
     journal: &Path,
     day: &str,
-    segment: &str,
     stream: &str,
+    segment: &str,
+    layout: SegmentLayout,
     create: bool,
 ) -> Result<PathBuf, String> {
-    solstone_core_speaker_resolve::segment_path(journal, day, segment, stream, create)
-        .map_err(|error| error.to_string())
+    if create {
+        let resolved = solstone_core_speaker_resolve::segment_catalog::resolve_exact(
+            journal,
+            day,
+            stream,
+            segment,
+            layout,
+        )
+        .map_err(|error| error.to_string())?;
+        match resolved {
+            Some(path) => Ok(path),
+            None => {
+                let day_dir = solstone_core_journal_io::day_path(journal, Some(day), true)
+                    .map_err(|error| error.to_string())?;
+                let rel = match layout {
+                    SegmentLayout::Direct => {
+                        if stream != "_default" {
+                            return Err(format!(
+                                "direct layout requires stream \"_default\", got \"{stream}\""
+                            ));
+                        }
+                        segment.to_owned()
+                    }
+                    SegmentLayout::Named => format!("{stream}/{segment}"),
+                };
+                let contained = solstone_core_journal_io::contained_path(&day_dir, &rel)
+                    .map_err(|error| error.to_string())?;
+                std::fs::create_dir_all(&contained).map_err(|error| error.to_string())?;
+                Ok(contained)
+            }
+        }
+    } else {
+        if let Ok(Some(resolved)) = solstone_core_speaker_resolve::segment_catalog::resolve_exact(
+            journal,
+            day,
+            stream,
+            segment,
+            layout,
+        ) {
+            return Ok(resolved);
+        }
+        let day_dir = solstone_core_journal_io::day_path(journal, Some(day), false)
+            .map_err(|error| error.to_string())?;
+        let rel = match layout {
+            SegmentLayout::Direct => {
+                if stream != "_default" {
+                    return Err(format!(
+                        "direct layout requires stream \"_default\", got \"{stream}\""
+                    ));
+                }
+                segment.to_owned()
+            }
+            SegmentLayout::Named => format!("{stream}/{segment}"),
+        };
+        let contained = solstone_core_journal_io::contained_path(&day_dir, &rel)
+            .map_err(|error| error.to_string())?;
+        Ok(contained)
+    }
 }
 
 fn label_values(output: &ResolveOutput) -> Vec<Value> {
@@ -121,12 +187,19 @@ fn has_embeddings(segment: &Path) -> bool {
         })
 }
 
-fn try_accumulate(journal: &Path, day: &str, segment: &str, stream: &str, output: &ResolveOutput) {
+fn try_accumulate(
+    journal: &Path,
+    day: &str,
+    layout: SegmentLayout,
+    segment: &str,
+    stream: &str,
+    output: &ResolveOutput,
+) {
     let Some(source) = output.source.as_deref() else {
         return;
     };
     let result = (|| {
-        let dir = segment_dir(journal, day, segment, stream, false)?;
+        let dir = segment_dir(journal, day, stream, segment, layout, false)?;
         let Some(embeddings) = solstone_core_speaker_id::embeddings::load_embeddings_file(
             &dir.join(format!("{source}.npz")),
         )
@@ -137,6 +210,7 @@ fn try_accumulate(journal: &Path, day: &str, segment: &str, stream: &str, output
         accumulate_with_embeddings(
             journal,
             day,
+            layout,
             segment,
             stream,
             output,
@@ -159,6 +233,7 @@ fn try_accumulate(journal: &Path, day: &str, segment: &str, stream: &str, output
 fn accumulate_with_embeddings(
     journal: &Path,
     day: &str,
+    layout: SegmentLayout,
     segment: &str,
     stream: &str,
     output: &ResolveOutput,
@@ -177,6 +252,7 @@ fn accumulate_with_embeddings(
     let request = AccumulationRequest {
         journal_root: journal.to_owned(),
         day: day.to_owned(),
+        stream_layout: layout,
         stream: stream.to_owned(),
         segment_key: segment.to_owned(),
         source: source.to_owned(),
@@ -216,19 +292,20 @@ pub fn build(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
 ) -> Result<PrePostState, RuntimeOutcome> {
-    let Some((day, segment, stream)) = fields(prepared) else {
+    let Some((day, layout, segment, stream)) = fields(prepared) else {
         return Err(skipped(prepared, "no_segment_context"));
     };
     let dry_run = is_dry_run(prepared);
     // Preserve solstone/talent/speaker_attribution.py:40: this lookup creates a first-run segment
     // unless preview/dry-run asked for a read-only pass.
-    let segment_dir = segment_dir(&context.journal, day, segment, stream, !dry_run)
+    let segment_dir = segment_dir(&context.journal, day, stream, segment, layout, !dry_run)
         .map_err(|error| skipped(prepared, error))?;
     let resolved = match solstone_core_speaker_resolve::resolve::resolve(
         &context.journal,
         day,
         stream,
         segment,
+        layout,
         dry_run,
         Utc::now().timestamp_millis(),
     ) {
@@ -280,7 +357,7 @@ pub fn build(
                 &metadata_values(&state.resolved.metadata),
             )
             .map_err(|error| skipped(prepared, error.to_string()))?;
-            try_accumulate(&context.journal, day, segment, stream, &state.resolved);
+            try_accumulate(&context.journal, day, layout, segment, stream, &state.resolved);
         }
         // Preserve solstone/talent/speaker_attribution.py:73-81: this writes from build because
         // the reference writes before it skips generation.
@@ -357,7 +434,7 @@ pub fn commit(
             "expected text output",
         ));
     };
-    let (Some((day, segment, stream)), PrePostState::SpeakerAttribution(state)) =
+    let (Some((day, layout, segment, stream)), PrePostState::SpeakerAttribution(state)) =
         (fields(prepared), state)
     else {
         return Ok(CommitPlan::NoOutput);
@@ -365,6 +442,7 @@ pub fn commit(
     Ok(CommitPlan::Write(WriteIntent::SpeakerAttribution {
         output,
         day: day.to_owned(),
+        stream_layout: layout,
         segment: segment.to_owned(),
         stream: stream.to_owned(),
         state: state.clone(),
@@ -377,6 +455,7 @@ pub fn apply_result(
     day: &str,
     segment: &str,
     stream: &str,
+    layout: SegmentLayout,
     state: &SpeakerAttributionState,
 ) -> Result<(), String> {
     let mut layer4 = HashMap::new();
@@ -445,14 +524,14 @@ pub fn apply_result(
         }
     }
     // Preserve solstone/talent/speaker_attribution.py:200: post processing creates the segment path.
-    let segment_dir = segment_dir(journal, day, segment, stream, true)?;
+    let segment_dir = segment_dir(journal, day, stream, segment, layout, true)?;
     solstone_core_speaker_id::labels::write_full_labels(
         &segment_dir,
         label_values(&resolved),
         &metadata_values(&resolved.metadata),
     )
     .map_err(|error| error.to_string())?;
-    try_accumulate(journal, day, segment, stream, &resolved);
+    try_accumulate(journal, day, layout, segment, stream, &resolved);
     Ok(())
 }
 
@@ -516,9 +595,25 @@ mod tests {
     fn segment_path_preserves_create_and_read_only_polarities() {
         // Derived from solstone/talent/speaker_attribution.py:40,200 and solstone/think/utils.py:389.
         let root = tempfile::tempdir().unwrap();
-        let read_only = segment_dir(root.path(), "20260101", "090000_300", "main", false).unwrap();
+        let read_only = segment_dir(
+            root.path(),
+            "20260101",
+            "main",
+            "090000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
+            false,
+        )
+        .unwrap();
         assert!(!read_only.exists());
-        let created = segment_dir(root.path(), "20260101", "090000_300", "main", true).unwrap();
+        let created = segment_dir(
+            root.path(),
+            "20260101",
+            "main",
+            "090000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
+            true,
+        )
+        .unwrap();
         assert!(created.is_dir());
     }
 
@@ -527,7 +622,15 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let expected = root.path().join("chronicle/20260101/090000_300");
         assert_eq!(
-            segment_dir(root.path(), "20260101", "090000_300", "_default", false).unwrap(),
+            segment_dir(
+                root.path(),
+                "20260101",
+                "_default",
+                "090000_300",
+                solstone_core_journal_io::SegmentLayout::Direct,
+                false,
+            )
+            .unwrap(),
             expected
         );
         assert!(!expected.exists());
@@ -546,7 +649,17 @@ mod tests {
         );
         assert!(expected.is_dir());
         assert!(!root.path().join("chronicle/20260101/_default").exists());
-        assert!(segment_dir(root.path(), "20260101", "../outside", "_default", true).is_err());
+        assert!(
+            segment_dir(
+                root.path(),
+                "20260101",
+                "_default",
+                "../outside",
+                solstone_core_journal_io::SegmentLayout::Direct,
+                true,
+            )
+            .is_err()
+        );
         assert!(!root.path().join("chronicle/outside").exists());
     }
 
@@ -617,7 +730,15 @@ mod tests {
     fn embeddings_gate_writes_a_stub_before_skipping() {
         // Derived from solstone/talent/speaker_attribution.py:45-58.
         let root = tempfile::tempdir().unwrap();
-        let segment = segment_dir(root.path(), "20260101", "090000_300", "main", true).unwrap();
+        let segment = segment_dir(
+            root.path(),
+            "20260101",
+            "main",
+            "090000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
+            true,
+        )
+        .unwrap();
         std::fs::write(segment.join("transcript.npz"), "fixture").unwrap();
         let mut prepared = PreparedTalent {
             name: "speaker_attribution".to_owned(),
@@ -669,6 +790,7 @@ mod tests {
             "20260101",
             "090000_300",
             "main",
+            solstone_core_journal_io::SegmentLayout::Named,
             &state,
         )
         .unwrap();
@@ -707,7 +829,15 @@ mod tests {
             },
         )
         .unwrap();
-        let segment = segment_dir(root.path(), "20260808", "120000_300", "mic", true).unwrap();
+        let segment = segment_dir(
+            root.path(),
+            "20260808",
+            "mic",
+            "120000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
+            true,
+        )
+        .unwrap();
         std::fs::create_dir_all(segment.join("talents")).unwrap();
         write_statement_embeddings(
             &segment.join("mic_audio.npz"),
@@ -724,6 +854,7 @@ mod tests {
             "20260808",
             "mic",
             "120000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
             true,
             1,
         )
@@ -816,6 +947,7 @@ mod tests {
             "20260101",
             "090000_300",
             "main",
+            solstone_core_journal_io::SegmentLayout::Named,
             &state,
         )
         .unwrap();
@@ -918,7 +1050,15 @@ mod tests {
         resolved.labels[0].confidence = None;
         resolved.labels[0].method = None;
         resolved.unmatched = vec![7];
-        let segment = segment_dir(root.path(), "20260101", "090000_300", "main", false).unwrap();
+        let segment = segment_dir(
+            root.path(),
+            "20260101",
+            "main",
+            "090000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
+            true,
+        )
+        .unwrap();
         write_statement_embeddings(&segment.join("transcript.npz"), &[7], &[vector(0.0, 1.0)]);
         apply_result(
             root.path(),
@@ -926,6 +1066,7 @@ mod tests {
             "20260101",
             "090000_300",
             "main",
+            solstone_core_journal_io::SegmentLayout::Named,
             &SpeakerAttributionState { resolved },
         )
         .unwrap();
@@ -996,7 +1137,15 @@ mod tests {
             },
         )
         .unwrap();
-        let segment = segment_dir(root, "20260101", "090000_300", "main", true).unwrap();
+        let segment = segment_dir(
+            root,
+            "20260101",
+            "main",
+            "090000_300",
+            solstone_core_journal_io::SegmentLayout::Named,
+            true,
+        )
+        .unwrap();
         std::fs::write(segment.join("transcript.jsonl"), "{}\n").unwrap();
         let mut resolved = output(Vec::new());
         resolved.labels[0].speaker = Some("ada".to_owned());
@@ -1021,6 +1170,7 @@ mod tests {
         accumulate_with_embeddings(
             root.path(),
             "20260101",
+            solstone_core_journal_io::SegmentLayout::Named,
             "090000_300",
             "main",
             &resolved,
@@ -1041,6 +1191,7 @@ mod tests {
         accumulate_with_embeddings(
             root.path(),
             "20260101",
+            solstone_core_journal_io::SegmentLayout::Named,
             "090000_300",
             "main",
             &resolved,

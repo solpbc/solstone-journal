@@ -289,7 +289,14 @@ pub async fn correct(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
         return response;
     }
     let removal = if let Some(old) = old_speaker.as_deref() {
-        let key = json!({"day":fields.day,"segment_key":fields.segment_key,"source":fields.source,"sentence_id":fields.sentence_id});
+        let key = json!({
+            "day": fields.day,
+            "stream_layout": layout_name(fields.layout),
+            "stream": fields.stream,
+            "segment_key": fields.segment_key,
+            "source": fields.source,
+            "sentence_id": fields.sentence_id,
+        });
         let rendered_key = format!(
             "{}/{}/{}#{}",
             fields.day, fields.segment_key, fields.source, fields.sentence_id
@@ -601,6 +608,7 @@ fn propagate_speaker_correction(
             &segment.day,
             &segment.stream,
             &segment.name,
+            segment.layout,
             true,
             Utc::now().timestamp_millis(),
         )
@@ -664,6 +672,7 @@ fn propagate_speaker_correction(
                         root,
                         &segment.path,
                         &segment.day,
+                        segment.layout,
                         &segment.stream,
                         &segment.name,
                         &output,
@@ -964,6 +973,7 @@ fn contamination_allowed(
     }
     let probe = ContaminationProbe {
         day: fields.day.clone(),
+        stream_layout: Some(fields.layout),
         stream: fields.stream.clone(),
         segment_key: fields.segment_key.clone(),
         source: fields.source.clone(),

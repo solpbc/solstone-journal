@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use serde_json::{Map, Value};
 use solstone_core_entity::hold_entity_trust_lock;
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_id::labels::write_full_labels;
 use thiserror::Error;
 
@@ -32,6 +33,7 @@ pub enum SpeakerLabelsState {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BackfillSegment {
     pub day: String,
+    pub stream_layout: SegmentLayout,
     pub stream: String,
     pub segment_key: String,
     pub path: PathBuf,
@@ -79,6 +81,8 @@ pub enum BackfillError {
     Ledger(#[from] crate::backfill_operations::BackfillOperationError),
     #[error("speaker label write failed: {0}")]
     Labels(#[from] solstone_core_speaker_id::labels::LabelsError),
+    #[error("segment lookup failed: {0}")]
+    ExactLookup(#[from] crate::segment_catalog::ExactLookupError),
     #[error("segment path failed: {0}")]
     Path(#[from] solstone_core_journal_io::PathError),
     #[error("backfill operation lock failed: {0}")]
@@ -140,8 +144,9 @@ pub fn plan_backfill_segments(
         }
         plan.to_process.push(BackfillSegment {
             day: segment.day,
+            stream_layout: segment.layout,
             stream: segment.stream,
-            segment_key: segment.key,
+            segment_key: segment.name,
             path: segment.path,
         });
     }
@@ -159,6 +164,7 @@ pub fn resolve_backfill_segment(
         &segment.day,
         &segment.stream,
         &segment.segment_key,
+        segment.stream_layout,
         false,
         now_ms,
     )?)
@@ -196,6 +202,7 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
             .iter()
             .map(|segment| BackfillSegmentKey {
                 day: segment.day.clone(),
+                stream_layout: segment.stream_layout,
                 stream: segment.stream.clone(),
                 segment_key: segment.segment_key.clone(),
             })
@@ -226,17 +233,38 @@ pub fn run_backfill(request: &BackfillRunRequest) -> Result<BackfillRunResult, B
         return Ok(backfill_result(&state));
     }
     for key in &state.pending_segments {
+        let path = match crate::segment_catalog::resolve_exact(
+            &request.journal_root,
+            &key.day,
+            &key.stream,
+            &key.segment_key,
+            key.stream_layout,
+        )? {
+            Some(path) => path,
+            None => {
+                append_backfill_event(
+                    &ledger_path,
+                    &BackfillOperationEvent {
+                        schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
+                        event_id: next_checkpoint_event_id(&ledger_path, &request.operation_id, key)?,
+                        operation_id: request.operation_id.clone(),
+                        ts: Utc::now().to_rfc3339(),
+                        payload: BackfillOperationPayload::Checkpoint {
+                            segment: key.clone(),
+                            outcome: BackfillCheckpointOutcome::Skipped,
+                            error_detail: None,
+                        },
+                    },
+                )?;
+                continue;
+            }
+        };
         let segment = BackfillSegment {
             day: key.day.clone(),
+            stream_layout: key.stream_layout,
             stream: key.stream.clone(),
             segment_key: key.segment_key.clone(),
-            path: crate::segment_path(
-                &request.journal_root,
-                &key.day,
-                &key.segment_key,
-                &key.stream,
-                false,
-            )?,
+            path,
         };
         let (outcome, error_detail) =
             match resolve_backfill_segment(&request.journal_root, &segment, request.now_ms) {

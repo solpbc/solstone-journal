@@ -5,11 +5,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
-
-use crate::segment_path;
 use serde_json::{Map, Value, json};
 use solstone_core_entity::{EncoderIdentity, VoiceprintRemoval, remove_voiceprints_by_key};
 use solstone_core_facets::{EntityHistoryReference, delete_created_entity_if_unreferenced};
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_id::corrections::{append_correction, read_corrections};
 use solstone_core_speaker_id::labels::{LabelRestoration, restore_label_rows};
 use thiserror::Error;
@@ -21,7 +20,7 @@ use crate::identify_forward_phases::{
 use crate::identify_operations::{ForwardPhase, OperationState};
 use crate::keep_separate::{KeepSeparateError, remove_operation_sources};
 
-type PlanKey = (String, String, String, i64);
+type PlanKey = (String, SegmentLayout, String, String, i64);
 
 /// Failures from an undo phase. The undo executor is responsible for mapping these.
 #[derive(Debug, Error)]
@@ -40,6 +39,8 @@ pub enum UndoPhaseError {
     Sentinel(#[from] ForwardPhaseError),
     #[error("created entity restore failed: {0}")]
     Entity(#[from] solstone_core_facets::FacetEntityLifecycleError),
+    #[error("segment lookup failed: {0}")]
+    ExactLookup(#[from] crate::segment_catalog::ExactLookupError),
     #[error("segment path failed: {0}")]
     Path(#[from] solstone_core_journal_io::PathError),
 }
@@ -68,7 +69,7 @@ pub fn undo_labels(journal_root: &Path, state: &OperationState) -> Result<Value,
         return Ok(json!({"labels":report}));
     };
     let map = label_plan_map(&state.prepared_plan);
-    let mut grouped = BTreeMap::<(String, String, String), Vec<LabelRestoration>>::new();
+    let mut grouped = BTreeMap::<(String, SegmentLayout, String, String), Vec<LabelRestoration>>::new();
     for key in checkpoint_keys(
         checkpoint,
         &["patched_sentence_keys", "inserted_sentence_keys"],
@@ -78,10 +79,10 @@ pub fn undo_labels(journal_root: &Path, state: &OperationState) -> Result<Value,
             continue;
         };
         grouped
-            .entry((key.0.clone(), key.1.clone(), key.2.clone()))
+            .entry((key.0.clone(), key.1, key.2.clone(), key.3.clone()))
             .or_default()
             .push(LabelRestoration {
-                sentence_id: key.3,
+                sentence_id: key.4,
                 expected_current_label: label["intended_label"].clone(),
                 prior_state: label["prior_state"].as_str().unwrap_or_default().to_owned(),
                 prior_label: (!label["prior_label"].is_null())
@@ -89,8 +90,17 @@ pub fn undo_labels(journal_root: &Path, state: &OperationState) -> Result<Value,
             });
         let _ = segment;
     }
-    for ((day, stream, segment_key), restorations) in grouped {
-        let directory = segment_path(journal_root, &day, &segment_key, &stream, false)?;
+    for ((day, layout, stream, segment_key), restorations) in grouped {
+        let Some(directory) = crate::segment_catalog::resolve_exact(
+            journal_root,
+            &day,
+            &stream,
+            &segment_key,
+            layout,
+        )? else {
+            skip(&mut report, "missing", restorations.len());
+            continue;
+        };
         if !directory.is_dir() {
             skip(&mut report, "missing", restorations.len());
             continue;
@@ -131,12 +141,25 @@ pub fn undo_corrections(
             skip(&mut report, "missing_plan", 1);
             continue;
         };
-        let directory = segment_path(journal_root, &key.0, &key.2, &key.1, false)?;
+        let Some(directory) = crate::segment_catalog::resolve_exact(
+            journal_root,
+            &key.0,
+            &key.2,
+            &key.3,
+            key.1,
+        )? else {
+            skip(&mut report, "missing", 1);
+            continue;
+        };
+        if !directory.is_dir() {
+            skip(&mut report, "missing", 1);
+            continue;
+        }
         let existing = read_corrections(&directory)?;
         if existing.iter().any(|row| {
             row["operation_id"].as_str() == Some(&state.operation_id)
                 && row["correction_kind"].as_str() == Some("identify_undo")
-                && row["sentence_id"].as_i64() == Some(key.3)
+                && row["sentence_id"].as_i64() == Some(key.4)
         }) {
             increment(&mut report, "already_present_count", 1);
             skip(&mut report, "already_present", 1);
@@ -144,7 +167,7 @@ pub fn undo_corrections(
         }
         let prior_speaker = label["prior_label"]["speaker"].clone();
         let mut row = Map::new();
-        row.insert("sentence_id".to_owned(), json!(key.3));
+        row.insert("sentence_id".to_owned(), json!(key.4));
         row.insert("original_speaker".to_owned(), json!(state.target_entity_id));
         row.insert("corrected_speaker".to_owned(), prior_speaker);
         row.insert("original_method".to_owned(), json!("user_identified"));
@@ -419,24 +442,47 @@ fn planned_correction_rows(plan: &Value) -> BTreeMap<PlanKey, (Value, Value)> {
         .collect()
 }
 fn plan_key(segment: &Value, sentence_id: i64) -> Option<PlanKey> {
-    Some((
-        segment["day"].as_str()?.into(),
-        segment["stream"].as_str()?.into(),
-        segment["segment_key"].as_str()?.into(),
-        sentence_id,
-    ))
+    let day = segment["day"].as_str()?.to_owned();
+    let stream = segment["stream"].as_str()?.to_owned();
+    let segment_key = segment["segment_key"].as_str()?.to_owned();
+    let stream_layout = if let Some(layout_str) = segment.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        }
+    } else {
+        if stream == "_default" {
+            SegmentLayout::Direct
+        } else {
+            SegmentLayout::Named
+        }
+    };
+    Some((day, stream_layout, stream, segment_key, sentence_id))
 }
 fn checkpoint_keys(checkpoint: &Value, fields: &[&str]) -> Vec<PlanKey> {
     fields
         .iter()
         .flat_map(|field| checkpoint[*field].as_array().into_iter().flatten())
         .filter_map(|key| {
-            Some((
-                key["day"].as_str()?.into(),
-                key["stream"].as_str()?.into(),
-                key["segment_key"].as_str()?.into(),
-                key["sentence_id"].as_i64()?,
-            ))
+            let day = key["day"].as_str()?.to_owned();
+            let stream = key["stream"].as_str()?.to_owned();
+            let segment_key = key["segment_key"].as_str()?.to_owned();
+            let sentence_id = key["sentence_id"].as_i64()?;
+            let stream_layout = if let Some(layout_str) = key.get("stream_layout").and_then(Value::as_str) {
+                match layout_str {
+                    "direct" => SegmentLayout::Direct,
+                    "named" => SegmentLayout::Named,
+                    _ => return None,
+                }
+            } else {
+                if stream == "_default" {
+                    SegmentLayout::Direct
+                } else {
+                    SegmentLayout::Named
+                }
+            };
+            Some((day, stream_layout, stream, segment_key, sentence_id))
         })
         .collect()
 }
@@ -464,13 +510,33 @@ fn skip(report: &mut Value, reason: &str, count: usize) {
     reasons.insert(reason.to_owned(), json!(current + count as u64));
 }
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
-struct ValueKey(String, String, String, i64);
+struct ValueKey(String, SegmentLayout, String, String, String, i64);
 fn value_key(value: &Value) -> Option<ValueKey> {
+    let day = value["day"].as_str()?.into();
+    let segment_key = value["segment_key"].as_str()?.into();
+    let source = value["source"].as_str()?.into();
+    let sentence_id = value["sentence_id"].as_i64()?;
+    let stream = value.get("stream").and_then(Value::as_str).unwrap_or("").to_owned();
+    let stream_layout = if let Some(layout_str) = value.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => return None,
+        }
+    } else {
+        if stream == "_default" || stream.is_empty() {
+            SegmentLayout::Direct
+        } else {
+            SegmentLayout::Named
+        }
+    };
     Some(ValueKey(
-        value["day"].as_str()?.into(),
-        value["segment_key"].as_str()?.into(),
-        value["source"].as_str()?.into(),
-        value["sentence_id"].as_i64()?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
+        source,
+        sentence_id,
     ))
 }
 fn blocked_categories(outcome: &solstone_core_facets::EntityDeleteGuardOutcome) -> Vec<String> {
@@ -558,10 +624,10 @@ mod tests {
         row
     }
     fn metadata(added_at: i64) -> Value {
-        json!({"day":DAY,"segment_key":SEGMENT,"source":"audio","stream":STREAM,"sentence_id":7,"added_at":added_at,"last_seen_ts":added_at})
+        json!({"day":DAY,"stream_layout":"named","segment_key":SEGMENT,"source":"audio","stream":STREAM,"sentence_id":7,"added_at":added_at,"last_seen_ts":added_at})
     }
     fn key() -> Value {
-        json!({"day":DAY,"segment_key":SEGMENT,"source":"audio","sentence_id":7})
+        json!({"day":DAY,"stream_layout":"named","stream":STREAM,"segment_key":SEGMENT,"source":"audio","sentence_id":7})
     }
     fn segment(root: &Path) -> PathBuf {
         let path = segment_path(root, DAY, SEGMENT, STREAM, true).unwrap();
@@ -680,6 +746,52 @@ mod tests {
             undo_voiceprints(temporary.path(), &state, &encoder()).unwrap()["voiceprints"]["metadata_mismatch_count"],
             1
         );
+    }
+
+    #[test]
+    fn twins_both_store_and_exact_undo_leaves_other_row() {
+        let temporary = Temp::new();
+        entity(temporary.path(), "target");
+        let direct_meta = json!({"day":DAY,"stream_layout":"direct","stream":"_default","segment_key":SEGMENT,"source":"audio","sentence_id":7,"added_at":1,"last_seen_ts":1});
+        let named_meta = json!({"day":DAY,"stream_layout":"named","stream":"_default","segment_key":SEGMENT,"source":"audio","sentence_id":7,"added_at":2,"last_seen_ts":2});
+        let direct_key = json!({"day":DAY,"stream_layout":"direct","stream":"_default","segment_key":SEGMENT,"source":"audio","sentence_id":7});
+        let _named_key = json!({"day":DAY,"stream_layout":"named","stream":"_default","segment_key":SEGMENT,"source":"audio","sentence_id":7});
+
+        save_voiceprints_batch(
+            temporary.path(),
+            "target",
+            &[
+                VoiceprintItem {
+                    embedding: embedding(),
+                    metadata: direct_meta.clone(),
+                },
+                VoiceprintItem {
+                    embedding: embedding(),
+                    metadata: named_meta.clone(),
+                },
+            ],
+            &encoder(),
+        )
+        .unwrap();
+
+        let mut state = state(temporary.path());
+        state.prepared_plan = json!({
+            "direct_voiceprints": {
+                "entries_to_add": [
+                    {"key": direct_key.clone(), "metadata": direct_meta.clone()}
+                ]
+            },
+            "retro_confirm": {"voiceprints_to_add": []}
+        });
+        state.phase_checkpoints.insert(
+            ForwardPhase::DirectVoiceprints,
+            json!({"saved_keys":[direct_key]}),
+        );
+        let report = undo_voiceprints(temporary.path(), &state, &encoder()).unwrap();
+        assert_eq!(report["voiceprints"]["removed_count"], 1);
+        let archive = load_entity_voiceprints_file(temporary.path(), "target").unwrap();
+        assert_eq!(archive.rows, 1);
+        assert_eq!(archive.metadata, vec![named_meta.to_string()]);
     }
 
     #[test]

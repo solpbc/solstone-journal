@@ -95,11 +95,36 @@ fn candidate_evidence(
         if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
             return Err(invalid().into());
         }
-        let directory = crate::segment_path(journal, day, segment, stream, false)?;
-        let layout = if stream == "_default" {
-            SegmentLayout::Direct
+        let (directory, layout) = if let Some(layout_val) = source.get("stream_layout") {
+            let layout_str = layout_val.as_str().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid stream_layout: {layout_val:?}"),
+                )
+            })?;
+            let layout = match layout_str {
+                "direct" => SegmentLayout::Direct,
+                "named" => SegmentLayout::Named,
+                _ => {
+                    return Err(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("invalid stream_layout: {layout_str}"),
+                    )
+                    .into());
+                }
+            };
+            let dir = crate::segment_catalog::resolve_exact(journal, day, stream, segment, layout)?
+                .unwrap_or_default();
+            (dir, layout)
         } else {
-            SegmentLayout::Named
+            // Historical v1 source: no stream_layout field -> legacy segment_path
+            let dir = crate::segment_path(journal, day, segment, stream, false)?;
+            let layout = if stream == "_default" {
+                SegmentLayout::Direct
+            } else {
+                SegmentLayout::Named
+            };
+            (dir, layout)
         };
         let (url, _) = audio_info(&directory, day, stream, segment, audio_source, layout);
         if let Some(url) = url {
@@ -254,5 +279,27 @@ mod tests {
         fs::write(&path, "{bad").unwrap();
         assert!(tracker.snapshot_candidates_locked().is_err());
         assert_eq!(fs::read(&path).unwrap(), b"{bad");
+    }
+
+    #[test]
+    fn accepted_or_dismissed_v1_pair_does_not_reopen_as_v2() {
+        let root = tempfile::tempdir().unwrap();
+        pool(root.path());
+        refresh_candidate_pair_suggestions(root.path()).unwrap();
+        let row = load_candidates(root.path()).unwrap().remove(0);
+        // Accept the candidate pair
+        accept_candidate(
+            root.path(),
+            row["anchor_a"].as_str().unwrap(),
+            row["anchor_b"].as_str().unwrap(),
+        )
+        .unwrap();
+
+        // Refresh again; it should be 0 created, 1 updated (preserving status accepted)
+        let report = refresh_candidate_pair_suggestions(root.path()).unwrap();
+        assert_eq!(report["created"], 0);
+        let current = load_candidates(root.path()).unwrap();
+        assert_eq!(current.len(), 1);
+        assert_eq!(current[0]["status"], "accepted");
     }
 }

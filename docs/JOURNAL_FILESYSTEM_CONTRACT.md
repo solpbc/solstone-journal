@@ -386,14 +386,12 @@ separate value, so a basename such as `093000_300_summary` is never rebuilt as
 `093000_300` for lookup.
 
 Read surfaces admit both layouts through the explicit resolver. Shell-owned
-speaker mutations whose downstream implementation is still layout-blind
-refuse Direct before any mutation. The bundled speaker workspace keys a row by
+and native speaker mutations preserve layout awareness across bootstrap,
+backfill, identification, retroactive confirmation, and voiceprint
+accumulation by resolving exact locators `(day, stream_layout, stream, exact_basename)`.
+Public Direct layout mutation remains refused at the CLI and convey boundary
+(`UNSUPPORTED_LAYOUT_REASON`) before any state change. The bundled speaker workspace keys a row by
 the JSON-encoded tuple `(day, stream_layout, stream, exact basename)`, and only
 accepts a legacy basename-only deep link when that basename is unique among
 the loaded rows.
 
-This does not complete the speaker-resolve migration. That crate still has
-layout-blind bootstrap, backfill, identify, resolve, owner, and voiceprint
-paths built on the legacy `segment_path` contract or records without an
-explicit layout. Direct segments remain unsupported whenever a Shell command
-hands control to one of those Named-only mutation paths.

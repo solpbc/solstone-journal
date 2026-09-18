@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::backfill_operations::{
     BACKFILL_OPERATION_SCHEMA_VERSION, BackfillCheckpointOutcome, BackfillOperationError,
     BackfillOperationEvent, BackfillOperationPayload, BackfillOperationTerminalStatus,
@@ -41,6 +42,7 @@ impl Drop for TempDir {
 fn segment(index: usize) -> BackfillSegmentKey {
     BackfillSegmentKey {
         day: "20260808".to_owned(),
+        stream_layout: SegmentLayout::Named,
         stream: "mic".to_owned(),
         segment_key: format!("120{index:02}_300"),
     }

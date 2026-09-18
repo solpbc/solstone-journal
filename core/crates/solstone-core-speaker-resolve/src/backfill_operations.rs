@@ -11,14 +11,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{AppendError, LockError, LockOptions, append_jsonl, hold_lock};
+use solstone_core_journal_io::{
+    AppendError, LockError, LockOptions, SegmentLayout, append_jsonl, hold_lock,
+};
 use thiserror::Error;
 
-pub const BACKFILL_OPERATION_SCHEMA_VERSION: i64 = 1;
+pub const BACKFILL_OPERATION_SCHEMA_VERSION: i64 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BackfillSegmentKey {
     pub day: String,
+    pub stream_layout: SegmentLayout,
     pub stream: String,
     pub segment_key: String,
 }
@@ -28,6 +31,7 @@ impl BackfillSegmentKey {
     pub fn to_json(&self) -> Value {
         serde_json::json!({
             "day": self.day,
+            "stream_layout": self.stream_layout.as_str(),
             "stream": self.stream,
             "segment_key": self.segment_key,
         })
@@ -163,6 +167,10 @@ impl BackfillOperationEvent {
                 error_detail,
             } => {
                 row.insert("day".to_owned(), Value::String(segment.day.clone()));
+                row.insert(
+                    "stream_layout".to_owned(),
+                    Value::String(segment.stream_layout.as_str().to_owned()),
+                );
                 row.insert("stream".to_owned(), Value::String(segment.stream.clone()));
                 row.insert(
                     "segment_key".to_owned(),
@@ -326,9 +334,11 @@ pub fn validate_backfill_row(
     let object = row
         .as_object()
         .ok_or(BackfillOperationError::MissingOrInvalidField { field: "row" })?;
-    if object.get("schema_version").and_then(Value::as_i64)
-        != Some(BACKFILL_OPERATION_SCHEMA_VERSION)
-    {
+    let schema_version = object
+        .get("schema_version")
+        .and_then(Value::as_i64)
+        .ok_or(BackfillOperationError::InvalidSchemaVersion)?;
+    if !(1..=2).contains(&schema_version) {
         return Err(BackfillOperationError::InvalidSchemaVersion);
     }
     let event_kind_text = required_string(object, "event_kind")?;
@@ -360,7 +370,7 @@ pub fn validate_backfill_row(
                 .and_then(Value::as_array)
                 .ok_or(BackfillOperationError::MissingOrInvalidField { field: "segments" })?
                 .iter()
-                .map(parse_segment)
+                .map(|v| parse_segment(v, schema_version))
                 .collect::<Result<Vec<_>, _>>()?;
             if total_count != segments.len() {
                 return Err(BackfillOperationError::PreparedTotalCountMismatch);
@@ -373,7 +383,7 @@ pub fn validate_backfill_row(
             }
         }
         BackfillEventKind::Checkpoint => {
-            let segment = parse_segment(&Value::Object(object.clone()))?;
+            let segment = parse_segment(&Value::Object(object.clone()), schema_version)?;
             let outcome_text = required_string(object, "outcome")?;
             let outcome = BackfillCheckpointOutcome::parse(&outcome_text).ok_or(
                 BackfillOperationError::InvalidCheckpointOutcome {
@@ -401,7 +411,7 @@ pub fn validate_backfill_row(
         },
     };
     Ok(BackfillOperationEvent {
-        schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
+        schema_version,
         event_id,
         operation_id,
         ts,
@@ -573,13 +583,46 @@ fn required_string(
         .ok_or(BackfillOperationError::MissingOrInvalidField { field })
 }
 
-fn parse_segment(value: &Value) -> Result<BackfillSegmentKey, BackfillOperationError> {
+fn parse_segment(
+    value: &Value,
+    schema_version: i64,
+) -> Result<BackfillSegmentKey, BackfillOperationError> {
     let object = value
         .as_object()
         .ok_or(BackfillOperationError::PreparedSegmentNotObject)?;
+    let day = required_string(object, "day")?;
+    let stream = required_string(object, "stream")?;
+    let segment_key = required_string(object, "segment_key")?;
+    let stream_layout = if schema_version >= 2 {
+        let layout_str = required_string(object, "stream_layout")?;
+        match layout_str.as_str() {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => {
+                return Err(BackfillOperationError::MissingOrInvalidField {
+                    field: "stream_layout",
+                });
+            }
+        }
+    } else if let Some(layout_str) = object.get("stream_layout").and_then(Value::as_str) {
+        match layout_str {
+            "direct" => SegmentLayout::Direct,
+            "named" => SegmentLayout::Named,
+            _ => {
+                return Err(BackfillOperationError::MissingOrInvalidField {
+                    field: "stream_layout",
+                });
+            }
+        }
+    } else if stream == "_default" {
+        SegmentLayout::Direct
+    } else {
+        SegmentLayout::Named
+    };
     Ok(BackfillSegmentKey {
-        day: required_string(object, "day")?,
-        stream: required_string(object, "stream")?,
-        segment_key: required_string(object, "segment_key")?,
+        day,
+        stream_layout,
+        stream,
+        segment_key,
     })
 }

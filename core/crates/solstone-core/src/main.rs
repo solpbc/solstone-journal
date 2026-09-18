@@ -1797,9 +1797,14 @@ fn speaker_resolve_error_exit(error: &str) -> u8 {
 }
 
 fn identify_request(value: Value) -> Result<Value, String> {
-    use solstone_core_speaker_resolve::discovery_cache::normalize_reviewed_near_match_ids;
+    use solstone_core_speaker_resolve::discovery_cache::{
+        load_discovery_cache, member_tuple, normalize_reviewed_near_match_ids,
+    };
     use solstone_core_speaker_resolve::identify_cluster::{
         IdentifyClusterRequest, identify_cluster,
+    };
+    use solstone_core_speaker_resolve::segment_catalog::{
+        UNSUPPORTED_LAYOUT_DETAIL, UNSUPPORTED_LAYOUT_MESSAGE, UNSUPPORTED_LAYOUT_REASON,
     };
     let request_object = request_object(
         value,
@@ -1826,9 +1831,32 @@ fn identify_request(value: Value) -> Result<Value, String> {
             Ok(ids) => ids,
             Err(error) => return Ok(error.invalid_request_response()),
         };
+    let root = PathBuf::from(required_string(object, "journal_root")?);
+    let cluster_id = required_i64(object, "cluster_id")?;
+    if let Some(cache) = load_discovery_cache(&root) {
+        if let Some(raw_members) = cache
+            .get("clusters")
+            .and_then(Value::as_object)
+            .and_then(|clusters| clusters.get(&cluster_id.to_string()))
+            .and_then(Value::as_array)
+        {
+            for member in raw_members {
+                if let Ok(m) = member_tuple(member) {
+                    if m.stream_layout == solstone_core_journal_io::SegmentLayout::Direct {
+                        return Ok(json!({
+                            "status": "error",
+                            "reason": UNSUPPORTED_LAYOUT_REASON,
+                            "message": UNSUPPORTED_LAYOUT_MESSAGE,
+                            "detail": UNSUPPORTED_LAYOUT_DETAIL,
+                        }));
+                    }
+                }
+            }
+        }
+    }
     let request = IdentifyClusterRequest {
-        journal_root: PathBuf::from(required_string(object, "journal_root")?),
-        cluster_id: required_i64(object, "cluster_id")?,
+        journal_root: root,
+        cluster_id,
         name: optional_string(object, "name")?,
         entity_id: optional_string(object, "entity_id")?,
         resolve_only: required_bool(object, "resolve_only")?,
@@ -2087,6 +2115,7 @@ fn parse_accumulation_request(
     value: Value,
 ) -> Result<solstone_core_speaker_resolve::voiceprint_accumulation::AccumulationRequest, String> {
     use solstone_core_entity::EncoderIdentity;
+    use solstone_core_journal_io::SegmentLayout;
     use solstone_core_speaker_resolve::voiceprint_accumulation::{
         AccumulationEmbedding, AccumulationLabel, AccumulationRequest,
     };
@@ -2121,6 +2150,19 @@ fn parse_accumulation_request(
             .map(str::to_owned)
             .ok_or_else(|| format!("{key} is required"))
     };
+    let stream = string(segment, "stream")?;
+    let stream_layout = match segment.get("stream_layout").and_then(Value::as_str) {
+        Some("direct") => SegmentLayout::Direct,
+        Some("named") => SegmentLayout::Named,
+        Some(_) => return Err("invalid stream_layout".to_owned()),
+        None => {
+            if stream == solstone_core_journal_io::DEFAULT_STREAM {
+                SegmentLayout::Direct
+            } else {
+                SegmentLayout::Named
+            }
+        }
+    };
     let encoder = object
         .get("encoder")
         .and_then(Value::as_object)
@@ -2149,7 +2191,8 @@ fn parse_accumulation_request(
     Ok(AccumulationRequest {
         journal_root: PathBuf::from(string(object, "journal_root")?),
         day: string(segment, "day")?,
-        stream: string(segment, "stream")?,
+        stream_layout,
+        stream,
         segment_key: string(segment, "segment_key")?,
         source: string(segment, "source")?,
         now_ms: object
@@ -2347,11 +2390,19 @@ fn screen_owner_contamination_request(value: Value) -> Result<Value, String> {
             "source",
             "sentence_id",
             "encoder",
+            "stream_layout",
         ],
     )?;
     let root = PathBuf::from(required_string(&object, "journal_root")?);
+    let stream_layout = match object.get("stream_layout").and_then(Value::as_str) {
+        Some("direct") => Some(solstone_core_journal_io::SegmentLayout::Direct),
+        Some("named") => Some(solstone_core_journal_io::SegmentLayout::Named),
+        Some(_) => return Err("invalid stream_layout".to_owned()),
+        None => None,
+    };
     let probe = ContaminationProbe {
         day: required_string(&object, "day")?,
+        stream_layout,
         stream: required_string(&object, "stream")?,
         segment_key: required_string(&object, "segment_key")?,
         source: required_string(&object, "source")?,
@@ -2553,23 +2604,37 @@ fn wipe_speaker_artifacts_request(value: Value) -> Result<Value, String> {
 }
 
 fn segment_dir(object: &Map<String, Value>) -> Result<PathBuf, String> {
+    use solstone_core_journal_io::SegmentLayout;
+
     let root = PathBuf::from(required_string(object, "journal_root")?);
     let segment = object
         .get("segment")
         .and_then(Value::as_object)
         .ok_or_else(|| "segment is required".to_owned())?;
-    const FIELDS: [&str; 3] = ["day", "stream", "segment_key"];
+    const FIELDS: [&str; 4] = ["day", "stream_layout", "stream", "segment_key"];
     if segment.keys().any(|key| !FIELDS.contains(&key.as_str())) {
         return Err("invalid segment request".to_owned());
     }
     let day = required_string(segment, "day")?;
     let stream = required_string(segment, "stream")?;
     let segment_key = required_string(segment, "segment_key")?;
-    solstone_core_journal_io::contained_path(
-        &root,
-        &format!("chronicle/{day}/{stream}/{segment_key}"),
-    )
-    .map_err(|error| error.to_string())
+    let stream_layout = match segment.get("stream_layout").and_then(Value::as_str) {
+        Some("direct") => SegmentLayout::Direct,
+        Some("named") => SegmentLayout::Named,
+        Some(_) => return Err("invalid stream_layout".to_owned()),
+        None => {
+            if stream == solstone_core_journal_io::DEFAULT_STREAM {
+                SegmentLayout::Direct
+            } else {
+                SegmentLayout::Named
+            }
+        }
+    };
+    let path = match stream_layout {
+        SegmentLayout::Direct => format!("chronicle/{day}/{segment_key}"),
+        SegmentLayout::Named => format!("chronicle/{day}/{stream}/{segment_key}"),
+    };
+    solstone_core_journal_io::contained_path(&root, &path).map_err(|error| error.to_string())
 }
 
 fn required_object_value(

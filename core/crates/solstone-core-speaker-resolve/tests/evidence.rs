@@ -7,6 +7,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde_json::{Value, json};
 use solstone_core_entity::ambiguity_id;
+use solstone_core_journal_io::SegmentLayout;
 use solstone_core_speaker_resolve::evidence::{
     compute_segment_candidate_evidence_readonly, extract_meeting_participants_with_gaps,
     extract_screen_participants_with_gaps, load_segment_speakers_with_gaps,
@@ -103,8 +104,14 @@ fn evidence_for_speakers(
 ) {
     let segment = segment(temporary);
     fs::write(segment.join("talents/speakers.json"), speakers).expect("write speakers");
-    compute_segment_candidate_evidence_readonly(temporary.path(), "20260808", "mic", "120000_300")
-        .expect("compute evidence")
+    compute_segment_candidate_evidence_readonly(
+        temporary.path(),
+        "20260808",
+        "mic",
+        "120000_300",
+        SegmentLayout::Named,
+    )
+    .expect("compute evidence")
 }
 
 #[test]
@@ -212,6 +219,7 @@ fn ac5_readonly_evidence_assembles_resolved_candidates_in_canonical_order() {
         "20260808",
         "mic",
         "120000_300",
+        SegmentLayout::Named,
     )
     .expect("compute evidence");
     assert!(gaps.is_empty());
@@ -232,6 +240,7 @@ fn readonly_evidence_does_not_emit_a_written_id_slug_collision() {
         "20260808",
         "mic",
         "120000_300",
+        SegmentLayout::Named,
     )
     .expect("compute evidence");
     assert!(gaps.is_empty());
@@ -259,6 +268,7 @@ fn ac6_readonly_evidence_reports_all_five_gap_sources() {
         "20260808",
         "mic",
         "120000_300",
+        SegmentLayout::Named,
     )
     .expect("compute evidence");
     assert_eq!(
@@ -284,6 +294,7 @@ fn ac7_missing_segment_short_circuits_without_evidence() {
             "20260808",
             "mic",
             "120000_300",
+            SegmentLayout::Named,
         )
         .expect("missing segment"),
         (Vec::new(), Vec::new())
