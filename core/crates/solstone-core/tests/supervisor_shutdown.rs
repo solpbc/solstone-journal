@@ -4,6 +4,7 @@
 #![cfg(unix)]
 
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -36,7 +37,9 @@ impl TempJournal {
             .duration_since(UNIX_EPOCH)
             .expect("clock")
             .as_nanos();
-        let root = std::env::temp_dir().join(format!("solstone-core-supervisor-shutdown-{stamp}"));
+        // Keep the root short enough that `health/callosum.sock` remains below
+        // macOS's sockaddr_un path limit even under its long per-user temp root.
+        let root = std::env::temp_dir().join(format!("sj-shutdown-{stamp}"));
         fs::create_dir_all(root.join("config")).expect("config directory");
         fs::write(
             root.join("config/journal.json"),
@@ -107,7 +110,15 @@ fn wait_for(path: &std::path::Path, child: &mut SupervisorGuard) {
                 PollState::Held
             } else {
                 match child.try_wait() {
-                    Ok(Some(status)) => PollState::HardFail(format!("supervisor exited: {status}")),
+                    Ok(Some(status)) => {
+                        let mut stderr = String::new();
+                        if let Some(mut pipe) = child.stderr.take() {
+                            let _ = pipe.read_to_string(&mut stderr);
+                        }
+                        PollState::HardFail(format!(
+                            "supervisor exited: {status}; stderr: {stderr}"
+                        ))
+                    }
                     Ok(None) => PollState::Pending,
                     Err(error) => PollState::HardFail(format!("supervisor status: {error}")),
                 }
