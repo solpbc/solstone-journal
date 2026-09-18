@@ -896,8 +896,7 @@ mod tests {
 
     #[test]
     fn locator_controls_reject_public_or_wrong_identity() {
-        let locator =
-            "ssh://mirror-operator@git-mirror.internal/data/git/advisory-mirrors/rustsec/rustsec-advisory-db.git";
+        let locator = "ssh://mirror-operator@git-mirror.internal/data/git/advisory-mirrors/rustsec/rustsec-advisory-db.git";
         let name = validate_locator(locator).expect("private locator");
         assert!(name.starts_with("rustsec-advisory-db.git-"));
         for invalid in [
