@@ -1961,6 +1961,20 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core::never_admitted_generation_children"
+package = "solstone-core"
+target = "never_admitted_generation_children"
+set = "component"
+areas = ["core"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "slow"
+serial_group = "local-services"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-artifact-download::artifact_download_native"
 package = "solstone-core-artifact-download"
 target = "artifact_download_native"

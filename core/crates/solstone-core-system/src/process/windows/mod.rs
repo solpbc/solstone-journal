@@ -636,13 +636,42 @@ mod unavailable {
     }
 
     #[cfg(not(unix))]
+    pub fn launch_managed_generation_child(
+        _disposition: Disposition,
+        _journal: &std::path::Path,
+        _launch_id: String,
+        _request: ManagedLaunchRequest,
+    ) -> Result<LaunchAuthority, LaunchError> {
+        require_managed_process_capability()
+            .map_err(|needed| LaunchError::CapabilityUnavailable { needed })?;
+        unreachable!("non-Unix managed-process capability unexpectedly available")
+    }
+
+    #[cfg(not(unix))]
+    pub fn launch_generation_child<F>(
+        _disposition: Disposition,
+        _journal: &std::path::Path,
+        _launch_id: String,
+        _spawn: F,
+        _terminate_fn: BoxedTerminateFn,
+    ) -> Result<LaunchAuthority, LaunchError>
+    where
+        F: FnOnce() -> io::Result<Child>,
+    {
+        require_managed_process_capability()
+            .map_err(|needed| LaunchError::CapabilityUnavailable { needed })?;
+        unreachable!("non-Unix managed-process capability unexpectedly available")
+    }
+
+    #[cfg(not(unix))]
     pub fn apply_parent_death_kill(_command: &mut Command) {}
 }
 
 #[cfg(all(not(unix), not(windows)))]
 pub use unavailable::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,
-    launch_command_hosted, launch_managed, launch_managed_hosted, launch_managed_request,
+    launch_command_hosted, launch_generation_child, launch_managed,
+    launch_managed_generation_child, launch_managed_hosted, launch_managed_request,
     launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
 };

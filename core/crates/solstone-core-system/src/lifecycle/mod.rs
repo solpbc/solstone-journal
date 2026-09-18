@@ -77,11 +77,13 @@ pub enum HostedServiceKind {
 #[cfg(unix)]
 pub use parent_loss_admission::{
     AdmissionAcknowledgement, AdmissionIdentity, AdmissionIntent, AdmissionResult,
-    AdmissionResultState, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
-    ParentLossAdmissionError, ParentLossServiceWitnessDrop, acknowledge_hosted_child_admission,
-    acknowledge_parent_loss_admission, hosted_child_launch_provenance,
-    read_parent_loss_admission_acknowledgement, write_parent_loss_admission_intent,
-    write_parent_loss_admission_result, write_parent_loss_service_witness,
+    AdmissionResultState, AdmissionSpawnIdentity, HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV,
+    HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossAdmissionError, ParentLossServiceWitnessDrop,
+    acknowledge_hosted_child_admission, acknowledge_parent_loss_admission,
+    generate_helper_launch_id, hosted_child_launch_provenance,
+    read_parent_loss_admission_acknowledgement, read_parent_loss_admission_spawn_identity,
+    service_name, write_parent_loss_admission_intent, write_parent_loss_admission_result,
+    write_parent_loss_admission_spawn_identity, write_parent_loss_service_witness,
 };
 #[cfg(unix)]
 pub use parent_loss_closure::{

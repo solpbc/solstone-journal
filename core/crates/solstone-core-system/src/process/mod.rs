@@ -40,7 +40,10 @@ pub use common::{
     SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
 };
 #[cfg(any(test, feature = "test-hooks"))]
-pub use common::{HostedAdmissionTestFault, set_hosted_admission_test_fault};
+pub use common::{
+    HostedAdmissionTestFault, closer_skip_test_fault, retirement_skip_test_fault,
+    set_closer_skip_test_fault, set_hosted_admission_test_fault, set_retirement_skip_test_fault,
+};
 pub use events::{OutputStream, ProcessEvent, ProcessEventSink};
 pub use log::DailyLogWriter;
 pub use observation::{ProcessObservation, ProcessObservationTuple, classify_process_observation};
@@ -75,7 +78,8 @@ pub use platform::{
 };
 pub use platform::{
     LaunchAuthority, ManagedProcess, apply_parent_death_kill, launch, launch_command,
-    launch_command_hosted, launch_managed, launch_managed_hosted, launch_managed_request,
+    launch_command_hosted, launch_generation_child, launch_managed,
+    launch_managed_generation_child, launch_managed_hosted, launch_managed_request,
     launch_managed_with, launch_with, signal_exact_instance, terminate,
     terminate_descendants_exact, terminate_exact_instance,
 };

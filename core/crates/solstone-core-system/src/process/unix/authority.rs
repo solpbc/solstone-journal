@@ -25,6 +25,7 @@ use crate::lifecycle::{
     HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossGeneration,
     ParentLossLedger, ParentLossPhase, read_parent_loss_admission_acknowledgement,
     write_parent_loss_admission_intent, write_parent_loss_admission_result,
+    write_parent_loss_admission_spawn_identity,
 };
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
@@ -476,6 +477,159 @@ pub fn launch_managed_hosted(
     }
 }
 
+pub fn launch_managed_generation_child(
+    disposition: Disposition,
+    journal: &Path,
+    launch_id: String,
+    request: ManagedLaunchRequest,
+) -> Result<LaunchAuthority, LaunchError> {
+    let ledger = ParentLossLedger::open(journal)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let active = ledger
+        .active_generation()
+        .map_err(|error| LaunchError::Admission(error.to_string()))?
+        .ok_or_else(|| LaunchError::Admission("missing active generation".to_owned()))?;
+    if active.phase != ParentLossPhase::Admitting {
+        return Err(LaunchError::Admission(
+            "generation not admitting".to_owned(),
+        ));
+    }
+    let generation = active.generation;
+    let lock_path = ledger.admission_lock_path(generation);
+    let _lock = hold_lock(
+        &lock_path,
+        LockOptions {
+            timeout: Duration::from_secs(5),
+            poll_interval: Duration::from_millis(10),
+            mode: Some(0o600),
+        },
+    )
+    .map_err(|error| LaunchError::Admission(error.to_string()))?;
+
+    let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
+    write_parent_loss_admission_intent(journal, &intent)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+
+    let mut authority = match launch_managed_request(disposition, request) {
+        Ok(authority) => authority,
+        Err(err) => {
+            record_unidentified_admission_result(
+                journal,
+                generation,
+                &launch_id,
+                AdmissionResultState::SpawnFailed {
+                    detail: err.to_string(),
+                },
+            )?;
+            return Err(err);
+        }
+    };
+
+    finish_generation_child_admission(&mut authority, journal, generation, &launch_id)?;
+    Ok(authority)
+}
+
+fn finish_generation_child_admission(
+    authority: &mut LaunchAuthority,
+    journal: &Path,
+    generation: u64,
+    launch_id: &str,
+) -> Result<(), LaunchError> {
+    let source = SystemProcessInstanceSource;
+    let identity = match authority.exact_identity() {
+        Some(identity) => identity,
+        None => match source.inspect(authority.pid()) {
+            InspectResult::Present { instance, uid, .. } => {
+                let id = LaunchedProcessIdentity { instance, uid };
+                authority.bind_exact_identity(id)?;
+                id
+            }
+            InspectResult::Absent | InspectResult::Unverifiable => {
+                let _ = authority.terminate_exact(Duration::from_secs(2));
+                return Err(LaunchError::Admission(
+                    "exact launch identity unavailable".to_owned(),
+                ));
+            }
+        },
+    };
+
+    let expected = AdmissionIdentity {
+        generation,
+        launch_id: launch_id.to_owned(),
+        instance: identity.instance,
+        uid: identity.uid,
+        parent_launch_id: None,
+    };
+    write_parent_loss_admission_spawn_identity(journal, &expected)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+
+    let result = AdmissionResult {
+        schema: 1,
+        identity: Some(expected),
+        state: AdmissionResultState::Admitted,
+    };
+    write_parent_loss_admission_result(journal, generation, launch_id, &result)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+
+    Ok(())
+}
+
+pub fn launch_generation_child<F>(
+    disposition: Disposition,
+    journal: &Path,
+    launch_id: String,
+    spawn: F,
+    terminate_fn: BoxedTerminateFn,
+) -> Result<LaunchAuthority, LaunchError>
+where
+    F: FnOnce() -> io::Result<Child>,
+{
+    let ledger = ParentLossLedger::open(journal)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+    let active = ledger
+        .active_generation()
+        .map_err(|error| LaunchError::Admission(error.to_string()))?
+        .ok_or_else(|| LaunchError::Admission("missing active generation".to_owned()))?;
+    if active.phase != ParentLossPhase::Admitting {
+        return Err(LaunchError::Admission(
+            "generation not admitting".to_owned(),
+        ));
+    }
+    let generation = active.generation;
+    let lock_path = ledger.admission_lock_path(generation);
+    let _lock = hold_lock(
+        &lock_path,
+        LockOptions {
+            timeout: Duration::from_secs(5),
+            poll_interval: Duration::from_millis(10),
+            mode: Some(0o600),
+        },
+    )
+    .map_err(|error| LaunchError::Admission(error.to_string()))?;
+
+    let intent = AdmissionIntent::new(generation, launch_id.clone(), None, None);
+    write_parent_loss_admission_intent(journal, &intent)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
+
+    let mut authority = match launch(disposition, spawn, terminate_fn) {
+        Ok(authority) => authority,
+        Err(err) => {
+            record_unidentified_admission_result(
+                journal,
+                generation,
+                &launch_id,
+                AdmissionResultState::SpawnFailed {
+                    detail: err.to_string(),
+                },
+            )?;
+            return Err(err);
+        }
+    };
+
+    finish_generation_child_admission(&mut authority, journal, generation, &launch_id)?;
+    Ok(authority)
+}
+
 fn record_unidentified_admission_result(
     journal: &Path,
     generation: ParentLossGeneration,
@@ -527,6 +681,8 @@ fn finish_hosted_admission(
         uid: identity.uid,
         parent_launch_id: provenance.parent_launch_id.clone(),
     };
+    write_parent_loss_admission_spawn_identity(&provenance.journal, &expected)
+        .map_err(|error| LaunchError::Admission(error.to_string()))?;
     let deadline = Instant::now() + provenance.acknowledgement_timeout;
     loop {
         match read_parent_loss_admission_acknowledgement(

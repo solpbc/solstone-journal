@@ -618,6 +618,8 @@ pub enum HostedAdmissionTestFault {
 #[cfg(any(test, feature = "test-hooks"))]
 thread_local! {
     static HOSTED_ADMISSION_TEST_FAULT: Cell<Option<HostedAdmissionTestFault>> = const { Cell::new(None) };
+    static CLOSER_SKIP_TEST_FAULT: Cell<bool> = const { Cell::new(false) };
+    static RETIREMENT_SKIP_TEST_FAULT: Cell<bool> = const { Cell::new(false) };
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -629,4 +631,26 @@ pub fn set_hosted_admission_test_fault(fault: Option<HostedAdmissionTestFault>) 
 #[cfg(any(test, feature = "test-hooks"))]
 pub(crate) fn hosted_admission_test_fault() -> Option<HostedAdmissionTestFault> {
     HOSTED_ADMISSION_TEST_FAULT.with(Cell::get)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn set_closer_skip_test_fault(enabled: bool) {
+    CLOSER_SKIP_TEST_FAULT.with(|slot| slot.set(enabled));
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn closer_skip_test_fault() -> bool {
+    CLOSER_SKIP_TEST_FAULT.with(Cell::get)
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+#[doc(hidden)]
+pub fn set_retirement_skip_test_fault(enabled: bool) {
+    RETIREMENT_SKIP_TEST_FAULT.with(|slot| slot.set(enabled));
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn retirement_skip_test_fault() -> bool {
+    RETIREMENT_SKIP_TEST_FAULT.with(Cell::get)
 }

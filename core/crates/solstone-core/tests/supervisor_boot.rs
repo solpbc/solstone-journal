@@ -1677,6 +1677,41 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
         "the child is the supervisor itself"
     );
 
+    let mut helper_child = Command::new(journal.system_test_child())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn helper child");
+    let helper_instance = match source.inspect(helper_child.id()) {
+        solstone_core_system::process::InspectResult::Present { instance, .. } => instance,
+        other => panic!("helper child inspectable: {other:?}"),
+    };
+    let helper_launch_id =
+        solstone_core_system::lifecycle::generate_helper_launch_id("task-worker");
+    solstone_core_system::lifecycle::write_parent_loss_admission_intent(
+        journal.root(),
+        &solstone_core_system::lifecycle::AdmissionIntent::new(
+            active.generation,
+            &helper_launch_id,
+            None,
+            None,
+        ),
+    )
+    .expect("write helper intent");
+    let helper_identity = solstone_core_system::lifecycle::AdmissionIdentity {
+        generation: active.generation,
+        launch_id: helper_launch_id.clone(),
+        instance: helper_instance,
+        uid: nix::unistd::getuid().as_raw(),
+        parent_launch_id: None,
+    };
+    solstone_core_system::lifecycle::write_parent_loss_admission_spawn_identity(
+        journal.root(),
+        &helper_identity,
+    )
+    .expect("write helper spawn identity");
+
     // Both authorities at once. Under the scope this is the control group;
     // otherwise two exact SIGKILLs, the coordinator first so it cannot
     // adjudicate the supervisor's death.
@@ -1717,20 +1752,6 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
         coordinator_gone,
         "the coordinator must be gone before the second start"
     );
-    // ⚠ On Linux the app fixtures are deliberately NOT waited for: whether
-    // they are still exiting or already gone when the next start arrives is
-    // the successor's problem, and both shapes must boot. On macOS there is
-    // no parent-death signal and the test fixtures do not watch their parent
-    // the way a hosted service does, so they would hold the speakers-analyze
-    // generation lease they inherited for ever; stop them the way a real
-    // service's parent watcher would have.
-    #[cfg(target_os = "macos")]
-    for instance in &admitted {
-        let _ = nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(i32::try_from(instance.pid).expect("pid fits")),
-            nix::sys::signal::Signal::SIGKILL,
-        );
-    }
     assert!(
         matches!(
             read_parent_loss_outcome(&journal.0).expect("outcome"),
@@ -1849,6 +1870,14 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
             "no app fixture of the dead generation survives the successor: {instance:?}"
         );
     }
+    assert!(
+        matches!(
+            source.observe(&helper_instance),
+            InstanceVerdict::NotSameOrExited
+        ),
+        "helper process of the dead generation survives the successor: {helper_instance:?}"
+    );
+    let _ = helper_child.wait();
     assert!(
         ledger.sealed_ledger_path(active.generation).is_file(),
         "the abandoned generation carries a sealed ledger"

@@ -31,6 +31,17 @@ pub const HOSTED_GENERATION_ENV: &str = "SOL_PARENT_LOSS_GENERATION";
 pub const HOSTED_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_LAUNCH_ID";
 pub const HOSTED_PARENT_LAUNCH_ID_ENV: &str = "SOL_PARENT_LOSS_PARENT_LAUNCH_ID";
 
+pub fn generate_helper_launch_id(prefix: &str) -> String {
+    let mut nonce = [0u8; 8];
+    let _ = getrandom::fill(&mut nonce);
+    let mut hex = String::with_capacity(16);
+    for byte in nonce {
+        use std::fmt::Write;
+        let _ = write!(&mut hex, "{byte:02x}");
+    }
+    format!("{prefix}-{hex}")
+}
+
 /// Exact authority required before a coordinator can retire an admitted child.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdmissionIdentity {
@@ -82,6 +93,15 @@ pub enum AdmissionResultState {
 /// boundary to its direct exact spawn observation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AdmissionAcknowledgement {
+    pub schema: u32,
+    pub identity: AdmissionIdentity,
+}
+
+/// Immutable spawn-identity drop written immediately after inspect before
+/// waiting for child acknowledgement. Ensures dead generations never leave
+/// mid-ack spawned children unattributable.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AdmissionSpawnIdentity {
     pub schema: u32,
     pub identity: AdmissionIdentity,
 }
@@ -162,6 +182,22 @@ pub fn write_parent_loss_admission_result(
     write_immutable_json(&result_path(&ledger, generation, launch_id), result)
 }
 
+pub fn write_parent_loss_admission_spawn_identity(
+    journal: &Path,
+    identity: &AdmissionIdentity,
+) -> Result<(), ParentLossAdmissionError> {
+    validate_launch_id(&identity.launch_id)?;
+    let ledger = ParentLossLedger::open(journal)?;
+    let drop = AdmissionSpawnIdentity {
+        schema: SCHEMA,
+        identity: identity.clone(),
+    };
+    write_immutable_json(
+        &spawn_identity_path(&ledger, identity.generation, &identity.launch_id),
+        &drop,
+    )
+}
+
 pub fn read_parent_loss_admission_acknowledgement(
     journal: &Path,
     generation: ParentLossGeneration,
@@ -170,6 +206,16 @@ pub fn read_parent_loss_admission_acknowledgement(
     validate_launch_id(launch_id)?;
     let ledger = ParentLossLedger::open(journal)?;
     read_json_optional(&ack_path(&ledger, generation, launch_id))
+}
+
+pub fn read_parent_loss_admission_spawn_identity(
+    journal: &Path,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+) -> Result<Option<AdmissionSpawnIdentity>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
+    let ledger = ParentLossLedger::open(journal)?;
+    read_json_optional(&spawn_identity_path(&ledger, generation, launch_id))
 }
 
 /// Host-service entry points call this before listener binding or readiness.
@@ -314,6 +360,15 @@ pub(crate) fn read_parent_loss_admission_acknowledgement_in(
     read_json_optional(&ack_path(ledger, generation, launch_id))
 }
 
+pub(crate) fn read_parent_loss_admission_spawn_identity_in(
+    ledger: &ParentLossLedger,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+) -> Result<Option<AdmissionSpawnIdentity>, ParentLossAdmissionError> {
+    validate_launch_id(launch_id)?;
+    read_json_optional(&spawn_identity_path(ledger, generation, launch_id))
+}
+
 pub(crate) fn admission_directory(
     ledger: &ParentLossLedger,
     generation: ParentLossGeneration,
@@ -332,7 +387,7 @@ pub(crate) fn witness_path(
         .join(format!("{}.json", service_name(service)))
 }
 
-pub(crate) fn service_name(service: HostedServiceKind) -> &'static str {
+pub fn service_name(service: HostedServiceKind) -> &'static str {
     match service {
         HostedServiceKind::Convey => "convey",
         HostedServiceKind::Sense => "sense",
@@ -370,6 +425,16 @@ pub(crate) fn ack_path(
     admission_directory(ledger, generation)
         .join(launch_id)
         .join("acknowledgement.json")
+}
+
+pub(crate) fn spawn_identity_path(
+    ledger: &ParentLossLedger,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+) -> PathBuf {
+    admission_directory(ledger, generation)
+        .join(launch_id)
+        .join("spawn-identity.json")
 }
 
 pub(crate) fn parse_hosted_admission_environment(
@@ -571,6 +636,34 @@ mod tests {
             read_parent_loss_admission_intent(&ledger, 7, "launch-b").expect("read second"),
             Some(second)
         );
+    }
+
+    #[test]
+    fn spawn_identity_is_immutable_and_idempotent() {
+        let directory = TempDir::new().expect("temporary root");
+        let id = identity();
+        write_parent_loss_admission_spawn_identity(directory.path(), &id)
+            .expect("first spawn identity");
+        write_parent_loss_admission_spawn_identity(directory.path(), &id)
+            .expect("idempotent spawn identity");
+        let ledger = ParentLossLedger::open(directory.path()).expect("ledger");
+        let read =
+            read_parent_loss_admission_spawn_identity_in(&ledger, id.generation, &id.launch_id)
+                .expect("read spawn identity");
+        assert_eq!(
+            read,
+            Some(AdmissionSpawnIdentity {
+                schema: SCHEMA,
+                identity: id.clone()
+            })
+        );
+
+        let mut conflicting = id.clone();
+        conflicting.uid += 1;
+        assert!(matches!(
+            write_parent_loss_admission_spawn_identity(directory.path(), &conflicting),
+            Err(ParentLossAdmissionError::Conflict { .. })
+        ));
     }
 
     #[test]

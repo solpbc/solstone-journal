@@ -1515,7 +1515,8 @@ pub(crate) async fn boot_and_tick(
         coordinator: ProviderRuntimeCoordinator::new(),
         shared: local_shared.clone(),
         truth,
-        lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone()),
+        lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone())
+            .with_journal(journal.clone()),
         probe: LocalProbeSeam::new(local_shared.clone(), journal.clone()),
         store: FileRuntimeStore::new(
             journal.clone(),
@@ -1570,7 +1571,8 @@ pub(crate) async fn boot_and_tick(
         coordinator: ProviderRuntimeCoordinator::new(),
         shared: parakeet_shared.clone(),
         truth: parakeet_truth,
-        lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone()),
+        lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone())
+            .with_journal(journal.clone()),
         probe: ParakeetProbeSeam::new(parakeet_shared.clone(), journal.clone()),
         store: FileRuntimeStore::new(
             journal.clone(),

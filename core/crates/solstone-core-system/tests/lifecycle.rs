@@ -1465,6 +1465,66 @@ mod abandoned_generation_closer {
     }
 
     #[test]
+    fn helper_child_with_spawn_identity_fallback_is_retired() {
+        use solstone_core_system::lifecycle::{
+            generate_helper_launch_id, write_parent_loss_admission_spawn_identity,
+        };
+
+        let bed = super::Bed::new("closer-retires-helper-fallback");
+        let (mut child, child_instance) = spawn_child(false);
+        let ledger = ParentLossLedger::open(&bed.root).expect("ledger");
+        let active = ledger
+            .reserve_generation(instance(10, 1), [])
+            .expect("reserve generation");
+        ledger.initialize_record(&active).expect("record");
+        let coordinator = instance(20, 2);
+        ledger
+            .persist_coordinator_identity(active.generation, coordinator)
+            .expect("coordinator identity");
+        ledger
+            .mark_admitting(active.generation, coordinator)
+            .expect("admitting state");
+
+        let launch_id = generate_helper_launch_id("task-worker");
+        write_parent_loss_admission_intent(
+            &bed.root,
+            &AdmissionIntent::new(active.generation, &launch_id, None, None),
+        )
+        .expect("intent");
+
+        let identity = AdmissionIdentity {
+            generation: active.generation,
+            launch_id: launch_id.clone(),
+            instance: child_instance,
+            uid: nix::unistd::getuid().as_raw(),
+            parent_launch_id: None,
+        };
+        write_parent_loss_admission_spawn_identity(&bed.root, &identity).expect("spawn identity");
+
+        let successor = close_with_budget(&ledger, Duration::from_secs(5));
+        assert_eq!(successor, active.generation + 1);
+
+        let status = child.wait().expect("child reaped");
+        assert!(!status.success());
+        assert_eq!(
+            SystemProcessInstanceSource.observe(&child_instance),
+            InstanceVerdict::NotSameOrExited
+        );
+        let record = ledger
+            .record(active.generation)
+            .expect("record")
+            .expect("record");
+        let closure = record.closure.expect("closure");
+        assert_eq!(closure.admissions.len(), 1);
+        assert_eq!(closure.admissions[0].launch_id, launch_id);
+        assert_eq!(closure.admissions[0].service, None);
+        assert_eq!(
+            closure.admissions[0].finding,
+            AdmissionFinding::Retired { escalated: false }
+        );
+    }
+
+    #[test]
     fn hosted_early_tempfail_child_records_rejected_and_reaped_ignoring_stale_ack() {
         use std::collections::BTreeMap;
         use std::ffi::OsString;

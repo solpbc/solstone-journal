@@ -106,6 +106,9 @@ mod schedule_read_only_architecture;
 #[path = "contracts/service_legacy_gate_purity.rs"]
 mod service_legacy_gate_purity;
 #[cfg(test)]
+#[path = "contracts/spawn_path_inventory.rs"]
+mod spawn_path_inventory;
+#[cfg(test)]
 #[path = "contracts/speaker_native_routes.rs"]
 mod speaker_native_routes;
 #[cfg(test)]

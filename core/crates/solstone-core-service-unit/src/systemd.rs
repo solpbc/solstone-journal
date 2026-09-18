@@ -9,10 +9,8 @@ const SERVICE_FILE_DESCRIPTOR_LIMIT: u32 = 4096;
 /// group. The supervisor's own standard shutdown is budgeted well under it
 /// (`solstone_core_system::lifecycle::STANDARD_SHUTDOWN_BUDGET`; a test in
 /// `solstone-core` pins the margin), so this is the manager's backstop, not
-/// the shape of a normal stop. Left at its installed value on purpose: an
-/// installed unit only changes at the next `journal setup`, and the fix that
-/// reaches every install at once is the supervisor's budget.
-pub const SERVICE_STOP_TIMEOUT_SECONDS: u32 = 30;
+/// the shape of a normal stop. Matches launchd's default at 20 seconds.
+pub const SERVICE_STOP_TIMEOUT_SECONDS: u32 = 20;
 /// launchd's documented default `ExitTimeOut`; the generated plist does not
 /// set one, so the supervisor's budget has to clear this too.
 pub const LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS: u32 = 20;

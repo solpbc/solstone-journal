@@ -33,8 +33,9 @@ use solstone_core_journal_io::{LockOptions, hold_lock, write_json};
 
 use super::HostedServiceKind;
 use super::parent_loss_admission::{
-    AdmissionResultState, admission_directory, read_parent_loss_admission_acknowledgement_in,
-    read_parent_loss_admission_intent, read_parent_loss_admission_result,
+    AdmissionIdentity, AdmissionResultState, admission_directory,
+    read_parent_loss_admission_acknowledgement_in, read_parent_loss_admission_intent,
+    read_parent_loss_admission_result, read_parent_loss_admission_spawn_identity_in,
 };
 use super::parent_loss_coordinator::{SealedAdmission, clear_supervisor_heartbeat};
 use super::parent_loss_ledger::{
@@ -43,8 +44,9 @@ use super::parent_loss_ledger::{
     ParentLossTerminalDisposition, ParentLossUnresolvedReason, digest_bytes, json_options,
 };
 use crate::process::{
-    InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner, SignalKind,
-    SystemProcessInstanceSource, TerminationError, process_owner, signal_exact_instance,
+    InspectResult, InstanceVerdict, ProcessInstance, ProcessInstanceSource, ProcessOwner,
+    SignalKind, SystemProcessInstanceSource, TerminationError, process_owner,
+    signal_exact_instance, terminate_descendants_exact,
 };
 
 pub const PARENT_LOSS_CLOSURE_SCHEMA_V1: u32 = 1;
@@ -390,12 +392,17 @@ fn scan_admissions(
             read_parent_loss_admission_acknowledgement_in(ledger, generation, &launch_id)
                 .ok()
                 .flatten();
+        let spawn_identity =
+            read_parent_loss_admission_spawn_identity_in(ledger, generation, &launch_id)
+                .ok()
+                .flatten();
         let (identity, finding) = match result {
             Some(result) => match result.state {
                 AdmissionResultState::Admitted | AdmissionResultState::RejectedUnreaped { .. } => {
                     match result
                         .identity
                         .or_else(|| acknowledgement.map(|ack| ack.identity))
+                        .or_else(|| spawn_identity.map(|s| s.identity))
                     {
                         Some(identity) => (Some(identity), None),
                         None => (None, Some(AdmissionFinding::Unidentified)),
@@ -410,7 +417,24 @@ fn scan_admissions(
             },
             None => match acknowledgement {
                 Some(acknowledgement) => (Some(acknowledgement.identity), None),
-                None => (None, Some(AdmissionFinding::NeverAcknowledged)),
+                None => match spawn_identity {
+                    Some(spawn_identity) => (Some(spawn_identity.identity), None),
+                    None => {
+                        #[cfg(target_os = "linux")]
+                        {
+                            match find_live_process_by_launch_env(
+                                ledger.canonical_root(),
+                                generation,
+                                &launch_id,
+                            ) {
+                                Some(id) => (Some(id), None),
+                                None => (None, Some(AdmissionFinding::NeverAcknowledged)),
+                            }
+                        }
+                        #[cfg(not(target_os = "linux"))]
+                        (None, Some(AdmissionFinding::NeverAcknowledged))
+                    }
+                },
             },
         };
         if let Some(identity) = identity.as_ref() {
@@ -435,12 +459,95 @@ fn scan_admissions(
     Ok((closures, sealed))
 }
 
+#[cfg(target_os = "linux")]
+fn find_live_process_by_launch_env(
+    journal: &std::path::Path,
+    generation: ParentLossGeneration,
+    launch_id: &str,
+) -> Option<AdmissionIdentity> {
+    use std::os::unix::fs::MetadataExt;
+    let own_uid = nix::unistd::getuid().as_raw();
+    let proc_dir = fs::read_dir("/proc").ok()?;
+    for entry in proc_dir.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        let Ok(pid) = name_str.parse::<u32>() else {
+            continue;
+        };
+        if pid == 0 {
+            continue;
+        }
+        let proc_path = entry.path();
+        let Ok(meta) = fs::metadata(&proc_path) else {
+            continue;
+        };
+        if meta.uid() != own_uid {
+            continue;
+        }
+        let environ_path = proc_path.join("environ");
+        let Ok(environ_bytes) = fs::read(&environ_path) else {
+            continue;
+        };
+        let mut has_journal = false;
+        let mut has_launch_id = false;
+        for var in environ_bytes.split(|&b| b == 0) {
+            if var.is_empty() {
+                continue;
+            }
+            if let Ok(var_str) = std::str::from_utf8(var)
+                && let Some((k, v)) = var_str.split_once('=')
+            {
+                if k == "SOLSTONE_JOURNAL" && std::path::Path::new(v) == journal {
+                    has_journal = true;
+                } else if k == "SOL_PARENT_LOSS_LAUNCH_ID" && v == launch_id {
+                    has_launch_id = true;
+                }
+            }
+        }
+        if has_journal && has_launch_id {
+            let source = SystemProcessInstanceSource;
+            if let InspectResult::Present { instance, uid, .. } = source.inspect(pid) {
+                return Some(AdmissionIdentity {
+                    generation,
+                    launch_id: launch_id.to_string(),
+                    instance,
+                    uid,
+                    parent_launch_id: None,
+                });
+            }
+        }
+    }
+    None
+}
+
 /// Observe every identified admission; signal the live ones exactly and wait
 /// for them within the deadline. Returns the refusal reason if any remain.
 fn retire_live_admissions(
     admissions: &mut [AdmissionClosure],
     authority: &ClosingAuthority<'_>,
 ) -> Option<BootstrapRecoveryReason> {
+    #[cfg(any(test, feature = "test-hooks"))]
+    if crate::process::retirement_skip_test_fault() {
+        for admission in admissions.iter() {
+            let Some(instance) = admission.instance else {
+                continue;
+            };
+            if matches!(
+                observe_settled(authority.source, &instance, authority.deadline),
+                InstanceVerdict::SameLive { .. }
+            ) {
+                return Some(BootstrapRecoveryReason::AbandonedAdmissionLive);
+            }
+        }
+        return None;
+    }
+
+    let kill_at = authority
+        .deadline
+        .checked_sub(ESCALATION_RESERVE)
+        .unwrap_or(authority.deadline)
+        .max(Instant::now());
+
     let mut pending = Vec::new();
     let mut unverifiable = false;
     for (index, admission) in admissions.iter_mut().enumerate() {
@@ -456,6 +563,17 @@ fn retire_live_admissions(
                 }
             }
             InstanceVerdict::SameLive { .. } => {
+                #[cfg(any(target_os = "linux", target_os = "macos"))]
+                if let Some(uid) = admission.uid {
+                    let descendant_budget = kill_at.saturating_duration_since(Instant::now());
+                    let _ = terminate_descendants_exact(
+                        instance,
+                        uid,
+                        descendant_budget,
+                        authority.source,
+                        || {},
+                    );
+                }
                 // A failed signal here means the exact instance was gone by the
                 // time the guard re-observed it; the wait below settles it.
                 let _ = authority.retirer.signal(instance, SignalKind::Terminate);
@@ -471,11 +589,6 @@ fn retire_live_admissions(
     if pending.is_empty() {
         return None;
     }
-    let kill_at = authority
-        .deadline
-        .checked_sub(ESCALATION_RESERVE)
-        .unwrap_or(authority.deadline)
-        .max(Instant::now());
     pending = wait_for_exit(admissions, pending, authority, kill_at, false);
     if pending.is_empty() {
         return None;

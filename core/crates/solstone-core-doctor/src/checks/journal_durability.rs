@@ -166,6 +166,38 @@ fn scan_generations(journal: &Path, report: &mut DurabilityReport) {
                 closure.closed_at,
                 closure.admissions.len(),
             ));
+            for admission in &closure.admissions {
+                let finding_desc = match admission.finding {
+                    AdmissionFinding::Exited => "exited".to_owned(),
+                    AdmissionFinding::Retired { escalated: true } => {
+                        "retired (escalated: true)".to_owned()
+                    }
+                    AdmissionFinding::Retired { escalated: false } => "retired".to_owned(),
+                    AdmissionFinding::NeverAcknowledged => "never-acknowledged".to_owned(),
+                    AdmissionFinding::SpawnFailed => "spawn-failed".to_owned(),
+                    AdmissionFinding::Unidentified => "unidentified".to_owned(),
+                    AdmissionFinding::RejectedAndReaped => "rejected-and-reaped".to_owned(),
+                    AdmissionFinding::PidReusedByAnotherUser => {
+                        "pid-reused-by-another-user".to_owned()
+                    }
+                };
+                let service_or_prefix = match admission.service {
+                    Some(service) => {
+                        format!(
+                            "service {}",
+                            solstone_core_system::lifecycle::service_name(service)
+                        )
+                    }
+                    None => {
+                        let prefix = admission.launch_id.split('-').next().unwrap_or("helper");
+                        format!("helper {prefix}")
+                    }
+                };
+                report.closed_generations.push(format!(
+                    "generation {generation} admission {}: {service_or_prefix}, {finding_desc}",
+                    admission.launch_id,
+                ));
+            }
         } else if let Some(ParentLossTerminalDisposition::Unresolved { reason }) =
             record.terminal.as_ref()
         {
@@ -521,17 +553,28 @@ mod tests {
         .unwrap();
 
         let report = scan(journal.path());
-        assert_eq!(
-            report.closed_generations,
-            vec![
-                "generation 93 was closed by the start that became generation 94 (unix \
-                 1789000000): 3 admissions, 1 already exited, 1 stopped by the journal, 1 never \
-                 admitted"
-                    .to_owned()
-            ]
+        assert_eq!(report.closed_generations.len(), 4);
+        assert!(report.closed_generations[0].contains("93"));
+        assert!(
+            report
+                .closed_generations
+                .iter()
+                .any(|line| line.contains("convey-a"))
+        );
+        assert!(
+            report
+                .closed_generations
+                .iter()
+                .any(|line| { line.contains("sense-b") && line.contains("escalated") })
+        );
+        assert!(
+            report
+                .closed_generations
+                .iter()
+                .any(|line| { line.contains("sense-c") })
         );
         assert_eq!(report.unresolved_generations.len(), 1);
-        assert!(report.unresolved_generations[0].starts_with("generation 6: "));
+        assert!(report.unresolved_generations[0].contains("6"));
         assert!(!report.is_clean());
     }
 

@@ -10,8 +10,9 @@ mod spawn;
 mod terminate;
 
 pub use authority::{
-    LaunchAuthority, launch, launch_command, launch_command_hosted, launch_managed,
-    launch_managed_hosted, launch_managed_request, launch_managed_with, launch_with,
+    LaunchAuthority, launch, launch_command, launch_command_hosted, launch_generation_child,
+    launch_managed, launch_managed_generation_child, launch_managed_hosted, launch_managed_request,
+    launch_managed_with, launch_with,
 };
 #[cfg(target_os = "linux")]
 pub(crate) use instance::hold_while_instance_live;

@@ -528,6 +528,12 @@ impl ParentLossLedger {
                     // is closed from its admissions directory, or refuses with
                     // a reason that converges.
                     outcome => {
+                        #[cfg(any(test, feature = "test-hooks"))]
+                        if crate::process::closer_skip_test_fault() {
+                            return Err(ParentLossLedgerError::RecoveryRequired(
+                                BootstrapRecoveryReason::CoordinatorNotLive,
+                            ));
+                        }
                         let (_, authority) = closing.expect("closing authority checked above");
                         let next = active.generation.max(floor) + 1;
                         self.close_active_generation(&active, outcome, next, authority)?;

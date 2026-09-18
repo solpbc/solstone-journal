@@ -903,7 +903,7 @@ fn systemd_managed(bytes: &[u8], launcher: &Path) -> bool {
         singleton.get("TimeoutStopSec").copied(),
     ) {
         (Some("control-group"), Some(timeout))
-            if timeout == SERVICE_STOP_TIMEOUT_SECONDS.to_string() =>
+            if timeout == SERVICE_STOP_TIMEOUT_SECONDS.to_string() || timeout == "30" =>
         {
             true
         }
@@ -2285,6 +2285,33 @@ mod tests {
         assert!(!systemd_managed(
             systemd
                 .replace("KillMode=control-group", "KillMode=process")
+                .as_bytes(),
+            launcher,
+        ));
+        assert!(systemd_managed(
+            systemd
+                .replace(
+                    &format!("TimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\n"),
+                    "TimeoutStopSec=30\n"
+                )
+                .as_bytes(),
+            launcher,
+        ));
+        assert!(!systemd_managed(
+            systemd
+                .replace(
+                    &format!("TimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\n"),
+                    "TimeoutStopSec=15\n"
+                )
+                .as_bytes(),
+            launcher,
+        ));
+        assert!(!systemd_managed(
+            systemd
+                .replace(
+                    &format!("TimeoutStopSec={SERVICE_STOP_TIMEOUT_SECONDS}\n"),
+                    "TimeoutStopSec=45\n"
+                )
                 .as_bytes(),
             launcher,
         ));

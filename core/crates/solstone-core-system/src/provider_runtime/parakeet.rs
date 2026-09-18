@@ -709,6 +709,7 @@ impl ReadyProcessLookup for ParakeetRuntimeShared {
 pub struct ParakeetLifecycleSeam {
     shared: Arc<ParakeetRuntimeShared>,
     clock: Arc<dyn RuntimeClock>,
+    journal_path: Option<PathBuf>,
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
     termination_timeout: Duration,
@@ -735,10 +736,16 @@ impl ParakeetLifecycleSeam {
         Self {
             shared,
             clock,
+            journal_path: std::env::var_os("SOLSTONE_JOURNAL").map(PathBuf::from),
             warmup_timeout,
             warmup_poll_interval,
             termination_timeout,
         }
+    }
+
+    pub fn with_journal(mut self, journal_path: impl Into<PathBuf>) -> Self {
+        self.journal_path = Some(journal_path.into());
+        self
     }
 }
 
@@ -748,6 +755,7 @@ impl LifecycleSeam for ParakeetLifecycleSeam {
         let _clock = Arc::clone(&self.clock);
         let launch = shared.launch_request_for(&state.desired_fingerprint);
         let fence = fence.clone();
+        let journal_path = self.journal_path.clone();
         let warmup_timeout = self.warmup_timeout;
         let warmup_poll_interval = self.warmup_poll_interval;
         thread::spawn(move || {
@@ -757,6 +765,7 @@ impl LifecycleSeam for ParakeetLifecycleSeam {
                         &shared,
                         &launch,
                         &fence,
+                        journal_path.as_deref(),
                         warmup_timeout,
                         warmup_poll_interval,
                     )
@@ -1044,6 +1053,7 @@ fn start_parakeet(
     shared: &ParakeetRuntimeShared,
     launch: &ParakeetLaunchConfig,
     fence: &ProviderFence,
+    journal_path: Option<&std::path::Path>,
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
 ) -> ProviderLaunchOutcome {
@@ -1061,7 +1071,26 @@ fn start_parakeet(
         port,
         launch.threads,
     );
-    let mut authority = match crate::process::launch(
+    #[cfg(unix)]
+    let authority_res = {
+        let Some(journal_path) = journal_path else {
+            return launch_failed();
+        };
+        let launch_id = crate::lifecycle::generate_helper_launch_id("parakeet-provider");
+        crate::process::launch_generation_child(
+            Disposition::IndependentLongLived,
+            journal_path,
+            launch_id,
+            || spawn_parakeet(&cmd, &launch.env_updates),
+            Box::new(|child, timeout| {
+                crate::process::terminate(child, timeout)
+                    .map(|_| ())
+                    .map_err(|error| LaunchError::Terminate(std::io::Error::other(error)))
+            }),
+        )
+    };
+    #[cfg(not(unix))]
+    let authority_res = crate::process::launch(
         Disposition::IndependentLongLived,
         || spawn_parakeet(&cmd, &launch.env_updates),
         Box::new(|child, timeout| {
@@ -1069,7 +1098,8 @@ fn start_parakeet(
                 .map(|_| ())
                 .map_err(|error| LaunchError::Terminate(std::io::Error::other(error)))
         }),
-    ) {
+    );
+    let mut authority = match authority_res {
         Ok(authority) => authority,
         Err(_) => return launch_failed(),
     };
@@ -1134,6 +1164,7 @@ fn start_parakeet(
     shared: &ParakeetRuntimeShared,
     launch: &ParakeetLaunchConfig,
     fence: &ProviderFence,
+    _journal_path: Option<&std::path::Path>,
     warmup_timeout: Duration,
     warmup_poll_interval: Duration,
 ) -> ProviderLaunchOutcome {
@@ -1239,6 +1270,7 @@ fn start_parakeet(
     _: &ParakeetRuntimeShared,
     _: &ParakeetLaunchConfig,
     _: &ProviderFence,
+    _: Option<&std::path::Path>,
     _: Duration,
     _: Duration,
 ) -> ProviderLaunchOutcome {

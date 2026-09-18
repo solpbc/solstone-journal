@@ -48,7 +48,8 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
                 vulkan_devices: Vec::new(),
             },
         ),
-        lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone()),
+        lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone())
+            .with_journal(journal),
         probe: LocalProbeSeam::new(local_shared.clone(), journal),
         store: FileRuntimeStore::new(
             journal,
@@ -75,7 +76,8 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
                 vulkan_devices: Vec::new(),
             },
         ),
-        lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone()),
+        lifecycle: ParakeetLifecycleSeam::new(parakeet_shared.clone(), clock.clone())
+            .with_journal(journal),
         probe: ParakeetProbeSeam::new(parakeet_shared.clone(), journal),
         store: FileRuntimeStore::new(
             journal,

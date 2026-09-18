@@ -93,6 +93,11 @@ path = "tests/provider_install_component.rs"
 name = "darwin_hosted_parent_lifetime"
 path = "tests/darwin_hosted_parent_lifetime.rs"
 
+[[test]]
+name = "never_admitted_generation_children"
+path = "tests/never_admitted_generation_children.rs"
+required-features = ["test-hooks"]
+
 [[bin]]
 name = "solstone-core-generate-session-kill-helper"
 path = "tests/bin/generate_session_kill_helper.rs"

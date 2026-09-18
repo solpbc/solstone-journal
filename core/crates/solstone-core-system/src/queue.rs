@@ -24,10 +24,12 @@ use crate::catchup::{admit_daily_catchup_with_capability, catchup_marker_capabil
 use crate::partition::Partition;
 use crate::process::{
     CAP_TERMINATION_TIMEOUT, Disposition, ExecutionState, InspectResult, LaunchAuthority,
-    LaunchError, ManagedProcess, ProcessEventSink, ProcessInstanceSource, SpawnError, SpawnOptions,
+    LaunchError, ProcessEventSink, ProcessInstanceSource, SpawnError, SpawnOptions,
     SystemProcessInstanceSource, TASK_QUEUE_SHUTDOWN_TIMEOUT, TerminationError, TerminationOutcome,
-    exit_status_for_code, launch_managed,
+    exit_status_for_code,
 };
+#[cfg(not(unix))]
+use crate::process::{ManagedProcess, launch_managed};
 use crate::request::{ActiveTaskSnapshot, DailyCatchupProvenance, ExecutionRequest};
 
 /// The byte-identical Python status label consumed downstream for deadline termination.
@@ -228,31 +230,71 @@ type WorkerThreadSpawner =
     Arc<dyn Fn(Box<dyn FnOnce() + Send>) -> io::Result<thread::JoinHandle<()>> + Send + Sync>;
 
 fn spawn_managed_queue_process(
+    journal_root: PathBuf,
     command: Vec<String>,
     options: SpawnOptions,
     timeout: Duration,
 ) -> Result<QueueProcessHandle, SpawnError> {
-    let authority = match launch_managed(Disposition::IndependentBoundedHelper { timeout }, || {
-        ManagedProcess::spawn_exact(command, options)
-    }) {
-        Ok(authority) => authority,
-        Err(LaunchError::SpawnManaged(error)) => return Err(error),
-        Err(LaunchError::CapabilityUnavailable { needed }) => {
-            return Err(SpawnError::Spawn(io::Error::other(format!(
-                "independent launch requires {needed}"
-            ))));
-        }
-        Err(error) => {
-            unreachable!("launch_managed(IndependentBoundedHelper) cannot fail with {error}")
-        }
-    };
-    Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
-        authority,
-    )))))
+    #[cfg(unix)]
+    {
+        let launch_id = crate::lifecycle::generate_helper_launch_id("task-worker");
+        let authority = match crate::process::launch_managed_generation_child(
+            Disposition::IndependentBoundedHelper { timeout },
+            &journal_root,
+            launch_id,
+            crate::process::ManagedLaunchRequest {
+                #[cfg(windows)]
+                read_file_grants: Vec::new(),
+                command,
+                options,
+            },
+        ) {
+            Ok(authority) => authority,
+            Err(LaunchError::SpawnManaged(error)) => return Err(error),
+            Err(LaunchError::CapabilityUnavailable { needed }) => {
+                return Err(SpawnError::Spawn(io::Error::other(format!(
+                    "independent launch requires {needed}"
+                ))));
+            }
+            Err(error) => {
+                return Err(SpawnError::Spawn(io::Error::other(format!(
+                    "failed to launch generation child: {error}"
+                ))));
+            }
+        };
+        Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
+            authority,
+        )))))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = journal_root;
+        let authority =
+            match launch_managed(Disposition::IndependentBoundedHelper { timeout }, || {
+                ManagedProcess::spawn_exact(command, options)
+            }) {
+                Ok(authority) => authority,
+                Err(LaunchError::SpawnManaged(error)) => return Err(error),
+                Err(LaunchError::CapabilityUnavailable { needed }) => {
+                    return Err(SpawnError::Spawn(io::Error::other(format!(
+                        "independent launch requires {needed}"
+                    ))));
+                }
+                Err(error) => {
+                    unreachable!(
+                        "launch_managed(IndependentBoundedHelper) cannot fail with {error}"
+                    )
+                }
+            };
+        Ok(Arc::new(Mutex::new(Box::new(ManagedQueueProcess(
+            authority,
+        )))))
+    }
 }
 
 #[cfg(windows)]
 fn spawn_windows_queue_process(
+    journal_root: PathBuf,
     mut command: Vec<String>,
     options: SpawnOptions,
     timeout: Duration,
@@ -275,7 +317,7 @@ fn spawn_windows_queue_process(
             .is_some_and(|(actual, expected)| actual == expected);
     if grants.is_empty() || !(named_journal || exact_journal) {
         // Third-party commands keep their existing no-protocol launch contract.
-        return spawn_managed_queue_process(command, options, timeout);
+        return spawn_managed_queue_process(journal_root, command, options, timeout);
     }
     // Bind the queue's closed journal command to this installation's binary,
     // rather than letting a PATH override receive an installation capability.
@@ -486,12 +528,24 @@ impl TaskQueue {
         #[cfg(windows)]
         let spawner: QueueProcessSpawner = {
             let grants = options.read_file_grants;
+            let journal_root = options.journal_root.clone();
             Arc::new(move |command, options, timeout| {
-                spawn_windows_queue_process(command, options, timeout, &grants)
+                spawn_windows_queue_process(
+                    journal_root.clone(),
+                    command,
+                    options,
+                    timeout,
+                    &grants,
+                )
             })
         };
         #[cfg(not(windows))]
-        let spawner: QueueProcessSpawner = Arc::new(spawn_managed_queue_process);
+        let spawner: QueueProcessSpawner = {
+            let journal_root = options.journal_root.clone();
+            Arc::new(move |command, options, timeout| {
+                spawn_managed_queue_process(journal_root.clone(), command, options, timeout)
+            })
+        };
         Self {
             inner: Arc::new(QueueInner {
                 options: QueueOptions {
