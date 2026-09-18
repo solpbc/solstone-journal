@@ -9,6 +9,12 @@
     "schema_version",
     "product",
     "version",
+    "bootstrap_contract_version",
+    "bootstrap_filename",
+    "upgrade_epoch",
+    "state_reader_min",
+    "state_reader_max",
+    "retention_window",
     "source_commit",
     "source_dirty",
     "cargo_lock_sha256",
@@ -30,6 +36,30 @@
     "version": {
       "type": "string",
       "minLength": 1
+    },
+    "bootstrap_contract_version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "bootstrap_filename": {
+      "type": "string",
+      "minLength": 1
+    },
+    "upgrade_epoch": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state_reader_min": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state_reader_max": {
+      "type": "string",
+      "minLength": 1
+    },
+    "retention_window": {
+      "type": "integer",
+      "minimum": 1
     },
     "source_commit": {
       "type": "string",

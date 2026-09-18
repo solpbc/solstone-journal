@@ -56,12 +56,19 @@ pub fn linux_produce_dir(root: &Path, version: &str) -> (PathBuf, String) {
     let basename = format!("solstone-journal-{version}-linux-x86_64");
     let dest = root.join("artifacts");
     let work = root.join("work");
+    let journal_script = format!(
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'journal (solstone) %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
+    );
+    let solstone_script = format!(
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf 'solstone %s\\n' \"{version}\"; exit 0; fi\nexit 0\n"
+    );
     promote(&PromoteRequest {
         dest: dest.clone(),
         work,
         tree: vec![
             ("bin/solstone-core".into(), b"core".to_vec(), 0o755),
-            ("bin/journal".into(), b"#!/bin/sh\nexit 0\n".to_vec(), 0o755),
+            ("bin/journal".into(), journal_script.into_bytes(), 0o755),
+            ("bin/solstone".into(), solstone_script.into_bytes(), 0o755),
         ],
         version: version.to_owned(),
         basename: basename.clone(),

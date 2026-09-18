@@ -147,20 +147,36 @@ pub fn artifact_sidecars(basename: &str) -> [String; 3] {
     ]
 }
 
+#[must_use]
+pub fn versioned_bootstrap_member(version: &str) -> String {
+    format!("solstone-journal-{version}-install.sh")
+}
+
+pub fn extract_version_from_basename(basename: &str) -> Option<&str> {
+    let rest = basename.strip_prefix("solstone-journal-")?;
+    let (version, _) = rest.split_once('-')?;
+    Some(version)
+}
+
 /// Members protected by the checksum sidecar. The receipt is a first-class
 /// macOS release fact, so it is covered alongside the containers and release
 /// declaration rather than being an unsigned afterthought.
 pub fn checksum_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
+    let version =
+        extract_version_from_basename(basename).ok_or("cannot derive version from basename")?;
+    let bootstrap = versioned_bootstrap_member(version);
     match os {
         OS_MACOS => {
             let mut names = artifact_archives_for_os(os, basename)?;
             names.push(format!("{basename}.release"));
             names.push(format!("{basename}.signing.json"));
+            names.push(bootstrap);
             Ok(names)
         }
         OS_LINUX => {
             let mut names = artifact_archives_for_os(os, basename)?;
             names.push(format!("{basename}.release"));
+            names.push(bootstrap);
             Ok(names)
         }
         OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
@@ -172,12 +188,7 @@ pub fn checksum_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, 
 /// its eventual minisign signature), but it does bind the checksum sidecar.
 pub fn manifest_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
     match os {
-        OS_MACOS => {
-            let mut names = checksum_members_for_os(os, basename)?;
-            names.push(format!("{basename}.sha256"));
-            Ok(names)
-        }
-        OS_LINUX => {
+        OS_MACOS | OS_LINUX => {
             let mut names = checksum_members_for_os(os, basename)?;
             names.push(format!("{basename}.sha256"));
             Ok(names)
@@ -188,23 +199,35 @@ pub fn manifest_members_for_os(os: &str, basename: &str) -> Result<Vec<String>, 
 }
 
 #[must_use]
-pub fn artifact_set(basename: &str) -> [String; 6] {
+pub fn artifact_set(basename: &str) -> Vec<String> {
     let [tar, deb, rpm] = artifact_archives(basename);
     let [sha256, manifest, release] = artifact_sidecars(basename);
-    [tar, deb, rpm, sha256, manifest, release]
+    let mut set = vec![tar, deb, rpm, sha256, manifest, release];
+    if let Some(version) = extract_version_from_basename(basename) {
+        set.push(versioned_bootstrap_member(version));
+    }
+    set
 }
 
 /// Sidecars for `os`. macOS carries a fourth: the signing receipt, which is
 /// provenance the Linux set does not need and which used to be produced by
 /// `scripts/record_macos_native_wheel.py`.
 pub fn artifact_sidecars_for_os(os: &str, basename: &str) -> Result<Vec<String>, &'static str> {
+    let version =
+        extract_version_from_basename(basename).ok_or("cannot derive version from basename")?;
+    let bootstrap = versioned_bootstrap_member(version);
     match os {
         OS_MACOS => {
             let mut names = artifact_sidecars(basename).to_vec();
             names.push(format!("{basename}.signing.json"));
+            names.push(bootstrap);
             Ok(names)
         }
-        OS_LINUX => Ok(artifact_sidecars(basename).to_vec()),
+        OS_LINUX => {
+            let mut names = artifact_sidecars(basename).to_vec();
+            names.push(bootstrap);
+            Ok(names)
+        }
         OS_WINDOWS => Err("windows archive/signing is not implemented in this lode"),
         other => panic!("unexpected distribution os {other}"),
     }
@@ -1291,21 +1314,31 @@ mod tests {
     }
 
     #[test]
-    fn both_platforms_promote_a_six_file_set_and_neither_names_the_others_container() {
+    fn both_platforms_promote_a_seven_file_set_and_neither_names_the_others_container() {
         let base = "solstone-journal-1.0.22-linux-x86_64";
         let linux = artifact_set_for_os(OS_LINUX, base).expect("linux");
-        assert_eq!(linux.len(), 6);
+        assert_eq!(linux.len(), 7);
         assert!(linux.iter().any(|name| name.ends_with(".deb")));
         assert!(linux.iter().any(|name| name.ends_with(".rpm")));
+        assert!(
+            linux
+                .iter()
+                .any(|name| name == "solstone-journal-1.0.22-install.sh")
+        );
         assert!(!linux.iter().any(|name| name.ends_with(".pkg")));
         assert!(!linux.iter().any(|name| name.ends_with(".signing.json")));
 
         let base = "solstone-journal-1.0.22-macos-arm64";
         let macos = artifact_set_for_os(OS_MACOS, base).expect("macos");
-        assert_eq!(macos.len(), 6);
+        assert_eq!(macos.len(), 7);
         assert!(macos.iter().any(|name| name.ends_with(".tar.gz")));
         assert!(macos.iter().any(|name| name.ends_with(".pkg")));
         assert!(macos.iter().any(|name| name.ends_with(".signing.json")));
+        assert!(
+            macos
+                .iter()
+                .any(|name| name == "solstone-journal-1.0.22-install.sh")
+        );
         assert!(!macos.iter().any(|name| name.ends_with(".deb")));
         assert!(!macos.iter().any(|name| name.ends_with(".rpm")));
     }

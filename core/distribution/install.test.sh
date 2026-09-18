@@ -49,6 +49,8 @@ make_release() {
 	_dest=$1
 	_version=$2
 	_target=$3
+	_min=${4:-1.0.0}
+	_max=${5:-$_version}
 	printf '%s\n' \
 		"product=solstone-journal" \
 		"version=${_version}" \
@@ -57,14 +59,36 @@ make_release() {
 		"lock_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
 		"upgrade_epoch=journal-v2" \
 		"retention_window=3" \
-		"min_bootstrap_revision=1" \
+		"min_bootstrap_revision=2" \
+		"bootstrap_contract_version=2" \
+		"bootstrap_filename=solstone-journal-${_version}-install.sh" \
+		"state_reader_min=${_min}" \
+		"state_reader_max=${_max}" \
+		>"$_dest"
+}
+
+make_legacy_release() {
+	_dest=$1
+	_version=$2
+	_target=$3
+	printf '%s\n' \
+		"product=solstone-journal" \
+		"version=${_version}" \
+		"target=${_target}" \
+		"commit=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" \
+		"lock_sha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" \
+		"upgrade_epoch=journal-v2" \
+		"retention_window=3" \
+		"min_bootstrap_revision=2" \
 		>"$_dest"
 }
 
 make_macos_release() {
 	_dest=$1
 	_version=$2
-	make_release "$_dest" "$_version" macos-arm64
+	_min=${3:-1.0.0}
+	_max=${4:-$_version}
+	make_release "$_dest" "$_version" macos-arm64 "$_min" "$_max"
 	printf '%s\n' \
 		"archive_prebuild_input_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" \
 		"archive_delivery_contract_sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" \
@@ -75,14 +99,39 @@ make_macos_release() {
 make_tree_tar() {
 	_dest=$1
 	_stage=$2
+	_setup_script=${3:-"exit 0"}
 	mkdir -p "$_stage/bin"
-	printf '%s\n' \
-		'#!/bin/sh' \
-		'# fixture-build: ok' \
-		'[ -z "${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "$*" >"$SOLSTONE_SETUP_ARGS_LOG"' \
-		'[ -z "${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "$PATH" >"$SOLSTONE_SETUP_PATH_LOG"' \
-		'exit 0' >"$_stage/bin/journal"
-	chmod 755 "$_stage/bin/journal"
+	cat <<EOF >"$_stage/bin/journal"
+#!/bin/sh
+# fixture-build: ok
+if [ "\${1:-}" = "--version" ]; then
+	_dir=\$(CDPATH= cd -- "\$(dirname "\$0")/.." && pwd)
+	_ver=1.0.22
+	if [ -f "\$_dir/.release" ]; then
+		_ver=\$(awk -F= '\$1=="version"{print \$2}' "\$_dir/.release")
+	fi
+	printf 'journal (solstone) %s\n' "\$_ver"
+	exit 0
+fi
+[ -z "\${SOLSTONE_SETUP_ARGS_LOG:-}" ] || printf "%s\n" "\$*" >"\$SOLSTONE_SETUP_ARGS_LOG"
+[ -z "\${SOLSTONE_SETUP_PATH_LOG:-}" ] || printf "%s\n" "\$PATH" >"\$SOLSTONE_SETUP_PATH_LOG"
+${_setup_script}
+EOF
+	cat <<EOF >"$_stage/bin/solstone"
+#!/bin/sh
+# fixture-build: ok
+if [ "\${1:-}" = "--version" ]; then
+	_dir=\$(CDPATH= cd -- "\$(dirname "\$0")/.." && pwd)
+	_ver=1.0.22
+	if [ -f "\$_dir/.release" ]; then
+		_ver=\$(awk -F= '\$1=="version"{print \$2}' "\$_dir/.release")
+	fi
+	printf 'solstone %s\n' "\$_ver"
+	exit 0
+fi
+exit 0
+EOF
+	chmod 755 "$_stage/bin/journal" "$_stage/bin/solstone"
 	tar -C "$_stage" -czf "$_dest" bin
 }
 
@@ -342,9 +391,12 @@ if grep -F 'schema_version=1' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'origin=local' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F "architecture=$TARGET" "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'installer_revision=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' "$PREFIX/install-receipt" >/dev/null \
-	&& grep -F 'bootstrap_revision=1' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'bootstrap_revision=2' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'route=tree' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'signature_verification=skipped' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'role=journal' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'journal_state=present' "$PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=start' "$PREFIX/install-receipt" >/dev/null \
 	&& grep -F 'setup_status=complete' "$PREFIX/install-receipt" >/dev/null; then
 	pass "tree install writes the forward-readable receipt"
 else
@@ -363,15 +415,7 @@ SIGNAL_STAGE=$BASE/signal-stage
 SIGNAL_ARCHIVE=$BASE/signal.tar.gz
 SIGNAL_SHA=$BASE/signal.sha256
 SIGNAL_REL=$BASE/signal.release
-mkdir -p "$SIGNAL_STAGE/bin"
-printf '%s\n' '#!/bin/sh' \
-	'if [ ! -e "$HOME/.signal-fired" ]; then' \
-	'  : >"$HOME/.signal-fired"' \
-	'  kill -TERM "$PPID"' \
-	'fi' \
-	'exit 0' >"$SIGNAL_STAGE/bin/journal"
-chmod 755 "$SIGNAL_STAGE/bin/journal"
-tar -C "$SIGNAL_STAGE" -czf "$SIGNAL_ARCHIVE" bin
+make_tree_tar "$SIGNAL_ARCHIVE" "$SIGNAL_STAGE" 'if [ ! -e "$HOME/.signal-fired" ]; then : >"$HOME/.signal-fired"; kill -TERM "$PPID"; fi; exit 0'
 sha_sidecar "$SIGNAL_ARCHIVE" "$SIGNAL_SHA"
 make_release "$SIGNAL_REL" 1.0.25 "$TARGET"
 mkdir -p "$BASE/signal-home"
@@ -498,15 +542,7 @@ ROLLBACK_STAGE=$BASE/rollback-stage
 ROLLBACK_ARCHIVE=$BASE/rollback.tar.gz
 ROLLBACK_SHA=$BASE/rollback.sha256
 ROLLBACK_REL=$BASE/rollback.release
-mkdir -p "$ROLLBACK_STAGE/bin"
-printf '%s\n' '#!/bin/sh' \
-	'if [ ! -e "$HOME/.setup-refused-once" ]; then' \
-	'  : >"$HOME/.setup-refused-once"' \
-	'  exit 1' \
-	'fi' \
-	'exit 0' >"$ROLLBACK_STAGE/bin/journal"
-chmod 755 "$ROLLBACK_STAGE/bin/journal"
-tar -C "$ROLLBACK_STAGE" -czf "$ROLLBACK_ARCHIVE" bin
+make_tree_tar "$ROLLBACK_ARCHIVE" "$ROLLBACK_STAGE" 'if [ ! -e "$HOME/.setup-refused-once" ]; then : >"$HOME/.setup-refused-once"; exit 1; fi; exit 0'
 sha_sidecar "$ROLLBACK_ARCHIVE" "$ROLLBACK_SHA"
 make_release "$ROLLBACK_REL" 1.0.27 "$TARGET"
 ROLLBACK_BIN=$BASE/rollback-bin
@@ -737,7 +773,7 @@ OUTDATED_DIGEST=0000000000000000000000000000000000000000000000000000000000000000
 mkdir -p "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin"
 printf '%s\n' "$OUTDATED_DIGEST" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.archive-sha256"
 make_release "$BASE/outdated-owned-base.release" 1.0.22 "$TARGET"
-sed 's/^min_bootstrap_revision=1$/min_bootstrap_revision=2/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
+sed 's/^min_bootstrap_revision=2$/min_bootstrap_revision=99/' "$BASE/outdated-owned-base.release" >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/.release"
 printf '%s\n' '#!/bin/sh' 'exit 0' >"$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 chmod 755 "$OUTDATED_PREFIX/versions/1.0.22-000000000000/bin/journal"
 ln -s versions/1.0.22-000000000000 "$OUTDATED_PREFIX/current"
@@ -908,15 +944,13 @@ else
 	fail "identical-digest no-op omitted version or lane"
 fi
 
-# Unknown receipt keys are tolerated, while an unknown schema is named and
-# leaves the installed tree untouched.
-printf '%s\n' 'future_dispatch_hint=ignored-by-v1' >>"$PREFIX/install-receipt"
-if env HOME="$HOME" "$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null; then
-	pass "receipt reader tolerates unknown keys"
-else
-	fail "receipt reader rejected an unknown key"
-fi
+# Unknown receipt keys are rejected under receipt-invalid
 cp "$PREFIX/install-receipt" "$BASE/receipt.good"
+printf '%s\n' 'future_dispatch_hint=rejected' >>"$PREFIX/install-receipt"
+expect_refuse receipt-invalid receipt-unknown-key \
+	env HOME="$HOME" "$INSTALL" --prefix "$PREFIX" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+cp "$BASE/receipt.good" "$PREFIX/install-receipt"
+
 sed 's/^schema_version=1$/schema_version=99/' "$BASE/receipt.good" >"$PREFIX/install-receipt"
 _receipt_current=$(readlink "$PREFIX/current")
 expect_refuse receipt-schema-unsupported receipt-schema-newer \
@@ -958,7 +992,7 @@ rm -f "$ADOPT_PREFIX/install-receipt"
 # record. Positive identification accepts that legacy shape for adoption, but
 # does not invent an epoch or lane for it.
 _adopt_current=$ADOPT_PREFIX/$(readlink "$ADOPT_PREFIX/current")
-sed '/^upgrade_epoch=/d; /^retention_window=/d; /^min_bootstrap_revision=/d' "$_adopt_current/.release" >"$BASE/adopt-legacy.release"
+head -n 5 "$_adopt_current/.release" >"$BASE/adopt-legacy.release"
 mv "$BASE/adopt-legacy.release" "$_adopt_current/.release"
 ADOPT_UPGRADE_REL=$BASE/adopt-upgrade.release
 make_release "$ADOPT_UPGRADE_REL" 1.0.23 "$TARGET"
@@ -1090,7 +1124,7 @@ expect_refuse version-mismatch version-other \
 
 # installer-outdated (fresh-fetch route)
 make_release "$BASE/outdated-fetch-base.release" 1.0.22 "$TARGET"
-sed 's/^min_bootstrap_revision=1$/min_bootstrap_revision=2/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
+sed 's/^min_bootstrap_revision=2$/min_bootstrap_revision=99/' "$BASE/outdated-fetch-base.release" >"$BASE/outdated-fetch.release"
 expect_refuse installer-outdated installer-outdated-fresh-fetch \
 	env HOME="$HOME" \
 	"$INSTALL" --prefix "$BASE/other" --archive "$ARCHIVE" --sha256 "$SHA" --release "$BASE/outdated-fetch.release"
@@ -1110,10 +1144,7 @@ STAGE2=$BASE/stage2
 ARCHIVE2=$BASE/other.tar.gz
 SHA2=$BASE/other.sha256
 REL2=$BASE/other2.release
-mkdir -p "$STAGE2/bin"
-printf '%s\n' '#!/bin/sh' '# fixture-build: other' 'exit 0' >"$STAGE2/bin/journal"
-chmod 755 "$STAGE2/bin/journal"
-tar -C "$STAGE2" -czf "$ARCHIVE2" bin
+make_tree_tar "$ARCHIVE2" "$STAGE2" 'echo "# fixture-build: other" >/dev/null; exit 0'
 sha_sidecar "$ARCHIVE2" "$SHA2"
 make_release "$REL2" 1.0.22 "$TARGET"
 if env HOME="$HOME" \
@@ -1144,10 +1175,7 @@ FAIL_STAGE=$BASE/setup-fail-stage
 FAIL_ARCHIVE=$BASE/setup-fail.tar.gz
 FAIL_SHA=$BASE/setup-fail.sha256
 FAIL_REL=$BASE/setup-fail.release
-mkdir -p "$FAIL_STAGE/bin"
-printf '%s\n' '#!/bin/sh' 'exit 2' >"$FAIL_STAGE/bin/journal"
-chmod 755 "$FAIL_STAGE/bin/journal"
-tar -C "$FAIL_STAGE" -czf "$FAIL_ARCHIVE" bin
+make_tree_tar "$FAIL_ARCHIVE" "$FAIL_STAGE" 'exit 2'
 sha_sidecar "$FAIL_ARCHIVE" "$FAIL_SHA"
 make_release "$FAIL_REL" 1.0.23 "$TARGET"
 _before_failed_setup=$(readlink "$PREFIX/current")
@@ -1174,10 +1202,7 @@ PARTIAL_FAIL_STAGE=$BASE/setup-partial-fail-stage
 PARTIAL_FAIL_ARCHIVE=$BASE/setup-partial-fail.tar.gz
 PARTIAL_FAIL_SHA=$BASE/setup-partial-fail.sha256
 PARTIAL_FAIL_REL=$BASE/setup-partial-fail.release
-mkdir -p "$PARTIAL_FAIL_STAGE/bin"
-printf '%s\n' '#!/bin/sh' '[ "${SOLSTONE_SETUP_RETRY:-0}" -eq 1 ] && exit 0' 'exit 3' >"$PARTIAL_FAIL_STAGE/bin/journal"
-chmod 755 "$PARTIAL_FAIL_STAGE/bin/journal"
-tar -C "$PARTIAL_FAIL_STAGE" -czf "$PARTIAL_FAIL_ARCHIVE" bin
+make_tree_tar "$PARTIAL_FAIL_ARCHIVE" "$PARTIAL_FAIL_STAGE" '[ "${SOLSTONE_SETUP_RETRY:-0}" -eq 1 ] && exit 0; exit 3'
 sha_sidecar "$PARTIAL_FAIL_ARCHIVE" "$PARTIAL_FAIL_SHA"
 make_release "$PARTIAL_FAIL_REL" 1.0.24 "$TARGET"
 _before_partial_failure=$(readlink "$PREFIX/current")
@@ -1252,10 +1277,7 @@ while [ "$_patch" -le 3 ]; do
 	_archive=$BASE/downgrade-${_patch}.tar.gz
 	_sha=$BASE/downgrade-${_patch}.sha256
 	_release=$BASE/downgrade-${_patch}.release
-	mkdir -p "$_stage/bin"
-	printf '%s\n' '#!/bin/sh' "# fixture-version: $_version" 'exit 0' >"$_stage/bin/journal"
-	chmod 755 "$_stage/bin/journal"
-	tar -C "$_stage" -czf "$_archive" bin
+	make_tree_tar "$_archive" "$_stage" "echo '# fixture-version: $_version' >/dev/null; exit 0"
 	sha_sidecar "$_archive" "$_sha"
 	make_release "$_release" "$_version" "$TARGET"
 	env HOME="$DOWNGRADE_HOME" "$INSTALL" --prefix "$DOWNGRADE_PREFIX" \
@@ -1289,10 +1311,7 @@ EPOCH_STAGE=$BASE/downgrade-epoch-stage
 EPOCH_ARCHIVE=$BASE/downgrade-epoch.tar.gz
 EPOCH_SHA=$BASE/downgrade-epoch.sha256
 EPOCH_REL=$BASE/downgrade-epoch.release
-mkdir -p "$EPOCH_STAGE/bin"
-printf '%s\n' '#!/bin/sh' '# fixture-version: 1.9.9-foreign-epoch' 'exit 0' >"$EPOCH_STAGE/bin/journal"
-chmod 755 "$EPOCH_STAGE/bin/journal"
-tar -C "$EPOCH_STAGE" -czf "$EPOCH_ARCHIVE" bin
+make_tree_tar "$EPOCH_ARCHIVE" "$EPOCH_STAGE" 'exit 0'
 sha_sidecar "$EPOCH_ARCHIVE" "$EPOCH_SHA"
 make_release "$EPOCH_REL" 1.9.9 "$TARGET"
 sed 's/^upgrade_epoch=journal-v2$/upgrade_epoch=journal-v3/' "$EPOCH_REL" >"$BASE/downgrade-epoch-other.release"
@@ -1313,7 +1332,7 @@ else
 	fail "explicit prune: $(cat "$BASE/prune.out")"
 fi
 
-	expect_refuse prune-unsafe prune-rejects-lane \
+expect_refuse prune-unsafe prune-rejects-lane \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --lane release
 expect_refuse prune-unsafe prune-rejects-origin \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --origin https://updates.solstone.app
@@ -1321,6 +1340,10 @@ expect_refuse prune-unsafe prune-rejects-signature-flag \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --skip-signature
 expect_refuse prune-unsafe prune-rejects-path-flag \
 	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --no-path
+expect_refuse prune-unsafe prune-rejects-role-flag \
+	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --role journal
+expect_refuse prune-unsafe prune-rejects-no-start-flag \
+	env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune --no-start
 
 rm -f "$DOWNGRADE_PREFIX/install-receipt"
 if env HOME="$DOWNGRADE_HOME" "$INSTALL_SOURCE" --prefix "$DOWNGRADE_PREFIX" --prune \
@@ -1442,6 +1465,413 @@ else
 		fi
 	done
 fi
+
+# --- Role & No-Start Contract v2 Test Suites ---
+
+# Role flag validation
+expect_refuse role-invalid role-flag-invalid \
+	env HOME="$HOME" "$INSTALL" --role invalid --prefix "$BASE/invalid-role-prefix" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+
+# Fresh CLI installation
+CLI_HOME=$BASE/cli-home
+CLI_PREFIX=$BASE/cli-prefix
+CLI_SETUP_LOG=$BASE/cli-setup.log
+mkdir -p "$CLI_HOME"
+if env HOME="$CLI_HOME" SOLSTONE_SETUP_ARGS_LOG="$CLI_SETUP_LOG" \
+	"$INSTALL" --role cli --prefix "$CLI_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=cli' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'journal_state=unknown' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=none' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'setup_status=not-applicable' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& [ ! -f "$CLI_SETUP_LOG" ]; then
+	pass "role=cli installs without running setup"
+else
+	fail "role=cli installation failed or invoked setup: $(cat "$CLI_PREFIX/install-receipt" 2>/dev/null)"
+fi
+
+# Fresh journal installation with --no-start
+NOSTART_HOME=$BASE/nostart-home
+NOSTART_PREFIX=$BASE/nostart-prefix
+NOSTART_SETUP_LOG=$BASE/nostart-setup.log
+mkdir -p "$NOSTART_HOME"
+if env HOME="$NOSTART_HOME" SOLSTONE_SETUP_ARGS_LOG="$NOSTART_SETUP_LOG" \
+	"$INSTALL" --role journal --no-start --prefix "$NOSTART_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=journal' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'journal_state=present' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=no-start' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'setup_status=complete' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F -- '--skip-service' "$NOSTART_SETUP_LOG" >/dev/null; then
+	pass "role=journal with --no-start passes --skip-service and records service_policy=no-start"
+else
+	fail "role=journal --no-start failed: $(cat "$NOSTART_PREFIX/install-receipt" 2>/dev/null)"
+fi
+
+# CLI installation with --no-start
+CLINOSTART_HOME=$BASE/clinostart-home
+CLINOSTART_PREFIX=$BASE/clinostart-prefix
+mkdir -p "$CLINOSTART_HOME"
+if env HOME="$CLINOSTART_HOME" \
+	"$INSTALL" --role cli --no-start --prefix "$CLINOSTART_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=cli' "$CLINOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=none' "$CLINOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'setup_status=not-applicable' "$CLINOSTART_PREFIX/install-receipt" >/dev/null; then
+	pass "role=cli with --no-start records service_policy=none"
+else
+	fail "role=cli --no-start failed"
+fi
+
+# Plain upgrade of CLI install with --role cli preserves role=cli
+if env HOME="$CLI_HOME" \
+	"$INSTALL" --role cli --prefix "$CLI_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=cli' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=none' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'setup_status=not-applicable' "$CLI_PREFIX/install-receipt" >/dev/null; then
+	pass "plain upgrade of cli install with --role cli preserves role=cli"
+else
+	fail "plain upgrade of cli install with --role cli lost role=cli"
+fi
+
+# Default upgrade (absent --role) over complete CLI install promotes CLI -> journal and runs setup
+CLI_PROMOTE_SETUP_LOG=$BASE/cli-promote-setup.log
+if env HOME="$CLI_HOME" SOLSTONE_SETUP_ARGS_LOG="$CLI_PROMOTE_SETUP_LOG" \
+	"$INSTALL" --prefix "$CLI_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=journal' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=start' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'setup_status=complete' "$CLI_PREFIX/install-receipt" >/dev/null \
+	&& [ -s "$CLI_PROMOTE_SETUP_LOG" ]; then
+	pass "default install over CLI prefix promotes to role=journal and runs setup"
+else
+	fail "default install over CLI prefix failed to promote to journal or run setup"
+fi
+
+# Journal complete + start + --no-start on same digest is a no-op: keeps start, no setup run, receipt byte-identical
+NOOP_START_HOME=$BASE/noop-start-home
+NOOP_START_PREFIX=$BASE/noop-start-prefix
+NOOP_START_SETUP_LOG=$BASE/noop-start-setup.log
+mkdir -p "$NOOP_START_HOME"
+env HOME="$NOOP_START_HOME" SOLSTONE_SETUP_ARGS_LOG="$NOOP_START_SETUP_LOG" \
+	"$INSTALL" --role journal --prefix "$NOOP_START_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+cp "$NOOP_START_PREFIX/install-receipt" "$BASE/noop-start-receipt.saved"
+_log_size_before=$(wc -c <"$NOOP_START_SETUP_LOG" | tr -d ' ')
+if env HOME="$NOOP_START_HOME" SOLSTONE_SETUP_ARGS_LOG="$NOOP_START_SETUP_LOG" \
+	"$INSTALL" --role journal --no-start --prefix "$NOOP_START_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& cmp "$NOOP_START_PREFIX/install-receipt" "$BASE/noop-start-receipt.saved" >/dev/null \
+	&& [ "$(wc -c <"$NOOP_START_SETUP_LOG" | tr -d ' ')" = "$_log_size_before" ]; then
+	pass "journal complete+start with --no-start is a no-op preserving start without running setup or rewriting receipt"
+else
+	fail "journal complete+start with --no-start failed no-op test"
+fi
+
+# Journal complete + no-start + default over same digest is NOT a no-op: runs setup without --skip-service and records start
+NOOP_PROMOTE_SETUP_LOG=$BASE/noop-promote-setup.log
+if env HOME="$NOSTART_HOME" SOLSTONE_SETUP_ARGS_LOG="$NOOP_PROMOTE_SETUP_LOG" \
+	"$INSTALL" --prefix "$NOSTART_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=journal' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'service_policy=start' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& grep -F 'setup_status=complete' "$NOSTART_PREFIX/install-receipt" >/dev/null \
+	&& [ -s "$NOOP_PROMOTE_SETUP_LOG" ] \
+	&& ! grep -F -- '--skip-service' "$NOOP_PROMOTE_SETUP_LOG" >/dev/null; then
+	pass "default install over complete no-start runs setup without --skip-service and updates service_policy=start"
+else
+	fail "default install over complete no-start promotion failed"
+fi
+
+# CLI complete + --role cli identical digest is a no-op: receipt byte-identical
+CLI_NOOP_HOME=$BASE/cli-noop-home
+CLI_NOOP_PREFIX=$BASE/cli-noop-prefix
+mkdir -p "$CLI_NOOP_HOME"
+env HOME="$CLI_NOOP_HOME" \
+	"$INSTALL" --role cli --prefix "$CLI_NOOP_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+cp "$CLI_NOOP_PREFIX/install-receipt" "$BASE/cli-noop-receipt.saved"
+if env HOME="$CLI_NOOP_HOME" \
+	"$INSTALL" --role cli --prefix "$CLI_NOOP_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& cmp "$CLI_NOOP_PREFIX/install-receipt" "$BASE/cli-noop-receipt.saved" >/dev/null; then
+	pass "cli with --role cli on identical digest is a no-op without rewriting receipt"
+else
+	fail "cli with --role cli identical digest no-op failed"
+fi
+
+# Broken solstone --version candidate refuses candidate-invalid before displacement/receipt rewrite
+BROKEN_LAUNCH_HOME=$BASE/broken-launch-home
+BROKEN_LAUNCH_PREFIX=$BASE/broken-launch-prefix
+mkdir -p "$BROKEN_LAUNCH_HOME"
+env HOME="$BROKEN_LAUNCH_HOME" \
+	"$INSTALL" --role cli --prefix "$BROKEN_LAUNCH_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+cp "$BROKEN_LAUNCH_PREFIX/install-receipt" "$BASE/broken-launch-receipt.saved"
+_broken_current_target=$(readlink "$BROKEN_LAUNCH_PREFIX/current")
+
+BROKEN_ARCHIVE=$BASE/broken-launch.tar.gz
+BROKEN_SHA=$BASE/broken-launch.sha256
+BROKEN_REL=$BASE/broken-launch.release
+BROKEN_STAGE=$BASE/broken-launch-stage
+mkdir -p "$BROKEN_STAGE/bin"
+cat <<EOF >"$BROKEN_STAGE/bin/journal"
+#!/bin/sh
+if [ "\${1:-}" = "--version" ]; then
+	printf 'journal (solstone) 1.0.24\n'
+	exit 0
+fi
+exit 0
+EOF
+cat <<EOF >"$BROKEN_STAGE/bin/solstone"
+#!/bin/sh
+if [ "\${1:-}" = "--version" ]; then
+	printf 'solstone wrong-version\n'
+	exit 0
+fi
+exit 0
+EOF
+chmod 755 "$BROKEN_STAGE/bin/journal" "$BROKEN_STAGE/bin/solstone"
+tar -C "$BROKEN_STAGE" -czf "$BROKEN_ARCHIVE" bin
+sha_sidecar "$BROKEN_ARCHIVE" "$BROKEN_SHA"
+make_release "$BROKEN_REL" 1.0.24 "$TARGET"
+
+expect_refuse candidate-invalid broken-launcher-version-refused \
+	env HOME="$BROKEN_LAUNCH_HOME" "$INSTALL" --role cli --prefix "$BROKEN_LAUNCH_PREFIX" \
+	--archive "$BROKEN_ARCHIVE" --sha256 "$BROKEN_SHA" --release "$BROKEN_REL"
+
+if [ "$(readlink "$BROKEN_LAUNCH_PREFIX/current")" = "$_broken_current_target" ] \
+	&& cmp "$BROKEN_LAUNCH_PREFIX/install-receipt" "$BASE/broken-launch-receipt.saved" >/dev/null; then
+	pass "candidate launcher failure leaves current symlink and receipt untouched"
+else
+	fail "candidate launcher failure modified current symlink or receipt"
+fi
+
+# 8-field release installs cleanly
+LEGACY_REL_PREFIX=$BASE/legacy-rel-prefix
+LEGACY_REL_HOME=$BASE/legacy-rel-home
+mkdir -p "$LEGACY_REL_HOME"
+LEGACY_REL=$BASE/legacy-8field.release
+make_legacy_release "$LEGACY_REL" 1.0.22 "$TARGET"
+if env HOME="$LEGACY_REL_HOME" \
+	"$INSTALL" --prefix "$LEGACY_REL_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$LEGACY_REL" >/dev/null \
+	&& [ -x "$LEGACY_REL_PREFIX/current/bin/journal" ]; then
+	pass "legacy 8-field release installs cleanly"
+else
+	fail "legacy 8-field release install failed"
+fi
+
+# Legacy receipt without role fields maps journal/unknown/start and refuses --role cli
+sed '/^role=/d; /^journal_state=/d; /^service_policy=/d; /^setup_status=/d' "$LEGACY_REL_PREFIX/install-receipt" >"$BASE/legacy-no-role.receipt"
+cp "$BASE/legacy-no-role.receipt" "$LEGACY_REL_PREFIX/install-receipt"
+expect_refuse role-conflict legacy-receipt-refuses-cli \
+	env HOME="$LEGACY_REL_HOME" "$INSTALL" --role cli --prefix "$LEGACY_REL_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$LEGACY_REL"
+
+# Receipt-less adopted tree + --role cli -> role-conflict
+ADOPTED_PREFIX=$BASE/adopted-prefix
+ADOPTED_HOME=$BASE/adopted-home
+mkdir -p "$ADOPTED_HOME"
+env HOME="$ADOPTED_HOME" "$INSTALL" --prefix "$ADOPTED_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+rm -f "$ADOPTED_PREFIX/install-receipt"
+expect_refuse role-conflict adopted-tree-refuses-cli \
+	env HOME="$ADOPTED_HOME" "$INSTALL" --role cli --prefix "$ADOPTED_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+
+# Transition journal to cli with existing wrapper triggers role-conflict
+CONFLICT_HOME=$BASE/conflict-home
+CONFLICT_PREFIX=$BASE/conflict-prefix
+mkdir -p "$CONFLICT_HOME/.local/bin"
+if env HOME="$CONFLICT_HOME" "$INSTALL" --prefix "$CONFLICT_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null; then
+	printf '#!/bin/sh\nexec "%s/current/bin/journal" "$@"\n' "$CONFLICT_PREFIX" >"$CONFLICT_HOME/.local/bin/journal"
+	chmod 755 "$CONFLICT_HOME/.local/bin/journal"
+	expect_refuse role-conflict journal-to-cli-with-wrapper-conflicts \
+		env HOME="$CONFLICT_HOME" "$INSTALL" --role cli --prefix "$CONFLICT_PREFIX" \
+		--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+	rm -f "$CONFLICT_HOME/.local/bin/journal"
+	if env HOME="$CONFLICT_HOME" "$INSTALL" --role cli --prefix "$CONFLICT_PREFIX" \
+		--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+		&& grep -F 'role=cli' "$CONFLICT_PREFIX/install-receipt" >/dev/null \
+		&& grep -F 'journal_state=present' "$CONFLICT_PREFIX/install-receipt" >/dev/null \
+		&& grep -F 'service_policy=none' "$CONFLICT_PREFIX/install-receipt" >/dev/null; then
+		pass "journal-to-cli transition succeeds once wrapper is cleared, preserving journal_state=present"
+	else
+		fail "journal-to-cli transition without wrapper failed"
+	fi
+else
+	fail "conflict test base setup failed"
+fi
+
+# Journal -> CLI transition succeeds when wrapper for this prefix is removed, even with foreign wrapper and config.toml present
+FOREIGN_HOME=$BASE/foreign-home
+FOREIGN_PREFIX=$BASE/foreign-prefix
+FOREIGN_OTHER_PREFIX=$BASE/other-prefix
+mkdir -p "$FOREIGN_HOME/.local/bin" "$FOREIGN_HOME/.config/solstone"
+touch "$FOREIGN_HOME/.config/solstone/config.toml"
+env HOME="$FOREIGN_HOME" "$INSTALL" --prefix "$FOREIGN_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+# Set wrapper pointing to foreign other prefix
+printf '#!/bin/sh\nSOL_BIN="%s/current/bin/journal"\nexec "$SOL_BIN" "$@"\n' "$FOREIGN_OTHER_PREFIX" >"$FOREIGN_HOME/.local/bin/journal"
+printf '#!/bin/sh\nSOL_BIN="%s/current/bin/solstone"\nexec "$SOL_BIN" "$@"\n' "$FOREIGN_OTHER_PREFIX" >"$FOREIGN_HOME/.local/bin/solstone"
+chmod 755 "$FOREIGN_HOME/.local/bin/journal" "$FOREIGN_HOME/.local/bin/solstone"
+
+if env HOME="$FOREIGN_HOME" "$INSTALL" --role cli --prefix "$FOREIGN_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null \
+	&& grep -F 'role=cli' "$FOREIGN_PREFIX/install-receipt" >/dev/null; then
+	pass "journal-to-cli succeeds with foreign wrapper and config.toml present"
+else
+	fail "journal-to-cli with foreign wrapper failed"
+fi
+
+# Malformed / ambiguous wrapper refuses role-conflict
+MAL_WRAP_HOME=$BASE/mal-wrap-home
+MAL_WRAP_PREFIX=$BASE/mal-wrap-prefix
+mkdir -p "$MAL_WRAP_HOME/.local/bin"
+env HOME="$MAL_WRAP_HOME" "$INSTALL" --prefix "$MAL_WRAP_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+printf 'garbage wrapper content without SOL_BIN or prefix\n' >"$MAL_WRAP_HOME/.local/bin/journal"
+chmod 755 "$MAL_WRAP_HOME/.local/bin/journal"
+expect_refuse role-conflict malformed-wrapper-refused \
+	env HOME="$MAL_WRAP_HOME" "$INSTALL" --role cli --prefix "$MAL_WRAP_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+
+# Leftover transaction marker policy conflict
+MARKER_HOME=$BASE/marker-home
+MARKER_PREFIX=$BASE/marker-prefix
+mkdir -p "$MARKER_HOME"
+env HOME="$MARKER_HOME" "$INSTALL" --prefix "$MARKER_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+MARKER_ARCHIVE=$BASE/marker-cand.tar.gz
+MARKER_SHA=$BASE/marker-cand.sha256
+MARKER_REL=$BASE/marker-cand.release
+make_tree_tar "$MARKER_ARCHIVE" "$BASE/marker-stage"
+sha_sidecar "$MARKER_ARCHIVE" "$MARKER_SHA"
+make_release "$MARKER_REL" 1.0.23 "$TARGET"
+MARKER_DIGEST=$(sha256sum "$MARKER_ARCHIVE" | awk '{print $1}')
+MARKER_DIGEST_12=$(printf '%s' "$MARKER_DIGEST" | cut -c1-12)
+MARKER_DEST=$MARKER_PREFIX/versions/1.0.23-${MARKER_DIGEST_12}
+mkdir -p "$MARKER_DEST"
+printf '%s\n' "$MARKER_DIGEST" >"$MARKER_DEST/.archive-sha256"
+cp "$MARKER_REL" "$MARKER_DEST/.release"
+printf '%s\n' \
+	'token=testtoken' \
+	'old_current=' \
+	'old_receipt_role=' \
+	'old_receipt_status=' \
+	"candidate_dest=$MARKER_DEST" \
+	"candidate_digest=$MARKER_DIGEST" \
+	'requested_role=journal' \
+	'requested_no_start=0' \
+	'prior_service_policy=' \
+	'phase=candidate-extracted' \
+	>"$MARKER_DEST/.install-transaction-testtoken"
+expect_refuse transaction-policy-conflict transaction-marker-role-conflict \
+	env HOME="$MARKER_HOME" "$INSTALL" --role cli --prefix "$MARKER_PREFIX" \
+	--archive "$MARKER_ARCHIVE" --sha256 "$MARKER_SHA" --release "$MARKER_REL"
+expect_refuse transaction-policy-conflict transaction-marker-no-start-conflict \
+	env HOME="$MARKER_HOME" "$INSTALL" --role journal --no-start --prefix "$MARKER_PREFIX" \
+	--archive "$MARKER_ARCHIVE" --sha256 "$MARKER_SHA" --release "$MARKER_REL"
+rm -f "$MARKER_DEST/.install-transaction-testtoken"
+rm -rf "$MARKER_PREFIX"
+
+# Interrupted-CLI candidate retry exception:
+# Journal prefix with wrapper bound to this prefix + transaction marker requested_role=cli
+# on candidate DEST permits retry with --role cli without role-conflict.
+INTR_CLI_HOME=$BASE/intr-cli-home
+INTR_CLI_PREFIX=$BASE/intr-cli-prefix
+mkdir -p "$INTR_CLI_HOME/.local/bin"
+env HOME="$INTR_CLI_HOME" "$INSTALL" --prefix "$INTR_CLI_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+INTR_CAND_ARCHIVE=$BASE/intr-cand.tar.gz
+INTR_CAND_SHA=$BASE/intr-cand.sha256
+INTR_CAND_REL=$BASE/intr-cand.release
+make_tree_tar "$INTR_CAND_ARCHIVE" "$BASE/intr-cand-stage"
+sha_sidecar "$INTR_CAND_ARCHIVE" "$INTR_CAND_SHA"
+make_release "$INTR_CAND_REL" 1.0.25 "$TARGET"
+INTR_CAND_DIGEST=$(awk '{print $1}' "$INTR_CAND_SHA")
+INTR_CAND_DIG12=$(printf '%s' "$INTR_CAND_DIGEST" | cut -c1-12)
+INTR_CAND_DEST=$INTR_CLI_PREFIX/versions/1.0.25-${INTR_CAND_DIG12}
+mkdir -p "$INTR_CAND_DEST"
+tar -xzf "$INTR_CAND_ARCHIVE" -C "$INTR_CAND_DEST"
+printf '%s\n' "$(cat "$INTR_CAND_REL")" >"$INTR_CAND_DEST/.release"
+printf '%s\n' "$INTR_CAND_DIGEST" >"$INTR_CAND_DEST/.archive-sha256"
+printf '%s\n' \
+	'token=testtoken' \
+	'old_current=versions/1.0.22-3cbea66bdfed' \
+	'old_receipt_role=journal' \
+	'old_receipt_status=complete' \
+	"candidate_dest=$INTR_CAND_DEST" \
+	"candidate_digest=$INTR_CAND_DIGEST" \
+	'requested_role=cli' \
+	'requested_no_start=0' \
+	'prior_service_policy=start' \
+	'phase=extract' \
+	>"$INTR_CAND_DEST/.install-transaction-testtoken"
+if env HOME="$INTR_CLI_HOME" "$INSTALL" --role cli --prefix "$INTR_CLI_PREFIX" \
+	--archive "$INTR_CAND_ARCHIVE" --sha256 "$INTR_CAND_SHA" --release "$INTR_CAND_REL" >/dev/null \
+	&& grep -F 'role=cli' "$INTR_CLI_PREFIX/install-receipt" >/dev/null; then
+	pass "interrupted CLI candidate retries without role-conflict"
+else
+	fail "interrupted CLI candidate retry failed"
+fi
+
+# Downgrade compatibility-unknown checks
+COMPAT_HOME=$BASE/compat-home
+COMPAT_PREFIX=$BASE/compat-prefix
+mkdir -p "$COMPAT_HOME"
+# 1. Install 2.0.2 as role=cli (so journal_state=unknown)
+make_tree_tar "$BASE/compat-2.0.2.tar.gz" "$BASE/compat-2.0.2-stage"
+sha_sidecar "$BASE/compat-2.0.2.tar.gz" "$BASE/compat-2.0.2.sha256"
+make_release "$BASE/compat-2.0.2.release" 2.0.2 "$TARGET" 1.0.0 2.0.2
+env HOME="$COMPAT_HOME" "$INSTALL" --role cli --prefix "$COMPAT_PREFIX" \
+	--archive "$BASE/compat-2.0.2.tar.gz" --sha256 "$BASE/compat-2.0.2.sha256" \
+	--release "$BASE/compat-2.0.2.release" >/dev/null
+# Also stage a 2.0.1 candidate
+make_tree_tar "$BASE/compat-2.0.1.tar.gz" "$BASE/compat-2.0.1-stage"
+sha_sidecar "$BASE/compat-2.0.1.tar.gz" "$BASE/compat-2.0.1.sha256"
+make_release "$BASE/compat-2.0.1.release" 2.0.1 "$TARGET" 1.0.0 2.0.1
+# Downgrade with journal_state=unknown must refuse compatibility-unknown
+expect_refuse compatibility-unknown downgrade-with-unknown-state-refused \
+	env HOME="$COMPAT_HOME" "$INSTALL" --prefix "$COMPAT_PREFIX" \
+	--archive "$BASE/compat-2.0.1.tar.gz" --sha256 "$BASE/compat-2.0.1.sha256" \
+	--release "$BASE/compat-2.0.1.release"
+
+# Receipt malformation and invalid triple checks
+MALFORM_HOME=$BASE/malform-home
+MALFORM_PREFIX=$BASE/malform-receipt-prefix
+mkdir -p "$MALFORM_HOME"
+env HOME="$MALFORM_HOME" "$INSTALL" --prefix "$MALFORM_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" >/dev/null
+cp "$MALFORM_PREFIX/install-receipt" "$BASE/malform.receipt.good"
+
+# Duplicate key
+printf 'role=journal\n' >>"$MALFORM_PREFIX/install-receipt"
+expect_refuse receipt-invalid receipt-duplicate-key \
+	env HOME="$MALFORM_HOME" "$INSTALL" --prefix "$MALFORM_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+cp "$BASE/malform.receipt.good" "$MALFORM_PREFIX/install-receipt"
+
+# Invalid triple: cli + start
+sed '/^role=/d; /^service_policy=/d; /^setup_status=/d' "$BASE/malform.receipt.good" >"$MALFORM_PREFIX/install-receipt"
+printf 'role=cli\nservice_policy=start\nsetup_status=not-applicable\n' >>"$MALFORM_PREFIX/install-receipt"
+expect_refuse receipt-invalid receipt-invalid-triple-cli-start \
+	env HOME="$MALFORM_HOME" "$INSTALL" --prefix "$MALFORM_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+cp "$BASE/malform.receipt.good" "$MALFORM_PREFIX/install-receipt"
+
+# Invalid triple: journal + complete + none
+sed '/^role=/d; /^service_policy=/d; /^setup_status=/d' "$BASE/malform.receipt.good" >"$MALFORM_PREFIX/install-receipt"
+printf 'role=journal\nservice_policy=none\nsetup_status=complete\n' >>"$MALFORM_PREFIX/install-receipt"
+expect_refuse receipt-invalid receipt-invalid-triple-journal-none \
+	env HOME="$MALFORM_HOME" "$INSTALL" --prefix "$MALFORM_PREFIX" \
+	--archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+
+rm -rf "$MALFORM_PREFIX"
 
 # loopback serve + fetch (not a second origin; digest still verified)
 BIN=$ROOT/core/target/debug/solstone-distribution
