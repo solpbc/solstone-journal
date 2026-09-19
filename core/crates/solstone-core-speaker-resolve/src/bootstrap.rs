@@ -823,4 +823,43 @@ mod tests {
         assert_eq!(segments[1].name, "093000_300_b");
         assert_eq!(segments[1].key, "093000_300");
     }
+
+    #[test]
+    fn scan_segments_returns_canonical_locator_order() {
+        let root = tempfile::tempdir().unwrap();
+        for relative in [
+            "chronicle/20260102/zeta/090000_300_b",
+            "chronicle/20260101/beta/100000_300",
+            "chronicle/20260101/080000_300",
+            "chronicle/20260101/_default/070000_300",
+            "chronicle/20260101/alpha/090000_300_b",
+            "chronicle/20260101/alpha/090000_300_a",
+        ] {
+            fs::create_dir_all(root.path().join(relative)).unwrap();
+        }
+
+        let segments = scan_segments(root.path()).unwrap();
+        let locators = segments
+            .iter()
+            .map(|segment| {
+                (
+                    segment.day.as_str(),
+                    segment.layout,
+                    segment.stream.as_str(),
+                    segment.name.as_str(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            locators,
+            vec![
+                ("20260101", SegmentLayout::Direct, "_default", "080000_300",),
+                ("20260101", SegmentLayout::Named, "_default", "070000_300",),
+                ("20260101", SegmentLayout::Named, "alpha", "090000_300_a",),
+                ("20260101", SegmentLayout::Named, "alpha", "090000_300_b",),
+                ("20260101", SegmentLayout::Named, "beta", "100000_300",),
+                ("20260102", SegmentLayout::Named, "zeta", "090000_300_b",),
+            ]
+        );
+    }
 }
