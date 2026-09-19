@@ -492,7 +492,13 @@ fn wait_descendant(
             let overshoot = now.saturating_duration_since(deadline);
             let tail = sink
                 .map(|sink| match sink.lines.lock() {
-                    Ok(lines) => lines.iter().rev().take(5).rev().cloned().collect::<Vec<_>>(),
+                    Ok(lines) => lines
+                        .iter()
+                        .rev()
+                        .take(5)
+                        .rev()
+                        .cloned()
+                        .collect::<Vec<_>>(),
                     Err(poisoned) => poisoned.into_inner().clone(),
                 })
                 .map(|lines| {
@@ -587,7 +593,12 @@ fn windows_generation_descendant_receipt() {
             body_deadline,
         );
         fs::write(journal.join("descendant-0.release"), b"release\n").unwrap();
-        wait_descendant(&mut children[0], body_deadline, None, Some(outputs[0].as_ref()));
+        wait_descendant(
+            &mut children[0],
+            body_deadline,
+            None,
+            Some(outputs[0].as_ref()),
+        );
         assert!(children[1].poll().unwrap().is_none());
         run_unrelated_root_probe_until(
             &journal,
@@ -597,7 +608,12 @@ fn windows_generation_descendant_receipt() {
             body_deadline,
         );
         fs::write(journal.join("descendant-1.release"), b"release\n").unwrap();
-        wait_descendant(&mut children[1], body_deadline, None, Some(outputs[1].as_ref()));
+        wait_descendant(
+            &mut children[1],
+            body_deadline,
+            None,
+            Some(outputs[1].as_ref()),
+        );
         // Both original ManagedProcess values, including their resource bags,
         // still live here: cleanup cannot hide a leftover parent grant.
         run_unrelated_root_probe_until(
