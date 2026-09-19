@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- the journal's background now gently shifts with the time of day — a soft sunrise-to-sunset glow that never asks for your location.
+
 ### Fixed
 
 - restore, prune, recovery key rotation and turning off backup now tell you what went wrong in plain language when they fail, instead of a raw internal code.
