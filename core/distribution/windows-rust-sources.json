@@ -1,9 +1,9 @@
 {
-  "cargo_lock_sha256": "b0697a0b6e4c21701ec8828cab208a4d4433f9b8ddbe42677ab1eb33b74f8210",
+  "cargo_lock_sha256": "92f43974765c0656641aed5f2dbab8d06846e13e29e1f1be0b9e92520612fe96",
   "dependency_source_companion": {
-    "bytes": 93978481,
-    "filename": "windows-rust-dependencies-b0697a0b6e4c2170.tar.gz",
-    "sha256": "7914ca9e468270ef387d61a5c77221e61264df93b92196493a272ae82cf9a65b"
+    "bytes": 93333703,
+    "filename": "windows-rust-dependencies-92f43974765c0656.tar.gz",
+    "sha256": "b98dbce21fda40cd3f4f4720c1c50202557540f94d1e90fb80eab379f0741b88"
   },
   "notice_texts": [
     {
@@ -20278,7 +20278,7 @@
     },
     {
       "archive_sha256": null,
-      "identity": "spl-core@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1)",
+      "identity": "spl-core@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.10.1#ea2d33bf988b584efce972bb249d0ccb0b6c3e5f)",
       "license_expression": "AGPL-3.0-only",
       "name": "spl-core",
       "notice_references": [
@@ -20289,17 +20289,17 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "06ee67ffb54208b3bdfd60aa666b7eec8e281df1",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/06ee67ffb54208b3bdfd60aa666b7eec8e281df1/LICENSE"
+            "revision": "ea2d33bf988b584efce972bb249d0ccb0b6c3e5f",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/ea2d33bf988b584efce972bb249d0ccb0b6c3e5f/LICENSE"
           }
         }
       ],
       "notice_status": "texts-acquired",
       "repository": "https://github.com/solpbc/spl-rust",
-      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1",
+      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.10.1#ea2d33bf988b584efce972bb249d0ccb0b6c3e5f",
       "vcs": {
         "git": {
-          "sha1": "06ee67ffb54208b3bdfd60aa666b7eec8e281df1"
+          "sha1": "ea2d33bf988b584efce972bb249d0ccb0b6c3e5f"
         },
         "path_in_vcs": "crates/spl-core"
       },
@@ -20308,7 +20308,7 @@
     },
     {
       "archive_sha256": null,
-      "identity": "spl-home@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1)",
+      "identity": "spl-home@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.10.1#ea2d33bf988b584efce972bb249d0ccb0b6c3e5f)",
       "license_expression": "AGPL-3.0-only",
       "name": "spl-home",
       "notice_references": [
@@ -20319,17 +20319,17 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "06ee67ffb54208b3bdfd60aa666b7eec8e281df1",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/06ee67ffb54208b3bdfd60aa666b7eec8e281df1/LICENSE"
+            "revision": "ea2d33bf988b584efce972bb249d0ccb0b6c3e5f",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/ea2d33bf988b584efce972bb249d0ccb0b6c3e5f/LICENSE"
           }
         }
       ],
       "notice_status": "texts-acquired",
       "repository": "https://github.com/solpbc/spl-rust",
-      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1",
+      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.10.1#ea2d33bf988b584efce972bb249d0ccb0b6c3e5f",
       "vcs": {
         "git": {
-          "sha1": "06ee67ffb54208b3bdfd60aa666b7eec8e281df1"
+          "sha1": "ea2d33bf988b584efce972bb249d0ccb0b6c3e5f"
         },
         "path_in_vcs": "crates/spl-home"
       },
@@ -20338,7 +20338,7 @@
     },
     {
       "archive_sha256": null,
-      "identity": "spl-transport@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1)",
+      "identity": "spl-transport@0.1.0 (git+https://github.com/solpbc/spl-rust?tag=v0.10.1#ea2d33bf988b584efce972bb249d0ccb0b6c3e5f)",
       "license_expression": "AGPL-3.0-only",
       "name": "spl-transport",
       "notice_references": [
@@ -20349,17 +20349,17 @@
             "kind": "git-blob",
             "member": "LICENSE",
             "repository": "https://github.com/solpbc/spl-rust",
-            "revision": "06ee67ffb54208b3bdfd60aa666b7eec8e281df1",
-            "source_url": "https://github.com/solpbc/spl-rust/blob/06ee67ffb54208b3bdfd60aa666b7eec8e281df1/LICENSE"
+            "revision": "ea2d33bf988b584efce972bb249d0ccb0b6c3e5f",
+            "source_url": "https://github.com/solpbc/spl-rust/blob/ea2d33bf988b584efce972bb249d0ccb0b6c3e5f/LICENSE"
           }
         }
       ],
       "notice_status": "texts-acquired",
       "repository": "https://github.com/solpbc/spl-rust",
-      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.9.0#06ee67ffb54208b3bdfd60aa666b7eec8e281df1",
+      "source": "git+https://github.com/solpbc/spl-rust?tag=v0.10.1#ea2d33bf988b584efce972bb249d0ccb0b6c3e5f",
       "vcs": {
         "git": {
-          "sha1": "06ee67ffb54208b3bdfd60aa666b7eec8e281df1"
+          "sha1": "ea2d33bf988b584efce972bb249d0ccb0b6c3e5f"
         },
         "path_in_vcs": "crates/spl-transport"
       },
@@ -25765,10 +25765,10 @@
     "metadata_feature_scope": "workspace unified; conservative inclusion, not exact PE link graph",
     "notices": "non-dev dependency closure from Windows inventory binary roots in Windows-filtered Cargo metadata",
     "query": "cargo metadata --manifest-path core/Cargo.toml --locked --offline --format-version 1 --filter-platform x86_64-pc-windows-msvc; inventory roots; follow non-dev dependency edges",
-    "query_utc": "2026-09-17T06:54:21.096629+00:00",
+    "query_utc": "2026-09-19T05:45:17.122016+00:00",
     "source": "complete Cargo.lock external-source set",
     "source_package_count": 484,
-    "source_sha256": "48445e4e39871d6aed6b4ebe7274c94e093b0c2140ed79371d93d761ded4a710",
+    "source_sha256": "d278ccd90ad569c67572c425cdf85e2d04e0016954cc7524f1f0cabe86a91d45",
     "windows_notice_package_count": 396
   },
   "schema": "solstone.windows-rust-notices.v2"

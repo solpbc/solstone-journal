@@ -6,9 +6,20 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Added
+## [2.0.10] - 2026-09-19
 
-- the journal now includes agents on linux and mac, using publicly trusted certificates by default.
+### Changed
+
+- a device doing several things at once has more room before your journal starts refusing requests. it now handles sixteen at a time on one connection instead of eight; a ninth at the same time used to be refused.
+- pairing a device directly with your journal now works at a public address too. it already worked at the addresses your journal has on a home or Tailscale network, so a journal reachable only at a public address had to pair through the relay.
+- confirming your own voice now happens in the browser only. the confirm button waits until a sample's audio has loaded and can play, and until that sample still matches the recording it was built from. you can now set a suggestion aside as well as reject it. `solstone call speakers confirm-owner` no longer saves a voiceprint or starts naming speakers across your recordings; it points you at the review page instead.
+
+### Fixed
+
+- a backup that saved your journal but could not read every file now reports as a partial backup, not a failed one, and names how many files it couldn't read and the first reason given. a run with no snapshot at all is still a failure, and when a backup does fail it now says what went wrong in a sentence instead of an internal code.
+- naming or correcting a speaker now works on recordings stored directly under a day, not only on recordings grouped by device. those used to be refused.
+- `solstone call speakers backfill` no longer gives up while the work is still running. on a long backfill it used to stop after about twenty seconds, with the run carrying on out of sight; it now follows the operation to the end, and stopping the command does not cancel it.
+- an entity that changes while your journal is reviewing it no longer leaves the day retrying without end. the review retries once on its own, then stops and leaves the day unfinished, and journal doctor names the day, the facet and what to do next.
 
 ## [2.0.9] - 2026-09-18
 
