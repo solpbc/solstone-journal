@@ -12,6 +12,7 @@ Open these HTML files directly in a browser; each assertion reports pass/fail in
 - `quiet-notifs-disclosure.html`: manual, not CI-gated
 - `relative-time.html`
 - `status-pane-label.html`
+- `sunarc.html`
 - `support.html`: exact local report card, editable recent lines, and fragment-only handoff
 - `surface-state.html`
 - `ws-listen.html`

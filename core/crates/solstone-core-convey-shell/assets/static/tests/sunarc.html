@@ -1,0 +1,551 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>sunarc.js smoke</title>
+<link rel="stylesheet" href="../tokens.css">
+<style>
+  body { font: 14px/1.4 sans-serif; padding: 16px; background: #fff; color: #1a1a1a; }
+  .pass { color: #166534; }
+  .fail { color: #b91c1c; font-weight: bold; }
+  #results { margin-top: 12px; }
+  .test-row { padding: 3px 0; border-bottom: 1px solid #eee; }
+</style>
+</head>
+<body>
+<h1>sunarc.js smoke</h1>
+<div id="results"></div>
+
+<script src="../sunarc.js"></script>
+<script>
+  const results = document.getElementById('results');
+  let failures = 0;
+  let testCount = 0;
+
+  function assert(name, condition, detail) {
+    testCount += 1;
+    const row = document.createElement('div');
+    row.className = 'test-row ' + (condition ? 'pass' : 'fail');
+    row.textContent = `${condition ? 'PASS' : 'FAIL'} [${name}]${detail ? ` — ${detail}` : ''}`;
+    results.appendChild(row);
+    if (!condition) failures += 1;
+  }
+
+  function approx(a, b, epsilon = 0.01) {
+    if (typeof a === 'number' && typeof b === 'number') {
+      return Math.abs(a - b) <= Math.max(Math.abs(a), Math.abs(b)) * epsilon || Math.abs(a - b) <= epsilon;
+    }
+    return a === b;
+  }
+
+  function getTokens() {
+    return window.SunArc.parseTokens(document.documentElement);
+  }
+
+  function run() {
+    const tokens = getTokens();
+    assert('tokens_valid', window.SunArc.tokensValid(tokens), 'CSS tokens loaded and parsed valid');
+
+    // 1. Fallback 06:30/19:30: opacity at m=dawn (360) and m=dusk (1200) is exactly 0.
+    {
+      const rise = 390; // 06:30
+      const set = 1170; // 19:30
+      const tw = tokens.twilightMinutes; // 30
+      const dawn = rise - tw; // 360
+      const dusk = set + tw; // 1200
+
+      const tDawn = window.SunArc.dayProgress(dawn, rise, set, tw);
+      const envDawn = window.SunArc.env(tDawn, tokens.envelopeEdge);
+      const nightDawn = window.SunArc.nightAmount(dawn, rise, set, tw);
+      const opDawn = window.SunArc.sunOpacity({ t: tDawn, env: envDawn, nightAmount: nightDawn, peakOpacity: tokens.peakOpacity });
+
+      const tDusk = window.SunArc.dayProgress(dusk, rise, set, tw);
+      const envDusk = window.SunArc.env(tDusk, tokens.envelopeEdge);
+      const nightDusk = window.SunArc.nightAmount(dusk, rise, set, tw);
+      const opDusk = window.SunArc.sunOpacity({ t: tDusk, env: envDusk, nightAmount: nightDusk, peakOpacity: tokens.peakOpacity });
+
+      assert('1_fallback_dawn_dusk_opacity_zero', opDawn === 0 && opDusk === 0, `opDawn=${opDawn}, opDusk=${opDusk}`);
+    }
+
+    // 2. t=0.5 centers match both table rows within 1%
+    {
+      const g1 = window.SunArc.geometry(1280, 820, 0.5, tokens);
+      const c1Match = approx(g1.center.x, 779.2, 0.01) && approx(g1.center.y, 234.3, 0.01);
+
+      const g2 = window.SunArc.geometry(393, 852, 0.5, tokens);
+      const c2Match = approx(g2.center.x, 299.6, 0.01) && approx(g2.center.y, 359.3, 0.01);
+
+      assert('2_t05_center_matches_reference_table', c1Match && c2Match,
+        `1280x820 center=(${g1.center.x.toFixed(1)}, ${g1.center.y.toFixed(1)}) expected (779.2, 234.3); ` +
+        `393x852 center=(${g2.center.x.toFixed(1)}, ${g2.center.y.toFixed(1)}) expected (299.6, 359.3)`);
+    }
+
+    // 3. t=0->A, t=1->B, both sizes, within 1%
+    {
+      const g1 = window.SunArc.geometry(1280, 820, 0.0, tokens);
+      const g1_end = window.SunArc.geometry(1280, 820, 1.0, tokens);
+      const g1_AMatch = approx(g1.pos.x, -469.1, 0.01) && approx(g1.pos.y, -469.1, 0.01);
+      const g1_BMatch = approx(g1_end.pos.x, 1749.1, 0.01) && approx(g1_end.pos.y, 1289.1, 0.01);
+
+      const g2 = window.SunArc.geometry(393, 852, 0.0, tokens);
+      const g2_end = window.SunArc.geometry(393, 852, 1.0, tokens);
+      const g2_AMatch = approx(g2.pos.x, -224.8, 0.01) && approx(g2.pos.y, -224.8, 0.01);
+      const g2_BMatch = approx(g2_end.pos.x, 617.8, 0.01) && approx(g2_end.pos.y, 1076.8, 0.01);
+
+      assert('3_endpoints_A_and_B_match_reference', g1_AMatch && g1_BMatch && g2_AMatch && g2_BMatch,
+        `1280x820 A=(${g1.pos.x.toFixed(1)},${g1.pos.y.toFixed(1)}) B=(${g1_end.pos.x.toFixed(1)},${g1_end.pos.y.toFixed(1)}); ` +
+        `393x852 A=(${g2.pos.x.toFixed(1)},${g2.pos.y.toFixed(1)}) B=(${g2_end.pos.x.toFixed(1)},${g2_end.pos.y.toFixed(1)})`);
+    }
+
+    // 4. Subtended angle 36.0°±0.1° for >= 3 sizes
+    {
+      const sizes = [[1280, 820], [393, 852], [1920, 1080], [2560, 1440]];
+      let allMatch = true;
+      const angles = [];
+      for (const [w, h] of sizes) {
+        const g = window.SunArc.geometry(w, h, 0.5, tokens);
+        angles.push(`${w}x${h}:${g.angleDeg.toFixed(2)}°`);
+        if (Math.abs(g.angleDeg - 36.0) > 0.1) {
+          allMatch = false;
+        }
+      }
+      assert('4_subtended_angle_36_deg', allMatch, angles.join(', '));
+    }
+
+    // 5. Midday (env=1, not night): opacity equals peak-opacity token; t outside draw range -> opacity 0
+    {
+      const opMidday = window.SunArc.sunOpacity({ t: 0.5, env: 1.0, nightAmount: 0.0, peakOpacity: tokens.peakOpacity });
+      const opOutLow = window.SunArc.sunOpacity({ t: -0.05, env: 0.0, nightAmount: 1.0, peakOpacity: tokens.peakOpacity });
+      const opOutHigh = window.SunArc.sunOpacity({ t: 1.05, env: 0.0, nightAmount: 1.0, peakOpacity: tokens.peakOpacity });
+
+      assert('5_midday_peak_and_outside_draw_range_zero',
+        approx(opMidday, tokens.peakOpacity, 0.001) && opOutLow === 0 && opOutHigh === 0,
+        `opMidday=${opMidday} (expected ${tokens.peakOpacity}), outLow=${opOutLow}, outHigh=${opOutHigh}`);
+    }
+
+    // 6. Strictly inside a twilight window: opacity = peak * env(t) * (1 - nightAmount). Must fail if factor dropped.
+    {
+      const rise = 390;
+      const set = 1170;
+      const tw = tokens.twilightMinutes;
+      const mSample = rise - tw / 2; // m=375, half way between dawn(360) and rise(390)
+      const t = window.SunArc.dayProgress(mSample, rise, set, tw); // t = 15/840 ≈ 0.017857
+      const e = tokens.envelopeEdge;
+      const envVal = window.SunArc.env(t, e);
+      const nightAmt = window.SunArc.nightAmount(mSample, rise, set, tw); // 0.5
+
+      const correctOp = window.SunArc.sunOpacity({ t, env: envVal, nightAmount: nightAmt, peakOpacity: tokens.peakOpacity });
+      const droppedFactorOp = tokens.peakOpacity * envVal; // without (1 - nightAmount)
+
+      const expectedOp = tokens.peakOpacity * envVal * (1 - nightAmt);
+      const includesFactor = approx(correctOp, expectedOp, 0.0001) && (correctOp !== droppedFactorOp) && Math.abs(correctOp - droppedFactorOp) > 0.001;
+
+      assert('6_twilight_opacity_includes_night_amount_factor', includesFactor,
+        `correct=${correctOp.toFixed(4)}, without_factor=${droppedFactorOp.toFixed(4)}, diff=${Math.abs(correctOp - droppedFactorOp).toFixed(4)}`);
+    }
+
+    // 7. Sweep q in [0,1]: glow alpha >= night-floor always; = night-alpha at q=0 and q=1; = night-floor at q=0.5
+    {
+      let allGteFloor = true;
+      for (let step = 0; step <= 100; step++) {
+        const q = step / 100;
+        const a = window.SunArc.glowAlpha(false, 0, 1, q, tokens);
+        if (a < tokens.glowNightFloor - 1e-6) {
+          allGteFloor = false;
+        }
+      }
+      const a0 = window.SunArc.glowAlpha(false, 0, 1, 0.0, tokens);
+      const a1 = window.SunArc.glowAlpha(false, 0, 1, 1.0, tokens);
+      const a05 = window.SunArc.glowAlpha(false, 0, 1, 0.5, tokens);
+
+      const pass = allGteFloor && approx(a0, tokens.glowNightAlpha, 0.001) &&
+                   approx(a1, tokens.glowNightAlpha, 0.001) &&
+                   approx(a05, tokens.glowNightFloor, 0.001);
+
+      assert('7_glow_night_alpha_curve_and_floor', pass,
+        `q=0: ${a0.toFixed(3)} (exp ${tokens.glowNightAlpha}), q=0.5: ${a05.toFixed(3)} (exp ${tokens.glowNightFloor}), q=1: ${a1.toFixed(3)}`);
+    }
+
+    // 8. q<0.5 glow position = B; q>0.5 = A (table WxH, within 1%)
+    {
+      const geom = window.SunArc.geometry(1280, 820, 0.5, tokens);
+      const posLow = window.SunArc.glowPosition(false, geom.pos, geom.A, geom.B, 0.25);
+      const posHigh = window.SunArc.glowPosition(false, geom.pos, geom.A, geom.B, 0.75);
+
+      const lowIsB = approx(posLow.x, geom.B.x, 0.01) && approx(posLow.y, geom.B.y, 0.01);
+      const highIsA = approx(posHigh.x, geom.A.x, 0.01) && approx(posHigh.y, geom.A.y, 0.01);
+
+      assert('8_glow_night_position_snaps_corners', lowIsB && highIsA,
+        `q=0.25 pos=(${posLow.x.toFixed(1)},${posLow.y.toFixed(1)}) B=(${geom.B.x.toFixed(1)},${geom.B.y.toFixed(1)}); ` +
+        `q=0.75 pos=(${posHigh.x.toFixed(1)},${posHigh.y.toFixed(1)}) A=(${geom.A.x.toFixed(1)},${geom.A.y.toFixed(1)})`);
+    }
+
+    // 9. Default day ground #FEFCF8 at nightAmount=1: mixed color equals --sunarc-night-ground within a few RGB units
+    {
+      const mixedNight = window.SunArc.nightGroundColor(tokens.creamBright, tokens.ink, tokens.warmDark, tokens.mixInk, tokens.mixWarm);
+      const oracle = tokens.nightGround;
+
+      const [r1, g1, b1] = window.SunArc.srgbToLinear ?
+        [parseInt(mixedNight.slice(1,3),16), parseInt(mixedNight.slice(3,5),16), parseInt(mixedNight.slice(5,7),16)] : [0,0,0];
+      const [r2, g2, b2] = [parseInt(oracle.slice(1,3),16), parseInt(oracle.slice(3,5),16), parseInt(oracle.slice(5,7),16)];
+
+      const diff = Math.max(Math.abs(r1 - r2), Math.abs(g1 - g2), Math.abs(b1 - b2));
+      assert('9_default_day_ground_oklab_mix_vs_oracle', diff <= 3,
+        `mixed=${mixedNight}, oracle=${oracle}, maxChannelDiff=${diff}`);
+    }
+
+    // 10. A different day-ground (#FFFFFF or #3366CC) at nightAmount=1 is NOT that token; nightAmount=0.5 is between day and full-night in OKLab L
+    {
+      const customDay = '#3366CC';
+      const customNight = window.SunArc.nightGroundColor(customDay, tokens.ink, tokens.warmDark, tokens.mixInk, tokens.mixWarm);
+      const isNotOracle = customNight.toUpperCase() !== tokens.nightGround.toUpperCase();
+
+      const midColor = window.SunArc.mixedGround(customDay, customNight, 0.5);
+      const lDay = window.SunArc.oklabLightness(customDay);
+      const lNight = window.SunArc.oklabLightness(customNight);
+      const lMid = window.SunArc.oklabLightness(midColor);
+
+      const minL = Math.min(lDay, lNight);
+      const maxL = Math.max(lDay, lNight);
+      const isBetween = lMid > minL && lMid < maxL;
+
+      assert('10_custom_day_ground_and_oklab_lightness_midpoint', isNotOracle && isBetween,
+        `customNight=${customNight} !== oracle ${tokens.nightGround}; L(day)=${lDay.toFixed(3)}, L(mid)=${lMid.toFixed(3)}, L(night)=${lNight.toFixed(3)}`);
+    }
+
+    // 11. NOAA: 39.74, -104.99, 2026-09-19, offset -360: sunrise/sunset within 1 minute of 06:44 and 19:02 local
+    {
+      const date = new Date('2026-09-19T12:00:00Z');
+      const res = window.SunArc.noaaSunriseSunset(39.74, -104.99, date, -360);
+      const expRiseMin = 6 * 60 + 44; // 404
+      const expSetMin = 19 * 60 + 2;  // 1142
+
+      const riseOk = res && Math.abs(res.rise - expRiseMin) <= 1.0;
+      const setOk = res && Math.abs(res.set - expSetMin) <= 1.0;
+
+      assert('11_noaa_denver_sunrise_sunset_within_1min', Boolean(riseOk && setOk),
+        `rise=${res ? res.rise.toFixed(1) : 'null'} (exp ${expRiseMin}), set=${res ? res.set.toFixed(1) : 'null'} (exp ${expSetMin})`);
+    }
+
+    // 12. Appearance signal flips exactly once in dawn twilight and once in dusk twilight at L crossing. Does not clobber data-solstone-shell.
+    {
+      document.documentElement.dataset.solstoneShell = 'spa';
+      const rise = 390;
+      const set = 1170;
+      const tw = tokens.twilightMinutes;
+      const dawn = rise - tw;
+      const dusk = set + tw;
+      const nightGround = window.SunArc.nightGroundColor(tokens.creamBright, tokens.ink, tokens.warmDark, tokens.mixInk, tokens.mixWarm);
+
+      let dawnFlips = 0;
+      let lastDawnApp = null;
+      for (let m = dawn - 5; m <= rise + 5; m += 1) {
+        const nightAmt = window.SunArc.nightAmount(m, rise, set, tw);
+        const ground = window.SunArc.mixedGround(tokens.creamBright, nightGround, nightAmt);
+        const L = window.SunArc.oklabLightness(ground);
+        const app = window.SunArc.appearanceFromLightness(L, tokens.appearanceFlipL);
+        if (lastDawnApp !== null && app !== lastDawnApp) {
+          dawnFlips += 1;
+        }
+        lastDawnApp = app;
+      }
+
+      let duskFlips = 0;
+      let lastDuskApp = null;
+      for (let m = set - 5; m <= dusk + 5; m += 1) {
+        const nightAmt = window.SunArc.nightAmount(m, rise, set, tw);
+        const ground = window.SunArc.mixedGround(tokens.creamBright, nightGround, nightAmt);
+        const L = window.SunArc.oklabLightness(ground);
+        const app = window.SunArc.appearanceFromLightness(L, tokens.appearanceFlipL);
+        if (lastDuskApp !== null && app !== lastDuskApp) {
+          duskFlips += 1;
+        }
+        lastDuskApp = app;
+      }
+
+      const preservedShellAttr = document.documentElement.dataset.solstoneShell === 'spa';
+      assert('12_appearance_flips_once_per_twilight_window', dawnFlips === 1 && duskFlips === 1 && preservedShellAttr,
+        `dawnFlips=${dawnFlips}, duskFlips=${duskFlips}, solstoneShell=${document.documentElement.dataset.solstoneShell}`);
+    }
+
+    // 13. Full-day sweep of m: spies on fetch, XMLHttpRequest, geolocation - none called unless permission granted; granted+fail no retry loop
+    {
+      let fetchCalled = 0;
+      let xhrCalled = 0;
+      let geoCalls = 0;
+
+      const origFetch = window.fetch;
+      const origXHR = window.XMLHttpRequest;
+
+      window.fetch = function () { fetchCalled += 1; return origFetch ? origFetch.apply(this, arguments) : Promise.reject(); };
+      window.XMLHttpRequest = function () { xhrCalled += 1; if (origXHR) return new origXHR(); };
+
+      const mockPermDenied = {
+        query: () => ({
+          then: (cb) => {
+            cb({ state: 'denied', addEventListener: () => {} });
+            return { catch: () => {} };
+          },
+          catch: () => {}
+        })
+      };
+      const mockGeo = {
+        getCurrentPosition: (success, fail) => {
+          geoCalls += 1;
+          if (fail) fail(new Error('simulated'));
+        }
+      };
+
+      const testContainer = document.createElement('div');
+      document.body.appendChild(testContainer);
+
+      let fakeTime = new Date('2026-09-19T00:00:00Z').getTime();
+      const instance = window.SunArc.mount(testContainer, {
+        getNow: () => new Date(fakeTime),
+        permissions: mockPermDenied,
+        geolocation: mockGeo,
+      });
+
+      // Advance through 24 hours (1440 minutes)
+      for (let min = 0; min < 1440; min += 15) {
+        fakeTime += 15 * 60 * 1000;
+        instance.recompute();
+      }
+
+      const deniedGeoCalls = geoCalls;
+      instance.teardown();
+
+      // Test granted + fail: exactly 1 call, no retry loop
+      let grantedGeoCalls = 0;
+      const mockPermGranted = {
+        query: () => ({
+          then: (cb) => {
+            cb({ state: 'granted', addEventListener: () => {} });
+            return { catch: () => {} };
+          },
+          catch: () => {}
+        })
+      };
+      const mockGeoFailing = {
+        getCurrentPosition: (success, fail) => {
+          grantedGeoCalls += 1;
+          if (fail) fail(new Error('fail once'));
+        }
+      };
+
+      const instance2 = window.SunArc.mount(testContainer, {
+        getNow: () => new Date(fakeTime),
+        permissions: mockPermGranted,
+        geolocation: mockGeoFailing,
+      });
+
+      for (let min = 0; min < 1440; min += 30) {
+        fakeTime += 30 * 60 * 1000;
+        instance2.recompute();
+      }
+
+      instance2.teardown();
+
+      // Test granted + never-resolve: exactly 1 call, no retry loop, uses fallback
+      let neverResolveGeoCalls = 0;
+      const mockPermNeverResolve = {
+        query: () => ({
+          then: (cb) => {
+            cb({ state: 'granted', addEventListener: () => {} });
+            return { catch: () => {} };
+          },
+          catch: () => {}
+        })
+      };
+      const mockGeoNeverResolve = {
+        getCurrentPosition: () => {
+          neverResolveGeoCalls += 1;
+        }
+      };
+
+      const instance3 = window.SunArc.mount(testContainer, {
+        getNow: () => new Date(fakeTime),
+        permissions: mockPermNeverResolve,
+        geolocation: mockGeoNeverResolve,
+      });
+
+      for (let min = 0; min < 1440; min += 30) {
+        fakeTime += 30 * 60 * 1000;
+        instance3.recompute();
+      }
+
+      const sunTimes3 = instance3.getSunTimes();
+      const usedFallback = sunTimes3 && sunTimes3.rise === 390 && sunTimes3.set === 1170;
+
+      instance3.teardown();
+      testContainer.remove();
+
+      window.fetch = origFetch;
+      window.XMLHttpRequest = origXHR;
+
+      assert('13_network_isolation_and_geolocation_spies',
+        fetchCalled === 0 && xhrCalled === 0 && deniedGeoCalls === 0 && grantedGeoCalls === 1 && neverResolveGeoCalls === 1 && usedFallback,
+        `fetch=${fetchCalled}, xhr=${xhrCalled}, deniedGeo=${deniedGeoCalls}, grantedGeoCalls=${grantedGeoCalls}, neverResolveGeoCalls=${neverResolveGeoCalls}, usedFallback=${usedFallback}`);
+    }
+
+    // 14. Rapid resize burst -> recompute once, not per event (inject fake setTimeout/setInterval; flush debounce once)
+    {
+      let timeouts = [];
+      let timeoutId = 100;
+      let recomputeCount = 0;
+
+      const fakeSetTimeout = (fn, ms) => {
+        const id = ++timeoutId;
+        timeouts.push({ id, fn, ms });
+        return id;
+      };
+      const fakeClearTimeout = (id) => {
+        timeouts = timeouts.filter(t => t.id !== id);
+      };
+      const fakeSetInterval = () => 999;
+      const fakeClearInterval = () => {};
+
+      const testContainer = document.createElement('div');
+      document.body.appendChild(testContainer);
+
+      const instance = window.SunArc.mount(testContainer, {
+        setTimeout: fakeSetTimeout,
+        clearTimeout: fakeClearTimeout,
+        setInterval: fakeSetInterval,
+        clearInterval: fakeClearInterval,
+        resizeDebounceMs: 250,
+      });
+
+      // Dispatch 10 resize events rapidly
+      for (let i = 0; i < 10; i++) {
+        window.dispatchEvent(new Event('resize'));
+      }
+
+      const pendingTimerCount = timeouts.length;
+      // Flush remaining timer
+      while (timeouts.length > 0) {
+        const timer = timeouts.shift();
+        timer.fn();
+      }
+
+      instance.teardown();
+      testContainer.remove();
+
+      assert('14_rapid_resize_burst_debounces_to_single_recompute', pendingTimerCount === 1,
+        `pendingTimerCount=${pendingTimerCount} (expected exactly 1 timer held after 10 rapid events)`);
+    }
+
+    // 15. Stub one numeric --sunarc-* non-numeric, and separately one color invalid -> no sun/glow paint
+    {
+      const invalidNumericTokens = { ...tokens, angle: NaN };
+      const invalidNumericValid = window.SunArc.tokensValid(invalidNumericTokens);
+
+      const invalidColorTokens = { ...tokens, warmDark: 'invalid-not-a-color-12345' };
+      const invalidColorValid = window.SunArc.tokensValid(invalidColorTokens);
+
+      const testContainer = document.createElement('div');
+      document.body.appendChild(testContainer);
+
+      const instance = window.SunArc.mount(testContainer);
+      const glowEl = testContainer.querySelector('.sunarc-glow');
+      const sunEl = testContainer.querySelector('.sunarc-sun');
+
+      // Case A: invalid numeric token
+      testContainer.style.setProperty('--sunarc-angle', 'not-a-number');
+      instance.recompute();
+      const numNoPaint = (testContainer.style.backgroundColor === 'transparent' || testContainer.style.backgroundColor === '') &&
+                         (glowEl.style.display === 'none') &&
+                         (sunEl.style.display === 'none');
+
+      // Case B: restore numeric, set invalid color token
+      testContainer.style.removeProperty('--sunarc-angle');
+      testContainer.style.setProperty('--sunarc-glow-color', 'invalid-color-string-xyz');
+      instance.recompute();
+      const colorNoPaint = (testContainer.style.backgroundColor === 'transparent' || testContainer.style.backgroundColor === '') &&
+                           (glowEl.style.display === 'none') &&
+                           (sunEl.style.display === 'none');
+
+      // Case C: parseTokens on mock with invalid prop
+      const fakeComputedStyle = {
+        getPropertyValue: (prop) => {
+          if (prop === '--sunarc-angle') return 'invalid-deg';
+          return '1';
+        }
+      };
+      const parsedInvalid = window.SunArc.parseTokens(fakeComputedStyle);
+      const isParsedInvalid = !window.SunArc.tokensValid(parsedInvalid);
+
+      instance.teardown();
+      testContainer.remove();
+
+      assert('15_invalid_numeric_and_color_tokens_fail_closed',
+        !invalidNumericValid && !invalidColorValid && isParsedInvalid && numNoPaint && colorNoPaint,
+        `numericValid=${invalidNumericValid}, colorValid=${invalidColorValid}, numNoPaint=${numNoPaint}, colorNoPaint=${colorNoPaint}`);
+    }
+
+    // Optional Extra: Polar Hold/Fallback
+    {
+      const polarRes = window.SunArc.noaaSunriseSunset(85.0, 0.0, new Date('2026-12-21T12:00:00Z'), 0);
+      assert('extra_polar_returns_null_without_throwing', polarRes === null,
+        `polar latitude on solstice returned ${polarRes === null ? 'null (fallback triggers)' : JSON.stringify(polarRes)}`);
+    }
+
+    // Polar Hold Through Mount
+    {
+      const testContainer = document.createElement('div');
+      document.body.appendChild(testContainer);
+
+      let currentTime = new Date('2026-03-20T12:00:00Z');
+      const mockPerm = {
+        query: () => ({
+          then: (cb) => {
+            cb({ state: 'granted', addEventListener: () => {} });
+            return { catch: () => {} };
+          },
+          catch: () => {}
+        })
+      };
+      const mockGeo = {
+        getCurrentPosition: (success) => {
+          success({
+            coords: { latitude: 80.0, longitude: 0.0 }
+          });
+        }
+      };
+
+      const instance = window.SunArc.mount(testContainer, {
+        getNow: () => currentTime,
+        permissions: mockPerm,
+        geolocation: mockGeo,
+      });
+
+      const marchTimes = instance.getSunTimes();
+      const hasMarchTimes = marchTimes && marchTimes.rise !== 390 && marchTimes.set !== 1170;
+
+      // Advance to polar date (2026-06-21) where NOAA returns null
+      currentTime = new Date('2026-06-21T12:00:00Z');
+      instance.recompute();
+
+      const juneTimes = instance.getSunTimes();
+      const heldMarchTimes = juneTimes &&
+                             approx(juneTimes.rise, marchTimes.rise, 0.001) &&
+                             approx(juneTimes.set, marchTimes.set, 0.001) &&
+                             (juneTimes.rise !== 390 || juneTimes.set !== 1170);
+
+      instance.teardown();
+      testContainer.remove();
+
+      assert('extra_polar_hold_preserves_last_valid_times', hasMarchTimes && heldMarchTimes,
+        `marchTimes=(${marchTimes ? marchTimes.rise.toFixed(1) : 'null'}, ${marchTimes ? marchTimes.set.toFixed(1) : 'null'}), ` +
+        `juneTimes=(${juneTimes ? juneTimes.rise.toFixed(1) : 'null'}, ${juneTimes ? juneTimes.set.toFixed(1) : 'null'})`);
+    }
+
+    assert('SUMMARY', failures === 0, failures ? `${failures} failure(s)` : `all ${testCount} assertions passed`);
+  }
+
+  run();
+</script>
+</body>
+</html>

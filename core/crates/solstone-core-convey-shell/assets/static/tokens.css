@@ -123,6 +123,27 @@
 
   /* ── touch ───────────────────────────────────────────────────────────── */
   --touch-min: 44px; /* 46px on primary buttons/inputs */
+
+  /* ── sunarc (decorative background) ─────────────────────────────────── */
+  --sunarc-angle: 36deg;
+  --sunarc-bow-ratio: 0.07919;
+  --sunarc-diameter-ratio: 1.6180339887;
+  --sunarc-corner-overshoot: 1;
+  --sunarc-envelope-edge: 0.22;
+  --sunarc-mix-ink: 0.90;
+  --sunarc-mix-warm: 0.45;
+  --sunarc-glow-night-floor: 0.12;
+  --sunarc-peak-opacity: 0.45;
+  --sunarc-twilight-minutes: 30;
+  --sunarc-glow-radius-ratio: 2.6;
+  --sunarc-glow-day-alpha: 0.16;
+  --sunarc-glow-night-alpha: 0.32;
+  --sunarc-glow-mid-stop: 45%;
+  --sunarc-glow-mid-ratio: 0.4;
+  --sunarc-appearance-flip-l: 0.38;
+  --sunarc-warm-dark: #2F261C;
+  --sunarc-glow-color: #E6C27A;
+  --sunarc-night-ground: #2E2A25;
 }
 
 /* Breakpoints are documented here but live in @media (custom properties can't

@@ -90,6 +90,27 @@ body {
   background: var(--cream-bright);
 }
 
+#sunarc {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  contain: strict;
+}
+#sunarc .sunarc-glow,
+#sunarc .sunarc-sun {
+  position: absolute;
+  pointer-events: none;
+  user-select: none;
+}
+#sunarc .sunarc-glow { border-radius: 50%; }
+
+#main-content {
+  position: relative;
+  z-index: 1; /* stacking only — do not change padding/margin/colors */
+}
+
 .workspace {
   padding-top: 8px;
   margin-left: var(--app-rail-width);
