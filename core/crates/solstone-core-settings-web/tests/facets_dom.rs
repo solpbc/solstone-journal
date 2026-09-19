@@ -4,6 +4,41 @@
 use std::io::ErrorKind;
 use std::process::Command;
 
+#[tokio::test]
+async fn activity_edit_reports_corrupt_definitions_without_rewriting_them() {
+    use axum::{
+        body::{Body, to_bytes},
+        http::Request,
+    };
+    use tower::ServiceExt;
+
+    let root = tempfile::tempdir().unwrap();
+    let facet = root.path().join("facets/work");
+    std::fs::create_dir_all(&facet).unwrap();
+    std::fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+    let router = solstone_core_settings_web::routes(root.path().to_path_buf());
+    let request = || {
+        Request::post("/app/settings/api/facet/work/activities")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"name":"New activity"}"#))
+            .unwrap()
+    };
+    let healthy = router.clone().oneshot(request()).await.unwrap();
+    assert_eq!(healthy.status(), 201);
+    let path = facet.join("activities/activities.jsonl");
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains("new_activity"));
+    let damaged = format!("{saved}{{sensitive-sentinel\n");
+    std::fs::write(&path, &damaged).unwrap();
+    let refused = router.oneshot(request()).await.unwrap();
+    assert_eq!(refused.status(), 500);
+    let bytes = to_bytes(refused.into_body(), 8192).await.unwrap();
+    let response: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(response["reason_code"], "settings_operation_failed");
+    assert!(!String::from_utf8_lossy(&bytes).contains("sensitive-sentinel"));
+    assert_eq!(std::fs::read(&path).unwrap(), damaged.as_bytes());
+}
+
 #[test]
 fn facets_dom_contract() {
     match Command::new("node").arg("--version").output() {

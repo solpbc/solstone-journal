@@ -133,15 +133,15 @@ pub fn migrate_custom_activity_icons_to_emoji(
         };
         report.files_scanned += 1;
         let mut changed = false;
-        let mut rows = Vec::new();
-        for line in text.lines() {
-            let Ok(mut row) = serde_json::from_str::<Value>(line) else {
-                continue;
-            };
-            let Some(object) = row.as_object_mut() else {
-                rows.push(row);
-                continue;
-            };
+        let path = content_file_path(
+            journal_root,
+            &facet,
+            FacetContentKind::Activities,
+            "activities.jsonl",
+        )?;
+        let mut rows = parse_activity_rows(&path, &text)?;
+        for row in &mut rows {
+            let object = row.as_object_mut().expect("validated activity object");
             let custom = object.get("custom").and_then(Value::as_bool) == Some(true);
             if custom
                 && object
@@ -159,7 +159,6 @@ pub fn migrate_custom_activity_icons_to_emoji(
                 changed = true;
                 report.records_changed += 1;
             }
-            rows.push(row);
         }
         if changed {
             report.files_changed += 1;
@@ -179,14 +178,33 @@ fn is_lucide_name(value: &str) -> bool {
 }
 
 fn activity_rows(journal_root: &Path, facet_dir: &str) -> Result<Vec<Value>, FacetWriteError> {
-    Ok(
-        read_activity_file(journal_root, facet_dir, "activities.jsonl")?
-            .unwrap_or_default()
-            .lines()
-            .filter(|line| !line.trim().is_empty())
-            .filter_map(|line| serde_json::from_str(line).ok())
-            .collect(),
-    )
+    let path = content_file_path(
+        journal_root,
+        facet_dir,
+        FacetContentKind::Activities,
+        "activities.jsonl",
+    )?;
+    let text = read_activity_file(journal_root, facet_dir, "activities.jsonl")?.unwrap_or_default();
+    parse_activity_rows(&path, &text)
+}
+
+fn parse_activity_rows(path: &Path, text: &str) -> Result<Vec<Value>, FacetWriteError> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, line)| !line.trim().is_empty())
+        .map(|(index, line)| {
+            let malformed = |reason| FacetStoreError::MalformedActivityDefinition {
+                path: path.to_path_buf(),
+                line: index + 1,
+                reason,
+            };
+            let row: Value = serde_json::from_str(line).map_err(|_| malformed("invalid JSON"))?;
+            if !row.is_object() {
+                return Err(malformed("expected an object").into());
+            }
+            Ok(row)
+        })
+        .collect()
 }
 
 fn write_rows(journal_root: &Path, facet_dir: &str, rows: &[Value]) -> Result<(), FacetWriteError> {
@@ -268,13 +286,118 @@ fn write_content_file(
 }
 
 #[cfg(all(test, feature = "full-tests"))]
-mod migration_tests {
+mod tests {
     use super::*;
     use tempfile::tempdir;
 
+    fn declared_root() -> tempfile::TempDir {
+        let root = tempdir().unwrap();
+        let facet = root.path().join("facets/work");
+        fs::create_dir_all(&facet).unwrap();
+        fs::write(facet.join("facet.json"), r#"{"title":"Work"}"#).unwrap();
+        root
+    }
+
+    #[test]
+    fn semantic_edits_preserve_damaged_definitions_and_report_physical_line() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        for bad in ["{sensitive-sentinel", "\"sensitive-sentinel\""] {
+            let original =
+                format!("\n{{\"id\":\"kept\",\"custom\":true}}\n\n{bad}\n{{\"id\":\"last\"}}\n");
+            for operation in 0..3 {
+                fs::write(&path, &original).unwrap();
+                let result = match operation {
+                    0 => add_activity(root.path(), "work", serde_json::json!({"id":"new"}))
+                        .map(|_| ()),
+                    1 => update_activity(root.path(), "work", "kept", &serde_json::Map::new())
+                        .map(|_| ()),
+                    _ => remove_activity(root.path(), "work", "kept").map(|_| ()),
+                };
+                let error = result.unwrap_err();
+                assert!(
+                    matches!(
+                        &error,
+                        FacetWriteError::Read(FacetStoreError::MalformedActivityDefinition {
+                            path: actual, line: 4, ..
+                        }) if actual == &path
+                    ),
+                    "{error}"
+                );
+                assert!(!error.to_string().contains("sensitive-sentinel"));
+                assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
+            }
+        }
+    }
+
+    #[test]
+    fn semantic_edits_refuse_unreadable_and_invalid_utf8_input() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, [0xff, 0xfe]).unwrap();
+        assert!(add_activity(root.path(), "work", serde_json::json!({"id":"new"})).is_err());
+        assert_eq!(fs::read(&path).unwrap(), [0xff, 0xfe]);
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(remove_activity(root.path(), "work", "kept").is_err());
+        assert!(path.is_dir());
+    }
+
+    #[test]
+    fn healthy_definitions_keep_first_use_and_semantic_edit_behavior() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        let first = serde_json::json!({"id":"first","custom":true,"extra":{"preserve":1}});
+        add_activity(root.path(), "work", first.clone()).unwrap();
+        add_activity(root.path(), "work", first.clone()).unwrap();
+        assert_eq!(
+            activity_rows(root.path(), "work").unwrap(),
+            vec![first.clone()]
+        );
+        fs::write(&path, format!("\n{first}\n\n")).unwrap();
+        let updates = serde_json::json!({"name":"Renamed"});
+        let changed = update_activity(root.path(), "work", "first", updates.as_object().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(changed["name"], "Renamed");
+        assert_eq!(changed["extra"], first["extra"]);
+        assert!(remove_activity(root.path(), "work", "first").unwrap());
+        assert!(!remove_activity(root.path(), "work", "first").unwrap());
+        assert_eq!(fs::read(&path).unwrap(), b"");
+        add_activity(root.path(), "work", first.clone()).unwrap();
+        assert_eq!(activity_rows(root.path(), "work").unwrap(), vec![first]);
+    }
+
+    #[test]
+    fn icon_conversion_preserves_damaged_input_in_both_modes() {
+        let root = declared_root();
+        let path = root.path().join("facets/work/activities/activities.jsonl");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let eligible = "{\"id\":\"x\",\"custom\":true,\"icon\":\"🎯\"}\n";
+        for bad in ["{broken", "42"] {
+            let original = format!("{eligible}{bad}\n");
+            for dry_run in [true, false] {
+                fs::write(&path, &original).unwrap();
+                assert!(migrate_custom_activity_icons_to_emoji(root.path(), dry_run).is_err());
+                assert_eq!(fs::read(&path).unwrap(), original.as_bytes());
+            }
+        }
+        fs::write(&path, eligible).unwrap();
+        let preview = migrate_custom_activity_icons_to_emoji(root.path(), true).unwrap();
+        assert_eq!(preview.records_changed, 1);
+        assert_eq!(fs::read(&path).unwrap(), eligible.as_bytes());
+        let committed = migrate_custom_activity_icons_to_emoji(root.path(), false).unwrap();
+        assert_eq!(committed.records_changed, 1);
+        let rows = activity_rows(root.path(), "work").unwrap();
+        assert_eq!(rows[0]["emoji"], "🎯");
+        assert!(rows[0].get("icon").is_none());
+    }
+
     #[test]
     fn migrates_custom_glyph_and_preserves_lucide_and_existing_emoji() {
-        let temp = tempdir().unwrap();
+        let temp = declared_root();
         let path = temp.path().join("facets/work/activities/activities.jsonl");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, "{\"id\": \"x\", \"custom\": true, \"icon\": \"🎯\"}\n{\"id\": \"y\", \"custom\": true, \"icon\": \"target\"}\n{\"id\": \"z\", \"custom\": true, \"emoji\": \"✅\", \"icon\": \"old\"}\n").unwrap();

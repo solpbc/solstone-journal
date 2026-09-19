@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- editing an activity could drop a damaged entry from its saved settings. the edit now stops and leaves those settings unchanged.
 - restore, prune, recovery key rotation and turning off backup now tell you what went wrong in plain language when they fail, instead of a raw internal code.
 - moving older media off your device to your backup, and bringing it back, now tell you what went wrong in plain language too, instead of a raw internal code.
 
