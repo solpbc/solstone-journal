@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- the journal's background now gently shifts with the time of day — a soft sunrise-to-sunset glow that never asks for your location.
+
 ### Fixed
 
 - editing an activity could drop a damaged entry from its saved settings. the edit now stops and leaves those settings unchanged.
