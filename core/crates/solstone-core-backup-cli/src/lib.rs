@@ -757,11 +757,17 @@ fn restore_result(result: RestoreOutcome, json_output: bool) -> CliRun {
         }
         _ => match (reason, result.recording_failure.as_deref()) {
             (Some(reason), Some(recording_failure)) => runtime_error(format!(
-                "Restore failed: {reason}; {counters}. Recording the result also failed (recording_failure={recording_failure})."
+                "Restore failed: {}; {counters}. Recording the result also failed: {}.",
+                restore_failure_reason(reason),
+                restore_failure_reason(recording_failure)
             )),
-            (Some(reason), None) => runtime_error(format!("Restore failed: {reason}; {counters}.")),
+            (Some(reason), None) => runtime_error(format!(
+                "Restore failed: {}; {counters}.",
+                restore_failure_reason(reason)
+            )),
             (None, Some(recording_failure)) => runtime_error(format!(
-                "Restore failed: {counters}. Recording the result also failed (recording_failure={recording_failure})."
+                "Restore failed: {counters}. Recording the result also failed: {}.",
+                restore_failure_reason(recording_failure)
             )),
             (None, None) => runtime_error(format!("Restore failed: {counters}.")),
         },
@@ -1070,6 +1076,55 @@ fn backup_failure_reason(reason: &str) -> String {
     }
 }
 
+/// The owner-facing sentence for a restore-run reason code.
+///
+/// Restore has its own vocabulary — `backup_failure_reason` covers the backup
+/// namespace and does not fit here: routing restore through it hits its
+/// fallback for nearly every real restore failure, which is worse than the
+/// raw code on the one operation an owner runs after losing everything. This
+/// covers every `RESTORE_REASON_*` constant in `solstone_core_backup_runtime::restore`.
+fn restore_failure_reason(reason: &str) -> String {
+    match reason {
+        "invalid_key" => "the recovery key entered doesn't match this backup".into(),
+        "restic_unavailable" => "the restic backup program isn't available".into(),
+        "destination_invalid" => "the backup destination isn't valid".into(),
+        "destination_admission_failed" => "the backup destination couldn't be reached".into(),
+        "snapshot_list_io_failed" => "the list of backups couldn't be read".into(),
+        "snapshot_list_failed" => "the list of backups couldn't be retrieved".into(),
+        "snapshot_catalog_invalid" => "the list of backups is invalid".into(),
+        "journal_snapshot_not_found" => "no backup of your journal was found".into(),
+        "snapshot_selection_ambiguous" => {
+            "more than one backup matched and none could be chosen automatically".into()
+        }
+        "restore_io_failed" => "files couldn't be written during restore".into(),
+        "restore_failed" => "the restore didn't complete".into(),
+        "restore_summary_missing" => "the restore finished but its summary is missing".into(),
+        "integrity_check_io_failed" => "the restored files couldn't be checked".into(),
+        // Same wording as the "degraded" branch above, so the two paths that
+        // can surface these codes read identically.
+        "integrity_unverified" => {
+            "integrity verification could not run (the repository was busy or timed out)".into()
+        }
+        "integrity_failed" => {
+            "integrity verification failed — the backup copy may be damaged".into()
+        }
+        "body_rebuild_failed" => "your journal couldn't be rebuilt from the restored files".into(),
+        "destination_publish_failed" => {
+            "the restored journal couldn't be saved to its destination".into()
+        }
+        "recovery_key_publish_failed" => "the recovery key couldn't be saved".into(),
+        "recovery_confirmation_publish_failed" => {
+            "the recovery confirmation couldn't be saved".into()
+        }
+        "full_scan_failed" => "a full scan of the restored journal failed".into(),
+        "restore_record_failed" => "the restore's result couldn't be recorded".into(),
+        other => format!(
+            "stopped without a reason ({})",
+            solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
+        ),
+    }
+}
+
 fn incomplete_backup_message(
     snapshot_id: Option<&str>,
     unreadable: Option<&UnreadableSources>,
@@ -1130,7 +1185,7 @@ fn backup_prune_result(result: PruneResult) -> CliRun {
         "skipped" => success("Prune skipped (not enabled or not configured).\n".into()),
         _ => runtime_error(format!(
             "Prune failed: {}.",
-            result.error_reason.as_deref().unwrap_or("failed")
+            backup_failure_reason(result.error_reason.as_deref().unwrap_or("failed"))
         )),
     }
 }
@@ -1151,7 +1206,7 @@ fn recovery_key_rotate_result(result: RotationResult) -> CliRun {
         "skipped" => success("Recovery key rotation skipped (backup not configured).\n".into()),
         _ => runtime_error(format!(
             "Rotation failed: {}.",
-            result.reason_code.as_deref().unwrap_or("failed")
+            backup_failure_reason(result.reason_code.as_deref().unwrap_or("failed"))
         )),
     }
 }
@@ -1173,7 +1228,7 @@ fn teardown_result(result: TeardownResult) -> CliRun {
         "ok" | "skipped" => success("Backup turned off.\n".into()),
         _ => runtime_error(format!(
             "Teardown failed: {}.",
-            result.reason_code.as_deref().unwrap_or("failed")
+            backup_failure_reason(result.reason_code.as_deref().unwrap_or("failed"))
         )),
     }
 }
@@ -1767,7 +1822,10 @@ mod tests {
             status: "error".into(),
             error_reason: Some("locked".into()),
         });
-        assert_eq!(error.stderr, "Error: Prune failed: locked.\n");
+        assert_eq!(
+            error.stderr,
+            "Error: Prune failed: the backup at the destination is locked, usually by a run that's still going or one that was interrupted.\n"
+        );
     }
 
     #[test]
@@ -1799,7 +1857,10 @@ mod tests {
             recovery_key: None,
             recovery_key_display: None,
         });
-        assert_eq!(error.stderr, "Error: Rotation failed: auth_failed.\n");
+        assert_eq!(
+            error.stderr,
+            "Error: Rotation failed: the destination rejected the credentials.\n"
+        );
     }
 
     #[test]
@@ -1865,7 +1926,10 @@ mod tests {
             status: "error".into(),
             reason_code: Some("timeout".into()),
         });
-        assert_eq!(error.stderr, "Error: Teardown failed: timeout.\n");
+        assert_eq!(
+            error.stderr,
+            "Error: Teardown failed: it ran too long and stopped.\n"
+        );
     }
 
     #[test]
@@ -2297,11 +2361,11 @@ mod tests {
         );
         assert_eq!(
             trimmed.stderr,
-            "Error: Restore failed: timeout; files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
+            "Error: Restore failed: stopped without a reason (timeout); files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
         );
         assert_eq!(
             restore_result(outcome("error", Some("timeout"), Some(42)), false).stderr,
-            "Error: Restore failed: timeout; files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42.\n"
+            "Error: Restore failed: stopped without a reason (timeout); files_expected=42, files_restored=42, bytes_expected=42, bytes_restored=42.\n"
         );
         assert_eq!(
             restore_result(

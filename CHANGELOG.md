@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- restore, prune, recovery key rotation and turning off backup now tell you what went wrong in plain language when they fail, instead of a raw internal code.
+
 ## [2.0.10] - 2026-09-19
 
 ### Changed
