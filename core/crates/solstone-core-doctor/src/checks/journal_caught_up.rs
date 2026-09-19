@@ -88,42 +88,34 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                     })
                 })
                 .max_by(|left, right| left.0.cmp(&right.0).then(right.1.cmp(left.1)));
+            let location = |day: &str, facet: Option<&str>| match facet
+                .map(str::trim)
+                .filter(|facet| !facet.is_empty())
+            {
+                Some(facet) => format!("{day}/{facet}"),
+                None => day.to_owned(),
+            };
             let fix = match review_unit {
                 Some((_, day, unit))
                     if unit.lifecycle_state.as_deref() == Some("ambiguous_started") =>
                 {
-                    let facet = unit.facet.as_deref().unwrap_or("");
-                    let facet_desc = if facet.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" (facet {facet})")
-                    };
+                    let loc = location(day, unit.facet.as_deref());
                     format!(
-                        "entities:entities_review: an entity review change may have started but not finished on {day}{facet_desc}; inspect with journal health; resolve before reprocessing"
+                        "entities:entities_review may have started an entity review change but did not confirm completion on {loc}; resolve the in-progress change before reprocessing"
                     )
                 }
                 Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("exhausted") => {
-                    let facet = unit.facet.as_deref().unwrap_or("");
+                    let loc = location(day, unit.facet.as_deref());
                     let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
-                    let facet_desc = if facet.is_empty() {
-                        String::new()
-                    } else {
-                        format!("facet {facet}, ")
-                    };
                     format!(
-                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) exhausted its automatic retry; inspect with journal health or reprocess with journal reprocess {day} --from-scratch"
+                        "entities:entities_review stopped on {loc} with reason {kind} after its automatic retry; run journal reprocess {day} --from-scratch"
                     )
                 }
                 Some((_, day, unit)) if unit.lifecycle_state.as_deref() == Some("retrying") => {
-                    let facet = unit.facet.as_deref().unwrap_or("");
+                    let loc = location(day, unit.facet.as_deref());
                     let kind = unit.owner_conflict_kind.as_deref().unwrap_or("unknown");
-                    let facet_desc = if facet.is_empty() {
-                        String::new()
-                    } else {
-                        format!("facet {facet}, ")
-                    };
                     format!(
-                        "entities:entities_review entity review conflict on {day} ({facet_desc}conflict {kind}) will retry automatically on the next run; you can also prioritize it from health"
+                        "entities:entities_review stopped on {loc} with reason {kind}; it will retry automatically on the next run"
                     )
                 }
                 _ => "solstone catches up on its own; reprocess a day from the health surface to prioritize it".to_owned(),

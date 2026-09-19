@@ -3065,30 +3065,13 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     assert_eq!(row.status, Status::Warn);
     assert!(row.detail.contains("20251230"));
     let fix = row.fix.as_deref().unwrap_or_default();
-    assert!(
-        fix.contains("20251230"),
-        "retrying fix must contain day: {fix}"
+    assert_eq!(
+        fix,
+        "entities:entities_review stopped on 20251230/work with reason alias_claimed; it will retry automatically on the next run"
     );
-    assert!(
-        fix.contains("entities:entities_review"),
-        "retrying fix must contain talent: {fix}"
-    );
-    assert!(
-        fix.contains("work"),
-        "retrying fix must contain facet: {fix}"
-    );
-    assert!(
-        fix.contains("alias_claimed"),
-        "retrying fix must contain kind: {fix}"
-    );
-    assert!(
-        fix.contains("will retry automatically on the next run"),
-        "retrying fix should mention automatic retry: {fix}"
-    );
-    assert!(
-        fix.contains("you can also prioritize it from health"),
-        "retrying fix should mention health: {fix}"
-    );
+    assert!(!fix.contains("conflict"), "{fix}");
+    assert!(!fix.contains("journal health"), "{fix}");
+    assert!(!fix.contains("prioritize"), "{fix}");
 
     // 2. Exhausted case (failure_count == 2, no started receipts)
     record.failure_count = 2;
@@ -3097,34 +3080,12 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     let row = result("journal_caught_up", &c);
     assert_eq!(row.status, Status::Warn);
     let fix = row.fix.as_deref().unwrap_or_default();
-    assert!(
-        fix.contains("20251230"),
-        "exhausted fix must contain day: {fix}"
+    assert_eq!(
+        fix,
+        "entities:entities_review stopped on 20251230/work with reason alias_claimed after its automatic retry; run journal reprocess 20251230 --from-scratch"
     );
-    assert!(
-        fix.contains("entities:entities_review"),
-        "exhausted fix must contain talent: {fix}"
-    );
-    assert!(
-        fix.contains("work"),
-        "exhausted fix must contain facet: {fix}"
-    );
-    assert!(
-        fix.contains("alias_claimed"),
-        "exhausted fix must contain kind: {fix}"
-    );
-    assert!(
-        !fix.contains("catches up on its own"),
-        "exhausted fix must not say catches up on its own: {fix}"
-    );
-    assert!(
-        fix.contains("exhausted its automatic retry"),
-        "exhausted fix must use voice-gate copy: {fix}"
-    );
-    assert!(
-        fix.contains("--from-scratch"),
-        "exhausted fix may recommend --from-scratch: {fix}"
-    );
+    assert!(!fix.contains("conflict"), "{fix}");
+    assert!(!fix.contains("journal health"), "{fix}");
 
     // 3. Authentic crash: Unfinished, no reason_code, uncommitted started receipt
     record.status = solstone_core_journal_io::DailyUnitStatus::Unfinished;
@@ -3139,42 +3100,14 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
     let row2 = result("journal_caught_up", &c);
     let fix2 = row2.fix.as_deref().unwrap_or_default();
-    assert!(
-        fix2.contains("20251230"),
-        "started fix must contain day: {fix2}"
+    assert_eq!(
+        fix2,
+        "entities:entities_review may have started an entity review change but did not confirm completion on 20251230/work; resolve the in-progress change before reprocessing"
     );
-    assert!(
-        fix2.contains("entities:entities_review"),
-        "started fix must contain talent: {fix2}"
-    );
-    assert!(
-        fix2.contains("work"),
-        "started fix must contain facet: {fix2}"
-    );
-    assert!(
-        fix2.contains("may have started but not finished"),
-        "started fix must use started-but-not-finished copy: {fix2}"
-    );
-    assert!(
-        !fix2.contains("owner conflict"),
-        "started fix must not say owner conflict: {fix2}"
-    );
-    assert!(
-        !fix2.contains("write in-doubt"),
-        "started fix must not say write in-doubt: {fix2}"
-    );
-    assert!(
-        !fix2.contains("unit record"),
-        "started fix must not say unit record: {fix2}"
-    );
-    assert!(
-        !fix2.contains("catches up on its own"),
-        "started fix must not say catches up on its own: {fix2}"
-    );
-    assert!(
-        !fix2.contains("--from-scratch"),
-        "started fix must NOT recommend --from-scratch: {fix2}"
-    );
+    assert!(!fix2.contains("conflict"), "{fix2}");
+    assert!(!fix2.contains("journal health"), "{fix2}");
+    assert!(!fix2.contains("--from-scratch"), "{fix2}");
+    assert!(!fix2.contains("journal reprocess"), "{fix2}");
 
     // 4. Failed + talent_stage_failed + started is still the started copy.
     record.status = solstone_core_journal_io::DailyUnitStatus::Failed;
@@ -3182,11 +3115,11 @@ fn journal_caught_up_surfaces_review_conflict_and_tailored_recommendations() {
     solstone_core_journal_io::save_daily_unit_record(root, &record).unwrap();
     let row3 = result("journal_caught_up", &c);
     let fix3 = row3.fix.as_deref().unwrap_or_default();
-    assert!(
-        fix3.contains("may have started but not finished"),
-        "Failed plus started must stay ambiguous_started: {fix3}"
+    assert_eq!(
+        fix3,
+        "entities:entities_review may have started an entity review change but did not confirm completion on 20251230/work; resolve the in-progress change before reprocessing"
     );
-    assert!(!fix3.contains("exhausted its automatic retry"), "{fix3}");
+    assert!(!fix3.contains("after its automatic retry"), "{fix3}");
 }
 
 #[test]
@@ -3267,13 +3200,12 @@ fn journal_caught_up_selects_highest_review_severity() {
 
     let row = result("journal_caught_up", &c);
     let fix = row.fix.as_deref().unwrap_or_default();
-    assert!(
-        fix.contains("may have started but not finished"),
-        "ambiguous started outranks exhausted and retrying: {fix}"
+    assert_eq!(
+        fix,
+        "entities:entities_review may have started an entity review change but did not confirm completion on 20251230/work; resolve the in-progress change before reprocessing"
     );
-    assert!(fix.contains("20251230"), "{fix}");
-    assert!(!fix.contains("exhausted"), "{fix}");
-    assert!(!fix.contains("retry once"), "{fix}");
+    assert!(!fix.contains("after its automatic retry"), "{fix}");
+    assert!(!fix.contains("it will retry automatically"), "{fix}");
 
     save(
         "20251230",
@@ -3285,12 +3217,11 @@ fn journal_caught_up_selects_highest_review_severity() {
     );
     let row = result("journal_caught_up", &c);
     let fix = row.fix.as_deref().unwrap_or_default();
-    assert!(
-        fix.contains("exhausted its automatic retry"),
-        "exhausted outranks retrying: {fix}"
+    assert_eq!(
+        fix,
+        "entities:entities_review stopped on 20251229/work with reason identity_changed after its automatic retry; run journal reprocess 20251229 --from-scratch"
     );
-    assert!(fix.contains("20251229"), "{fix}");
-    assert!(!fix.contains("retry once"), "{fix}");
+    assert!(!fix.contains("it will retry automatically"), "{fix}");
 }
 
 #[test]
@@ -3363,10 +3294,12 @@ fn journal_caught_up_treats_committed_or_capped_started_receipt_as_ambiguous() {
         let row = result("journal_caught_up", &c);
         assert_ne!(row.status, Status::Ok, "{status:?}");
         let fix = row.fix.as_deref().unwrap_or_default();
-        assert!(
-            fix.contains("may have started but not finished"),
-            "{status:?}: {fix}"
+        assert_eq!(
+            fix,
+            "entities:entities_review may have started an entity review change but did not confirm completion on 20251230/work; resolve the in-progress change before reprocessing",
+            "{status:?}"
         );
         assert!(!fix.contains("caught up"), "{status:?}: {fix}");
+        assert!(!fix.contains("journal reprocess"), "{status:?}: {fix}");
     }
 }
