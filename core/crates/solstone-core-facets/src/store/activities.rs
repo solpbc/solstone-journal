@@ -38,7 +38,7 @@ pub fn add_activity(
     facet_dir: &str,
     activity: Value,
 ) -> Result<Value, FacetWriteError> {
-    let mut rows = activity_rows(journal_root, facet_dir)?;
+    let mut rows = read_activity_definitions(journal_root, facet_dir)?;
     let id = activity
         .get("id")
         .and_then(Value::as_str)
@@ -63,7 +63,7 @@ pub fn update_activity(
     id: &str,
     updates: &serde_json::Map<String, Value>,
 ) -> Result<Option<Value>, FacetWriteError> {
-    let mut rows = activity_rows(journal_root, facet_dir)?;
+    let mut rows = read_activity_definitions(journal_root, facet_dir)?;
     let Some(row) = rows
         .iter_mut()
         .find(|row| row.get("id").and_then(Value::as_str) == Some(id))
@@ -100,7 +100,7 @@ pub fn remove_activity(
     facet_dir: &str,
     id: &str,
 ) -> Result<bool, FacetWriteError> {
-    let mut rows = activity_rows(journal_root, facet_dir)?;
+    let mut rows = read_activity_definitions(journal_root, facet_dir)?;
     let before = rows.len();
     rows.retain(|row| row.get("id").and_then(Value::as_str) != Some(id));
     if before != rows.len() {
@@ -177,7 +177,11 @@ fn is_lucide_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
-fn activity_rows(journal_root: &Path, facet_dir: &str) -> Result<Vec<Value>, FacetWriteError> {
+/// Read semantic activity definitions without changing absent or damaged files.
+pub fn read_activity_definitions(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<Vec<Value>, FacetStoreError> {
     let path = content_file_path(
         journal_root,
         facet_dir,
@@ -188,7 +192,7 @@ fn activity_rows(journal_root: &Path, facet_dir: &str) -> Result<Vec<Value>, Fac
     parse_activity_rows(&path, &text)
 }
 
-fn parse_activity_rows(path: &Path, text: &str) -> Result<Vec<Value>, FacetWriteError> {
+fn parse_activity_rows(path: &Path, text: &str) -> Result<Vec<Value>, FacetStoreError> {
     text.lines()
         .enumerate()
         .filter(|(_, line)| !line.trim().is_empty())
@@ -200,7 +204,7 @@ fn parse_activity_rows(path: &Path, text: &str) -> Result<Vec<Value>, FacetWrite
             };
             let row: Value = serde_json::from_str(line).map_err(|_| malformed("invalid JSON"))?;
             if !row.is_object() {
-                return Err(malformed("expected an object").into());
+                return Err(malformed("expected an object"));
             }
             Ok(row)
         })
@@ -353,7 +357,7 @@ mod tests {
         add_activity(root.path(), "work", first.clone()).unwrap();
         add_activity(root.path(), "work", first.clone()).unwrap();
         assert_eq!(
-            activity_rows(root.path(), "work").unwrap(),
+            read_activity_definitions(root.path(), "work").unwrap(),
             vec![first.clone()]
         );
         fs::write(&path, format!("\n{first}\n\n")).unwrap();
@@ -367,7 +371,10 @@ mod tests {
         assert!(!remove_activity(root.path(), "work", "first").unwrap());
         assert_eq!(fs::read(&path).unwrap(), b"");
         add_activity(root.path(), "work", first.clone()).unwrap();
-        assert_eq!(activity_rows(root.path(), "work").unwrap(), vec![first]);
+        assert_eq!(
+            read_activity_definitions(root.path(), "work").unwrap(),
+            vec![first]
+        );
     }
 
     #[test]
@@ -390,7 +397,7 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), eligible.as_bytes());
         let committed = migrate_custom_activity_icons_to_emoji(root.path(), false).unwrap();
         assert_eq!(committed.records_changed, 1);
-        let rows = activity_rows(root.path(), "work").unwrap();
+        let rows = read_activity_definitions(root.path(), "work").unwrap();
         assert_eq!(rows[0]["emoji"], "🎯");
         assert!(rows[0].get("icon").is_none());
     }

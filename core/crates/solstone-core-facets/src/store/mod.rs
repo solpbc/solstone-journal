@@ -31,7 +31,8 @@ mod write;
 
 pub use activities::{
     ActivityIconMigrationReport, add_activity, migrate_custom_activity_icons_to_emoji,
-    read_activity_file, remove_activity, update_activity, write_activity_file,
+    read_activity_definitions, read_activity_file, remove_activity, update_activity,
+    write_activity_file,
 };
 pub use activity_records::{
     ActivityRecord, ActivityRecordStoreError, AppendOutcome, PreparedAnticipationBatch,
