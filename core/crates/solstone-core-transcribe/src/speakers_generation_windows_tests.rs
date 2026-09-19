@@ -469,6 +469,7 @@ fn wait_descendant(
     process: &mut solstone_core_system::process::ManagedProcess,
     deadline: Instant,
     ready: Option<&Path>,
+    sink: Option<&DescendantOutput>,
 ) {
     loop {
         let exit = process.poll().expect("original native root observation");
@@ -481,7 +482,33 @@ fn wait_descendant(
             assert_eq!(exit, 0, "descendant libtest process failed");
             return;
         }
-        assert!(Instant::now() < deadline, "descendant wait deadline");
+        let now = Instant::now();
+        if now >= deadline {
+            // `exit` above is always `None` here -- either branch already
+            // returned on `Some` -- so it says nothing a reader doesn't
+            // already know. What is actually absent is how far past budget
+            // this run is, the pid to go inspect, and whatever stdout the
+            // retained sink captured before the deadline hit.
+            let overshoot = now.saturating_duration_since(deadline);
+            let tail = sink
+                .map(|sink| match sink.lines.lock() {
+                    Ok(lines) => lines.iter().rev().take(5).rev().cloned().collect::<Vec<_>>(),
+                    Err(poisoned) => poisoned.into_inner().clone(),
+                })
+                .map(|lines| {
+                    if lines.is_empty() {
+                        "<no output captured>".to_owned()
+                    } else {
+                        lines.join(" | ")
+                    }
+                })
+                .unwrap_or_else(|| "<no sink>".to_owned());
+            panic!(
+                "descendant wait deadline: {overshoot:?} past budget, pid={}, still running, \
+                 tail={tail}",
+                process.pid()
+            );
+        }
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -543,6 +570,7 @@ fn windows_generation_descendant_receipt() {
                 &mut children[index],
                 body_deadline,
                 Some(&journal.join(format!("descendant-{index}.ready"))),
+                Some(output.as_ref()),
             );
         }
         for child in &mut children {
@@ -559,7 +587,7 @@ fn windows_generation_descendant_receipt() {
             body_deadline,
         );
         fs::write(journal.join("descendant-0.release"), b"release\n").unwrap();
-        wait_descendant(&mut children[0], body_deadline, None);
+        wait_descendant(&mut children[0], body_deadline, None, Some(outputs[0].as_ref()));
         assert!(children[1].poll().unwrap().is_none());
         run_unrelated_root_probe_until(
             &journal,
@@ -569,7 +597,7 @@ fn windows_generation_descendant_receipt() {
             body_deadline,
         );
         fs::write(journal.join("descendant-1.release"), b"release\n").unwrap();
-        wait_descendant(&mut children[1], body_deadline, None);
+        wait_descendant(&mut children[1], body_deadline, None, Some(outputs[1].as_ref()));
         // Both original ManagedProcess values, including their resource bags,
         // still live here: cleanup cannot hide a leftover parent grant.
         run_unrelated_root_probe_until(
@@ -800,7 +828,12 @@ fn windows_generation_installed_entry_receipt() {
             .into_managed()
             .expect("retain original child Job"),
         );
-        wait_descendant(child.as_mut().unwrap(), body_deadline, None);
+        wait_descendant(
+            child.as_mut().unwrap(),
+            body_deadline,
+            None,
+            Some(output.as_ref()),
+        );
     }));
     let mut settled = true;
     if let Some(child) = child.as_mut() {

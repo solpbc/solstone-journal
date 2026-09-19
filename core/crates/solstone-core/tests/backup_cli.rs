@@ -74,7 +74,7 @@ fn restore_process_reports_tool_resolution_failure_without_pinning_restic_versio
     assert!(human.stdout.is_empty());
     assert_eq!(
         String::from_utf8(human.stderr).expect("human error"),
-        "Error: Restore failed: restic_unavailable; files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
+        "Error: Restore failed: the restic backup program isn't available; files_expected=unknown, files_restored=unknown, bytes_expected=unknown, bytes_restored=unknown.\n"
     );
 
     let json = restore(&["restore", "--json"]);
