@@ -909,7 +909,11 @@ fn offload_restore_result(result: OffloadRestoreResult, json_output: bool) -> Cl
         success(format!(
             "backup offload restore: status={} reason={}{} segments_restored={} files_restored={} bytes_restored={}\n",
             result.status,
-            result.reason.as_deref().unwrap_or("None"),
+            result
+                .reason
+                .as_deref()
+                .map(offload_restore_failure_reason)
+                .unwrap_or_else(|| "None".to_owned()),
             result
                 .reason_detail
                 .as_deref()
@@ -1118,6 +1122,67 @@ fn restore_failure_reason(reason: &str) -> String {
         }
         "full_scan_failed" => "a full scan of the restored journal failed".into(),
         "restore_record_failed" => "the restore's result couldn't be recorded".into(),
+        other => format!(
+            "stopped without a reason ({})",
+            solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
+        ),
+    }
+}
+
+/// The owner-facing sentence for an offload-restore reason code.
+///
+/// Offload restore brings back raw media that was previously archived off
+/// this device — a different operation from [`restore_failure_reason`]'s
+/// whole-journal restore, with its own closed vocabulary
+/// (`solstone_core_offload::restore::OFFLOAD_RESTORE_REASONS`, 17 codes).
+/// Several codes share a name with `backup_failure_reason`'s or
+/// `restore_failure_reason`'s own arms (`locked`, `auth_failed`,
+/// `repo_missing`, `restic_unavailable`, `rclone_unavailable`, `timeout`,
+/// `failed`) because they trace back to the same restic return codes
+/// (`reason_for_returncode`) — routing through either of those maps blind
+/// would still miss the 10 codes unique to this operation, so this gets its
+/// own arm for every one of the 17.
+fn offload_restore_failure_reason(reason: &str) -> String {
+    match reason {
+        "auth_failed" => "the destination rejected the credentials".into(),
+        "backup_not_ready" => {
+            "your backup isn't set up, so the offloaded files can't be fetched back".into()
+        }
+        "destination_admission_failed" => "the backup destination couldn't be reached".into(),
+        "failed" => "the restore attempt failed for an unspecified reason".into(),
+        "insufficient_free_space" => {
+            "there isn't enough free space on this device to bring the files back".into()
+        }
+        "ledger_degraded" => {
+            "the record of what was offloaded is damaged and can't be used to restore".into()
+        }
+        "locked" => {
+            "the backup at the destination is locked, usually by a run that's still going or one \
+             that was interrupted"
+                .into()
+        }
+        "missing_file_after_restore" => {
+            "a file that should have come back with the restore is missing".into()
+        }
+        // Status is "no_op" here, not a failure: nothing offloaded matched
+        // what was asked for.
+        "nothing_to_restore" => "there was nothing offloaded to restore".into(),
+        "repo_missing" => "there's no backup at the destination yet".into(),
+        "restic_unavailable" => "the restic backup program isn't available".into(),
+        "rclone_unavailable" => "the rclone program isn't available".into(),
+        "segment_identity" => "one of your journal's recordings couldn't be verified against \
+             its own identity record"
+            .into(),
+        "segment_missing" => {
+            "the journal location these files belong to no longer exists on this device".into()
+        }
+        "stream_marker_failed" => {
+            "the files were restored, but updating the journal's records afterward failed".into()
+        }
+        "timeout" => "it ran too long and stopped".into(),
+        "verification_failed" => {
+            "a restored file didn't match what it should have been, so it may be damaged".into()
+        }
         other => format!(
             "stopped without a reason ({})",
             solstone_core_system_health::sanitize_str_for_terminal_bounded(other)
@@ -1737,6 +1802,66 @@ mod tests {
     }
 
     #[test]
+    fn no_offload_restore_reason_code_reaches_the_owner_as_an_identifier() {
+        const EVERY_REASON: &[&str] = &[
+            "auth_failed",
+            "backup_not_ready",
+            "destination_admission_failed",
+            "failed",
+            "insufficient_free_space",
+            "ledger_degraded",
+            "locked",
+            "missing_file_after_restore",
+            "nothing_to_restore",
+            "repo_missing",
+            "restic_unavailable",
+            "rclone_unavailable",
+            "segment_identity",
+            "segment_missing",
+            "stream_marker_failed",
+            "timeout",
+            "verification_failed",
+        ];
+        for reason in EVERY_REASON {
+            let rendered = offload_restore_failure_reason(reason);
+            assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
+            assert!(
+                !rendered.contains('_'),
+                "{reason} leaves snake_case in owner copy: {rendered}"
+            );
+            assert!(
+                rendered
+                    .chars()
+                    .next()
+                    .is_some_and(|first| first.is_lowercase()),
+                "{reason} isn't lowercase-led prose: {rendered}"
+            );
+        }
+        // ⛔ An unmapped code still reaches support rather than being swallowed.
+        let unmapped = offload_restore_failure_reason("some_new_code");
+        assert!(unmapped.contains("some_new_code"), "{unmapped}");
+    }
+
+    #[test]
+    fn offload_restore_result_plain_text_carries_a_sentence_not_a_code() {
+        let rendered =
+            offload_restore_result(offload_result("error", Some("segment_missing")), false);
+        assert_eq!(rendered.exit_code, 1);
+        assert!(
+            rendered.stdout.contains(
+                "reason=the journal location these files belong to no longer exists on this device"
+            ),
+            "{}",
+            rendered.stdout
+        );
+        assert!(
+            !rendered.stdout.contains("segment_missing"),
+            "{}",
+            rendered.stdout
+        );
+    }
+
+    #[test]
     fn a_partial_backup_names_its_snapshot_what_is_missing_and_the_next_step() {
         // ✅ Opens in the success form this surface already uses, carries the
         // count and restic's OWN reason, and never names a cause.
@@ -1990,7 +2115,7 @@ mod tests {
         assert_eq!(normal.exit_code, 0);
         assert_eq!(
             normal.stdout,
-            "backup offload: stalled reason=backup_not_ready files_marked=0 bytes_marked=0 bytes_released=0 ran_out_of_markable_media=false\n"
+            "backup offload: stalled reason=your backup isn't set up or hasn't completed a successful run yet files_marked=0 bytes_marked=0 bytes_released=0 ran_out_of_markable_media=false\n"
         );
         let dry_run = run_cli_with(
             &["offload".into(), "run".into(), "--dry-run".into()],
@@ -2000,7 +2125,7 @@ mod tests {
         assert_eq!(dry_run.exit_code, 0);
         assert_eq!(
             dry_run.stdout,
-            "backup offload: stalled reason=backup_not_ready dry_run=true\n"
+            "backup offload: stalled reason=your backup isn't set up or hasn't completed a successful run yet dry_run=true\n"
         );
     }
 

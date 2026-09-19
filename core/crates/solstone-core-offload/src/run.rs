@@ -97,10 +97,12 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
         if result.status == "stalled" {
             format!(
                 "backup offload: stalled reason={}{} dry_run=true",
-                result
-                    .reason
-                    .as_deref()
-                    .unwrap_or(OFFLOAD_STALL_UNEXPECTED_ERROR),
+                offload_reason_text(
+                    result
+                        .reason
+                        .as_deref()
+                        .unwrap_or(OFFLOAD_STALL_UNEXPECTED_ERROR)
+                ),
                 result
                     .reason_detail
                     .as_deref()
@@ -110,7 +112,11 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
         } else if result.status == "ok" {
             format!(
                 "backup offload: ok reason={} dry_run=true",
-                result.reason.as_deref().unwrap_or("")
+                result
+                    .reason
+                    .as_deref()
+                    .map(offload_reason_text)
+                    .unwrap_or_default()
             )
         } else {
             format!("backup offload: {} dry_run=true", result.status)
@@ -118,7 +124,11 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
     } else if result.status == "ok" {
         format!(
             "backup offload: ok reason={} files_marked={} bytes_marked={} files_already_marked={} bytes_already_marked={} bytes_released=0 ran_out_of_markable_media={}",
-            result.reason.as_deref().unwrap_or(""),
+            result
+                .reason
+                .as_deref()
+                .map(offload_reason_text)
+                .unwrap_or_default(),
             result.files_marked,
             result.bytes_marked,
             result.files_already_marked,
@@ -130,10 +140,12 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
     } else {
         format!(
             "backup offload: stalled reason={}{} files_marked={} bytes_marked={} bytes_released=0 ran_out_of_markable_media={}",
-            result
-                .reason
-                .as_deref()
-                .unwrap_or(OFFLOAD_STALL_UNEXPECTED_ERROR),
+            offload_reason_text(
+                result
+                    .reason
+                    .as_deref()
+                    .unwrap_or(OFFLOAD_STALL_UNEXPECTED_ERROR)
+            ),
             result
                 .reason_detail
                 .as_deref()
@@ -151,6 +163,71 @@ pub fn format_offload_result(result: &OffloadResult) -> String {
     match result.audit_recording_failure.as_deref() {
         Some(detail) => format!("{line} audit_recording_failed={detail}"),
         None => line,
+    }
+}
+
+/// Turn an offload-run reason code into something an owner can read.
+///
+/// 🔴 The set is closed but spans two places: the 11 `OFFLOAD_STALL_REASONS`
+/// and 3 `OFFLOAD_OK_*` codes this module produces itself, plus
+/// `restic_unavailable`/`rclone_unavailable`, which `solstone-core-maintenance`
+/// hands this same formatter when it can't resolve backup tools before a real
+/// offload run ever starts (`format_backup_resolution_error`). Every value
+/// reaching this function is a `&'static str` literal from one of those two
+/// crates -- never external/untrusted text -- so the fallback below prints the
+/// code itself rather than sanitizing it.
+///
+/// ⛔ The fallback still prints the code rather than swallowing it, matching
+/// `backup_failure_reason`/`restore_failure_reason` in `solstone-core-backup-cli`.
+fn offload_reason_text(reason: &str) -> String {
+    match reason {
+        OFFLOAD_STALL_BACKUP_NOT_READY => {
+            "your backup isn't set up or hasn't completed a successful run yet".into()
+        }
+        OFFLOAD_STALL_BACKUP_FAILING => "your last backup didn't complete successfully".into(),
+        OFFLOAD_STALL_VERIFICATION_MISSING => "no backup verification has completed yet".into(),
+        OFFLOAD_STALL_VERIFICATION_OVERDUE => {
+            "backup verification hasn't succeeded recently enough".into()
+        }
+        OFFLOAD_STALL_VERIFICATION_FAILED => {
+            "the last backup verification found a problem with the backup's integrity".into()
+        }
+        // Same wording as `backup_failure_reason`'s "locked" arm in
+        // solstone-core-backup-cli, so the two surfaces read alike.
+        OFFLOAD_STALL_LOCKED => {
+            "the backup at the destination is locked, usually by a run that's still going or one \
+             that was interrupted"
+                .into()
+        }
+        OFFLOAD_STALL_ARCHIVE_FAILED => "the archive step of the offload didn't complete".into(),
+        OFFLOAD_STALL_CONFIRM_FAILED => {
+            "the offload couldn't confirm the archived files actually reached the backup".into()
+        }
+        OFFLOAD_STALL_CONFIRM_TOOL_FAILED => {
+            "the check that confirms an offload archive couldn't complete".into()
+        }
+        OFFLOAD_STALL_SEGMENT_IDENTITY => "one of your journal's recordings couldn't be verified \
+             against its own identity record"
+            .into(),
+        OFFLOAD_STALL_UNEXPECTED_ERROR => "something unexpected interrupted the offload".into(),
+        OFFLOAD_OK_BUDGET_ALREADY_SATISFIED => {
+            "the offload budget was already met, so nothing needed to be marked for release".into()
+        }
+        // ⛔ Never "moved" or "released": offload only marks raw media for a
+        // later owner-approved release step and never deletes it itself
+        // (`run_offload`'s own doc comment, and the CLI line this accompanies
+        // prints `bytes_released=0` in the very same breath).
+        OFFLOAD_OK_BUDGET_SATISFIED => {
+            "enough media has been marked for release to meet the offload budget".into()
+        }
+        OFFLOAD_OK_MARKABLE_MEDIA_EXHAUSTED => {
+            "every eligible file was already checked; nothing more can be marked for release \
+             right now"
+                .into()
+        }
+        "restic_unavailable" => "the restic backup program isn't available".into(),
+        "rclone_unavailable" => "the rclone program isn't available".into(),
+        other => format!("stopped without a reason ({other})"),
     }
 }
 
@@ -1515,6 +1592,46 @@ mod tests {
         assert_eq!(last["last_ok_time"], prior);
         assert_eq!(raw_last_ok_time(journal.path()), prior);
         let _ = second;
+    }
+
+    #[test]
+    fn no_offload_run_reason_code_reaches_the_owner_as_an_identifier() {
+        const EVERY_REASON: &[&str] = &[
+            OFFLOAD_STALL_BACKUP_NOT_READY,
+            OFFLOAD_STALL_BACKUP_FAILING,
+            OFFLOAD_STALL_VERIFICATION_MISSING,
+            OFFLOAD_STALL_VERIFICATION_OVERDUE,
+            OFFLOAD_STALL_VERIFICATION_FAILED,
+            OFFLOAD_STALL_LOCKED,
+            OFFLOAD_STALL_ARCHIVE_FAILED,
+            OFFLOAD_STALL_CONFIRM_FAILED,
+            OFFLOAD_STALL_CONFIRM_TOOL_FAILED,
+            OFFLOAD_STALL_SEGMENT_IDENTITY,
+            OFFLOAD_STALL_UNEXPECTED_ERROR,
+            OFFLOAD_OK_BUDGET_ALREADY_SATISFIED,
+            OFFLOAD_OK_BUDGET_SATISFIED,
+            OFFLOAD_OK_MARKABLE_MEDIA_EXHAUSTED,
+            "restic_unavailable",
+            "rclone_unavailable",
+        ];
+        for reason in EVERY_REASON {
+            let rendered = offload_reason_text(reason);
+            assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
+            assert!(
+                !rendered.contains('_'),
+                "{reason} leaves snake_case in owner copy: {rendered}"
+            );
+            assert!(
+                rendered
+                    .chars()
+                    .next()
+                    .is_some_and(|first| first.is_lowercase()),
+                "{reason} isn't lowercase-led prose: {rendered}"
+            );
+        }
+        // ⛔ An unmapped code still reaches support rather than being swallowed.
+        let unmapped = offload_reason_text("some_new_code");
+        assert!(unmapped.contains("some_new_code"), "{unmapped}");
     }
 
     #[test]

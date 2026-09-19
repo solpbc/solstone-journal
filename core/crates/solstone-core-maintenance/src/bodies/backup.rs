@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(dry.exit_code, 0);
         assert_eq!(
             dry.stdout,
-            "backup offload: stalled reason=backup_failing dry_run=true\n"
+            "backup offload: stalled reason=your last backup didn't complete successfully dry_run=true\n"
         );
 
         let invalid = run(
