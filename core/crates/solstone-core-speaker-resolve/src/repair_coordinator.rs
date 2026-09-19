@@ -119,10 +119,7 @@ fn payload_bytes_newline(bytes: &mut Vec<u8>) {
 }
 
 /// Execute repair or survey based on request.
-pub fn start_repair(
-    journal_root: &Path,
-    request: StartRepairRequest,
-) -> Result<Value, String> {
+pub fn start_repair(journal_root: &Path, request: StartRepairRequest) -> Result<Value, String> {
     if !request.commit {
         let inv = survey_repair_inventory(journal_root)?;
         return Ok(serde_json::json!({
@@ -146,10 +143,7 @@ pub fn start_repair(
 }
 
 /// Query repair status for an operation ID.
-pub fn query_repair_status(
-    journal_root: &Path,
-    operation_id: &str,
-) -> Result<Value, String> {
+pub fn query_repair_status(journal_root: &Path, operation_id: &str) -> Result<Value, String> {
     let state = fold_repair_operation(journal_root, operation_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("operation '{operation_id}' not found in ledger"))?;
@@ -181,17 +175,16 @@ fn execute_repair_commit(
     now_ms: i64,
 ) -> Result<Value, String> {
     // 1. Acquire execution lock (timeout ZERO)
-    let _exec_lock = acquire_repair_lock(journal_root).map_err(|e| {
-        format!("failed to acquire speaker repair execution lock: {e}")
-    })?;
+    let _exec_lock = acquire_repair_lock(journal_root)
+        .map_err(|e| format!("failed to acquire speaker repair execution lock: {e}"))?;
 
     // 2. Hold entity trust lock
-    let _trust_lock = hold_entity_trust_lock(journal_root).map_err(|e| {
-        format!("failed to acquire entity trust lock: {e}")
-    })?;
+    let _trust_lock = hold_entity_trust_lock(journal_root)
+        .map_err(|e| format!("failed to acquire entity trust lock: {e}"))?;
 
     // Load existing state if any
-    let prior_state = fold_repair_operation(journal_root, operation_id).map_err(|e| e.to_string())?;
+    let prior_state =
+        fold_repair_operation(journal_root, operation_id).map_err(|e| e.to_string())?;
 
     if let Some(state) = &prior_state
         && state.is_completed
@@ -283,12 +276,18 @@ fn execute_repair_commit(
                         operation_id: operation_id.to_owned(),
                         attempt_id: attempt_id.clone(),
                         stage: "directory_proof".to_owned(),
-                        detail: format!("entity_memory_path failed for {}: {}", removal.entity_id, err),
+                        detail: format!(
+                            "entity_memory_path failed for {}: {}",
+                            removal.entity_id, err
+                        ),
                         retryable: false,
                         timestamp: Utc::now().to_rfc3339(),
                     },
                 );
-                return Err(format!("directory proof failed for {}: {}", removal.entity_id, err));
+                return Err(format!(
+                    "directory proof failed for {}: {}",
+                    removal.entity_id, err
+                ));
             }
         };
 
@@ -309,42 +308,46 @@ fn execute_repair_commit(
                     timestamp: Utc::now().to_rfc3339(),
                 },
             );
-            return Err(format!("directory proof mismatch for {}", removal.entity_id));
+            return Err(format!(
+                "directory proof mismatch for {}",
+                removal.entity_id
+            ));
         }
 
-        let running_encoder = match try_load_entity_voiceprints_in_dir(journal_root, &removal.entity_dir) {
-            Ok(Some(archive)) => archive.envelope.encoder.unwrap_or_else(|| EncoderIdentity {
-                id: "dummy".to_owned(),
-                sha256: "dummy".to_owned(),
-                width: 512,
-            }),
-            Ok(None) => EncoderIdentity {
-                id: "dummy".to_owned(),
-                sha256: "dummy".to_owned(),
-                width: 512,
-            },
-            Err(err) => {
-                let _ = append_repair_event(
-                    journal_root,
-                    &RepairEvent::AttemptFailed {
-                        schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
-                        operation_id: operation_id.to_owned(),
-                        attempt_id: attempt_id.clone(),
-                        stage: "voiceprint_removal".to_owned(),
-                        detail: format!(
-                            "failed loading voiceprint archive for {}: {}",
-                            removal.entity_id, err
-                        ),
-                        retryable: false,
-                        timestamp: Utc::now().to_rfc3339(),
-                    },
-                );
-                return Err(format!(
-                    "failed loading voiceprint archive for {}: {}",
-                    removal.entity_id, err
-                ));
-            }
-        };
+        let running_encoder =
+            match try_load_entity_voiceprints_in_dir(journal_root, &removal.entity_dir) {
+                Ok(Some(archive)) => archive.envelope.encoder.unwrap_or_else(|| EncoderIdentity {
+                    id: "dummy".to_owned(),
+                    sha256: "dummy".to_owned(),
+                    width: 512,
+                }),
+                Ok(None) => EncoderIdentity {
+                    id: "dummy".to_owned(),
+                    sha256: "dummy".to_owned(),
+                    width: 512,
+                },
+                Err(err) => {
+                    let _ = append_repair_event(
+                        journal_root,
+                        &RepairEvent::AttemptFailed {
+                            schema_version: REPAIR_OPERATION_SCHEMA_VERSION,
+                            operation_id: operation_id.to_owned(),
+                            attempt_id: attempt_id.clone(),
+                            stage: "voiceprint_removal".to_owned(),
+                            detail: format!(
+                                "failed loading voiceprint archive for {}: {}",
+                                removal.entity_id, err
+                            ),
+                            retryable: false,
+                            timestamp: Utc::now().to_rfc3339(),
+                        },
+                    );
+                    return Err(format!(
+                        "failed loading voiceprint archive for {}: {}",
+                        removal.entity_id, err
+                    ));
+                }
+            };
 
         let removals = removal
             .voiceprint_keys
@@ -355,7 +358,12 @@ fn execute_repair_commit(
             })
             .collect::<Vec<_>>();
 
-        match remove_voiceprints_by_key(journal_root, &removal.entity_id, &removals, &running_encoder) {
+        match remove_voiceprints_by_key(
+            journal_root,
+            &removal.entity_id,
+            &removals,
+            &running_encoder,
+        ) {
             Ok(delta) => {
                 if delta.skipped_reasons.metadata_mismatch > 0
                     || delta.skipped_count > delta.skipped_reasons.missing
@@ -392,7 +400,10 @@ fn execute_repair_commit(
                         operation_id: operation_id.to_owned(),
                         attempt_id: attempt_id.clone(),
                         stage: "voiceprint_removal".to_owned(),
-                        detail: format!("voiceprint removal failed for {}: {}", removal.entity_id, err),
+                        detail: format!(
+                            "voiceprint removal failed for {}: {}",
+                            removal.entity_id, err
+                        ),
                         retryable: false,
                         timestamp: Utc::now().to_rfc3339(),
                     },
@@ -511,7 +522,10 @@ fn execute_repair_commit(
                 };
 
                 let meta_map_val = metadata_map(outcome_metadata.as_ref());
-                let fresh_labels = resolved_labels.iter().map(label_to_value).collect::<Vec<_>>();
+                let fresh_labels = resolved_labels
+                    .iter()
+                    .map(label_to_value)
+                    .collect::<Vec<_>>();
                 let payload_val = build_repaired_label_payload(
                     current_labels_val.as_object(),
                     corrections,
@@ -530,7 +544,8 @@ fn execute_repair_commit(
                 let final_intent_id = if new_intended_sha == *ha {
                     intent.intent_id.clone()
                 } else {
-                    let super_intent_id = format!("{}_super_{}_{}", attempt_id, plan.day, plan.segment_name);
+                    let super_intent_id =
+                        format!("{}_super_{}_{}", attempt_id, plan.day, plan.segment_name);
                     append_repair_event(
                         journal_root,
                         &RepairEvent::WriteIntent {
@@ -596,7 +611,10 @@ fn execute_repair_commit(
                         timestamp: Utc::now().to_rfc3339(),
                     },
                 );
-                return Err(format!("resumable conflict on segment {}", plan.segment_name));
+                return Err(format!(
+                    "resumable conflict on segment {}",
+                    plan.segment_name
+                ));
             }
         } else {
             // First time processing this segment
@@ -649,7 +667,10 @@ fn execute_repair_commit(
             };
 
             let meta_map_val = metadata_map(outcome_metadata.as_ref());
-            let fresh_labels = resolved_labels.iter().map(label_to_value).collect::<Vec<_>>();
+            let fresh_labels = resolved_labels
+                .iter()
+                .map(label_to_value)
+                .collect::<Vec<_>>();
             let payload_val = build_repaired_label_payload(
                 current_labels_val.as_object(),
                 corrections,
@@ -746,11 +767,11 @@ fn execute_repair_commit(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::repair_operations::ledger_path;
+    use solstone_core_journal_io::SegmentLayout;
     use std::fs;
     use std::path::{Path, PathBuf};
     use tempfile::tempdir;
-    use solstone_core_journal_io::SegmentLayout;
-    use crate::repair_operations::ledger_path;
 
     fn make_owner(root: &Path, id: &str) {
         let dir = root.join("entities").join(id);
@@ -763,7 +784,11 @@ mod tests {
             "names": [id],
             "display_name": id
         });
-        fs::write(dir.join("entity.json"), serde_json::to_vec_pretty(&entity_json).unwrap()).unwrap();
+        fs::write(
+            dir.join("entity.json"),
+            serde_json::to_vec_pretty(&entity_json).unwrap(),
+        )
+        .unwrap();
 
         // Write owner centroid
         let centroid_npy = solstone_core_npy::write_npy("<f4", "(256,)", &vec![0u8; 256 * 4]);
@@ -796,7 +821,11 @@ mod tests {
             "names": [id],
             "display_name": id
         });
-        fs::write(dir.join("entity.json"), serde_json::to_vec_pretty(&entity_json).unwrap()).unwrap();
+        fs::write(
+            dir.join("entity.json"),
+            serde_json::to_vec_pretty(&entity_json).unwrap(),
+        )
+        .unwrap();
 
         let items = vec![solstone_core_entity::VoiceprintItem {
             embedding: vec![1.0; 256],
@@ -820,7 +849,9 @@ mod tests {
         let talents_dir = seg_dir.join("talents");
         fs::create_dir_all(&talents_dir).unwrap();
 
-        let mut bytes = write_python_compatible_json(&labels_val, 2).unwrap().into_bytes();
+        let mut bytes = write_python_compatible_json(&labels_val, 2)
+            .unwrap()
+            .into_bytes();
         payload_bytes_newline(&mut bytes);
         fs::write(talents_dir.join("speaker_labels.json"), bytes).unwrap();
     }
@@ -857,7 +888,8 @@ mod tests {
         assert!(!ledger_path(root).exists());
 
         // Check owner centroid hash before commit
-        let owner_centroid_before = fs::read(root.join("entities/owner_user/owner_centroid.npz")).unwrap();
+        let owner_centroid_before =
+            fs::read(root.join("entities/owner_user/owner_centroid.npz")).unwrap();
         let owner_centroid_sha_before = compute_bytes_sha256(&owner_centroid_before);
 
         // 2. Commit
@@ -871,7 +903,8 @@ mod tests {
         assert_eq!(commit_res["summary"]["complete"], true);
 
         // Verify owner centroid was NOT touched
-        let owner_centroid_after = fs::read(root.join("entities/owner_user/owner_centroid.npz")).unwrap();
+        let owner_centroid_after =
+            fs::read(root.join("entities/owner_user/owner_centroid.npz")).unwrap();
         let owner_centroid_sha_after = compute_bytes_sha256(&owner_centroid_after);
         assert_eq!(owner_centroid_sha_before, owner_centroid_sha_after);
 
@@ -883,8 +916,16 @@ mod tests {
 
         // Verify ledger was written with proper events
         let ledger = crate::repair_operations::load_repair_ledger(root).unwrap();
-        assert!(ledger.iter().any(|e| matches!(e, RepairEvent::Accepted { .. })));
-        assert!(ledger.iter().any(|e| matches!(e, RepairEvent::Completed { .. })));
+        assert!(
+            ledger
+                .iter()
+                .any(|e| matches!(e, RepairEvent::Accepted { .. }))
+        );
+        assert!(
+            ledger
+                .iter()
+                .any(|e| matches!(e, RepairEvent::Completed { .. }))
+        );
 
         // 3. Re-run repair -> should be no-op complete
         let req_rerun = StartRepairRequest {
@@ -934,7 +975,9 @@ mod tests {
                         visit(&path, root, files);
                     } else if path.is_file() {
                         let rel = path.strip_prefix(root).unwrap().to_path_buf();
-                        if !rel.starts_with("health/locks") && !rel.to_string_lossy().ends_with(".lock") {
+                        if !rel.starts_with("health/locks")
+                            && !rel.to_string_lossy().ends_with(".lock")
+                        {
                             if let Ok(b) = fs::read(&path) {
                                 files.push((rel, b));
                             }
@@ -1042,7 +1085,10 @@ mod tests {
         // Mutate corrections before resume
         let mut corr_map = serde_json::Map::new();
         corr_map.insert("sentence_id".to_owned(), serde_json::json!(1));
-        corr_map.insert("corrected_speaker".to_owned(), serde_json::json!("owner_user"));
+        corr_map.insert(
+            "corrected_speaker".to_owned(),
+            serde_json::json!("owner_user"),
+        );
         solstone_core_speaker_id::corrections::append_correction(&seg_dir, corr_map).unwrap();
 
         let labels_before_resume = fs::read(&label_p).unwrap();
@@ -1085,14 +1131,18 @@ mod tests {
         // 2. Named stream segment twin A: chronicle/20260101/mic/093000_300_a
         let twin_a = root.join("chronicle/20260101/mic/093000_300_a/talents");
         fs::create_dir_all(&twin_a).unwrap();
-        let mut ba = write_python_compatible_json(&labels, 2).unwrap().into_bytes();
+        let mut ba = write_python_compatible_json(&labels, 2)
+            .unwrap()
+            .into_bytes();
         payload_bytes_newline(&mut ba);
         fs::write(twin_a.join("speaker_labels.json"), &ba).unwrap();
 
         // 3. Named stream segment twin B: chronicle/20260101/mic/093000_300_b
         let twin_b = root.join("chronicle/20260101/mic/093000_300_b/talents");
         fs::create_dir_all(&twin_b).unwrap();
-        let mut bb = write_python_compatible_json(&labels, 2).unwrap().into_bytes();
+        let mut bb = write_python_compatible_json(&labels, 2)
+            .unwrap()
+            .into_bytes();
         payload_bytes_newline(&mut bb);
         fs::write(twin_b.join("speaker_labels.json"), &bb).unwrap();
 
@@ -1149,9 +1199,11 @@ mod tests {
         let checkpoints: Vec<_> = ledger
             .iter()
             .filter_map(|e| match e {
-                RepairEvent::Checkpoint { segment_name, stream_layout, .. } => {
-                    Some((segment_name.clone(), *stream_layout))
-                }
+                RepairEvent::Checkpoint {
+                    segment_name,
+                    stream_layout,
+                    ..
+                } => Some((segment_name.clone(), *stream_layout)),
                 _ => None,
             })
             .collect();
@@ -1388,7 +1440,11 @@ mod tests {
             assert_eq!(resume_res["status"], "completed");
 
             let ledger = crate::repair_operations::load_repair_ledger(root).unwrap();
-            assert!(ledger.iter().any(|e| matches!(e, RepairEvent::Checkpoint { .. })));
+            assert!(
+                ledger
+                    .iter()
+                    .any(|e| matches!(e, RepairEvent::Checkpoint { .. }))
+            );
         }
 
         // Case 3: Supersede - re-resolve output differs from intent A, resumes with superseding intent
@@ -1451,7 +1507,10 @@ mod tests {
 
             let ledger = crate::repair_operations::load_repair_ledger(root).unwrap();
             assert!(ledger.iter().any(|e| match e {
-                RepairEvent::WriteIntent { supersedes_intent_id, .. } => {
+                RepairEvent::WriteIntent {
+                    supersedes_intent_id,
+                    ..
+                } => {
                     supersedes_intent_id.as_deref() == Some("intent_A")
                 }
                 _ => false,
@@ -1556,6 +1615,10 @@ mod tests {
             _ => false,
         }));
         // Verify NO Prepared event was appended
-        assert!(!ledger.iter().any(|e| matches!(e, RepairEvent::Prepared { .. })));
+        assert!(
+            !ledger
+                .iter()
+                .any(|e| matches!(e, RepairEvent::Prepared { .. }))
+        );
     }
 }

@@ -151,37 +151,38 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
             let observation = observe_json_durable::<Value>(ArtifactId::Entity, &entity_json_path);
 
             // 2. Load voiceprints
-            let (has_vp, vp_count, vp_keys) = match try_load_entity_voiceprints_in_dir(journal_root, &dir_name) {
-                Ok(Some(archive)) => {
-                    let mut parse_ok = true;
-                    let mut parsed_keys = Vec::new();
-                    for meta_str in &archive.metadata {
-                        match serde_json::from_str::<Value>(meta_str) {
-                            Ok(val) => parsed_keys.push(val),
-                            Err(err) => {
-                                parse_ok = false;
-                                gaps.push(RepairGap {
-                                    path: entities_dir.join(&dir_name).join("voiceprints.npz"),
-                                    reason: format!("malformed metadata row: {err}"),
-                                });
+            let (has_vp, vp_count, vp_keys) =
+                match try_load_entity_voiceprints_in_dir(journal_root, &dir_name) {
+                    Ok(Some(archive)) => {
+                        let mut parse_ok = true;
+                        let mut parsed_keys = Vec::new();
+                        for meta_str in &archive.metadata {
+                            match serde_json::from_str::<Value>(meta_str) {
+                                Ok(val) => parsed_keys.push(val),
+                                Err(err) => {
+                                    parse_ok = false;
+                                    gaps.push(RepairGap {
+                                        path: entities_dir.join(&dir_name).join("voiceprints.npz"),
+                                        reason: format!("malformed metadata row: {err}"),
+                                    });
+                                }
                             }
                         }
+                        if parse_ok {
+                            (true, archive.rows, parsed_keys)
+                        } else {
+                            (true, 0, Vec::new())
+                        }
                     }
-                    if parse_ok {
-                        (true, archive.rows, parsed_keys)
-                    } else {
+                    Ok(None) => (false, 0, Vec::new()),
+                    Err(err) => {
+                        gaps.push(RepairGap {
+                            path: entities_dir.join(&dir_name).join("voiceprints.npz"),
+                            reason: format!("unreadable voiceprint archive: {err}"),
+                        });
                         (true, 0, Vec::new())
                     }
-                }
-                Ok(None) => (false, 0, Vec::new()),
-                Err(err) => {
-                    gaps.push(RepairGap {
-                        path: entities_dir.join(&dir_name).join("voiceprints.npz"),
-                        reason: format!("unreadable voiceprint archive: {err}"),
-                    });
-                    (true, 0, Vec::new())
-                }
-            };
+                };
 
             // 3. Classify entity based on observation
             match &observation {
@@ -200,7 +201,9 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
 
                     let classification = if is_admissible_person(&journal_entity) {
                         EntityClassification::AdmissibleActivePerson
-                    } else if journal_entity.is_blocked() && journal_entity.entity_type() == Some("Person") {
+                    } else if journal_entity.is_blocked()
+                        && journal_entity.entity_type() == Some("Person")
+                    {
                         EntityClassification::ProtectedBlockedPerson
                     } else if journal_entity.is_principal() {
                         EntityClassification::ProtectedInvalidPrincipal
@@ -316,27 +319,41 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                         match map.get("labels") {
                             Some(Value::Array(rows)) => {
                                 for row in rows {
-                                    let method = row.get("method").and_then(Value::as_str).unwrap_or("unknown");
+                                    let method = row
+                                        .get("method")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("unknown");
                                     *labels_by_method.entry(method.to_owned()).or_default() += 1;
 
-                                    if let Some(conf) = row.get("confidence").and_then(Value::as_str) {
-                                        *labels_by_confidence.entry(conf.to_owned()).or_default() += 1;
+                                    if let Some(conf) =
+                                        row.get("confidence").and_then(Value::as_str)
+                                    {
+                                        *labels_by_confidence
+                                            .entry(conf.to_owned())
+                                            .or_default() += 1;
                                     }
 
-                                    if let Some(speaker) = row.get("speaker").and_then(Value::as_str) {
+                                    if let Some(speaker) =
+                                        row.get("speaker").and_then(Value::as_str)
+                                    {
                                         referenced_effective_ids.insert(speaker.to_owned());
 
                                         // Look up entity classification
                                         match effective_id_map.get(speaker) {
                                             Some(indices) => {
                                                 let entity_dir = &scanned_dirs[indices[0]];
-                                                if entity_dir.classification == EntityClassification::RepairableNonPerson {
+                                                if entity_dir.classification
+                                                    == EntityClassification::RepairableNonPerson
+                                                {
                                                     if method.starts_with("user_") {
                                                         user_authored_non_person_refs_count += 1;
                                                     } else {
                                                         // System label to repairable non-person -> contamination!
-                                                        if !segment_contaminated_speakers.contains(&speaker.to_owned()) {
-                                                            segment_contaminated_speakers.push(speaker.to_owned());
+                                                        if !segment_contaminated_speakers
+                                                            .contains(&speaker.to_owned())
+                                                        {
+                                                            segment_contaminated_speakers
+                                                                .push(speaker.to_owned());
                                                         }
                                                     }
                                                 }
@@ -345,7 +362,9 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
                                                 // Missing entity reference
                                                 gaps.push(RepairGap {
                                                     path: label_p.clone(),
-                                                    reason: format!("label references missing entity {speaker}"),
+                                                    reason: format!(
+                                                        "label references missing entity {speaker}"
+                                                    ),
                                                 });
                                             }
                                         }
@@ -505,7 +524,8 @@ pub fn survey_repair_inventory(journal_root: &Path) -> Result<RepairInventory, S
             }
             EntityClassification::RepairableNonPerson => {
                 summary.repairable_non_persons += 1;
-                if dir.voiceprint_count > 0 && !colliding_effective_ids.contains(&dir.effective_id) {
+                if dir.voiceprint_count > 0 && !colliding_effective_ids.contains(&dir.effective_id)
+                {
                     planned_removals.push(EntityVoiceprintRemovalPlan {
                         entity_id: dir.effective_id.clone(),
                         entity_dir: dir.dir_name.clone(),
@@ -593,7 +613,11 @@ mod tests {
             "names": [id_field],
             "display_name": id_field
         });
-        fs::write(dir.join("entity.json"), serde_json::to_vec_pretty(&entity_json).unwrap()).unwrap();
+        fs::write(
+            dir.join("entity.json"),
+            serde_json::to_vec_pretty(&entity_json).unwrap(),
+        )
+        .unwrap();
 
         if has_vp {
             let items = vec![solstone_core_entity::VoiceprintItem {
@@ -626,29 +650,72 @@ mod tests {
         // 3. Principal entity failing unblocked Person (e.g. Place)
         make_entity(root, "hq", "hq", "Place", false, true, true);
         // 4. Valid repairable non-Person with voiceprints
-        make_entity(root, "acme_corp", "acme_corp", "Organization", false, false, true);
+        make_entity(
+            root,
+            "acme_corp",
+            "acme_corp",
+            "Organization",
+            false,
+            false,
+            true,
+        );
         // 5. Valid repairable non-Person clean
-        make_entity(root, "widget_proj", "widget_proj", "Project", false, false, false);
+        make_entity(
+            root,
+            "widget_proj",
+            "widget_proj",
+            "Project",
+            false,
+            false,
+            false,
+        );
 
         let inv = survey_repair_inventory(root).unwrap();
 
         assert!(inv.complete);
         assert!(!inv.clean); // Has residuals and planned removals
 
-        let alice = inv.entities.iter().find(|e| e.entity_id == "alice").unwrap();
-        assert_eq!(alice.classification, EntityClassification::AdmissibleActivePerson);
+        let alice = inv
+            .entities
+            .iter()
+            .find(|e| e.entity_id == "alice")
+            .unwrap();
+        assert_eq!(
+            alice.classification,
+            EntityClassification::AdmissibleActivePerson
+        );
 
         let bob = inv.entities.iter().find(|e| e.entity_id == "bob").unwrap();
-        assert_eq!(bob.classification, EntityClassification::ProtectedBlockedPerson);
+        assert_eq!(
+            bob.classification,
+            EntityClassification::ProtectedBlockedPerson
+        );
 
         let hq = inv.entities.iter().find(|e| e.entity_id == "hq").unwrap();
-        assert_eq!(hq.classification, EntityClassification::ProtectedInvalidPrincipal);
+        assert_eq!(
+            hq.classification,
+            EntityClassification::ProtectedInvalidPrincipal
+        );
 
-        let acme = inv.entities.iter().find(|e| e.entity_id == "acme_corp").unwrap();
-        assert_eq!(acme.classification, EntityClassification::RepairableNonPerson);
+        let acme = inv
+            .entities
+            .iter()
+            .find(|e| e.entity_id == "acme_corp")
+            .unwrap();
+        assert_eq!(
+            acme.classification,
+            EntityClassification::RepairableNonPerson
+        );
 
-        let widget = inv.entities.iter().find(|e| e.entity_id == "widget_proj").unwrap();
-        assert_eq!(widget.classification, EntityClassification::RepairableNonPerson);
+        let widget = inv
+            .entities
+            .iter()
+            .find(|e| e.entity_id == "widget_proj")
+            .unwrap();
+        assert_eq!(
+            widget.classification,
+            EntityClassification::RepairableNonPerson
+        );
 
         // Only acme_corp is planned for removal
         assert_eq!(inv.planned_removals.len(), 1);
@@ -661,12 +728,24 @@ mod tests {
         let root = temp.path();
 
         // Orphan archive: create valid entity, save voiceprints, then delete entity.json
-        make_entity(root, "orphan_entity", "orphan_entity", "Person", false, false, true);
+        make_entity(
+            root,
+            "orphan_entity",
+            "orphan_entity",
+            "Person",
+            false,
+            false,
+            true,
+        );
         fs::remove_file(root.join("entities/orphan_entity/entity.json")).unwrap();
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(!inv.complete);
-        assert!(inv.gaps.iter().any(|g| g.reason.contains("orphan voiceprint archive")));
+        assert!(
+            inv.gaps
+                .iter()
+                .any(|g| g.reason.contains("orphan voiceprint archive"))
+        );
     }
 
     #[test]
@@ -679,7 +758,11 @@ mod tests {
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(!inv.complete);
-        assert!(inv.gaps.iter().any(|g| g.path.to_string_lossy().contains("bad_ent")));
+        assert!(
+            inv.gaps
+                .iter()
+                .any(|g| g.path.to_string_lossy().contains("bad_ent"))
+        );
     }
 
     #[test]
@@ -697,8 +780,20 @@ mod tests {
             "names": ["dir_a"],
             "display_name": "dir_a"
         });
-        fs::write(root.join("entities/dir_a/entity.json"), serde_json::to_vec_pretty(&entity_json).unwrap()).unwrap();
-        make_entity(root, "dir_b", "shared_id", "Organization", false, false, false);
+        fs::write(
+            root.join("entities/dir_a/entity.json"),
+            serde_json::to_vec_pretty(&entity_json).unwrap(),
+        )
+        .unwrap();
+        make_entity(
+            root,
+            "dir_b",
+            "shared_id",
+            "Organization",
+            false,
+            false,
+            false,
+        );
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(!inv.complete);
@@ -736,11 +831,19 @@ mod tests {
                 "segment_id": 1,
             }]
         });
-        fs::write(seg_dir.join("speaker_labels.json"), serde_json::to_vec_pretty(&labels_json).unwrap()).unwrap();
+        fs::write(
+            seg_dir.join("speaker_labels.json"),
+            serde_json::to_vec_pretty(&labels_json).unwrap(),
+        )
+        .unwrap();
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(!inv.complete);
-        assert!(inv.gaps.iter().any(|g| g.reason.contains("missing entity") && g.reason.contains("ghost_entity")));
+        assert!(
+            inv.gaps
+                .iter()
+                .any(|g| g.reason.contains("missing entity") && g.reason.contains("ghost_entity"))
+        );
     }
 
     #[test]
@@ -759,7 +862,11 @@ mod tests {
                 "segment_id": 1,
             }]
         });
-        fs::write(seg_dir.join("speaker_labels.json"), serde_json::to_vec_pretty(&labels_json).unwrap()).unwrap();
+        fs::write(
+            seg_dir.join("speaker_labels.json"),
+            serde_json::to_vec_pretty(&labels_json).unwrap(),
+        )
+        .unwrap();
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(inv.complete);
@@ -770,7 +877,15 @@ mod tests {
         let temp = tempdir().unwrap();
         let root = temp.path();
 
-        make_entity(root, "org_entity", "org_entity", "Organization", false, false, false);
+        make_entity(
+            root,
+            "org_entity",
+            "org_entity",
+            "Organization",
+            false,
+            false,
+            false,
+        );
 
         let seg_dir = root.join("chronicle/20260808/120000_300/talents");
         fs::create_dir_all(&seg_dir).unwrap();
@@ -782,7 +897,11 @@ mod tests {
                 "segment_id": 1,
             }]
         });
-        fs::write(seg_dir.join("speaker_labels.json"), serde_json::to_vec_pretty(&labels_json).unwrap()).unwrap();
+        fs::write(
+            seg_dir.join("speaker_labels.json"),
+            serde_json::to_vec_pretty(&labels_json).unwrap(),
+        )
+        .unwrap();
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(inv.complete);
@@ -801,10 +920,18 @@ mod tests {
             "schema_version": 1,
             "labels": "not-an-array"
         });
-        fs::write(seg_dir.join("speaker_labels.json"), serde_json::to_vec_pretty(&labels_json).unwrap()).unwrap();
+        fs::write(
+            seg_dir.join("speaker_labels.json"),
+            serde_json::to_vec_pretty(&labels_json).unwrap(),
+        )
+        .unwrap();
 
         let inv = survey_repair_inventory(root).unwrap();
         assert!(!inv.complete);
-        assert!(inv.gaps.iter().any(|g| g.reason.contains("labels field is not an array")));
+        assert!(
+            inv.gaps
+                .iter()
+                .any(|g| g.reason.contains("labels field is not an array"))
+        );
     }
 }

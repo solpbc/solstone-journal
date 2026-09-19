@@ -233,9 +233,7 @@ pub fn fold_repair_operation(
 
     for event in events {
         match event {
-            RepairEvent::Accepted {
-                operation_id, ..
-            } => {
+            RepairEvent::Accepted { operation_id, .. } => {
                 if operation_id == target_operation_id {
                     let s = state.get_or_insert_with(|| RepairOperationState {
                         operation_id: operation_id.clone(),

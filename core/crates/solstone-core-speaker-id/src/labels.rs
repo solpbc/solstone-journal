@@ -559,8 +559,12 @@ pub fn replace_labels_if_current_hash_matches_locked(
     }
 
     // 4. Atomic replacement
-    atomic_replace(&labels_file, &intended_bytes, AtomicWriteOptions { mode: Some(0o600) })
-        .map_err(LabelsError::Write)
+    atomic_replace(
+        &labels_file,
+        &intended_bytes,
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(LabelsError::Write)
 }
 
 /// Strict CAS label replacement acquiring the label lock.
@@ -705,7 +709,9 @@ mod tests {
         let initial_labels = serde_json::json!({
             "labels": [{"sentence_id": 1, "speaker": "spk_1", "method": "heuristic"}]
         });
-        let mut initial_bytes = write_python_compatible_json(&initial_labels, 2).unwrap().into_bytes();
+        let mut initial_bytes = write_python_compatible_json(&initial_labels, 2)
+            .unwrap()
+            .into_bytes();
         initial_bytes.push(b'\n');
         fs::write(&labels_file, &initial_bytes).unwrap();
         let expected_label_hash = compute_bytes_sha256(&initial_bytes);
@@ -717,7 +723,9 @@ mod tests {
         let intended_payload = serde_json::json!({
             "labels": [{"sentence_id": 1, "speaker": "spk_2", "method": "acoustic"}]
         });
-        let mut intended_bytes = write_python_compatible_json(&intended_payload, 2).unwrap().into_bytes();
+        let mut intended_bytes = write_python_compatible_json(&intended_payload, 2)
+            .unwrap()
+            .into_bytes();
         intended_bytes.push(b'\n');
         let intended_hash = compute_bytes_sha256(&intended_bytes);
 
@@ -747,7 +755,9 @@ mod tests {
         let corrupt_hash = compute_bytes_sha256(corrupt_bytes);
 
         let intended = serde_json::json!({"labels": []});
-        let mut intended_bytes = write_python_compatible_json(&intended, 2).unwrap().into_bytes();
+        let mut intended_bytes = write_python_compatible_json(&intended, 2)
+            .unwrap()
+            .into_bytes();
         intended_bytes.push(b'\n');
         let intended_hash = compute_bytes_sha256(&intended_bytes);
 
@@ -771,15 +781,20 @@ mod tests {
         fs::create_dir_all(&talents_dir).unwrap();
         let labels_file = talents_dir.join(LABELS_FILE);
 
-        let current_payload = serde_json::json!({"labels": [{"sentence_id": 1, "speaker": "latest"}]});
-        let mut current_bytes = write_python_compatible_json(&current_payload, 2).unwrap().into_bytes();
+        let current_payload =
+            serde_json::json!({"labels": [{"sentence_id": 1, "speaker": "latest"}]});
+        let mut current_bytes = write_python_compatible_json(&current_payload, 2)
+            .unwrap()
+            .into_bytes();
         current_bytes.push(b'\n');
         fs::write(&labels_file, &current_bytes).unwrap();
 
         let stale_hash = "0000000000000000000000000000000000000000000000000000000000000000";
 
         let intended = serde_json::json!({"labels": []});
-        let mut intended_bytes = write_python_compatible_json(&intended, 2).unwrap().into_bytes();
+        let mut intended_bytes = write_python_compatible_json(&intended, 2)
+            .unwrap()
+            .into_bytes();
         intended_bytes.push(b'\n');
         let intended_hash = compute_bytes_sha256(&intended_bytes);
 
@@ -796,4 +811,3 @@ mod tests {
         assert_eq!(fs::read(&labels_file).unwrap(), current_bytes);
     }
 }
-

@@ -1351,8 +1351,12 @@ async fn speakers_repair_report_only_and_commit_route() {
     fs::create_dir_all(&np_dir).unwrap();
     fs::write(
         np_dir.join("entity.json"),
-        serde_json::to_vec(&json!({"id": "acme", "name": "acme", "type": "Organization", "is_principal": false})).unwrap(),
-    ).unwrap();
+        serde_json::to_vec(
+            &json!({"id": "acme", "name": "acme", "type": "Organization", "is_principal": false}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
 
     let mut embedding = vec![0.0; 256];
     embedding[0] = 1.0;
@@ -1369,14 +1373,16 @@ async fn speakers_repair_report_only_and_commit_route() {
             }),
         }],
         &resolve_names_encoder(),
-    ).unwrap();
+    )
+    .unwrap();
 
     // 1. Report-only (commit: false)
     let (status, value) = call(
         router(journal.0.clone()),
         "/app/speakers/api/repair",
         json!({"commit": false}),
-    ).await;
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(value["mode"], "dry_run");
     assert_eq!(value["complete"], true);
@@ -1387,7 +1393,8 @@ async fn speakers_repair_report_only_and_commit_route() {
         router(journal.0.clone()),
         "/app/speakers/api/repair",
         json!({"commit": true, "operation_id": "op_repair_test"}),
-    ).await;
+    )
+    .await;
     assert_eq!(status_commit, StatusCode::OK);
     assert_eq!(value_commit["status"], "completed");
     assert_eq!(value_commit["summary"]["complete"], true);

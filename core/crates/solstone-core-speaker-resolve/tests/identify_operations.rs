@@ -855,9 +855,20 @@ fn direct_vs_named_default_members_are_unequal_and_fingerprints_differ() {
         sentence_id: 1,
     };
     assert_ne!(direct_member, named_member);
-    let fp_direct =
-        request_fingerprint(&[direct_member.clone()], "ent-alice", false, "Person", &[]);
-    let fp_named = request_fingerprint(&[named_member.clone()], "ent-alice", false, "Person", &[]);
+    let fp_direct = request_fingerprint(
+        std::slice::from_ref(&direct_member),
+        "ent-alice",
+        false,
+        "Person",
+        &[],
+    );
+    let fp_named = request_fingerprint(
+        std::slice::from_ref(&named_member),
+        "ent-alice",
+        false,
+        "Person",
+        &[],
+    );
     assert_ne!(fp_direct, fp_named);
 
     let fp_both = request_fingerprint(
@@ -873,7 +884,7 @@ fn direct_vs_named_default_members_are_unequal_and_fingerprints_differ() {
 
 #[test]
 fn historical_plan_v1_and_event_v1_remain_readable() {
-    let mut plan = json!({
+    let plan = json!({
         "plan_schema_version": 1,
         "operation_id": "idop_test",
         "request_id": "request",
