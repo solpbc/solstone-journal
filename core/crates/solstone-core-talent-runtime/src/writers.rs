@@ -6,7 +6,7 @@ pub use daily::{
     PreparedDailyAction, PreparedDailyPublication, prepare_daily_output, prepare_daily_publication,
     publish_daily_publication, required_artifact_receipts,
 };
-pub(crate) use daily::{prepare_frozen_output_action, prepare_output_action};
+pub(crate) use daily::{bind_output_action, prepare_frozen_output_action};
 
 use std::fs;
 use std::path::PathBuf;

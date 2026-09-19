@@ -139,20 +139,23 @@ fn verify_frozen_facet(
     Ok(())
 }
 
-pub fn prepare_output_action(
+pub(crate) fn bind_output_action(
     root: &Path,
     path: &Path,
     after: Vec<u8>,
-) -> Result<PreparedDailyAction, String> {
+    observe_identity: bool,
+) -> Result<PreparedDailyAction, ReviewOwnerError> {
     let path_string = relative_output(root, path)?;
     let facet_identity = if let Some(rest) = path_string.strip_prefix("facets/") {
         let facet = rest.split('/').next().ok_or("invalid facet output path")?;
-        let _guard =
-            solstone_core_facets::hold_facet_trust_lock(root).map_err(|e| e.to_string())?;
-        Some((
-            facet.to_owned(),
-            solstone_core_facets::facet_write_identity(root, facet)?,
-        ))
+        let _guard = solstone_core_facets::hold_facet_trust_lock(root)
+            .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+        let id = if observe_identity {
+            solstone_core_facets::observe_facet_write_identity(root, facet)?
+        } else {
+            solstone_core_facets::facet_write_identity(root, facet)?
+        };
+        Some((facet.to_owned(), id))
     } else {
         None
     };
@@ -170,7 +173,12 @@ pub(crate) fn prepare_frozen_output_action(
     after: Vec<u8>,
     prepared: &PreparedTalent,
 ) -> Result<PreparedDailyAction, ReviewOwnerError> {
-    let action = prepare_output_action(root, path, after)?;
+    let action = bind_output_action(
+        root,
+        path,
+        after,
+        prepared.name == "entities:entities_review",
+    )?;
     let PreparedDailyAction::Output { path, before, .. } = &action else {
         unreachable!()
     };
@@ -1702,7 +1710,7 @@ mod tests {
             let action = match kind {
                 "calendar" => PreparedDailyAction::Anticipation { batch: solstone_core_facets::prepare_anticipation_batch(root.path(), "work", "20260920", &[(json!({"id":"event", "source":"anticipated", "title":"Planning"}).as_object().unwrap().clone(), vec![])], "2026-09-14T10:00:00Z").unwrap() },
                 "news" => PreparedDailyAction::Newsletter { batch: solstone_core_facets::prepare_news_replacement(root.path(), "work", "20260910.md", "News").unwrap() },
-                "output" => prepare_output_action(root.path(), &root.path().join("facets/work/entities/20260910_review_outcome.json"), b"result".to_vec()).unwrap(),
+                "output" => bind_output_action(root.path(), &root.path().join("facets/work/entities/20260910_review_outcome.json"), b"result".to_vec(), false).unwrap(),
                 "proposals" => PreparedDailyAction::MergeProposals { facet:"work".into(), facet_id, batch:solstone_core_entity::prepare_merge_proposals(root.path(), &[json!({"facet":"work", "day":"20260910", "source":"Ada", "source_slug":"ada", "target":"Grace", "target_slug":"grace", "summary":"Variant"})]).unwrap() },
                 _ => {
                     let promotion = solstone_core_facets::prepare_review_promotion(root.path(), "work", "Person", "Grace Hopper", "Engineer", &["Amazing Grace".into()]).unwrap();
@@ -2254,6 +2262,47 @@ mod tests {
             "{error:?}"
         );
         assert!(path.is_dir());
+    }
+
+    #[test]
+    fn review_frozen_output_helper_observes_malformed_facet_without_repair() {
+        let root = fixture();
+        let journal = root.path();
+        let path = journal.join("facets/work/facet.json");
+        std::fs::write(&path, b"{").unwrap();
+        let prepared = PreparedTalent {
+            name: "entities:entities_review".into(),
+            config: json!({
+                "day":"20260910",
+                "facet":"work",
+                "_daily_artifact_before": {},
+                "_daily_facet_ids": {"work":"ignored"}
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let error = prepare_frozen_output_action(
+            journal,
+            &journal.join("facets/work/entities/20260910_review_outcome.json"),
+            b"{}\n".to_vec(),
+            &prepared,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, ReviewOwnerError::Failed { .. }),
+            "{error:?}"
+        );
+        assert_eq!(error.kind(), None);
+        assert_eq!(std::fs::read(&path).unwrap(), b"{");
+        assert_eq!(
+            std::fs::read_dir(path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains("wedged"))
+                .count(),
+            0
+        );
     }
 
     #[test]

@@ -36,7 +36,7 @@ pub fn freeze(
         .map_err(|error| failure(&prepared, error))?;
     let stage = contract::resolve_hook(&hook)
         .ok_or_else(|| failure(&prepared, format!("unsupported daily hook {hook}")))?;
-    capture_owner_expectations(&mut prepared, context, &hook).map_err(|e| failure(&prepared, e))?;
+    capture_owner_expectations(&mut prepared, context, &hook)?;
     let mut state = PrePostState::None;
     if !prepared.config.contains_key("skip_reason") {
         if let Some(gate) = stage.gate {
@@ -238,20 +238,59 @@ pub(crate) fn search_day_sources(
     })
 }
 
+fn review_identity_stage_failed(
+    prepared: &PreparedTalent,
+    error: solstone_core_facets::FacetIdentityError,
+) -> RuntimeOutcome {
+    review_owner_stage_failed(prepared, error.into())
+}
+
+fn review_owner_stage_failed(
+    prepared: &PreparedTalent,
+    error: solstone_core_entity::ReviewOwnerError,
+) -> RuntimeOutcome {
+    let identity = solstone_core_journal_io::DailyUnitIdentity::new(
+        prepared
+            .config
+            .get("day")
+            .and_then(Value::as_str)
+            .unwrap_or_default(),
+        prepared.name.clone(),
+        prepared
+            .config
+            .get("facet")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+    );
+    RuntimeOutcome::StageFailed(match error {
+        solstone_core_entity::ReviewOwnerError::Conflict { kind, detail } => {
+            StageError::owner_conflict(&identity, "daily_publication", kind, detail)
+        }
+        solstone_core_entity::ReviewOwnerError::Failed { detail } => StageError::new(
+            "publication",
+            "daily_publication",
+            identity.name.clone(),
+            detail,
+        )
+        .with_identity(&identity),
+    })
+}
+
 fn capture_owner_expectations(
     prepared: &mut PreparedTalent,
     context: &ExecutionContext,
     hook: &str,
-) -> Result<(), String> {
+) -> Result<(), RuntimeOutcome> {
     if prepared.config.contains_key("skip_reason") {
         return Ok(());
     }
+    let observe_review = hook == "entities:entities_review";
     let facet_ids = {
         let _guard = solstone_core_facets::hold_facet_trust_lock(&context.journal)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| failure(prepared, e.to_string()))?;
         let names = if hook == "schedule" {
             solstone_core_facets::list_declared_facet_names(&context.journal)
-                .map_err(|e| e.to_string())?
+                .map_err(|e| failure(prepared, e.to_string()))?
         } else if matches!(
             hook,
             "facet_newsletter"
@@ -270,13 +309,14 @@ fn capture_owner_expectations(
         };
         let mut identities = Map::new();
         for facet in names {
-            identities.insert(
-                facet.clone(),
-                json!(solstone_core_facets::facet_write_identity(
-                    &context.journal,
-                    &facet
-                )?),
-            );
+            let id = if observe_review {
+                solstone_core_facets::observe_facet_write_identity(&context.journal, &facet)
+                    .map_err(|error| review_identity_stage_failed(prepared, error))?
+            } else {
+                solstone_core_facets::facet_write_identity(&context.journal, &facet)
+                    .map_err(|error| failure(prepared, error.to_string()))?
+            };
+            identities.insert(facet, json!(id));
         }
         identities
     };
@@ -310,9 +350,17 @@ fn capture_owner_expectations(
     }
     let mut artifacts = Map::new();
     for path in paths {
-        let action = crate::writers::prepare_output_action(&context.journal, &path, Vec::new())?;
+        let action =
+            crate::writers::bind_output_action(&context.journal, &path, Vec::new(), observe_review)
+                .map_err(|error| {
+                    if observe_review {
+                        review_owner_stage_failed(prepared, error)
+                    } else {
+                        failure(prepared, error.to_string())
+                    }
+                })?;
         let crate::writers::PreparedDailyAction::Output { path, before, .. } = action else {
-            return Err("invalid artifact preparation".to_owned());
+            return Err(failure(prepared, "invalid artifact preparation".to_owned()));
         };
         artifacts.insert(path, json!(before));
     }
@@ -324,7 +372,8 @@ fn capture_owner_expectations(
         let before = solstone_core_system::schedule::prepare_daily_time(
             &context.journal.join("config/schedules.json"),
             "00:00",
-        )?
+        )
+        .map_err(|e| failure(prepared, e))?
         .before;
         prepared.config.insert(
             "_daily_time_before".to_owned(),
@@ -336,20 +385,34 @@ fn capture_owner_expectations(
             .config
             .get("day")
             .and_then(Value::as_str)
-            .ok_or("daily calendar preparation requires day")?;
+            .ok_or_else(|| {
+                failure(
+                    prepared,
+                    "daily calendar preparation requires day".to_owned(),
+                )
+            })?
+            .to_owned();
         let _lock = solstone_core_facets::hold_facet_trust_lock(&context.journal)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| failure(prepared, e.to_string()))?;
         let mut before = Map::new();
-        for facet in strict_entries(&context.journal.join("facets"))? {
-            if !facet.file_type().map_err(|e| e.to_string())?.is_dir() {
+        for facet in
+            strict_entries(&context.journal.join("facets")).map_err(|e| failure(prepared, e))?
+        {
+            if !facet
+                .file_type()
+                .map_err(|e| failure(prepared, e.to_string()))?
+                .is_dir()
+            {
                 continue;
             }
             let facet_name = facet
                 .file_name()
                 .to_str()
-                .ok_or("invalid facet filename")?
+                .ok_or_else(|| failure(prepared, "invalid facet filename".to_owned()))?
                 .to_owned();
-            for entry in strict_entries(&facet.path().join("activities"))? {
+            for entry in strict_entries(&facet.path().join("activities"))
+                .map_err(|e| failure(prepared, e))?
+            {
                 let path = entry.path();
                 if path.extension().and_then(|s| s.to_str()) != Some("jsonl") {
                     continue;
@@ -357,8 +420,10 @@ fn capture_owner_expectations(
                 let target = path
                     .file_stem()
                     .and_then(|s| s.to_str())
-                    .ok_or("invalid activity filename")?;
-                if chrono::NaiveDate::parse_from_str(target, "%Y%m%d").is_err() || target <= day {
+                    .ok_or_else(|| failure(prepared, "invalid activity filename".to_owned()))?;
+                if chrono::NaiveDate::parse_from_str(target, "%Y%m%d").is_err()
+                    || target <= day.as_str()
+                {
                     continue;
                 }
                 let raw = solstone_core_facets::read_activity_file(
@@ -366,14 +431,16 @@ fn capture_owner_expectations(
                     &facet_name,
                     &format!("{target}.jsonl"),
                 )
-                .map_err(|e| e.to_string())?;
+                .map_err(|e| failure(prepared, e.to_string()))?;
                 if let Some(raw) = &raw {
                     for line in raw.lines().filter(|s| !s.trim().is_empty()) {
-                        let row: Value = serde_json::from_str(line)
-                            .map_err(|e| format!("calendar {facet_name}/{target}: {e}"))?;
+                        let row: Value = serde_json::from_str(line).map_err(|e| {
+                            failure(prepared, format!("calendar {facet_name}/{target}: {e}"))
+                        })?;
                         if !row.is_object() {
-                            return Err(format!(
-                                "calendar {facet_name}/{target} row is not an object"
+                            return Err(failure(
+                                prepared,
+                                format!("calendar {facet_name}/{target} row is not an object"),
                             ));
                         }
                     }
@@ -409,6 +476,82 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, text).unwrap();
     }
+    #[test]
+    fn review_admission_snapshot_observes_malformed_facet_without_repair() {
+        let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
+        let path = root.path().join("facets/work/facet.json");
+        std::fs::write(&path, b"{").unwrap();
+        let prepared = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "type":"generate",
+                "day":"20260910",
+                "facet":"work",
+                "prompt":"review",
+                "hook":{"pre":"entities:entities_review","post":"entities:entities_review"}
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let outcome = freeze(
+            prepared,
+            &ExecutionContext {
+                journal: root.path().to_owned(),
+            },
+        )
+        .unwrap_err();
+        let RuntimeOutcome::StageFailed(error) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(error.phase, "publication");
+        assert_eq!(error.reason_code(), "talent_stage_failed");
+        assert_eq!(error.owner_conflict_kind(), None);
+        assert_eq!(std::fs::read(&path).unwrap(), b"{");
+        assert_eq!(
+            std::fs::read_dir(path.parent().unwrap())
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains("wedged"))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn review_admission_snapshot_types_missing_facet_as_owning_facet_changed() {
+        let root = tempfile::tempdir().unwrap();
+        let prepared = PreparedTalent {
+            name: "entities:entities_review".to_owned(),
+            config: json!({
+                "type":"generate",
+                "day":"20260910",
+                "facet":"missing",
+                "prompt":"review",
+                "hook":{"pre":"entities:entities_review","post":"entities:entities_review"}
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let outcome = freeze(
+            prepared,
+            &ExecutionContext {
+                journal: root.path().to_owned(),
+            },
+        )
+        .unwrap_err();
+        let RuntimeOutcome::StageFailed(error) = outcome else {
+            panic!("{outcome:?}");
+        };
+        assert_eq!(error.phase, "conflict");
+        assert_eq!(error.reason_code(), "daily_owner_conflict");
+        assert_eq!(error.owner_conflict_kind(), Some("owning_facet_changed"));
+        assert_eq!(error.day(), "20260910");
+        assert_eq!(error.facet(), Some("missing"));
+    }
+
     #[test]
     fn newsletter_no_output_retains_all_clipped_source_diagnostics() {
         let root = tempfile::tempdir().unwrap();
