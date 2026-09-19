@@ -433,7 +433,7 @@ async fn owner_write_routes_cover_ready_detect_build_rebuild_confirm_reject_and_
     )
     .expect("jsonl");
     fs::write(seg_dir.join("audio.flac"), audio_bytes).expect("flac");
-    write_embeddings(&seg_dir.join("audio.npz"), &[emb.clone()]);
+    write_embeddings(&seg_dir.join("audio.npz"), std::slice::from_ref(&emb));
 
     solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
         &journal.0,
@@ -1839,7 +1839,7 @@ async fn owner_confirm_evidentiary_rejections() {
     )
     .expect("jsonl");
     fs::write(seg_dir.join("audio.flac"), audio_bytes).expect("flac");
-    write_embeddings(&seg_dir.join("audio.npz"), &[emb.clone()]);
+    write_embeddings(&seg_dir.join("audio.npz"), std::slice::from_ref(&emb));
 
     solstone_core_speaker_resolve::owner_candidate::write_owner_candidate(
         &journal.0,
