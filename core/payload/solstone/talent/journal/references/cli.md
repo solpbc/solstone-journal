@@ -291,5 +291,7 @@ Cogitate talents have access to all `solstone` commands. The following infrastru
 - `journal sense`
 - `journal transcribe` / `journal describe`
 - `journal indexer --reset`
+- `solstone call speakers repair`
+- `solstone call speakers repair-resume`
 
 Talents should use `solstone call` commands for journal interaction and `journal health` / `journal talent logs` for diagnostics.

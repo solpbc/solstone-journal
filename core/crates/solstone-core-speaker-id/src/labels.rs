@@ -10,13 +10,16 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
+use sha2::{Digest, Sha256};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, LockError, LockOptions, atomic_replace, hold_lock,
+    AtomicWriteError, AtomicWriteOptions, FileLock, LockError, LockOptions, atomic_replace,
+    hold_lock,
 };
 
 use crate::corrections::{CorrectionsError, read_corrections};
 use crate::json::{JsonError, write_python_compatible_json};
 
+pub const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const LABELS_FILE: &str = "speaker_labels.json";
 
 /// Errors produced while reading or writing speaker labels.
@@ -29,6 +32,12 @@ pub enum LabelsError {
     SentenceIdNotFound(i64),
     InvalidCorrectionSentenceId,
     InvalidLabelRestoration,
+    MalformedCurrentLabels(String),
+    MalformedCorrections(String),
+    CurrentHashMismatch { expected: String, actual: String },
+    CorrectionsHashMismatch { expected: String, actual: String },
+    IntendedPayloadHashMismatch { expected: String, actual: String },
+    Io(std::io::Error),
 }
 
 /// One compare-and-restore request for an identify-authored label row.
@@ -70,6 +79,31 @@ impl fmt::Display for LabelsError {
             Self::InvalidLabelRestoration => {
                 write!(f, "speaker label restoration has invalid prior state")
             }
+            Self::MalformedCurrentLabels(detail) => {
+                write!(f, "current speaker labels are malformed: {detail}")
+            }
+            Self::MalformedCorrections(detail) => {
+                write!(f, "current speaker corrections are malformed: {detail}")
+            }
+            Self::CurrentHashMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "current speaker labels hash mismatch: expected {expected}, actual {actual}"
+                )
+            }
+            Self::CorrectionsHashMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "current speaker corrections hash mismatch: expected {expected}, actual {actual}"
+                )
+            }
+            Self::IntendedPayloadHashMismatch { expected, actual } => {
+                write!(
+                    f,
+                    "intended speaker labels hash mismatch: expected {expected}, actual {actual}"
+                )
+            }
+            Self::Io(error) => write!(f, "i/o error handling speaker labels: {error}"),
         }
     }
 }
@@ -81,9 +115,15 @@ impl Error for LabelsError {
             Self::Write(error) => Some(error),
             Self::Serialize(error) => Some(error),
             Self::Corrections(error) => Some(error),
+            Self::Io(error) => Some(error),
             Self::SentenceIdNotFound(_)
             | Self::InvalidCorrectionSentenceId
-            | Self::InvalidLabelRestoration => None,
+            | Self::InvalidLabelRestoration
+            | Self::MalformedCurrentLabels(_)
+            | Self::MalformedCorrections(_)
+            | Self::CurrentHashMismatch { .. }
+            | Self::CorrectionsHashMismatch { .. }
+            | Self::IntendedPayloadHashMismatch { .. } => None,
         }
     }
 }
@@ -338,8 +378,209 @@ pub fn restore_label_rows(
     Ok(report)
 }
 
-fn labels_path(segment_dir: &Path) -> PathBuf {
+pub fn labels_path(segment_dir: &Path) -> PathBuf {
     segment_dir.join("talents").join(LABELS_FILE)
+}
+
+pub fn corrections_path(segment_dir: &Path) -> PathBuf {
+    segment_dir.join("talents").join("speaker_corrections.json")
+}
+
+pub fn compute_bytes_sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let digest = hasher.finalize();
+    format!("{digest:x}")
+}
+
+pub fn compute_file_sha256(path: &Path) -> Result<String, std::io::Error> {
+    match fs::read(path) {
+        Ok(bytes) => Ok(compute_bytes_sha256(&bytes)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(EMPTY_SHA256.to_owned()),
+        Err(err) => Err(err),
+    }
+}
+
+/// Build intended label payload by merging fresh resolver labels with existing user labels and applying corrections.
+pub fn build_repaired_label_payload(
+    current_labels: Option<&Map<String, Value>>,
+    corrections: Vec<Value>,
+    mut fresh_labels: Vec<Value>,
+    metadata: &Map<String, Value>,
+) -> Result<Value, LabelsError> {
+    let corrected = corrections_by_sentence(corrections)?;
+    let mut result = current_labels.cloned().unwrap_or_default();
+    result.remove("skipped");
+    result.remove("reason");
+
+    for label in &mut fresh_labels {
+        let Some(label) = label.as_object_mut() else {
+            continue;
+        };
+        let Some(sentence_id) = label_sentence_id(label) else {
+            continue;
+        };
+        if let Some(correction) = corrected.get(&sentence_id) {
+            apply_correction_overlay(label, correction);
+        }
+    }
+
+    let mut user_by_sentence = HashMap::new();
+    if let Some(labels) = current_labels
+        .and_then(|current| current.get("labels"))
+        .and_then(Value::as_array)
+    {
+        for label in labels {
+            let Some(object) = label.as_object() else {
+                continue;
+            };
+            let Some(sentence_id) = label_sentence_id(object) else {
+                continue;
+            };
+            if is_user_label(object) {
+                user_by_sentence.insert(sentence_id, label.clone());
+            }
+        }
+    }
+
+    let mut merged_labels = Vec::new();
+    let mut fresh_sentence_ids = HashSet::new();
+    for label in fresh_labels {
+        let sentence_id = label.as_object().and_then(label_sentence_id);
+        let Some(sentence_id) = sentence_id else {
+            merged_labels.push(label);
+            continue;
+        };
+        fresh_sentence_ids.insert(sentence_id);
+        merged_labels.push(user_by_sentence.get(&sentence_id).cloned().unwrap_or(label));
+    }
+
+    let mut user_only: Vec<_> = user_by_sentence
+        .into_iter()
+        .filter(|(sentence_id, _)| !fresh_sentence_ids.contains(sentence_id))
+        .collect();
+    user_only.sort_by_key(|(sentence_id, _)| *sentence_id);
+    merged_labels.extend(user_only.into_iter().map(|(_, label)| label));
+
+    result.insert("labels".to_owned(), Value::Array(merged_labels));
+    result.insert(
+        "owner_centroid_last_refreshed_at".to_owned(),
+        metadata
+            .get("owner_centroid_last_refreshed_at")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
+    result.insert(
+        "voiceprint_versions".to_owned(),
+        metadata
+            .get("voiceprint_versions")
+            .cloned()
+            .unwrap_or_else(|| Value::Object(Map::new())),
+    );
+    result.insert(
+        "candidate_evidence".to_owned(),
+        metadata
+            .get("candidate_evidence")
+            .filter(|value| py_truthy(value))
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    );
+    if let Some(gaps) = metadata
+        .get("candidate_evidence_gaps")
+        .filter(|value| py_truthy(value))
+    {
+        result.insert("candidate_evidence_gaps".to_owned(), gaps.clone());
+    } else {
+        result.remove("candidate_evidence_gaps");
+    }
+
+    Ok(Value::Object(result))
+}
+
+/// Inner CAS label replacement executed when caller holds the label lock.
+pub fn replace_labels_if_current_hash_matches_locked(
+    segment_dir: &Path,
+    expected_current_label_sha256: &str,
+    expected_corrections_sha256: &str,
+    intended_payload: &Value,
+    intended_payload_sha256: &str,
+    _held_label_lock: &FileLock,
+) -> Result<(), LabelsError> {
+    let labels_file = labels_path(segment_dir);
+    let corrections_file = corrections_path(segment_dir);
+
+    // 1. Check current label bytes & hash
+    let actual_label_sha256 = match fs::read(&labels_file) {
+        Ok(bytes) => {
+            if let Err(err) = serde_json::from_slice::<Value>(&bytes) {
+                return Err(LabelsError::MalformedCurrentLabels(err.to_string()));
+            }
+            compute_bytes_sha256(&bytes)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => EMPTY_SHA256.to_owned(),
+        Err(err) => return Err(LabelsError::Io(err)),
+    };
+    if actual_label_sha256 != expected_current_label_sha256 {
+        return Err(LabelsError::CurrentHashMismatch {
+            expected: expected_current_label_sha256.to_owned(),
+            actual: actual_label_sha256,
+        });
+    }
+
+    // 2. Check current corrections bytes & hash
+    let actual_corrections_sha256 = match fs::read(&corrections_file) {
+        Ok(bytes) => {
+            if let Err(err) = serde_json::from_slice::<Value>(&bytes) {
+                return Err(LabelsError::MalformedCorrections(err.to_string()));
+            }
+            compute_bytes_sha256(&bytes)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => EMPTY_SHA256.to_owned(),
+        Err(err) => return Err(LabelsError::Io(err)),
+    };
+    if actual_corrections_sha256 != expected_corrections_sha256 {
+        return Err(LabelsError::CorrectionsHashMismatch {
+            expected: expected_corrections_sha256.to_owned(),
+            actual: actual_corrections_sha256,
+        });
+    }
+
+    // 3. Serialize intended payload and verify intended payload hash
+    let mut intended_bytes = write_python_compatible_json(intended_payload, 2)
+        .map_err(LabelsError::Serialize)?
+        .into_bytes();
+    intended_bytes.push(b'\n');
+    let actual_intended_sha256 = compute_bytes_sha256(&intended_bytes);
+    if actual_intended_sha256 != intended_payload_sha256 {
+        return Err(LabelsError::IntendedPayloadHashMismatch {
+            expected: intended_payload_sha256.to_owned(),
+            actual: actual_intended_sha256,
+        });
+    }
+
+    // 4. Atomic replacement
+    atomic_replace(&labels_file, &intended_bytes, AtomicWriteOptions { mode: Some(0o600) })
+        .map_err(LabelsError::Write)
+}
+
+/// Strict CAS label replacement acquiring the label lock.
+pub fn replace_labels_if_current_hash_matches(
+    segment_dir: &Path,
+    expected_current_label_sha256: &str,
+    expected_corrections_sha256: &str,
+    intended_payload: &Value,
+    intended_payload_sha256: &str,
+) -> Result<(), LabelsError> {
+    let path = labels_path(segment_dir);
+    let lock = hold_lock(&path, LockOptions::default()).map_err(LabelsError::Lock)?;
+    replace_labels_if_current_hash_matches_locked(
+        segment_dir,
+        expected_current_label_sha256,
+        expected_corrections_sha256,
+        intended_payload,
+        intended_payload_sha256,
+        &lock,
+    )
 }
 
 fn read_current_labels(path: &Path) -> Option<Map<String, Value>> {
@@ -396,11 +637,11 @@ fn coerce_correction_sentence_id(value: &Value) -> Result<i64, LabelsError> {
     }
 }
 
-fn is_user_label(label: &Map<String, Value>) -> bool {
+pub fn is_user_label(label: &Map<String, Value>) -> bool {
     matches!(label.get("method"), Some(Value::String(method)) if method.starts_with("user_"))
 }
 
-fn apply_correction_overlay(label: &mut Map<String, Value>, correction: &Map<String, Value>) {
+pub fn apply_correction_overlay(label: &mut Map<String, Value>, correction: &Map<String, Value>) {
     let corrected_speaker = get_present(correction, "corrected_speaker");
     match corrected_speaker {
         None => {
@@ -447,3 +688,112 @@ fn write_labels(path: &Path, value: Value) -> Result<(), LabelsError> {
     atomic_replace(path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(LabelsError::Write)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strict_writer_happy_path() {
+        let temp = tempfile::tempdir().unwrap();
+        let talents_dir = temp.path().join("talents");
+        fs::create_dir_all(&talents_dir).unwrap();
+        let labels_file = talents_dir.join(LABELS_FILE);
+        let _corrections_file = talents_dir.join("speaker_corrections.json");
+
+        // Initial labels
+        let initial_labels = serde_json::json!({
+            "labels": [{"sentence_id": 1, "speaker": "spk_1", "method": "heuristic"}]
+        });
+        let mut initial_bytes = write_python_compatible_json(&initial_labels, 2).unwrap().into_bytes();
+        initial_bytes.push(b'\n');
+        fs::write(&labels_file, &initial_bytes).unwrap();
+        let expected_label_hash = compute_bytes_sha256(&initial_bytes);
+
+        // No corrections file -> EMPTY_SHA256
+        let expected_corrections_hash = EMPTY_SHA256;
+
+        // Intended payload
+        let intended_payload = serde_json::json!({
+            "labels": [{"sentence_id": 1, "speaker": "spk_2", "method": "acoustic"}]
+        });
+        let mut intended_bytes = write_python_compatible_json(&intended_payload, 2).unwrap().into_bytes();
+        intended_bytes.push(b'\n');
+        let intended_hash = compute_bytes_sha256(&intended_bytes);
+
+        // Replace
+        replace_labels_if_current_hash_matches(
+            temp.path(),
+            &expected_label_hash,
+            expected_corrections_hash,
+            &intended_payload,
+            &intended_hash,
+        )
+        .unwrap();
+
+        let read_bytes = fs::read(&labels_file).unwrap();
+        assert_eq!(read_bytes, intended_bytes);
+    }
+
+    #[test]
+    fn test_strict_writer_malformed_current_labels_rejects_without_modifying_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let talents_dir = temp.path().join("talents");
+        fs::create_dir_all(&talents_dir).unwrap();
+        let labels_file = talents_dir.join(LABELS_FILE);
+
+        let corrupt_bytes = b"not valid json {[[[";
+        fs::write(&labels_file, corrupt_bytes).unwrap();
+        let corrupt_hash = compute_bytes_sha256(corrupt_bytes);
+
+        let intended = serde_json::json!({"labels": []});
+        let mut intended_bytes = write_python_compatible_json(&intended, 2).unwrap().into_bytes();
+        intended_bytes.push(b'\n');
+        let intended_hash = compute_bytes_sha256(&intended_bytes);
+
+        let err = replace_labels_if_current_hash_matches(
+            temp.path(),
+            &corrupt_hash,
+            EMPTY_SHA256,
+            &intended,
+            &intended_hash,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, LabelsError::MalformedCurrentLabels(_)));
+        assert_eq!(fs::read(&labels_file).unwrap(), corrupt_bytes);
+    }
+
+    #[test]
+    fn test_strict_writer_cas_mismatch_preserves_latest_bytes() {
+        let temp = tempfile::tempdir().unwrap();
+        let talents_dir = temp.path().join("talents");
+        fs::create_dir_all(&talents_dir).unwrap();
+        let labels_file = talents_dir.join(LABELS_FILE);
+
+        let current_payload = serde_json::json!({"labels": [{"sentence_id": 1, "speaker": "latest"}]});
+        let mut current_bytes = write_python_compatible_json(&current_payload, 2).unwrap().into_bytes();
+        current_bytes.push(b'\n');
+        fs::write(&labels_file, &current_bytes).unwrap();
+
+        let stale_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+
+        let intended = serde_json::json!({"labels": []});
+        let mut intended_bytes = write_python_compatible_json(&intended, 2).unwrap().into_bytes();
+        intended_bytes.push(b'\n');
+        let intended_hash = compute_bytes_sha256(&intended_bytes);
+
+        let err = replace_labels_if_current_hash_matches(
+            temp.path(),
+            stale_hash,
+            EMPTY_SHA256,
+            &intended,
+            &intended_hash,
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, LabelsError::CurrentHashMismatch { .. }));
+        assert_eq!(fs::read(&labels_file).unwrap(), current_bytes);
+    }
+}
+

@@ -372,6 +372,115 @@ pub async fn backfill_resume(
     }
 }
 
+pub async fn repair(Extension(root): Extension<Arc<JournalRoot>>, request: Request) -> Response {
+    let body = json_body(request).await.unwrap_or_else(|_| json!({}));
+    let commit = body.get("commit").and_then(Value::as_bool).unwrap_or(false);
+    let operation_id = body
+        .get("operation_id")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+
+    let req = solstone_core_speaker_resolve::repair_coordinator::StartRepairRequest {
+        operation_id,
+        commit,
+        now_ms: Utc::now().timestamp_millis(),
+    };
+
+    match solstone_core_speaker_resolve::repair_coordinator::start_repair(&root.0, req) {
+        Ok(value) => Json(value).into_response(),
+        Err(err_msg) => {
+            if err_msg.contains("busy") || err_msg.contains("locked") {
+                err(
+                    "speaker_operation_busy",
+                    "repair operation is currently locked or busy.",
+                    &err_msg,
+                    StatusCode::CONFLICT,
+                )
+            } else if err_msg.contains("not found") {
+                err(
+                    "speaker_operation_not_found",
+                    "that speaker operation wasn't found.",
+                    &err_msg,
+                    StatusCode::NOT_FOUND,
+                )
+            } else {
+                err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &err_msg,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            }
+        }
+    }
+}
+
+pub async fn repair_status(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    RoutePath(operation_id): RoutePath<String>,
+) -> Response {
+    match solstone_core_speaker_resolve::repair_coordinator::query_repair_status(
+        &root.0,
+        &operation_id,
+    ) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => {
+            if error.contains("not found") {
+                err(
+                    "speaker_operation_not_found",
+                    "that speaker operation wasn't found.",
+                    &format!("repair operation {operation_id} not found"),
+                    StatusCode::NOT_FOUND,
+                )
+            } else {
+                err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            }
+        }
+    }
+}
+
+pub async fn repair_resume(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    RoutePath(operation_id): RoutePath<String>,
+) -> Response {
+    match solstone_core_speaker_resolve::repair_coordinator::resume_repair(
+        &root.0,
+        &operation_id,
+        Utc::now().timestamp_millis(),
+    ) {
+        Ok(value) => Json(value).into_response(),
+        Err(error) => {
+            if error.contains("not found") {
+                err(
+                    "speaker_operation_not_found",
+                    "that speaker operation wasn't found.",
+                    &format!("repair operation {operation_id} not found: {error}"),
+                    StatusCode::NOT_FOUND,
+                )
+            } else if error.contains("busy") || error.contains("locked") {
+                err(
+                    "speaker_operation_busy",
+                    "repair operation is currently locked or busy.",
+                    &error,
+                    StatusCode::CONFLICT,
+                )
+            } else {
+                err(
+                    "speaker_command_failed",
+                    "that speaker command didn't finish.",
+                    &error,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                )
+            }
+        }
+    }
+}
+
 pub async fn backfill_last_seen(
     Extension(root): Extension<Arc<JournalRoot>>,
     request: Request,

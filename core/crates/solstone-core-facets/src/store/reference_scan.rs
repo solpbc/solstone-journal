@@ -34,6 +34,7 @@ pub struct EntityReferenceBreakdown {
     pub speaker_review_candidate: usize,
     pub candidate_pair: usize,
     pub dismissal: usize,
+    pub repair_operation: usize,
     pub unreadable: usize,
 }
 
@@ -77,6 +78,18 @@ pub(crate) fn scan_entity_references(
             }) && identify_operation_references(row, id)
         },
         |counts| &mut counts.identify_operation,
+    )?;
+    count_jsonl_surface(
+        journal_root,
+        "speakers/repair-operations.jsonl",
+        entity_id,
+        &mut breakdown,
+        |row, id| {
+            !operation_id.is_some_and(|operation_id| {
+                row.get("operation_id").and_then(Value::as_str) == Some(operation_id)
+            }) && value_contains(row, id)
+        },
+        |counts| &mut counts.repair_operation,
     )?;
     count_jsonl_surface(
         journal_root,

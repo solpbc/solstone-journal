@@ -559,6 +559,179 @@ fn follow_backfill(
 }
 
 #[must_use]
+pub fn repair(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--operation-id", None)],
+        &[
+            FlagSpec::true_flag("--commit"),
+            FlagSpec::true_flag("--json"),
+        ],
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let commit = parsed.flag("--commit");
+    let operation_id = parsed.value("--operation-id").map(str::to_owned);
+    let json_output = parsed.flag("--json");
+    let mut out = String::new();
+    if !commit && !json_output {
+        emit(&mut out, REPORT_ONLY);
+    }
+    if !json_output {
+        emit(&mut out, "Starting speaker contamination repair...");
+    }
+    let mut body = json!({
+        "commit": commit,
+    });
+    if let Some(id) = &operation_id {
+        body["operation_id"] = json!(id);
+    }
+    let stats = match request_json(
+        ctx,
+        HttpMethod::Post,
+        "/app/speakers/api/repair",
+        vec![],
+        Some(body),
+    ) {
+        Ok(stats) => stats,
+        Err(error) => return speaker_error_preserving_stdout(out, error),
+    };
+    let complete = stats
+        .get("complete")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
+
+    if json_output {
+        let json_res = stdout_json(&stats);
+        if !complete {
+            return CommandOutput::failure(json_res.stdout, 1);
+        }
+        return json_res;
+    }
+    render_repair(&mut out, &stats);
+    if !complete {
+        return CommandOutput::failure(out, 1);
+    }
+    CommandOutput::success(out)
+}
+
+#[must_use]
+pub fn repair_status(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(operation_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument OPERATION_ID");
+    };
+    let json_output = parsed.flag("--json");
+    let stats = match request_json(
+        ctx,
+        HttpMethod::Get,
+        &format!("/app/speakers/api/repair/operations/{operation_id}"),
+        vec![],
+        None,
+    ) {
+        Ok(stats) => stats,
+        Err(error) => return speaker_error(error),
+    };
+    if json_output {
+        return stdout_json(&stats);
+    }
+    let mut out = String::new();
+    render_repair(&mut out, &stats);
+    CommandOutput::success(out)
+}
+
+#[must_use]
+pub fn repair_resume(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--json")]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(operation_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument OPERATION_ID");
+    };
+    let json_output = parsed.flag("--json");
+    let mut out = String::new();
+    let stats = match request_json(
+        ctx,
+        HttpMethod::Post,
+        &format!("/app/speakers/api/repair/operations/{operation_id}/resume"),
+        vec![],
+        None,
+    ) {
+        Ok(stats) => stats,
+        Err(error) => return speaker_error_preserving_stdout(out, error),
+    };
+    if json_output {
+        return stdout_json(&stats);
+    }
+    render_repair(&mut out, &stats);
+    CommandOutput::success(out)
+}
+
+fn render_repair(out: &mut String, stats: &Value) {
+    let op_id = string_field(stats, "operation_id").unwrap_or_default();
+    let status = string_field(stats, "status").unwrap_or_default();
+    let commit = stats
+        .get("commit")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let complete = stats
+        .get("complete")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let clean = stats.get("clean").and_then(Value::as_bool).unwrap_or(false);
+
+    emit(out, format!("Operation: {op_id}"));
+    emit(out, format!("Status:    {status}"));
+    emit(
+        out,
+        format!("Mode:      {}", if commit { "commit" } else { "dry-run" }),
+    );
+    emit(out, format!("Complete:  {complete}"));
+    emit(out, format!("Clean:     {clean}"));
+
+    if let Some(counts) = stats.get("counts").and_then(Value::as_object) {
+        emit(out, "\nInventory counts:");
+        for (k, v) in counts {
+            emit(out, format!("  {k}: {v}"));
+        }
+    }
+    if let Some(removed) = stats.get("voiceprints_removed").and_then(Value::as_array)
+        && !removed.is_empty()
+    {
+        emit(
+            out,
+            format!("\nVoiceprints removed: {} entities", removed.len()),
+        );
+        for r in removed {
+            if let Some(id) = r.get("entity_id").and_then(Value::as_str) {
+                let rows = r.get("rows_removed").and_then(Value::as_u64).unwrap_or(0);
+                emit(out, format!("  - {id} ({rows} rows)"));
+            }
+        }
+    }
+    if let Some(repaired) = stats.get("segments_repaired").and_then(Value::as_array)
+        && !repaired.is_empty()
+    {
+        emit(out, format!("\nSegments repaired: {}", repaired.len()));
+    }
+    if let Some(gaps) = stats.get("gaps").and_then(Value::as_array)
+        && !gaps.is_empty()
+    {
+        emit(out, format!("\nGaps detected ({}):", gaps.len()));
+        for g in gaps {
+            if let Some(reason) = g.get("reason").and_then(Value::as_str) {
+                emit(out, format!("  - {reason}"));
+            }
+        }
+    }
+}
+
+#[must_use]
 pub fn backfill_last_seen(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_json_commit(ctx.args) {
         Ok(parsed) => parsed,

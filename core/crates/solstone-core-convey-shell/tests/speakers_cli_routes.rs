@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-const SPEAKERS_CLI_OPERATIONS: [&str; 23] = [
+const SPEAKERS_CLI_OPERATIONS: [&str; 26] = [
     "speakers.attribute-segment",
     "speakers.backfill",
     "speakers.backfill-last-seen",
@@ -22,6 +22,9 @@ const SPEAKERS_CLI_OPERATIONS: [&str; 23] = [
     "speakers.link-import",
     "speakers.merge-names",
     "speakers.reject-owner",
+    "speakers.repair",
+    "speakers.repair-resume",
+    "speakers.repair-status",
     "speakers.resolve-names",
     "speakers.seed-from-imports",
     "speakers.sentences",
@@ -94,7 +97,7 @@ fn router_covers_every_speakers_cli_operation() {
     let inventory = authority_routes(authority);
     assert_eq!(
         inventory.len(),
-        22,
+        25,
         "speakers CLI authority inventory changed; update this explicit scope review"
     );
     let expected = inventory.into_iter().collect::<BTreeSet<_>>();

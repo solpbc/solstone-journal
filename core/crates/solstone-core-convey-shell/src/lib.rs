@@ -880,6 +880,18 @@ fn router_with_hosted_parent(
             post(speakers_cli_maintenance::backfill_resume),
         )
         .route(
+            "/app/speakers/api/repair",
+            post(speakers_cli_maintenance::repair),
+        )
+        .route(
+            "/app/speakers/api/repair/operations/{operation_id}",
+            get(speakers_cli_maintenance::repair_status),
+        )
+        .route(
+            "/app/speakers/api/repair/operations/{operation_id}/resume",
+            post(speakers_cli_maintenance::repair_resume),
+        )
+        .route(
             "/app/speakers/api/backfill-last-seen",
             post(speakers_cli_maintenance::backfill_last_seen),
         )

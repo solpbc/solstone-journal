@@ -74,6 +74,52 @@ params = [
 ]
 
 [[entries]]
+path = ["speakers", "repair"]
+kind = "command"
+help = "Repair non-Person speaker contamination without relearning from it.\n\nSurveys identities and voiceprints, removes non-Person voiceprint contamination,\nand updates segment labels using fresh attribution under current state."
+operation_id = "speakers.repair"
+entry_type = "http"
+method = "POST"
+route = "/app/speakers/api/repair"
+contract_operation_id = "speakers.repair"
+handler = "repair"
+params = [
+  { name = "commit", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--commit"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "operation_id", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--operation-id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
+path = ["speakers", "repair-status"]
+kind = "command"
+help = "Show status of a speaker repair operation."
+operation_id = "speakers.repair-status"
+entry_type = "http"
+method = "GET"
+route = "/app/speakers/api/repair/operations/{operation_id}"
+contract_operation_id = "speakers.repair-status"
+handler = "repair_status"
+params = [
+  { name = "operation_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["operation_id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
+path = ["speakers", "repair-resume"]
+kind = "command"
+help = "Resume an interrupted or failed speaker repair operation."
+operation_id = "speakers.repair-resume"
+entry_type = "http"
+method = "POST"
+route = "/app/speakers/api/repair/operations/{operation_id}/resume"
+contract_operation_id = "speakers.repair-resume"
+handler = "repair_resume"
+params = [
+  { name = "operation_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["operation_id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
 path = ["speakers", "backfill-last-seen"]
 kind = "command"
 help = "Backfill last_seen_ts on existing voiceprint metadata rows."

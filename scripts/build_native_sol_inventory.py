@@ -51,8 +51,8 @@ ENTRY_TYPES = {
 }
 COMMAND_KINDS = {"command", "callback", "top-level"}
 HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
-FINAL_ORACLE_TOTAL = 153
-FINAL_HTTP_TOTAL = 147
+FINAL_ORACLE_TOTAL = 156
+FINAL_HTTP_TOTAL = 150
 FINAL_JOURNAL_PYTHON_COMPAT_TOTAL = 2
 FINAL_TOP_LEVEL_IMPORT_TOTAL = 1
 FINAL_TOP_LEVEL_LINK_TOTAL = 3
@@ -71,7 +71,7 @@ FINAL_HTTP_GROUP_COUNTS = {
     "profile": 4,
     "settings": 12,
     "sol": 2,
-    "speakers": 32,
+    "speakers": 35,
     "thinking": 19,
     "transcripts": 5,
 }
@@ -514,6 +514,130 @@ ADDITIONAL_NATIVE_ORACLE_ENTRIES: list[dict[str, Any]] = [
             "options": ["--attempt-id"], "secondary": [], "hidden": False,
             "is_flag": False, "count": False,
         }],
+    },
+    {
+        "path": ["speakers", "repair"],
+        "kind": "command",
+        "help": (
+            "Repair non-Person speaker contamination without relearning from it.\n\n"
+            "Surveys identities and voiceprints, removes non-Person voiceprint contamination,\n"
+            "and updates segment labels using fresh attribution under current state."
+        ),
+        "params": [
+            {
+                "name": "commit",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--commit"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+            {
+                "name": "operation_id",
+                "kind": "option",
+                "type": "text",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["--operation-id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "json_output",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--json"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+        ],
+    },
+    {
+        "path": ["speakers", "repair-status"],
+        "kind": "command",
+        "help": "Show status of a speaker repair operation.",
+        "params": [
+            {
+                "name": "operation_id",
+                "kind": "argument",
+                "type": "text",
+                "required": True,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["operation_id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "json_output",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--json"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+        ],
+    },
+    {
+        "path": ["speakers", "repair-resume"],
+        "kind": "command",
+        "help": "Resume an interrupted or failed speaker repair operation.",
+        "params": [
+            {
+                "name": "operation_id",
+                "kind": "argument",
+                "type": "text",
+                "required": True,
+                "nargs": 1,
+                "multiple": False,
+                "options": ["operation_id"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": False,
+                "count": False,
+            },
+            {
+                "name": "json_output",
+                "kind": "option",
+                "type": "boolean",
+                "required": False,
+                "nargs": 1,
+                "multiple": False,
+                "default": False,
+                "options": ["--json"],
+                "secondary": [],
+                "hidden": False,
+                "is_flag": True,
+                "count": False,
+                "flag_value": True,
+            },
+        ],
     },
 ]
 

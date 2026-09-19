@@ -1339,3 +1339,56 @@ async fn test_hooks_stale_confirm_cannot_clear_replacement() {
 
     test_hooks::reset();
 }
+
+#[tokio::test]
+async fn speakers_repair_report_only_and_commit_route() {
+    let journal = Journal::new();
+    journal.entity("owner", true);
+    journal.owner_centroid();
+
+    // Create a non-person entity with voiceprint
+    let np_dir = journal.0.join("entities/acme");
+    fs::create_dir_all(&np_dir).unwrap();
+    fs::write(
+        np_dir.join("entity.json"),
+        serde_json::to_vec(&json!({"id": "acme", "name": "acme", "type": "Organization", "is_principal": false})).unwrap(),
+    ).unwrap();
+
+    let mut embedding = vec![0.0; 256];
+    embedding[0] = 1.0;
+    save_voiceprints_batch(
+        &journal.0,
+        "acme",
+        &[VoiceprintItem {
+            embedding,
+            metadata: json!({
+                "day": "20260808",
+                "segment_key": "120000_300",
+                "source": "audio",
+                "sentence_id": 1,
+            }),
+        }],
+        &resolve_names_encoder(),
+    ).unwrap();
+
+    // 1. Report-only (commit: false)
+    let (status, value) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/repair",
+        json!({"commit": false}),
+    ).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(value["mode"], "dry_run");
+    assert_eq!(value["complete"], true);
+    assert_eq!(value["clean"], false);
+
+    // 2. Commit (commit: true)
+    let (status_commit, value_commit) = call(
+        router(journal.0.clone()),
+        "/app/speakers/api/repair",
+        json!({"commit": true, "operation_id": "op_repair_test"}),
+    ).await;
+    assert_eq!(status_commit, StatusCode::OK);
+    assert_eq!(value_commit["status"], "completed");
+    assert_eq!(value_commit["summary"]["complete"], true);
+}

@@ -613,6 +613,16 @@ fn scan_counts_synthetic_dismissal_entity_reference() {
 }
 
 #[test]
+fn scan_counts_synthetic_repair_operation_entity_reference() {
+    let counts = scan_synthetic_entity_reference(
+        "speakers/repair-operations.jsonl",
+        "{\"schema_version\":1,\"operation_id\":\"op1\",\"event_type\":\"prepared\",\"planned_removals\":[\"target\"]}\n",
+    );
+
+    assert_eq!(counts.repair_operation, 1);
+}
+
+#[test]
 fn partial_delete_steps_are_distinguishable_from_complete_or_untouched() {
     let temporary = TempDir::new();
     write_journal_entity(temporary.path(), "target", Some("target"));
