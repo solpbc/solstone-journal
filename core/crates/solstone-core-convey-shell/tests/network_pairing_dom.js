@@ -1136,6 +1136,74 @@ async function main() {
     assert.ok(workspace.includes('id="link-device-label"'));
   });
 
+  await testCase('AC6: workspace html markup and network_copy satisfy unusable home address contract', async () => {
+    assert.ok(workspace.includes('id="link-home-address-unusable"'), 'link-home-address-unusable id present');
+    assert.ok(workspace.includes('data-copy="REACH_HOME_ADDRESS_UNUSABLE"'), 'REACH_HOME_ADDRESS_UNUSABLE data-copy present');
+    const copyPath = path.join(manifestDir, 'assets/network_copy.json');
+    const networkCopy = JSON.parse(fs.readFileSync(copyPath, 'utf8'));
+    assert.strictEqual(
+      networkCopy.REACH_HOME_ADDRESS_UNUSABLE,
+      "this saved address can't be used for pairing."
+    );
+    assert.ok(!networkCopy.REACH_HOME_ADDRESS_UNUSABLE.includes('{port}'), 'no {port} template in copy');
+  });
+
+  await testCase('AC7: renderHomeAddress displays unusable note when present and hides when clean', async () => {
+    const copy = {
+      REACH_HOME_ADDRESS_UNUSABLE: "this saved address can't be used for pairing.",
+    };
+    const makeMockElement = (id, dataset = {}) => ({
+      id,
+      textContent: '',
+      hidden: true,
+      value: '',
+      dataset,
+    });
+    const elements = {
+      homeAddressEl: makeMockElement('link-home-address'),
+      homeAddressRow: makeMockElement('link-home-address-row'),
+      hostAddressInput: makeMockElement('link-host-address-input'),
+      hostAddressError: makeMockElement('link-host-address-error'),
+      homeAddressUnusable: makeMockElement('link-home-address-unusable', { copy: 'REACH_HOME_ADDRESS_UNUSABLE' }),
+    };
+
+    const start = workspace.indexOf('function renderHomeAddress(');
+    const end = workspace.indexOf('\n  function renderReach', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+    const context = vm.createContext({
+      window: { LinkCopy: copy },
+      document: { activeElement: null },
+      ...elements,
+    });
+    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-home-address.js' });
+
+    // With unusable address
+    context.renderHomeAddress({
+      home_address: '169.254.1.1:7657',
+      home_address_unusable: 'REACH_HOME_ADDRESS_UNUSABLE',
+    });
+    assert.strictEqual(elements.homeAddressRow.hidden, false);
+    assert.strictEqual(elements.homeAddressEl.textContent, '169.254.1.1:7657');
+    assert.strictEqual(elements.hostAddressInput.value, '169.254.1.1:7657');
+    assert.strictEqual(elements.homeAddressUnusable.hidden, false);
+    assert.strictEqual(elements.homeAddressUnusable.textContent, "this saved address can't be used for pairing.");
+    assert.ok(!elements.homeAddressUnusable.textContent.includes('{port}'));
+    assert.strictEqual(elements.hostAddressError.textContent, '');
+
+    // With clean/valid address
+    context.renderHomeAddress({
+      home_address: '192.168.1.50:7657',
+      home_address_unusable: null,
+    });
+    assert.strictEqual(elements.homeAddressRow.hidden, false);
+    assert.strictEqual(elements.homeAddressEl.textContent, '192.168.1.50:7657');
+    assert.strictEqual(elements.hostAddressInput.value, '192.168.1.50:7657');
+    assert.strictEqual(elements.homeAddressUnusable.hidden, true);
+    assert.strictEqual(elements.homeAddressUnusable.textContent, '');
+    assert.strictEqual(elements.hostAddressError.textContent, '');
+  });
+
   console.log(`DOM CASES: ${cases} passed`);
 }
 

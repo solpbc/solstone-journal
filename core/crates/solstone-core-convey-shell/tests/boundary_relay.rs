@@ -131,7 +131,7 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     fs::create_dir_all(root.path().join("health")).expect("health directory");
     fs::write(
         root.path().join("config/journal.json"),
-        br#"{"setup":{"completed_at":1},"link":{"posture":"spl"},"pairing":{"home_address":"203.0.113.77:7657"}}"#,
+        br#"{"setup":{"completed_at":1},"link":{"posture":"spl"},"pairing":{"home_address":"169.254.1.1:7657"}}"#,
     )
     .expect("config writes");
     fs::write(
@@ -199,13 +199,18 @@ async fn relay_health_subscriber_starts_late_and_drives_live_status() {
     assert_eq!(status["last_relay_tunnel_error_at"], 596);
     assert_eq!(status["last_relay_listener_ack_at"], 593);
     assert_eq!(status["last_relay_listener_ack_generation"], 594);
-    assert!(
-        status["home_candidates"]
-            .as_array()
-            .expect("home candidates array")
-            .iter()
-            .any(|candidate| candidate["source"] == "override")
+    assert_eq!(status["home_address"], "169.254.1.1:7657");
+    assert_eq!(
+        status["home_address_unusable"],
+        "REACH_HOME_ADDRESS_UNUSABLE"
     );
+    if let Some(candidates) = status["home_candidates"].as_array() {
+        for candidate in candidates {
+            if candidate["source"] == "override" {
+                assert_eq!(candidate["selected"], false);
+            }
+        }
+    }
     assert_eq!(status["relay_state"], "parked");
 
     send_health(

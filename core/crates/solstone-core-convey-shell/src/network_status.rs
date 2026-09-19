@@ -4,6 +4,7 @@
 //! Native network status, identity, and local-endpoint read routes.
 
 use std::fs;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 
 use axum::Json;
@@ -21,7 +22,7 @@ use solstone_core_sol_link::committed::{
 use solstone_core_sol_link::mark::mark_from_jid;
 use solstone_core_sol_link::pairing::addresses::{
     AddressError, EndpointScope, PairingSnapshot, SystemInterfaceSource, SystemRouteIpv4Source,
-    resolve_pair_link_candidates, snapshot_from_sources,
+    is_allowed_direct_ipv4, is_usable_ipv4, resolve_pair_link_candidates, snapshot_from_sources,
 };
 use solstone_core_spl::{
     LinkServiceTokenRead, LinkStateRead, OFFLINE_TUNNEL_REASONS, load_link_service_token,
@@ -42,19 +43,19 @@ const LINK_HEALTH_FRESHNESS_MS: i64 = 90_000;
 
 /// The non-I/O health fields published by the status route.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-struct LinkHealthProjection {
-    state: Option<String>,
-    last_link_event_at: Option<i64>,
-    relay_listen_generation: Option<i64>,
-    last_successful_relay_tunnel_at: Option<i64>,
-    last_relay_tunnel_error: Option<String>,
-    last_relay_tunnel_error_at: Option<i64>,
-    last_relay_listener_ack_at: Option<i64>,
-    last_relay_listener_ack_generation: Option<i64>,
+pub(crate) struct LinkHealthProjection {
+    pub(crate) state: Option<String>,
+    pub(crate) last_link_event_at: Option<i64>,
+    pub(crate) relay_listen_generation: Option<i64>,
+    pub(crate) last_successful_relay_tunnel_at: Option<i64>,
+    pub(crate) last_relay_tunnel_error: Option<String>,
+    pub(crate) last_relay_tunnel_error_at: Option<i64>,
+    pub(crate) last_relay_listener_ack_at: Option<i64>,
+    pub(crate) last_relay_listener_ack_generation: Option<i64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum LinkPosture {
+pub(crate) enum LinkPosture {
     Direct,
     Spl,
 }
@@ -138,60 +139,75 @@ impl Reachability {
 }
 
 #[derive(Serialize)]
-struct HomeCandidate {
-    address: String,
-    selected: bool,
-    source: &'static str,
+pub(crate) struct HomeCandidate {
+    pub(crate) address: String,
+    pub(crate) selected: bool,
+    pub(crate) source: &'static str,
 }
 
 #[derive(Serialize)]
-struct VpnCandidate {
-    label: &'static str,
-    address: String,
+pub(crate) struct VpnCandidate {
+    pub(crate) label: &'static str,
+    pub(crate) address: String,
 }
 
 #[derive(Serialize)]
-struct VpnStatus {
-    active: Option<Value>,
-    candidates: Vec<VpnCandidate>,
+pub(crate) struct VpnStatus {
+    pub(crate) active: Option<Value>,
+    pub(crate) candidates: Vec<VpnCandidate>,
 }
 
 #[derive(Serialize)]
-struct StatusBody {
-    ca_fingerprint: Option<String>,
-    enrolled: bool,
-    home_address: Option<String>,
-    home_candidates: Vec<HomeCandidate>,
-    home_candidates_error: Option<&'static str>,
-    home_candidates_state: &'static str,
-    home_label: Option<String>,
-    instance_id: Option<String>,
-    lan_accessible: bool,
-    last_link_event_at: Option<i64>,
-    last_relay_listener_ack_at: Option<i64>,
-    last_relay_listener_ack_generation: Option<i64>,
-    last_relay_tunnel_error: Option<String>,
-    last_relay_tunnel_error_at: Option<i64>,
-    last_successful_relay_tunnel_at: Option<i64>,
-    posture: &'static str,
-    reachability: &'static str,
-    relay_listen_generation: Option<i64>,
-    relay_state: &'static str,
-    relay_url: String,
-    vpn: VpnStatus,
+pub(crate) struct StatusBody {
+    pub(crate) ca_fingerprint: Option<String>,
+    pub(crate) enrolled: bool,
+    pub(crate) home_address: Option<String>,
+    pub(crate) home_address_unusable: Option<&'static str>,
+    pub(crate) home_candidates: Vec<HomeCandidate>,
+    pub(crate) home_candidates_error: Option<&'static str>,
+    pub(crate) home_candidates_state: &'static str,
+    pub(crate) home_label: Option<String>,
+    pub(crate) instance_id: Option<String>,
+    pub(crate) lan_accessible: bool,
+    pub(crate) last_link_event_at: Option<i64>,
+    pub(crate) last_relay_listener_ack_at: Option<i64>,
+    pub(crate) last_relay_listener_ack_generation: Option<i64>,
+    pub(crate) last_relay_tunnel_error: Option<String>,
+    pub(crate) last_relay_tunnel_error_at: Option<i64>,
+    pub(crate) last_successful_relay_tunnel_at: Option<i64>,
+    pub(crate) posture: &'static str,
+    pub(crate) reachability: &'static str,
+    pub(crate) relay_listen_generation: Option<i64>,
+    pub(crate) relay_state: &'static str,
+    pub(crate) relay_url: String,
+    pub(crate) vpn: VpnStatus,
 }
 
-struct StatusInputs<'a> {
-    link_state: LinkStateRead,
-    token_present: bool,
-    posture: LinkPosture,
-    relay_url: String,
-    ca_fingerprint: Option<String>,
-    health: Option<&'a LinkHealthProjection>,
-    home_address: Option<String>,
-    snapshot: Result<PairingSnapshot, AddressError>,
-    now_ms: i64,
-    direct_port: u16,
+pub(crate) struct StatusInputs<'a> {
+    pub(crate) link_state: LinkStateRead,
+    pub(crate) token_present: bool,
+    pub(crate) posture: LinkPosture,
+    pub(crate) relay_url: String,
+    pub(crate) ca_fingerprint: Option<String>,
+    pub(crate) health: Option<&'a LinkHealthProjection>,
+    pub(crate) home_address: Option<String>,
+    pub(crate) snapshot: Result<PairingSnapshot, AddressError>,
+    pub(crate) now_ms: i64,
+    pub(crate) direct_port: u16,
+}
+
+fn parse_usable_home_address(value: &str, direct_port: u16) -> Option<Ipv4Addr> {
+    let (host, port) = value.rsplit_once(':')?;
+    let parsed_port = port.parse::<u16>().ok()?;
+    if parsed_port != direct_port {
+        return None;
+    }
+    let ipv4 = host.parse::<Ipv4Addr>().ok()?;
+    if is_usable_ipv4(ipv4) && is_allowed_direct_ipv4(ipv4) {
+        Some(ipv4)
+    } else {
+        None
+    }
 }
 
 #[derive(Serialize)]
@@ -433,7 +449,7 @@ fn link_health_is_fresh(health: &LinkHealthProjection, now_ms: i64) -> bool {
         .is_some_and(|timestamp| now_ms - timestamp <= LINK_HEALTH_FRESHNESS_MS)
 }
 
-fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
+pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
     let StatusInputs {
         link_state,
         token_present,
@@ -452,6 +468,14 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
             (None, None)
         }
     };
+    let usable_home = home_address
+        .as_deref()
+        .and_then(|addr| parse_usable_home_address(addr, direct_port));
+    let home_address_unusable = if home_address.is_some() && usable_home.is_none() {
+        Some("REACH_HOME_ADDRESS_UNUSABLE")
+    } else {
+        None
+    };
     let (lan_accessible, home_candidates, home_candidates_state, home_candidates_error, vpn) =
         match snapshot {
             Ok(snapshot) => {
@@ -460,9 +484,12 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                         .into_iter()
                         .map(|address| format!("{address}:{direct_port}"))
                         .collect::<Vec<_>>();
-                let selected = home_address
-                    .as_deref()
-                    .or_else(|| detected.first().map(String::as_str));
+                let selected = if usable_home.is_some() {
+                    home_address.as_deref()
+                } else {
+                    None
+                }
+                .or_else(|| detected.first().map(String::as_str));
                 let mut entries = detected
                     .iter()
                     .map(|address| HomeCandidate {
@@ -476,7 +503,7 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                 {
                     entries.push(HomeCandidate {
                         address: address.clone(),
-                        selected: true,
+                        selected: usable_home.is_some(),
                         source: "override",
                     });
                 }
@@ -496,15 +523,15 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                     candidates,
                 };
                 (
-                    home_address.is_some() || !detected.is_empty(),
+                    usable_home.is_some() || !detected.is_empty(),
                     entries,
                     "ready",
                     None,
                     vpn,
                 )
             }
-            Err(_) => match &home_address {
-                Some(address) => (
+            Err(_) => match (&home_address, usable_home) {
+                (Some(address), Some(_)) => (
                     true,
                     vec![HomeCandidate {
                         address: address.clone(),
@@ -518,7 +545,7 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
                         candidates: Vec::new(),
                     },
                 ),
-                None => (
+                _ => (
                     false,
                     Vec::new(),
                     "unavailable",
@@ -538,6 +565,7 @@ fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
         ca_fingerprint,
         enrolled: token_present,
         home_address,
+        home_address_unusable,
         home_candidates,
         home_candidates_error,
         home_candidates_state,
@@ -1173,7 +1201,7 @@ mod tests {
     #[test]
     fn absent_health_keeps_configured_override_and_null_event_timestamp() {
         let body = status_json(
-            Some("203.0.113.77:7657"),
+            Some("169.254.1.1:7657"),
             Ok(snapshot(vec![(
                 Ipv4Addr::new(192, 168, 1, 2),
                 EndpointScope::Lan,
@@ -1181,11 +1209,12 @@ mod tests {
             None,
         );
         assert_eq!(body["last_link_event_at"], Value::Null);
+        assert_eq!(body["home_address_unusable"], "REACH_HOME_ADDRESS_UNUSABLE");
         assert_eq!(
             body["home_candidates"],
             json!([
-                {"address":"192.168.1.2:7657","selected":false,"source":"detected"},
-                {"address":"203.0.113.77:7657","selected":true,"source":"override"}
+                {"address":"192.168.1.2:7657","selected":true,"source":"detected"},
+                {"address":"169.254.1.1:7657","selected":false,"source":"override"}
             ])
         );
     }
@@ -1203,6 +1232,25 @@ mod tests {
         );
         assert_eq!(override_body["home_candidates_state"], "ready");
         assert_eq!(override_body["home_candidates_error"], Value::Null);
+        assert_eq!(override_body["home_address_unusable"], Value::Null);
+
+        let unusable_override_body = status_json(Some("169.254.1.1:7657"), Err(error()), None);
+        assert_eq!(unusable_override_body["lan_accessible"], false);
+        assert_eq!(unusable_override_body["home_address"], "169.254.1.1:7657");
+        assert_eq!(
+            unusable_override_body["home_address_unusable"],
+            "REACH_HOME_ADDRESS_UNUSABLE"
+        );
+        assert_eq!(unusable_override_body["home_candidates"], json!([]));
+        assert_eq!(
+            unusable_override_body["home_candidates_state"],
+            "unavailable"
+        );
+        assert_eq!(
+            unusable_override_body["home_candidates_error"],
+            HOME_CANDIDATES_ERROR
+        );
+
         let unavailable_body = status_json(None, Err(error()), None);
         assert_eq!(unavailable_body["lan_accessible"], false);
         assert_eq!(unavailable_body["home_candidates"], json!([]));
@@ -1211,6 +1259,90 @@ mod tests {
             unavailable_body["home_candidates_error"],
             HOME_CANDIDATES_ERROR
         );
+        assert_eq!(unavailable_body["home_address_unusable"], Value::Null);
+    }
+
+    #[test]
+    fn wrong_port_saved_address_is_unusable_in_status_body() {
+        let body = status_json(Some("10.0.0.2:9000"), Ok(snapshot(vec![])), None);
+        assert_eq!(body["lan_accessible"], false);
+        assert_eq!(body["home_address"], "10.0.0.2:9000");
+        assert_eq!(body["home_address_unusable"], "REACH_HOME_ADDRESS_UNUSABLE");
+        assert_eq!(
+            body["home_candidates"],
+            json!([
+                {"address":"10.0.0.2:9000","selected":false,"source":"override"}
+            ])
+        );
+    }
+
+    #[test]
+    fn unusable_saved_address_mint_and_status_agree() {
+        let temporary = TempDir::new();
+        solstone_core_sol_link::establish::current_candidate(temporary.path()).expect("candidate");
+        solstone_core_sol_link::establish::lock_in(temporary.path(), Some("Native Study"))
+            .expect("lock in");
+        fs::create_dir_all(temporary.path().join("config")).expect("config");
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            br#"{"pairing":{"home_address":"169.254.1.1:7657"}}"#,
+        )
+        .expect("config write");
+
+        let configured = solstone_core_sol_link::pairing::read_configured_home(temporary.path());
+        assert_eq!(
+            configured.state,
+            solstone_core_sol_link::pairing::ConfiguredHomeState::NotAllowedDirect
+        );
+        assert_eq!(configured.address, None);
+
+        let mint_req = solstone_core_sol_link::pairing::MintRequest {
+            device_label: "phone".to_string(),
+            configured_home: configured,
+            same_machine: Some(false),
+            role: "phone".to_string(),
+            hardened_loopback: false,
+        };
+        let empty_snapshot = PairingSnapshot::default();
+        let mint_result = solstone_core_sol_link::pairing::mint_pairing_from_snapshot(
+            temporary.path(),
+            &mint_req,
+            1,
+            &empty_snapshot,
+        );
+        assert!(
+            mint_result.is_err(),
+            "mint refuses when saved address is unusable and no candidates"
+        );
+
+        let config_val: Value =
+            serde_json::from_str(r#"{"pairing":{"home_address":"169.254.1.1:7657"}}"#)
+                .expect("json");
+        let raw_home = configured_home_address(Some(&config_val));
+        assert_eq!(raw_home.as_deref(), Some("169.254.1.1:7657"));
+
+        let status_body = build_status_body(StatusInputs {
+            link_state: LinkStateRead::Missing,
+            token_present: false,
+            posture: LinkPosture::Direct,
+            relay_url: DEFAULT_RELAY_URL.to_string(),
+            ca_fingerprint: None,
+            health: None,
+            home_address: raw_home,
+            snapshot: Ok(empty_snapshot),
+            now_ms: 1_000_000,
+            direct_port: 7657,
+        });
+
+        assert_eq!(
+            status_body.home_address_unusable,
+            Some("REACH_HOME_ADDRESS_UNUSABLE")
+        );
+        assert_eq!(status_body.lan_accessible, false);
+        assert_eq!(status_body.reachability, "lan-unreachable");
+        assert_eq!(status_body.home_candidates.len(), 1);
+        assert_eq!(status_body.home_candidates[0].selected, false);
+        assert_eq!(status_body.home_candidates[0].source, "override");
     }
 
     #[test]

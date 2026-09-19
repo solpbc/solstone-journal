@@ -82,7 +82,16 @@
       <dl class="link-reach-details">
         <div id="link-home-address-row" class="link-reach-detail-row" hidden>
           <dt data-copy="REACH_HOME_ADDRESS_LABEL"></dt>
-          <dd><code id="link-home-address"></code></dd>
+          <dd>
+            <code id="link-home-address"></code>
+            <p
+              id="link-home-address-unusable"
+              class="link-home-address-unusable"
+              role="status"
+              data-copy="REACH_HOME_ADDRESS_UNUSABLE"
+              hidden
+            ></p>
+          </dd>
         </div>
         <div id="link-vpn-candidates-row" class="link-reach-detail-row" hidden>
           <dt data-copy="REACH_VPN_CANDIDATE_LABEL"></dt>
@@ -317,6 +326,8 @@
   .link-reach-detail-row dt { color: #777; font-size: 0.9em; }
   .link-reach-detail-row dd { margin: 0; min-width: 0; }
   .link-reach-detail-row code { font-family: ui-monospace, monospace; color: #555; word-break: break-all; }
+  .link-home-address-unusable { color: #8a2d1c; font-weight: 500; margin: 0.35em 0 0; font-size: 0.9em; }
+  .link-home-address-unusable[hidden] { display: none; }
   .link-host-address-override { margin-top: 0.8em; }
   .link-host-address-override summary { cursor: pointer; color: var(--orange-text-aa); font-weight: 500; }
   .link-host-address-controls { display: flex; gap: 0.5em; flex-wrap: wrap; margin-top: 0.65em; }
@@ -932,6 +943,7 @@
   const splCheckAgain = document.getElementById('link-spl-check-again');
   const homeAddressRow = document.getElementById('link-home-address-row');
   const homeAddressEl = document.getElementById('link-home-address');
+  const homeAddressUnusable = document.getElementById('link-home-address-unusable');
   const hostAddressInput = document.getElementById('link-host-address-input');
   const hostAddressApply = document.getElementById('link-host-address-apply');
   const hostAddressClear = document.getElementById('link-host-address-clear');
@@ -1251,6 +1263,30 @@
     renderSplState(data);
   }
 
+  function renderHomeAddress(data) {
+    const homeAddress = typeof data?.home_address === 'string' ? data.home_address : '';
+    if (homeAddressEl) homeAddressEl.textContent = homeAddress;
+    if (homeAddressRow) homeAddressRow.hidden = !homeAddress;
+    if (hostAddressInput && document.activeElement !== hostAddressInput) {
+      hostAddressInput.value = homeAddress;
+    }
+    if (homeAddressUnusable) {
+      const unusableKey =
+        typeof data?.home_address_unusable === 'string' ? data.home_address_unusable : '';
+      if (unusableKey) {
+        const text =
+          window.LinkCopy?.[unusableKey] ||
+          (homeAddressUnusable.dataset?.copy ? window.LinkCopy?.[homeAddressUnusable.dataset.copy] : '') ||
+          '';
+        homeAddressUnusable.textContent = text;
+        homeAddressUnusable.hidden = false;
+      } else {
+        homeAddressUnusable.textContent = '';
+        homeAddressUnusable.hidden = true;
+      }
+    }
+  }
+
   function renderReach(data) {
     const posture = data?.posture;
     if (posture !== lastPosture || viewedMode === null) {
@@ -1260,12 +1296,7 @@
     updateReachSelectorVisibility();
     renderSelector(data || {});
 
-    const homeAddress = typeof data?.home_address === 'string' ? data.home_address : '';
-    homeAddressEl.textContent = homeAddress;
-    homeAddressRow.hidden = !homeAddress;
-    if (hostAddressInput && document.activeElement !== hostAddressInput) {
-      hostAddressInput.value = homeAddress;
-    }
+    renderHomeAddress(data);
 
     const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
     renderVpnCandidates(candidates);

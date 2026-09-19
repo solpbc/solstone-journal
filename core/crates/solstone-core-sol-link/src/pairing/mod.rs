@@ -25,10 +25,15 @@ use self::addresses::{
     AddressError, DiagnosticKind, DiscoveryContext, PairLinkEncodeError, PairingSnapshot,
     RawInterfaceSource, RouteIpv4Source, SystemInterfaceSource, SystemRouteIpv4Source,
     build_pair_start_diagnostic, discover_sources, encode_configured_home_pair_link,
-    encode_pair_link, encode_relay_pair_link, resolve_pair_link_candidates,
+    encode_pair_link, encode_relay_pair_link, is_allowed_direct_ipv4, is_usable_ipv4,
+    resolve_pair_link_candidates,
 };
 use self::attestation::{AttestationError, mint_home_attestation};
 use self::nonces::{NONCE_TTL_SECONDS, Nonce, NonceStore, NonceStoreError};
+
+fn configured_home_is_direct_mintable(ip: Ipv4Addr) -> bool {
+    is_usable_ipv4(ip) && is_allowed_direct_ipv4(ip)
+}
 
 /// State of the configured home address in `config/journal.json` for diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -37,6 +42,7 @@ pub enum ConfiguredHomeState {
     WrongPort,
     NotIpv4HostPort,
     ConfigUnreadable,
+    NotAllowedDirect,
 }
 
 impl ConfiguredHomeState {
@@ -46,6 +52,7 @@ impl ConfiguredHomeState {
             Self::WrongPort => "wrong_port",
             Self::NotIpv4HostPort => "not_ipv4_host_port",
             Self::ConfigUnreadable => "config_unreadable",
+            Self::NotAllowedDirect => "not_allowed_direct",
         }
     }
 }
@@ -116,6 +123,12 @@ pub fn read_configured_home(journal_root: &Path) -> ConfiguredHomeDecision {
         return ConfiguredHomeDecision {
             address: None,
             state: ConfiguredHomeState::WrongPort,
+        };
+    }
+    if !configured_home_is_direct_mintable(parsed_ip) {
+        return ConfiguredHomeDecision {
+            address: None,
+            state: ConfiguredHomeState::NotAllowedDirect,
         };
     }
     ConfiguredHomeDecision {
@@ -345,7 +358,12 @@ pub fn mint_pairing(
     request: &MintRequest,
     now: i64,
 ) -> Result<MintResponse, PairingError> {
-    if request.same_machine == Some(true) || request.configured_home.address.is_some() {
+    if request.same_machine == Some(true)
+        || request
+            .configured_home
+            .address
+            .is_some_and(configured_home_is_direct_mintable)
+    {
         return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
     }
     mint_pairing_from_sources_detailed(
@@ -480,7 +498,11 @@ fn mint_pairing_from_snapshot_with_context(
         // as the reference's loopback branch does.
         encode_configured_home_pair_link(Ipv4Addr::LOCALHOST, nonce_bytes, ca_fp_prefix, port)
     } else {
-        match request.configured_home.address {
+        match request
+            .configured_home
+            .address
+            .filter(|ip| configured_home_is_direct_mintable(*ip))
+        {
             Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix, port),
             None => {
                 let candidates =
@@ -1112,6 +1134,98 @@ mod tests {
         )
         .expect("pair-link bytes");
         assert_eq!(blob[0], 0x04);
+        let spl_core::pairlink::ParsedPairLink::Direct(link) =
+            spl_core::pairlink::parse(&minted.pair_link).expect("pair-link parses")
+        else {
+            panic!("same-machine mint emits a direct link");
+        };
+        assert_eq!(link.candidates.len(), 1);
+        assert_eq!(link.candidates[0].host, Ipv4Addr::LOCALHOST.to_string());
+        assert_eq!(link.candidates[0].port, spl_core::DEFAULT_DIRECT_PORT);
+    }
+
+    #[test]
+    fn unusable_configured_home_falls_through_to_discovered_lan_candidate() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let request = MintRequest {
+            configured_home: ConfiguredHomeDecision {
+                address: Some(Ipv4Addr::new(169, 254, 1, 1)),
+                state: ConfiguredHomeState::NotAllowedDirect,
+            },
+            ..request()
+        };
+
+        // Assert that mint_pairing discovery skip condition is false for unusable configured home
+        assert!(
+            !request
+                .configured_home
+                .address
+                .is_some_and(configured_home_is_direct_mintable),
+            "unusable configured home does not take empty-snapshot short-circuit"
+        );
+
+        let (raw, _) = Raw::success(vec![]);
+        let (route, _) = Route::new(Some(Ipv4Addr::new(10, 0, 0, 2)));
+        let minted = mint_pairing_from_sources(temporary.path(), &request, 1, &raw, &route)
+            .expect("mint falls through and succeeds with discovered candidate");
+        let spl_core::pairlink::ParsedPairLink::Direct(link) =
+            spl_core::pairlink::parse(&minted.pair_link).expect("pair-link parses")
+        else {
+            panic!("mint emits a direct link");
+        };
+        assert_eq!(link.candidates.len(), 1);
+        assert_eq!(link.candidates[0].host, "10.0.0.2");
+        assert_eq!(link.candidates[0].port, spl_core::DEFAULT_DIRECT_PORT);
+    }
+
+    #[test]
+    fn unusable_configured_home_with_no_discovered_candidates_refuses() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let request = MintRequest {
+            configured_home: ConfiguredHomeDecision {
+                address: Some(Ipv4Addr::new(169, 254, 1, 1)),
+                state: ConfiguredHomeState::NotAllowedDirect,
+            },
+            ..request()
+        };
+
+        let (raw, _) = Raw::success(vec![]);
+        let (route, _) = Route::new(None);
+        let outcome =
+            mint_pairing_from_sources_detailed(temporary.path(), &request, 1, &raw, &route);
+        let err = outcome.result.expect_err("no candidates refuse");
+        assert_eq!(
+            err.to_string(),
+            "no usable local address is available for pairing"
+        );
+        let diag = outcome.diagnostic.expect("diagnostic emitted");
+        assert!(
+            diag.contains("saved_home=not_allowed_direct"),
+            "expected saved_home=not_allowed_direct in diag: {diag}"
+        );
+    }
+
+    #[test]
+    fn same_machine_mint_bypasses_unusable_configured_home_with_loopback_link() {
+        // Citing same_machine_mint_bypasses_configured_home_with_a_loopback_v04_link:
+        // same-machine mint bypasses any unusable configured home address and uses loopback.
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let request = MintRequest {
+            same_machine: Some(true),
+            hardened_loopback: true,
+            configured_home: ConfiguredHomeDecision {
+                address: Some(Ipv4Addr::new(169, 254, 1, 1)),
+                state: ConfiguredHomeState::NotAllowedDirect,
+            },
+            ..request()
+        };
+
+        let minted =
+            mint_pairing_from_snapshot(temporary.path(), &request, 1, &PairingSnapshot::default())
+                .expect("same-machine mint");
         let spl_core::pairlink::ParsedPairLink::Direct(link) =
             spl_core::pairlink::parse(&minted.pair_link).expect("pair-link parses")
         else {
@@ -2026,6 +2140,11 @@ mod tests {
                 Some(r#"{"pairing":{"home_address":12345}}"#),
                 ConfiguredHomeState::NotIpv4HostPort,
                 "not_ipv4_host_port",
+            ),
+            (
+                Some(r#"{"pairing":{"home_address":"169.254.1.1:7657"}}"#),
+                ConfiguredHomeState::NotAllowedDirect,
+                "not_allowed_direct",
             ),
         ];
 
