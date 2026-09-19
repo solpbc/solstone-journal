@@ -977,10 +977,9 @@ mod tests {
                         let rel = path.strip_prefix(root).unwrap().to_path_buf();
                         if !rel.starts_with("health/locks")
                             && !rel.to_string_lossy().ends_with(".lock")
+                            && let Ok(b) = fs::read(&path)
                         {
-                            if let Ok(b) = fs::read(&path) {
-                                files.push((rel, b));
-                            }
+                            files.push((rel, b));
                         }
                     }
                 }

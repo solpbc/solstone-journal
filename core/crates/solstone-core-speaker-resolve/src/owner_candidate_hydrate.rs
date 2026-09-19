@@ -475,7 +475,7 @@ mod tests {
         let mut header_bytes = header.into_bytes();
         let rem = (header_bytes.len() + 10) % 64;
         let pad = if rem == 0 { 0 } else { 64 - rem };
-        header_bytes.extend(std::iter::repeat(b' ').take(pad));
+        header_bytes.extend(std::iter::repeat_n(b' ', pad));
         header_bytes.push(b'\n');
 
         let mut npy = Vec::new();

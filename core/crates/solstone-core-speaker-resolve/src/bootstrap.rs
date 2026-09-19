@@ -647,6 +647,13 @@ pub(crate) fn scan_segments(journal_root: &Path) -> Result<Vec<ScannedSegment>, 
             });
         }
     }
+    scanned.sort_by(|left, right| {
+        left.day
+            .cmp(&right.day)
+            .then_with(|| left.layout.cmp(&right.layout))
+            .then_with(|| left.stream.cmp(&right.stream))
+            .then_with(|| left.name.cmp(&right.name))
+    });
     Ok(scanned)
 }
 

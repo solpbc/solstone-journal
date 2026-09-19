@@ -857,7 +857,7 @@ mod tests {
 
         let final_journal_files = collect_all_files(temp.path());
         // Only speakers/backfill-operations.jsonl (and lock files) was added
-        for (p, _) in &final_journal_files {
+        for p in final_journal_files.keys() {
             let s = p.to_string_lossy();
             if s.contains("speakers/backfill-operations.jsonl") || s.contains("health/locks") {
                 continue;
@@ -955,10 +955,10 @@ mod tests {
                     let path = entry.path();
                     if path.is_dir() {
                         dirs.push(path);
-                    } else if path.is_file() {
-                        if let Ok(bytes) = fs::read(&path) {
-                            map.insert(path, bytes);
-                        }
+                    } else if path.is_file()
+                        && let Ok(bytes) = fs::read(&path)
+                    {
+                        map.insert(path, bytes);
                     }
                 }
             }
