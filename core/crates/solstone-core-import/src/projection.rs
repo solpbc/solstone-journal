@@ -536,7 +536,6 @@ pub fn project_import_result_with_clock(
         raw_publication.as_ref(),
         manifest_value.as_ref(),
         &content_manifest_lines,
-        &source_type,
     );
     if content_manifest_corrupted || is_corrupted {
         metrics.entries_written = None;
@@ -933,7 +932,6 @@ fn derive_metrics(
     raw_publication: Option<&Value>,
     manifest: Option<&Value>,
     content_manifest_lines: &[Value],
-    source_type: &str,
 ) -> DerivedMetrics {
     let mut entries_written: Option<u64> = None;
     let mut total_files_created: Option<u64> = None;
@@ -985,7 +983,11 @@ fn derive_metrics(
                 days.push(seg.day.clone());
             }
         }
-        if entries_written.is_none() && (source_type == "image" || source_type == "document") {
+        // Any publication with segments counts them when nothing more specific did. This
+        // was an image/document allow-list, which meant every new source had to remember to
+        // add itself to a list it has no reason to know about -- and a source that forgot
+        // rendered a successful row with a blank count.
+        if entries_written.is_none() && !pub_rec.segments.is_empty() {
             entries_written = Some(pub_rec.segments.len() as u64);
         }
     }

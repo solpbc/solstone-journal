@@ -101,6 +101,46 @@ pub fn hold_import_lock(
         })
 }
 
+/// The wall-clock bound after which a `Running` attempt is no longer treated as live.
+/// Shared by the live-attempt refusal and the projection's own Running bound so the two
+/// can never disagree about whether an attempt is still alive.
+pub const RUNNING_ATTEMPT_BOUND_MS: u64 = 3_600_000;
+
+/// Refuse a second producer while a live `Running` attempt holds this import.
+///
+/// Returns the refusal sentence when one should be shown, or `None` to proceed. It takes the
+/// source's display name rather than a `RegistrySource`, because the generic audio and text
+/// producers have no registry variant to pass; each caller wraps the sentence in its own
+/// failure shape.
+///
+/// This is advisory and deliberately lock-free: it reads provenance outside the import lock,
+/// so two children can both pass it. The generation guard in the terminal write is the real
+/// serialization; this only turns the common double-start into a clear message.
+#[must_use]
+pub fn refuse_if_live_running(
+    journal_root: &Path,
+    import_id: &str,
+    source_name: &str,
+) -> Option<String> {
+    let Ok(Some(metadata)) = read_provenance(journal_root, import_id) else {
+        return None;
+    };
+    let facts = get_attempt_facts(&metadata)?;
+    if facts.state != AttemptState::Running {
+        return None;
+    }
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    if now_ms.saturating_sub(facts.started_at_ms) > RUNNING_ATTEMPT_BOUND_MS {
+        return None;
+    }
+    Some(format!(
+        "{source_name} import failed: another import of this file is already running"
+    ))
+}
+
 /// Admit an in-flight attempt in import.json under the import lock before any source or chronicle mutation.
 pub fn admit_running_attempt(
     journal_root: &Path,

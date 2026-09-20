@@ -1017,3 +1017,347 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
 fn native_remux_preserves_long_form_audio_packets_without_unbounded_buffers() {
     solstone_core_import_host::audio::native_long_audio_remux_corpus::run();
 }
+
+// --- Half A: the import row reports its true outcome -------------------------------
+//
+// Before this, a generic audio import wrote no attempt facts, so the web reader fell to
+// its legacy rule and reported `Failed("Import never completed", "timeout")` an hour
+// after upload over content sitting safely on disk. These pin the real outcomes.
+
+use solstone_core_import::{
+    AttemptState, ProjectionStatus, admit_running_attempt, get_attempt_facts,
+    project_import_result, read_import_metadata,
+};
+use solstone_core_import_host::audio_publication::finish_audio_attempt;
+
+/// Admit an attempt the way `run_audio` does, returning its generation.
+fn admit(request: &AudioImportRequest) -> u64 {
+    admit_running_attempt(&request.journal_root, &request.import_id, 1_000, None)
+        .unwrap()
+        .generation
+}
+
+fn stream_record_seq(journal_root: &Path, stream: &str) -> Option<u64> {
+    let path = journal_root.join("streams").join(format!("{stream}.json"));
+    let value: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    value.get("seq").and_then(Value::as_u64)
+}
+
+fn imported_json_bytes(request: &AudioImportRequest) -> Option<Vec<u8>> {
+    fs::read(
+        request
+            .journal_root
+            .join("imports")
+            .join(&request.import_id)
+            .join("imported.json"),
+    )
+    .ok()
+}
+
+/// A clean import reads `success`, not the legacy timeout failure.
+#[tokio::test]
+async fn a_clean_audio_import_projects_success() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+    let request = request(&temp, "20260811_120000");
+    let generation = admit(&request);
+
+    let outcome = fake_import(
+        request.clone(),
+        120.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    finish_audio_attempt(
+        &request.journal_root,
+        &request.import_id,
+        generation,
+        &outcome,
+    );
+
+    let projection = project_import_result(&request.journal_root, &request.import_id);
+    assert_eq!(projection.status, ProjectionStatus::Success);
+    assert!(!projection.has_gaps, "a clean import has no gaps");
+    // The metrics generalization: a successful row renders a real count, not null.
+    assert_eq!(projection.entries_written, Some(1));
+    // source_type comes from the publication's stream prefix, never from a source hint.
+    assert_eq!(projection.source_type, "audio");
+}
+
+/// A dropped chunk keeps the import a success and marks it as carrying gaps.
+#[tokio::test]
+async fn a_dropped_chunk_projects_success_with_gaps() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+    let request = request(&temp, "20260811_130000");
+    let generation = admit(&request);
+
+    // 900s of audio is three 300s chunks; drop the middle one.
+    let outcome = fake_import(
+        request.clone(),
+        900.0,
+        Some(1),
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    finish_audio_attempt(
+        &request.journal_root,
+        &request.import_id,
+        generation,
+        &outcome,
+    );
+
+    let projection = project_import_result(&request.journal_root, &request.import_id);
+    assert_eq!(projection.status, ProjectionStatus::Success);
+    assert!(
+        projection.has_gaps,
+        "a dropped chunk is a gap, not a silent success"
+    );
+}
+
+/// N created segments advance the stream record by exactly N.
+///
+/// No "a replay advances by zero" twin: `replayable_unbound_advance` matches only when the
+/// segment is the record head, so replaying N>1 segments advances by N. That is the tree's
+/// real behaviour and pinning the opposite would have been pinning a wish.
+#[tokio::test]
+async fn publishing_n_segments_advances_the_stream_record_by_n() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+    let request = request(&temp, "20260811_140000");
+    let generation = admit(&request);
+
+    let outcome = fake_import(
+        request.clone(),
+        900.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    let created_count = created(outcome.as_ref().unwrap()).segments.len() as u64;
+    assert_eq!(created_count, 3, "900s of audio is three chunks");
+
+    finish_audio_attempt(
+        &request.journal_root,
+        &request.import_id,
+        generation,
+        &outcome,
+    );
+
+    assert_eq!(
+        stream_record_seq(&request.journal_root, "import.audio"),
+        Some(created_count),
+        "each created segment advances the chain exactly once"
+    );
+}
+
+/// The stream record an audio publication creates is labelled as an import.
+///
+/// `Kind::Imported(_)` flattens to the compat label `"import"` -- the `Named("audio")`
+/// payload is discarded by the record writer -- so `"import"` is the observable that
+/// exists. What matters is that it is never `"unknown"`, which is what re-deriving the
+/// segments instead of using the producer's own `CreatedSegment` list would have minted.
+#[tokio::test]
+async fn an_audio_publication_labels_its_stream_record_as_an_import() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+    let request = request(&temp, "20260811_150000");
+    let generation = admit(&request);
+
+    let outcome = fake_import(
+        request.clone(),
+        120.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    finish_audio_attempt(
+        &request.journal_root,
+        &request.import_id,
+        generation,
+        &outcome,
+    );
+
+    let path = request.journal_root.join("streams/import.audio.json");
+    let record: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    assert_eq!(record.get("kind").and_then(Value::as_str), Some("import"));
+}
+
+/// A superseded generation writes nothing, advances nothing and emits nothing.
+///
+/// The control in the same binary is the point: every assertion here is an absence, and
+/// absences are all trivially true on a tree where audio never published at all. The
+/// control fails unless the new path is live.
+#[tokio::test]
+async fn a_superseded_generation_touches_nothing_while_a_live_one_publishes() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+
+    // Control: a live generation does publish and does advance the chain.
+    let live = request(&temp, "20260811_160000");
+    let live_generation = admit(&live);
+    let live_outcome = fake_import(live.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    finish_audio_attempt(
+        &live.journal_root,
+        &live.import_id,
+        live_generation,
+        &live_outcome,
+    );
+    assert!(
+        imported_json_bytes(&live).is_some(),
+        "control: a live generation writes a publication record"
+    );
+    let seq_after_live = stream_record_seq(&live.journal_root, "import.audio");
+    assert_eq!(seq_after_live, Some(1), "control: the chain advanced");
+
+    // Superseded: generation 1 finishes after generation 2 has been admitted.
+    let stale = request(&temp, "20260811_170000");
+    let stale_generation = admit(&stale);
+    let stale_outcome =
+        fake_import(stale.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    let successor = admit_running_attempt(&stale.journal_root, &stale.import_id, 2_000, None)
+        .unwrap()
+        .generation;
+    assert!(successor > stale_generation, "a successor was admitted");
+
+    let metadata_before = read_import_metadata(&stale.journal_root, &stale.import_id).unwrap();
+    let seq_before = stream_record_seq(&stale.journal_root, "import.audio");
+
+    finish_audio_attempt(
+        &stale.journal_root,
+        &stale.import_id,
+        stale_generation,
+        &stale_outcome,
+    );
+
+    assert!(
+        imported_json_bytes(&stale).is_none(),
+        "a superseded child must not write a publication record"
+    );
+    assert_eq!(
+        stream_record_seq(&stale.journal_root, "import.audio"),
+        seq_before,
+        "a superseded child must not advance the stream record"
+    );
+    let metadata_after = read_import_metadata(&stale.journal_root, &stale.import_id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&metadata_before).unwrap(),
+        serde_json::to_value(&metadata_after).unwrap(),
+        "a superseded child must not rewrite import.json"
+    );
+    // The successor is still live and untouched.
+    let facts = get_attempt_facts(&metadata_after).unwrap();
+    assert_eq!(facts.generation, successor);
+    assert_eq!(facts.state, AttemptState::Running);
+}
+
+/// An abort records a real failure and publishes nothing.
+///
+/// Every abort path returns `Err` and so carries no created-segment list; segments made
+/// before the abort stay unpublished, which is a named residual of this part rather than
+/// an oversight. The control is the same shape as the superseded test's: "no publication
+/// record" is trivially true wherever audio never published.
+#[tokio::test]
+async fn an_aborted_import_reads_failed_and_publishes_nothing() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+
+    let control = request(&temp, "20260811_180000");
+    let control_generation = admit(&control);
+    let control_outcome =
+        fake_import(control.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    finish_audio_attempt(
+        &control.journal_root,
+        &control.import_id,
+        control_generation,
+        &control_outcome,
+    );
+    assert!(
+        imported_json_bytes(&control).is_some(),
+        "control: a successful import does write a publication record"
+    );
+
+    // Total loss: the only chunk fails to remux, so the import aborts.
+    let aborted = request(&temp, "20260811_190000");
+    let aborted_generation = admit(&aborted);
+    let aborted_outcome = fake_import(
+        aborted.clone(),
+        120.0,
+        Some(0),
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    assert!(aborted_outcome.is_err(), "a total loss aborts");
+    finish_audio_attempt(
+        &aborted.journal_root,
+        &aborted.import_id,
+        aborted_generation,
+        &aborted_outcome,
+    );
+
+    assert!(
+        imported_json_bytes(&aborted).is_none(),
+        "an abort publishes nothing"
+    );
+    let projection = project_import_result(&aborted.journal_root, &aborted.import_id);
+    assert_eq!(
+        projection.status,
+        ProjectionStatus::Failed,
+        "an abort is a definitive failure, not an unconfirmed one"
+    );
+}
+
+/// A row with no attempt keeps the landed legacy rule, unchanged.
+///
+/// This is the symptom the whole part exists to remove, and the memo requires that rows
+/// written by earlier releases keep their base classification. Asserted in the same binary
+/// as an admitted row, so it only passes while the new path is live.
+#[tokio::test]
+async fn a_row_with_no_attempt_keeps_the_landed_legacy_rule() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+
+    // The admitted row, so this guard cannot be green on a tree where nothing was built.
+    let admitted = request(&temp, "20260811_200000");
+    let admitted_generation = admit(&admitted);
+    let admitted_outcome =
+        fake_import(admitted.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    finish_audio_attempt(
+        &admitted.journal_root,
+        &admitted.import_id,
+        admitted_generation,
+        &admitted_outcome,
+    );
+    assert_eq!(
+        project_import_result(&admitted.journal_root, &admitted.import_id).status,
+        ProjectionStatus::Success
+    );
+
+    // The legacy row: a web-started import that never finalized, older than the bound.
+    let legacy_id = "20260811_210000";
+    let legacy_dir = admitted.journal_root.join("imports").join(legacy_id);
+    fs::create_dir_all(&legacy_dir).unwrap();
+    let two_hours_ago_ms = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64)
+        .saturating_sub(7_200_000);
+    let mut legacy = Map::new();
+    legacy.insert("task_id".to_owned(), json!("1755000000000"));
+    legacy.insert("upload_timestamp".to_owned(), json!(two_hours_ago_ms));
+    fs::write(
+        legacy_dir.join("import.json"),
+        serde_json::to_vec(&Value::Object(legacy)).unwrap(),
+    )
+    .unwrap();
+
+    let projection = project_import_result(&admitted.journal_root, legacy_id);
+    assert_eq!(projection.status, ProjectionStatus::Failed);
+    assert_eq!(
+        projection.error.as_deref(),
+        Some("Import never completed"),
+        "the landed legacy rule is preserved verbatim for rows with no attempt"
+    );
+    assert_eq!(projection.error_stage.as_deref(), Some("timeout"));
+}

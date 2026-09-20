@@ -36,6 +36,7 @@ use solstone_core_import::sync_plaud::{
 };
 
 use crate::audio::{AudioImportRequest, import_audio};
+use crate::audio_publication::finish_audio_attempt;
 
 /// Result of parsing and resolving one importer invocation.
 #[derive(Debug, Eq, PartialEq)]
@@ -248,6 +249,28 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         Ok(runtime) => runtime,
         Err(error) => return failure("", &format!("audio import runtime failed: {error}\n"), 1),
     };
+    // Everything that can fail before the producer starts has now run, so an admitted
+    // attempt always has a producer behind it. Admitting above this point would leave a
+    // Running row for the full wall-clock bound on an invocation that failed instantly.
+    if let Some(message) =
+        solstone_core_import::refuse_if_live_running(journal_path, timestamp, "audio")
+    {
+        return failure("", &format!("{message}\n"), 1);
+    }
+    let started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    // No source hint: `admit_running_attempt` persists one, the web start replays it as
+    // `--source <hint>`, and `resolve` refuses any name `RegistrySource` does not know --
+    // which has no audio variant. The projection derives "audio" from the publication's
+    // `import.audio` stream prefix instead, so the hint buys nothing and would break restart.
+    let attempt =
+        match solstone_core_import::admit_running_attempt(journal_path, timestamp, started_at_ms, None)
+        {
+            Ok(facts) => facts,
+            Err(error) => return failure("", &format!("audio import failed: {error}\n"), 1),
+        };
     let request = AudioImportRequest {
         source_media: PathBuf::from(media),
         journal_root: journal_path.to_path_buf(),
@@ -266,7 +289,9 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
         stall_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(250),
     };
-    audio_import_cli_run(runtime.block_on(import_audio(request)))
+    let outcome = runtime.block_on(import_audio(request));
+    finish_audio_attempt(journal_path, timestamp, attempt.generation, &outcome);
+    audio_import_cli_run(outcome)
 }
 
 fn run_text(

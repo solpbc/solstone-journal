@@ -480,29 +480,15 @@ fn archive_incomplete_detail(outcome: &ArchiveMergeResult) -> String {
     )
 }
 
+/// Thin wrapper over the shared guard in `solstone-core-import`, which the generic audio and
+/// text producers also use. One guard, so the two can never disagree about liveness.
 fn refuse_if_live_running(
     journal: &Path,
     import_id: &str,
     source: RegistrySource,
 ) -> Option<CliRun> {
-    let Ok(Some(meta)) = solstone_core_import::read_provenance(journal, import_id) else {
-        return None;
-    };
-    let facts = solstone_core_import::get_attempt_facts(&meta)?;
-    if facts.state != solstone_core_import::AttemptState::Running {
-        return None;
-    }
-    let now_ms = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64;
-    if now_ms.saturating_sub(facts.started_at_ms) > 3_600_000 {
-        return None;
-    }
-    Some(failure(format!(
-        "{} import failed: another import of this file is already running\n",
-        source.name()
-    )))
+    solstone_core_import::refuse_if_live_running(journal, import_id, source.name())
+        .map(|message| failure(format!("{message}\n")))
 }
 
 fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {
