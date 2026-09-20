@@ -162,23 +162,56 @@ async fn run_endpoint_topology(
     };
 
     let mut tunnel_shutdown = shutdown_receive.clone();
-    let tunnel = match owner
-        .connect_mcp_endpoint_tunnel(&mut tunnel_shutdown)
-        .await
-    {
-        Ok(tunnel) => tunnel,
-        Err(_) if shutdown_requested(&shutdown_receive) => return Ok(()),
-        Err(_) => {
-            crate::owner_state::write_mcp_owner_state(
-                &journal_root,
-                "failed",
-                None,
-                ("failed", "waiting", "waiting"),
-                Some(
-                    "this computer could not reach services.solstone.app; it will try again when the service restarts",
-                ),
-            );
-            return Err(McpServiceError::Tunnel);
+    let tunnel = loop {
+        match owner
+            .connect_mcp_endpoint_tunnel(&mut tunnel_shutdown)
+            .await
+        {
+            Ok(tunnel) => break tunnel,
+            Err(_) if shutdown_requested(&shutdown_receive) => return Ok(()),
+            Err(ref error) => match first_connect_on_carrier_error(error) {
+                FirstConnectAction::StayAlive(delay) => {
+                    let next_attempt = chrono::Utc::now()
+                        + chrono::Duration::from_std(delay)
+                            .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                    crate::owner_state::write_mcp_needs_subscription_state(
+                        &journal_root,
+                        None,
+                        ("waiting", "waiting", "waiting"),
+                        next_attempt,
+                    );
+                    let mut sleep = std::pin::pin!(tokio::time::sleep(delay));
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+                    loop {
+                        tokio::select! {
+                            _ = &mut sleep => break,
+                            _ = ticker.tick() => {
+                                if shutdown_requested(&shutdown_receive) {
+                                    return Ok(());
+                                }
+                                if !capability_enabled(&journal_root) {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+                    if shutdown_requested(&shutdown_receive) || !capability_enabled(&journal_root) {
+                        return Ok(());
+                    }
+                }
+                FirstConnectAction::ExitTunnel => {
+                    crate::owner_state::write_mcp_owner_state(
+                        &journal_root,
+                        "failed",
+                        None,
+                        ("failed", "waiting", "waiting"),
+                        Some(
+                            "this computer could not reach services.solstone.app; it will try again when the service restarts",
+                        ),
+                    );
+                    return Err(McpServiceError::Tunnel);
+                }
+            },
         }
     };
     let (tls, forwarder_session) = tunnel.into_service_parts();
@@ -238,10 +271,20 @@ async fn run_endpoint_topology(
                 }
                 () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     let active = state_tls.ordinary_certificate_is_active();
-                    let rate_limit_is_current = crate::owner_state::read_mcp_owner_state(&state_root)
-                        .is_some_and(|state| state.certificate_leg == "not_this_week"
-                            && state.next_attempt_at.is_some_and(|next| next > chrono::Utc::now()));
-                    if rate_limit_is_current && !active {
+                    let current_state = crate::owner_state::read_mcp_owner_state(&state_root);
+                    let hold_is_current = current_state
+                        .as_ref()
+                        .is_some_and(|state| {
+                            (state.certificate_leg == "not_this_week"
+                                || state.status == "needs_subscription")
+                                && state
+                                    .next_attempt_at
+                                    .is_some_and(|next| next > chrono::Utc::now())
+                        });
+                    let is_subscription = current_state
+                        .as_ref()
+                        .is_some_and(|state| state.status == "needs_subscription");
+                    if hold_is_current && (is_subscription || !active) {
                         continue;
                     }
                     crate::owner_state::write_mcp_owner_state(
@@ -318,6 +361,22 @@ async fn run_endpoint_topology(
     result
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum FirstConnectAction {
+    StayAlive(std::time::Duration),
+    ExitTunnel,
+}
+
+pub(crate) fn first_connect_on_carrier_error(
+    error: &crate::bridge_carrier::McpBridgeCarrierError,
+) -> FirstConnectAction {
+    if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(error) {
+        FirstConnectAction::StayAlive(delay)
+    } else {
+        FirstConnectAction::ExitTunnel
+    }
+}
+
 fn capability_enabled(journal_root: &Path) -> bool {
     matches!(
         read_journal_config(journal_root)
@@ -362,8 +421,10 @@ async fn wait_for_shutdown_signal(shutdown: watch::Sender<bool>) {
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::fs;
+    use std::time::Duration;
 
-    use super::capability_enabled;
+    use super::{FirstConnectAction, capability_enabled, first_connect_on_carrier_error};
+    use crate::bridge_carrier::McpBridgeCarrierError;
 
     #[test]
     fn capability_recheck_fails_closed_before_network_or_listener_work() {
@@ -373,5 +434,28 @@ mod tests {
         fs::write(journal.path().join("config/journal.json"), "not json")
             .expect("fixture malformed config");
         assert!(!capability_enabled(journal.path()));
+    }
+
+    #[test]
+    fn first_connect_error_classification() {
+        assert_eq!(
+            first_connect_on_carrier_error(&McpBridgeCarrierError::NeedsSubscription),
+            FirstConnectAction::StayAlive(Duration::from_secs(300))
+        );
+        for other_error in [
+            McpBridgeCarrierError::Account,
+            McpBridgeCarrierError::Cancelled,
+            McpBridgeCarrierError::Deadline,
+            McpBridgeCarrierError::Connect,
+            McpBridgeCarrierError::Tls,
+            McpBridgeCarrierError::Io,
+            McpBridgeCarrierError::Pop,
+            McpBridgeCarrierError::State,
+        ] {
+            assert_eq!(
+                first_connect_on_carrier_error(&other_error),
+                FirstConnectAction::ExitTunnel
+            );
+        }
     }
 }

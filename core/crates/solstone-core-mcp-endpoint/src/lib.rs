@@ -392,6 +392,10 @@ impl McpEndpointOwnerContext {
         )
         .map_err(|_| McpBridgeCarrierError::State)
     }
+
+    pub(crate) fn journal_path(&self) -> &Path {
+        self.journal_root.canonical_path()
+    }
 }
 
 /// Bootstrap failure category, intentionally without filesystem or key material.

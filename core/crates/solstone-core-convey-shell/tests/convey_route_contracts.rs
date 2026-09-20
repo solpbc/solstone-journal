@@ -5,6 +5,8 @@
 #[path = "support/mod.rs"]
 mod support;
 
+#[path = "agents_enable_routes.rs"]
+mod agents_enable_routes;
 #[path = "calendar_routes.rs"]
 mod calendar_routes;
 #[path = "corpus.rs"]

@@ -587,24 +587,45 @@ async fn run_renewal_fetcher(
                     false
                 }
             };
-            if let Ok(successor) = result
-                && accepted
-            {
-                log::info!("mcp bridge lease renewal: successor authority accepted");
-                if updates
-                    .send(RenewalUpdate::Success(successor))
-                    .await
-                    .is_err()
-                {
-                    return;
-                }
-                match advances.recv().await {
-                    Some(next_expiry) if next_expiry > current_expiry => {
-                        current_expiry = next_expiry;
-                        break;
+            match result {
+                Ok(successor) if accepted => {
+                    log::info!("mcp bridge lease renewal: successor authority accepted");
+                    if updates
+                        .send(RenewalUpdate::Success(successor))
+                        .await
+                        .is_err()
+                    {
+                        return;
                     }
-                    _ => return,
+                    match advances.recv().await {
+                        Some(next_expiry) if next_expiry > current_expiry => {
+                            current_expiry = next_expiry;
+                            break;
+                        }
+                        _ => return,
+                    }
                 }
+                Err(ref err) => {
+                    if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(err) {
+                        let next_attempt = chrono::Utc::now()
+                            + chrono::Duration::from_std(delay)
+                                .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                        crate::owner_state::write_mcp_needs_subscription_state(
+                            owner.journal_path(),
+                            Some(binding.hostname()),
+                            ("done", "done", "waiting"),
+                            next_attempt,
+                        );
+                        tokio::select! {
+                            changed = shutdown.changed() => {
+                                if changed.is_err() || *shutdown.borrow_and_update() { return; }
+                            }
+                            _ = sleep(delay) => {}
+                        }
+                        continue;
+                    }
+                }
+                _ => {}
             }
             let cap = 1u64 << u32::from(retries.min(3));
             retries = retries.saturating_add(1);

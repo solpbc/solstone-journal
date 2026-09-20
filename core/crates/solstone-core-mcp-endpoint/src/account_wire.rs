@@ -449,6 +449,7 @@ enum McpAccountResponseWireError {
     BridgeAddressesCardinality,
     BridgeAddressIpv4,
     BridgeAddressDenied,
+    NeedsSubscription,
 }
 
 impl fmt::Display for McpAccountResponseWireError {
@@ -496,6 +497,7 @@ impl fmt::Display for McpAccountResponseWireError {
             Self::BridgeAddressDenied => {
                 "MCP account registration response bridge address is denied"
             }
+            Self::NeedsSubscription => "MCP account registration subscription required",
         })
     }
 }
@@ -586,6 +588,7 @@ enum McpAccountError {
     HttpRead,
     HttpFraming,
     Response,
+    NeedsSubscription,
 }
 
 impl fmt::Display for McpAccountError {
@@ -602,6 +605,7 @@ impl fmt::Display for McpAccountError {
             Self::HttpRead => "MCP account registration response read failed",
             Self::HttpFraming => "MCP account registration response framing is invalid",
             Self::Response => "MCP account registration response is invalid",
+            Self::NeedsSubscription => "MCP account registration subscription required",
         })
     }
 }
@@ -660,6 +664,14 @@ fn parse_account_registration_response(
     headers: &[(Vec<u8>, Vec<u8>)],
     body: &[u8],
 ) -> Result<McpAccountResponseWire, McpAccountResponseWireError> {
+    if status == 402 {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+            && value.get("error").and_then(serde_json::Value::as_str) == Some("needs_subscription")
+        {
+            return Err(McpAccountResponseWireError::NeedsSubscription);
+        }
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
     if status != 200 {
         return Err(McpAccountResponseWireError::UnexpectedStatus);
     }
@@ -733,7 +745,10 @@ pub(crate) async fn establish_mcp_bridge_carrier(
 ) -> Result<McpBridgeCarrier, McpBridgeCarrierError> {
     let registration = request_account_registration(owner, shutdown)
         .await
-        .map_err(|_| McpBridgeCarrierError::Account)?;
+        .map_err(|error| match error {
+            McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
+            _ => McpBridgeCarrierError::Account,
+        })?;
     establish_initial_bridge_carrier(
         registration_into_authority_for_tls(registration, expected_tls)?,
         &owner.keypair,
@@ -754,7 +769,10 @@ pub(crate) async fn refresh_mcp_bridge_authority(
 ) -> Result<BridgeAuthority, McpBridgeCarrierError> {
     let registration = request_account_registration(owner, shutdown)
         .await
-        .map_err(|_| McpBridgeCarrierError::Account)?;
+        .map_err(|error| match error {
+            McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
+            _ => McpBridgeCarrierError::Account,
+        })?;
     Ok(registration_into_authority(registration))
 }
 
@@ -884,7 +902,12 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
     let wall_end = clock.wall_now();
     let wire =
         parse_account_registration_response(response.status, &response.headers, &response.body)
-            .map_err(|_| McpAccountError::Response)?;
+            .map_err(|error| match error {
+                McpAccountResponseWireError::NeedsSubscription => {
+                    McpAccountError::NeedsSubscription
+                }
+                _ => McpAccountError::Response,
+            })?;
     validate_account_registration(wire, owner, wall_start, wall_end)
         .map_err(|_| McpAccountError::Response)
 }
@@ -4745,6 +4768,67 @@ mod tests {
             account_runtime().block_on(request_account_registration(&owner, &mut shutdown)),
             Err(McpAccountError::Cancelled)
         ));
+    }
+
+    #[test]
+    fn account_registration_402_needs_subscription_maps_to_needs_subscription_error() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let subscription_response = [
+            &b"HTTP/1.1 402 Payment Required\r\n"[..],
+            &b"Content-Type: application/json\r\n"[..],
+            &b"Content-Length: 30\r\n"[..],
+            &b"Connection: close\r\n\r\n"[..],
+            &br#"{"error":"needs_subscription"}"#[..],
+        ]
+        .concat();
+        let mut io = TestAccountAttemptIo::success(clock.clone(), subscription_response);
+        let (_sender, mut shutdown) = watch::channel(false);
+        let result = account_runtime().block_on(run_fixed_account_attempt(
+            &owner,
+            &mut shutdown,
+            &mut io,
+            &clock,
+        ));
+        assert_eq!(result.err(), Some(McpAccountError::NeedsSubscription));
+
+        // Other 402 body returns McpAccountError::Response
+        let other_402 = [
+            &b"HTTP/1.1 402 Payment Required\r\n"[..],
+            &b"Content-Type: application/json\r\n"[..],
+            &b"Content-Length: 22\r\n"[..],
+            &b"Connection: close\r\n\r\n"[..],
+            &br#"{"error":"other_code"}"#[..],
+        ]
+        .concat();
+        let mut io = TestAccountAttemptIo::success(clock.clone(), other_402);
+        let (_sender, mut shutdown) = watch::channel(false);
+        let result = account_runtime().block_on(run_fixed_account_attempt(
+            &owner,
+            &mut shutdown,
+            &mut io,
+            &clock,
+        ));
+        assert_eq!(result.err(), Some(McpAccountError::Response));
+
+        // 401 returns McpAccountError::Response
+        let unauthorized = [
+            &b"HTTP/1.1 401 Unauthorized\r\n"[..],
+            &b"Content-Type: application/json\r\n"[..],
+            &b"Content-Length: 2\r\n"[..],
+            &b"Connection: close\r\n\r\n"[..],
+            &b"{}"[..],
+        ]
+        .concat();
+        let mut io = TestAccountAttemptIo::success(clock.clone(), unauthorized);
+        let (_sender, mut shutdown) = watch::channel(false);
+        let result = account_runtime().block_on(run_fixed_account_attempt(
+            &owner,
+            &mut shutdown,
+            &mut io,
+            &clock,
+        ));
+        assert_eq!(result.err(), Some(McpAccountError::Response));
     }
 
     #[test]

@@ -105,6 +105,10 @@ impl BridgeBinding {
             && successor.bridge_address == self.bridge_address
             && successor.expires_at > current_expiry
     }
+
+    pub(crate) fn hostname(&self) -> &str {
+        &self.hostname
+    }
 }
 
 impl BridgeAuthority {
@@ -156,6 +160,7 @@ pub enum McpBridgeCarrierError {
     Io,
     Pop,
     State,
+    NeedsSubscription,
 }
 
 impl fmt::Display for McpBridgeCarrierError {
@@ -169,11 +174,19 @@ impl fmt::Display for McpBridgeCarrierError {
             Self::Io => "MCP bridge control I/O failed",
             Self::Pop => "MCP bridge proof-of-possession failed",
             Self::State => "MCP endpoint certificate state could not be loaded",
+            Self::NeedsSubscription => "MCP bridge subscription required",
         })
     }
 }
 
 impl std::error::Error for McpBridgeCarrierError {}
+
+pub fn needs_subscription_retry(error: &McpBridgeCarrierError) -> Option<Duration> {
+    match error {
+        McpBridgeCarrierError::NeedsSubscription => Some(Duration::from_secs(300)),
+        _ => None,
+    }
+}
 
 const BRIDGE_ORIGIN_HOST: &str = "bridge.solstone.me";
 const BRIDGE_ORIGIN_PORT: u16 = 443;

@@ -15,6 +15,7 @@
   const view = document.getElementById('agents-view');
   const esc = value => window.AppServices.escapeHtml(String(value ?? ''));
   let state = null;
+  let enableOp = null;
   let route = {name: 'home'};
   let activity = null;
   let pairingCode = null;
@@ -139,15 +140,44 @@
     return `<h3>what was released</h3><ul>${targets.map(target => `<li><a href="${esc(link(target))}">${esc(target)}</a></li>`).join('')}</ul><p class="meta">these links open the corresponding journal record. the activity entry stores coordinates and a fingerprint, not a second copy of the content.</p>`;
   }
 
+  function needsSubscriptionPage() {
+    const subscribeUrl = state.subscribe_url || "https://services.solstone.app/services/solstone-me";
+    return frame('agents', 'a subscription is needed to connect your journal to solstone.me.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>subscription required</h2><p>a subscription is required to connect to solstone.me.</p><div class="notice">subscribe to enable agent access for your journal. once subscribed, connection will continue automatically.</div><div class="button-row"><a class="btn primary" href="${esc(subscribeUrl)}" target="_blank" rel="noopener">subscribe to solstone.me</a><button class="btn" data-action="refresh">check now</button><button class="btn" data-action="turn-off-now">stop and turn off</button></div></div></section>${connections()}`);
+  }
+
+  function enableNeedsSubscriptionPage(subscribeUrl) {
+    const url = subscribeUrl || "https://services.solstone.app/services/solstone-me";
+    return frame('solstone.me', 'a subscription is needed to connect your journal to solstone.me.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>subscription required</h2><p>solstone.me needs an active subscription before it can turn on. your consent is saved; set one up, then enable again.</p><div class="button-row"><a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">subscribe to solstone.me</a><button class="btn" data-action="dismiss-enable">back</button></div></div></section><div class="section">${explainers()}</div>`);
+  }
+
+  function enableErrorPage(op) {
+    const guidance = op.guidance || 'the enable request could not finish.';
+    return frame('could not turn on solstone.me', `<div class="notice error">${esc(guidance)}</div>`, `<div class="button-row"><button class="btn primary" data-action="turn-on">try again</button><button class="btn" data-action="dismiss-enable">back</button></div><div class="section">${explainers()}</div>`);
+  }
+
+  function enableRevokedPage(op) {
+    const guidance = op.guidance || 'consent was not granted. start a new enable flow when ready.';
+    return frame('solstone.me', `<div class="notice">${esc(guidance)}</div>`, `<div class="button-row"><button class="btn primary" data-action="turn-on">try again</button><button class="btn" data-action="dismiss-enable">back</button></div><div class="section">${explainers()}</div>`);
+  }
+
+  function consentPage(op) {
+    return frame('turning on solstone.me', 'complete the approval in your browser to finish turning on.', `<section class="card pad status"><div class="mark" aria-hidden="true"><span class="spinner">◉</span></div><div><h2><span class="dot wait"></span>waiting for approval</h2><p>your browser opened the solstone.me approval page. approve the request there to finish connecting.</p>${op.portal_url ? `<p><a class="btn" href="${esc(op.portal_url)}" target="_blank" rel="noopener">open approval page again</a></p>` : ''}<div class="button-row"><button class="btn" data-action="refresh-enable">check now</button><button class="btn" data-action="dismiss-enable">cancel</button></div></div></section><div class="section">${explainers()}</div>`);
+  }
+
   function render() {
     if (!state) return;
     if (route.name === 'connect') view.innerHTML = connectPage();
     else if (route.name === 'off') view.innerHTML = offConfirmPage();
     else if (route.name === 'connection') view.innerHTML = connectionPage(route.connection);
     else if (route.name === 'activity') view.innerHTML = activityPage();
+    else if (enableOp && enableOp.phase === 'needs_subscription') view.innerHTML = enableNeedsSubscriptionPage(enableOp.subscribe_url);
+    else if (enableOp && enableOp.phase === 'error') view.innerHTML = enableErrorPage(enableOp);
+    else if (enableOp && enableOp.phase === 'revoked') view.innerHTML = enableRevokedPage(enableOp);
+    else if (enableOp && (enableOp.phase === 'waiting' || enableOp.phase === 'starting')) view.innerHTML = consentPage(enableOp);
     else if (!state.enabled) view.innerHTML = state.owner_state?.address ? turnedOffPage() : offPage();
     else if (state.status === 'offline') view.innerHTML = offlinePage();
     else if (state.status === 'renewal_overdue') view.innerHTML = renewalPage();
+    else if (state.status === 'needs_subscription') view.innerHTML = needsSubscriptionPage();
     else if (state.status !== 'on') view.innerHTML = enrollmentPage();
     else view.innerHTML = onPage();
     const scope = document.getElementById('scope');
@@ -158,9 +188,45 @@
     }
   }
 
+  async function pollEnable() {
+    try {
+      const res = await api('/app/agents/api/enable');
+      enableOp = res?.operation;
+      if (!enableOp || enableOp.phase === 'enabled') {
+        enableOp = null;
+        await reload();
+        return;
+      }
+      render();
+      if (enableOp.phase === 'starting' || enableOp.phase === 'waiting') {
+        setTimeout(pollEnable, 1500);
+      }
+    } catch (_) {}
+  }
+
+  async function checkEnableOp() {
+    try {
+      const res = await api('/app/agents/api/enable');
+      if (res?.operation && res.operation.phase !== 'enabled') {
+        enableOp = res.operation;
+        if (enableOp.phase === 'starting' || enableOp.phase === 'waiting') {
+          setTimeout(pollEnable, 1500);
+        }
+      }
+    } catch (_) {}
+  }
+
   async function reload() {
     view.innerHTML = '<p class="lead">loading agents…</p>';
-    try { state = await api('/app/agents/api/state'); render(); }
+    try {
+      state = await api('/app/agents/api/state');
+      if (!state.enabled && !state.owner_state?.address) {
+        await checkEnableOp();
+      } else {
+        enableOp = null;
+      }
+      render();
+    }
     catch (error) { errorPage(error.message || 'the journal did not return its agent state.'); }
   }
   async function loadActivity(connection = '') {
@@ -179,7 +245,28 @@
     if (target.dataset.closeModal !== undefined) { target.closest('.modal')?.remove(); return; }
     try {
       if (action === 'reload' || action === 'refresh') await reload();
-      else if (action === 'turn-on') { await api('/app/agents/api/capability', jsonOptions('PUT',{enabled:true})); await reload(); }
+      else if (action === 'refresh-enable') await pollEnable();
+      else if (action === 'dismiss-enable') { enableOp = null; render(); }
+      else if (action === 'turn-on') {
+        if (!state.owner_state?.address) {
+          try {
+            const start = await api('/app/agents/api/enable', jsonOptions('POST', {}));
+            enableOp = start?.operation;
+            if (start?.operation?.portal_url) {
+              window.open(start.operation.portal_url, '_blank', 'noopener,noreferrer');
+            }
+            render();
+            if (enableOp && (enableOp.phase === 'starting' || enableOp.phase === 'waiting')) {
+              setTimeout(pollEnable, 1500);
+            }
+          } catch (e) {
+            notify(e.message || 'could not begin enable flow');
+          }
+        } else {
+          await api('/app/agents/api/capability', jsonOptions('PUT',{enabled:true}));
+          await reload();
+        }
+      }
       else if (action === 'turn-off-now' || action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT',{enabled:false})); route={name:'home'}; await reload(); }
       else if (action === 'new-code') { pairingCode = await api('/app/agents/api/pairing',ownerOptions('POST')); state.pairing=pairingCode; render(); }
       else if (action === 'filter-activity') { const params=new URLSearchParams(); const outcome=document.getElementById('a-outcome').value; const tool=document.getElementById('a-tool').value; const connection=document.getElementById('a-agent').value; const from=document.getElementById('a-from').value.replaceAll('-',''); const to=document.getElementById('a-to').value.replaceAll('-',''); if(outcome)params.set('outcome',outcome);if(tool)params.set('tool',tool);if(connection)params.set('connection',connection);if(from)params.set('from',from);if(to)params.set('to',to);activity=await api(`/app/agents/api/activity?${params}`);render(); }
@@ -189,6 +276,14 @@
     } catch (error) { notify(error.message || 'that change did not finish'); }
   });
   reload();
-  window.setInterval(() => { if (state?.enabled && state?.status !== 'on' && route.name === 'home') reload(); }, 10000);
+  window.setInterval(() => {
+    if (route.name === 'home') {
+      if (enableOp && (enableOp.phase === 'starting' || enableOp.phase === 'waiting')) {
+        pollEnable();
+      } else if (state?.enabled && state?.status !== 'on') {
+        reload();
+      }
+    }
+  }, 10000);
 })();
 </script>

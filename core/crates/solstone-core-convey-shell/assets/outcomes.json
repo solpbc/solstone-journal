@@ -14,5 +14,17 @@
     "relay_rotation_unsupported": "this solstone's security key changed and can't be re-registered automatically yet. reach out to support.",
     "relay_unavailable": "the private network service isn't available right now. try again in a bit.",
     "relay_rejected": "the relay couldn't finish setting up your private network (error {code})."
+  },
+  "SME_ALREADY_ENABLED_DETAIL": "solstone.me is already on",
+  "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't prepare the consent link",
+  "SME_OUTCOME_GUIDANCE": {
+    "approved": null,
+    "pending": "keep the approval page open while the request finishes.",
+    "revoked": "consent was not granted. start a new enable flow when ready.",
+    "expired": "this enable link is no longer active. start a new enable flow.",
+    "malformed": "the service response was not understood. update solstone and try again.",
+    "network_error": "the service could not be reached. check network access and try again.",
+    "local_error": "local service state could not be written. check journal permissions and try again.",
+    "needs_subscription": "solstone.me needs an active subscription before it can turn on. your consent is saved; set one up, then enable again."
   }
 }

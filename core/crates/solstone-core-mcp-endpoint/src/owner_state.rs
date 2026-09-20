@@ -85,3 +85,85 @@ pub(crate) fn write_mcp_rate_limit_state(
         },
     );
 }
+
+pub(crate) fn write_mcp_needs_subscription_state(
+    journal_root: &Path,
+    address: Option<&str>,
+    legs: (&str, &str, &str),
+    next_attempt_at: DateTime<Utc>,
+) {
+    let detail = if address.is_some() {
+        "solstone.me needs an active subscription. your address is saved; your journal will try to reconnect on its own."
+    } else {
+        "solstone.me needs an active subscription before an address can be minted. your journal will check again on its own."
+    };
+    let state = McpOwnerState {
+        schema: 1,
+        status: "needs_subscription".to_owned(),
+        address: address.map(str::to_owned),
+        address_leg: legs.0.to_owned(),
+        certificate_leg: legs.1.to_owned(),
+        relay_leg: legs.2.to_owned(),
+        detail: Some(detail.to_owned()),
+        next_attempt_at: Some(next_attempt_at),
+        observed_at: Utc::now(),
+    };
+    let _ = write_json(
+        journal_root.join(STATE_PATH),
+        &state,
+        JsonWriteOptions {
+            mode: Some(0o600),
+            ..JsonWriteOptions::default()
+        },
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn write_and_read_mcp_needs_subscription_state() {
+        let dir = tempdir().expect("tempdir");
+        let journal_root = dir.path();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).expect("mkdir");
+        let next_attempt = Utc::now() + chrono::Duration::seconds(300);
+
+        // Without address (first-connect 402)
+        write_mcp_needs_subscription_state(
+            journal_root,
+            None,
+            ("waiting", "waiting", "waiting"),
+            next_attempt,
+        );
+        let state = read_mcp_owner_state(journal_root).expect("owner state");
+        assert_eq!(state.status, "needs_subscription");
+        assert_eq!(state.address, None);
+        assert_eq!(state.address_leg, "waiting");
+        assert_eq!(state.certificate_leg, "waiting");
+        assert_eq!(state.relay_leg, "waiting");
+        assert_eq!(state.next_attempt_at, Some(next_attempt));
+        let detail = state.detail.as_deref().unwrap_or_default();
+        assert!(!detail.contains("this computer could not reach services.solstone.app; it will try again when the service restarts"));
+        assert!(!detail.contains("couldn't reach services.solstone.app"));
+
+        // With address (renewal/reconnect 402)
+        write_mcp_needs_subscription_state(
+            journal_root,
+            Some("aaaqeaye.solstone.me"),
+            ("done", "done", "waiting"),
+            next_attempt,
+        );
+        let state = read_mcp_owner_state(journal_root).expect("owner state");
+        assert_eq!(state.status, "needs_subscription");
+        assert_eq!(state.address.as_deref(), Some("aaaqeaye.solstone.me"));
+        assert_eq!(state.address_leg, "done");
+        assert_eq!(state.certificate_leg, "done");
+        assert_eq!(state.relay_leg, "waiting");
+        assert_eq!(state.next_attempt_at, Some(next_attempt));
+        let detail = state.detail.as_deref().unwrap_or_default();
+        assert!(!detail.contains("this computer could not reach services.solstone.app; it will try again when the service restarts"));
+        assert!(!detail.contains("couldn't reach services.solstone.app"));
+    }
+}

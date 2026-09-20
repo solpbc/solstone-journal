@@ -166,10 +166,12 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
     let renewal_due = certificate.get("renewal_due").and_then(Value::as_bool) == Some(true);
     let status = if !enabled {
         "off"
-    } else if owner_state
-        .as_ref()
-        .is_some_and(|state| matches!(state.status.as_str(), "offline" | "failed"))
-    {
+    } else if owner_state.as_ref().is_some_and(|state| {
+        matches!(
+            state.status.as_str(),
+            "offline" | "failed" | "needs_subscription"
+        )
+    }) {
         owner_state
             .as_ref()
             .map_or("turning_on", |state| state.status.as_str())
@@ -189,7 +191,7 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
             .as_ref()
             .map_or("turning_on", |state| state.status.as_str())
     };
-    Ok(json!({
+    let mut response = json!({
         "enabled": enabled,
         "status": status,
         "owner_state": owner_state,
@@ -197,7 +199,18 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
         "connections": connections,
         "facets": facets,
         "pairing": pairing.map(|value| json!({"expires_at": value.expires_at, "generation": value.generation, "locked": value.locked})),
-    }))
+    });
+    if status == "needs_subscription" {
+        response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
+    }
+    Ok(response)
+}
+
+fn portal_origin() -> String {
+    std::env::var("SERVICES_PORTAL_URL")
+        .unwrap_or_else(|_| "https://services.solstone.app".to_string())
+        .trim_end_matches('/')
+        .to_string()
 }
 
 type ConnectionActivity = BTreeMap<String, (usize, Option<chrono::DateTime<Utc>>)>;
@@ -533,6 +546,34 @@ mod tests {
         assert_eq!(value["enabled"], false);
         assert_eq!(value["status"], "off");
         assert_eq!(value["connections"], json!([]));
+    }
+
+    #[test]
+    fn state_projects_needs_subscription_status_and_subscribe_url() {
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"enabled":true}}"#,
+        )
+        .unwrap();
+        let next_attempt = Utc::now() + Duration::seconds(300);
+        crate::owner_state::write_mcp_needs_subscription_state(
+            journal_root,
+            None,
+            ("waiting", "waiting", "waiting"),
+            next_attempt,
+        );
+
+        let value = state_value(journal_root).unwrap();
+        assert_eq!(value["enabled"], true);
+        assert_eq!(value["status"], "needs_subscription");
+        assert_eq!(
+            value["subscribe_url"],
+            "https://services.solstone.app/services/solstone-me"
+        );
     }
 
     #[test]

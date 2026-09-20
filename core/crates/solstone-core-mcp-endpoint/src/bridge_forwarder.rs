@@ -31,6 +31,23 @@ fn loopback_target() -> std::net::SocketAddr {
     std::net::SocketAddr::from(([127, 0, 0, 1], MCP_ENDPOINT_LOOPBACK_PORT))
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ReconnectWait {
+    TerminalSubscription { delay: Duration },
+    ShortRetry,
+}
+
+pub(crate) fn reconnect_wait_for_carrier_error(
+    error: &McpBridgeCarrierError,
+    _backoff_cap_seconds: u64,
+) -> ReconnectWait {
+    if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(error) {
+        ReconnectWait::TerminalSubscription { delay }
+    } else {
+        ReconnectWait::ShortRetry
+    }
+}
+
 /// Run one bridge generation at a time until the supervisor requests shutdown.
 pub(crate) async fn run(
     owner: &McpEndpointOwnerContext,
@@ -44,9 +61,25 @@ pub(crate) async fn run(
         let session = match owner.connect_mcp_bridge(shutdown).await {
             Ok(session) => session,
             Err(McpBridgeCarrierError::Cancelled) if shutdown_requested(shutdown) => return Ok(()),
-            Err(_) => {
-                wait_for_retry(shutdown, backoff_cap_seconds).await;
-                backoff_cap_seconds = (backoff_cap_seconds.saturating_mul(2)).min(60);
+            Err(ref error) => {
+                match reconnect_wait_for_carrier_error(error, backoff_cap_seconds) {
+                    ReconnectWait::TerminalSubscription { delay } => {
+                        let next_attempt = chrono::Utc::now()
+                            + chrono::Duration::from_std(delay)
+                                .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                        crate::owner_state::write_mcp_needs_subscription_state(
+                            owner.journal_path(),
+                            None,
+                            ("waiting", "waiting", "waiting"),
+                            next_attempt,
+                        );
+                        wait_for_fixed_delay(shutdown, delay).await;
+                    }
+                    ReconnectWait::ShortRetry => {
+                        wait_for_retry(shutdown, backoff_cap_seconds).await;
+                        backoff_cap_seconds = (backoff_cap_seconds.saturating_mul(2)).min(60);
+                    }
+                }
                 continue;
             }
         };
@@ -93,9 +126,26 @@ pub(crate) async fn run_bound_session(
                     Err(McpBridgeCarrierError::Cancelled) if shutdown_requested(shutdown) => {
                         return Ok(());
                     }
-                    Err(_) => {
-                        wait_for_retry(shutdown, backoff_cap_seconds).await;
-                        backoff_cap_seconds = (backoff_cap_seconds.saturating_mul(2)).min(60);
+                    Err(ref error) => {
+                        match reconnect_wait_for_carrier_error(error, backoff_cap_seconds) {
+                            ReconnectWait::TerminalSubscription { delay } => {
+                                let next_attempt = chrono::Utc::now()
+                                    + chrono::Duration::from_std(delay)
+                                        .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                                crate::owner_state::write_mcp_needs_subscription_state(
+                                    owner.journal_path(),
+                                    Some(tls.authorized_hostname()),
+                                    ("done", "done", "waiting"),
+                                    next_attempt,
+                                );
+                                wait_for_fixed_delay(shutdown, delay).await;
+                            }
+                            ReconnectWait::ShortRetry => {
+                                wait_for_retry(shutdown, backoff_cap_seconds).await;
+                                backoff_cap_seconds =
+                                    (backoff_cap_seconds.saturating_mul(2)).min(60);
+                            }
+                        }
                         continue;
                     }
                 }
@@ -206,6 +256,15 @@ async fn wait_for_retry(shutdown: &mut watch::Receiver<bool>, cap_seconds: u64) 
     }
 }
 
+async fn wait_for_fixed_delay(shutdown: &mut watch::Receiver<bool>, delay: Duration) {
+    tokio::select! {
+        changed = shutdown.changed() => {
+            let _ = changed;
+        }
+        _ = sleep(delay) => {}
+    }
+}
+
 fn full_jitter_delay(cap_seconds: u64) -> Duration {
     let cap_seconds = cap_seconds.clamp(1, 60);
     let limit = u64::MAX - (u64::MAX % cap_seconds);
@@ -243,5 +302,25 @@ mod tests {
             assert!(delay >= Duration::from_secs(1));
             assert!(delay <= Duration::from_secs(60));
         }
+    }
+
+    #[test]
+    fn ac7_reconnect_wait_for_needs_subscription_is_terminal_subscription() {
+        let err = McpBridgeCarrierError::NeedsSubscription;
+        match reconnect_wait_for_carrier_error(&err, 5) {
+            ReconnectWait::TerminalSubscription { delay } => {
+                assert!(delay >= Duration::from_secs(300));
+            }
+            ReconnectWait::ShortRetry => panic!("expected TerminalSubscription"),
+        }
+    }
+
+    #[test]
+    fn ac8_reconnect_wait_for_account_is_short_retry() {
+        let err = McpBridgeCarrierError::Account;
+        assert_eq!(
+            reconnect_wait_for_carrier_error(&err, 5),
+            ReconnectWait::ShortRetry
+        );
     }
 }

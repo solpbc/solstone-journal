@@ -107,6 +107,8 @@ use solstone_core_sol_link::DeviceDoorAuthorization;
 #[cfg(feature = "host")]
 use solstone_core_thinking::confidential::OperationRegistry;
 
+#[cfg(feature = "host")]
+mod agents_enable;
 mod assets;
 #[cfg(feature = "host")]
 pub mod authorization_gate;
@@ -165,6 +167,8 @@ mod thinking_sol_reads;
 mod thinking_sol_reads_contract;
 #[cfg(feature = "host")]
 mod thinking_sol_writes;
+#[cfg(feature = "host")]
+pub use agents_enable::{SmeOperationsOverride, SmePoll, SmePollOutcome, SmeRuntimeOverride};
 #[cfg(feature = "host")]
 pub use network_writes::{
     HostLabelOverride, NetworkOperationsOverride, SplDisableFailureOverride, SplEnrollment,
@@ -751,6 +755,10 @@ fn router_with_hosted_parent(
         } else {
             Router::new()
         })
+        .merge(agents_enable::router(
+            "/app/agents",
+            operation_registry.clone(),
+        ))
         .merge(agents_routes.unwrap_or_default())
         .merge(solstone_core_ingest::api_router(journal_root.clone()))
         .merge(solstone_core_push::api_router(journal_root.clone()))
