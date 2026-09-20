@@ -812,6 +812,9 @@ async function navigateTo(view, options = {}) {
   const guide = document.getElementById('importGuide');
   const cleanView = view ? String(view).replace(/^#/, '') : '';
   const nextHash = cleanView === 'grid' || !cleanView ? '' : `#${cleanView}`;
+  // Where the owner was when this navigation started. The hash is written after
+  // the awaits below, and in that window the owner can navigate somewhere else.
+  const hashAtEntry = window.location.hash;
 
   if (grid) {
     grid.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
@@ -833,17 +836,35 @@ async function navigateTo(view, options = {}) {
     currentGuideSource = null;
   }
 
+  // The owner's own navigation is newer than ours and wins. Everything above
+  // this point can await, and an owner who clicks "import another source" while
+  // a status read is in flight ends up on the grid -- writing our hash now would
+  // drag them back to the view they just left.
+  if (window.location.hash !== hashAtEntry) {
+    return;
+  }
+
   // hashchange is delivered as a queued task, so a flag raised and dropped
   // around the assignment is already down by the time the handler reads it:
   // every programmatic navigation re-entered navigateTo and redid the work it
   // had just finished -- a second GET for a progress view, and a second
   // loadGuidedFlow that rewrote guideSteps under the focus repeatSource had
-  // just placed. The handler consumes the flag instead. It is only ever raised
-  // for an assignment that genuinely changes the fragment, so an assignment
-  // that fires no event cannot leave it stuck up.
+  // just placed. The handler consumes the flag instead.
+  //
+  // The browser normalises what it stores -- a space, a quote, angle brackets,
+  // a backtick or anything non-ASCII comes back percent-encoded -- so a hash
+  // that looks different from nextHash can still be the same fragment. The
+  // timestamp the quick flow puts in progress/<ts> is free text, so this is
+  // reachable. Reading the hash back after the assignment is the only way to
+  // know whether anything changed: if it did not, no event is coming and the
+  // flag has to come down, or it swallows the owner's next navigation.
   if (updateHash && window.location.hash !== nextHash) {
+    const before = window.location.hash;
     navigatingHash = true;
     window.location.hash = nextHash;
+    if (window.location.hash === before) {
+      navigatingHash = false;
+    }
   }
 }
 
@@ -886,12 +907,16 @@ async function loadSourceGrid() {
     return;
   }
 
+  // The card carries the source name in a data attribute and the delegated
+  // listener reads it, the same way the repeat button does. An inline onclick
+  // builds a line of JavaScript out of a server string, and an attribute escape
+  // is the only thing standing between that string and the script context.
   grid.innerHTML = cachedSources.map(source => {
-    const clickHandler = source.name === 'quick'
-      ? 'showQuickImport()'
-      : `navigateTo(&quot;guide/${source.name}&quot;)`;
+    const cardAttr = source.name === 'quick'
+      ? 'data-import-quick="true"'
+      : `data-import-source="${escapeHtml(source.name)}"`;
     return `
-      <button type="button" class="import-source-card" onclick="${clickHandler}">
+      <button type="button" class="import-source-card" ${cardAttr}>
         <div class="import-source-card-icon" aria-label="${escapeHtml(source.display_name)}">${source.icon_svg || ''}</div>
         <div class="import-source-card-name">${escapeHtml(source.display_name)}</div>
         <div class="import-source-card-desc">${escapeHtml(source.description || '')}</div>
@@ -1441,6 +1466,10 @@ function isTerminalState(eventOrStatus) {
 
 function updateImportRow(importId, eventData, options = {}) {
   const { authoritative = false } = options;
+  // What actually gets stored, and therefore what the panel repaints from. The
+  // raw read is not it: a null this update dropped must not come back through
+  // refreshInlineProgress and blank a count the owner is looking at.
+  let cleanEventData = eventData;
   if (importId) {
     const floor = importGenerationFloor[importId];
     const existing = importEvents[importId];
@@ -1474,7 +1503,7 @@ function updateImportRow(importId, eventData, options = {}) {
     // cannot answer yet. Merging those nulls would blank counts the owner has
     // already been shown, so an unfinished update contributes only the keys it
     // actually has an answer for.
-    const cleanEventData = Object.fromEntries(
+    cleanEventData = Object.fromEntries(
       Object.entries(eventData).filter(([_, v]) => v !== undefined && (incomingTerminal || v !== null))
     );
     importEvents[importId] = { ...(existing || {}), ...cleanEventData };
@@ -1491,7 +1520,7 @@ function updateImportRow(importId, eventData, options = {}) {
   const safeId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(importId) : importId;
   const row = document.querySelector(`tr[data-import-id="${safeId}"]`);
   if (!row) {
-    refreshInlineProgress(importId, eventData);
+    refreshInlineProgress(importId, cleanEventData);
     return;
   }
 
@@ -1556,7 +1585,7 @@ function updateImportRow(importId, eventData, options = {}) {
     }
   }
 
-  refreshInlineProgress(importId, eventData);
+  refreshInlineProgress(importId, cleanEventData);
 }
 
 function refreshInlineProgress(importId, eventData = null) {
@@ -2211,8 +2240,11 @@ function showProgressView(importId, eventData = null) {
       </div>
     `;
   } else if (isUnavailable) {
-    const unavailableInfo = currentEvent || importInfo || {};
-    const desc = unavailableInfo.unavailable_description || importInfo?.unavailable_description || 'import status unavailable';
+    // unavailable_description is a server field and can carry a provider's own
+    // error text. Escaping it makes it safe to put in the page; it does not make
+    // it owner copy. The panel says what we can stand behind, the way the detail
+    // drawer does with its own fixed line.
+    const desc = 'import status unavailable';
     completionHtml = `
       <div class="import-completion-summary unavailable">
         <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: #9a3412;">${escapeHtml(desc)}</div>
@@ -2464,6 +2496,19 @@ document.addEventListener('click', event => {
     const source = repeatBtn.getAttribute('data-source');
     if (source) {
       repeatSource(source);
+    }
+    return;
+  }
+  const sourceCard = event.target.closest('[data-import-source], [data-import-quick]');
+  if (sourceCard) {
+    event.stopPropagation();
+    if (sourceCard.hasAttribute('data-import-quick')) {
+      showQuickImport();
+      return;
+    }
+    const name = sourceCard.getAttribute('data-import-source');
+    if (name) {
+      navigateTo(`guide/${name}`);
     }
     return;
   }
