@@ -1117,7 +1117,7 @@ function renderImportRow(imp) {
     statusText = 'unconfirmed';
   } else if (imp.status === 'unavailable') {
     statusClass = 'unavailable';
-    statusText = 'unavailable';
+    statusText = 'status unavailable';
   } else if (imp.status === 'running') {
     statusClass = 'running';
     statusText = 'running';
@@ -1525,7 +1525,7 @@ function updateImportRow(importId, eventData, options = {}) {
     }
   } else if (status === 'unavailable') {
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status unavailable">unavailable</span>${gapDetail}`;
+      statusCell.innerHTML = `<span class="import-status unavailable">status unavailable</span>${gapDetail}`;
     }
   } else if (eventData.event === 'started') {
     if (statusCell) {
@@ -2145,7 +2145,7 @@ function showProgressView(importId, eventData = null) {
     : isConfirmedSuccess
       ? 'import complete'
       : isUnconfirmed
-        ? 'import incomplete'
+        ? 'import unconfirmed'
         : isUnavailable
           ? 'import status unavailable'
           : isFailed
@@ -2172,7 +2172,7 @@ function showProgressView(importId, eventData = null) {
     }
     const sourceName = currentGuideSource || source?.name || completedInfo.source_type || importInfo?.source_type || '';
     const repeatBtn = sourceName ? `
-      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">import another ${escapeHtml(source?.display_name || sourceName)}</button>
+      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">${escapeHtml(['image', 'document'].includes(sourceName) ? 'import another ' + (source?.display_name || sourceName) : 'import another source')}</button>
     ` : '';
     completionHtml = `
       <div class="import-completion-summary">
@@ -2202,7 +2202,7 @@ function showProgressView(importId, eventData = null) {
     ` : '';
     completionHtml = `
       <div class="import-completion-summary unconfirmed">
-        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: #9a3412;">this import was interrupted before finalizing.</div>
+        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: #9a3412;">this import couldn't be confirmed as finished.</div>
         <div class="import-action-row">
           <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
           ${browseBtn}
@@ -2403,7 +2403,7 @@ async function reconcileImportState(importId, options = {}) {
     if (errEl) {
       errEl.setAttribute('role', 'alert');
       errEl.setAttribute('aria-live', 'polite');
-      errEl.textContent = 'failed to check status: ' + (err.message || 'network error');
+      errEl.textContent = "couldn't check status. reload to try again.";
       errEl.style.display = '';
     }
   } finally {

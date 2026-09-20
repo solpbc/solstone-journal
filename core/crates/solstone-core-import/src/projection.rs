@@ -718,7 +718,7 @@ fn derive_status_and_errors(
                     if pub_rec.status == PublicationStatus::Success {
                         return (
                             ProjectionStatus::Unconfirmed,
-                            Some("this import was interrupted before finalizing.".to_owned()),
+                            Some("this import couldn't be confirmed as finished.".to_owned()),
                             Some("finalization".to_owned()),
                         );
                     }
@@ -751,7 +751,7 @@ fn derive_status_and_errors(
                 (
                     ProjectionStatus::Unconfirmed,
                     att.failure_reason.clone().or_else(|| {
-                        Some("this import was interrupted before finalizing.".to_owned())
+                        Some("this import couldn't be confirmed as finished.".to_owned())
                     }),
                     Some("finalization".to_owned()),
                 )

@@ -331,7 +331,7 @@ where
             &ImporterError {
                 import_id: request.import_id.to_owned(),
                 stage: "publication".to_owned(),
-                error: "this import was interrupted before finalizing.".to_owned(),
+                error: "this import couldn't be confirmed as finished.".to_owned(),
                 duration_ms: 0,
                 partial_outputs: vec![],
                 generation: Some(generation),
@@ -339,7 +339,7 @@ where
             },
         );
         return Err(NativeProducerError::PublicationFailed {
-            detail: "this import was interrupted before finalizing.".to_owned(),
+            detail: "this import couldn't be confirmed as finished.".to_owned(),
         });
     }
 

@@ -1628,7 +1628,7 @@ async function runCanonicalReadOutranksTheGenerationFloor() {
   await vm.runInContext("reconcileImportState('1700000001')", context);
 
   assert.ok(
-    statusCell.innerHTML.includes('<span class="import-status unavailable">unavailable</span>'),
+    statusCell.innerHTML.includes('<span class="import-status unavailable">status unavailable</span>'),
     'the row goes from running to unavailable on the canonical read'
   );
   assert.ok(!statusCell.innerHTML.includes('import-status running'), 'and stops claiming to be running');

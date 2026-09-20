@@ -18,6 +18,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - restore, prune, recovery key rotation and turning off backup now tell you what went wrong in plain language when they fail, instead of a raw internal code.
 - moving older media off your device to your backup, and bringing it back, now tell you what went wrong in plain language too, instead of a raw internal code.
 - home now catches up after a dropped connection. if your journal finished your "recent activity" summary or your "morning briefing" while the connection was down, they show up when it reconnects, without a reload.
+- importing an image or a PDF now shows when it has finished, on the progress page, without a reload. before, the page could stay on "preparing…" and the import history could say the import had no entries.
+- what you imported can now be browsed once an image or PDF import has finished.
+- an import that only partly worked now says which part couldn't be read. one that can't be confirmed as finished now says so and offers "check status", instead of a spinner or a generic error.
+- after a finished import, "import another image" (or document) takes you back to a fresh upload.
 
 ## [2.0.10] - 2026-09-19
 
