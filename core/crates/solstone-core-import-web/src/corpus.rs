@@ -1418,9 +1418,10 @@ pub(crate) mod tests {
             "list and detail name it alike"
         );
         assert_eq!(native_row["has_gaps"], true);
-        assert!(
-            native_row["unavailable_description"].is_string(),
-            "{native_row}"
+        // Only the fact that a description is missing goes out, never the provider's error text.
+        assert_eq!(
+            native_row["unavailable_description"],
+            "description unavailable"
         );
         assert!(native_row["generation"].is_number(), "{native_row}");
         // The legacy row is exactly its recorded shape: no projection-only keys appear.

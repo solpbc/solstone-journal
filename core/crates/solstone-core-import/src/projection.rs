@@ -128,11 +128,15 @@ impl ImportProjection {
         if let Some(attempt_id) = &self.attempt_id {
             map.insert("attempt_id".to_owned(), Value::String(attempt_id.clone()));
         }
+        // Only that the description is missing goes out on a row: the provider's own
+        // error text stays in the durable record and is not an owner-facing fact.
         map.insert(
             "unavailable_description".to_owned(),
             self.unavailable_description
                 .as_ref()
-                .map_or(Value::Null, |text| Value::String(text.clone())),
+                .map_or(Value::Null, |_| {
+                    Value::String("description unavailable".to_owned())
+                }),
         );
         map.insert(
             "unavailable_pages".to_owned(),
