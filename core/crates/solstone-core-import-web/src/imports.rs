@@ -167,7 +167,7 @@ fn ctime(path: &Path) -> std::io::Result<f64> {
     let metadata = path.metadata()?;
     let timestamp = metadata.created().or_else(|_| metadata.modified())?;
     timestamp
-        .duration_since(UNIX_EPOCH)
+        .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs_f64())
         .map_err(std::io::Error::other)
 }

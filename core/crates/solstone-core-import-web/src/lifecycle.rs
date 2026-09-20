@@ -1223,11 +1223,37 @@ fn spawn_inprocess_import(
                     worker_path,
                     Duration::from_secs(90),
                 );
+                // 🔴 The web import lifecycle has NO Windows PDF worker, and this arm has
+                // never compiled. It arrived in 9937954cd, the stopped lode's round-3
+                // snapshot whose own commit message says "base for direct fixes, not for
+                // main", and it named
+                // `solstone_core_import_sources::document::WindowsPdfWorker`, which does
+                // not exist: the only `WindowsPdfWorker` is a PRIVATE struct in
+                // `solstone-core`'s own `import_sources.rs`, in a crate this one does not
+                // depend on. Nothing caught it because `make ci` and `make ci-full` never
+                // compile the Windows cfg, and `make ci-full-windows` runs only at release
+                // time.
+                //
+                // ⛔ Do not paper this over by inventing a worker here. Wiring it means
+                // moving `WindowsPdfWorker` and its `solstone_core_local::install::
+                // pdfium_readiness::verified_windows_pdfium_package` input into
+                // `solstone-core-import-sources` beside `SystemPdfWorker` (no dependency
+                // cycle: `solstone-core-local` does not depend on this crate), and then
+                // actually exercising it on Windows. That is the import lane's work, not a
+                // release train's.
+                //
+                // ✅ Until then this refuses through the product's OWN designed path — the
+                // `Err` branch below, which records an unconfirmed attempt and emits an
+                // importer error — so a Windows owner is told the import failed rather than
+                // meeting a tree that does not build. No published surface is affected: no
+                // native Windows Journal installer ships today.
                 #[cfg(windows)]
-                let worker =
-                    match solstone_core_import_sources::document::WindowsPdfWorker::from_verified_package(
-                        Duration::from_secs(90),
-                    ) {
+                let windows_worker: Result<
+                    solstone_core_import_sources::document::SystemPdfWorker,
+                    String,
+                > = Err("document import has no PDF worker on windows yet".to_owned());
+                #[cfg(windows)]
+                let worker = match windows_worker {
                         Ok(w) => w,
                         Err(_) => {
                             let finished_at_ms = SystemTime::now()
