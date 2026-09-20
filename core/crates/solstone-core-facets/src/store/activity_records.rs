@@ -809,7 +809,8 @@ mod tests {
 
         // Replaced facet declaration fails update with Replaced
         crate::create_facet(root.path(), "repl", "Repl", "", "", "", None).unwrap();
-        append_activity_record(root.path(), "repl", "20260510", record).unwrap();
+        let outcome = append_activity_record(root.path(), "repl", "20260510", record).unwrap();
+        assert!(matches!(outcome, AppendOutcome::Written(_)));
         std::fs::write(
             root.path().join("facets/repl/facet.json"),
             b"{\"id\":\"00000000-0000-4000-8000-000000000099\",\"title\":\"Replaced\"}",
