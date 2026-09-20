@@ -2531,6 +2531,27 @@ document.addEventListener('keydown', event => {
   }
 });
 
+// One live importer event: track or release the pending timer, update the row and panel, and
+// after a terminal event read the durable record once (see below).
+function handleImporterEvent(eventData) {
+  if (!IMPORT_ROW_EVENTS.has(eventData.event)) {
+    return;
+  }
+  if (IMPORT_TERMINAL_EVENTS.has(eventData.event)) {
+    clearPendingImport(eventData.import_id);
+  } else {
+    trackPendingImport(eventData.import_id);
+  }
+  updateImportRow(eventData.import_id, eventData);
+  if (eventData.event === 'completed' || eventData.event === 'error') {
+    // A live event carries the counts but neither what was only partly done (pages or a
+    // description that could not be produced) nor whether an error was a definite failure
+    // or an outcome that could not be confirmed. Read the durable record once so the panel
+    // says the right thing now, not after a reload.
+    reconcileImportState(eventData.import_id, { quiet: true });
+  }
+}
+
 function initImportWorkspace() {
   const listView = document.getElementById('importListView');
   if (window.solPathContext().segment) {
@@ -2563,23 +2584,7 @@ function initImportWorkspace() {
     correlationKey: 'import_id',
     timeout: IMPORT_STALL_TIMEOUT_MS,
     onTimeout: markRowStalled,
-  }, eventData => {
-    if (!IMPORT_ROW_EVENTS.has(eventData.event)) {
-      return;
-    }
-    if (IMPORT_TERMINAL_EVENTS.has(eventData.event)) {
-      clearPendingImport(eventData.import_id);
-    } else {
-      trackPendingImport(eventData.import_id);
-    }
-    updateImportRow(eventData.import_id, eventData);
-    if (eventData.event === 'completed') {
-      // The completed event carries the counts but not what was only partly done (pages or a
-      // description that could not be produced), so read the durable record once to fill
-      // that in: an import that finished with gaps says so now, not after a reload.
-      reconcileImportState(eventData.import_id, { quiet: true });
-    }
-  });
+  }, handleImporterEvent);
 
   if (typeof window.addEventListener === 'function') {
     const teardown = () => {

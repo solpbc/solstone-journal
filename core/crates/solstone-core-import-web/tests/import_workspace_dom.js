@@ -591,6 +591,7 @@ function runInitWaitsForTheImportList() {
     "const updateImportRow = () => {};",
     "const trackPendingImport = () => {};",
     "const clearPendingImport = () => {};",
+    "const handleImporterEvent = () => {};",
   ].join('\n'), context);
   context.order = order;
   context.loadImports = async () => { await null; order.push('importList'); };
@@ -1126,6 +1127,7 @@ async function runConnectionStateReconcile() {
     reconciledId = id;
   };
   context.markRowStalled = () => {};
+  context.handleImporterEvent = () => {};
   context.loadImports = () => Promise.resolve();
   context.handleHashChange = () => {};
   context.connectionStateCleanup = null;
@@ -1789,6 +1791,29 @@ function runRunningReadKeepsKnownFacts() {
 // Item 43: a "check status" read is the canonical answer for an import, so it
 // lands even when it carries no generation at all -- which is what the detail
 // route returns for an import whose state it cannot reconstruct.
+function runImporterEventsReadTheRecordAfterATerminalEvent() {
+  // Which live events trigger the follow-up read: the two terminal ones, and only those.
+  const calls = [];
+  const context = vm.createContext({ console });
+  context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+  context.IMPORT_TERMINAL_EVENTS = new Set(['completed', 'error', 'declined']);
+  context.clearPendingImport = (id) => calls.push(['clear', id]);
+  context.trackPendingImport = (id) => calls.push(['track', id]);
+  context.updateImportRow = (id, data) => calls.push(['row', id, data.event]);
+  context.reconcileImportState = (id, options) => calls.push(['reconcile', id, options && options.quiet === true]);
+  vm.runInContext(functionSource(workspace, 'handleImporterEvent'), context);
+  const send = (event) => {
+    calls.length = 0;
+    vm.runInContext(`handleImporterEvent(${JSON.stringify({ import_id: 'i1', event })})`, context);
+    return calls.map((call) => call.join(':')).join(' ');
+  };
+  assert.strictEqual(send('started'), 'track:i1 row:i1:started', 'a start only tracks and shows the row');
+  assert.strictEqual(send('status'), 'track:i1 row:i1:status', 'a progress tick reads nothing');
+  assert.strictEqual(send('completed'), 'clear:i1 row:i1:completed reconcile:i1:true', 'a completion reads the record quietly');
+  assert.strictEqual(send('error'), 'clear:i1 row:i1:error reconcile:i1:true', 'an error reads the record quietly');
+  assert.strictEqual(send('observing'), '', 'events the page does not show are ignored');
+}
+
 async function runCompletionThenAQuietReadShowsThePartialNotice() {
   // A live "completed" event carries the counts but not the gaps. The canonical read that
   // follows must add them to the open panel, and must say nothing if it fails.
@@ -1841,6 +1866,21 @@ async function runCompletionThenAQuietReadShowsThePartialNotice() {
     'the panel gains the partial notice once the durable record is read'
   );
   assert.ok(ok.guideSteps.innerHTML.includes('import complete'), 'and stays complete');
+
+  // The producer can emit a plain error when it could not record its own completion: the
+  // canonical read then says "unconfirmed", and the panel must offer "check status".
+  const unconfirmed = build(async () => ({
+    import_id: '1700000090', status: 'unconfirmed', generation: 1,
+    error: "this import couldn't be confirmed as finished.",
+  }));
+  unconfirmed.context.importEvents['1700000090'] = {
+    import_id: '1700000090', event: 'error', status: 'failed', generation: 1, error: 'import failed',
+  };
+  vm.runInContext("showProgressView('1700000090')", unconfirmed.context);
+  assert.ok(!unconfirmed.guideSteps.innerHTML.includes('check status'), 'a plain error event offers no check status');
+  await vm.runInContext("reconcileImportState('1700000090', { quiet: true })", unconfirmed.context);
+  assert.ok(unconfirmed.guideSteps.innerHTML.includes('import unconfirmed'), 'the canonical read reclassifies it as unconfirmed');
+  assert.ok(unconfirmed.guideSteps.innerHTML.includes('check status'), 'and offers check status');
 
   const down = build(async () => { throw new Error('offline'); });
   vm.runInContext("showProgressView('1700000090')", down.context);
@@ -2861,6 +2901,7 @@ Promise.resolve()
   .then(runRunningReadKeepsKnownFacts)
   .then(runCanonicalReadOutranksTheGenerationFloor)
   .then(runCompletionThenAQuietReadShowsThePartialNotice)
+  .then(runImporterEventsReadTheRecordAfterATerminalEvent)
   .then(runTerminalStateCoversEveryEndState)
   .then(runGenerationFloorIsRaisedByEveryEvent)
   .then(runEveryOwnerSinkEscapes)

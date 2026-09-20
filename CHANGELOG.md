@@ -21,7 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - importing an image or a PDF now shows when it has finished, on the progress page, without a reload. before, the page could stay on "preparing…" while the import history counted 0 entries.
 - what you imported can now be browsed once an image or PDF import has finished.
 - an import that only partly worked now says so. one that can't be confirmed as finished says that, and offers "check status" in place of a spinner or a generic error.
-- after a finished import, "import another image" (or document) takes you back to a fresh upload.
+- after a finished import, "import another image" (or document) now goes straight to a fresh upload instead of back to the list of sources.
 
 ## [2.0.10] - 2026-09-19
 
