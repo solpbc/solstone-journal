@@ -9,6 +9,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_segment::{list_days, lookup_stream_state};
 
 use crate::health::day_read_reason;
@@ -23,50 +24,59 @@ pub async fn ingest_manifest(
     headers: HeaderMap,
     Query(query): Query<SourceQuery>,
 ) -> Response {
-    let context = match listing_context(&state, &basis, &headers, &query) {
-        Ok(value) => value,
-        Err((code, status, detail)) => return refusal(code, status, detail),
-    };
-    let days = match list_days(&state.journal_root) {
-        Ok(days) => days
-            .into_iter()
-            .map(|(day, _)| day)
-            .collect::<BTreeSet<_>>(),
-        Err(_) => {
-            return refusal(
-                ReasonCode::JournalReadFailed,
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "cannot read journal",
-            );
-        }
-    };
-    let mut result = Map::new();
-    for day in days {
-        let listing = match day_listing(
-            &state,
-            &context.cid,
-            &context.source,
-            context.native_stream.as_deref(),
-            &day,
-        ) {
-            Ok(listing) => listing,
-            Err(error) => {
-                // A device told this refuses the whole day and reports itself offline,
-                // so the journal says so too; nothing else on this side records it.
-                let reason = day_read_reason(error);
-                log::warn!(
-                    "device_manifest_day_unreadable day={day} reason={}",
-                    reason.as_str()
+    // Every day in the journal, every segment directory under it, every
+    // `events.jsonl` and a stat per written file — and the device runs this at
+    // the head of every sync cycle. Convey's two async workers also carry the
+    // carrier driver that answers this device's keepalive PING, so the fold
+    // belongs on the blocking pool. `listing_context` comes with it: the access
+    // check is pure, but resolving the stream binding reads the registry.
+    spawn_blocking_response(OwnerReadRole::DeviceIngestManifest, move || {
+        let context = match listing_context(&state, &basis, &headers, &query) {
+            Ok(value) => value,
+            Err((code, status, detail)) => return refusal(code, status, detail),
+        };
+        let days = match list_days(&state.journal_root) {
+            Ok(days) => days
+                .into_iter()
+                .map(|(day, _)| day)
+                .collect::<BTreeSet<_>>(),
+            Err(_) => {
+                return refusal(
+                    ReasonCode::JournalReadFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot read journal",
                 );
-                result.insert(day, json!({"error": reason.as_str()}));
-                continue;
             }
         };
-        if !listing.segments.is_empty() {
-            result.insert(day, json!({"segments": listing.segments.len()}));
+        let mut result = Map::new();
+        for day in days {
+            let listing = match day_listing(
+                &state,
+                &context.cid,
+                &context.source,
+                context.native_stream.as_deref(),
+                &day,
+            ) {
+                Ok(listing) => listing,
+                Err(error) => {
+                    // A device told this refuses the whole day and reports itself offline,
+                    // so the journal says so too; nothing else on this side records it.
+                    let reason = day_read_reason(error);
+                    log::warn!(
+                        "device_manifest_day_unreadable day={day} reason={}",
+                        reason.as_str()
+                    );
+                    result.insert(day, json!({"error": reason.as_str()}));
+                    continue;
+                }
+            };
+            if !listing.segments.is_empty() {
+                result.insert(day, json!({"segments": listing.segments.len()}));
+            }
         }
-    }
-    Json(json!({"days": result})).into_response()
+        Json(json!({"days": result})).into_response()
+    })
+    .await
 }
 
 pub async fn ingest_manifest_day(
@@ -76,29 +86,32 @@ pub async fn ingest_manifest_day(
     Path(day): Path<String>,
     Query(query): Query<SourceQuery>,
 ) -> Response {
-    let context = match listing_context(&state, &basis, &headers, &query) {
-        Ok(value) => value,
-        Err((code, status, detail)) => return refusal(code, status, detail),
-    };
     if let Err(code) = validate_day(&day) {
         return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
     }
-    let listing = match day_listing(
-        &state,
-        &context.cid,
-        &context.source,
-        context.native_stream.as_deref(),
-        &day,
-    ) {
-        Ok(listing) => listing,
-        Err(error) => return day_refusal(&day, error),
-    };
-    let segments = listing
-        .segments
-        .into_iter()
-        .map(|segment| (segment.key, json!({"files": files_value(&segment.files)})))
-        .collect::<Map<_, _>>();
-    Json(json!({"version": 1, "day": day, "segments": segments})).into_response()
+    spawn_blocking_response(OwnerReadRole::DeviceIngestManifestDay, move || {
+        let context = match listing_context(&state, &basis, &headers, &query) {
+            Ok(value) => value,
+            Err((code, status, detail)) => return refusal(code, status, detail),
+        };
+        let listing = match day_listing(
+            &state,
+            &context.cid,
+            &context.source,
+            context.native_stream.as_deref(),
+            &day,
+        ) {
+            Ok(listing) => listing,
+            Err(error) => return day_refusal(&day, error),
+        };
+        let segments = listing
+            .segments
+            .into_iter()
+            .map(|segment| (segment.key, json!({"files": files_value(&segment.files)})))
+            .collect::<Map<_, _>>();
+        Json(json!({"version": 1, "day": day, "segments": segments})).into_response()
+    })
+    .await
 }
 
 pub async fn ingest_segments(
@@ -108,41 +121,44 @@ pub async fn ingest_segments(
     Path(day): Path<String>,
     Query(query): Query<SourceQuery>,
 ) -> Response {
-    let context = match listing_context(&state, &basis, &headers, &query) {
-        Ok(value) => value,
-        Err((code, status, detail)) => return refusal(code, status, detail),
-    };
     if let Err(code) = validate_day(&day) {
         return refusal(code, StatusCode::BAD_REQUEST, "invalid day");
     }
-    let listing = match day_listing(
-        &state,
-        &context.cid,
-        &context.source,
-        context.native_stream.as_deref(),
-        &day,
-    ) {
-        Ok(listing) => listing,
-        Err(error) => return day_refusal(&day, error),
-    };
-    let items = listing
-        .segments
-        .iter()
-        .map(|segment| {
-            let mut item = Map::new();
-            item.insert("key".to_owned(), Value::String(segment.key.clone()));
-            item.insert("observed".to_owned(), Value::Bool(segment.observed));
-            item.insert("files".to_owned(), files_value(&segment.files));
-            if let Some(original_key) = &segment.original_key {
-                item.insert(
-                    "original_key".to_owned(),
-                    Value::String(original_key.clone()),
-                );
-            }
-            Value::Object(item)
-        })
-        .collect::<Vec<_>>();
-    Json(json!({"protocol_version": 3, "total": items.len(), "items": items})).into_response()
+    spawn_blocking_response(OwnerReadRole::DeviceIngestSegments, move || {
+        let context = match listing_context(&state, &basis, &headers, &query) {
+            Ok(value) => value,
+            Err((code, status, detail)) => return refusal(code, status, detail),
+        };
+        let listing = match day_listing(
+            &state,
+            &context.cid,
+            &context.source,
+            context.native_stream.as_deref(),
+            &day,
+        ) {
+            Ok(listing) => listing,
+            Err(error) => return day_refusal(&day, error),
+        };
+        let items = listing
+            .segments
+            .iter()
+            .map(|segment| {
+                let mut item = Map::new();
+                item.insert("key".to_owned(), Value::String(segment.key.clone()));
+                item.insert("observed".to_owned(), Value::Bool(segment.observed));
+                item.insert("files".to_owned(), files_value(&segment.files));
+                if let Some(original_key) = &segment.original_key {
+                    item.insert(
+                        "original_key".to_owned(),
+                        Value::String(original_key.clone()),
+                    );
+                }
+                Value::Object(item)
+            })
+            .collect::<Vec<_>>();
+        Json(json!({"protocol_version": 3, "total": items.len(), "items": items})).into_response()
+    })
+    .await
 }
 
 #[derive(Debug)]

@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- a large upload from a device could fail over and over on a connection that was working fine. while saving an upload, or listing what a device already had, your journal went quiet on that connection, and the device treated the silence as a dropped connection and started the upload again. your journal now stays responsive while that work runs.
+
 ## [2.0.11] - 2026-09-20
 
 ### Added

@@ -2413,6 +2413,20 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-convey-shell::device_route_isolation"
+package = "solstone-core-convey-shell"
+target = "device_route_isolation"
+set = "component"
+areas = ["ingest", "services"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "local-services"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-convey-shell::profile_routes"
 package = "solstone-core-convey-shell"
 target = "profile_routes"

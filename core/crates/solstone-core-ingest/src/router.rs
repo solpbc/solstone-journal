@@ -19,6 +19,7 @@ use solstone_core_callosum::{
 };
 use solstone_core_convey_http::envelope::{error_envelope, not_found_fallback};
 use solstone_core_convey_http::identity::AccessBasis;
+use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use solstone_core_ingest_contract::{CONNECTION_BODY_LIMIT, MAX_PART_BYTES};
 use solstone_core_ingest_resolve::{
     AppliedDisposition, AppliedFile, ApplyError, ApplyResult, ConflictPlan, FailedPlan, IngestFile,
@@ -177,24 +178,45 @@ async fn ingest_upload(
 ) -> Response {
     let cid = match validate_access(&basis) {
         Ok(cid) => cid,
+        // The only arm that touches nothing: no ledger write, so it may answer
+        // from the async worker.
         Err((code, status, detail)) => return refusal(code, status, detail),
     };
-    if let Err((code, status, detail)) = validate_protocol(request.headers()) {
-        return refusal_with_activity(&state, &cid, code, status, detail);
-    }
-    let parsed = match parse_multipart(request).await {
-        Ok(parsed) => parsed,
-        Err((code, detail)) => {
-            return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
-        }
+    let protocol = validate_protocol(request.headers());
+    // Reading the request body is the one part that must stay on the async
+    // worker. Everything after it touches the journal: the durable write takes
+    // the source-mutation lock and writes multiple megabytes, and every refusal
+    // arm below records activity through the authorization ledger, which takes
+    // two nested advisory locks of its own. Convey shares its two async workers
+    // with the carrier driver that answers this very device's keepalive PING,
+    // so none of that may run here.
+    let read = match protocol {
+        Ok(()) => Ok(parse_multipart(request).await),
+        Err(refusal) => Err(refusal),
     };
-    let envelope = match parse_envelope(parsed.envelope, parsed.files) {
-        Ok(envelope) => envelope,
-        Err((code, detail)) => {
-            return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
-        }
-    };
-    write_envelope(&state, &cid, envelope)
+    #[cfg(test)]
+    let carried_hook = carried_before_apply_hook();
+    spawn_blocking_response(OwnerReadRole::DeviceIngestUpload, move || {
+        #[cfg(test)]
+        let _carried_hook = CarriedBeforeApplyHook::install(carried_hook);
+        let parsed = match read {
+            Err((code, status, detail)) => {
+                return refusal_with_activity(&state, &cid, code, status, detail);
+            }
+            Ok(Err((code, detail))) => {
+                return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
+            }
+            Ok(Ok(parsed)) => parsed,
+        };
+        let envelope = match parse_envelope(parsed.envelope, parsed.files) {
+            Ok(envelope) => envelope,
+            Err((code, detail)) => {
+                return refusal_with_activity(&state, &cid, code, StatusCode::BAD_REQUEST, detail);
+            }
+        };
+        write_envelope(&state, &cid, envelope)
+    })
+    .await
 }
 
 struct MultipartInput {
@@ -993,8 +1015,15 @@ fn written_descriptors(applied: &[AppliedFile]) -> Vec<FileDescriptor> {
         .collect()
 }
 
+// The hook stays thread-local: cargo runs these tests in one process, in
+// parallel, and a process-global would let one test's fault fire inside
+// another's upload. It is shared behind an `Arc` rather than owned so the
+// installing thread can hand a handle to the blocking-pool thread that now
+// performs the durable write, without giving it up — a test that drives the
+// route twice still has its hook installed for the second call.
 #[cfg(test)]
-type BeforeApplyHook = Box<dyn FnMut(&solstone_core_ingest_resolve::ApplyPlan)>;
+type BeforeApplyHook =
+    std::sync::Arc<std::sync::Mutex<dyn FnMut(&solstone_core_ingest_resolve::ApplyPlan) + Send>>;
 
 #[cfg(test)]
 thread_local! {
@@ -1003,13 +1032,15 @@ thread_local! {
 }
 
 #[cfg(test)]
-fn set_before_apply_hook(hook: impl FnMut(&solstone_core_ingest_resolve::ApplyPlan) + 'static) {
+fn set_before_apply_hook(
+    hook: impl FnMut(&solstone_core_ingest_resolve::ApplyPlan) + Send + 'static,
+) {
     BEFORE_APPLY_HOOK.with(|slot| {
         assert!(
             slot.borrow().is_none(),
             "test apply hook is already installed"
         );
-        *slot.borrow_mut() = Some(Box::new(hook));
+        *slot.borrow_mut() = Some(std::sync::Arc::new(std::sync::Mutex::new(hook)));
     });
 }
 
@@ -1020,11 +1051,36 @@ fn clear_before_apply_hook() {
 
 #[cfg(test)]
 fn run_before_apply_hook(plan: &solstone_core_ingest_resolve::ApplyPlan) {
-    BEFORE_APPLY_HOOK.with(|slot| {
-        if let Some(hook) = slot.borrow_mut().as_mut() {
-            hook(plan);
-        }
-    });
+    let hook = BEFORE_APPLY_HOOK.with(|slot| slot.borrow().clone());
+    if let Some(hook) = hook {
+        (hook.lock().expect("test apply hook"))(plan);
+    }
+}
+
+/// A handle to the installed hook, for the thread that will run the write.
+#[cfg(test)]
+fn carried_before_apply_hook() -> Option<BeforeApplyHook> {
+    BEFORE_APPLY_HOOK.with(|slot| slot.borrow().clone())
+}
+
+/// Installs a carried hook for the duration of one blocking task and removes it
+/// again, so a pooled thread never keeps a fault armed for the next task on it.
+#[cfg(test)]
+struct CarriedBeforeApplyHook;
+
+#[cfg(test)]
+impl CarriedBeforeApplyHook {
+    fn install(hook: Option<BeforeApplyHook>) -> Self {
+        BEFORE_APPLY_HOOK.with(|slot| *slot.borrow_mut() = hook);
+        Self
+    }
+}
+
+#[cfg(test)]
+impl Drop for CarriedBeforeApplyHook {
+    fn drop(&mut self) {
+        BEFORE_APPLY_HOOK.with(|slot| *slot.borrow_mut() = None);
+    }
 }
 
 fn resolve_and_apply(

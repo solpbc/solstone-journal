@@ -5,6 +5,14 @@ use axum::body::Body;
 use axum::http::StatusCode;
 use axum::response::Response;
 
+/// One expensive handler that must not run on a Convey async worker.
+///
+/// Convey serves every HTTP handler and `spl-home`'s carrier driver from a
+/// single two-worker Tokio runtime, and that driver is the only task that can
+/// answer a paired device's keepalive PING or emit a WINDOW grant. Any handler
+/// that folds the journal therefore runs on the blocking pool, whoever asked
+/// for it: the owner's own browser reads and the paired device's sync routes
+/// share one runtime and one hazard.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum OwnerReadRole {
     SpeakersIndex,
@@ -52,6 +60,10 @@ pub enum OwnerReadRole {
     HomeBriefing,
     BackupStatus,
     BackupOffloadStatus,
+    DeviceIngestUpload,
+    DeviceIngestManifest,
+    DeviceIngestManifestDay,
+    DeviceIngestSegments,
 }
 
 impl OwnerReadRole {
@@ -101,6 +113,16 @@ impl OwnerReadRole {
         Self::HomeBriefing,
         Self::BackupStatus,
         Self::BackupOffloadStatus,
+    ];
+
+    /// The paired-device sync roles. Kept separate from [`Self::ALL`] because
+    /// they refuse without a linked-device basis and a protocol header, so a
+    /// probe that reaches an owner route does not reach these.
+    pub const DEVICE_SYNC: &'static [Self] = &[
+        Self::DeviceIngestUpload,
+        Self::DeviceIngestManifest,
+        Self::DeviceIngestManifestDay,
+        Self::DeviceIngestSegments,
     ];
 
     pub fn probe_uri(&self) -> &'static str {
@@ -158,6 +180,10 @@ impl OwnerReadRole {
             Self::HomeBriefing => "/app/home/api/briefing",
             Self::BackupStatus => "/app/backup/status",
             Self::BackupOffloadStatus => "/app/backup/offload/status",
+            Self::DeviceIngestUpload => "/app/devices/ingest",
+            Self::DeviceIngestManifest => "/app/devices/ingest/manifest",
+            Self::DeviceIngestManifestDay => "/app/devices/ingest/manifest/20260901",
+            Self::DeviceIngestSegments => "/app/devices/ingest/segments/20260901",
         }
     }
 }
