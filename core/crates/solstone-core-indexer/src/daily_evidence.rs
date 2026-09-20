@@ -523,6 +523,63 @@ pub fn digest(value: &Value) -> String {
     )
 }
 
+/// One day's source projection, captured at most once and shared by the units of a
+/// single coverage read.
+///
+/// A day has dozens of daily units and all but a few derive their revision from the
+/// same whole-day projection; capturing it per unit walks and re-hashes the day dozens
+/// of times. The cache belongs to the caller of one read and is never global or shared
+/// across threads, so every unit sees the day exactly as that one read captured it.
+pub struct DayProjectionCache {
+    journal: PathBuf,
+    day: String,
+    /// Only the source list is kept: the chunk text of a projection is large and no unit needs it.
+    sources: Option<Result<Vec<SourceEvidence>, String>>,
+    captures: u32,
+    requests: u32,
+}
+
+impl DayProjectionCache {
+    pub fn new(journal: &Path, day: &str) -> Self {
+        Self {
+            journal: journal.to_path_buf(),
+            day: day.to_owned(),
+            sources: None,
+            captures: 0,
+            requests: 0,
+        }
+    }
+
+    /// Whole-day captures made on behalf of this cache's computations, including any
+    /// made directly because a call did not match the cache's journal and day.
+    #[doc(hidden)]
+    pub fn captures(&self) -> u32 {
+        self.captures
+    }
+
+    /// Times a computation asked this cache for the day's sources.
+    #[doc(hidden)]
+    pub fn requests(&self) -> u32 {
+        self.requests
+    }
+
+    fn sources(&mut self) -> Result<Vec<SourceEvidence>, String> {
+        self.requests += 1;
+        if self.sources.is_none() {
+            self.captures += 1;
+            self.sources = Some(
+                capture_day_projection(&self.journal, &self.day)
+                    .map(|projection| projection.sources),
+            );
+        }
+        match self.sources.as_ref() {
+            Some(Ok(sources)) => Ok(sources.clone()),
+            Some(Err(error)) => Err(error.clone()),
+            None => unreachable!("captured above"),
+        }
+    }
+}
+
 pub fn compute_daily_evidence_revision(
     journal: &Path,
     day: &str,
@@ -531,6 +588,33 @@ pub fn compute_daily_evidence_revision(
     body: &str,
     facet: Option<&str>,
     overrides: Option<&Map<String, Value>>,
+) -> Result<(String, String), String> {
+    compute_daily_evidence_revision_cached(
+        journal,
+        day,
+        name,
+        metadata,
+        body,
+        facet,
+        overrides,
+        &mut DayProjectionCache::new(journal, day),
+    )
+}
+
+/// `compute_daily_evidence_revision` for a caller that computes several units of the
+/// same day: the day's own sources are captured once through `cache` instead of once
+/// per unit. `cache` must be for this `journal` and `day`; a cache for any other day
+/// is ignored and the day is captured directly, so the result never depends on it.
+#[allow(clippy::too_many_arguments)] // The unit identity and its cache travel together.
+pub fn compute_daily_evidence_revision_cached(
+    journal: &Path,
+    day: &str,
+    name: &str,
+    metadata: &Map<String, Value>,
+    body: &str,
+    facet: Option<&str>,
+    overrides: Option<&Map<String, Value>>,
+    cache: &mut DayProjectionCache,
 ) -> Result<(String, String), String> {
     let contract = compute_contract_digest(journal, name, metadata, body, overrides)?;
     let hook = daily_hook(name, metadata)?;
@@ -583,7 +667,10 @@ pub fn compute_daily_evidence_revision(
                 capture_facet_day_sources(journal, &d, "entities", facet)?.sources
             } else if offset > 0 {
                 capture_facet_day_sources(journal, &d, "activities", None)?.sources
+            } else if cache.journal == journal && cache.day == d {
+                cache.sources()?
             } else {
+                cache.captures += 1;
                 capture_day_projection(journal, &d)?.sources
             });
         }
@@ -1042,5 +1129,254 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    // --- one projection per day, shared by the units of a coverage read ---------
+
+    const DAY: &str = "20260910";
+    const UNITS: [(&str, Option<&str>); 7] = [
+        ("schedule", None),
+        ("facet_newsletter", Some("work")),
+        ("facet_newsletter", Some("home")),
+        ("entities:entity_observer", Some("work")),
+        ("entities:entity_suggest", Some("work")),
+        ("entities:entities_review", Some("work")),
+        ("morning_briefing", None),
+    ];
+
+    /// A day with sources on the day itself, activities on later days (before today) and
+    /// entities inside the review window, so every offset route has data.
+    fn shared_day(name: &str) -> PathBuf {
+        let root = root(name);
+        write(
+            &root,
+            "chronicle/20260910/mic/090000_60/talents/audio.md",
+            "# Named\n\nA useful fact.",
+        );
+        write(
+            &root,
+            "chronicle/20260910/100000_60/_transcript.md",
+            "# Direct\n\nAnother fact.",
+        );
+        let row = |t: &str| {
+            json!({"id":"meeting","source":"user","title":t,"description":"d","start":"09:00:00"})
+                .to_string()
+        };
+        write(
+            &root,
+            "facets/work/activities/20260910.jsonl",
+            &row("Planning"),
+        );
+        write(
+            &root,
+            "facets/home/activities/20260910.jsonl",
+            &row("Chores"),
+        );
+        write(
+            &root,
+            "facets/work/activities/20260911.jsonl",
+            &row("Next day"),
+        );
+        write(
+            &root,
+            "facets/work/activities/20260913.jsonl",
+            &row("Three days later"),
+        );
+        write(
+            &root,
+            "facets/work/entities/20260909.jsonl",
+            "{\"name\":\"Alice\",\"description\":\"Engineer\"}\n",
+        );
+        write(
+            &root,
+            "facets/work/entities/20260904.jsonl",
+            "{\"name\":\"Bob\",\"description\":\"Designer\"}\n",
+        );
+        root
+    }
+
+    fn unit_metadata(name: &str) -> Map<String, Value> {
+        let hook = match name {
+            "schedule" => json!({"post":name}),
+            "morning_briefing" => json!({"pre":name}),
+            _ => json!({"pre":name,"post":name}),
+        };
+        Map::from_iter([("hook".to_owned(), hook)])
+    }
+
+    fn cached(
+        root: &Path,
+        day: &str,
+        name: &str,
+        facet: Option<&str>,
+        cache: &mut DayProjectionCache,
+    ) -> Result<(String, String), String> {
+        compute_daily_evidence_revision_cached(
+            root,
+            day,
+            name,
+            &unit_metadata(name),
+            "prompt",
+            facet,
+            None,
+            cache,
+        )
+    }
+
+    fn uncached(
+        root: &Path,
+        day: &str,
+        name: &str,
+        facet: Option<&str>,
+    ) -> Result<(String, String), String> {
+        compute_daily_evidence_revision(
+            root,
+            day,
+            name,
+            &unit_metadata(name),
+            "prompt",
+            facet,
+            None,
+        )
+    }
+
+    #[test]
+    fn shared_projection_gives_every_unit_the_revision_it_computed_alone_from_one_capture() {
+        let root = shared_day("daily-shared-projection");
+        let mut cache = DayProjectionCache::new(&root, DAY);
+        let mut revisions = std::collections::BTreeSet::new();
+        for (name, facet) in UNITS {
+            let shared = cached(&root, DAY, name, facet, &mut cache).unwrap();
+            assert_eq!(
+                shared,
+                uncached(&root, DAY, name, facet).unwrap(),
+                "{name} {facet:?}"
+            );
+            revisions.insert(shared.0);
+        }
+        assert_eq!(
+            revisions.len(),
+            UNITS.len(),
+            "the fixture must tell the units apart"
+        );
+        // Every unit but the review reads the day's own projection; the review reads facet entities.
+        let projecting = UNITS
+            .iter()
+            .filter(|(name, _)| *name != "entities:entities_review")
+            .count();
+        assert_eq!(cache.requests() as usize, projecting);
+        assert_eq!(
+            cache.captures(),
+            1,
+            "the day is captured once, not once per unit"
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_new_cache_sees_a_changed_source_exactly_as_an_uncached_computation_does() {
+        let root = shared_day("daily-shared-projection-fresh");
+        let first = cached(
+            &root,
+            DAY,
+            "facet_newsletter",
+            Some("work"),
+            &mut DayProjectionCache::new(&root, DAY),
+        )
+        .unwrap();
+        write(
+            &root,
+            "chronicle/20260910/100000_60/_transcript.md",
+            "# Direct\n\nA changed fact.",
+        );
+        let second = cached(
+            &root,
+            DAY,
+            "facet_newsletter",
+            Some("work"),
+            &mut DayProjectionCache::new(&root, DAY),
+        )
+        .unwrap();
+        assert_ne!(first, second);
+        assert_eq!(
+            second,
+            uncached(&root, DAY, "facet_newsletter", Some("work")).unwrap()
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn units_that_never_read_the_projection_never_capture_it_or_see_its_failure() {
+        let root = shared_day("daily-shared-projection-lazy");
+        let mut cache = DayProjectionCache::new(&root, DAY);
+        cached(
+            &root,
+            DAY,
+            "entities:entities_review",
+            Some("work"),
+            &mut cache,
+        )
+        .unwrap();
+        assert_eq!((cache.captures(), cache.requests()), (0, 0));
+        // A source that makes the whole-day projection fail.
+        write(&root, "facets/work/activities/20260910.jsonl", "not json");
+        let failure = capture_day_projection(&root, DAY).unwrap_err();
+        let mut cache = DayProjectionCache::new(&root, DAY);
+        assert_eq!(
+            cached(
+                &root,
+                DAY,
+                "entities:entities_review",
+                Some("work"),
+                &mut cache
+            ),
+            uncached(&root, DAY, "entities:entities_review", Some("work")),
+        );
+        assert!(
+            cached(
+                &root,
+                DAY,
+                "entities:entities_review",
+                Some("work"),
+                &mut cache
+            )
+            .is_ok()
+        );
+        assert_eq!((cache.captures(), cache.requests()), (0, 0));
+        // A unit that does read the projection gets the same error as its own capture.
+        assert_eq!(
+            cached(&root, DAY, "facet_newsletter", Some("work"), &mut cache).unwrap_err(),
+            failure
+        );
+        assert_eq!(
+            cached(&root, DAY, "schedule", None, &mut cache).unwrap_err(),
+            failure
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_cache_for_another_day_or_journal_never_supplies_the_result() {
+        let root = shared_day("daily-shared-projection-wrong-day");
+        let other = shared_day("daily-shared-projection-other-journal");
+        write(
+            &other,
+            "chronicle/20260910/100000_60/_transcript.md",
+            "# Direct\n\nDifferent.",
+        );
+        let expected = uncached(&root, DAY, "facet_newsletter", Some("work")).unwrap();
+        for mut cache in [
+            DayProjectionCache::new(&root, "20260909"),
+            DayProjectionCache::new(&other, DAY),
+        ] {
+            assert_eq!(
+                cached(&root, DAY, "facet_newsletter", Some("work"), &mut cache).unwrap(),
+                expected
+            );
+            assert_eq!(cache.requests(), 0, "a mismatched cache is never asked");
+            assert_eq!(cache.captures(), 1, "the direct capture is counted");
+        }
+        fs::remove_dir_all(root).unwrap();
+        fs::remove_dir_all(other).unwrap();
     }
 }

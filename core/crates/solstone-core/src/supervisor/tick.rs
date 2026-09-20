@@ -50,6 +50,9 @@ use super::runtime::{
 const MAX_INBOUND_PER_TICK: usize = 256;
 const FLUSH_TIMEOUT: Duration = Duration::from_secs(3600);
 pub(crate) const RETRY_EXPIRY_INTERVAL: Duration = Duration::from_secs(60);
+/// A retry-expiry drain runs on the tick loop's own thread; one this long is worth a log
+/// line. Well above a healthy pass and well below the ~60 s at which the old throttle re-fired.
+const SLOW_RETRY_EXPIRY_DRAIN: Duration = Duration::from_secs(30);
 
 struct AppProcessSample {
     service: AppService,
@@ -392,7 +395,7 @@ pub(crate) async fn run(
             if daily_drain {
                 // The rollover drain has just considered the same state; do
                 // not immediately replay it through the retry-expiry path.
-                state.last_retry_expiry_drain = tick;
+                state.last_retry_expiry_drain = scan_finished(tick);
             } else if let Err(error) = handle_retry_expiry_drain(
                 state.is_remote_mode,
                 processing_is_deferred(&state.journal),
@@ -598,18 +601,50 @@ fn handle_retry_expiry_drain(
     tick: Instant,
     now: SystemTime,
 ) -> Result<(), CatchupError> {
+    retry_expiry_drain_with(is_remote, is_deferred, last_drain, today, tick, |exclude| {
+        // A bounded persisted reconciliation also discovers derived-only edits and lost
+        // notifications. The ordinary selector still applies pacing, current-day exclusion,
+        // and the four-day cap.
+        run_catchup_drain(journal, queue, exclude, &[], now)
+    })
+}
+
+/// The retry-expiry gate and throttle around one catch-up scan. The throttle runs from when
+/// the scan finished, on success or failure: a scan as long as the interval must not be
+/// followed at once by another that re-reads the same days.
+fn retry_expiry_drain_with(
+    is_remote: bool,
+    is_deferred: bool,
+    last_drain: &mut Instant,
+    today: chrono::NaiveDate,
+    tick: Instant,
+    scan: impl FnOnce(&BTreeSet<String>) -> Result<(), CatchupError>,
+) -> Result<(), CatchupError> {
     if is_remote || is_deferred {
         return Ok(());
     }
     if tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL {
         return Ok(());
     }
-    *last_drain = tick;
     let exclude = BTreeSet::from([today.format("%Y%m%d").to_string()]);
-    // A bounded persisted reconciliation also discovers derived-only edits and lost notifications.
-    // The ordinary selector still applies pacing, current-day exclusion, and the four-day cap.
-    run_catchup_drain(journal, queue, &exclude, &[], now)?;
-    Ok(())
+    let started = Instant::now();
+    let scanned = scan(&exclude);
+    *last_drain = scan_finished(tick);
+    let took = started.elapsed();
+    if took >= SLOW_RETRY_EXPIRY_DRAIN {
+        log::warn!(
+            "supervisor: retry-expiry catchup drain blocked the tick for {:.1}s",
+            took.as_secs_f64()
+        );
+    }
+    scanned
+}
+
+/// The instant a catch-up scan that began at `tick` counts as having finished, for throttling.
+/// `tick` is the loop-top instant, so a scan that took time ends later; a `tick` already in
+/// the future (a synthetic tick) is kept.
+fn scan_finished(tick: Instant) -> Instant {
+    tick.max(Instant::now())
 }
 
 /// Reconcile durable crash leftovers, then make one normal automatic pass
@@ -2563,6 +2598,146 @@ mod tests {
         )
         .expect("throttled retry tick");
         assert_eq!(pending(&queue), 1, "the same window must not replay");
+    }
+
+    #[test]
+    fn scan_finished_moves_a_past_tick_forward_and_keeps_a_future_one() {
+        let past = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let before = Instant::now();
+        assert!(
+            scan_finished(past) >= before,
+            "a scan that took time ends later"
+        );
+        let future = Instant::now() + Duration::from_secs(30);
+        assert_eq!(scan_finished(future), future, "a synthetic tick is kept");
+    }
+
+    #[test]
+    fn retry_expiry_throttle_restarts_when_the_scan_finishes_not_when_it_starts() {
+        let bed = Bed::new("retry-expiry-finish");
+        bed.enable_thinking();
+        bed.updated_day("20260101");
+        fs::create_dir_all(bed.root.join("health")).expect("health directory");
+        fs::write(
+            bed.root.join("health/catchup-state.json"),
+            serde_json::to_vec(&json!({
+                "version": 1,
+                "entries": {
+                    "20260101:daily-catchup": {
+                        "day": "20260101",
+                        "command_kind": "daily-catchup",
+                        "active": null,
+                        "next_retry_at": wall_time(3, 10).duration_since(UNIX_EPOCH).unwrap().as_secs_f64(),
+                    },
+                },
+            }))
+            .expect("retry state"),
+        )
+        .expect("write retry state");
+        let queue = queue(&bed.root);
+        // The loop-top instant is already in the past when the scan starts.
+        let tick = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let mut last_drain = tick
+            .checked_sub(RETRY_EXPIRY_INTERVAL)
+            .expect("host uptime exceeds the interval");
+        let before = Instant::now();
+        handle_retry_expiry_drain(
+            false,
+            false,
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(3),
+            tick,
+            wall_time(3, 10),
+        )
+        .expect("drain");
+        let after = Instant::now();
+        assert_eq!(pending(&queue), 1, "the drain ran");
+        assert!(
+            before <= last_drain && last_drain <= after,
+            "the marker is stamped by the handler, from the scan and not from the tick or a later time"
+        );
+    }
+
+    #[test]
+    fn retry_expiry_throttle_restarts_when_the_scan_fails_too() {
+        let bed = Bed::new("retry-expiry-failure");
+        bed.enable_thinking();
+        // With a thinking engine chosen the scan creates its health directory first; a file
+        // where the directory belongs makes it fail after the drain has begun.
+        fs::write(bed.root.join("health"), b"not a directory").expect("block health directory");
+        let queue = queue(&bed.root);
+        let tick = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let mut last_drain = tick
+            .checked_sub(RETRY_EXPIRY_INTERVAL)
+            .expect("host uptime exceeds the interval");
+        let before = Instant::now();
+        let outcome = handle_retry_expiry_drain(
+            false,
+            false,
+            &bed.root,
+            &queue,
+            &mut last_drain,
+            date(3),
+            tick,
+            wall_time(3, 10),
+        );
+        let after = Instant::now();
+        assert!(outcome.is_err(), "the fixture must make the scan fail");
+        assert!(
+            before <= last_drain && last_drain <= after,
+            "a failed scan is stamped too, from the scan and not from the tick or a later time"
+        );
+    }
+
+    #[test]
+    fn a_scan_that_takes_time_starts_the_throttle_from_its_end_whether_it_succeeds_or_fails() {
+        for succeeds in [true, false] {
+            let tick = Instant::now()
+                .checked_sub(Duration::from_secs(5))
+                .expect("host uptime exceeds five seconds");
+            let mut last_drain = tick
+                .checked_sub(RETRY_EXPIRY_INTERVAL)
+                .expect("host uptime exceeds the interval");
+            let mut scan_ended = None;
+            let mut scans = 0;
+            let outcome =
+                retry_expiry_drain_with(false, false, &mut last_drain, date(3), tick, |_| {
+                    scans += 1;
+                    std::thread::sleep(Duration::from_millis(20));
+                    scan_ended = Some(Instant::now());
+                    if succeeds {
+                        Ok(())
+                    } else {
+                        Err(CatchupError::State("scripted".to_owned()))
+                    }
+                });
+            let after = Instant::now();
+            assert_eq!(scans, 1);
+            assert_eq!(outcome.is_ok(), succeeds);
+            let scan_ended = scan_ended.expect("the scan ran");
+            assert!(
+                scan_ended <= last_drain && last_drain <= after,
+                "the marker is the scan's end (succeeds: {succeeds}), not its start, the tick or a later time"
+            );
+            // A tick just short of an interval after the scan's END is throttled. Measured from
+            // a stamp taken when the scan started it would already scan, so this pins the end.
+            let next_tick = scan_ended + RETRY_EXPIRY_INTERVAL - Duration::from_millis(5);
+            let mut again = 0;
+            retry_expiry_drain_with(false, false, &mut last_drain, date(3), next_tick, |_| {
+                again += 1;
+                Ok(())
+            })
+            .expect("throttled");
+            assert_eq!(again, 0, "throttled until an interval after the scan's end");
+        }
     }
 
     #[test]

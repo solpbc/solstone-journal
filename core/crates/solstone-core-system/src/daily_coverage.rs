@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use solstone_core_indexer::daily_evidence::DayProjectionCache;
 use solstone_core_journal_io::{DailyUnitIdentity, DailyUnitStatus, load_daily_unit_record};
 use solstone_core_talent_config::{
     TalentConfig, TalentFilter, load_talent_configs, read_talent_overrides,
@@ -120,6 +121,23 @@ pub fn read_daily_coverage_with_roots(
     talent: &Path,
     apps: &Path,
 ) -> Result<DailyCoverage, String> {
+    read_daily_coverage_with_cache(
+        journal,
+        day,
+        talent,
+        apps,
+        &mut DayProjectionCache::new(journal, day),
+    )
+}
+
+/// One coverage read of `day`, sharing one whole-day source projection across its units.
+fn read_daily_coverage_with_cache(
+    journal: &Path,
+    day: &str,
+    talent: &Path,
+    apps: &Path,
+    cache: &mut DayProjectionCache,
+) -> Result<DailyCoverage, String> {
     let configs = daily_configs(journal, talent, apps)?;
     let facets =
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?;
@@ -154,10 +172,18 @@ pub fn read_daily_coverage_with_roots(
                 {
                     continue;
                 }
-                units.push(read_unit_coverage(journal, day, &config, Some(facet))?);
+                units.push(read_unit_coverage_cached(
+                    journal,
+                    day,
+                    &config,
+                    Some(facet),
+                    cache,
+                )?);
             }
         } else {
-            units.push(read_unit_coverage(journal, day, &config, None)?);
+            units.push(read_unit_coverage_cached(
+                journal, day, &config, None, cache,
+            )?);
         }
     }
     let state = if units.iter().any(|u| u.state == CoverageState::Unreadable) {
@@ -192,8 +218,24 @@ pub fn read_unit_coverage(
     config: &TalentConfig,
     facet: Option<&str>,
 ) -> Result<UnitCoverage, String> {
+    read_unit_coverage_cached(
+        journal,
+        day,
+        config,
+        facet,
+        &mut DayProjectionCache::new(journal, day),
+    )
+}
+
+fn read_unit_coverage_cached(
+    journal: &Path,
+    day: &str,
+    config: &TalentConfig,
+    facet: Option<&str>,
+    cache: &mut DayProjectionCache,
+) -> Result<UnitCoverage, String> {
     let identity = DailyUnitIdentity::new(day, &config.key, facet.map(str::to_owned));
-    let revision = solstone_core_indexer::daily_evidence::compute_daily_evidence_revision(
+    let revision = solstone_core_indexer::daily_evidence::compute_daily_evidence_revision_cached(
         journal,
         day,
         &config.key,
@@ -201,6 +243,7 @@ pub fn read_unit_coverage(
         &config.body,
         facet,
         None,
+        cache,
     );
     let (e, contract) = match revision {
         Ok(revision) => revision,
@@ -856,5 +899,66 @@ mod tests {
             .unwrap();
         assert_eq!(review.state, CoverageState::Outstanding);
         assert!(!review.state.is_current());
+    }
+
+    #[test]
+    fn a_coverage_read_captures_the_day_once_for_all_of_its_units() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        let day = "20260910";
+        let frontmatter = |kind: &str, extra: &str| {
+            format!(
+                "{{\n\"type\":\"generate\",\"output\":\"md\",\"schedule\":\"daily\",\"priority\":20,{extra}\"hook\":{kind}\n}}\nBody."
+            )
+        };
+        fs::write(
+            talent.join("facet_newsletter.md"),
+            frontmatter(
+                "{\"pre\":\"facet_newsletter\",\"post\":\"facet_newsletter\"}",
+                "\"multi_facet\":true,",
+            ),
+        )
+        .unwrap();
+        fs::write(
+            talent.join("morning_briefing.md"),
+            frontmatter("{\"pre\":\"morning_briefing\"}", ""),
+        )
+        .unwrap();
+        source(root, day, "# Flow\nMeeting at ten.");
+        // Two declared facets, both active on the day.
+        for facet in ["work", "home"] {
+            let dir = root.join("facets").join(facet);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(dir.join("facet.json"), "{\"title\":\"Facet\"}").unwrap();
+        }
+        let segment = root.join(format!("chronicle/{day}/mic/090000_60/talents"));
+        fs::create_dir_all(&segment).unwrap();
+        fs::write(
+            segment.join("facets.json"),
+            "[{\"facet\":\"work\"},{\"facet\":\"home\"}]",
+        )
+        .unwrap();
+
+        let mut cache = DayProjectionCache::new(root, day);
+        let mut shared =
+            read_daily_coverage_with_cache(root, day, &talent, &apps, &mut cache).unwrap();
+        // schedule + morning_briefing + one facet_newsletter per active facet, through both call sites.
+        assert_eq!(shared.units.len(), 4, "{:?}", shared.units);
+        assert_eq!(
+            cache.captures(),
+            1,
+            "the day is captured once for all units"
+        );
+        assert_eq!(
+            cache.requests() as usize,
+            shared.units.len(),
+            "no unit bypassed the cache"
+        );
+
+        // Same coverage as a plain read (which builds its own cache), apart from the read time.
+        let mut plain = read_daily_coverage_with_roots(root, day, &talent, &apps).unwrap();
+        shared.as_of_ms = 0;
+        plain.as_of_ms = 0;
+        assert_eq!(format!("{shared:?}"), format!("{plain:?}"));
     }
 }
