@@ -3,6 +3,7 @@
 
 use solstone_core_journal_io::durability::{ArtifactId, DurableRead, read_json_durable};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
 use chrono::{DateTime, Local, Utc};
 use serde::{Deserialize, Serialize};
@@ -110,6 +111,35 @@ pub fn daily_configs(
     )
 }
 
+/// Orders whole-day coverage reads within this process: at most one runs at a time.
+///
+/// A coverage read is the heaviest allocation and free churn the supervisor does, and
+/// each of the three known allocator aborts had two of them overlapping (the tick
+/// thread's catch-up drain and a queue worker's completion check). The lock guards no
+/// data; it only orders reads, so a poisoned lock is recovered.
+///
+/// It is a leaf lock. Nothing is acquired while it is held, so a holder never waits for
+/// another lock. It is taken while holding the catch-up ledger lock (startup
+/// reconciliation), and it must never be held while taking the ledger, adoption or
+/// queue-state locks. The acquire blocks with no timeout: callers read an `Err` from a
+/// coverage read as "not complete", so a timeout would record a finished catch-up as a
+/// failed one.
+static COVERAGE_READ: Mutex<()> = Mutex::new(());
+
+/// Takes `lock` for one coverage read of `day`. A read that finds another in flight says
+/// so before it waits, outside the lock, so a holder that never lets go shows as waiters'
+/// lines. A poisoned lock is taken over: it guards nothing.
+fn acquire_coverage_read<'a>(lock: &'a Mutex<()>, day: &str) -> MutexGuard<'a, ()> {
+    match lock.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+        Err(TryLockError::WouldBlock) => {
+            eprintln!("coverage read of {day} is waiting behind another coverage read");
+            lock.lock().unwrap_or_else(PoisonError::into_inner)
+        }
+    }
+}
+
 pub fn read_daily_coverage(journal: &Path, day: &str) -> Result<DailyCoverage, String> {
     let (talent, apps) = package_roots()?;
     read_daily_coverage_with_roots(journal, day, &talent, &apps)
@@ -138,6 +168,10 @@ fn read_daily_coverage_with_cache(
     apps: &Path,
     cache: &mut DayProjectionCache,
 ) -> Result<DailyCoverage, String> {
+    // Held for the whole read, and taken before any of its work. `read_unit_coverage`
+    // is deliberately not guarded: the maintenance unit calls it from in here and the
+    // lock is not reentrant.
+    let _one_read_at_a_time = acquire_coverage_read(&COVERAGE_READ, day);
     let configs = daily_configs(journal, talent, apps)?;
     let facets =
         solstone_core_facets::list_declared_facet_names(journal).map_err(|e| e.to_string())?;
@@ -589,6 +623,9 @@ mod tests {
     use super::*;
     use solstone_core_journal_io::{AcceptedDailyResult, DailyUnitRecord, save_daily_unit_record};
     use std::fs;
+    use std::sync::mpsc::{self, RecvTimeoutError};
+    use std::thread;
+    use std::time::{Duration, Instant};
 
     fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let dir = tempfile::tempdir().unwrap();
@@ -960,5 +997,162 @@ mod tests {
         shared.as_of_ms = 0;
         plain.as_of_ms = 0;
         assert_eq!(format!("{shared:?}"), format!("{plain:?}"));
+    }
+
+    // --- whole-day coverage reads are mutually exclusive within a process ------------
+
+    /// Long enough that a read which is merely slow is never mistaken for a hung one.
+    const GENEROUS: Duration = Duration::from_secs(60);
+
+    type Read = Result<DailyCoverage, String>;
+
+    fn read_on_a_thread(root: &Path, talent: &Path, apps: &Path) -> mpsc::Receiver<Read> {
+        let (sender, receiver) = mpsc::channel();
+        let (root, talent, apps) = (root.to_owned(), talent.to_owned(), apps.to_owned());
+        thread::spawn(move || {
+            let _ = sender.send(read_daily_coverage_with_roots(
+                &root, "20260910", &talent, &apps,
+            ));
+        });
+        receiver
+    }
+
+    /// The same coverage, apart from when it was read.
+    fn assert_same_coverage(mut first: DailyCoverage, mut second: DailyCoverage) {
+        first.as_of_ms = 0;
+        second.as_of_ms = 0;
+        assert_eq!(first, second);
+    }
+
+    #[test]
+    fn acquiring_a_poisoned_lock_takes_it_over_instead_of_panicking() {
+        let lock = Mutex::new(());
+        thread::scope(|scope| {
+            let poisoner = thread::Builder::new()
+                .name("intentional-poison-of-a-private-lock".to_owned())
+                .spawn_scoped(scope, || {
+                    let _held = lock.lock().unwrap();
+                    panic!("intentional: poisoning a private lock for the test");
+                })
+                .unwrap();
+            assert!(poisoner.join().is_err());
+        });
+        assert!(lock.is_poisoned(), "the fixture must poison the lock");
+        drop(acquire_coverage_read(&lock, "20260910"));
+    }
+
+    #[test]
+    fn acquiring_waits_for_a_holder_and_then_takes_the_lock() {
+        let lock = Mutex::new(());
+        // Control: free, it is taken at once.
+        drop(acquire_coverage_read(&lock, "20260910"));
+        let held = lock.lock().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                drop(acquire_coverage_read(&lock, "20260910"));
+                sender.send(()).unwrap();
+            });
+            let early = receiver.recv_timeout(Duration::from_millis(300));
+            drop(held);
+            assert!(
+                matches!(early, Err(RecvTimeoutError::Timeout)),
+                "took the lock while another held it: {early:?}"
+            );
+            receiver
+                .recv_timeout(GENEROUS)
+                .expect("taken once the holder let go");
+        });
+    }
+
+    #[test]
+    fn a_coverage_read_waits_while_another_holds_the_lock_and_then_matches_a_plain_read() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        source(root, "20260910", "# Flow\nMeeting at ten.");
+        // Control: with nothing holding the lock the same read completes, and how long
+        // that took sets how long the held case is given to (wrongly) finish.
+        let started = Instant::now();
+        let control = read_on_a_thread(root, &talent, &apps)
+            .recv_timeout(GENEROUS)
+            .expect("an uncontended read completes")
+            .expect("the fixture reads");
+        let took = started.elapsed();
+        let patience = (took * 4).clamp(Duration::from_millis(300), Duration::from_secs(2));
+        // The wait below must be long against the read itself, or a lockless build would
+        // still be mid-read when it ends and the test would pass on the cap.
+        assert!(
+            took * 2 <= patience,
+            "inconclusive: an uncontended read took {took:?}, too long to prove exclusion"
+        );
+
+        let held = COVERAGE_READ.lock().unwrap_or_else(PoisonError::into_inner);
+        let blocked = read_on_a_thread(root, &talent, &apps);
+        let early = blocked.recv_timeout(patience);
+        // Released before any assertion, so a failure is a red test and not a hang.
+        drop(held);
+        assert!(
+            matches!(early, Err(RecvTimeoutError::Timeout)),
+            "a coverage read ran while another held the lock: {early:?}"
+        );
+        let released = blocked
+            .recv_timeout(GENEROUS)
+            .expect("the read completes once the lock is released")
+            .expect("the fixture reads");
+        assert_same_coverage(control, released);
+    }
+
+    #[test]
+    fn a_read_of_the_maintenance_unit_inside_the_lock_does_not_deadlock() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        source(root, "20260910", "# Flow\nMeeting at ten.");
+        // The maintenance unit is read with `read_unit_coverage` from inside the guarded
+        // region; a second acquisition there would hang.
+        fs::write(
+            talent.join("daily_schedule.md"),
+            "{\n\"type\":\"generate\",\"output\":\"json\",\"schedule\":\"daily\",\"priority\":5,\"hook\":{\"pre\":\"daily_schedule\",\"post\":\"daily_schedule\"}\n}\nMaintain the schedule.",
+        )
+        .unwrap();
+        let first = read_on_a_thread(root, &talent, &apps)
+            .recv_timeout(GENEROUS)
+            .expect("the read does not deadlock on itself")
+            .expect("the fixture reads");
+        assert!(first.maintenance.is_some(), "the maintenance unit was read");
+        let second = read_on_a_thread(root, &talent, &apps)
+            .recv_timeout(GENEROUS)
+            .expect("a second read on a new thread completes")
+            .expect("the fixture reads");
+        assert_same_coverage(first, second);
+        // Two reads on one thread, one after the other.
+        let one = read_daily_coverage_with_roots(root, "20260910", &talent, &apps).unwrap();
+        let two = read_daily_coverage_with_roots(root, "20260910", &talent, &apps).unwrap();
+        assert_same_coverage(one, two);
+    }
+
+    #[test]
+    fn a_panic_while_holding_the_lock_does_not_break_later_coverage_reads() {
+        let (dir, talent, apps) = fixture();
+        let root = dir.path();
+        source(root, "20260910", "# Flow\nMeeting at ten.");
+        let expected = read_daily_coverage_with_roots(root, "20260910", &talent, &apps).unwrap();
+        let poisoner = thread::Builder::new()
+            .name("intentional-poison-of-the-coverage-lock".to_owned())
+            .spawn(|| {
+                let _held = COVERAGE_READ.lock().unwrap_or_else(PoisonError::into_inner);
+                panic!("intentional: poisoning the coverage lock for the test");
+            })
+            .unwrap();
+        assert!(poisoner.join().is_err());
+        assert!(
+            COVERAGE_READ.is_poisoned(),
+            "the fixture must poison the lock"
+        );
+        let after = read_on_a_thread(root, &talent, &apps)
+            .recv_timeout(GENEROUS)
+            .expect("a read after a panic completes")
+            .expect("the fixture reads");
+        COVERAGE_READ.clear_poison();
+        assert_same_coverage(expected, after);
     }
 }
