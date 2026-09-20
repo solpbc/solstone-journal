@@ -6,22 +6,20 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.11] - 2026-09-20
+
 ### Added
 
-- the journal's background now gently shifts with the time of day — a soft sunrise-to-sunset glow that never asks for your location.
+- your journal's web app now shifts its background with the time of day, a glow that follows the sun and goes by your device's time zone.
 
 ### Fixed
 
-- suggested facet names no longer become activity destinations before you create the facet. activity results also stay tied to the facet that started them.
-- editing an activity could drop a damaged entry from its saved settings. the edit now stops and leaves those settings unchanged.
-- damaged activity settings now show an error when you open them.
-- restore, prune, recovery key rotation and turning off backup now tell you what went wrong in plain language when they fail, instead of a raw internal code.
-- moving older media off your device to your backup, and bringing it back, now tell you what went wrong in plain language too, instead of a raw internal code.
+- a facet name your journal suggested, but that you had never created, could still be used to file an activity and hold its results. an activity now goes only to a facet that exists, and its results stay with the facet that started it.
+- editing an activity could drop a damaged entry from its saved settings. the edit now stops and leaves those settings unchanged, and damaged activity settings show an error when you open them.
+- at the command line, restoring, backup cleanup, rotating your recovery key, turning off backup, and moving older media to your backup and bringing it back now say what went wrong in plain language when they fail, instead of a raw internal code.
+- a saved home address your journal can't use for pairing no longer goes into pairing links, and no longer counts as your journal being reachable on your own network. the network page says the saved address can't be used and leaves it under "use a different address" so you can correct it, and pairing looks for a working address instead.
 - home now catches up after a dropped connection. if your journal finished your "recent activity" summary or your "morning briefing" while the connection was down, they show up when it reconnects, without a reload.
-- importing an image or a PDF now shows when it has finished, on the progress page, without a reload. before, the page could stay on "preparing…" while the import history counted 0 entries.
-- what you imported can now be browsed once an image or PDF import has finished.
-- an import that only partly worked now says so. one that can't be confirmed as finished says that, and offers "check status" in place of a spinner or a generic error.
-- after a finished import, "import another image" (or document) now goes straight to a fresh upload instead of back to the list of sources.
+- if an image or PDF import still stalled on "preparing…" after the last update, this resolves it. the progress panel now shows when the import has finished and what you can browse, and "import another image" (or document) goes straight to a fresh upload instead of back to the list of sources. an import that only partly worked says so, and one that can't be confirmed as finished offers "check status" in place of a spinner.
 
 ## [2.0.10] - 2026-09-19
 
