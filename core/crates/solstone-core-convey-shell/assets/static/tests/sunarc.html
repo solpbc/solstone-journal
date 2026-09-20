@@ -270,124 +270,65 @@
         `dawnFlips=${dawnFlips}, duskFlips=${duskFlips}, solstoneShell=${document.documentElement.dataset.solstoneShell}`);
     }
 
-    // 13. Full-day sweep of m: spies on fetch, XMLHttpRequest, geolocation - none called unless permission granted; granted+fail no retry loop
+    // 13. Full-day sweep: no fetch, no XMLHttpRequest, and the location APIs are never
+    // reached at all. Spec § 12 accepts no location request attributable to this pattern, and
+    // a granted permission is still a request.
     {
       let fetchCalled = 0;
       let xhrCalled = 0;
+      let permissionQueries = 0;
       let geoCalls = 0;
 
       const origFetch = window.fetch;
       const origXHR = window.XMLHttpRequest;
+      const origPerms = navigator.permissions;
+      const origGeo = navigator.geolocation;
 
       window.fetch = function () { fetchCalled += 1; return origFetch ? origFetch.apply(this, arguments) : Promise.reject(); };
       window.XMLHttpRequest = function () { xhrCalled += 1; if (origXHR) return new origXHR(); };
-
-      const mockPermDenied = {
-        query: () => ({
-          then: (cb) => {
-            cb({ state: 'denied', addEventListener: () => {} });
-            return { catch: () => {} };
-          },
-          catch: () => {}
-        })
-      };
-      const mockGeo = {
-        getCurrentPosition: (success, fail) => {
-          geoCalls += 1;
-          if (fail) fail(new Error('simulated'));
-        }
-      };
+      Object.defineProperty(navigator, 'permissions', {
+        configurable: true,
+        get: () => { permissionQueries += 1; return { query: () => { permissionQueries += 1; return Promise.resolve({ state: 'granted' }); } }; }
+      });
+      Object.defineProperty(navigator, 'geolocation', {
+        configurable: true,
+        get: () => { geoCalls += 1; return { getCurrentPosition: () => { geoCalls += 1; } }; }
+      });
 
       const testContainer = document.createElement('div');
       document.body.appendChild(testContainer);
 
-      let fakeTime = new Date('2026-09-19T00:00:00Z').getTime();
+      let fakeTime = new Date('2026-09-19T06:00:00').getTime();
       const instance = window.SunArc.mount(testContainer, {
         getNow: () => new Date(fakeTime),
-        permissions: mockPermDenied,
-        geolocation: mockGeo,
+        getZoneId: () => 'America/Denver',
+        utcOffsetMinutes: -360,
       });
 
-      // Advance through 24 hours (1440 minutes)
-      for (let min = 0; min < 1440; min += 15) {
-        fakeTime += 15 * 60 * 1000;
+      for (let min = 0; min < 1440; min += 30) {
+        fakeTime += 30 * 60 * 1000;
         instance.recompute();
       }
 
-      const deniedGeoCalls = geoCalls;
+      // The sweep runs a full 24 hours, so it crosses midnight and the daily recompute fires;
+      // the pair is the next day's Denver pair, minutes away from the worked day's, never the
+      // fixed default.
+      const sunTimes = instance.getSunTimes();
+      const usedTheZone = sunTimes && sunTimes.rise !== 390 && sunTimes.set !== 1170 &&
+        Math.abs(sunTimes.rise - (6 * 60 + 44)) <= 5.0 && Math.abs(sunTimes.set - (19 * 60 + 2)) <= 5.0;
+
       instance.teardown();
-
-      // Test granted + fail: exactly 1 call, no retry loop
-      let grantedGeoCalls = 0;
-      const mockPermGranted = {
-        query: () => ({
-          then: (cb) => {
-            cb({ state: 'granted', addEventListener: () => {} });
-            return { catch: () => {} };
-          },
-          catch: () => {}
-        })
-      };
-      const mockGeoFailing = {
-        getCurrentPosition: (success, fail) => {
-          grantedGeoCalls += 1;
-          if (fail) fail(new Error('fail once'));
-        }
-      };
-
-      const instance2 = window.SunArc.mount(testContainer, {
-        getNow: () => new Date(fakeTime),
-        permissions: mockPermGranted,
-        geolocation: mockGeoFailing,
-      });
-
-      for (let min = 0; min < 1440; min += 30) {
-        fakeTime += 30 * 60 * 1000;
-        instance2.recompute();
-      }
-
-      instance2.teardown();
-
-      // Test granted + never-resolve: exactly 1 call, no retry loop, uses fallback
-      let neverResolveGeoCalls = 0;
-      const mockPermNeverResolve = {
-        query: () => ({
-          then: (cb) => {
-            cb({ state: 'granted', addEventListener: () => {} });
-            return { catch: () => {} };
-          },
-          catch: () => {}
-        })
-      };
-      const mockGeoNeverResolve = {
-        getCurrentPosition: () => {
-          neverResolveGeoCalls += 1;
-        }
-      };
-
-      const instance3 = window.SunArc.mount(testContainer, {
-        getNow: () => new Date(fakeTime),
-        permissions: mockPermNeverResolve,
-        geolocation: mockGeoNeverResolve,
-      });
-
-      for (let min = 0; min < 1440; min += 30) {
-        fakeTime += 30 * 60 * 1000;
-        instance3.recompute();
-      }
-
-      const sunTimes3 = instance3.getSunTimes();
-      const usedFallback = sunTimes3 && sunTimes3.rise === 390 && sunTimes3.set === 1170;
-
-      instance3.teardown();
       testContainer.remove();
 
       window.fetch = origFetch;
       window.XMLHttpRequest = origXHR;
+      Object.defineProperty(navigator, 'permissions', { configurable: true, value: origPerms });
+      Object.defineProperty(navigator, 'geolocation', { configurable: true, value: origGeo });
 
-      assert('13_network_isolation_and_geolocation_spies',
-        fetchCalled === 0 && xhrCalled === 0 && deniedGeoCalls === 0 && grantedGeoCalls === 1 && neverResolveGeoCalls === 1 && usedFallback,
-        `fetch=${fetchCalled}, xhr=${xhrCalled}, deniedGeo=${deniedGeoCalls}, grantedGeoCalls=${grantedGeoCalls}, neverResolveGeoCalls=${neverResolveGeoCalls}, usedFallback=${usedFallback}`);
+      assert('13_no_network_and_no_location_api_touched',
+        fetchCalled === 0 && xhrCalled === 0 && permissionQueries === 0 && geoCalls === 0 && usedTheZone,
+        `fetch=${fetchCalled}, xhr=${xhrCalled}, permissions=${permissionQueries}, geolocation=${geoCalls}, ` +
+        `sunTimes=(${sunTimes ? sunTimes.rise.toFixed(1) + ', ' + sunTimes.set.toFixed(1) : 'null'})`);
     }
 
     // 14. Rapid resize burst -> recompute once, not per event (inject fake setTimeout/setInterval; flush debounce once)
@@ -485,61 +426,96 @@
         `numericValid=${invalidNumericValid}, colorValid=${invalidColorValid}, numNoPaint=${numNoPaint}, colorNoPaint=${colorNoPaint}`);
     }
 
-    // Optional Extra: Polar Hold/Fallback
+    // 16. The bundled tzdb table carries the spec's worked zone point (§ 5 rung 2:
+    // "America/Denver -> 39.74 N, 104.98 W").
     {
-      const polarRes = window.SunArc.noaaSunriseSunset(85.0, 0.0, new Date('2026-12-21T12:00:00Z'), 0);
-      assert('extra_polar_returns_null_without_throwing', polarRes === null,
-        `polar latitude on solstice returned ${polarRes === null ? 'null (fallback triggers)' : JSON.stringify(polarRes)}`);
+      const denver = window.SunArc.zonePoint('America/Denver');
+      const ok = denver && Math.abs(denver.lat - 39.74) < 0.005 && Math.abs(denver.lon - (-104.98)) < 0.005;
+      assert('16_zone_table_carries_the_spec_point',
+        Boolean(ok) && window.SunArc.zoneCount === 418 &&
+        Boolean(window.SunArc.zonePoint('Europe/Oslo')) &&
+        Boolean(window.SunArc.zonePoint('America/Indiana/Indianapolis')) &&
+        window.SunArc.zonePoint('US/Mountain') === null,
+        `Denver=${denver ? denver.lat + ',' + denver.lon : 'null'}, count=${window.SunArc.zoneCount}`);
     }
 
-    // Polar Hold Through Mount
+    // 17. Rung order: a held location outranks the zone point, and an identifier the table
+    // does not know falls to 06:30/19:30.
     {
       const testContainer = document.createElement('div');
       document.body.appendChild(testContainer);
+      const now = new Date('2026-09-19T12:00:00');
 
-      let currentTime = new Date('2026-03-20T12:00:00Z');
-      const mockPerm = {
-        query: () => ({
-          then: (cb) => {
-            cb({ state: 'granted', addEventListener: () => {} });
-            return { catch: () => {} };
-          },
-          catch: () => {}
-        })
-      };
-      const mockGeo = {
-        getCurrentPosition: (success) => {
-          success({
-            coords: { latitude: 80.0, longitude: 0.0 }
-          });
-        }
-      };
-
-      const instance = window.SunArc.mount(testContainer, {
-        getNow: () => currentTime,
-        permissions: mockPerm,
-        geolocation: mockGeo,
+      const held = window.SunArc.mount(testContainer, {
+        getNow: () => now, getZoneId: () => 'America/Denver', utcOffsetMinutes: -360,
+        heldCoords: { lat: -33.87, lon: 151.22 },
       });
+      const heldTimes = held.getSunTimes();
+      held.teardown();
 
-      const marchTimes = instance.getSunTimes();
-      const hasMarchTimes = marchTimes && marchTimes.rise !== 390 && marchTimes.set !== 1170;
+      const unknown = window.SunArc.mount(testContainer, {
+        getNow: () => now, getZoneId: () => 'US/Mountain', utcOffsetMinutes: -360,
+      });
+      const unknownTimes = unknown.getSunTimes();
+      unknown.teardown();
+      testContainer.remove();
 
-      // Advance to polar date (2026-06-21) where NOAA returns null
-      currentTime = new Date('2026-06-21T12:00:00Z');
+      assert('17_rung_order_held_then_zone_then_default',
+        Math.abs(heldTimes.rise - (6 * 60 + 44)) > 1.0 &&
+        unknownTimes.rise === 390 && unknownTimes.set === 1170,
+        `held=(${heldTimes.rise.toFixed(1)}, ${heldTimes.set.toFixed(1)}), unknown=(${unknownTimes.rise}, ${unknownTimes.set})`);
+    }
+
+    // 18. A timezone change recomputes on the next tick (§ 5: "Recompute once a day and on a
+    // timezone or location change").
+    {
+      const testContainer = document.createElement('div');
+      document.body.appendChild(testContainer);
+      let zone = 'America/Denver';
+      const instance = window.SunArc.mount(testContainer, {
+        getNow: () => new Date('2026-09-19T12:00:00'),
+        getZoneId: () => zone,
+        utcOffsetMinutes: -360,
+      });
+      const denver = Object.assign({}, instance.getSunTimes());
+      zone = 'Asia/Tokyo';
       instance.recompute();
-
-      const juneTimes = instance.getSunTimes();
-      const heldMarchTimes = juneTimes &&
-                             approx(juneTimes.rise, marchTimes.rise, 0.001) &&
-                             approx(juneTimes.set, marchTimes.set, 0.001) &&
-                             (juneTimes.rise !== 390 || juneTimes.set !== 1170);
-
+      const tokyo = instance.getSunTimes();
       instance.teardown();
       testContainer.remove();
 
-      assert('extra_polar_hold_preserves_last_valid_times', hasMarchTimes && heldMarchTimes,
-        `marchTimes=(${marchTimes ? marchTimes.rise.toFixed(1) : 'null'}, ${marchTimes ? marchTimes.set.toFixed(1) : 'null'}), ` +
-        `juneTimes=(${juneTimes ? juneTimes.rise.toFixed(1) : 'null'}, ${juneTimes ? juneTimes.set.toFixed(1) : 'null'})`);
+      assert('18_timezone_change_recomputes',
+        instance.getZoneId() === 'Asia/Tokyo' && Math.abs(tokyo.rise - denver.rise) > 1.0,
+        `denver=(${denver.rise.toFixed(1)}, ${denver.set.toFixed(1)}), tokyo=(${tokyo.rise.toFixed(1)}, ${tokyo.set.toFixed(1)})`);
+    }
+
+    // 19. Polar day: the equation has no answer, and the chain still returns the last valid
+    // pair rather than 06:30/19:30 (§ 5: "hold the last valid pair").
+    {
+      const midsummer = new Date('2026-06-21T12:00:00Z');
+      const point = window.SunArc.zonePoint('Arctic/Longyearbyen');
+      const direct = window.SunArc.noaaSunriseSunset(point.lat, point.lon, midsummer, 120);
+      const held = window.SunArc.solarPair(point, midsummer, 120);
+      assert('19_polar_day_holds_the_last_valid_pair',
+        direct === null && held !== null && held.rise !== 390 && held.set !== 1170,
+        `direct=${direct === null ? 'null' : JSON.stringify(direct)}, held=${held ? held.rise.toFixed(1) + ',' + held.set.toFixed(1) : 'null'}`);
+    }
+
+    // 20. A sunset after local midnight is carried into the next day, so dawn precedes dusk
+    // and the small hours read as the end of the day that is ending.
+    {
+      const midsummer = new Date('2026-06-21T12:00:00Z');
+      const pair = window.SunArc.solarPair(window.SunArc.zonePoint('Atlantic/Reykjavik'), midsummer, 0);
+      const tw = 30;
+      const dusk = pair.set + tw;
+      const shift = (clock) => (dusk > 1440 && clock < dusk - 1440 ? clock + 1440 : clock);
+      const tSmallHours = window.SunArc.dayProgress(shift(10), pair.rise, pair.set, tw);
+      const nightSmallHours = window.SunArc.nightAmount(shift(10), pair.rise, pair.set, tw);
+      const nightLater = window.SunArc.nightAmount(shift(60), pair.rise, pair.set, tw);
+      assert('20_wrapped_sunset_carried_into_the_next_day',
+        pair.set > 1440 && pair.set > pair.rise &&
+        tSmallHours > 0.9 && nightSmallHours > 0 && nightSmallHours < 1 && nightLater === 1,
+        `rise=${pair.rise.toFixed(1)}, set=${pair.set.toFixed(1)}, t(00:10)=${tSmallHours.toFixed(3)}, night(00:10)=${nightSmallHours.toFixed(2)}, night(01:00)=${nightLater}`);
     }
 
     assert('SUMMARY', failures === 0, failures ? `${failures} failure(s)` : `all ${testCount} assertions passed`);
