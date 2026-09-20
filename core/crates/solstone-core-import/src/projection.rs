@@ -729,7 +729,7 @@ fn derive_status_and_errors(
                 if now_ms.saturating_sub(att.started_at_ms) > 3_600_000 {
                     (
                         ProjectionStatus::Unconfirmed,
-                        Some("Import never completed".to_owned()),
+                        Some("this import couldn't be confirmed as finished.".to_owned()),
                         Some("timeout".to_owned()),
                     )
                 } else {
@@ -1176,7 +1176,10 @@ mod tests {
         assert_eq!(inside.status, ProjectionStatus::Running, "{inside:?}");
         let past = project_import_result_with_clock(journal, id, started_s + 3_601.0);
         assert_eq!(past.status, ProjectionStatus::Unconfirmed, "{past:?}");
-        assert_eq!(past.error.as_deref(), Some("Import never completed"));
+        assert_eq!(
+            past.error.as_deref(),
+            Some("this import couldn't be confirmed as finished.")
+        );
         assert_eq!(past.error_stage.as_deref(), Some("timeout"));
     }
 
