@@ -6,15 +6,6 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- the install command on solstone.app now works on a computer that still has the older version of solstone. it used to stop and point you back to the older `journal` command, and install nothing. it now installs the current version, replaces the old one, and leaves the memories already in your journal as they were.
-- when the journal app set up your journal on a mac that still had the older version's command-line tools, `sol` and `journal` kept answering as the older version. when it recognizes them as the older version's, setup now removes them and saves a backup of each in `~/.local/share/solstone/setup-backups`, so `sol` and `journal` stop answering. installing the current command-line tools gives you `journal` and `solstone`, but not `sol`.
-- when setup stopped because the command-line tools or background support on your computer were set up by a different solstone installation, it listed commands that would delete them. it now lists none and says nothing was changed. when setup does list commands, it now includes a leftover `sol` from the older version.
-- when setup can't verify an installation, the commands it lists did nothing in the `Application Support` folder on a mac, because its name has a space in it. they now work there too.
-- `journal service start` said "service started" as soon as it asked your computer to start it, even if your journal never came up. it now waits for your journal to be ready, as `journal service restart` and `journal up` already did, and reports an error if it isn't.
-- a large upload from a device could fail over and over on a connection that was working fine. while saving an upload, or listing what a device already had, your journal went quiet on that connection, and the device treated the silence as a dropped connection and started the upload again. your journal now stays responsive while that work runs.
-
 ## [2.0.11] - 2026-09-20
 
 ### Added
@@ -29,6 +20,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a saved home address your journal can't use for pairing no longer goes into pairing links, and no longer counts as your journal being reachable on your own network. the network page says the saved address can't be used and leaves it under "use a different address" so you can correct it, and pairing looks for a working address instead.
 - home now catches up after a dropped connection. if your journal finished your "recent activity" summary or your "morning briefing" while the connection was down, they show up when it reconnects, without a reload.
 - if an image or PDF import still stalled on "preparing…" after the last update, this resolves it. the progress panel now shows when the import has finished and what you can browse, and "import another image" (or document) goes straight to a fresh upload instead of back to the list of sources. an import that only partly worked says so, and one that can't be confirmed as finished offers "check status" in place of a spinner.
+- the install command on solstone.app now works on a computer that still has the older version of solstone. it used to stop and point you back to the older `journal` command, and install nothing. it now installs the current version, replaces the old one, and leaves the memories already in your journal as they were.
+- when the journal app set up your journal on a mac that still had the older version's command-line tools, `sol` and `journal` kept answering as the older version. when it recognizes them as the older version's, setup now removes them and saves a backup of each in `~/.local/share/solstone/setup-backups`, so `sol` and `journal` stop answering. installing the current command-line tools gives you `journal` and `solstone`, but not `sol`.
+- when setup stopped because the command-line tools or background support on your computer were set up by a different solstone installation, it listed commands that would delete them. it now lists none and says nothing was changed. when setup does list commands, it now includes a leftover `sol` from the older version.
+- when setup can't verify an installation, the commands it lists did nothing in the `Application Support` folder on a mac, because its name has a space in it. they now work there too.
+- `journal service start` said "service started" as soon as it asked your computer to start it, even if your journal never came up. it now waits for your journal to be ready, as `journal service restart` and `journal up` already did, and reports an error if it isn't.
+- a large upload from a device could fail over and over on a connection that was working fine. while saving an upload, or listing what a device already had, your journal went quiet on that connection, and the device treated the silence as a dropped connection and started the upload again. your journal now stays responsive while that work runs.
 
 ## [2.0.10] - 2026-09-19
 
