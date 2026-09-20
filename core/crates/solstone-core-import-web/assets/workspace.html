@@ -489,6 +489,10 @@
 .import-status.running { background: var(--hairline); color: var(--ink-soft-paper); display: inline-flex; align-items: center; gap: 6px; }
 .import-status.running::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--ink-faint-paper); animation: pulse 1.5s ease-in-out infinite; }
 .import-status.stalled { background: rgba(245, 158, 11, 0.16); color: #92400e; }
+.import-status.unconfirmed { background: rgba(245, 158, 11, 0.16); color: #92400e; }
+.import-status.unavailable { background: #fff0f0; color: #9b2c2c; }
+.status-badge.unconfirmed { background: rgba(245, 158, 11, 0.16); color: #92400e; }
+.status-badge.unavailable { background: #fff0f0; color: #9b2c2c; }
 .progress-detail { font-size: 0.8em; color: #8891a0; margin-top: 2px; }
 .progress-detail.import-stalled-meta { color: #92400e; }
 .import-retry-btn {
@@ -744,6 +748,7 @@ window._quickClientItemId = null;
 window._quickSaved = null;
 window._guidedClientItemId = null;
 let importEvents = {};
+const importGenerationFloor = {};
 let importsCache = [];
 let currentSourceFilter = '';
 // G3-310: 417 imports at 25 a page took sixteen clicks to reach the oldest, and
@@ -754,6 +759,7 @@ let currentPage = 1;
 let totalImports = 0;
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
 let importEventsCleanup = null;
+let connectionStateCleanup = null;
 
 function malformedImportHistoryResponse(url) {
   return new window.ApiError({
@@ -794,31 +800,39 @@ function clearPendingImport(importId) {
   importEventsCleanup.pending.clear(importId);
 }
 
-function navigateTo(view, options = {}) {
+let navigatingHash = false;
+
+async function navigateTo(view, options = {}) {
   const { updateHash = true } = options;
   const grid = document.getElementById('importGrid');
   const guide = document.getElementById('importGuide');
-  const nextHash = view === 'grid' ? '' : view;
+  const cleanView = view ? String(view).replace(/^#/, '') : '';
+  const nextHash = cleanView === 'grid' || !cleanView ? '' : `#${cleanView}`;
 
   if (grid) {
-    grid.style.display = view === 'grid' ? '' : 'none';
+    grid.style.display = cleanView === 'grid' || !cleanView ? '' : 'none';
   }
   if (guide) {
-    guide.style.display = view === 'grid' ? 'none' : '';
+    guide.style.display = cleanView === 'grid' || !cleanView ? 'none' : '';
   }
 
-  if (view.startsWith('guide/')) {
-    const source = view.split('/')[1];
-    loadGuidedFlow(source);
-  } else if (view.startsWith('progress/')) {
-    const importId = view.split('/')[1];
+  if (cleanView.startsWith('guide/')) {
+    const source = cleanView.split('/')[1];
+    await loadGuidedFlow(source);
+  } else if (cleanView.startsWith('progress/')) {
+    const importId = cleanView.split('/')[1];
     showProgressView(importId);
+    if (typeof reconcileImportState === 'function') {
+      await reconcileImportState(importId);
+    }
   } else {
     currentGuideSource = null;
   }
 
-  if (updateHash && window.location.hash.slice(1) !== nextHash) {
+  if (updateHash && window.location.hash !== nextHash) {
+    navigatingHash = true;
     window.location.hash = nextHash;
+    navigatingHash = false;
   }
 }
 
@@ -833,7 +847,10 @@ function showGrid() {
 window.addEventListener('hashchange', handleHashChange);
 
 function handleHashChange() {
-  const hash = window.location.hash.slice(1);
+  if (navigatingHash) {
+    return;
+  }
+  const hash = (window.location.hash || '').replace(/^#/, '');
   if (hash.startsWith('guide/')) {
     navigateTo(hash, { updateHash: false });
   } else if (hash.startsWith('progress/')) {
@@ -977,49 +994,7 @@ function humanStageName(stage, sourceDisplay = '') {
   return fallback;
 }
 
-function retryImport(event) {
-  event.stopPropagation();
-  const button = event.target.closest('[data-import-retry]');
-  if (!button) return;
-  const importId = button.dataset.importId;
-  const stage = button.dataset.stage || '';
-  const statusCell = button.closest('.status-cell');
-  const result = statusCell?.querySelector('.import-retry-result');
-  button.disabled = true;
-  button.textContent = 'retrying…';
-  if (result) result.textContent = '';
-  const payload = { import_id: importId };
-  if (stage) payload.stage = stage;
-  window.apiJson('/app/health/api/retry-import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-    .then(() => {
-      button.textContent = 'retry sent';
-      if (result) result.textContent = 'retry sent';
-    })
-    .catch(err => {
-      window.logError(err, { context: 'import: retry-import failed' });
-      button.disabled = false;
-      button.textContent = stage ? `retry from ${humanStageName(stage)}` : 'retry import';
-      if (result) {
-        result.innerHTML = window.SurfaceState.error({
-          heading: "that import couldn't be retried",
-          desc: window.CONVEY_COPY?.RELOAD_HINT || 'reload to try again.',
-          serverMessage: err.serverMessage,
-          detail: err,
-          headingLevel: 'h4'
-        });
-      }
-    });
-}
 
-document.addEventListener('click', event => {
-  if (event.target.closest('[data-import-retry]')) {
-    retryImport(event);
-  }
-});
 
 function formatDateRange(dateRange) {
   if (!Array.isArray(dateRange) || !dateRange[0]) {
@@ -1033,13 +1008,13 @@ function formatDateRange(dateRange) {
 
 function formatImportStats(entriesWritten, entitiesSeeded) {
   const parts = [];
-  if (typeof entriesWritten === 'number' && entriesWritten > 0) {
+  if (typeof entriesWritten === 'number') {
     parts.push(`${entriesWritten} ${entriesWritten === 1 ? 'entry' : 'entries'}`);
   }
-  if (typeof entitiesSeeded === 'number' && entitiesSeeded > 0) {
+  if (typeof entitiesSeeded === 'number') {
     parts.push(`${entitiesSeeded} entities`);
   }
-  return parts.join(' • ') || '-';
+  return parts.join(' • ') || '—';
 }
 
 function formatProgressStats(eventData) {
@@ -1087,8 +1062,10 @@ function buildHistoryHeader(total, totalEntriesWritten) {
   ].join('');
 
   const importsLabel = total === 1 ? 'import' : 'imports';
-  const entriesLabel = totalEntriesWritten === 1 ? 'entry' : 'entries';
-  const summaryText = `${total.toLocaleString()} ${importsLabel}, ${totalEntriesWritten.toLocaleString()} ${entriesLabel}.`;
+  const entriesPart = (totalEntriesWritten === null || totalEntriesWritten === undefined)
+    ? '—'
+    : `${totalEntriesWritten.toLocaleString()} ${totalEntriesWritten === 1 ? 'entry' : 'entries'}`;
+  const summaryText = `${total.toLocaleString()} ${importsLabel}, ${entriesPart}.`;
 
   return `
     <div class="import-history-header">
@@ -1121,12 +1098,22 @@ function renderImportRow(imp) {
       const errorStage = imp.error_stage ? ` (${capitalizeStage(imp.error_stage)})` : '';
       statusDetail = `<div class="progress-detail">${escapeHtml(imp.error)}${escapeHtml(errorStage)}</div>`;
     }
+  } else if (imp.status === 'unconfirmed') {
+    statusClass = 'unconfirmed';
+    statusText = 'unconfirmed';
+  } else if (imp.status === 'unavailable') {
+    statusClass = 'unavailable';
+    statusText = 'unavailable';
   } else if (imp.status === 'running') {
     statusClass = 'running';
     statusText = 'running';
   } else {
     statusClass = 'pending';
     statusText = 'pending';
+  }
+
+  if (imp.has_gaps) {
+    statusDetail += `<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:#9a3412;">contains gaps</div>`;
   }
 
   // The file column holds a file and nothing else, and the source column holds a
@@ -1144,14 +1131,15 @@ function renderImportRow(imp) {
     ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
     : '-';
   const statsText = formatImportStats(imp.entries_written, imp.entities_seeded);
+  const encodedId = encodeURIComponent(imp.timestamp);
 
-  let html = `<tr data-import-id="${imp.timestamp}" data-source-type="${imp.source_type || ''}" tabindex="0" role="link" onclick="window.location.href='/app/import/${imp.timestamp}'" onkeydown="if(event.key==='Enter')window.location.href='/app/import/${imp.timestamp}'">`;
+  let html = `<tr data-import-id="${escapeHtml(imp.timestamp)}" data-source-type="${escapeHtml(imp.source_type || '')}" tabindex="0" role="link" data-import-link="/app/import/${encodedId}">`;
   // 'imported to' leads: it is the column that varies, and it is the fact the
   // owner came for. 'imported at' is constant across a bulk import, so it sits
   // last rather than first (G3-209).
   html += '<td class="nowrap">';
   if (imp.target_day) {
-    html += `<a href="/app/transcripts/${encodeURIComponent(imp.target_day)}" class="timestamp-link" onclick="event.stopPropagation();">${escapeHtml(targetDayDisplay)}</a>`;
+    html += `<a href="/app/transcripts/${encodeURIComponent(imp.target_day)}" class="timestamp-link">${escapeHtml(targetDayDisplay)}</a>`;
   } else {
     html += '-';
   }
@@ -1198,7 +1186,7 @@ async function loadImports() {
       return;
     }
 
-    let html = buildHistoryHeader(data.total, data.total_entries_written || 0);
+    let html = buildHistoryHeader(data.total, data.total_entries_written);
     html += '<table class="import-table">';
     html += '<thead><tr>';
     html += '<th>imported to</th>';
@@ -1370,28 +1358,67 @@ function markRowStalled(importId) {
   clearPendingImport(importId);
   importEvents[importId] = { ...(importEvents[importId] || {}), stalled: true };
 
-  const row = document.querySelector(`tr[data-import-id="${importId}"]`);
-	  if (row) {
-	    row.classList.add('import-row--stalled');
-	    const statusCell = row.querySelector('.status-cell');
-	    if (statusCell) {
-	      const stage = importEvents[importId]?.stage || 'importing';
-	      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}" data-stage="${escapeHtml(stage)}">retry from ${escapeHtml(humanStageName(stage))}</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
-	    }
-	  }
-
-  refreshInlineProgress(importId);
-}
-
-function updateImportRow(importId, eventData) {
-  if (importId) {
-    importEvents[importId] = { ...(importEvents[importId] || {}), ...eventData };
-    if (IMPORT_ROW_EVENTS.has(eventData.event)) {
-      importEvents[importId].stalled = false;
+  const safeId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(importId) : importId;
+  const row = document.querySelector(`tr[data-import-id="${safeId}"]`);
+  if (row) {
+    row.classList.add('import-row--stalled');
+    const statusCell = row.querySelector('.status-cell');
+    if (statusCell) {
+      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">check status</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
     }
   }
 
-  const row = document.querySelector(`tr[data-import-id="${importId}"]`);
+  refreshInlineProgress(importId);
+  reconcileImportState(importId, { fromStall: true });
+}
+
+function isTerminalState(eventOrStatus) {
+  return eventOrStatus === 'completed' || eventOrStatus === 'success' ||
+         eventOrStatus === 'failed' || eventOrStatus === 'error' ||
+         eventOrStatus === 'unconfirmed' || eventOrStatus === 'unavailable';
+}
+
+function updateImportRow(importId, eventData, options = {}) {
+  const { authoritative = false } = options;
+  if (importId) {
+    const floor = importGenerationFloor[importId];
+    const existing = importEvents[importId];
+    const currGen = existing && typeof existing.generation === 'number' ? existing.generation : floor;
+    const newGen = eventData.generation;
+    if (!authoritative && typeof currGen === 'number') {
+      if (newGen === undefined || newGen === null) {
+        return;
+      }
+      if (typeof newGen === 'number' && newGen < currGen) {
+        return;
+      }
+    }
+    if (typeof newGen === 'number') {
+      importGenerationFloor[importId] = Math.max(importGenerationFloor[importId] || 0, newGen);
+    }
+    if (existing && !authoritative) {
+      if (isTerminalState(existing.event || existing.status) && !isTerminalState(eventData.event || eventData.status)) {
+        if (!(typeof currGen === 'number' && typeof newGen === 'number' && newGen > currGen)) {
+          return;
+        }
+      }
+    }
+    const cleanEventData = Object.fromEntries(
+      Object.entries(eventData).filter(([_, v]) => v !== undefined)
+    );
+    importEvents[importId] = { ...(existing || {}), ...cleanEventData };
+    if (IMPORT_ROW_EVENTS.has(eventData.event)) {
+      if (eventData.fromStall && (eventData.event === 'status' || eventData.status === 'running') && !isTerminalState(eventData.event || eventData.status)) {
+        importEvents[importId].stalled = true;
+        trackPendingImport(importId);
+      } else {
+        importEvents[importId].stalled = false;
+      }
+    }
+  }
+
+  const safeId = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(importId) : importId;
+  const row = document.querySelector(`tr[data-import-id="${safeId}"]`);
   if (!row) {
     refreshInlineProgress(importId, eventData);
     return;
@@ -1402,27 +1429,36 @@ function updateImportRow(importId, eventData) {
   const sourceCell = row.querySelector('.source-cell');
 
   if (IMPORT_ROW_EVENTS.has(eventData.event)) {
-    row.classList.remove('import-row--stalled');
+    if (!importEvents[importId]?.stalled) {
+      row.classList.remove('import-row--stalled');
+    }
   }
 
   if (sourceCell && (eventData.source_type || eventData.source_display)) {
-    // Same rule as renderImportRow: the source column answers one question and
-    // never borrows the file name, so a live event and a reload agree (G3-113).
-    // Reading the file cell by position is gone with it -- the column order has
-    // already moved once.
     const displayText = eventData.source_display
       || sourceMetadataByName[eventData.source_type]?.display_name
       || eventData.source_type
       || '';
     sourceCell.innerHTML = displayText
       ? renderSourceDisplay(eventData.source_type || '', displayText, displayText)
-      : '-';
+      : '—';
     row.dataset.sourceType = eventData.source_type || '';
   }
 
-  if (eventData.event === 'started') {
+  const status = eventData.status || (eventData.event === 'completed' ? 'success' : eventData.event === 'error' ? 'failed' : null);
+  let gapDetail = eventData.has_gaps ? '<div class="progress-gap-chip" style="margin-top:2px; font-size:0.8em; color:#9a3412;">contains gaps</div>' : '';
+
+  if (status === 'unconfirmed') {
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span>`;
+      statusCell.innerHTML = `<span class="import-status unconfirmed">unconfirmed</span>${gapDetail}`;
+    }
+  } else if (status === 'unavailable') {
+    if (statusCell) {
+      statusCell.innerHTML = `<span class="import-status unavailable">unavailable</span>${gapDetail}`;
+    }
+  } else if (eventData.event === 'started') {
+    if (statusCell) {
+      statusCell.innerHTML = `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span>${gapDetail}`;
     }
   } else if (eventData.event === 'status') {
     if (statusCell) {
@@ -1433,21 +1469,21 @@ function updateImportRow(importId, eventData) {
       if (progressStats.length) {
         detailParts.push(progressStats.join(' • '));
       }
-      statusCell.innerHTML = `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span><div class="progress-detail">${escapeHtml(detailParts.join(' • '))}</div>`;
+      statusCell.innerHTML = `<span class="import-status running">${escapeHtml(humanStageName(eventData.stage, eventData.source_display))}</span><div class="progress-detail">${escapeHtml(detailParts.join(' • '))}</div>${gapDetail}`;
     }
-  } else if (eventData.event === 'completed') {
+  } else if (eventData.event === 'completed' || status === 'success') {
     if (statusCell) {
-      statusCell.innerHTML = '<span class="import-status success">completed</span>';
+      statusCell.innerHTML = `<span class="import-status success">completed</span>${gapDetail}`;
     }
     if (statsCell) {
       statsCell.textContent = formatImportStats(eventData.entries_written, eventData.entities_seeded);
     }
     setTimeout(() => loadImports(), 1000);
-	  } else if (eventData.event === 'error') {
-	    if (statusCell) {
-	      statusCell.innerHTML = `<span class="import-status failed">failed</span><button type="button" class="import-retry-btn" data-import-retry="true" data-import-id="${escapeHtml(importId)}">retry import</button><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div><div class="import-retry-result"></div>`;
-	    }
-	  }
+  } else if (eventData.event === 'error' || status === 'failed') {
+    if (statusCell) {
+      statusCell.innerHTML = `<span class="import-status failed">failed</span><div class="progress-detail">${escapeHtml(eventData.error || 'unknown error')}</div>${gapDetail}`;
+    }
+  }
 
   refreshInlineProgress(importId, eventData);
 }
@@ -1894,6 +1930,17 @@ async function startGuidedImport(source) {
       throw new Error(errorData.error || 'Failed to save import settings');
     }
 
+    trackPendingImport(ts);
+    if (!importEvents[ts]) {
+      importEvents[ts] = {
+        import_id: ts,
+        event: 'started',
+        stage: 'initialization',
+        source_type: source.name,
+        source_display: source.display_name,
+      };
+    }
+
     const startResponse = await fetch('/app/import/api/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1901,18 +1948,21 @@ async function startGuidedImport(source) {
     });
 
     if (!startResponse.ok) {
+      clearPendingImport(ts);
       const errorData = await startResponse.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to start import');
     }
 
-    importEvents[ts] = {
-      import_id: ts,
-      event: 'started',
-      stage: 'initialization',
-      source_type: source.name,
-      source_display: source.display_name,
-    };
-    trackPendingImport(ts);
+    if (!importEvents[ts] || !IMPORT_TERMINAL_EVENTS.has(importEvents[ts].event)) {
+      importEvents[ts] = {
+        import_id: ts,
+        event: 'started',
+        stage: 'initialization',
+        source_type: source.name,
+        source_display: source.display_name,
+        ...(importEvents[ts] || {})
+      };
+    }
     loadImports();
     navigateTo(`progress/${ts}`);
   } catch (err) {
@@ -1959,6 +2009,40 @@ async function previewGuidedJournalArchive(source) {
   }
 }
 
+async function repeatSource(sourceName) {
+  currentGuidedFile = null;
+  currentGuidedSaved = null;
+  window._guidedClientItemId = null;
+  const hash = window.location.hash.slice(1);
+  if (hash.startsWith('progress/')) {
+    const importId = hash.split('/')[1];
+    clearPendingImport(importId);
+    if (importEvents[importId]) {
+      importEvents[importId].stalled = false;
+    }
+  }
+  await navigateTo(`guide/${sourceName}`);
+  const dropArea = document.getElementById('guidedDropArea');
+  const pathInput = document.getElementById('guidedPathInput');
+  const quickDropArea = document.getElementById('dropArea');
+  if (dropArea) {
+    dropArea.focus();
+  } else if (pathInput) {
+    pathInput.value = '';
+    pathInput.focus();
+  } else if (quickDropArea) {
+    quickDropArea.focus();
+  }
+  const dedup = document.getElementById('guidedDedupNotice');
+  if (dedup) dedup.innerHTML = '';
+}
+
+function formatStatValue(val) {
+  if (typeof val === 'number') return escapeHtml(String(val));
+  if (val === null || val === undefined) return '—';
+  return escapeHtml(String(val));
+}
+
 function showProgressView(importId, eventData = null) {
   const guideSteps = document.getElementById('guideSteps');
   const source = sourceMetadataByName[currentGuideSource] || null;
@@ -1969,49 +2053,109 @@ function showProgressView(importId, eventData = null) {
     return;
   }
 
-  const displayName = currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
-  // One reading decides the whole panel. The heading used to derive from the live
-  // event alone while the summary below it also consulted the import list, so a
-  // reload onto a finished import titled it "preparing..." over its own
-  // completion summary. A live event outranks the list, which is only ever as
-  // fresh as the last load: a retry in progress must not wear its own last
-  // failure.
-  const isComplete = currentEvent
-    ? currentEvent.event === 'completed'
+  const isConfirmedSuccess = currentEvent
+    ? currentEvent.event === 'completed' || currentEvent.status === 'success'
     : importInfo?.status === 'success';
+  const isUnconfirmed = currentEvent
+    ? currentEvent.status === 'unconfirmed'
+    : importInfo?.status === 'unconfirmed';
+  const isUnavailable = currentEvent
+    ? currentEvent.status === 'unavailable'
+    : importInfo?.status === 'unavailable';
   const isFailed = currentEvent
-    ? currentEvent.event === 'error'
+    ? currentEvent.event === 'error' || currentEvent.status === 'failed'
     : importInfo?.status === 'failed';
-  const stageLabel = currentEvent?.stalled
+  const isStalled = Boolean(currentEvent?.stalled);
+
+  const displayName = currentEvent?.source_display || importInfo?.source_display || source?.display_name || 'Import';
+
+  const stageLabel = isStalled
     ? 'stalled: no updates in 10 minutes'
-    : isComplete
+    : isConfirmedSuccess
       ? 'import complete'
-      : isFailed
-        ? 'import failed'
-        : humanStageName(currentEvent?.stage || 'initialization', displayName);
+      : isUnconfirmed
+        ? 'import incomplete'
+        : isUnavailable
+          ? 'import status unavailable'
+          : isFailed
+            ? 'import failed'
+            : humanStageName(currentEvent?.stage || 'initialization', displayName);
   const progressHtml = currentEvent ? renderProgressStats(currentEvent) : '';
   let completionHtml = '';
 
-  if (isComplete) {
+  if (isConfirmedSuccess) {
     const completedInfo = currentEvent || importInfo || {};
     const range = completedInfo.date_range || importInfo?.date_range || null;
+    const entriesWritten = completedInfo.entries_written ?? importInfo?.entries_written ?? null;
+    const entitiesSeeded = completedInfo.entities_seeded ?? importInfo?.entities_seeded ?? null;
+    const durationMs = completedInfo.duration_ms ?? importInfo?.duration_ms ?? null;
+    const unavailDesc = completedInfo.unavailable_description ?? importInfo?.unavailable_description ?? null;
+    const unavailPages = completedInfo.unavailable_pages ?? importInfo?.unavailable_pages ?? null;
+    let gapHtml = '';
+    if (unavailDesc) {
+      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: #9a3412;">original saved (description unavailable)</div>`;
+    }
+    if (typeof unavailPages === 'number' && unavailPages > 0) {
+      const pageLabel = unavailPages === 1 ? '1 page unavailable' : `${unavailPages} pages unavailable`;
+      gapHtml += `<div class="progress-gap-chip" style="margin-top: 0.5rem; color: #9a3412;">partially extracted (${pageLabel})</div>`;
+    }
+    const sourceName = currentGuideSource || source?.name || completedInfo.source_type || importInfo?.source_type || '';
+    const repeatBtn = sourceName ? `
+      <button type="button" class="import-primary-btn" data-source="${escapeHtml(sourceName)}">import another ${escapeHtml(source?.display_name || sourceName)}</button>
+    ` : '';
     completionHtml = `
       <div class="import-completion-summary">
-        <div><strong>Entries written:</strong> ${completedInfo.entries_written || importInfo?.entries_written || 0}</div>
-        <div><strong>Entities seeded:</strong> ${completedInfo.entities_seeded || importInfo?.entities_seeded || 0}</div>
-        <div><strong>Date range:</strong> ${escapeHtml(formatDateRange(range) || '-')}</div>
-        <div><strong>Duration:</strong> ${formatElapsed(completedInfo.duration_ms || 0)}</div>
+        <div><strong>entries written:</strong> ${formatStatValue(entriesWritten)}</div>
+        <div><strong>entities seeded:</strong> ${formatStatValue(entitiesSeeded)}</div>
+        <div><strong>date range:</strong> ${escapeHtml(formatDateRange(range) || '—')}</div>
+        <div><strong>duration:</strong> ${durationMs !== null && durationMs !== undefined ? formatElapsed(durationMs) : '—'}</div>
+        ${gapHtml}
         <div class="import-action-row">
-          <a class="import-secondary-btn" href="/app/import/${completedInfo.processed_timestamp || importId}#content">browse what was imported →</a>
+          <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(completedInfo.processed_timestamp || importId)}#content">browse what was imported →</a>
+          ${repeatBtn}
+          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+        </div>
+      </div>
+    `;
+  } else if (isUnconfirmed) {
+    const unconfirmedInfo = currentEvent || importInfo || {};
+    const totalFiles = typeof unconfirmedInfo.total_files_created === 'number'
+      ? unconfirmedInfo.total_files_created
+      : (typeof importInfo?.total_files_created === 'number' ? importInfo.total_files_created : null);
+    const entries = typeof unconfirmedInfo.entries_written === 'number'
+      ? unconfirmedInfo.entries_written
+      : (typeof importInfo?.entries_written === 'number' ? importInfo.entries_written : null);
+    const hasVerifiedOutputs = (typeof totalFiles === 'number' && totalFiles > 0) || (typeof entries === 'number' && entries > 0);
+    const browseBtn = hasVerifiedOutputs ? `
+      <a class="import-secondary-btn" href="/app/import/${encodeURIComponent(importId)}#content">browse what was imported →</a>
+    ` : '';
+    completionHtml = `
+      <div class="import-completion-summary unconfirmed">
+        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: #9a3412;">this import was interrupted before finalizing.</div>
+        <div class="import-action-row">
+          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
+          ${browseBtn}
+          <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
+        </div>
+      </div>
+    `;
+  } else if (isUnavailable) {
+    const unavailableInfo = currentEvent || importInfo || {};
+    const desc = unavailableInfo.unavailable_description || importInfo?.unavailable_description || 'import status unavailable';
+    completionHtml = `
+      <div class="import-completion-summary unavailable">
+        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: #9a3412;">${escapeHtml(desc)}</div>
+        <div class="import-action-row">
+          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>
       </div>
     `;
   } else if (isFailed) {
-    const errorText = currentEvent?.error || importInfo?.error || 'Unknown error';
+    const errorText = currentEvent?.error || importInfo?.error || 'import failed';
     completionHtml = `
       <div class="import-completion-summary failed">
-        <div><strong>Error:</strong> ${escapeHtml(errorText)}</div>
+        <div><strong>error:</strong> ${escapeHtml(errorText)}</div>
         <div class="import-action-row">
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>
@@ -2020,9 +2164,10 @@ function showProgressView(importId, eventData = null) {
   } else if (currentEvent?.stalled) {
     completionHtml = `
       <div class="import-completion-summary stalled">
-        <div><strong>Import ID:</strong> ${escapeHtml(importId)}</div>
+        <div><strong>import id:</strong> ${escapeHtml(importId)}</div>
         <div>stalled: no updates in 10 minutes. ${window.CONVEY_COPY.RELOAD_HINT}</div>
         <div class="import-action-row">
+          <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
         </div>
       </div>
@@ -2035,6 +2180,7 @@ function showProgressView(importId, eventData = null) {
       <h3 class="import-progress-title">${escapeHtml(displayName)}</h3>
       <p class="import-progress-message">${escapeHtml(stageLabel)}</p>
       ${currentEvent?.elapsed_ms ? `<div class="progress-detail">${escapeHtml(formatElapsed(currentEvent.elapsed_ms))} elapsed</div>` : ''}
+      <div id="progressReconcileError" role="alert" aria-live="polite" style="display:none; color:#dc2626; margin-top:0.5rem; font-size:0.9rem;"></div>
       ${progressHtml}
       ${completionHtml}
     </div>
@@ -2071,6 +2217,17 @@ startBtn.addEventListener('click', async () => {
       throw new Error(errorData.error || 'Failed to save import settings');
     }
 
+    trackPendingImport(ts);
+    if (!importEvents[ts]) {
+      importEvents[ts] = {
+        import_id: ts,
+        event: 'started',
+        stage: 'initialization',
+        source_type: 'quick',
+        source_display: 'quick import',
+      };
+    }
+
     const startResponse = await fetch('/app/import/api/start', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -2078,6 +2235,7 @@ startBtn.addEventListener('click', async () => {
     });
 
     if (!startResponse.ok) {
+      clearPendingImport(ts);
       const errorData = await startResponse.json().catch(() => ({}));
       throw new Error(errorData.error || 'Failed to start import');
     }
@@ -2085,14 +2243,16 @@ startBtn.addEventListener('click', async () => {
     startBtn.disabled = false;
     startBtn.textContent = originalText;
     closeDetectModal();
-    importEvents[ts] = {
-      import_id: ts,
-      event: 'started',
-      stage: 'initialization',
-      source_type: 'quick',
-      source_display: 'quick import',
-    };
-    trackPendingImport(ts);
+    if (!importEvents[ts] || !IMPORT_TERMINAL_EVENTS.has(importEvents[ts].event)) {
+      importEvents[ts] = {
+        import_id: ts,
+        event: 'started',
+        stage: 'initialization',
+        source_type: 'quick',
+        source_display: 'quick import',
+        ...(importEvents[ts] || {})
+      };
+    }
     loadImports();
     navigateTo(`progress/${ts}`);
   } catch (err) {
@@ -2114,6 +2274,127 @@ document.addEventListener('keydown', function(e) {
   }
 });
 
+const inFlightReconcile = new Set();
+
+async function reconcileImportState(importId, options = {}) {
+  if (!importId || inFlightReconcile.has(importId)) return;
+  inFlightReconcile.add(importId);
+  const { fromStall = false } = options;
+  const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
+  try {
+    const res = await window.apiJson(`/app/import/api/${encodeURIComponent(importId)}`);
+    if (!res) return;
+    const canonicalStatus = res.status;
+    const eventName = canonicalStatus === 'success'
+      ? 'completed'
+      : (canonicalStatus === 'failed' || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable')
+        ? 'error'
+        : (canonicalStatus === 'running')
+          ? 'status'
+          : 'started';
+    const eventData = {
+      import_id: importId,
+      event: eventName,
+      status: canonicalStatus,
+      generation: res.generation,
+      attempt_id: res.attempt_id,
+      entries_written: res.entries_written,
+      entities_seeded: res.entities_seeded,
+      total_files_created: res.total_files_created,
+      unavailable_description: res.unavailable_description,
+      unavailable_pages: res.unavailable_pages,
+      has_gaps: res.has_gaps,
+      duration_ms: res.duration_ms,
+      date_range: res.date_range,
+      error: res.error,
+      error_stage: res.error_stage,
+      fromStall: fromStall
+    };
+    if (IMPORT_TERMINAL_EVENTS.has(eventName) || canonicalStatus === 'unconfirmed' || canonicalStatus === 'unavailable') {
+      clearPendingImport(importId);
+    } else if (canonicalStatus === 'running') {
+      trackPendingImport(importId);
+    }
+    updateImportRow(importId, eventData, { authoritative: true });
+    const errEl = typeof document !== 'undefined' && typeof document.getElementById === 'function'
+      ? document.getElementById('progressReconcileError')
+      : null;
+    if (errEl) {
+      errEl.style.display = 'none';
+    }
+  } catch (err) {
+    const errEl = typeof document !== 'undefined' && typeof document.getElementById === 'function'
+      ? document.getElementById('progressReconcileError')
+      : null;
+    if (errEl) {
+      errEl.setAttribute('role', 'alert');
+      errEl.setAttribute('aria-live', 'polite');
+      errEl.textContent = 'failed to check status: ' + (err.message || 'network error');
+      errEl.style.display = '';
+    }
+  } finally {
+    inFlightReconcile.delete(importId);
+    const checkId = activeEl && typeof activeEl.getAttribute === 'function'
+      ? activeEl.getAttribute('data-import-check-status')
+      : null;
+    if (checkId) {
+      const safe = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(checkId) : checkId;
+      const btn = document.querySelector(`[data-import-check-status="${safe}"]`);
+      if (btn && typeof btn.focus === 'function') {
+        btn.focus();
+      }
+    } else if (activeEl && typeof activeEl.focus === 'function' && document.body && document.body.contains(activeEl)) {
+      activeEl.focus();
+    }
+  }
+}
+
+if (typeof window.addEventListener === 'function') {
+  window.addEventListener('online', () => {
+    const hash = window.location.hash.slice(1);
+    if (hash.startsWith('progress/')) {
+      const importId = hash.split('/')[1];
+      reconcileImportState(importId);
+    }
+  });
+}
+
+document.addEventListener('click', event => {
+  const checkBtn = event.target.closest('[data-import-check-status]');
+  if (checkBtn) {
+    event.stopPropagation();
+    const id = checkBtn.getAttribute('data-import-check-status');
+    if (id) {
+      reconcileImportState(id);
+    }
+    return;
+  }
+  const repeatBtn = event.target.closest('[data-source]');
+  if (repeatBtn) {
+    event.stopPropagation();
+    const source = repeatBtn.getAttribute('data-source');
+    if (source) {
+      repeatSource(source);
+    }
+    return;
+  }
+  const tr = event.target.closest('tr[data-import-link]');
+  if (tr && !event.target.closest('a, button, input, select, textarea')) {
+    const link = tr.getAttribute('data-import-link');
+    if (link) window.location.href = link;
+  }
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Enter') {
+    const tr = event.target.closest('tr[data-import-link]');
+    if (tr && event.target === tr) {
+      const link = tr.getAttribute('data-import-link');
+      if (link) window.location.href = link;
+    }
+  }
+});
+
 function initImportWorkspace() {
   const listView = document.getElementById('importListView');
   if (window.solPathContext().segment) {
@@ -2121,6 +2402,26 @@ function initImportWorkspace() {
     return;
   }
   if (listView) listView.style.display = '';
+
+  if (typeof connectionStateCleanup === 'function') {
+    connectionStateCleanup();
+    connectionStateCleanup = null;
+  }
+  if (typeof importEventsCleanup === 'function') {
+    importEventsCleanup();
+    importEventsCleanup = null;
+  }
+  if (window.appEvents && typeof window.appEvents.onConnectionState === 'function') {
+    connectionStateCleanup = window.appEvents.onConnectionState(({ connected }) => {
+      if (connected) {
+        const hash = window.location.hash.slice(1);
+        if (hash.startsWith('progress/')) {
+          const importId = hash.split('/')[1];
+          reconcileImportState(importId);
+        }
+      }
+    });
+  }
 
   importEventsCleanup = window.appEvents.listen('importer', {
     correlationKey: 'import_id',
@@ -2137,6 +2438,19 @@ function initImportWorkspace() {
     }
     updateImportRow(eventData.import_id, eventData);
   });
+
+  if (typeof window.addEventListener === 'function') {
+    const teardown = () => {
+      if (typeof importEventsCleanup === 'function') {
+        importEventsCleanup();
+      }
+      if (typeof connectionStateCleanup === 'function') {
+        connectionStateCleanup();
+      }
+    };
+    window.addEventListener('pagehide', teardown);
+    window.addEventListener('unload', teardown);
+  }
 
   // The progress panel renders from the import list, so the list has to be in
   // hand before the hash is acted on: a reload straight onto #progress/<id> was
@@ -2557,7 +2871,7 @@ function initImportDetail() {
 
   loadImportDetail();
 
-  window.appEvents.listen('importer', { correlationKey: 'import_id' }, eventData => {
+  const detailEventsCleanup = window.appEvents.listen('importer', { correlationKey: 'import_id' }, eventData => {
     if (!IMPORT_ROW_EVENTS.has(eventData.event)) return;
     if (eventData.import_id !== importDetailTimestamp) return;
     loadImportDetail();
@@ -2571,6 +2885,19 @@ function initImportDetail() {
   }
   window.addEventListener('hashchange', openContentFromHash);
   openContentFromHash();
+
+  if (typeof window.addEventListener === 'function') {
+    const detailTeardown = () => {
+      if (typeof detailEventsCleanup === 'function') {
+        detailEventsCleanup();
+      }
+      if (typeof window.removeEventListener === 'function') {
+        window.removeEventListener('hashchange', openContentFromHash);
+      }
+    };
+    window.addEventListener('pagehide', detailTeardown);
+    window.addEventListener('unload', detailTeardown);
+  }
 }
 
 window.loadContent = loadContent;

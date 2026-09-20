@@ -26,6 +26,7 @@ serde_json.workspace = true
 sha2.workspace = true
 solstone-core-convey-http.workspace = true
 solstone-core-callosum.workspace = true
+solstone-core-generate.workspace = true
 solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
 solstone-core-journal-archive.workspace = true

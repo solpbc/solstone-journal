@@ -17,9 +17,14 @@ pub mod image;
 pub mod kindle;
 pub mod obsidian;
 pub mod oura;
+pub mod producer;
 pub mod registry;
 pub mod shared;
 
+pub use producer::{
+    NativeProducerError, NativeProducerOutcome, NativeProducerRequest, NullDocumentModelClient,
+    NullPdfWorker, NullWireClient, run_native_producer,
+};
 pub use shared::{
     ImportPlan, PlannedEntry, PlannedSegment, SkipLocator, SkipReason, SkippedEntry, SourceError,
 };

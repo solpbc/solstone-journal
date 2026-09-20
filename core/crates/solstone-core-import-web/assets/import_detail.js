@@ -6,7 +6,7 @@
 
   // --- owner-facing strings ---
   const strings = Object.freeze({
-    unknown: 'unknown',
+    unknown: '—',
     drawer_label: 'bookkeeping',
     leads_title: 'where this landed',
     activities: 'activities',
@@ -52,6 +52,11 @@
     failed: 'failed',
     pending: 'pending',
     running: 'running',
+    unconfirmed: 'import incomplete',
+    unconfirmed_explanation: 'this import was interrupted before finalizing.',
+    status_unavailable: 'import status unavailable',
+    image_description_gap_detail: 'image saved without visual description',
+    image_description_gap_completion: 'original saved (description unavailable)',
     processing: 'processing…',
     failed_line: 'failed while processing',
     completed_in: 'completed in',
@@ -81,6 +86,9 @@
     collision_body_after_source: ' as its owner. this ',
     collision_body_journal_entity: 'journal&#39;s',
     collision_body_after_entity: ' owner is unchanged; the other person came in as a regular entity.',
+    unavailable_description: 'unavailable description',
+    unavailable_pages: 'unavailable pages',
+    has_gaps: 'contains gaps',
     file_size_units: Object.freeze(['b', 'kb', 'mb', 'gb'])
   });
   // --- end owner-facing strings ---
@@ -164,6 +172,19 @@
     return `${count} ${plural(count, singular, pluralValue)}`;
   }
 
+  function formatUnavailablePages(value) {
+    if (!hasValue(value)) return null;
+    if (Array.isArray(value)) {
+      if (!value.length) return null;
+      return value.join(', ');
+    }
+    const num = numberValue(value);
+    if (num !== null) {
+      return String(num);
+    }
+    return String(value);
+  }
+
   function formatDuration(startIso, endIso) {
     if (!hasValue(startIso) || !hasValue(endIso)) return null;
     const start = new Date(String(startIso));
@@ -192,6 +213,8 @@
     if (status === strings.completed) return 'success';
     if (status === strings.failed) return 'failed';
     if (status === strings.running) return 'running';
+    if (status === strings.unconfirmed || status === 'unconfirmed') return 'unconfirmed';
+    if (status === strings.status_unavailable || status === 'unavailable') return 'unavailable';
     return 'pending';
   }
 
@@ -205,6 +228,22 @@
         status: strings.failed,
         chipText: strings.failed,
         chipTone: 'danger',
+        open: true
+      };
+    }
+    if (canonicalStatus === 'unconfirmed') {
+      return {
+        status: strings.unconfirmed,
+        chipText: strings.unconfirmed,
+        chipTone: 'warn',
+        open: true
+      };
+    }
+    if (canonicalStatus === 'unavailable') {
+      return {
+        status: strings.status_unavailable,
+        chipText: strings.status_unavailable,
+        chipTone: 'warn',
         open: true
       };
     }
@@ -231,6 +270,8 @@
     const derived = deriveStatus(data);
 
     if (derived.status === strings.failed) return strings.failed_line;
+    if (derived.status === strings.unconfirmed) return strings.unconfirmed_explanation;
+    if (derived.status === strings.status_unavailable) return strings.status_unavailable;
     if (derived.status === strings.running || derived.status === strings.pending) {
       return strings.processing;
     }
@@ -257,8 +298,8 @@
 
   function resolveDay(data) {
     const importedJson = asObject(data?.imported_json) || {};
-    const range = importedJson.date_range || null;
-    const day = importedJson.target_day || range?.[0] || null;
+    const range = importedJson.date_range || data?.date_range || null;
+    const day = importedJson.target_day || data?.target_day || range?.[0] || null;
     return hasValue(day) ? String(day) : null;
   }
 
@@ -268,8 +309,8 @@
   }
 
   function kvRow(label, value) {
-    if (!hasValue(value)) return '';
-    return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd>`;
+    const display = hasValue(value) ? String(value) : '—';
+    return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(display)}</dd>`;
   }
 
   function sectionHtml(title, rows) {
@@ -284,11 +325,11 @@
     const derived = deriveStatus(data);
     const fileName = hasValue(importJson.original_filename)
       ? String(importJson.original_filename)
-      : importedJson.source_type === 'generic'
+      : (importedJson.source_type || data?.source_type) === 'generic'
         ? strings.file
-        : strings.unknown;
-    const fileSize = formatFileSize(importJson.file_size);
-    const uploadTime = formatDateTime(importJson.upload_datetime);
+        : (data?.original_filename ? String(data.original_filename) : strings.unknown);
+    const fileSize = formatFileSize(importJson.file_size || data?.file_size);
+    const uploadTime = formatDateTime(importJson.upload_datetime || data?.upload_datetime);
     const fileText = fileSize ? `${fileName} (${fileSize})` : fileName;
     const uploadHtml = uploadTime
       ? ` · <span>${escapeHtml(strings.uploaded_at)}: ${escapeHtml(uploadTime)}</span>`
@@ -301,14 +342,14 @@
     const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
     const day = resolveDay(data);
-    const source = importedJson.source_display || importedJson.source_type;
+    const source = importedJson.source_display || importedJson.source_type || data?.source_display || data?.source_type;
     const facts = [
       derived.status,
       source,
       day ? window.JournalFormat.day(day) : '',
-      formatCount(importedJson.entries_written, strings.entry, strings.entries),
-      formatCount(importedJson.entities_seeded || null, strings.entity, strings.entities),
-      formatCount(importedJson.total_files_created, strings.file, strings.files)
+      formatCount(importedJson.entries_written ?? data?.entries_written, strings.entry, strings.entries),
+      formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, strings.entity, strings.entities),
+      formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files)
     ].filter(hasValue);
     const encodedDay = day ? encodeURIComponent(day) : '';
     const links = day
@@ -333,15 +374,28 @@
   function processingFacts(data) {
     const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
-    const source = importedJson.source_display || importedJson.source_type;
+    const source = importedJson.source_display || importedJson.source_type || data?.source_display || data?.source_type;
+    const unavailPages = typeof data?.unavailable_pages === 'number'
+      ? (data.unavailable_pages > 0
+          ? (data.unavailable_pages === 1
+              ? '1 page could not be extracted'
+              : `${data.unavailable_pages} pages could not be extracted`)
+          : null)
+      : formatUnavailablePages(data?.unavailable_pages);
+    const unavailDesc = data?.unavailable_description
+      ? strings.image_description_gap_detail
+      : null;
     return sectionHtml(strings.processing_facts, [
       kvRow(strings.status, derived.status),
       kvRow(strings.source, source),
-      kvRow(strings.target_day, importedJson.target_day),
-      kvRow(strings.date_range, formatDateRange(importedJson.date_range)),
-      kvRow(strings.entries, formatCount(importedJson.entries_written, strings.entry, strings.entries)),
-      kvRow(strings.entities, formatCount(importedJson.entities_seeded || null, strings.entity, strings.entities)),
-      kvRow(strings.files, formatCount(importedJson.total_files_created, strings.file, strings.files)),
+      kvRow(strings.target_day, importedJson.target_day || data?.target_day),
+      kvRow(strings.date_range, formatDateRange(importedJson.date_range || data?.date_range)),
+      kvRow(strings.entries, formatCount(importedJson.entries_written ?? data?.entries_written, strings.entry, strings.entries)),
+      kvRow(strings.entities, formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, strings.entity, strings.entities)),
+      kvRow(strings.files, formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files)),
+      kvRow(strings.unavailable_description, unavailDesc),
+      kvRow(strings.unavailable_pages, unavailPages),
+      data?.has_gaps ? kvRow(strings.has_gaps, 'yes') : '',
       kvRow(strings.completed_at, formatDateTime(importedJson.processing_completed)),
       kvRow(strings.failed_at, formatDateTime(importedJson.processing_failed)),
       kvRow(strings.failed_stage, data?.error_stage),

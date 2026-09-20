@@ -639,22 +639,45 @@ pub fn preview(request: DocumentPreviewRequest<'_>, worker: &dyn PdfWorker) -> I
     }
 }
 
-pub fn import(
-    request: DocumentImportRequest<'_>,
+pub struct PreparedDocumentItem {
+    pub input_index: usize,
+    pub source: PathBuf,
+    pub segment_dir: PathBuf,
+    pub prepared: PreparedDocument,
+    pub claim: SegmentClaim,
+    pub page_count: usize,
+    pub engine: String,
+    pub timestamp_source: String,
+}
+
+pub struct PreparedDocumentImport {
+    pub items: Vec<PreparedDocumentItem>,
+    pub errors: Vec<String>,
+    pub hard_failures: Vec<String>,
+    pub timestamps: Vec<SystemTime>,
+    pub _render_dirs: Vec<TemporaryRenderDirectory>,
+}
+
+pub fn prepare_document_import(
+    request: &DocumentImportRequest<'_>,
     worker: &dyn PdfWorker,
     model: &dyn DocumentModelClient,
-    publication: &dyn PublicationOperations,
-) -> ImportResult {
+) -> PreparedDocumentImport {
     let pdfs = find_pdfs(request.source);
     if pdfs.is_empty() {
-        return empty_result("No PDF documents found to import");
+        return PreparedDocumentImport {
+            items: Vec::new(),
+            errors: Vec::new(),
+            hard_failures: Vec::new(),
+            timestamps: Vec::new(),
+            _render_dirs: Vec::new(),
+        };
     }
-    let mut files_created = Vec::new();
+    let mut items = Vec::new();
     let mut errors = Vec::new();
     let mut hard_failures = Vec::new();
-    let mut created_segments = Vec::new();
-    let mut manifest_entries = Vec::new();
     let mut timestamps = Vec::new();
+    let mut render_dirs = Vec::new();
     let mut occupied = HashSet::new();
 
     for (input_index, source) in pdfs.iter().enumerate() {
@@ -778,17 +801,64 @@ pub fn import(
                 .iter()
                 .map(|warning| format!("{}: {warning}", display_name(source))),
         );
+        timestamps.push(claim.timestamp);
+        if let Some((render_dir, _)) = render {
+            render_dirs.push(render_dir);
+        }
+        items.push(PreparedDocumentItem {
+            input_index,
+            source: source.clone(),
+            segment_dir,
+            prepared,
+            claim,
+            page_count: first.page_count,
+            engine: first.engine,
+            timestamp_source: timestamp.source.to_string(),
+        });
+    }
+
+    PreparedDocumentImport {
+        items,
+        errors,
+        hard_failures,
+        timestamps,
+        _render_dirs: render_dirs,
+    }
+}
+
+pub fn install_and_publish_document(
+    prepared_import: &PreparedDocumentImport,
+    request: &DocumentImportRequest<'_>,
+    publication: &dyn PublicationOperations,
+    may_write_record: Option<&dyn Fn() -> bool>,
+) -> ImportResult {
+    if prepared_import.items.is_empty()
+        && prepared_import.hard_failures.is_empty()
+        && prepared_import.errors.is_empty()
+    {
+        return empty_result("No PDF documents found to import");
+    }
+    let mut files_created = Vec::new();
+    let mut errors = prepared_import.errors.clone();
+    let mut hard_failures = prepared_import.hard_failures.clone();
+    let mut created_segments = Vec::new();
+    let mut manifest_entries = Vec::new();
+
+    for item in &prepared_import.items {
         match install_artifacts(
-            source,
-            &segment_dir,
-            &prepared,
+            &item.source,
+            &item.segment_dir,
+            &item.prepared,
             request.journal_root,
-            &claim.day,
+            &item.claim.day,
             publication,
         ) {
             Ok(transcript) => files_created.push(transcript),
             Err(error) => {
-                let failure = format!("{}: document import failed ({error})", display_name(source));
+                let failure = format!(
+                    "{}: document import failed ({error})",
+                    display_name(&item.source)
+                );
                 if error.is_marker_failure() {
                     hard_failures.push(failure.clone());
                 }
@@ -796,29 +866,28 @@ pub fn import(
                 continue;
             }
         }
-        timestamps.push(claim.timestamp);
         created_segments.push(CreatedSegment {
-            day: claim.day.clone(),
-            segment: claim.segment.clone(),
+            day: item.claim.day.clone(),
+            segment: item.claim.segment.clone(),
             stream: STREAM.to_owned(),
             hints: StreamHints::default(),
         });
         manifest_entries.push(json!({
-            "id": format!("document-{input_index}"),
-            "title": source.file_stem().unwrap_or_default().to_string_lossy(),
-            "date": claim.day,
+            "id": format!("document-{}", item.input_index),
+            "title": item.source.file_stem().unwrap_or_default().to_string_lossy(),
+            "date": item.claim.day,
             "type": "document",
-            "preview": char_prefix(&prepared.transcript, 200),
+            "preview": char_prefix(&item.prepared.transcript, 200),
             "meta": {
-                "page_count": first.page_count,
-                "engine": first.engine,
-                "timestamp_source": timestamp.source,
-                "text_layer_pages": prepared.stats.text_layer_pages,
-                "model_extracted_pages": prepared.stats.model_extracted_pages,
-                "unavailable_pages": prepared.stats.unavailable_pages,
-                "image_described_pages": prepared.stats.image_described_pages,
-                "model_calls": prepared.stats.model_calls,
-                "warnings": prepared.warnings,
+                "page_count": item.page_count,
+                "engine": item.engine,
+                "timestamp_source": item.timestamp_source,
+                "text_layer_pages": item.prepared.stats.text_layer_pages,
+                "model_extracted_pages": item.prepared.stats.model_extracted_pages,
+                "unavailable_pages": item.prepared.stats.unavailable_pages,
+                "image_described_pages": item.prepared.stats.image_described_pages,
+                "model_calls": item.prepared.stats.model_calls,
+                "warnings": item.prepared.warnings,
             },
             "segments": [{"day": created_segments.last().expect("created segment").day, "key": created_segments.last().expect("created segment").segment}],
         }));
@@ -827,7 +896,9 @@ pub fn import(
     if !manifest_entries.is_empty()
         && let Err(error) = write_document_content_manifest(request.import_dir, &manifest_entries)
     {
-        errors.push(format!("document content manifest: {error}"));
+        let failure = format!("document content manifest: {error}");
+        errors.push(failure.clone());
+        hard_failures.push(failure);
     }
     if !created_segments.is_empty() {
         let paths = files_created.iter().map(PathBuf::from).collect::<Vec<_>>();
@@ -840,6 +911,7 @@ pub fn import(
                 revision: request.revision,
                 segments: &created_segments,
                 files_created: &paths,
+                may_write_record,
             },
             publication,
         ) {
@@ -868,7 +940,7 @@ pub fn import(
         files_created,
         errors,
         summary: format!(
-            "Imported {} PDF documents across {} days into {} segments",
+            "imported {} PDF documents across {} days into {} segments",
             created_segments.len(),
             days.len(),
             created_segments.len()
@@ -880,13 +952,23 @@ pub fn import(
                 .map(|segment| (segment.day.clone(), segment.segment.clone()))
                 .collect()
         }),
-        date_range: date_range(&timestamps),
+        date_range: date_range(&prepared_import.timestamps),
         merge_summary: None,
         principal_collision: None,
         merge_log_path: None,
         merge_staging_path: None,
         raw_retention: None,
     }
+}
+
+pub fn import(
+    request: DocumentImportRequest<'_>,
+    worker: &dyn PdfWorker,
+    model: &dyn DocumentModelClient,
+    publication: &dyn PublicationOperations,
+) -> ImportResult {
+    let prepared = prepare_document_import(&request, worker, model);
+    install_and_publish_document(&prepared, &request, publication, None)
 }
 
 fn empty_result(summary: &str) -> ImportResult {
@@ -994,7 +1076,7 @@ fn timestamp_in_window(timestamp: SystemTime, now: SystemTime) -> bool {
 }
 
 #[derive(Clone)]
-struct SegmentClaim {
+pub struct SegmentClaim {
     day: String,
     segment: String,
     timestamp: SystemTime,
@@ -1103,19 +1185,19 @@ fn merge_warnings(first: &[String], second: &[String]) -> Vec<String> {
 }
 
 #[derive(Default)]
-struct RenderStats {
-    text_layer_pages: u64,
-    model_extracted_pages: u64,
-    unavailable_pages: u64,
-    image_described_pages: u64,
-    model_calls: u64,
+pub struct RenderStats {
+    pub text_layer_pages: u64,
+    pub model_extracted_pages: u64,
+    pub unavailable_pages: u64,
+    pub image_described_pages: u64,
+    pub model_calls: u64,
 }
 
-struct PreparedDocument {
-    transcript: String,
-    rasters: std::collections::BTreeMap<usize, PathBuf>,
-    warnings: Vec<String>,
-    stats: RenderStats,
+pub struct PreparedDocument {
+    pub transcript: String,
+    pub rasters: std::collections::BTreeMap<usize, PathBuf>,
+    pub warnings: Vec<String>,
+    pub stats: RenderStats,
 }
 
 struct RenderDocumentInput<'a> {
@@ -1529,12 +1611,12 @@ fn create_temporary_file(parent: &Path, name: &std::ffi::OsStr) -> PathBuf {
 }
 
 #[derive(Debug)]
-struct TemporaryRenderDirectory {
+pub struct TemporaryRenderDirectory {
     path: PathBuf,
 }
 
 impl TemporaryRenderDirectory {
-    fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 }
@@ -1581,6 +1663,10 @@ fn write_document_content_manifest(
     import_dir: &Path,
     entries: &[serde_json::Value],
 ) -> Result<(), String> {
+    #[cfg(test)]
+    if import_dir.join(".fail_manifest_write").exists() {
+        return Err("simulated manifest write failure".to_string());
+    }
     create_directory_with_mode(import_dir, DIRECTORY_MODE).map_err(|error| error.to_string())?;
     write_jsonl(
         import_dir.join("content_manifest.jsonl"),

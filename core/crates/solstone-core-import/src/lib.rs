@@ -18,6 +18,7 @@ pub mod dedupe;
 pub mod detect;
 pub mod events;
 pub mod metadata;
+pub mod projection;
 pub mod publish;
 pub mod staging;
 pub mod stream_name;
@@ -53,7 +54,13 @@ pub use events::{
     emit_file_imported, emit_importer_completed, emit_importer_error, emit_importer_started,
     emit_importer_status, emit_observe_observed, emit_observe_observing, emit_supervisor_drain,
 };
-pub use metadata::{ImportMetadata, read_import_metadata, read_provenance, write_import_metadata};
+pub use metadata::{
+    AttemptFacts, AttemptState, ImportMetadata, admit_running_attempt, get_attempt_facts,
+    hold_import_lock, read_import_metadata, read_provenance, record_completed_attempt,
+    record_completed_attempt_unlocked, record_running_attempt, record_unconfirmed_attempt,
+    record_unconfirmed_attempt_unlocked, write_import_metadata,
+};
+pub use projection::{ImportProjection, ProjectionStatus, project_import_result};
 pub use publish::{
     CreatedSegment, DayMarkerOutcome, DayMarkerStatus, IndexPublicationOutcomes, IndexedFile,
     IndexedFileError, NativePublicationOperations, PublicationInput, PublicationOperations,
@@ -191,6 +198,13 @@ pub enum ImportError {
         path: PathBuf,
         message: String,
     },
+    InvalidAttemptState {
+        message: String,
+    },
+    LockFailed {
+        path: PathBuf,
+        message: String,
+    },
     AudioProcessingWait {
         detail: String,
     },
@@ -316,6 +330,16 @@ impl fmt::Display for ImportError {
                 write!(
                     formatter,
                     "no audio segments created from {}",
+                    path.display()
+                )
+            }
+            Self::InvalidAttemptState { message } => {
+                write!(formatter, "invalid attempt state: {message}")
+            }
+            Self::LockFailed { path, message } => {
+                write!(
+                    formatter,
+                    "failed to acquire import lock for {}: {message}",
                     path.display()
                 )
             }

@@ -50,6 +50,8 @@ pub struct ImporterStatus {
     pub entities_found: u64,
     pub source_type: Option<String>,
     pub source_display: Option<String>,
+    pub generation: Option<u64>,
+    pub attempt_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -63,6 +65,8 @@ pub struct ImporterStarted {
     pub options: Map<String, Value>,
     pub stage: String,
     pub stream: String,
+    pub generation: Option<u64>,
+    pub attempt_id: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -131,6 +135,9 @@ pub struct ImporterCompleted {
     pub entries_written: u64,
     pub entities_seeded: u64,
     pub date_range: Option<(String, String)>,
+    pub generation: Option<u64>,
+    pub attempt_id: Option<String>,
+    pub errors: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -140,6 +147,8 @@ pub struct ImporterError {
     pub error: String,
     pub duration_ms: u64,
     pub partial_outputs: Vec<String>,
+    pub generation: Option<u64>,
+    pub attempt_id: Option<String>,
 }
 
 fn object(value: Value) -> Map<String, Value> {
@@ -150,7 +159,7 @@ fn object(value: Value) -> Map<String, Value> {
 }
 
 pub(crate) fn importer_status_fields(value: &ImporterStatus) -> Map<String, Value> {
-    object(json!({
+    let mut fields = object(json!({
         "import_id": value.import_id,
         "stage": value.stage,
         "elapsed_ms": value.elapsed_ms,
@@ -162,7 +171,14 @@ pub(crate) fn importer_status_fields(value: &ImporterStatus) -> Map<String, Valu
         "entities_found": value.entities_found,
         "source_type": value.source_type,
         "source_display": value.source_display,
-    }))
+    }));
+    if let Some(generation_val) = value.generation {
+        fields.insert("generation".to_owned(), json!(generation_val));
+    }
+    if let Some(att) = &value.attempt_id {
+        fields.insert("attempt_id".to_owned(), json!(att));
+    }
+    fields
 }
 
 pub fn emit_importer_status(emitter: &EventEmitter<'_>, value: &ImporterStatus) {
@@ -170,7 +186,7 @@ pub fn emit_importer_status(emitter: &EventEmitter<'_>, value: &ImporterStatus) 
 }
 
 pub(crate) fn importer_started_fields(value: &ImporterStarted) -> Map<String, Value> {
-    object(json!({
+    let mut fields = object(json!({
         "import_id": value.import_id,
         "input_file": value.input_file,
         "file_type": value.file_type,
@@ -180,7 +196,14 @@ pub(crate) fn importer_started_fields(value: &ImporterStarted) -> Map<String, Va
         "options": value.options,
         "stage": value.stage,
         "stream": value.stream,
-    }))
+    }));
+    if let Some(generation_val) = value.generation {
+        fields.insert("generation".to_owned(), json!(generation_val));
+    }
+    if let Some(att) = &value.attempt_id {
+        fields.insert("attempt_id".to_owned(), json!(att));
+    }
+    fields
 }
 
 pub fn emit_importer_started(emitter: &EventEmitter<'_>, value: &ImporterStarted) {
@@ -281,7 +304,7 @@ pub fn emit_enrichment_ready(emitter: &EventEmitter<'_>, value: &EnrichmentReady
 }
 
 pub(crate) fn importer_completed_fields(value: &ImporterCompleted) -> Map<String, Value> {
-    object(json!({
+    let mut fields = object(json!({
         "import_id": value.import_id,
         "stage": value.stage,
         "duration_ms": value.duration_ms,
@@ -296,7 +319,17 @@ pub(crate) fn importer_completed_fields(value: &ImporterCompleted) -> Map<String
         "entries_written": value.entries_written,
         "entities_seeded": value.entities_seeded,
         "date_range": value.date_range,
-    }))
+    }));
+    if let Some(generation_val) = value.generation {
+        fields.insert("generation".to_owned(), json!(generation_val));
+    }
+    if let Some(att) = &value.attempt_id {
+        fields.insert("attempt_id".to_owned(), json!(att));
+    }
+    if !value.errors.is_empty() {
+        fields.insert("errors".to_owned(), json!(value.errors));
+    }
+    fields
 }
 
 pub fn emit_importer_completed(emitter: &EventEmitter<'_>, value: &ImporterCompleted) {
@@ -304,13 +337,20 @@ pub fn emit_importer_completed(emitter: &EventEmitter<'_>, value: &ImporterCompl
 }
 
 pub(crate) fn importer_error_fields(value: &ImporterError) -> Map<String, Value> {
-    object(json!({
+    let mut fields = object(json!({
         "import_id": value.import_id,
         "stage": value.stage,
         "error": value.error,
         "duration_ms": value.duration_ms,
         "partial_outputs": value.partial_outputs,
-    }))
+    }));
+    if let Some(generation_val) = value.generation {
+        fields.insert("generation".to_owned(), json!(generation_val));
+    }
+    if let Some(att) = &value.attempt_id {
+        fields.insert("attempt_id".to_owned(), json!(att));
+    }
+    fields
 }
 
 pub fn emit_importer_error(emitter: &EventEmitter<'_>, value: &ImporterError) {
@@ -381,6 +421,8 @@ mod tests {
                 entities_found: 0,
                 source_type: Some("ics".to_owned()),
                 source_display: Some("Calendar".to_owned()),
+                generation: Some(1),
+                attempt_id: Some("id:1".to_owned()),
             })
             .is_empty()
         );
@@ -395,6 +437,8 @@ mod tests {
                 options: Map::new(),
                 stage: "initialization".to_owned(),
                 stream: "import.ics".to_owned(),
+                generation: Some(1),
+                attempt_id: Some("id:1".to_owned()),
             })
             .is_empty()
         );
@@ -432,8 +476,8 @@ mod tests {
             })
             .is_empty()
         );
-        assert!(
-            !importer_completed_fields(&ImporterCompleted {
+        assert_eq!(
+            importer_completed_fields(&ImporterCompleted {
                 import_id: "id".to_owned(),
                 stage: "done".to_owned(),
                 duration_ms: 1,
@@ -448,8 +492,14 @@ mod tests {
                 entries_written: 1,
                 entities_seeded: 0,
                 date_range: None,
+                generation: Some(1),
+                attempt_id: Some("id:1".to_owned()),
+                errors: vec!["page 2 failed".to_owned()],
             })
-            .is_empty()
+            .get("errors")
+            .and_then(|value| value.as_array())
+            .map(|arr| arr.len()),
+            Some(1)
         );
         assert!(
             !importer_error_fields(&ImporterError {
@@ -458,6 +508,8 @@ mod tests {
                 error: "failed".to_owned(),
                 duration_ms: 1,
                 partial_outputs: vec![],
+                generation: Some(1),
+                attempt_id: Some("id:1".to_owned()),
             })
             .is_empty()
         );

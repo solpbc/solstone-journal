@@ -161,15 +161,28 @@ pub fn preview(path: &Path) -> ImportPreview {
     }
 }
 
-/// Install, describe, and record one image import segment.
-pub fn import_image(
+/// In-memory prepared image import data before publication phase.
+#[derive(Debug, Clone)]
+pub struct PreparedImage {
+    pub path: PathBuf,
+    pub image: DynamicImage,
+    pub format: ImageFormat,
+    pub modified: SystemTime,
+    pub description: DescriptionOutcome,
+    pub timestamp: DateTime<Local>,
+    pub day: String,
+    pub segment: String,
+    pub format_name: &'static str,
+    pub mime_type: &'static str,
+    pub extension: String,
+    pub title: String,
+}
+
+/// Decode and generate AI description for an image in memory without touching chronicle.
+pub fn prepare_image(
     path: &Path,
-    journal_root: &Path,
-    import_id: &str,
-    mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
-    publication: &dyn PublicationOperations,
     wire: &dyn WireClient,
-) -> Result<ImageImportResult, ImageImportError> {
+) -> Result<PreparedImage, ImageImportError> {
     let (image, format, modified, source_bytes) = read_image(path)?;
     let (format_name, mime_type) =
         format_details(format).ok_or_else(|| ImageImportError::UndecodableSource {
@@ -179,13 +192,54 @@ pub fn import_image(
     let timestamp: DateTime<Local> = modified.into();
     let day = timestamp.format("%Y%m%d").to_string();
     let segment = format!("{}_0", timestamp.format("%H%M%S"));
-    let segment_dir =
-        segment_path(journal_root, &day, &segment, IMPORT_STREAM, true).map_err(|error| {
-            ImageImportError::JournalIo {
-                path: journal_root.to_path_buf(),
-                detail: error.to_string(),
-            }
-        })?;
+    let extension = path
+        .extension()
+        .map(|value| format!(".{}", value.to_string_lossy().to_ascii_lowercase()))
+        .unwrap_or_default();
+    let title = path
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+
+    let description =
+        interpret_generate(wire.execute(&build_generate_request(&source_bytes, mime_type)));
+
+    Ok(PreparedImage {
+        path: path.to_path_buf(),
+        image,
+        format,
+        modified,
+        description,
+        timestamp,
+        day,
+        segment,
+        format_name,
+        mime_type,
+        extension,
+        title,
+    })
+}
+
+/// Install original, transcript, and manifest for a prepared image.
+pub fn install_and_publish_image(
+    prepared: &PreparedImage,
+    journal_root: &Path,
+    import_id: &str,
+    _publication: &dyn PublicationOperations,
+    mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
+) -> Result<ImageImportResult, ImageImportError> {
+    let segment_dir = segment_path(
+        journal_root,
+        &prepared.day,
+        &prepared.segment,
+        IMPORT_STREAM,
+        true,
+    )
+    .map_err(|error| ImageImportError::JournalIo {
+        path: journal_root.to_path_buf(),
+        detail: error.to_string(),
+    })?;
     create_directory_with_mode(&segment_dir, PRIVATE_IMPORT_DIR_MODE).map_err(|error| {
         ImageImportError::JournalIo {
             path: segment_dir.clone(),
@@ -193,36 +247,17 @@ pub fn import_image(
         }
     })?;
 
-    let extension = path
-        .extension()
-        .map(|value| format!(".{}", value.to_string_lossy().to_ascii_lowercase()))
-        .unwrap_or_default();
-    let original_path = segment_dir.join(format!("original{extension}"));
-    install_source(
-        path,
-        &original_path,
-        modified,
-        journal_root,
-        &day,
-        publication,
-    )?;
-
-    // Python describes at images.py:113 before it creates the segment at :125;
-    // tests/test_importer_images.py:152-166 consequently expect no artifacts on
-    // vision failure. Native import installs first so a model outage preserves
-    // the owner's ground-truth original and the transcript can explain it.
-    let description =
-        interpret_generate(wire.execute(&build_generate_request(&source_bytes, mime_type)));
+    let original_path = segment_dir.join(format!("original{}", prepared.extension));
+    install_source(&prepared.path, &original_path, prepared.modified)?;
 
     let transcript_path = segment_dir.join(TRANSCRIPT_FILENAME);
-    let title = path.file_stem().unwrap_or_default().to_string_lossy();
     let transcript = render_image_markdown(
-        &title,
-        format_name,
-        image.width(),
-        image.height(),
-        &timestamp.format("%Y-%m-%d").to_string(),
-        &description,
+        &prepared.title,
+        prepared.format_name,
+        prepared.image.width(),
+        prepared.image.height(),
+        &prepared.timestamp.format("%Y-%m-%d").to_string(),
+        &prepared.description,
     );
     write_text(
         &transcript_path,
@@ -236,10 +271,10 @@ pub fn import_image(
         detail: error.to_string(),
     })?;
 
-    let days_affected = vec![day.clone()];
+    let days_affected = vec![prepared.day.clone()];
     let files_created = vec![transcript_path.clone()];
     write_import_manifest(
-        path,
+        &prepared.path,
         journal_root,
         import_id,
         &days_affected,
@@ -250,8 +285,8 @@ pub fn import_image(
         callback(&ProgressUpdate {
             current: 1,
             total: 1,
-            earliest_date: day.clone(),
-            latest_date: day.clone(),
+            earliest_date: prepared.day.clone(),
+            latest_date: prepared.day.clone(),
             entities_found: 0,
         });
     }
@@ -259,14 +294,27 @@ pub fn import_image(
     Ok(ImageImportResult {
         files_created,
         created_segment: CreatedSegment {
-            day,
-            segment,
+            day: prepared.day.clone(),
+            segment: prepared.segment.clone(),
             stream: IMPORT_STREAM.to_owned(),
             hints: Default::default(),
         },
         days_affected,
-        description,
+        description: prepared.description.clone(),
     })
+}
+
+/// Install, describe, and record one image import segment.
+pub fn import_image(
+    path: &Path,
+    journal_root: &Path,
+    import_id: &str,
+    progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
+    publication: &dyn PublicationOperations,
+    wire: &dyn WireClient,
+) -> Result<ImageImportResult, ImageImportError> {
+    let prepared = prepare_image(path, wire)?;
+    install_and_publish_image(&prepared, journal_root, import_id, publication, progress)
 }
 
 fn read_image(
@@ -432,9 +480,6 @@ fn install_source(
     source: &Path,
     destination: &Path,
     modified: SystemTime,
-    journal_root: &Path,
-    day: &str,
-    publication: &dyn PublicationOperations,
 ) -> Result<(), ImageImportError> {
     let parent = destination
         .parent()
@@ -480,12 +525,6 @@ fn install_source(
         path: destination.to_path_buf(),
         detail: error.to_string(),
     })?;
-    publication
-        .touch_stream_health_marker(journal_root, day)
-        .map_err(|detail| ImageImportError::StreamMarker {
-            day: day.to_owned(),
-            detail,
-        })?;
     File::open(destination)
         .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(modified)))
         .map_err(|error| ImageImportError::Install {

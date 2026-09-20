@@ -34,14 +34,13 @@ pub(crate) mod tests {
         body::{Body, to_bytes},
         http::{HeaderMap, Request, StatusCode},
     };
-    use serde_json::{Map, Value, json};
+    use serde_json::{Value, json};
     use sha2::{Digest, Sha256};
     use tower::ServiceExt;
 
     use super::{CTIME_PATHS, DECLARED_STATUS_ROOT_CREATED_AT_OVERFIRE, JsonPath, Segment};
-    use crate::{
-        imports::{ImportInfo, resolve_status_with_timeout},
-        test_support::{CONTENT, FAILED, OK, PENDING, phase_root, populated_root, seed_import},
+    use crate::test_support::{
+        CONTENT, FAILED, OK, PENDING, phase_root, populated_root, seed_import,
     };
 
     const CORPUS: &str = include_str!(concat!(
@@ -886,41 +885,76 @@ pub(crate) mod tests {
 
     #[test]
     fn ac17_status_timeout_and_processing_completed_are_derivations() {
-        let mut values = Map::new();
-        values.insert("error".into(), Value::Null);
-        values.insert("error_stage".into(), Value::Null);
-        values.insert("processed".into(), Value::Bool(false));
-        values.insert("task_id".into(), json!("task"));
-        let info = ImportInfo {
-            imported_at: 100.0,
-            values: values.clone(),
-        };
-        assert_eq!(resolve_status_with_timeout(&info, 109.0, 10.0).0, "running");
-        assert_eq!(
-            resolve_status_with_timeout(&info, 111.0, 10.0),
-            ("failed", json!("Import never completed"), json!("timeout"))
+        let root = phase_root("empty");
+        let timestamp = "20260108_000000";
+        let import_dir = root.path().join("imports").join(timestamp);
+        fs::create_dir_all(&import_dir).unwrap();
+
+        let meta = json!({
+            "task_id": "task_123",
+            "upload_timestamp": 100_000.0 * 1000.0,
+            "source": "ics"
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&meta).unwrap(),
+        )
+        .unwrap();
+
+        let proj_running = solstone_core_import::projection::project_import_result_with_clock(
+            root.path(),
+            timestamp,
+            101_000.0,
         );
-        values.insert("processing_completed".into(), json!(true));
         assert_eq!(
-            resolve_status_with_timeout(
-                &ImportInfo {
-                    imported_at: 0.0,
-                    values
-                },
-                1_000.0,
-                10.0
-            )
-            .0,
-            "success"
+            proj_running.status,
+            solstone_core_import::projection::ProjectionStatus::Running
+        );
+        assert_eq!(proj_running.error, None);
+
+        let proj_timeout = solstone_core_import::projection::project_import_result_with_clock(
+            root.path(),
+            timestamp,
+            104_000.0,
+        );
+        assert_eq!(
+            proj_timeout.status,
+            solstone_core_import::projection::ProjectionStatus::Failed
+        );
+        assert_eq!(
+            proj_timeout.error,
+            Some("Import never completed".to_string())
+        );
+        assert_eq!(proj_timeout.error_stage, Some("timeout".to_string()));
+
+        let completed_meta = json!({
+            "task_id": "task_123",
+            "upload_timestamp": 100_000.0 * 1000.0,
+            "processing_completed": true,
+            "source": "ics"
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&completed_meta).unwrap(),
+        )
+        .unwrap();
+        let proj_success = solstone_core_import::projection::project_import_result_with_clock(
+            root.path(),
+            timestamp,
+            200_000.0,
+        );
+        assert_eq!(
+            proj_success.status,
+            solstone_core_import::projection::ProjectionStatus::Success
         );
     }
 
     #[test]
     fn ac17a_upload_timestamp_is_the_shared_sort_and_timeout_time() {
         let root = phase_root("empty");
-        for (timestamp, upload) in [
+        for (timestamp, upload_sec) in [
             ("20260108_000000", 100_000.0),
-            ("20260109_000000", 199_995.0),
+            ("20260109_000000", 199_000.0),
         ] {
             seed_import(
                 root.path(),
@@ -938,22 +972,97 @@ pub(crate) mod tests {
                 .join("import.json");
             let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
             metadata["task_id"] = json!("task");
-            metadata["upload_timestamp"] = json!(upload * 1000.0);
+            metadata["upload_timestamp"] = json!(upload_sec * 1000.0);
             fs::write(path, serde_json::to_vec(&metadata).unwrap()).unwrap();
         }
-        let old_upload = crate::imports::load_import_info(root.path(), "20260108_000000").unwrap();
-        let recent_upload =
-            crate::imports::load_import_info(root.path(), "20260109_000000").unwrap();
-        assert_eq!(old_upload.imported_at, 100_000.0);
-        assert_eq!(recent_upload.imported_at, 199_995.0);
-        assert_eq!(
-            resolve_status_with_timeout(&old_upload, 200_000.0, 10.0).0,
-            "failed"
+
+        let now_sec = 200_000.0;
+        let old_proj = solstone_core_import::projection::project_import_result_with_clock(
+            root.path(),
+            "20260108_000000",
+            now_sec,
         );
-        assert_eq!(
-            resolve_status_with_timeout(&recent_upload, 200_000.0, 10.0).0,
-            "running"
+        let recent_proj = solstone_core_import::projection::project_import_result_with_clock(
+            root.path(),
+            "20260109_000000",
+            now_sec,
         );
+        assert_eq!(old_proj.imported_at, 100_000.0);
+        assert_eq!(recent_proj.imported_at, 199_000.0);
+        assert_eq!(
+            old_proj.status,
+            solstone_core_import::projection::ProjectionStatus::Failed
+        );
+        assert_eq!(old_proj.error_stage, Some("timeout".to_string()));
+        assert_eq!(
+            recent_proj.status,
+            solstone_core_import::projection::ProjectionStatus::Running
+        );
+    }
+
+    #[tokio::test]
+    async fn http_list_times_out_legacy_task_rows_from_backdated_upload() {
+        let root = phase_root("empty");
+        let timestamp = "20260108_120000";
+        seed_import(
+            root.path(),
+            timestamp,
+            "waiting.md",
+            "text/plain",
+            "timeout",
+            None,
+            b"# waiting\n",
+        );
+        let path = root
+            .path()
+            .join("imports")
+            .join(timestamp)
+            .join("import.json");
+        let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        metadata["task_id"] = json!("task");
+        metadata["upload_timestamp"] = json!(now_ms.saturating_sub(4_000_000));
+        fs::write(path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+
+        let (status, body) = json_request(root.path(), "GET", "/app/import/api/list").await;
+        assert_eq!(status, StatusCode::OK);
+        let row = body["imports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["timestamp"] == timestamp)
+            .expect("timed-out row");
+        assert_eq!(row["status"], "failed");
+        assert_eq!(row["error"], "Import never completed");
+        assert_eq!(row["error_stage"], "timeout");
+    }
+
+    #[tokio::test]
+    async fn corrupted_imported_json_returns_http_200_unavailable() {
+        let root = phase_root("empty");
+        let stamp = "20260111_000000";
+        let dir = root.path().join("imports").join(stamp);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("import.json"), "{}").unwrap();
+        fs::write(dir.join("imported.json"), "{ invalid json").unwrap();
+
+        let (status, list) = json_request(root.path(), "GET", "/app/import/api/list").await;
+        assert_eq!(status, StatusCode::OK);
+        let item = list["imports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["timestamp"] == stamp)
+            .expect("row present");
+        assert_eq!(item["status"], "unavailable");
+
+        let (status, detail) =
+            json_request(root.path(), "GET", &format!("/app/import/api/{stamp}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(detail["status"], "unavailable");
     }
 
     #[test]
@@ -978,8 +1087,8 @@ pub(crate) mod tests {
         metadata["facet"] = json!("work");
         fs::write(path, serde_json::to_vec(&metadata).unwrap()).unwrap();
 
-        let info = crate::imports::load_import_info(root.path(), timestamp).unwrap();
-        assert_eq!(info.values["facet"], json!("work"));
+        let meta = solstone_core_import::read_import_metadata(root.path(), timestamp).unwrap();
+        assert_eq!(meta.get("facet").and_then(Value::as_str), Some("work"));
     }
 
     #[tokio::test]
@@ -1155,5 +1264,476 @@ pub(crate) mod tests {
                 _ => unreachable!(),
             }
         }
+    }
+
+    const TINY_PNG_FIXTURE: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
+
+    struct FakeWebPdfWorker {
+        payload: solstone_core_import_sources::document::PdfPayload,
+    }
+
+    impl solstone_core_import_sources::document::PdfWorker for FakeWebPdfWorker {
+        fn execute(
+            &self,
+            _request: &solstone_core_import_sources::document::PdfWorkerRequest,
+        ) -> Result<
+            solstone_core_import_sources::document::PdfPayload,
+            solstone_core_import_sources::document::WorkerFailure,
+        > {
+            Ok(self.payload.clone())
+        }
+    }
+
+    fn collect_tree_bytes(dir: &Path) -> std::collections::BTreeMap<std::path::PathBuf, Vec<u8>> {
+        let mut map = std::collections::BTreeMap::new();
+        fn walk(
+            root: &Path,
+            current: &Path,
+            map: &mut std::collections::BTreeMap<std::path::PathBuf, Vec<u8>>,
+        ) {
+            if let Ok(entries) = fs::read_dir(current) {
+                for entry in entries.filter_map(Result::ok) {
+                    let path = entry.path();
+                    if path.is_file() {
+                        if let Ok(bytes) = fs::read(&path)
+                            && let Ok(rel) = path.strip_prefix(root)
+                        {
+                            map.insert(rel.to_path_buf(), bytes);
+                        }
+                    } else if path.is_dir() {
+                        walk(root, &path, map);
+                    }
+                }
+            }
+        }
+        walk(dir, dir, &mut map);
+        map
+    }
+
+    #[tokio::test]
+    async fn test_native_producer_roundtrip_immutability_helper() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let img_path = root.join("test.png");
+        fs::write(&img_path, TINY_PNG_FIXTURE).unwrap();
+
+        let id = "20260408_120000";
+        let req = solstone_core_import_sources::producer::NativeProducerRequest {
+            journal_root: root,
+            source_path: &img_path,
+            import_id: id,
+            source: solstone_core_import::RegistrySource::Image,
+            revision: None,
+            password: None,
+            force: false,
+            expected_generation: None,
+        };
+        solstone_core_import_sources::producer::run_native_producer(
+            req,
+            &solstone_core_import_sources::producer::NullWireClient,
+            &solstone_core_import_sources::producer::NullPdfWorker,
+            &solstone_core_import_sources::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("import succeeds");
+
+        let before = collect_tree_bytes(root);
+
+        let (status1, detail) = json_request(root, "GET", &format!("/app/import/api/{id}")).await;
+        assert_eq!(status1, StatusCode::OK);
+        assert_eq!(detail["status"], "success");
+
+        let (status2, content) =
+            json_request(root, "GET", &format!("/app/import/api/{id}/content")).await;
+        assert_eq!(status2, StatusCode::OK);
+        assert!(!content["items"].as_array().unwrap().is_empty());
+
+        let after = collect_tree_bytes(root);
+        assert_eq!(before, after, "GET requests must not mutate disk state");
+    }
+
+    #[tokio::test]
+    async fn test_native_image_get_recovers_source_count_date_content() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let img_path = root.join("photo.png");
+        fs::write(&img_path, TINY_PNG_FIXTURE).unwrap();
+
+        let id = "20260408_130000";
+        let req = solstone_core_import_sources::producer::NativeProducerRequest {
+            journal_root: root,
+            source_path: &img_path,
+            import_id: id,
+            source: solstone_core_import::RegistrySource::Image,
+            revision: None,
+            password: None,
+            force: false,
+            expected_generation: None,
+        };
+        solstone_core_import_sources::producer::run_native_producer(
+            req,
+            &solstone_core_import_sources::producer::NullWireClient,
+            &solstone_core_import_sources::producer::NullPdfWorker,
+            &solstone_core_import_sources::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("import succeeds");
+
+        let (status, body) = json_request(root, "GET", &format!("/app/import/api/{id}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "success");
+        assert_eq!(body["imported_json"]["status"], "success");
+        assert_eq!(
+            body["imported_json"]["schema"],
+            "solstone.import.publication.v1"
+        );
+
+        let (c_status, c_body) =
+            json_request(root, "GET", &format!("/app/import/api/{id}/content")).await;
+        assert_eq!(c_status, StatusCode::OK);
+        assert_eq!(c_body["source_type"], "image");
+        assert_eq!(c_body["total"], 1);
+        assert_eq!(
+            c_body["months"]
+                .as_object()
+                .unwrap()
+                .values()
+                .map(|v| v.as_u64().unwrap())
+                .sum::<u64>(),
+            1
+        );
+        let items = c_body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["stream"], "import.image");
+
+        let item_id = items[0]["id"].as_str().unwrap();
+        let (item_status, item_body) = json_request(
+            root,
+            "GET",
+            &format!("/app/import/api/{id}/content/{item_id}"),
+        )
+        .await;
+        assert_eq!(item_status, StatusCode::OK);
+        assert!(!item_body["content"].as_array().unwrap().is_empty());
+
+        // Historical fixture with imported.json but no attempt timing
+        let hist_id = "20260101_100000";
+        let hist_dir = root.join("imports").join(hist_id);
+        fs::create_dir_all(&hist_dir).unwrap();
+        fs::write(
+            hist_dir.join("imported.json"),
+            json!({
+                "schema": "solstone.import.publication.v1",
+                "status": "success",
+                "importer": "image",
+                "segments": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            hist_dir.join("import.json"),
+            json!({
+                "original_filename": "hist.png",
+                "file_size": 100,
+                "mime_type": "image/png",
+                "source": "image"
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let (_, hist_body) = json_request(root, "GET", &format!("/app/import/api/{hist_id}")).await;
+        assert_eq!(hist_body["attempt"]["duration_ms"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn test_native_pdf_get_no_manifest_json() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let pdf_path = root.join("doc.pdf");
+        fs::write(&pdf_path, b"%PDF-1.4 fake").unwrap();
+
+        let id = "20260408_140000";
+        let text = "Here is valid extracted text for the test document exceeding fifty characters.";
+        let payload = solstone_core_import_sources::document::PdfPayload {
+            schema: "sol-pdf/1".to_owned(),
+            page_count: 1,
+            pages: vec![solstone_core_import_sources::document::PdfPage {
+                index: 0,
+                chars: text.len(),
+                text: Some(text.to_owned()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let worker = FakeWebPdfWorker { payload };
+        let req = solstone_core_import_sources::producer::NativeProducerRequest {
+            journal_root: root,
+            source_path: &pdf_path,
+            import_id: id,
+            source: solstone_core_import::RegistrySource::Document,
+            revision: None,
+            password: None,
+            force: false,
+            expected_generation: None,
+        };
+        solstone_core_import_sources::producer::run_native_producer(
+            req,
+            &solstone_core_import_sources::producer::NullWireClient,
+            &worker,
+            &solstone_core_import_sources::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("pdf import succeeds");
+
+        assert!(!root.join("imports").join(id).join("manifest.json").exists());
+
+        let (status, body) = json_request(root, "GET", &format!("/app/import/api/{id}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "success");
+        assert_eq!(body["imported_json"]["status"], "success");
+        assert_eq!(
+            body["imported_json"]["schema"],
+            "solstone.import.publication.v1"
+        );
+
+        let (c_status, c_body) =
+            json_request(root, "GET", &format!("/app/import/api/{id}/content")).await;
+        assert_eq!(c_status, StatusCode::OK);
+        assert_eq!(c_body["source_type"], "document");
+        assert_eq!(c_body["total"], 1);
+        let items = c_body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["stream"], "import.document");
+    }
+
+    #[tokio::test]
+    async fn test_publication_failure_get_is_not_success() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let id = "20260408_150000";
+        let import_dir = root.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            json!({
+                "original_filename": "failed.png",
+                "file_size": 100,
+                "mime_type": "image/png",
+                "source": "image",
+                "attempt": {
+                    "attempt_id": id,
+                    "generation": 1,
+                    "state": "unconfirmed",
+                    "started_at_ms": 1000,
+                    "finished_at_ms": 2000,
+                    "failure_reason": "publication failed"
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let (status, body) = json_request(root, "GET", &format!("/app/import/api/{id}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_ne!(body["status"], "success");
+        assert_eq!(body["status"], "unconfirmed");
+    }
+
+    #[tokio::test]
+    async fn test_malformed_imported_json_is_not_ordinary_empty() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let id = "20260408_160000";
+        let import_dir = root.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            json!({
+                "original_filename": "corrupt.png",
+                "file_size": 100,
+                "mime_type": "image/png",
+                "source": "image"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(import_dir.join("imported.json"), b"{ invalid json").unwrap();
+
+        let (status, body) =
+            json_request(root, "GET", &format!("/app/import/api/{id}/content")).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["reason_code"], "import_metadata_failed");
+    }
+
+    #[tokio::test]
+    async fn test_browse_source_day_differs_from_import_id_and_missing_retained_file() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let id = "20260408_170000";
+        let source_day = "20260401";
+        let segment_name = "120000_0";
+
+        let chronicle_dir = root
+            .join("chronicle")
+            .join(source_day)
+            .join("import.image")
+            .join(segment_name);
+        fs::create_dir_all(&chronicle_dir).unwrap();
+        fs::write(
+            chronicle_dir.join("image_transcript.md"),
+            "# Sample Image Transcript",
+        )
+        .unwrap();
+
+        let import_dir = root.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            json!({
+                "original_filename": "photo.png",
+                "file_size": 100,
+                "mime_type": "image/png",
+                "source": "image"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            import_dir.join("imported.json"),
+            json!({
+                "schema": "solstone.import.publication.v1",
+                "status": "success",
+                "importer": "image",
+                "segments": [
+                    {
+                        "day": source_day,
+                        "segment": segment_name,
+                        "stream": "import.image",
+                        "outcome": "published"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // 1. Content list returns item referencing source_day
+        let (status, body) =
+            json_request(root, "GET", &format!("/app/import/api/{id}/content")).await;
+        assert_eq!(status, StatusCode::OK);
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["segments"][0]["day"], source_day);
+
+        // 2. Content detail fetches from source_day
+        let item_id = items[0]["id"].as_str().unwrap();
+        let (item_status, item_body) = json_request(
+            root,
+            "GET",
+            &format!("/app/import/api/{id}/content/{item_id}"),
+        )
+        .await;
+        assert_eq!(item_status, StatusCode::OK);
+        assert_eq!(
+            item_body["content"][0]["content"],
+            "# Sample Image Transcript"
+        );
+
+        // 3. Deleting retained chronicle segment causes import_content_failed, not empty success
+        fs::remove_dir_all(&chronicle_dir).unwrap();
+        let (missing_status, missing_body) = json_request(
+            root,
+            "GET",
+            &format!("/app/import/api/{id}/content/{item_id}"),
+        )
+        .await;
+        assert_eq!(missing_status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(missing_body["reason_code"], "import_content_failed");
+    }
+
+    #[tokio::test]
+    async fn test_item_42_payload_hygiene_list_and_detail() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let id = "20260408_170000";
+        let import_dir = root.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            json!({
+                "original_filename": "hygiene.png",
+                "file_size": 100,
+                "mime_type": "image/png",
+                "source": "image",
+                "attempt": {
+                    "attempt_id": id,
+                    "generation": 1,
+                    "state": "completed",
+                    "started_at_ms": 1000,
+                    "finished_at_ms": 2000
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            import_dir.join("imported.json"),
+            json!({
+                "schema": "solstone.import.publication.v1",
+                "status": "success",
+                "importer": "image",
+                "segments": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        // 1. List rows have no raw_metadata or raw_publication
+        let (status, list) = json_request(root, "GET", "/app/import/api/list").await;
+        assert_eq!(status, StatusCode::OK);
+        let row = list["imports"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["timestamp"] == id)
+            .expect("row found");
+        let row_obj = row.as_object().unwrap();
+        assert!(
+            !row_obj.contains_key("raw_metadata"),
+            "list row must not have raw_metadata"
+        );
+        assert!(
+            !row_obj.contains_key("raw_publication"),
+            "list row must not have raw_publication"
+        );
+
+        // 2. Detail does not insert attempt twice and has no duplicate raw_* vs import_json/imported_json
+        let (status, detail) = json_request(root, "GET", &format!("/app/import/api/{id}")).await;
+        assert_eq!(status, StatusCode::OK);
+        let detail_obj = detail.as_object().unwrap();
+        assert!(
+            !detail_obj.contains_key("raw_metadata"),
+            "detail must not have raw_metadata"
+        );
+        assert!(
+            !detail_obj.contains_key("raw_publication"),
+            "detail must not have raw_publication"
+        );
+        assert!(
+            detail_obj.contains_key("import_json"),
+            "detail must contain import_json"
+        );
+        assert!(
+            detail_obj.contains_key("imported_json"),
+            "detail must contain imported_json"
+        );
     }
 }

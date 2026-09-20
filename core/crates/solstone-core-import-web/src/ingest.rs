@@ -969,10 +969,12 @@ pub(crate) async fn imports(
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"import","item_id":id,"reason":"id_collision"}),
                 )?;
             } else {
-                fs::create_dir_all(&target).map_err(|error| error.to_string())?;
+                let mut sanitized_import_json = import_json.clone();
+                sanitized_import_json.remove("attempt");
+                sanitized_import_json.remove("task_id");
                 write_json(
                     &contained(&app.root, &format!("imports/{id}/import.json"))?,
-                    &Value::Object(import_json.clone()),
+                    &Value::Object(sanitized_import_json),
                 )?;
                 write_json(
                     &contained(&app.root, &format!("imports/{id}/imported.json"))?,
@@ -1785,6 +1787,52 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(response["errors"].as_array().unwrap().len(), 1);
         assert!(fs::read_dir(outside.path()).unwrap().next().is_none());
+    }
+
+    #[tokio::test]
+    async fn ingest_strips_attempt_and_task_id_from_peer_import_json() {
+        let root = phase_root("empty");
+        let id = "20260919_120000";
+        let (status, response) = request(
+            root.path(),
+            &format!("/app/import/journal/{PREFIX}/ingest/imports"),
+            Body::from(
+                json!({
+                    "imports": [{
+                        "id": id,
+                        "import_json": {
+                            "original_filename": "peer.png",
+                            "attempt": {
+                                "attempt_id": format!("{id}:9"),
+                                "generation": 9,
+                                "state": "running",
+                                "started_at_ms": 9_999_999_999_u64
+                            },
+                            "task_id": "peer-task"
+                        },
+                        "imported_json": {"processed": true},
+                        "content_manifest": []
+                    }]
+                })
+                .to_string(),
+            ),
+            "application/json",
+            true,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{response}");
+        let written: Value = serde_json::from_slice(
+            &fs::read(root.path().join("imports").join(id).join("import.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            written.get("attempt").is_none(),
+            "peer attempt must not be persisted: {written}"
+        );
+        assert!(
+            written.get("task_id").is_none(),
+            "peer task_id must not be persisted: {written}"
+        );
     }
 
     #[cfg(unix)]

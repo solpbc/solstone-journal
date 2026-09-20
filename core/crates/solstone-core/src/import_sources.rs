@@ -14,10 +14,8 @@ use std::ffi::OsString;
 
 use solstone_core_generate::OneShotClient;
 use solstone_core_import::cli_render::CliRun;
-use solstone_core_import::{
-    ImportResult, NativePublicationOperations, PublicationInput, PublicationOperations,
-    PublicationStatus, RegistrySource, cli_render, publish_with_operations,
-};
+use solstone_core_import::publish::NativePublicationOperations;
+use solstone_core_import::{ImportResult, RegistrySource, cli_render};
 use solstone_core_import_host::cli_argv::RegistryDispatch;
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
@@ -114,23 +112,76 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         Ok(client) => document::SystemDocumentModelClient::new(client),
         Err(error) => return failure(format!("{}\n", error_text(error))),
     };
-    let import_dir = journal.join("imports").join(&dispatch.timestamp);
+    if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
+        return refused;
+    }
+    let started_at_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let facts = match solstone_core_import::admit_running_attempt(
+        journal,
+        &dispatch.timestamp,
+        started_at_ms,
+        Some("document"),
+    ) {
+        Ok(f) => f,
+        Err(err) => {
+            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
+        }
+    };
     let publication = NativePublicationOperations;
-    let result = document::import(
-        document::DocumentImportRequest {
-            source: &dispatch.media,
+    let outcome = match solstone_core_import_sources::run_native_producer(
+        solstone_core_import_sources::NativeProducerRequest {
             journal_root: journal,
-            import_dir: &import_dir,
+            source_path: &dispatch.media,
             import_id: &dispatch.timestamp,
+            source: dispatch.source,
             revision: None,
             password: None,
             force: dispatch.force,
-            now: SystemTime::now(),
+            expected_generation: Some(facts.generation),
         },
+        &solstone_core_import_sources::NullWireClient,
         &worker,
         &model,
         &publication,
-    );
+    ) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return failure(format!(
+                "{} import failed: {}\n",
+                dispatch.source.name(),
+                producer_owner_message(&error)
+            ));
+        }
+    };
+    let proj = solstone_core_import::project_import_result(journal, &dispatch.timestamp);
+    let mut errors = outcome.errors;
+    if let Some(err) = proj.error
+        && !errors.contains(&err)
+    {
+        errors.push(err);
+    }
+    let result = ImportResult {
+        entries_written: outcome.entries_written,
+        entities_seeded: 0,
+        files_created: outcome
+            .files_created
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
+        errors,
+        summary: format!("imported {} PDF documents", outcome.entries_written),
+        hard_failures: Vec::new(),
+        segments: None,
+        date_range: proj.date_range.clone(),
+        merge_summary: None,
+        principal_collision: None,
+        merge_log_path: None,
+        merge_staging_path: None,
+        raw_retention: None,
+    };
     render_result(dispatch.source, result)
 }
 
@@ -299,87 +350,77 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
             &image::preview(&dispatch.media),
         ));
     }
-    let wire = image::SystemWireClient;
-    match image::import_image(
-        &dispatch.media,
+    if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
+        return refused;
+    }
+    let started_at_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let facts = match solstone_core_import::admit_running_attempt(
         journal,
         &dispatch.timestamp,
-        None,
-        &NativePublicationOperations,
-        &wire,
+        started_at_ms,
+        Some("image"),
     ) {
-        Ok(outcome) => finish_image_import(
-            dispatch.source,
-            journal,
-            &dispatch.timestamp,
-            outcome,
-            &NativePublicationOperations,
-        ),
-        Err(error) => failure(format!(
-            "{} import failed: {error}\n",
-            dispatch.source.name()
-        )),
-    }
-}
-
-fn finish_image_import(
-    source: RegistrySource,
-    journal: &Path,
-    import_id: &str,
-    outcome: image::ImageImportResult,
-    publication: &dyn PublicationOperations,
-) -> CliRun {
-    let import_dir = journal.join("imports").join(import_id);
-    let files_created = outcome.files_created;
-    let segments = [outcome.created_segment];
-    let publication_result = publish_with_operations(
-        PublicationInput {
-            journal,
-            import_dir: Some(&import_dir),
-            import_id,
-            importer: "image",
-            revision: None,
-            segments: &segments,
-            files_created: &files_created,
-        },
-        publication,
-    );
-    let publication_failure = match publication_result {
-        Ok(record) if record.status == PublicationStatus::Failure => {
-            Some("one or more publication operations failed".to_owned())
+        Ok(f) => f,
+        Err(err) => {
+            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
         }
-        Ok(_) => None,
-        Err(error) => Some(error.to_string()),
     };
-    let segment_locations = segments
-        .iter()
-        .map(|segment| (segment.day.clone(), segment.segment.clone()))
-        .collect::<Vec<_>>();
-    let files_created = files_created
-        .iter()
-        .map(|path| path.display().to_string())
-        .collect();
-    let mut result = ImportResult {
-        entries_written: 1,
+    let wire = image::SystemWireClient;
+    let outcome = match solstone_core_import_sources::run_native_producer(
+        solstone_core_import_sources::NativeProducerRequest {
+            journal_root: journal,
+            source_path: &dispatch.media,
+            import_id: &dispatch.timestamp,
+            source: dispatch.source,
+            revision: None,
+            password: None,
+            force: dispatch.force,
+            expected_generation: Some(facts.generation),
+        },
+        &wire,
+        &solstone_core_import_sources::NullPdfWorker,
+        &solstone_core_import_sources::NullDocumentModelClient,
+        &NativePublicationOperations,
+    ) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            return failure(format!(
+                "{} import failed: {}\n",
+                dispatch.source.name(),
+                producer_owner_message(&error)
+            ));
+        }
+    };
+    let proj = solstone_core_import::project_import_result(journal, &dispatch.timestamp);
+    let mut errors = outcome.errors;
+    if let Some(err) = proj.error
+        && !errors.contains(&err)
+    {
+        errors.push(err);
+    }
+    let result = ImportResult {
+        entries_written: outcome.entries_written,
         entities_seeded: 0,
-        files_created,
-        errors: Vec::new(),
-        summary: "Imported 1 image".to_owned(),
+        files_created: outcome
+            .files_created
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect(),
+        errors,
+        summary: "imported 1 image".to_owned(),
         hard_failures: Vec::new(),
-        segments: Some(segment_locations),
-        date_range: None,
+        segments: None,
+        date_range: proj.date_range.clone(),
         merge_summary: None,
         principal_collision: None,
         merge_log_path: None,
         merge_staging_path: None,
         raw_retention: None,
     };
-    if let Some(detail) = publication_failure {
-        let failure = format!("image publication failed ({detail})");
-        result.errors.push(failure.clone());
-        result.hard_failures.push(failure);
-    }
-    render_result(source, result)
+    render_result(dispatch.source, result)
 }
 
 fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
@@ -439,6 +480,44 @@ fn archive_incomplete_detail(outcome: &ArchiveMergeResult) -> String {
         outcome.merge_summary.segments_errored,
         outcome.merge_summary.entities_staged,
     )
+}
+
+fn refuse_if_live_running(
+    journal: &Path,
+    import_id: &str,
+    source: RegistrySource,
+) -> Option<CliRun> {
+    let Ok(Some(meta)) = solstone_core_import::read_provenance(journal, import_id) else {
+        return None;
+    };
+    let facts = solstone_core_import::get_attempt_facts(&meta)?;
+    if facts.state != solstone_core_import::AttemptState::Running {
+        return None;
+    }
+    let now_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    if now_ms.saturating_sub(facts.started_at_ms) > 3_600_000 {
+        return None;
+    }
+    Some(failure(format!(
+        "{} import failed: import failed\n",
+        source.name()
+    )))
+}
+
+fn producer_owner_message(
+    error: &solstone_core_import_sources::NativeProducerError,
+) -> &'static str {
+    match error {
+        solstone_core_import_sources::NativeProducerError::PublicationFailed { detail }
+            if detail.contains("interrupted") =>
+        {
+            "this import was interrupted before finalizing."
+        }
+        _ => "import failed",
+    }
 }
 
 fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {
@@ -505,65 +584,60 @@ fn failure(stderr: String) -> CliRun {
 mod tests {
     use std::fs;
 
-    use solstone_core_import::CreatedSegment;
-    use solstone_core_import_sources::image::{DescriptionOutcome, ImageImportResult};
     use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
 
     use super::*;
 
-    const DAY: &str = "20260809";
-    const SEGMENT: &str = "090000_60";
+    const TINY_PNG: &[u8] = &[
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
+        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
+        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
+        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
+        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+    ];
 
-    fn image_outcome(journal: &Path) -> ImageImportResult {
-        let segment = journal
-            .join("chronicle")
-            .join(DAY)
-            .join("import.image")
-            .join(SEGMENT);
-        fs::create_dir_all(&segment).unwrap();
-        fs::create_dir_all(journal.join("imports/image-test")).unwrap();
-        fs::write(segment.join("original.png"), b"image").unwrap();
-        let transcript = segment.join("transcript.md");
-        fs::write(&transcript, b"# Image\n").unwrap();
-        ImageImportResult {
-            files_created: vec![transcript],
-            created_segment: CreatedSegment {
-                day: DAY.to_owned(),
-                segment: SEGMENT.to_owned(),
-                stream: "import.image".to_owned(),
-                hints: Default::default(),
-            },
-            days_affected: vec![DAY.to_owned()],
-            description: DescriptionOutcome::Unavailable {
-                reason: "fixture".to_owned(),
-            },
+    fn image_dispatch(image_path: &Path, timestamp: &str) -> RegistryDispatch {
+        RegistryDispatch {
+            source: RegistrySource::Image,
+            media: image_path.to_path_buf(),
+            timestamp: timestamp.to_owned(),
+            dry_run: false,
+            force: false,
         }
+    }
+
+    fn image_time(img: &Path) -> (String, String) {
+        let modified = img.metadata().unwrap().modified().unwrap();
+        let dt: chrono::DateTime<chrono::Local> = modified.into();
+        (
+            dt.format("%Y%m%d").to_string(),
+            format!("{}_0", dt.format("%H%M%S")),
+        )
     }
 
     #[test]
     fn image_publication_advances_stream_and_dirties_the_day_before_success() {
         let journal = tempfile::tempdir().unwrap();
-        let run = finish_image_import(
-            RegistrySource::Image,
-            journal.path(),
-            "image-test",
-            image_outcome(journal.path()),
-            &NativePublicationOperations,
-        );
+        let img = journal.path().join("sample.png");
+        fs::write(&img, TINY_PNG).unwrap();
+        let (day, seg) = image_time(&img);
+        let dispatch = image_dispatch(&img, "20260809_090000");
 
+        let run = run(dispatch, journal.path());
         assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stdout.contains("imported 1 image"));
         assert!(
             journal
                 .path()
                 .join("chronicle")
-                .join(DAY)
+                .join(&day)
                 .join("import.image")
-                .join(SEGMENT)
+                .join(&seg)
                 .join("stream.json")
                 .is_file()
         );
         assert!(matches!(
-            read_health_marker(journal.path(), DAY, HealthMarkerKind::Stream).unwrap(),
+            read_health_marker(journal.path(), &day, HealthMarkerKind::Stream).unwrap(),
             HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
         ));
     }
@@ -571,30 +645,27 @@ mod tests {
     #[test]
     fn image_stream_publication_failure_is_terminal_and_recorded() {
         let journal = tempfile::tempdir().unwrap();
-        let outcome = image_outcome(journal.path());
-        fs::create_dir(
+        let img = journal.path().join("sample.png");
+        fs::write(&img, TINY_PNG).unwrap();
+        let (day, seg) = image_time(&img);
+        fs::create_dir_all(
             journal
                 .path()
                 .join("chronicle")
-                .join(DAY)
+                .join(&day)
                 .join("import.image")
-                .join(SEGMENT)
+                .join(&seg)
                 .join("stream.json"),
         )
         .unwrap();
 
-        let run = finish_image_import(
-            RegistrySource::Image,
-            journal.path(),
-            "image-test",
-            outcome,
-            &NativePublicationOperations,
-        );
+        let dispatch = image_dispatch(&img, "20260809_090000");
+        let run = run(dispatch, journal.path());
 
         assert_ne!(run.exit_code, 0);
-        assert!(run.stderr.contains("image publication failed"));
+        assert!(run.stderr.contains("image import failed:"));
         let record: serde_json::Value = serde_json::from_slice(
-            &fs::read(journal.path().join("imports/image-test/imported.json")).unwrap(),
+            &fs::read(journal.path().join("imports/20260809_090000/imported.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(record["status"], "failure");
@@ -607,41 +678,82 @@ mod tests {
     #[test]
     fn image_day_marker_failure_is_terminal_after_content_publication() {
         let journal = tempfile::tempdir().unwrap();
-        let outcome = image_outcome(journal.path());
+        let img = journal.path().join("sample.png");
+        fs::write(&img, TINY_PNG).unwrap();
+        let (day, seg) = image_time(&img);
         fs::create_dir_all(
             journal
                 .path()
                 .join("chronicle")
-                .join(DAY)
+                .join(&day)
                 .join("health/stream.updated"),
         )
         .unwrap();
 
-        let run = finish_image_import(
-            RegistrySource::Image,
-            journal.path(),
-            "image-test",
-            outcome,
-            &NativePublicationOperations,
-        );
+        let dispatch = image_dispatch(&img, "20260809_090000");
+        let run = run(dispatch, journal.path());
 
         assert_ne!(run.exit_code, 0);
-        assert!(run.stderr.contains("image publication failed"));
+        assert!(run.stderr.contains("image import failed:"));
         assert!(
             journal
                 .path()
                 .join("chronicle")
-                .join(DAY)
+                .join(&day)
                 .join("import.image")
-                .join(SEGMENT)
+                .join(&seg)
                 .join("original.png")
                 .is_file()
         );
         let record: serde_json::Value = serde_json::from_slice(
-            &fs::read(journal.path().join("imports/image-test/imported.json")).unwrap(),
+            &fs::read(journal.path().join("imports/20260809_090000/imported.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(record["status"], "failure");
         assert_eq!(record["day_markers"][0]["outcome"]["status"], "failed");
+    }
+
+    #[test]
+    fn image_publication_lifecycle_success() {
+        let journal = tempfile::tempdir().unwrap();
+        let image_path = journal.path().join("test.png");
+        fs::write(&image_path, TINY_PNG).unwrap();
+
+        let dispatch = image_dispatch(&image_path, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        let proj = solstone_core_import::project_import_result(journal.path(), "20260809_090000");
+        assert_eq!(proj.status, solstone_core_import::ProjectionStatus::Success);
+    }
+
+    #[test]
+    fn image_cli_refuses_a_live_running_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let image_path = journal.path().join("test.png");
+        fs::write(&image_path, TINY_PNG).unwrap();
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let facts = solstone_core_import::admit_running_attempt(
+            journal.path(),
+            "20260809_090000",
+            now_ms,
+            Some("image"),
+        )
+        .unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Running);
+
+        let dispatch = image_dispatch(&image_path, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stderr.contains("image import failed:"));
+
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let after = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_eq!(after.generation, 1);
+        assert_eq!(after.state, solstone_core_import::AttemptState::Running);
     }
 }

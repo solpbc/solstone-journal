@@ -4352,6 +4352,7 @@ dependencies = [
  "solstone-core-convey-shell",
  "solstone-core-entity-matching",
  "solstone-core-facets",
+ "solstone-core-generate",
  "solstone-core-import",
  "solstone-core-import-sources",
  "solstone-core-journal-archive",

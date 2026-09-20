@@ -10,7 +10,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use solstone_core_indexer_store::scan::{RescanFileStatus, rescan_file};
+pub use solstone_core_indexer_store::scan::RescanFileStatus;
+use solstone_core_indexer_store::scan::rescan_file;
 use solstone_core_journal_io::{AtomicWriteError, JsonWriteOptions, write_json};
 use solstone_core_segment::{
     StreamAdvance, StreamHints, UnboundStreamAdvanceError, advance_unbound_stream,
@@ -40,6 +41,7 @@ pub struct PublicationInput<'a> {
     pub revision: Option<&'a str>,
     pub segments: &'a [CreatedSegment],
     pub files_created: &'a [PathBuf],
+    pub may_write_record: Option<&'a (dyn Fn() -> bool + 'a)>,
 }
 
 #[derive(Debug)]
@@ -371,7 +373,10 @@ pub fn publish_with_operations(
         indexing,
         day_markers,
     };
-    write_publication_record(input.import_dir, &record)?;
+    let should_write = input.may_write_record.is_none_or(|predicate| predicate());
+    if should_write {
+        write_publication_record(input.import_dir, &record)?;
+    }
     Ok(record)
 }
 
@@ -506,6 +511,7 @@ mod tests {
             revision: Some("test"),
             segments,
             files_created: files,
+            may_write_record: None,
         }
     }
 

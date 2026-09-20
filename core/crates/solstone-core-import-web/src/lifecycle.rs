@@ -343,22 +343,14 @@ fn manifest_exists(root: &Path, hash: &SourceHash) -> bool {
 fn import_is_running_or_successful(
     root: &Path,
     timestamp: &str,
-    metadata: &ImportMetadata,
+    _metadata: &ImportMetadata,
 ) -> bool {
-    let imported = root.join("imports").join(timestamp).join("imported.json");
-    if let Ok(bytes) = std::fs::read(imported)
-        && let Ok(result) = serde_json::from_slice::<Value>(&bytes)
-    {
-        return result.get("error").is_none_or(Value::is_null);
-    }
-    if metadata.get("task_id").and_then(Value::as_str).is_none() {
-        return false;
-    }
-    let uploaded = metadata
-        .get("upload_timestamp")
-        .and_then(Value::as_i64)
-        .unwrap_or_else(now_ms);
-    now_ms().saturating_sub(uploaded) <= 3_600_000
+    let proj = solstone_core_import::project_import_result(root, timestamp);
+    matches!(
+        proj.status,
+        solstone_core_import::ProjectionStatus::Running
+            | solstone_core_import::ProjectionStatus::Success
+    )
 }
 
 fn summary(metadata: &ImportMetadata) -> Value {
@@ -1012,13 +1004,26 @@ fn command(path: &str, timestamp: &str, metadata: &ImportMetadata, force: bool) 
 }
 
 pub(crate) async fn start(State(state): State<AppState>, Json(data): Json<Value>) -> Response {
-    start_with(&state.root, &data, request_required, write_import_metadata)
+    start_with(
+        &state.root,
+        &data,
+        request_required,
+        write_import_metadata,
+        spawn_inprocess_import,
+    )
 }
 
-fn start_with<S, W>(root: &Path, data: &Value, mut send: S, mut write: W) -> Response
+fn start_with<S, W, P>(
+    root: &Path,
+    data: &Value,
+    mut send: S,
+    mut write: W,
+    mut produce: P,
+) -> Response
 where
     S: FnMut(&Path, &str, &[String]) -> Result<(), BusError>,
     W: FnMut(&Path, &str, &ImportMetadata) -> Result<PathBuf, ImportError>,
+    P: FnMut(PathBuf, PathBuf, String, solstone_core_import::RegistrySource, bool, u64),
 {
     let Some(path) = data
         .get("path")
@@ -1086,7 +1091,44 @@ where
             return metadata_failed(format!("Failed to update file path in metadata: {error}"));
         }
     }
+    let inprocess_source = detect_inprocess_source(&metadata, &command_path);
     let task_id = now_ms().to_string();
+    if let Some(source) = inprocess_source {
+        let started_at_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let source_hint_str = clean_optional(metadata.get("source_hint"));
+        let facts = match solstone_core_import::admit_running_attempt(
+            root,
+            timestamp,
+            started_at_ms,
+            source_hint_str.as_deref(),
+        ) {
+            Ok(f) => f,
+            Err(error) => {
+                return metadata_failed(format!("Failed to record running attempt: {error}"));
+            }
+        };
+        produce(
+            root.to_path_buf(),
+            PathBuf::from(&command_path),
+            timestamp.to_owned(),
+            source,
+            force,
+            facts.generation,
+        );
+        return json_response(
+            StatusCode::OK,
+            json!({
+                "status": "ok",
+                "task_id": task_id,
+                "generation": facts.generation,
+                "attempt_id": facts.attempt_id
+            }),
+        );
+    }
+
     let cmd = command(&command_path, timestamp, &metadata, force);
     if send(root, &task_id, &cmd).is_err() {
         return queue_error();
@@ -1105,6 +1147,166 @@ where
         );
     }
     json_response(StatusCode::OK, json!({"status":"ok","task_id":task_id}))
+}
+
+fn detect_inprocess_source(
+    metadata: &ImportMetadata,
+    command_path: &str,
+) -> Option<solstone_core_import::RegistrySource> {
+    let source_hint = clean_optional(metadata.get("source_hint"));
+    let source = clean_optional(metadata.get("source"));
+    let extension = Path::new(command_path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if source_hint.as_deref() == Some("image")
+        || source.as_deref() == Some("image")
+        || matches!(
+            extension.as_str(),
+            "png" | "jpg" | "jpeg" | "webp" | "gif" | "tiff"
+        )
+    {
+        Some(solstone_core_import::RegistrySource::Image)
+    } else if source_hint.as_deref() == Some("document")
+        || source.as_deref() == Some("document")
+        || extension == "pdf"
+    {
+        Some(solstone_core_import::RegistrySource::Document)
+    } else {
+        None
+    }
+}
+
+fn pdf_worker_sibling() -> Result<PathBuf, String> {
+    let current = std::env::current_exe().map_err(|error| error.to_string())?;
+    let parent = current
+        .parent()
+        .ok_or_else(|| "current executable has no parent".to_owned())?;
+    let path = parent.join("solstone-core-pdf");
+    if path.is_file() {
+        Ok(path)
+    } else {
+        Err(format!("missing sibling executable {}", path.display()))
+    }
+}
+
+fn spawn_inprocess_import(
+    root: PathBuf,
+    source_path: PathBuf,
+    import_id: String,
+    source: solstone_core_import::RegistrySource,
+    force: bool,
+    generation: u64,
+) {
+    thread::spawn(move || {
+        let wire = solstone_core_import_sources::image::SystemWireClient;
+        let publication = solstone_core_import::NativePublicationOperations;
+        let req = solstone_core_import_sources::NativeProducerRequest {
+            journal_root: &root,
+            source_path: &source_path,
+            import_id: &import_id,
+            source,
+            revision: None,
+            password: None,
+            force,
+            expected_generation: Some(generation),
+        };
+
+        let res = match source {
+            solstone_core_import::RegistrySource::Document => {
+                #[cfg(not(windows))]
+                let worker_path = pdf_worker_sibling().unwrap_or_default();
+                #[cfg(not(windows))]
+                let worker = solstone_core_import_sources::document::SystemPdfWorker::new(
+                    worker_path,
+                    Duration::from_secs(90),
+                );
+                #[cfg(windows)]
+                let worker =
+                    match solstone_core_import_sources::document::WindowsPdfWorker::from_verified_package(
+                        Duration::from_secs(90),
+                    ) {
+                        Ok(w) => w,
+                        Err(err) => {
+                            let finished_at_ms = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_millis() as u64;
+                            let _ = solstone_core_import::record_unconfirmed_attempt(
+                                &root,
+                                &import_id,
+                                generation,
+                                finished_at_ms,
+                                Some(err.to_string()),
+                            );
+                            let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
+                            solstone_core_import::events::emit_importer_error(
+                                &emitter,
+                                &solstone_core_import::events::ImporterError {
+                                    import_id: import_id.clone(),
+                                    stage: "execution".to_owned(),
+                                    error: err.to_string(),
+                                    duration_ms: 0,
+                                    partial_outputs: vec![],
+                                    generation: Some(generation),
+                                    attempt_id: Some(format!("{import_id}:{generation}")),
+                                },
+                            );
+                            return;
+                        }
+                    };
+
+                let model = solstone_core_generate::OneShotClient::sibling()
+                    .ok()
+                    .map(solstone_core_import_sources::document::SystemDocumentModelClient::new);
+                if let Some(model) = &model {
+                    solstone_core_import_sources::run_native_producer(
+                        req,
+                        &wire,
+                        &worker,
+                        model,
+                        &publication,
+                    )
+                } else {
+                    solstone_core_import_sources::run_native_producer(
+                        req,
+                        &wire,
+                        &worker,
+                        &solstone_core_import_sources::NullDocumentModelClient,
+                        &publication,
+                    )
+                }
+            }
+            _ => {
+                let null_worker = solstone_core_import_sources::NullPdfWorker;
+                solstone_core_import_sources::run_native_producer(
+                    req,
+                    &wire,
+                    &null_worker,
+                    &solstone_core_import_sources::NullDocumentModelClient,
+                    &publication,
+                )
+            }
+        };
+
+        if let Err(_err) = res {
+            let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
+            solstone_core_import::events::emit_importer_error(
+                &emitter,
+                &solstone_core_import::events::ImporterError {
+                    import_id: import_id.clone(),
+                    stage: "execution".to_owned(),
+                    error: "import failed".to_owned(),
+                    duration_ms: 0,
+                    partial_outputs: vec![],
+                    generation: Some(generation),
+                    attempt_id: Some(format!("{import_id}:{generation}")),
+                },
+            );
+        }
+    });
 }
 
 #[cfg(test)]
@@ -1224,15 +1426,22 @@ mod tests {
         assert_eq!(hash_source(&owner).unwrap(), before);
         let mut import_files = Vec::new();
         files_below(&root.path().join("imports"), &mut import_files);
-        assert_eq!(
-            import_files,
-            vec![
-                root.path()
-                    .join("imports")
-                    .join(timestamp)
-                    .join("import.json")
-            ]
-        );
+        import_files.sort();
+        let expected_json = root
+            .path()
+            .join("imports")
+            .join(timestamp)
+            .join("import.json");
+        assert!(import_files.contains(&expected_json));
+        assert!(import_files.len() <= 2);
+        for file in &import_files {
+            let name = file.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            assert!(
+                name == "import.json" || name == ".lock.lock" || name == ".lock",
+                "unexpected file staged in imports: {}",
+                file.display()
+            );
+        }
         assert_eq!(fs::read(&owner).unwrap(), b"owner bytes");
     }
 
@@ -1558,6 +1767,7 @@ mod tests {
             &json!({"path":owner,"timestamp":"new-ts"}),
             |_, _, _| Ok(()),
             write_import_metadata,
+            |_, _, _, _, _, _| {},
         );
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(fs::read(&owner).unwrap(), b"only owner copy");
@@ -1617,6 +1827,7 @@ mod tests {
                 Ok(())
             },
             write_import_metadata,
+            |_, _, _, _, _, _| {},
         );
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
@@ -1657,6 +1868,7 @@ mod tests {
                 *write_count.borrow_mut() += 1;
                 write_import_metadata(root, timestamp, metadata)
             },
+            |_, _, _, _, _, _| {},
         );
         assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
         assert_eq!(*writes.borrow(), 0);
@@ -1687,6 +1899,7 @@ mod tests {
                     message: "disk full".to_owned(),
                 })
             },
+            |_, _, _, _, _, _| {},
         );
         let (status, body) = response_json(response).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -1735,6 +1948,7 @@ mod tests {
             &json!({"path":path,"timestamp":"ts"}),
             |_, _, _| Ok(()),
             write_import_metadata,
+            |_, _, _, _, _, _| {},
         );
         let (_, start) = response_json(start).await;
         assert_eq!(start["reason_code"], "invalid_operation_for_state");
@@ -1743,7 +1957,15 @@ mod tests {
     #[tokio::test]
     async fn meta_refuses_running_and_successful_imports_without_retargeting_metadata() {
         let root = TempDir::new().unwrap();
-        for (timestamp, imported) in [("running", None), ("success", Some(json!({})))] {
+        let valid_pub = json!({
+            "schema": "solstone.import.publication.v1",
+            "imported_at": 1700000000000_u64,
+            "source_type": "image",
+            "status": "success",
+            "segments": [],
+            "files_created": []
+        });
+        for (timestamp, imported) in [("running", None), ("success", Some(valid_pub))] {
             let path = root.path().join(format!("imports/{timestamp}/item.txt"));
             let mut stored = metadata(path.display().to_string(), "hash");
             stored.insert("upload_timestamp".to_owned(), json!(super::now_ms()));
@@ -1782,5 +2004,50 @@ mod tests {
                 "{timestamp} metadata remains unchanged"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn meta_allows_failed_publication_import_to_update_metadata() {
+        let root = TempDir::new().unwrap();
+        let timestamp = "failed_import";
+        let path = root.path().join(format!("imports/{timestamp}/item.txt"));
+        let mut stored = metadata(path.display().to_string(), "hash");
+        stored.insert("upload_timestamp".to_owned(), json!(super::now_ms()));
+        staged(root.path(), timestamp, Value::Object(stored));
+
+        let failed_pub = json!({
+            "schema": "solstone.import.publication.v1",
+            "imported_at": 1700000000000_u64,
+            "source_type": "image",
+            "status": "failure",
+            "segments": [],
+            "files_created": []
+        });
+        fs::write(
+            root.path()
+                .join(format!("imports/{timestamp}/imported.json")),
+            serde_json::to_vec(&failed_pub).unwrap(),
+        )
+        .unwrap();
+
+        let response = crate::routes(root.path().to_path_buf())
+            .oneshot(
+                Request::post("/app/import/api/meta")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::to_vec(&json!({"path":path,"source_hint":"retargeted"}))
+                            .unwrap(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let (status, body) = response_json(response).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+        assert_eq!(
+            read_import_metadata(root.path(), timestamp).unwrap()["source_hint"],
+            "retargeted"
+        );
     }
 }

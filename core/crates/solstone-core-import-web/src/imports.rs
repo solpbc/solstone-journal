@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::{
-    collections::HashMap,
-    fs,
-    path::Path,
-    sync::LazyLock,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::HashMap, fs, path::Path, sync::LazyLock};
 
 use axum::{
     extract::{Path as AxumPath, Query, State},
@@ -20,8 +14,6 @@ use crate::{
     AppState,
     http::{import_not_found, json as json_response},
 };
-
-const TIMEOUT_SECONDS: f64 = 3600.0;
 
 #[derive(Clone, Copy)]
 struct SourceMetadata {
@@ -330,42 +322,26 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
             values.insert("duration_minutes".into(), json!(duration));
         }
     }
+    let proj = solstone_core_import::project_import_result(root, timestamp);
+    values.insert("status".into(), json!(proj.status.as_str()));
+    values.insert(
+        "error".into(),
+        proj.error.as_ref().map_or(Value::Null, |err| json!(err)),
+    );
+    values.insert(
+        "error_stage".into(),
+        proj.error_stage
+            .as_ref()
+            .map_or(Value::Null, |stage| json!(stage)),
+    );
+    if values.get("source_type").is_none_or(Value::is_null) && source(&proj.source_type).is_some() {
+        values.insert("source_type".into(), json!(proj.source_type));
+        values.insert("source_display".into(), json!(proj.source_display));
+    }
     Ok(ImportInfo {
         imported_at,
         values,
     })
-}
-
-pub(crate) fn resolve_status(info: &ImportInfo, now: f64) -> (&'static str, Value, Value) {
-    resolve_status_with_timeout(info, now, TIMEOUT_SECONDS)
-}
-
-pub(crate) fn resolve_status_with_timeout(
-    info: &ImportInfo,
-    now: f64,
-    timeout_seconds: f64,
-) -> (&'static str, Value, Value) {
-    let error = info.values["error"].clone();
-    let error_stage = info.values["error_stage"].clone();
-    if !error.is_null() {
-        return ("failed", error, error_stage);
-    }
-    if info.values["processed"] == Value::Bool(true)
-        || info.values.get("processing_completed").is_some()
-    {
-        return ("success", error, error_stage);
-    }
-    if info
-        .values
-        .get("task_id")
-        .is_some_and(|value| !value.is_null())
-    {
-        if now - info.imported_at > timeout_seconds {
-            return ("failed", json!("Import never completed"), json!("timeout"));
-        }
-        return ("running", error, error_stage);
-    }
-    ("pending", error, error_stage)
 }
 
 fn source(name: &str) -> Option<&'static SourceMetadata> {
@@ -426,16 +402,6 @@ pub(crate) async fn list(
         {
             info.values.insert("source_display".into(), json!(display));
         }
-        let (status, err, stage) = resolve_status(
-            &info,
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs_f64(),
-        );
-        info.values.insert("status".into(), json!(status));
-        info.values.insert("error".into(), err);
-        info.values.insert("error_stage".into(), stage);
         if filter.is_none_or(|wanted| source_type.as_deref() == Some(wanted)) {
             rows.push(info);
         }
@@ -553,15 +519,23 @@ pub(crate) async fn detail(
     {
         body.insert("summary_errors".into(), Value::Array(errors.clone()));
     }
-    let (status, error_value, stage) = resolve_status(
-        &info,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64(),
+    body.insert(
+        "status".into(),
+        info.values
+            .get("status")
+            .cloned()
+            .unwrap_or_else(|| json!("pending")),
     );
-    body.insert("status".into(), json!(status));
-    body.insert("error".into(), error_value);
-    body.insert("error_stage".into(), stage);
+    body.insert(
+        "error".into(),
+        info.values.get("error").cloned().unwrap_or(Value::Null),
+    );
+    body.insert(
+        "error_stage".into(),
+        info.values
+            .get("error_stage")
+            .cloned()
+            .unwrap_or(Value::Null),
+    );
     json_response(StatusCode::OK, Value::Object(body))
 }
