@@ -49,6 +49,11 @@ pub fn run_cogitate(
     }];
     let mut stuck = StuckDetector::default();
     stuck.push(HistoryEntry::User);
+    // The first stuck trip in a run that lands on a text-only turn or on the last
+    // call of a turn is answered with a warning; a second trip ends the run. Once
+    // per run, not per episode: after being warned a run may repeat consecutively
+    // for one more detector window, but it is not bounded in total by this.
+    let mut stuck_warned = false;
     let mut usage = Usage::default();
     let mut resources = ResourceLadder::default();
     let mut turns = TurnLadder::default();
@@ -120,17 +125,33 @@ pub fn run_cogitate(
         if turn.tool_calls.is_empty() {
             stuck.push(HistoryEntry::AssistantText(turn.text));
             if stuck.is_stuck() {
-                return terminal(
-                    sink,
-                    tail(&config, usage, final_text, false, &resources, &turns, true),
+                if stuck_warned {
+                    return terminal(
+                        sink,
+                        tail(&config, usage, final_text, false, &resources, &turns, true),
+                    );
+                }
+                stuck_warned = true;
+                push_stuck_warning(
+                    &mut messages,
+                    &mut stuck,
+                    StuckWarning::TextOnly,
+                    finish_tool(config.expects_emit_final),
                 );
             }
             // MAX_TURNS_HEADROOM is an SDK iteration-cap backstop. It has no
-            // native counterpart because three consecutive pure monologues
-            // trip the stuck detector, a tighter bound than max_turns + 2.
+            // native counterpart because six consecutive pure monologues (three,
+            // the one warning, three more) end the run through the stuck
+            // detector, a tighter bound than max_turns + 2 for any realistic
+            // max_turns.
             continue;
         }
-        for call in &turn.tool_calls {
+        // Whether the last call of this turn tripped the stuck detector for the first
+        // time in the run. The warning is sent after every result of the turn so
+        // results stay adjacent to the assistant message that requested them.
+        let mut tripped = false;
+        let last_call = turn.tool_calls.len() - 1;
+        for (index, call) in turn.tool_calls.iter().enumerate() {
             if is_final_tool(call, config.expects_emit_final) {
                 final_text = Some(final_tool_text(call));
                 return terminal(
@@ -245,18 +266,25 @@ pub fn run_cogitate(
                 );
             }
             if stuck.is_stuck() {
-                return terminal(
-                    sink,
-                    tail(
-                        &config,
-                        usage,
-                        final_text.or(Some(turn.text.clone())),
-                        false,
-                        &resources,
-                        &turns,
-                        true,
-                    ),
-                );
+                // A trip before the last call of a turn cannot be answered without
+                // deciding what to do with the calls after it, so it ends the run
+                // as it always has. Turns of one call, the measured case, always
+                // reach the warning.
+                if stuck_warned || index != last_call {
+                    return terminal(
+                        sink,
+                        tail(
+                            &config,
+                            usage,
+                            final_text.or(Some(turn.text.clone())),
+                            false,
+                            &resources,
+                            &turns,
+                            true,
+                        ),
+                    );
+                }
+                tripped = true;
             }
         }
         if resources.force_stopped || turns.force_stopped {
@@ -271,6 +299,15 @@ pub fn run_cogitate(
                     &turns,
                     false,
                 ),
+            );
+        }
+        if tripped {
+            stuck_warned = true;
+            push_stuck_warning(
+                &mut messages,
+                &mut stuck,
+                StuckWarning::Repeating,
+                finish_tool(config.expects_emit_final),
             );
         }
     }
@@ -301,6 +338,35 @@ fn finish_tool(expects_emit_final: bool) -> &'static str {
     } else {
         "finish"
     }
+}
+
+/// Which kind of stuck trip is being warned about.
+enum StuckWarning {
+    /// Steps repeated.
+    Repeating,
+    /// Consecutive replies with no tool call.
+    TextOnly,
+}
+
+/// The one model-facing warning sent on a run's first stuck trip. Like a
+/// ladder message it is a user message and resets the detector window; unlike a
+/// ladder message it is not a budget event and emits none.
+fn push_stuck_warning(
+    messages: &mut Vec<ConverseMessage>,
+    stuck: &mut StuckDetector,
+    warning: StuckWarning,
+    finish_tool: &str,
+) {
+    let text = match warning {
+        StuckWarning::Repeating => format!(
+            "You are repeating steps without new progress. Do not repeat them. Change the arguments, try a different approach, or call {finish_tool} now with what you have and say what is missing."
+        ),
+        StuckWarning::TextOnly => format!(
+            "You have replied with text several times without taking a step, and plain text is not accepted as a result. Take a step with a tool, or call {finish_tool} now with what you have and say what is missing."
+        ),
+    };
+    messages.push(ConverseMessage::User { text });
+    stuck.push(HistoryEntry::User);
 }
 pub(crate) fn context_fraction(config: &crate::RunConfig, turn_usage: &Usage) -> Option<f64> {
     config

@@ -11,4 +11,11 @@ pub struct RuntimeDivergence {
 
 /// Dollar estimation and limits are retired. Raw token usage and context/turn
 /// limits remain; no pricing fallback is applied.
-pub const DIVERGENCES: &[RuntimeDivergence] = &[];
+///
+/// The stuck detector's first trip is answered with one warning message rather
+/// than ending the run; see `runtime.rs` and `stuck.rs`.
+pub const DIVERGENCES: &[RuntimeDivergence] = &[RuntimeDivergence {
+    case: "the stuck detector trips",
+    reference: "ends the run as agent_stuck on the first trip",
+    native: "the first trip in a run, on a text-only turn or on the last call of a turn, is answered with one warning message; the second trip, or a first trip before the last call of a turn, ends the run as agent_stuck",
+}];

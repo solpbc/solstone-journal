@@ -721,10 +721,14 @@ fn tail_precedence_and_non_responsive_composition_are_preserved() {
 
 #[test]
 fn monologues_trip_stuck_and_provider_failures_are_terminal_passthroughs() {
+    // Three monologues warn once; three more end the run.
     let mut provider = ScriptedProvider::new([
         Ok(turn("one", vec![], json!({}))),
         Ok(turn("two", vec![], json!({}))),
         Ok(turn("three", vec![], json!({}))),
+        Ok(turn("four", vec![], json!({}))),
+        Ok(turn("five", vec![], json!({}))),
+        Ok(turn("six", vec![], json!({}))),
     ]);
     let mut tools = ScriptedTools::default();
     let mut sink = RecordingEventSink::default();
@@ -739,6 +743,7 @@ fn monologues_trip_stuck_and_provider_failures_are_terminal_passthroughs() {
         .as_deref(),
         Some("agent_stuck")
     );
+    assert_eq!(provider.seen_messages.len(), 6);
     let failure = ConverseFailure {
         reason_code: "provider_quota_exceeded".to_owned(),
         retryable: true,
@@ -910,5 +915,383 @@ fn truncated_turn_stops_before_tools_or_repeated_completion() {
         assert!(outcome.result.is_none());
         assert!(tools.calls.is_empty());
         assert_eq!(provider.seen_messages.len(), 1);
+    }
+}
+
+// --- the first stuck trip in a run warns; the second ends it ---------------
+
+fn same_call() -> ConverseToolCall {
+    call("read_file", json!({"path":"note.txt"}))
+}
+
+fn repeat_turns(count: usize) -> Vec<Result<ProviderResponse, ConverseFailure>> {
+    (0..count)
+        .map(|_| Ok(turn("", vec![same_call()], json!({}))))
+        .collect()
+}
+
+fn errored() -> ToolExecution {
+    ToolExecution {
+        output: "denied".to_owned(),
+        is_error: true,
+        sol_budget_exhausted: None,
+        slot_reacquire_error: None,
+    }
+}
+
+/// User messages other than the run's initial prompt.
+fn warnings(messages: &[ConverseMessage]) -> Vec<&str> {
+    messages
+        .iter()
+        .filter_map(|message| match message {
+            ConverseMessage::User { text } if text != "do work" => Some(text.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn run(
+    responses: Vec<Result<ProviderResponse, ConverseFailure>>,
+    tools: &mut ScriptedTools,
+    config: RunConfig,
+) -> (crate::RunOutcome, ScriptedProvider) {
+    let mut provider = ScriptedProvider::new(responses);
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, tools, input(config), &mut sink);
+    (outcome, provider)
+}
+
+fn call_with_id(id: &str, base: ConverseToolCall) -> ConverseToolCall {
+    ConverseToolCall {
+        id: id.to_owned(),
+        ..base
+    }
+}
+
+/// In a request every assistant message with tool calls is followed, directly and in order,
+/// by one result per call.
+fn assert_results_follow_calls(request: &[ConverseMessage]) {
+    let mut index = 0;
+    while index < request.len() {
+        if let ConverseMessage::Assistant { tool_calls, .. } = &request[index] {
+            for (offset, call) in tool_calls.iter().enumerate() {
+                match request.get(index + 1 + offset) {
+                    Some(ConverseMessage::ToolResult { tool_call_id, .. }) => {
+                        assert_eq!(tool_call_id, &call.id)
+                    }
+                    other => panic!("call {} has no adjacent result: {other:?}", call.id),
+                }
+            }
+            index += 1 + tool_calls.len();
+        } else {
+            index += 1;
+        }
+    }
+}
+
+fn run_with_events(
+    responses: Vec<Result<ProviderResponse, ConverseFailure>>,
+    tools: &mut ScriptedTools,
+) -> (crate::RunOutcome, ScriptedProvider, Vec<RuntimeEvent>) {
+    let mut provider = ScriptedProvider::new(responses);
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, tools, input(RunConfig::default()), &mut sink);
+    (outcome, provider, sink.events)
+}
+
+#[test]
+fn first_repeat_trip_warns_after_the_result_and_a_changed_turn_can_finish() {
+    let mut responses = repeat_turns(4);
+    responses.push(Ok(turn("", vec![final_call(false, "done")], json!({}))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code, None);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(provider.seen_messages.len(), 5);
+    assert_eq!(tools.calls.len(), 4);
+    for earlier in &provider.seen_messages[..4] {
+        assert!(warnings(earlier).is_empty(), "no warning before the trip");
+    }
+    let last = provider.seen_messages.last().unwrap();
+    assert_eq!(warnings(last).len(), 1);
+    assert_results_follow_calls(last);
+    let [.., assistant, result, warning] = last.as_slice() else {
+        panic!("request too short");
+    };
+    assert!(matches!(assistant, ConverseMessage::Assistant { .. }));
+    assert!(matches!(result, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(warning, ConverseMessage::User { .. }));
+}
+
+#[test]
+fn a_second_repeat_trip_after_the_warning_ends_agent_stuck() {
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(repeat_turns(8), &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(provider.seen_messages.len(), 8);
+    assert_eq!(tools.calls.len(), 8);
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+    assert_results_follow_calls(provider.seen_messages.last().unwrap());
+}
+
+#[test]
+fn three_monologues_warn_once_and_three_more_end_agent_stuck() {
+    let responses = (0..6)
+        .map(|_| Ok(turn("still thinking", vec![], json!({}))))
+        .collect();
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(
+        outcome.result, None,
+        "monologue text is never kept as a result"
+    );
+    assert_eq!(
+        outcome.error_text.as_deref(),
+        Some("agent_stuck: cogitate run was interrupted/stuck before emitting a final result")
+    );
+    assert_eq!(provider.seen_messages.len(), 6);
+    assert_eq!(warnings(&provider.seen_messages[2]).len(), 0);
+    let after_warning = &provider.seen_messages[3];
+    assert_eq!(warnings(after_warning).len(), 1);
+    assert!(matches!(
+        after_warning.last().unwrap(),
+        ConverseMessage::User { .. }
+    ));
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+}
+
+#[test]
+fn a_trip_on_the_last_call_of_a_multi_call_turn_warns_after_every_result() {
+    // Two single-call turns, then a turn of two identical calls: the fourth action trips on
+    // the turn's last call, so both calls run and both results precede the warning.
+    let mut responses = repeat_turns(2);
+    responses.push(Ok(turn(
+        "",
+        vec![
+            call_with_id("x-0", same_call()),
+            call_with_id("x-1", same_call()),
+        ],
+        json!({}),
+    )));
+    responses.push(Ok(turn("", vec![final_call(false, "done")], json!({}))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code, None);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(tools.calls, vec!["read_file"; 4]);
+    let last = provider.seen_messages.last().unwrap();
+    assert_results_follow_calls(last);
+    let [.., assistant, first, second, warning] = last.as_slice() else {
+        panic!("request too short");
+    };
+    assert!(
+        matches!(assistant, ConverseMessage::Assistant { tool_calls, .. } if tool_calls.len() == 2)
+    );
+    assert!(
+        matches!(first, ConverseMessage::ToolResult { tool_call_id, .. } if tool_call_id == "x-0")
+    );
+    assert!(
+        matches!(second, ConverseMessage::ToolResult { tool_call_id, .. } if tool_call_id == "x-1")
+    );
+    assert!(matches!(warning, ConverseMessage::User { .. }));
+}
+
+#[test]
+fn a_first_trip_before_the_last_call_of_a_turn_ends_agent_stuck_as_before() {
+    // Four identical calls trip the detector at the fourth, which is not the turn's last
+    // call: the run ends at once, the calls after the trip (the terminal one included)
+    // never run, and no warning is sent.
+    let mut calls: Vec<_> = (0..4)
+        .map(|index| call_with_id(&format!("x-{index}"), same_call()))
+        .collect();
+    calls.push(final_call(false, "claims work that never ran"));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(
+        vec![Ok(turn("partial", calls, json!({})))],
+        &mut tools,
+        RunConfig::default(),
+    );
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(outcome.result.as_deref(), Some("partial"));
+    assert_eq!(tools.calls, vec!["read_file"; 4]);
+    assert_eq!(provider.seen_messages.len(), 1);
+    assert!(warnings(&provider.seen_messages[0]).is_empty());
+}
+
+#[test]
+fn a_second_trip_keeps_the_partial_text_of_the_tripping_turn() {
+    let mut responses = repeat_turns(4);
+    responses.extend(repeat_turns(3));
+    responses.push(Ok(turn("partial", vec![same_call()], json!({}))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, _) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(outcome.result.as_deref(), Some("partial"));
+    assert_eq!(
+        outcome.error_text.as_deref(),
+        Some("agent_stuck: cogitate run was interrupted/stuck with a partial result preserved")
+    );
+}
+
+#[test]
+fn the_warning_is_per_run_and_shared_by_both_branches() {
+    // A differing call after the warning does not re-arm it.
+    let mut responses = repeat_turns(4);
+    responses.push(Ok(turn("", vec![call("list_dir", json!({}))], json!({}))));
+    responses.extend(repeat_turns(4));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(provider.seen_messages.len(), 9);
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+
+    // A tool-result warning then three text-only turns.
+    let mut responses = repeat_turns(4);
+    responses.extend((0..3).map(|_| Ok(turn("thinking", vec![], json!({})))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(provider.seen_messages.len(), 7);
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+
+    // A text-only warning then four identical calls.
+    let mut responses: Vec<_> = (0..3)
+        .map(|_| Ok(turn("thinking", vec![], json!({}))))
+        .collect();
+    responses.extend(repeat_turns(4));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(provider.seen_messages.len(), 7);
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+}
+
+#[test]
+fn the_warning_emits_no_events_of_its_own_and_the_warned_run_goes_on_to_finish() {
+    // Four identical calls trip and warn; the run then takes one different step and finishes.
+    let mut responses = repeat_turns(4);
+    responses.push(Ok(turn("", vec![call("list_dir", json!({}))], json!({}))));
+    responses.push(Ok(turn("", vec![final_call(false, "done")], json!({}))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, _, events) = run_with_events(responses, &mut tools);
+    assert_eq!(outcome.reason_code, None);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    let starts = events
+        .iter()
+        .filter(|event| matches!(event, RuntimeEvent::ToolStart { .. }))
+        .count();
+    let ends = events
+        .iter()
+        .filter(|event| matches!(event, RuntimeEvent::ToolEnd { .. }))
+        .count();
+    assert_eq!(
+        (starts, ends),
+        (5, 5),
+        "one pair per dispatched call, including the step taken after the warning"
+    );
+    // Nothing else: the warning is not a budget event and emits none of its own.
+    assert_eq!(events.len(), starts + ends + 1, "{events:?}");
+    assert!(matches!(events.last(), Some(RuntimeEvent::Terminal { .. })));
+}
+
+#[test]
+fn six_alternating_calls_trip_the_alternation_rule_and_warn_once() {
+    // A/B/A/B/A/B, each call always returning its own output, is the alternation rule.
+    let mut responses: Vec<_> = (0..3)
+        .flat_map(|_| {
+            [
+                Ok(turn("", vec![same_call()], json!({}))),
+                Ok(turn("", vec![call("list_dir", json!({}))], json!({}))),
+            ]
+        })
+        .collect();
+    responses.push(Ok(turn("", vec![final_call(false, "done")], json!({}))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(provider.seen_messages.len(), 7);
+    for earlier in &provider.seen_messages[..6] {
+        assert!(warnings(earlier).is_empty());
+    }
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+}
+
+#[test]
+fn three_identical_errors_warn_and_three_more_end_agent_stuck() {
+    let mut tools = ScriptedTools::default();
+    tools.executions.extend((0..6).map(|_| errored()));
+    let (outcome, provider) = run(repeat_turns(6), &mut tools, RunConfig::default());
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(provider.seen_messages.len(), 6);
+    let after_warning = &provider.seen_messages[3];
+    assert_eq!(warnings(after_warning).len(), 1);
+    assert!(matches!(
+        after_warning.last().unwrap(),
+        ConverseMessage::User { .. }
+    ));
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 1);
+}
+
+#[test]
+fn three_identical_ok_calls_then_a_different_call_never_warn() {
+    let mut responses = repeat_turns(3);
+    responses.push(Ok(turn("", vec![call("list_dir", json!({}))], json!({}))));
+    responses.push(Ok(turn("", vec![final_call(false, "done")], json!({}))));
+    let mut tools = ScriptedTools::default();
+    let (outcome, provider) = run(responses, &mut tools, RunConfig::default());
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert!(
+        provider
+            .seen_messages
+            .iter()
+            .all(|request| warnings(request).is_empty())
+    );
+}
+
+#[test]
+fn each_warning_names_the_terminal_tool_the_run_has_and_the_two_branches_differ() {
+    // (expects_emit_final, the terminal tool that must be named, the other tool that must not be told to run)
+    for (expects_emit_final, present, wrong_call) in [
+        (true, "emit_final", "call finish"),
+        (false, "finish", "call emit_final"),
+    ] {
+        let config = RunConfig {
+            expects_emit_final,
+            ..RunConfig::default()
+        };
+        // Tool-result branch.
+        let mut responses = repeat_turns(4);
+        responses.push(Ok(turn(
+            "",
+            vec![final_call(expects_emit_final, "done")],
+            json!({}),
+        )));
+        let mut tools = ScriptedTools::default();
+        let (_, provider) = run(responses, &mut tools, config.clone());
+        let repeat_text = warnings(provider.seen_messages.last().unwrap())[0].to_owned();
+        assert!(
+            repeat_text.contains(&format!("call {present} now")),
+            "{repeat_text}"
+        );
+        assert!(!repeat_text.contains(wrong_call), "{repeat_text}");
+        // Text-only branch.
+        let mut responses: Vec<_> = (0..3)
+            .map(|_| Ok(turn("thinking", vec![], json!({}))))
+            .collect();
+        responses.push(Ok(turn(
+            "",
+            vec![final_call(expects_emit_final, "done")],
+            json!({}),
+        )));
+        let mut tools = ScriptedTools::default();
+        let (_, provider) = run(responses, &mut tools, config);
+        let text_only = warnings(provider.seen_messages.last().unwrap())[0].to_owned();
+        assert!(
+            text_only.contains(&format!("call {present} now")),
+            "{text_only}"
+        );
+        assert!(!text_only.contains(wrong_call), "{text_only}");
+        assert_ne!(repeat_text, text_only, "each branch says what it saw");
     }
 }

@@ -21,6 +21,11 @@
 //! tail checks context/turn exhaustion before stuck/paused. Therefore a
 //! force-stopped run reports its own budget reason first and never also
 //! double-reports as `agent_stuck`.
+//!
+//! A trip does not by itself end a run: `runtime.rs` answers the first trip in
+//! a run with one warning message (which resets this window, like a ladder
+//! message) and ends the run `agent_stuck` only on a second trip. A first trip
+//! before the last call of an assistant turn still ends the run at once.
 
 use std::collections::VecDeque;
 
