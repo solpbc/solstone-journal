@@ -1158,8 +1158,27 @@
     interactionsWired = true;
   }
 
+  // Events sent while the stream is down are not replayed, so the first
+  // connected state after a disconnect re-reads what those events would have
+  // refreshed. The state reported at subscription is the baseline, not a
+  // reconnect; a page that subscribed while still connecting recovers on connect.
+  function connectionRecovery(refresh) {
+    let lastConnected = null;
+    return function (state) {
+      const connected = !!(state && state.connected);
+      const recovered = connected && lastConnected === false;
+      lastConnected = connected;
+      if (recovered) refresh();
+    };
+  }
+
   function wireRealtime() {
     if (realtimeWired || !window.appEvents) return;
+    window.appEvents.onConnectionState?.(connectionRecovery(function () {
+      refreshVitals();
+      refreshNarrative();
+      refreshBriefing();
+    }));
     window.appEvents.listen('supervisor', function (msg) {
       if (msg.event === 'status') refreshVitals();
     });
