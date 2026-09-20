@@ -14,8 +14,8 @@ use solstone_core_import::events::{
 };
 use solstone_core_import::metadata::{
     AttemptState, admit_running_attempt, get_attempt_facts, read_provenance,
-    record_completed_attempt_unlocked, record_unconfirmed_attempt,
-    record_unconfirmed_attempt_unlocked,
+    record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
+    record_unconfirmed_attempt, record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::publish::{
     PublicationInput, PublicationOperations, PublicationRecord, PublicationStatus,
@@ -574,14 +574,28 @@ where
                 && proj.entries_written == Some(import_res.entries_written);
 
             if is_success {
-                if let Err(meta_err) = record_completed_attempt_unlocked(
-                    request.journal_root,
-                    request.import_id,
-                    generation,
-                    finished_at_ms,
-                    Some(duration_ms),
-                    None,
-                ) {
+                // Inputs that failed while others imported are recorded on the attempt, so a
+                // reload still shows a partial outcome instead of a clean success.
+                let completion = if import_res.errors.is_empty() {
+                    record_completed_attempt_unlocked(
+                        request.journal_root,
+                        request.import_id,
+                        generation,
+                        finished_at_ms,
+                        Some(duration_ms),
+                        None,
+                    )
+                } else {
+                    record_completed_attempt_with_input_failures_unlocked(
+                        request.journal_root,
+                        request.import_id,
+                        generation,
+                        finished_at_ms,
+                        Some(duration_ms),
+                        import_res.errors.len() as u64,
+                    )
+                };
+                if let Err(meta_err) = completion {
                     let _ = record_unconfirmed_attempt_unlocked(
                         request.journal_root,
                         request.import_id,

@@ -39,6 +39,9 @@ pub struct AttemptFacts {
     pub failure_reason: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub unavailable_description: Option<String>,
+    /// Inputs of a multi-input import that could not be imported while the rest were.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub input_failures: Option<u64>,
 }
 
 /// The read state of an import attempt.
@@ -121,6 +124,7 @@ pub fn admit_running_attempt(
         duration_ms: None,
         failure_reason: None,
         unavailable_description: None,
+        input_failures: None,
     };
     let value = serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
         path: import_metadata_path(journal_root, import_id)
@@ -154,6 +158,47 @@ pub fn record_completed_attempt_unlocked(
     duration_ms: Option<u64>,
     unavailable_description: Option<String>,
 ) -> Result<AttemptFacts, ImportError> {
+    complete_attempt_unlocked(
+        journal_root,
+        import_id,
+        expected_generation,
+        finished_at_ms,
+        duration_ms,
+        unavailable_description,
+        None,
+    )
+}
+
+/// As [`record_completed_attempt_unlocked`], also recording how many inputs of a
+/// multi-input import could not be imported (caller holds the lock).
+pub fn record_completed_attempt_with_input_failures_unlocked(
+    journal_root: &Path,
+    import_id: &str,
+    expected_generation: u64,
+    finished_at_ms: u64,
+    duration_ms: Option<u64>,
+    input_failures: u64,
+) -> Result<AttemptFacts, ImportError> {
+    complete_attempt_unlocked(
+        journal_root,
+        import_id,
+        expected_generation,
+        finished_at_ms,
+        duration_ms,
+        None,
+        Some(input_failures).filter(|count| *count > 0),
+    )
+}
+
+fn complete_attempt_unlocked(
+    journal_root: &Path,
+    import_id: &str,
+    expected_generation: u64,
+    finished_at_ms: u64,
+    duration_ms: Option<u64>,
+    unavailable_description: Option<String>,
+    input_failures: Option<u64>,
+) -> Result<AttemptFacts, ImportError> {
     let mut metadata = read_import_metadata(journal_root, import_id)?;
     let mut facts =
         get_attempt_facts(&metadata).ok_or_else(|| ImportError::InvalidAttemptState {
@@ -172,6 +217,7 @@ pub fn record_completed_attempt_unlocked(
     facts.finished_at_ms = Some(finished_at_ms);
     facts.duration_ms = duration;
     facts.unavailable_description = unavailable_description;
+    facts.input_failures = input_failures;
 
     let value = serde_json::to_value(&facts).map_err(|err| ImportError::MetadataWriteFailed {
         path: import_metadata_path(journal_root, import_id)

@@ -136,6 +136,9 @@ impl ImportProjection {
             number(self.unavailable_pages),
         );
         map.insert("has_gaps".to_owned(), Value::Bool(self.has_gaps));
+        if let Some(failed) = self.attempt.as_ref().and_then(|facts| facts.input_failures) {
+            map.insert("input_failures".to_owned(), serde_json::json!(failed));
+        }
         map
     }
 
@@ -486,7 +489,11 @@ pub fn project_import_result_with_clock(
 
     let has_gaps = content_manifest_corrupted
         || unavailable_description.is_some()
-        || unavailable_pages.is_some_and(|pages| pages > 0);
+        || unavailable_pages.is_some_and(|pages| pages > 0)
+        || attempt
+            .as_ref()
+            .and_then(|facts| facts.input_failures)
+            .is_some_and(|failed| failed > 0);
     let created_at = fs::metadata(&import_dir)
         .and_then(|m| m.created().or_else(|_| m.modified()))
         .map(|t| {
@@ -494,7 +501,8 @@ pub fn project_import_result_with_clock(
                 .unwrap_or_default()
                 .as_secs_f64()
         })
-        .unwrap_or(0.0);
+        // An unreadable directory has no age: treat it as new rather than as instantly timed out.
+        .unwrap_or(now_sec);
     let imported_at = upload_timestamp.map(|ms| ms / 1000.0).unwrap_or(created_at);
 
     // Determine status & error
@@ -728,13 +736,26 @@ fn derive_status_and_errors(
                     (ProjectionStatus::Running, None, None)
                 }
             }
-            AttemptState::Unconfirmed => (
-                ProjectionStatus::Unconfirmed,
-                att.failure_reason
-                    .clone()
-                    .or_else(|| Some("this import was interrupted before finalizing.".to_owned())),
-                Some("finalization".to_owned()),
-            ),
+            AttemptState::Unconfirmed => {
+                // The producer records Unconfirmed both when it was interrupted and when
+                // publication definitively failed; the publication record tells them apart.
+                if publication.is_some_and(|record| record.status == PublicationStatus::Failure) {
+                    return (
+                        ProjectionStatus::Failed,
+                        att.failure_reason
+                            .clone()
+                            .or_else(|| Some("import failed".to_owned())),
+                        Some("publication".to_owned()),
+                    );
+                }
+                (
+                    ProjectionStatus::Unconfirmed,
+                    att.failure_reason.clone().or_else(|| {
+                        Some("this import was interrupted before finalizing.".to_owned())
+                    }),
+                    Some("finalization".to_owned()),
+                )
+            }
             AttemptState::Completed => {
                 if let Some(pub_rec) = publication {
                     match pub_rec.status {
@@ -1043,6 +1064,120 @@ mod tests {
 
         let projection = project_import_result(journal, import_id);
         assert_eq!(projection.status, ProjectionStatus::Failed);
+    }
+
+    fn write_attempt(journal: &Path, id: &str, state: &str, started_at_ms: u64) {
+        let dir = journal.join("imports").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        let metadata = serde_json::json!({
+            "original_filename": "test.png",
+            "task_id": id,
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": state,
+                "started_at_ms": started_at_ms,
+                "failure_reason": "publication failed"
+            }
+        });
+        fs::write(
+            dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+    }
+
+    fn write_publication(journal: &Path, id: &str, status: &str) {
+        let publication = serde_json::json!({
+            "schema": "solstone.import.publication.v1",
+            "status": status,
+            "segments": [],
+            "indexing": { "published": [], "declined": [], "errored": [] },
+            "day_markers": []
+        });
+        fs::write(
+            journal.join("imports").join(id).join("imported.json"),
+            serde_json::to_vec(&publication).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn an_unconfirmed_attempt_over_a_failed_publication_is_failed_not_unconfirmed() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120001");
+        write_attempt(journal, id, "unconfirmed", 1000);
+        write_publication(journal, id, "failure");
+        let projection = project_import_result(journal, id);
+        assert_eq!(projection.status, ProjectionStatus::Failed);
+        assert_eq!(projection.error_stage.as_deref(), Some("publication"));
+
+        // Control: an interrupted producer (no publication record) is still unconfirmed.
+        let other = "20260101_120002";
+        write_attempt(journal, other, "unconfirmed", 1000);
+        assert_eq!(
+            project_import_result(journal, other).status,
+            ProjectionStatus::Unconfirmed
+        );
+    }
+
+    #[test]
+    fn inputs_that_failed_while_others_imported_read_as_gaps_after_a_reload() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120004");
+        write_attempt(journal, id, "running", 1000);
+        crate::metadata::record_completed_attempt_with_input_failures_unlocked(
+            journal,
+            id,
+            1,
+            2000,
+            Some(1000),
+            2,
+        )
+        .unwrap();
+        write_publication(journal, id, "success");
+        let projection = project_import_result(journal, id);
+        assert_eq!(projection.status, ProjectionStatus::Success);
+        assert!(projection.has_gaps, "{projection:?}");
+        assert_eq!(projection.native_row_overlay()["input_failures"], 2);
+
+        // Control: a clean completion has no gap and no input_failures key.
+        let clean = "20260101_120005";
+        write_attempt(journal, clean, "running", 1000);
+        crate::metadata::record_completed_attempt_unlocked(
+            journal,
+            clean,
+            1,
+            2000,
+            Some(1000),
+            None,
+        )
+        .unwrap();
+        write_publication(journal, clean, "success");
+        let clean_projection = project_import_result(journal, clean);
+        assert!(!clean_projection.has_gaps, "{clean_projection:?}");
+        assert!(
+            clean_projection
+                .native_row_overlay()
+                .get("input_failures")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_running_attempt_is_bounded_server_side_by_the_wall_clock() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120003");
+        let started_ms = 1_000_000_000_u64;
+        write_attempt(journal, id, "running", started_ms);
+        let started_s = started_ms as f64 / 1000.0;
+        // Just inside the bound: still running. Just past it: unconfirmed, with the timeout copy.
+        let inside = project_import_result_with_clock(journal, id, started_s + 3_599.0);
+        assert_eq!(inside.status, ProjectionStatus::Running, "{inside:?}");
+        let past = project_import_result_with_clock(journal, id, started_s + 3_601.0);
+        assert_eq!(past.status, ProjectionStatus::Unconfirmed, "{past:?}");
+        assert_eq!(past.error.as_deref(), Some("Import never completed"));
+        assert_eq!(past.error_stage.as_deref(), Some("timeout"));
     }
 
     #[test]
