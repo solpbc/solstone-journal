@@ -226,7 +226,7 @@ pub fn install_and_publish_image(
     prepared: &PreparedImage,
     journal_root: &Path,
     import_id: &str,
-    _publication: &dyn PublicationOperations,
+    publication: &dyn PublicationOperations,
     mut progress: Option<&mut dyn FnMut(&ProgressUpdate)>,
 ) -> Result<ImageImportResult, ImageImportError> {
     let segment_dir = segment_path(
@@ -248,7 +248,14 @@ pub fn install_and_publish_image(
     })?;
 
     let original_path = segment_dir.join(format!("original{}", prepared.extension));
-    install_source(&prepared.path, &original_path, prepared.modified)?;
+    install_source(
+        &prepared.path,
+        &original_path,
+        prepared.modified,
+        journal_root,
+        &prepared.day,
+        publication,
+    )?;
 
     let transcript_path = segment_dir.join(TRANSCRIPT_FILENAME);
     let transcript = render_image_markdown(
@@ -480,6 +487,9 @@ fn install_source(
     source: &Path,
     destination: &Path,
     modified: SystemTime,
+    journal_root: &Path,
+    day: &str,
+    publication: &dyn PublicationOperations,
 ) -> Result<(), ImageImportError> {
     let parent = destination
         .parent()
@@ -525,6 +535,14 @@ fn install_source(
         path: destination.to_path_buf(),
         detail: error.to_string(),
     })?;
+    // The original is installed: mark the day dirty before anything that can still fail,
+    // so an interrupted or failed import is repaired rather than silently skipped.
+    publication
+        .touch_stream_health_marker(journal_root, day)
+        .map_err(|detail| ImageImportError::StreamMarker {
+            day: day.to_owned(),
+            detail,
+        })?;
     File::open(destination)
         .and_then(|file| file.set_times(fs::FileTimes::new().set_modified(modified)))
         .map_err(|error| ImageImportError::Install {
