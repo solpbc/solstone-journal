@@ -2384,7 +2384,7 @@ const inFlightReconcile = new Set();
 async function reconcileImportState(importId, options = {}) {
   if (!importId || inFlightReconcile.has(importId)) return;
   inFlightReconcile.add(importId);
-  const { fromStall = false } = options;
+  const { fromStall = false, quiet = false } = options;
   const activeEl = typeof document !== 'undefined' ? document.activeElement : null;
   try {
     const res = await window.apiJson(`/app/import/api/${encodeURIComponent(importId)}`);
@@ -2428,6 +2428,9 @@ async function reconcileImportState(importId, options = {}) {
       errEl.style.display = 'none';
     }
   } catch (err) {
+    // A read the owner did not ask for stays silent when it fails: the live event already
+    // told them the outcome, this only tops up the facts a live event does not carry.
+    if (quiet) return;
     const errEl = typeof document !== 'undefined' && typeof document.getElementById === 'function'
       ? document.getElementById('progressReconcileError')
       : null;
@@ -2570,6 +2573,12 @@ function initImportWorkspace() {
       trackPendingImport(eventData.import_id);
     }
     updateImportRow(eventData.import_id, eventData);
+    if (eventData.event === 'completed') {
+      // The completed event carries the counts but not what was only partly done (pages or a
+      // description that could not be produced), so read the durable record once to fill
+      // that in: an import that finished with gaps says so now, not after a reload.
+      reconcileImportState(eventData.import_id, { quiet: true });
+    }
   });
 
   if (typeof window.addEventListener === 'function') {

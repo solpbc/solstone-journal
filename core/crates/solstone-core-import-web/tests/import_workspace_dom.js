@@ -1789,6 +1789,67 @@ function runRunningReadKeepsKnownFacts() {
 // Item 43: a "check status" read is the canonical answer for an import, so it
 // lands even when it carries no generation at all -- which is what the detail
 // route returns for an import whose state it cannot reconstruct.
+async function runCompletionThenAQuietReadShowsThePartialNotice() {
+  // A live "completed" event carries the counts but not the gaps. The canonical read that
+  // follows must add them to the open panel, and must say nothing if it fails.
+  const build = (apiJson) => {
+    const guideSteps = new Element();
+    const failure = new Element();
+    failure.setAttribute = () => {};
+    const context = vm.createContext({ console, Promise });
+    context.window = { location: { hash: '#progress/1700000090' }, apiJson };
+    context.document = {
+      getElementById: (id) => (id === 'guideSteps' ? guideSteps : id === 'progressReconcileError' ? failure : null),
+      querySelector: () => null,
+    };
+    context.importEvents = {
+      '1700000090': {
+        import_id: '1700000090', event: 'completed', status: 'success', generation: 1,
+        entries_written: 1, entities_seeded: 0, source_type: 'document', source_display: 'document',
+      },
+    };
+    context.importGenerationFloor = { '1700000090': 1 };
+    context.sourceMetadataByName = {};
+    context.currentGuideSource = 'document';
+    context.getImportById = () => null;
+    installRealEscapeHtml(context);
+    assertEscaperIsReal(context);
+    context.humanStageName = (s) => s;
+    context.formatElapsed = () => '0s';
+    context.renderProgressStats = () => '';
+    context.formatDateRange = () => '';
+    context.clearPendingImport = () => {};
+    context.trackPendingImport = () => {};
+    context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+    context.IMPORT_TERMINAL_EVENTS = new Set(['completed', 'error', 'declined']);
+    context.inFlightReconcile = new Set();
+    for (const name of ['formatStatValue', 'isTerminalState', 'showProgressView', 'refreshInlineProgress', 'updateImportRow', 'reconcileImportState']) {
+      vm.runInContext(functionSource(workspace, name), context);
+    }
+    return { context, guideSteps, failure };
+  };
+
+  const ok = build(async () => ({
+    import_id: '1700000090', status: 'success', generation: 1, entries_written: 1,
+    unavailable_pages: 2, has_gaps: true, unavailable_description: null,
+  }));
+  vm.runInContext("showProgressView('1700000090')", ok.context);
+  assert.ok(!ok.guideSteps.innerHTML.includes('partially extracted'), 'the live event alone carries no gap notice');
+  await vm.runInContext("reconcileImportState('1700000090', { quiet: true })", ok.context);
+  assert.ok(
+    ok.guideSteps.innerHTML.includes('partially extracted (2 pages unavailable)'),
+    'the panel gains the partial notice once the durable record is read'
+  );
+  assert.ok(ok.guideSteps.innerHTML.includes('import complete'), 'and stays complete');
+
+  const down = build(async () => { throw new Error('offline'); });
+  vm.runInContext("showProgressView('1700000090')", down.context);
+  await vm.runInContext("reconcileImportState('1700000090', { quiet: true })", down.context);
+  assert.ok(!down.failure.textContent, 'a failed quiet read shows no error banner');
+  await vm.runInContext("reconcileImportState('1700000090')", down.context);
+  assert.strictEqual(down.failure.textContent, "couldn't check status. reload to try again.", 'an asked-for read still does');
+}
+
 async function runCanonicalReadOutranksTheGenerationFloor() {
   const guideSteps = new Element();
   const statusCell = new Element();
@@ -2799,6 +2860,7 @@ Promise.resolve()
   .then(runAuthoritativeRunningReadKeepsACompletedImportComplete)
   .then(runRunningReadKeepsKnownFacts)
   .then(runCanonicalReadOutranksTheGenerationFloor)
+  .then(runCompletionThenAQuietReadShowsThePartialNotice)
   .then(runTerminalStateCoversEveryEndState)
   .then(runGenerationFloorIsRaisedByEveryEvent)
   .then(runEveryOwnerSinkEscapes)
