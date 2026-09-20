@@ -969,6 +969,7 @@ pub(crate) async fn imports(
                     json!({"ts":Utc::now().to_rfc3339(),"action":"staged","item_type":"import","item_id":id,"reason":"id_collision"}),
                 )?;
             } else {
+                fs::create_dir_all(&target).map_err(|error| error.to_string())?;
                 let mut sanitized_import_json = import_json.clone();
                 sanitized_import_json.remove("attempt");
                 sanitized_import_json.remove("task_id");

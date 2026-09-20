@@ -338,6 +338,11 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
         values.insert("source_type".into(), json!(proj.source_type));
         values.insert("source_display".into(), json!(proj.source_display));
     }
+    // Imports the native producer wrote carry the projection's facts (counts, generation,
+    // gaps); every other importer's row keeps exactly the shape it always had.
+    if proj.is_native() {
+        values.extend(proj.native_row_overlay());
+    }
     Ok(ImportInfo {
         imported_at,
         values,
@@ -518,6 +523,10 @@ pub(crate) async fn detail(
         .filter(|errors| !errors.is_empty())
     {
         body.insert("summary_errors".into(), Value::Array(errors.clone()));
+    }
+    let projection = solstone_core_import::project_import_result(&state.root, &timestamp);
+    if projection.is_native() {
+        body.extend(projection.native_row_overlay());
     }
     body.insert(
         "status".into(),

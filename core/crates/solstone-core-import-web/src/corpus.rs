@@ -1359,6 +1359,86 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn native_rows_carry_projection_facts_and_legacy_rows_keep_their_shape() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+        let img_path = root.join("photo.png");
+        fs::write(&img_path, TINY_PNG_FIXTURE).unwrap();
+        let native = "20260408_130002";
+        solstone_core_import_sources::producer::run_native_producer(
+            solstone_core_import_sources::producer::NativeProducerRequest {
+                journal_root: root,
+                source_path: &img_path,
+                import_id: native,
+                source: solstone_core_import::RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+            },
+            &solstone_core_import_sources::producer::NullWireClient,
+            &solstone_core_import_sources::producer::NullPdfWorker,
+            &solstone_core_import_sources::NullDocumentModelClient,
+            &solstone_core_import::NativePublicationOperations,
+        )
+        .expect("native import succeeds");
+        // A legacy importer's row: flat fields only, no attempt, no typed publication.
+        let legacy = "20260408_130003";
+        let legacy_dir = root.join("imports").join(legacy);
+        fs::create_dir_all(&legacy_dir).unwrap();
+        fs::write(
+            legacy_dir.join("import.json"),
+            r#"{"original_filename":"c.json"}"#,
+        )
+        .unwrap();
+        fs::write(
+            legacy_dir.join("imported.json"),
+            r#"{"processed":true,"entries_written":3,"total_files_created":2,"source_type":"chatgpt"}"#,
+        )
+        .unwrap();
+
+        let (status, list) = json_request(root, "GET", "/app/import/api/list").await;
+        assert_eq!(status, StatusCode::OK);
+        let rows = list["imports"].as_array().unwrap();
+        let row = |id: &str| rows.iter().find(|row| row["timestamp"] == id).unwrap();
+
+        // The native row shows what the import really did, with its attempt identity and its
+        // gaps (the null wire client cannot describe the image, so the row says so): this is
+        // what was missing when history read "1 import, 0 entries" and a stuck row before.
+        let native_row = row(native);
+        assert_eq!(native_row["status"], "success");
+        assert_eq!(native_row["entries_written"], 1);
+        assert_eq!(native_row["source_type"], "image");
+        assert_eq!(native_row["has_gaps"], true);
+        assert!(
+            native_row["unavailable_description"].is_string(),
+            "{native_row}"
+        );
+        assert!(native_row["generation"].is_number(), "{native_row}");
+        // The legacy row is exactly its recorded shape: no projection-only keys appear.
+        let legacy_row = row(legacy);
+        assert_eq!(legacy_row["source_type"], "chatgpt");
+        assert_eq!(legacy_row["entries_written"], 3);
+        for key in ["generation", "has_gaps", "attempt_id", "unavailable_pages"] {
+            assert!(
+                legacy_row.get(key).is_none(),
+                "legacy row grew {key}: {legacy_row}"
+            );
+        }
+        assert_eq!(list["total_entries_written"], 4);
+
+        let (status, detail) =
+            json_request(root, "GET", &format!("/app/import/api/{native}")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(detail["entries_written"], 1);
+        assert_eq!(detail["has_gaps"], true);
+        assert!(detail["generation"].is_number(), "{detail}");
+        let (_, legacy_detail) =
+            json_request(root, "GET", &format!("/app/import/api/{legacy}")).await;
+        assert!(legacy_detail.get("generation").is_none(), "{legacy_detail}");
+    }
+
+    #[tokio::test]
     async fn test_native_image_get_recovers_source_count_date_content() {
         let temp = phase_root("empty");
         let root = temp.path();

@@ -80,6 +80,65 @@ pub struct ImportProjection {
 }
 
 impl ImportProjection {
+    /// True for an import the native producer wrote: an attempt record or a typed
+    /// publication record. Rows from the other importers keep their recorded shape.
+    #[must_use]
+    pub fn is_native(&self) -> bool {
+        self.attempt.is_some()
+            || self
+                .raw_publication
+                .as_ref()
+                .and_then(|record| record.get("schema"))
+                .and_then(Value::as_str)
+                == Some(crate::publish::PUBLICATION_SCHEMA)
+    }
+
+    /// The facts a native row carries beyond the recorded legacy row shape. A measured
+    /// zero stays `0` and an unknown value stays `null`; nothing is summed or defaulted.
+    #[must_use]
+    pub fn native_row_overlay(&self) -> Map<String, Value> {
+        let number =
+            |value: Option<u64>| value.map_or(Value::Null, |count| serde_json::json!(count));
+        let mut map = Map::new();
+        map.insert(
+            "source_type".to_owned(),
+            Value::String(self.source_type.clone()),
+        );
+        map.insert(
+            "source_display".to_owned(),
+            Value::String(self.source_display.clone()),
+        );
+        map.insert("entries_written".to_owned(), number(self.entries_written));
+        map.insert("entities_seeded".to_owned(), number(self.entities_seeded));
+        map.insert(
+            "total_files_created".to_owned(),
+            number(self.total_files_created),
+        );
+        map.insert("duration_ms".to_owned(), number(self.duration_ms));
+        map.insert(
+            "date_range".to_owned(),
+            self.date_range
+                .as_ref()
+                .map_or(Value::Null, |(start, end)| serde_json::json!([start, end])),
+        );
+        map.insert("generation".to_owned(), number(self.generation));
+        if let Some(attempt_id) = &self.attempt_id {
+            map.insert("attempt_id".to_owned(), Value::String(attempt_id.clone()));
+        }
+        map.insert(
+            "unavailable_description".to_owned(),
+            self.unavailable_description
+                .as_ref()
+                .map_or(Value::Null, |text| Value::String(text.clone())),
+        );
+        map.insert(
+            "unavailable_pages".to_owned(),
+            number(self.unavailable_pages),
+        );
+        map.insert("has_gaps".to_owned(), Value::Bool(self.has_gaps));
+        map
+    }
+
     /// Convert projection into a JSON-compatible map preserving null vs measured zero.
     #[must_use]
     pub fn to_json_map(&self) -> Map<String, Value> {

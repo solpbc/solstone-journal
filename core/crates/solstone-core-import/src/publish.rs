@@ -23,7 +23,7 @@ use crate::events::{
     emit_supervisor_drain,
 };
 
-const PUBLICATION_SCHEMA: &str = "solstone.import.publication.v1";
+pub(crate) const PUBLICATION_SCHEMA: &str = "solstone.import.publication.v1";
 
 #[derive(Clone, Debug)]
 pub struct CreatedSegment {

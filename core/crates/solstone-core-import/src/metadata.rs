@@ -312,10 +312,10 @@ pub fn write_import_metadata(
             } else {
                 merged.remove("attempt");
             }
+            // The durable task id wins when there is one; a start that has none yet
+            // (the queued path records it here for the first time) keeps the caller's.
             if let Some(tid) = existing.get("task_id") {
                 merged.insert("task_id".to_owned(), tid.clone());
-            } else {
-                merged.remove("task_id");
             }
         }
         Ok(None) => {}
@@ -475,6 +475,49 @@ mod tests {
         let err = admit_running_attempt(root, id, 2000, None).unwrap_err();
         assert!(matches!(err, ImportError::InvalidAttemptState { .. }));
         assert_eq!(fs::read(&path).unwrap(), initial_bytes);
+    }
+
+    #[test]
+    fn write_import_metadata_records_a_first_task_id_and_never_replaces_a_durable_one() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let id = "20260408_150001";
+
+        // The queued start path records its task id here for the first time: nothing durable
+        // has one yet, so the caller's must survive (dropping it left the row pending forever).
+        let mut staged = serde_json::Map::new();
+        staged.insert("original_filename".to_owned(), serde_json::json!("a.txt"));
+        write_import_metadata(root, id, &staged).unwrap(); // staging leaves import.json with no task id
+        assert!(
+            read_import_metadata(root, id)
+                .unwrap()
+                .get("task_id")
+                .is_none()
+        );
+        let mut first = staged.clone();
+        first.insert("task_id".to_owned(), serde_json::json!("task-1"));
+        write_import_metadata(root, id, &first).unwrap();
+        let read = |root: &Path| read_import_metadata(root, id).unwrap();
+        assert_eq!(
+            read(root).get("task_id"),
+            Some(&serde_json::json!("task-1"))
+        );
+
+        // Once durable it is authoritative: a stale or different caller cannot change or drop it.
+        let mut other = first.clone();
+        other.insert("task_id".to_owned(), serde_json::json!("task-2"));
+        write_import_metadata(root, id, &other).unwrap();
+        assert_eq!(
+            read(root).get("task_id"),
+            Some(&serde_json::json!("task-1"))
+        );
+        let mut without = first.clone();
+        without.remove("task_id");
+        write_import_metadata(root, id, &without).unwrap();
+        assert_eq!(
+            read(root).get("task_id"),
+            Some(&serde_json::json!("task-1"))
+        );
     }
 
     #[test]
