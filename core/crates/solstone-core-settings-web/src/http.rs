@@ -31,6 +31,16 @@ pub fn settings_operation_failed() -> Response {
     )
 }
 
+pub fn activity_settings_unavailable() -> Response {
+    error_envelope(
+        "settings_operation_failed",
+        "those activity settings couldn't be read.",
+        "the saved settings were left unchanged",
+        StatusCode::INTERNAL_SERVER_ERROR,
+    )
+    .into_response()
+}
+
 pub fn settings_operation_failed_with_detail(detail: impl Into<String>) -> Response {
     error_envelope(
         "settings_operation_failed",

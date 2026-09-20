@@ -32,6 +32,11 @@ pub enum FacetStoreError {
         line: usize,
         reason: &'static str,
     },
+    MalformedActivityDefinition {
+        path: PathBuf,
+        line: usize,
+        reason: &'static str,
+    },
 }
 
 impl fmt::Display for FacetStoreError {
@@ -66,6 +71,11 @@ impl fmt::Display for FacetStoreError {
                 formatter,
                 "malformed observation {source} line {line}: {reason}",
             ),
+            Self::MalformedActivityDefinition { path, line, reason } => write!(
+                formatter,
+                "cannot read activity definitions at {} line {line}: {reason}",
+                path.display(),
+            ),
         }
     }
 }
@@ -78,7 +88,8 @@ impl Error for FacetStoreError {
             Self::DeclarationNotObject { .. }
             | Self::EntityLinkNotObject { .. }
             | Self::CorruptCompletionMarker { .. }
-            | Self::MalformedObservation { .. } => None,
+            | Self::MalformedObservation { .. }
+            | Self::MalformedActivityDefinition { .. } => None,
         }
     }
 }
