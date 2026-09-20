@@ -98,6 +98,7 @@ pub fn commit(
         .ok_or_else(|| error(prepared, "story is missing activity record id"))?;
     // Python returns "" after the mutation; CommittedNoOutput is explicit.
     Ok(CommitPlan::Write(crate::writers::WriteIntent::Story {
+        destination_id: required(prepared, "destination_id")?.to_owned(),
         talent: prepared.name.clone(),
         facet: facet.to_owned(),
         day: day.to_owned(),
@@ -110,10 +111,19 @@ pub fn apply_story(
     root: &std::path::Path,
     talent: &str,
     facet: &str,
+    destination_id: &str,
     day: &str,
     record_id: &str,
     value: &Value,
 ) -> Result<(), String> {
+    let _guard = solstone_core_facets::hold_activity_enrichment(root, facet, destination_id)
+        .map_err(|error| error.to_string())?;
+    if solstone_core_facets::get_activity_record(root, facet, day, record_id)
+        .map_err(|error| error.to_string())?
+        .is_none()
+    {
+        return Err("activity no longer exists".to_owned());
+    }
     let entities = crate::detected_resolution_entities(root, facet, day)?;
     let resolve = |name: &str, field: &str| -> Result<Value, String> {
         let result = solstone_core_entity::record_entity_resolution(root, name, &entities, json!({"kind":"facet","facet":facet}), json!({"lane":"talent.story","facet":facet,"day":day,"record_id":record_id,"field":field}), 90.0, false).map_err(|error| error.to_string())?;
@@ -228,7 +238,8 @@ pub fn apply_story(
         "",
         &chrono::Utc::now().to_rfc3339(),
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| error.to_string())?
+    .ok_or("activity no longer exists")?;
     Ok(())
 }
 
@@ -252,6 +263,7 @@ mod tests {
     #[test]
     fn decision_counterparty_contract_survives_the_story_writer() {
         let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
         fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
         fs::write(&activity_path, "{\"id\":\"activity-1\"}\n").unwrap();
@@ -259,6 +271,13 @@ mod tests {
             name: "conversation".into(),
             config: Map::from_iter([
                 ("facet".into(), json!("work")),
+                (
+                    "destination_id".into(),
+                    json!(
+                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                            .unwrap()
+                    ),
+                ),
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
@@ -315,6 +334,7 @@ mod tests {
     #[test]
     fn criterion_22_story_stage_uses_plain_resolution_for_written_id() {
         let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
         let entity_path = root.path().join("facets/work/entities/20260101.jsonl");
         fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
@@ -331,6 +351,13 @@ mod tests {
             name: "conversation".into(),
             config: Map::from_iter([
                 ("facet".into(), json!("work")),
+                (
+                    "destination_id".into(),
+                    json!(
+                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                            .unwrap()
+                    ),
+                ),
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),
@@ -367,6 +394,7 @@ mod tests {
     #[test]
     fn criterion_7_story_validation_precedes_on_disk_mutation() {
         let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let activity_path = root.path().join("facets/work/activities/20260101.jsonl");
         let entity_path = root.path().join("facets/work/entities/20260101.jsonl");
         fs::create_dir_all(activity_path.parent().unwrap()).unwrap();
@@ -385,6 +413,13 @@ mod tests {
             name: "conversation".into(),
             config: Map::from_iter([
                 ("facet".into(), json!("work")),
+                (
+                    "destination_id".into(),
+                    json!(
+                        solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                            .unwrap()
+                    ),
+                ),
                 ("day".into(), json!("20260101")),
                 ("activity".into(), json!({"id":"activity-1"})),
             ]),

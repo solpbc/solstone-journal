@@ -527,6 +527,7 @@ mod tests {
     #[tokio::test]
     async fn ac2a_create_guard_same_since_segment_refuses_second_create() {
         let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let uri = "/app/activities/api/day/20260510/records?facet=work";
         let (first, _) = request(
             gated(root.path(), fixed_clock()),
@@ -557,6 +558,7 @@ mod tests {
     #[tokio::test]
     async fn ac2b_create_guard_fixed_clock_refuses_second_create() {
         let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let uri = "/app/activities/api/day/20260510/records?facet=work";
         let (first, _) = request(
             gated(root.path(), fixed_clock()),
@@ -587,6 +589,7 @@ mod tests {
     #[tokio::test]
     async fn ac2c_create_guard_distinct_clock_readings_create_two_records() {
         let root = phase_root("established_empty");
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let uri = "/app/activities/api/day/20260510/records?facet=work";
         let (first, _) = request(
             gated(root.path(), fixed_clock()),

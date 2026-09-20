@@ -36,9 +36,9 @@ pub use activities::{
 pub use activity_records::{
     ActivityRecord, ActivityRecordStoreError, AppendOutcome, PreparedAnticipationBatch,
     activity_is_available, activity_value_or_empty, activity_value_string, activity_value_truthy,
-    append_activity_record, append_edit, get_activity_record, load_activity_records,
-    prepare_anticipation_batch, publish_anticipation_batch, set_activity_hidden,
-    update_activity_record,
+    admit_activity_destination, append_activity_record, append_edit, get_activity_record,
+    hold_activity_enrichment, load_activity_records, prepare_anticipation_batch,
+    publish_anticipation_batch, set_activity_hidden, update_activity_record,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,
@@ -46,9 +46,10 @@ pub use awareness::{
 };
 pub use connections_horizon::{ConnectionsHorizon, refresh_connections_horizon};
 pub use declaration::{
-    FacetDeclarationSnapshot, FacetIdentityError, facet_write_identity,
-    observe_facet_write_identity, read_facet_declaration, require_facet_write_identity,
-    require_observed_facet_write_identity,
+    DeclaredFacetInventory, DestinationObservation, FacetDeclarationSnapshot, FacetIdentityError,
+    facet_write_identity, observe_declared_facet_inventory, observe_facet_declaration,
+    observe_facet_destination, observe_facet_write_identity, read_facet_declaration,
+    require_facet_write_identity, require_observed_facet_write_identity,
 };
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,

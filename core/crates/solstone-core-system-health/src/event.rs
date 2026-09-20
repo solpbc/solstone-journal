@@ -24,6 +24,8 @@ pub enum HealthEvent {
     PhaseComplete(EventPayload),
     RunStart(EventPayload),
     RunComplete(EventPayload),
+    FacetRoutingPending(EventPayload),
+    FacetRoutingResolved(EventPayload),
     SenseSkip(EventPayload),
     SenseComplete(EventPayload),
     SenseChangeDetect(EventPayload),
@@ -84,6 +86,8 @@ impl HealthEvent {
             Self::PhaseComplete(_) => "phase.complete",
             Self::RunStart(_) => "run.start",
             Self::RunComplete(_) => "run.complete",
+            Self::FacetRoutingPending(_) => "facet.routing_pending",
+            Self::FacetRoutingResolved(_) => "facet.routing_resolved",
             Self::SenseSkip(_) => "sense.skip",
             Self::SenseComplete(_) => "sense.complete",
             Self::SenseChangeDetect(_) => "sense.change_detect",
@@ -109,6 +113,8 @@ impl HealthEvent {
             "phase.complete" => Self::PhaseComplete(payload()),
             "run.start" => Self::RunStart(payload()),
             "run.complete" => Self::RunComplete(payload()),
+            "facet.routing_pending" => Self::FacetRoutingPending(payload()),
+            "facet.routing_resolved" => Self::FacetRoutingResolved(payload()),
             "sense.skip" => Self::SenseSkip(payload()),
             "sense.complete" => Self::SenseComplete(payload()),
             "sense.change_detect" => Self::SenseChangeDetect(payload()),
@@ -133,6 +139,8 @@ impl HealthEvent {
             | Self::PhaseComplete(payload)
             | Self::RunStart(payload)
             | Self::RunComplete(payload)
+            | Self::FacetRoutingPending(payload)
+            | Self::FacetRoutingResolved(payload)
             | Self::SenseSkip(payload)
             | Self::SenseComplete(payload)
             | Self::SenseChangeDetect(payload)
@@ -157,6 +165,8 @@ impl HealthEvent {
             | Self::PhaseComplete(payload)
             | Self::RunStart(payload)
             | Self::RunComplete(payload)
+            | Self::FacetRoutingPending(payload)
+            | Self::FacetRoutingResolved(payload)
             | Self::SenseSkip(payload)
             | Self::SenseComplete(payload)
             | Self::SenseChangeDetect(payload)

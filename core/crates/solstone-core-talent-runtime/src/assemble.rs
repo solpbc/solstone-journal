@@ -520,7 +520,7 @@ mod tests {
         permissions.set_mode(0o700);
         fs::set_permissions(&provider, permissions).expect("provider executable");
 
-        let output_path = journal.join("preview-parity-output.md");
+        let output_path = journal.join("facets/work/activities/preview-parity-output.md");
         let request = json!({
             "name":"probe",
             "day":"20260101",
@@ -612,7 +612,7 @@ mod tests {
             "span":["090000_60"],
             "prompt":activity_prompt,
             "use_id":"use-cogitate-preview-oracle",
-            "output_path":journal.join("cogitate-output.md"),
+            "output_path":journal.join("facets/work/activities/cogitate-output.md"),
             "env":{
                 "SOL_DAY":"20260101",
                 "SOL_FACET":"work",
@@ -669,7 +669,7 @@ mod tests {
             "schedule":"activity",
             "span":["090000_60"],
             "prompt":activity_prompt,
-            "output_path":journal.join("untyped-preview-parity-output.md"),
+            "output_path":journal.join("facets/work/activities/untyped-preview-parity-output.md"),
             "env":{
                 "SOL_DAY":"20260101",
                 "SOL_FACET":"work",

@@ -780,7 +780,7 @@ pub(crate) fn generate_and_write(
                 None => CommitDisposition::CommittedNoOutput,
             };
         } else {
-            disposition = match writers::write_output_if_configured(prepared, &response) {
+            disposition = match writers::write_output_if_configured(prepared, context, &response) {
                 Ok(_) => CommitDisposition::Written,
                 Err(error) => {
                     let mut err = stage_error("write", "runtime", prepared, error);
@@ -812,7 +812,7 @@ pub(crate) fn generate_and_write(
             degraded,
         };
     }
-    match writers::write_output_if_configured(prepared, &response) {
+    match writers::write_output_if_configured(prepared, context, &response) {
         Ok(_) => RuntimeOutcome::Finished {
             output: response,
             disposition: CommitDisposition::Written,

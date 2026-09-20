@@ -32,6 +32,11 @@ pub fn segment_fully_thought(progress: Option<&SegmentProgress>) -> ThoughtVerdi
     let Some(progress) = progress.filter(|progress| progress.sensed) else {
         return ThoughtVerdict::NoSenseComplete;
     };
+    if progress.dispatched.contains("facet_routing")
+        && !progress.completed.contains("facet_routing")
+    {
+        return ThoughtVerdict::Dispatched("facet_routing".to_owned());
+    }
     if progress.density.as_deref() == Some("idle")
         || progress.change_class.as_deref() == Some("redundant")
     {

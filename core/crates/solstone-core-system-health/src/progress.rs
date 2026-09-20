@@ -59,6 +59,21 @@ pub fn read_segment_progress<S: HealthLogSource>(
                 record.ts,
                 payload.change_class.clone(),
             ),
+            HealthEvent::FacetRoutingPending(_) | HealthEvent::FacetRoutingResolved(_) => {
+                push_record(
+                    &mut records,
+                    &mut sequence,
+                    key,
+                    Some("facet_routing".to_owned()),
+                    record.ts,
+                    if matches!(record.event, HealthEvent::FacetRoutingPending(_)) {
+                        ProgressKind::Dispatch
+                    } else {
+                        ProgressKind::Complete
+                    },
+                    None,
+                )
+            }
             HealthEvent::TalentDispatch(_) => push_record(
                 &mut records,
                 &mut sequence,
@@ -252,4 +267,44 @@ fn use_id_matches(dispatch: &Option<String>, terminal: &Option<String>) -> bool 
         (Some(left), Some(right)) => left == right,
         _ => true,
     }
+}
+
+/// Pending routing revisions from the same durable run log used by segment repair.
+pub fn read_pending_facet_routing<S: HealthLogSource>(
+    source: &S,
+    day: &str,
+) -> Result<FoldRead<BTreeMap<SegmentIdentity, Option<String>>>, HealthError> {
+    let mut scanned = read_day_records(source, day)?;
+    scanned.value.sort_by_key(|record| record.ts);
+    let mut pending = BTreeMap::new();
+    for record in scanned.value {
+        let (payload, unresolved) = match record.event {
+            HealthEvent::FacetRoutingPending(payload) => (payload, true),
+            HealthEvent::FacetRoutingResolved(payload) => (payload, false),
+            _ => continue,
+        };
+        let Some(segment) = payload.segment else {
+            continue;
+        };
+        let key = SegmentIdentity {
+            stream: payload.stream,
+            segment,
+        };
+        if unresolved {
+            pending.insert(
+                key,
+                payload
+                    .extensions
+                    .get("input_fingerprint")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
+            );
+        } else {
+            pending.remove(&key);
+        }
+    }
+    Ok(FoldRead {
+        value: pending,
+        malformed_line_count: scanned.malformed_line_count,
+    })
 }

@@ -10,56 +10,48 @@ use std::path::Path;
 
 use serde_json::Value;
 use solstone_core_facets::{
-    ScopedFacetEntity, list_facet_directories, list_scoped_facet_entities_tolerant,
-    observation_summary, read_facet_declaration,
+    ScopedFacetEntity, list_scoped_facet_entities_tolerant, observation_summary,
+    observe_declared_facet_inventory, observe_facet_declaration,
 };
 use solstone_core_journal_config::{is_path_shaped_name, read_journal_config};
 
 const MAX_ENTITIES_PER_FACET: usize = 20;
 const MAX_ENTITY_LINE_CHARS: usize = 240;
 
+/// Policy for substituting runtime facets into schema when enabled facets are empty.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RuntimeFacetsPolicy {
+    /// Non-Sense schemas: drops the `enum` property completely when enabled facets are empty.
+    DropEnum,
+    /// Sense schema: sets `enum: []` and `properties.facets.maxItems = 0`.
+    SenseEmptyRouting,
+}
+
 /// The facet names a talent is allowed to choose from, in the same sense the
 /// `$facets` prompt context uses: a facet directory with a readable declaration
 /// that is not muted.
-///
-/// 🔴 Exists because the talent schemas ship a literal `__RUNTIME_FACETS__`
-/// placeholder in their `facet` enums and nothing ever replaced it. Measured on the
-/// founder's journal 2026-09-01: 55 real facets on disk, and every V2 `sense` run
-/// emitted `{"facet": "__RUNTIME_FACETS__"}` because that was the only value its
-/// schema permitted. That bogus facet then flowed into `facets.json`, into activity
-/// records, and finally into `participation`, which failed 56 times with
-/// `facet '__RUNTIME_FACETS__' not found` after running 46,245 times cleanly on V1.
-pub(crate) fn enabled_facet_names(journal_root: &Path) -> Vec<String> {
-    let Ok(mut facets) = list_facet_directories(journal_root) else {
-        return Vec::new();
-    };
-    facets.sort();
-    facets.dedup();
-    facets
-        .into_iter()
-        .filter(|facet| {
-            matches!(
-                read_facet_declaration(journal_root, facet),
-                Ok(Some(declaration)) if declaration.muted != Some(true)
-            )
-        })
-        .collect()
+pub(crate) fn enabled_facet_names(journal_root: &Path) -> Result<Vec<String>, String> {
+    let inventory = observe_declared_facet_inventory(journal_root).map_err(|e| e.to_string())?;
+    Ok(inventory.enabled)
 }
 
 /// Replace the `__RUNTIME_FACETS__` placeholder in a talent schema with the owner's
 /// real facet names.
-///
-/// ⚠ When the owner has no enabled facets the enum is **removed** rather than left
-/// empty or left holding the placeholder. That matches what the prompt already tells
-/// the model in the same situation -- `all_summaries` emits "No facets are defined
-/// yet. You are in discovery mode. Name the contexts you observe" -- and a schema
-/// that permits no value at all would make discovery mode impossible to satisfy.
-pub(crate) fn substitute_runtime_facets(schema: &mut Value, journal_root: &Path) {
-    let names = enabled_facet_names(journal_root);
-    substitute_runtime_facets_with(schema, &names);
+pub(crate) fn substitute_runtime_facets(
+    schema: &mut Value,
+    journal_root: &Path,
+    policy: RuntimeFacetsPolicy,
+) -> Result<(), String> {
+    let names = enabled_facet_names(journal_root)?;
+    substitute_runtime_facets_with(schema, &names, policy);
+    Ok(())
 }
 
-fn substitute_runtime_facets_with(schema: &mut Value, names: &[String]) {
+pub(crate) fn substitute_runtime_facets_with(
+    schema: &mut Value,
+    names: &[String],
+    policy: RuntimeFacetsPolicy,
+) {
     match schema {
         Value::Object(object) => {
             let placeholder = object
@@ -72,7 +64,14 @@ fn substitute_runtime_facets_with(schema: &mut Value, names: &[String]) {
                 });
             if placeholder {
                 if names.is_empty() {
-                    object.remove("enum");
+                    match policy {
+                        RuntimeFacetsPolicy::DropEnum => {
+                            object.remove("enum");
+                        }
+                        RuntimeFacetsPolicy::SenseEmptyRouting => {
+                            object.insert("enum".to_owned(), Value::Array(Vec::new()));
+                        }
+                    }
                 } else {
                     object.insert(
                         "enum".to_owned(),
@@ -85,13 +84,19 @@ fn substitute_runtime_facets_with(schema: &mut Value, names: &[String]) {
                     );
                 }
             }
+            if policy == RuntimeFacetsPolicy::SenseEmptyRouting
+                && names.is_empty()
+                && let Some(facets_prop) = object.get_mut("facets").and_then(Value::as_object_mut)
+            {
+                facets_prop.insert("maxItems".to_owned(), Value::from(0));
+            }
             for value in object.values_mut() {
-                substitute_runtime_facets_with(value, names);
+                substitute_runtime_facets_with(value, names, policy);
             }
         }
         Value::Array(values) => {
             for value in values {
-                substitute_runtime_facets_with(value, names);
+                substitute_runtime_facets_with(value, names, policy);
             }
         }
         _ => {}
@@ -108,12 +113,12 @@ pub(crate) fn resolve_facets(
 ) -> Result<String, String> {
     match focused_facet {
         Some(facet) => focused_summary(journal_root, facet),
-        None => Ok(all_summaries(journal_root, facet_naming).unwrap_or_default()),
+        None => all_summaries(journal_root, facet_naming),
     }
 }
 
 fn focused_summary(journal_root: &Path, facet: &str) -> Result<String, String> {
-    let declaration = read_facet_declaration(journal_root, facet)
+    let declaration = observe_facet_declaration(journal_root, facet)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("facet '{facet}' not found"))?;
     let mut output = format!("## Facet Focus\n# {}", declaration.title);
@@ -137,20 +142,10 @@ fn focused_summary(journal_root: &Path, facet: &str) -> Result<String, String> {
 }
 
 fn all_summaries(journal_root: &Path, facet_naming: Option<&str>) -> Result<String, String> {
-    let mut facets = list_facet_directories(journal_root).map_err(|error| error.to_string())?;
-    facets.sort();
-    let mut enabled = Vec::new();
-    for facet in facets {
-        let declaration = match read_facet_declaration(journal_root, &facet) {
-            Ok(Some(declaration)) => declaration,
-            Ok(None) | Err(_) => continue,
-        };
-        if declaration.muted == Some(true) {
-            continue;
-        }
-        enabled.push((facet, declaration));
-    }
-    if enabled.is_empty() {
+    let inventory =
+        observe_declared_facet_inventory(journal_root).map_err(|error| error.to_string())?;
+
+    if inventory.is_genuine_empty() {
         let naming = facet_naming
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_default();
@@ -168,6 +163,31 @@ fn all_summaries(journal_root: &Path, facet_naming: Option<&str>) -> Result<Stri
             + &naming_sentence
             + " These names will be used to suggest journal organization to the user.");
     }
+
+    if inventory.is_all_muted() {
+        return Ok(
+            "Declared facets exist in the journal, but all are currently muted. \
+            Do not route activities to muted facets; leave facets[] empty and propose candidate \
+            names in speculative_facet if observed."
+                .to_owned(),
+        );
+    }
+
+    let mut enabled = Vec::new();
+    for facet in &inventory.enabled {
+        if let Ok(Some(declaration)) = observe_facet_declaration(journal_root, facet) {
+            enabled.push((facet.clone(), declaration));
+        }
+    }
+
+    if enabled.is_empty() {
+        return Ok(
+            "Declared facets exist in the journal, but none are currently enabled. \
+            Leave facets[] empty and propose candidate names in speculative_facet if observed."
+                .to_owned(),
+        );
+    }
+
     let mut output = String::from("## Available Facets\n");
     for (facet, declaration) in enabled {
         output.push_str(&format!("\n- **{}** (`{facet}`)\n", declaration.title));
@@ -520,41 +540,57 @@ mod tests {
     }
 
     #[test]
-    fn branch_failures_are_swallowed() {
+    fn all_muted_emits_distinct_non_discovery_guidance() {
+        let root = tempfile::tempdir().expect("root");
+        declaration(
+            root.path(),
+            "muted_work",
+            r#"{"title":"Muted Work","muted":true}"#,
+        );
+        declaration(
+            root.path(),
+            "muted_personal",
+            r#"{"title":"Muted Personal","muted":true}"#,
+        );
+        let copy = resolve_facets(root.path(), None, None).expect("all-muted copy");
+        assert!(copy.contains("all are currently muted"));
+        assert!(!copy.contains("No facets are defined yet"));
+    }
+
+    #[test]
+    fn malformed_sibling_does_not_enter_discovery_and_unreadable_fails_loud() {
         let root = tempfile::tempdir().expect("root");
         assert_eq!(
             resolve_facets(root.path(), Some("missing"), None),
             Err("facet 'missing' not found".to_owned())
         );
+        // Only a malformed sibling: does NOT enter discovery mode
         declaration(root.path(), "bad", "{");
-        assert!(
-            resolve_facets(root.path(), None, None)
-                .expect("discovery after bad declaration")
-                .contains("No facets are defined yet.")
-        );
+        let only_bad = resolve_facets(root.path(), None, None).expect("only bad");
+        assert!(only_bad.contains("none are currently enabled"));
+        assert!(!only_bad.contains("No facets are defined yet"));
+
+        // Valid sibling alongside malformed sibling: routes to valid sibling, not discovery
         declaration(root.path(), "work", r#"{"title":"Work"}"#);
-        let all = resolve_facets(root.path(), None, None).expect("all");
-        assert!(all.contains("**Work** (`work`)"));
-        assert!(!all.contains("bad"));
+        let mixed = resolve_facets(root.path(), None, None).expect("mixed");
+        assert!(mixed.contains("**Work** (`work`)"));
+        assert!(!mixed.contains("bad"));
+        assert!(!mixed.contains("No facets are defined yet"));
+
+        // Unreadable / broken inventory fails loudly with Err
         let blocked = root.path().join("facets");
         fs::remove_dir_all(&blocked).expect("remove directory");
         symlink("facets", &blocked).expect("self-referential facets path");
-        assert_eq!(
-            resolve_facets(root.path(), None, None).expect("self-referential swallow"),
-            ""
-        );
+        assert!(resolve_facets(root.path(), None, None).is_err());
     }
 
     /// The placeholder must become the owner's real facets.
-    ///
-    /// Measured on the founder's journal: 55 facets on disk, and every V2 `sense` run
-    /// still emitted `{"facet": "__RUNTIME_FACETS__"}` because that was the only value
-    /// its schema allowed.
     #[test]
     fn runtime_facets_placeholder_becomes_the_owners_facets() {
         let mut schema = json!({
             "properties": {
                 "facets": {
+                    "maxItems": 16,
                     "items": {
                         "properties": {
                             "facet": {"type": "string", "enum": ["__RUNTIME_FACETS__"]},
@@ -567,11 +603,13 @@ mod tests {
         super::substitute_runtime_facets_with(
             &mut schema,
             &["awareness".to_owned(), "ceo".to_owned()],
+            super::RuntimeFacetsPolicy::SenseEmptyRouting,
         );
         assert_eq!(
             schema["properties"]["facets"]["items"]["properties"]["facet"]["enum"],
             json!(["awareness", "ceo"])
         );
+        assert_eq!(schema["properties"]["facets"]["maxItems"], json!(16));
         // 🔒 An unrelated enum must be left exactly as it was.
         assert_eq!(
             schema["properties"]["facets"]["items"]["properties"]["level"]["enum"],
@@ -579,15 +617,57 @@ mod tests {
         );
     }
 
-    /// ⚠ With no facets the enum is REMOVED, not emptied.
-    ///
-    /// `all_summaries` tells the model "No facets are defined yet. You are in discovery
-    /// mode. Name the contexts you observe" in exactly this case, and an empty enum
-    /// would permit no value at all -- making that instruction impossible to satisfy.
+    /// Sense empty enabled sets enum: [] and properties.facets.maxItems: 0.
     #[test]
-    fn discovery_mode_drops_the_facet_enum_entirely() {
+    fn sense_empty_enabled_constrains_enum_and_max_items() {
+        let mut schema = json!({
+            "properties": {
+                "facets": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "properties": {
+                            "facet": {"type": "string", "enum": ["__RUNTIME_FACETS__"]},
+                            "level": {"type": "string", "enum": ["high", "low"]}
+                        }
+                    }
+                },
+                "speculative_facet": {
+                    "type": ["string", "null"]
+                }
+            }
+        });
+        super::substitute_runtime_facets_with(
+            &mut schema,
+            &[],
+            super::RuntimeFacetsPolicy::SenseEmptyRouting,
+        );
+        assert_eq!(
+            schema["properties"]["facets"]["items"]["properties"]["facet"]["enum"],
+            json!([])
+        );
+        assert_eq!(schema["properties"]["facets"]["maxItems"], json!(0));
+        let validator = jsonschema::options()
+            .with_draft(jsonschema::Draft::Draft7)
+            .build(&schema)
+            .expect("empty-routing schema must compile");
+        assert!(validator.is_valid(&json!({"facets":[]})));
+        assert!(!validator.is_valid(&json!({"facets":[{"facet":"invented"}]})));
+        assert_eq!(
+            schema["properties"]["speculative_facet"]["type"],
+            json!(["string", "null"])
+        );
+    }
+
+    /// Non-Sense with no facets drops the enum entirely.
+    #[test]
+    fn non_sense_drops_the_facet_enum_entirely() {
         let mut schema = json!({"facet": {"type": "string", "enum": ["__RUNTIME_FACETS__"]}});
-        super::substitute_runtime_facets_with(&mut schema, &[]);
+        super::substitute_runtime_facets_with(
+            &mut schema,
+            &[],
+            super::RuntimeFacetsPolicy::DropEnum,
+        );
         assert!(
             schema["facet"].get("enum").is_none(),
             "an empty enum permits nothing; discovery mode needs a free string"
@@ -605,7 +685,11 @@ mod tests {
             }
         });
         let mut schema = original.clone();
-        super::substitute_runtime_facets_with(&mut schema, &["awareness".to_owned()]);
+        super::substitute_runtime_facets_with(
+            &mut schema,
+            &["awareness".to_owned()],
+            super::RuntimeFacetsPolicy::SenseEmptyRouting,
+        );
         assert_eq!(schema, original);
     }
 

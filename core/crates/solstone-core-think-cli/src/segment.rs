@@ -15,7 +15,9 @@ use crate::run_log::RunLogWriter;
 use chrono::{TimeZone, Utc};
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use solstone_core_facets::{AppendOutcome, append_activity_record};
+use solstone_core_facets::{
+    AppendOutcome, DeclaredFacetInventory, append_activity_record, observe_declared_facet_inventory,
+};
 use solstone_core_journal_io::{
     AtomicWriteOptions, DEFAULT_STREAM, PathOrDay, atomic_replace, iter_segments,
 };
@@ -115,6 +117,39 @@ pub(crate) fn run(
             ]),
         ),
     );
+    // A routing retry rereads declarations against retained source, without another model call.
+    let pending = solstone_core_system_health::read_pending_facet_routing(
+        &FilesystemHealthLogSource::new(&context.journal),
+        &context.day,
+    )
+    .map_err(|error| error.to_string())?;
+    if pending.malformed_line_count != 0 {
+        return Err("cannot read routing recovery from malformed health logs".to_owned());
+    }
+    let key = solstone_core_system_health::SegmentIdentity {
+        stream: stream.map(str::to_owned),
+        segment: segment.to_owned(),
+    };
+    let routing_pending = if let Some(fingerprint) =
+        pending.value.get(&key).and_then(Option::as_deref)
+    {
+        solstone_core_system::catchup::read_raw_input_fingerprint(&context.journal, &context.day)
+            .map_err(|error| error.to_string())?
+            == fingerprint
+    } else {
+        false
+    };
+    if routing_pending && !refresh {
+        let raw = std::fs::read(segment_dir.join("talents/sense.json"))
+            .map_err(|error| error.to_string())?;
+        let retained: Value = serde_json::from_slice(&raw).map_err(|error| error.to_string())?;
+        let sense = retained
+            .as_object()
+            .filter(|_| valid_activity_sense(&retained))
+            .ok_or("retained routing source is invalid")?;
+        write_sense_and_change(context, log, segment, stream, &segment_dir, sense)?;
+        return Ok(ModeResult::default());
+    }
     if solstone_core_talent_runtime::check_segment_has_no_input(
         &context.journal,
         &context.day,
@@ -126,7 +161,8 @@ pub(crate) fn run(
         // Source-derived, not measured: thinking.py:1536-1584 writes a
         // schema-valid idle artifact and change record before terminalizing.
         let sense_json = empty_input_sense_output();
-        let change = write_sense_and_change(context, segment, stream, &segment_dir, &sense_json)?;
+        let change =
+            write_sense_and_change(context, log, segment, stream, &segment_dir, &sense_json)?;
         log_sense(log, context, segment, "idle", stream);
         log_change(
             log,
@@ -262,7 +298,7 @@ pub(crate) fn run(
     let Some(density) = sense_object.get("density").and_then(Value::as_str) else {
         return Ok(failed("sense (output_invalid)"));
     };
-    let change = write_sense_and_change(context, segment, stream, &segment_dir, sense_object)?;
+    let change = write_sense_and_change(context, log, segment, stream, &segment_dir, sense_object)?;
     log_sense(log, context, segment, density, stream);
     let change_class = change
         .get("change_class")
@@ -645,15 +681,13 @@ pub(crate) fn run_repair_batch(
                         Ok(result) => {
                             merge(&mut aggregate.lock().expect("repair result lock"), result)
                         }
-                        Err(_) => {
+                        Err(error) => {
                             // Source-derived, not measured: thinking.py:677-682
                             // folds one worker exception into that segment's failure
                             // while the remaining repairs continue.
                             let mut aggregate = aggregate.lock().expect("repair result lock");
                             aggregate.failed += 1;
-                            aggregate
-                                .failed_names
-                                .push(format!("{segment} (exception)"));
+                            aggregate.failed_names.push(format!("{segment} ({error})"));
                         }
                     }
                 }
@@ -680,6 +714,38 @@ pub(crate) fn run_repair_batch_with_activity(
     skip_talents: Vec<String>,
     no_activity_prompts: bool,
 ) -> Result<ModeResult, String> {
+    let pending = solstone_core_system_health::read_pending_facet_routing(
+        &FilesystemHealthLogSource::new(&context.journal),
+        &context.day,
+    )
+    .map_err(|error| error.to_string())?;
+    let retry_streams = segments
+        .iter()
+        .filter(|(segment, stream)| {
+            pending
+                .value
+                .contains_key(&solstone_core_system_health::SegmentIdentity {
+                    segment: segment.clone(),
+                    stream: stream.clone(),
+                })
+        })
+        .map(|(_, stream)| stream.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut replay_segments = segments.clone();
+    if !retry_streams.is_empty() {
+        // Include retained boundaries around the repaired classification. Replaying
+        // only its active segment can lose an activity that ends in a later idle one.
+        for entry in iter_segments(&context.journal, PathOrDay::Day(&context.day))
+            .map_err(|error| error.to_string())?
+        {
+            let stream = named_stream(entry.path(), &context.day).map(str::to_owned);
+            if retry_streams.contains(&stream) {
+                replay_segments.push((entry.name().to_string_lossy().into_owned(), stream));
+            }
+        }
+        replay_segments.sort();
+        replay_segments.dedup();
+    }
     run_repair_batch(
         context,
         log,
@@ -691,14 +757,19 @@ pub(crate) fn run_repair_batch_with_activity(
         skip_talents,
     )
     .map(|mut result| {
-        if let Err(error) = replay_activity_state(
+        let selected = segments
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>();
+        if let Err(error) = replay_activity_state_selected(
             context,
             log,
-            &segments,
+            &replay_segments,
             refresh,
             max_concurrency,
             no_activity_prompts,
             false,
+            (!retry_streams.is_empty()).then_some(&selected),
         ) {
             crate::dispatch::record_followup_failure(&mut result, "activity replay", &error);
         }
@@ -723,19 +794,48 @@ pub(crate) fn replay_activity_state(
     skip_activity_prompts: bool,
     hydrate_existing: bool,
 ) -> Result<(), String> {
+    replay_activity_state_selected(
+        context,
+        log,
+        segments,
+        refresh,
+        max_concurrency,
+        skip_activity_prompts,
+        hydrate_existing,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn replay_activity_state_selected(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segments: &[(String, Option<String>)],
+    refresh: bool,
+    max_concurrency: i64,
+    skip_activity_prompts: bool,
+    hydrate_existing: bool,
+    selected: Option<&std::collections::BTreeSet<(String, Option<String>)>>,
+) -> Result<(), String> {
     let mut errors = Vec::new();
+    let mut resolved_routing = Vec::new();
     let mut ordered = segments.to_vec();
     ordered.sort();
     let mut machines = BTreeMap::new();
     if hydrate_existing {
         machines.insert(None, ActivityStateMachine::hydrate(Some(&context.journal)));
     }
+    let inventory =
+        observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
     for (segment, stream) in ordered {
         let Some(segment_dir) =
             find_segment_dir(&context.journal, &context.day, &segment, stream.as_deref())
         else {
             continue;
         };
+        let stream = stream.or_else(|| named_stream(&segment_dir, &context.day).map(str::to_owned));
+        let selected_coordinate =
+            selected.is_none_or(|keys| keys.contains(&(segment.clone(), stream.clone())));
         let sense_path = segment_dir.join("talents/sense.json");
         let sense = match solstone_core_journal_io::durability::read_json_durable::<Value>(
             solstone_core_journal_io::durability::ArtifactId::SegmentSense,
@@ -760,7 +860,28 @@ pub(crate) fn replay_activity_state(
             .last_segment_day()
             .unwrap_or(&context.day)
             .to_owned();
-        let changes = machine.update(&sense, &segment, &context.day, None, context.now_ms);
+        let mut filtered_sense = sense.clone();
+        let mut routing_unreadable = false;
+        if let Some(obj) = filtered_sense.as_object_mut() {
+            let filtered = filter_declared_facets(
+                obj.get("facets"),
+                &inventory,
+                context,
+                log,
+                &segment,
+                stream.as_deref(),
+                selected_coordinate,
+            )?;
+            routing_unreadable = filtered.1;
+            obj.insert("facets".to_owned(), filtered.0);
+        }
+        let changes = machine.update(
+            &filtered_sense,
+            &segment,
+            &context.day,
+            None,
+            context.now_ms,
+        );
         if hydrate_existing {
             // Source-derived, not measured: thinking.py:408-411 deliberately
             // logs and continues when snapshot persistence fails; ended records
@@ -775,12 +896,19 @@ pub(crate) fn replay_activity_state(
             &segment,
             &routing_day,
             changes,
-            &machine.completed_activities(),
+            &selected_completed(machine, stream.as_deref(), selected),
             refresh,
             max_concurrency,
             skip_activity_prompts,
         ) {
             errors.push(error);
+        } else if selected_coordinate && !routing_unreadable {
+            resolved_routing.push((segment.clone(), stream.clone()));
+        }
+        if selected_coordinate && routing_unreadable {
+            errors.push(format!(
+                "{segment}: facet declaration is unreadable; routing remains pending"
+            ));
         }
     }
     if !hydrate_existing
@@ -788,6 +916,7 @@ pub(crate) fn replay_activity_state(
             context,
             log,
             machines,
+            selected,
             refresh,
             max_concurrency,
             skip_activity_prompts,
@@ -796,10 +925,36 @@ pub(crate) fn replay_activity_state(
         errors.push(error);
     }
     if errors.is_empty() {
+        for (segment, stream) in resolved_routing {
+            log_routing_state(context, log, &segment, stream.as_deref(), false)?;
+        }
         Ok(())
     } else {
         Err(errors.join("; "))
     }
+}
+
+fn selected_completed(
+    machine: &ActivityStateMachine,
+    stream: Option<&str>,
+    selected: Option<&std::collections::BTreeSet<(String, Option<String>)>>,
+) -> Vec<Value> {
+    machine
+        .completed_activities()
+        .into_iter()
+        .filter(|record| {
+            selected.is_none_or(|keys| {
+                record
+                    .get("segments")
+                    .and_then(Value::as_array)
+                    .is_some_and(|segments| {
+                        segments.iter().filter_map(Value::as_str).any(|segment| {
+                            keys.contains(&(segment.to_owned(), stream.map(str::to_owned)))
+                        })
+                    })
+            })
+        })
+        .collect()
 }
 
 fn valid_activity_sense(sense: &Value) -> bool {
@@ -814,6 +969,7 @@ fn flush_replay_machines(
     context: &ThinkContext,
     log: &mut RunLogWriter,
     mut machines: BTreeMap<Option<String>, ActivityStateMachine>,
+    selected: Option<&std::collections::BTreeSet<(String, Option<String>)>>,
     refresh: bool,
     max_concurrency: i64,
     skip_activity_prompts: bool,
@@ -849,7 +1005,7 @@ fn flush_replay_machines(
             &last_segment,
             &routing_day,
             changes,
-            &machine.completed_activities(),
+            &selected_completed(machine, stream.as_deref(), selected),
             refresh,
             max_concurrency,
             skip_activity_prompts,
@@ -926,11 +1082,24 @@ fn persist_ended_activities(
         }) else {
             continue;
         };
-        let written = matches!(
-            append_activity_record(&context.journal, facet, routing_day, record.clone())
-                .map_err(|error| error.to_string())?,
-            AppendOutcome::Written(_)
-        );
+        let written =
+            match append_activity_record(&context.journal, facet, routing_day, record.clone()) {
+                Ok(AppendOutcome::Written(_)) => true,
+                Ok(AppendOutcome::AlreadyExists) => false,
+                Err(error) => {
+                    log.log(
+                        "activity.persist_failed",
+                        context.now_ms,
+                        activity_event(Map::from_iter([
+                            ("activity".to_owned(), Value::String(id.to_owned())),
+                            ("facet".to_owned(), Value::String(facet.to_owned())),
+                            ("error".to_owned(), Value::String(error.to_string())),
+                        ])),
+                    );
+                    failures.push(format!("{facet}/{id}: {error}"));
+                    continue;
+                }
+            };
         log.log(
             "activity.persisted",
             context.now_ms,
@@ -965,21 +1134,47 @@ fn persist_ended_activities(
                 );
                 continue;
             }
-            let mut prompt_context = ThinkContext::new_with_event_clock(
+            let mut prompt_context = match ThinkContext::new_with_event_clock(
                 &context.journal,
                 routing_day.to_owned(),
                 context.journal.join("chronicle").join(routing_day),
                 context.now_ms,
                 context.event_clock(),
-            )?;
+            ) {
+                Ok(ctx) => ctx,
+                Err(error) => {
+                    failures.push(format!("{facet}/{id}: {error}"));
+                    continue;
+                }
+            };
             prompt_context.talent_root = context.talent_root.clone();
             prompt_context.apps_root = context.apps_root.clone();
             prompt_context.cortex = context.cortex.clone();
             prompt_context.index = context.index.clone();
             prompt_context.status = context.status.clone();
-            let result =
-                crate::activity::run(&prompt_context, log, id, facet, refresh, max_concurrency)?;
-            if result.failed != 0 {
+            let result = match crate::activity::run(
+                &prompt_context,
+                log,
+                id,
+                facet,
+                refresh,
+                false,
+                max_concurrency,
+            ) {
+                Ok(res) => res,
+                Err(error) => {
+                    failures.push(format!("{facet}/{id}: {error}"));
+                    continue;
+                }
+            };
+            if result.failed != 0
+                && !crate::activity_work::has_persisted_disposition(
+                    &context.journal,
+                    routing_day,
+                    facet,
+                    id,
+                )?
+            {
                 failures.extend(result.failed_names);
             }
         }
@@ -1291,8 +1486,9 @@ fn empty_input_sense_output() -> Map<String, Value> {
     ])
 }
 
-fn write_sense_and_change(
+pub(crate) fn write_sense_and_change(
     context: &ThinkContext,
+    log: &mut RunLogWriter,
     segment_name: &str,
     stream: Option<&str>,
     segment: &std::path::Path,
@@ -1309,13 +1505,20 @@ fn write_sense_and_change(
             .and_then(Value::as_str)
             .unwrap_or_default(),
     )?;
-    replace_json(
-        &talents.join("facets.json"),
-        &sense
-            .get("facets")
-            .cloned()
-            .unwrap_or(Value::Array(Vec::new())),
+    // Preserve source evidence even when declaration observation refuses routing.
+    replace_json(&talents.join("sense.json"), &Value::Object(sense.clone()))?;
+    let inventory =
+        observe_declared_facet_inventory(&context.journal).map_err(|error| error.to_string())?;
+    let filtered_facets = filter_declared_facets(
+        sense.get("facets"),
+        &inventory,
+        context,
+        log,
+        segment_name,
+        stream,
+        true,
     )?;
+    replace_json(&talents.join("facets.json"), &filtered_facets.0)?;
     replace_json(&talents.join("sense.json"), &Value::Object(sense.clone()))?;
     replace_json(
         &talents.join("density.json"),
@@ -1549,6 +1752,141 @@ fn python_truthy(value: &Value) -> bool {
     }
 }
 
+fn filter_declared_facets(
+    facets_value: Option<&Value>,
+    inventory: &DeclaredFacetInventory,
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    stream: Option<&str>,
+    record_disposition: bool,
+) -> Result<(Value, bool), String> {
+    let Some(array) = facets_value.and_then(Value::as_array) else {
+        return Ok((Value::Array(Vec::new()), false));
+    };
+    let mut accepted = Vec::new();
+    let mut unreadable = false;
+    for entry in array {
+        let facet = entry
+            .get("facet")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if inventory
+            .enabled
+            .iter()
+            .chain(&inventory.muted)
+            .any(|slug| slug == facet)
+        {
+            accepted.push(entry.clone());
+            continue;
+        }
+        let reason = if inventory.unreadable.iter().any(|slug| slug == facet) {
+            unreadable = true;
+            "declaration_unreadable"
+        } else if inventory.malformed.iter().any(|slug| slug == facet) {
+            "declaration_malformed"
+        } else {
+            "destination_missing"
+        };
+        if record_disposition {
+            log.log(
+                "facet.routing_rejected",
+                context.event_now_ms(),
+                segment_event(
+                    context,
+                    segment,
+                    stream,
+                    Map::from_iter([
+                        ("facet".to_owned(), Value::String(facet.to_owned())),
+                        ("reason_code".to_owned(), Value::String(reason.to_owned())),
+                        (
+                            "next_action".to_owned(),
+                            Value::String(
+                                "correct the declaration, then reprocess this source segment."
+                                    .to_owned(),
+                            ),
+                        ),
+                    ]),
+                ),
+            );
+        }
+    }
+    if record_disposition && unreadable {
+        log_routing_state(context, log, segment, stream, true)?;
+    }
+    if record_disposition {
+        log.finish()?;
+    }
+    Ok((Value::Array(accepted), unreadable))
+}
+
+fn log_routing_state(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    segment: &str,
+    stream: Option<&str>,
+    pending: bool,
+) -> Result<(), String> {
+    let mut fields = segment_event(
+        context,
+        segment,
+        stream,
+        Map::from_iter([(
+            "reason_code".to_owned(),
+            Value::String(
+                if pending {
+                    "declaration_unreadable"
+                } else {
+                    "routing_resolved"
+                }
+                .to_owned(),
+            ),
+        )]),
+    );
+    if pending {
+        let fingerprint = solstone_core_system::catchup::read_raw_input_fingerprint(
+            &context.journal,
+            &context.day,
+        )
+        .map_err(|error| error.to_string())?;
+        fields.insert("input_fingerprint".to_owned(), Value::String(fingerprint));
+        // Direct repair of a previously certified day also needs a retry carrier.
+        // Preserve an existing repair's active claim and backoff.
+        if !solstone_core_system_health::read_segment_repair_attempted(
+            &context.journal,
+            &context.day,
+        ) {
+            use solstone_core_system::catchup::{
+                SegmentRepairOutcome, record_segment_repair_attempt, record_segment_repair_outcome,
+            };
+            let now = context.event_now_ms() as f64 / 1000.0;
+            record_segment_repair_attempt(&context.journal, &context.day, now);
+            record_segment_repair_outcome(
+                &context.journal,
+                &context.day,
+                SegmentRepairOutcome {
+                    success: false,
+                    timed_out: false,
+                    timeout_seconds: None,
+                    ended_at: now,
+                    cleared: Some(0),
+                    remaining: None,
+                },
+            );
+        }
+    }
+    log.log(
+        if pending {
+            "facet.routing_pending"
+        } else {
+            "facet.routing_resolved"
+        },
+        context.event_now_ms(),
+        fields,
+    );
+    log.finish()
+}
+
 fn failed(name: &str) -> ModeResult {
     ModeResult {
         failed: 1,
@@ -1574,6 +1912,8 @@ mod activity_date_tests {
             1788758400000,
         )
         .unwrap();
+        solstone_core_facets::create_facet(root.path(), "personal", "Personal", "", "", "", None)
+            .unwrap();
         let mut log = RunLogWriter::open(root.path(), current, "segment");
         let activity = json!({"id":"terminal_233333_304", "facet":"personal", "source":"cogitate", "state":"ended"});
         persist_ended_activities(

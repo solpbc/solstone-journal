@@ -70,6 +70,184 @@ pub fn read_facet_declaration(
     }))
 }
 
+/// Inventory of declared facet directories and their non-mutating durable status.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DeclaredFacetInventory {
+    pub enabled: Vec<String>,
+    pub muted: Vec<String>,
+    pub malformed: Vec<String>,
+    pub unreadable: Vec<String>,
+    pub absent: Vec<String>,
+}
+
+impl DeclaredFacetInventory {
+    pub fn is_genuine_empty(&self) -> bool {
+        self.enabled.is_empty()
+            && self.muted.is_empty()
+            && self.malformed.is_empty()
+            && self.unreadable.is_empty()
+            && self.absent.is_empty()
+    }
+
+    pub fn is_all_muted(&self) -> bool {
+        !self.muted.is_empty()
+            && self.enabled.is_empty()
+            && self.malformed.is_empty()
+            && self.unreadable.is_empty()
+            && self.absent.is_empty()
+    }
+}
+
+/// Non-mutating observation of all facet declarations under `facets/`.
+///
+/// Scans directory entries without setting aside malformed files, minting IDs,
+/// or taking write locks.
+pub fn observe_declared_facet_inventory(
+    journal_root: &Path,
+) -> Result<DeclaredFacetInventory, FacetStoreError> {
+    let mut inventory = DeclaredFacetInventory::default();
+    let directories = super::map::list_facet_directories(journal_root)?;
+    for dir in directories {
+        let path = match declaration_path(journal_root, &dir) {
+            Ok(p) => p,
+            Err(_) => {
+                inventory.malformed.push(dir);
+                continue;
+            }
+        };
+        match observe_json_durable::<Value>(ArtifactId::FacetDeclaration, &path) {
+            DurableObservation::Absent => {
+                inventory.absent.push(dir);
+            }
+            DurableObservation::Malformed { .. } => {
+                inventory.malformed.push(dir);
+            }
+            DurableObservation::Unreadable { .. } => {
+                inventory.unreadable.push(dir);
+            }
+            DurableObservation::Present(val) => {
+                let Some(object) = val.as_object() else {
+                    inventory.malformed.push(dir);
+                    continue;
+                };
+                if object.contains_key("id")
+                    && !object
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .is_some_and(super::facet_id::is_well_formed_facet_id)
+                {
+                    inventory.malformed.push(dir);
+                    continue;
+                }
+                let is_muted = object
+                    .get("muted")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if is_muted {
+                    inventory.muted.push(dir);
+                } else {
+                    inventory.enabled.push(dir);
+                }
+            }
+        }
+    }
+    inventory.enabled.sort();
+    inventory.muted.sort();
+    inventory.malformed.sort();
+    inventory.unreadable.sort();
+    inventory.absent.sort();
+    Ok(inventory)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DestinationObservation {
+    Ready { id: String, muted: bool },
+    LegacyWithoutId { muted: bool },
+    InvalidId { muted: bool },
+    Absent,
+    Malformed(String),
+    Unreadable(String),
+}
+
+pub fn observe_facet_destination(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<DestinationObservation, FacetStoreError> {
+    let path = declaration_path(journal_root, facet_dir)?;
+    match observe_json_durable::<Value>(ArtifactId::FacetDeclaration, &path) {
+        DurableObservation::Absent => Ok(DestinationObservation::Absent),
+        DurableObservation::Malformed { path, source } => Ok(DestinationObservation::Malformed(
+            format!("{}: {source}", path.display()),
+        )),
+        DurableObservation::Unreadable { path, source } => Ok(DestinationObservation::Unreadable(
+            format!("{}: {source}", path.display()),
+        )),
+        DurableObservation::Present(value) => {
+            let Some(object) = value.as_object() else {
+                return Ok(DestinationObservation::Malformed(format!(
+                    "{}: facet declaration is not an object",
+                    path.display()
+                )));
+            };
+            let muted = object
+                .get("muted")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if let Some(id) = object
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| super::facet_id::is_well_formed_facet_id(id))
+            {
+                Ok(DestinationObservation::Ready {
+                    id: id.to_owned(),
+                    muted,
+                })
+            } else if !object.contains_key("id") {
+                Ok(DestinationObservation::LegacyWithoutId { muted })
+            } else {
+                Ok(DestinationObservation::InvalidId { muted })
+            }
+        }
+    }
+}
+
+/// Non-mutating single facet declaration observation.
+pub fn observe_facet_declaration(
+    journal_root: &Path,
+    facet_dir: &str,
+) -> Result<Option<FacetDeclarationSnapshot>, FacetStoreError> {
+    let path = declaration_path(journal_root, facet_dir)?;
+    let val = match observe_json_durable::<Value>(ArtifactId::FacetDeclaration, &path) {
+        DurableObservation::Present(v) => v,
+        DurableObservation::Absent => return Ok(None),
+        DurableObservation::Malformed { path, source } => {
+            return Err(solstone_core_journal_io::ReadError::Malformed(
+                solstone_core_journal_io::MalformedDataError {
+                    path,
+                    line: None,
+                    source,
+                },
+            )
+            .into());
+        }
+        DurableObservation::Unreadable { path, source } => {
+            return Err(solstone_core_journal_io::ReadError::Io { path, source }.into());
+        }
+    };
+    let Some(object) = val.as_object() else {
+        return Err(FacetStoreError::DeclarationNotObject { path });
+    };
+    Ok(Some(FacetDeclarationSnapshot {
+        title: string_field(object.get("title")),
+        description: string_field(object.get("description")),
+        color: string_field(object.get("color")),
+        emoji: string_field(object.get("emoji")),
+        icon: non_empty_string(object.get("icon")).map(str::to_owned),
+        muted: object.get("muted").and_then(Value::as_bool),
+        value: val,
+    }))
+}
+
 /// Closed deterministic facet-identity outcomes vs untyped read failures.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FacetIdentityError {
@@ -262,5 +440,81 @@ mod tests {
         let error = observe_facet_write_identity(root.path(), "work").unwrap_err();
         assert!(matches!(error, FacetIdentityError::Failed(_)), "{error}");
         assert!(path.is_dir());
+    }
+
+    #[test]
+    fn observe_declared_facet_inventory_classifies_correctly_and_leaves_bytes_in_place() {
+        use super::observe_declared_facet_inventory;
+        let root = tempfile::tempdir().unwrap();
+
+        // 1. Genuine empty (no facets dir yet)
+        let empty_inv = observe_declared_facet_inventory(root.path()).unwrap();
+        assert!(empty_inv.is_genuine_empty());
+        assert!(!empty_inv.is_all_muted());
+
+        // Create facets/
+        let facets_dir = root.path().join("facets");
+        std::fs::create_dir_all(&facets_dir).unwrap();
+
+        // Still genuine empty
+        let empty_inv = observe_declared_facet_inventory(root.path()).unwrap();
+        assert!(empty_inv.is_genuine_empty());
+
+        // 2. All muted
+        let work_dir = facets_dir.join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        std::fs::write(
+            work_dir.join("facet.json"),
+            br#"{"title":"Work","muted":true}"#,
+        )
+        .unwrap();
+
+        let muted_inv = observe_declared_facet_inventory(root.path()).unwrap();
+        assert!(!muted_inv.is_genuine_empty());
+        assert!(muted_inv.is_all_muted());
+        assert_eq!(muted_inv.muted, vec!["work"]);
+        assert!(muted_inv.enabled.is_empty());
+
+        // 3. Enabled facet added
+        let personal_dir = facets_dir.join("personal");
+        std::fs::create_dir_all(&personal_dir).unwrap();
+        std::fs::write(
+            personal_dir.join("facet.json"),
+            br#"{"title":"Personal","muted":false}"#,
+        )
+        .unwrap();
+
+        let mixed_inv = observe_declared_facet_inventory(root.path()).unwrap();
+        assert!(!mixed_inv.is_genuine_empty());
+        assert!(!mixed_inv.is_all_muted());
+        assert_eq!(mixed_inv.enabled, vec!["personal"]);
+        assert_eq!(mixed_inv.muted, vec!["work"]);
+
+        // 4. Malformed declaration added (must NOT set aside or mutate bytes)
+        let broken_dir = facets_dir.join("broken");
+        std::fs::create_dir_all(&broken_dir).unwrap();
+        let broken_path = broken_dir.join("facet.json");
+        std::fs::write(&broken_path, b"{broken json").unwrap();
+
+        // 5. Absent declaration directory
+        let absent_dir = facets_dir.join("absent_decl");
+        std::fs::create_dir_all(&absent_dir).unwrap();
+
+        let full_inv = observe_declared_facet_inventory(root.path()).unwrap();
+        assert_eq!(full_inv.enabled, vec!["personal"]);
+        assert_eq!(full_inv.muted, vec!["work"]);
+        assert_eq!(full_inv.malformed, vec!["broken"]);
+        assert_eq!(full_inv.absent, vec!["absent_decl"]);
+
+        // Verify broken bytes were NOT modified or set aside
+        assert_eq!(std::fs::read(&broken_path).unwrap(), b"{broken json");
+        assert_eq!(
+            std::fs::read_dir(&broken_dir)
+                .unwrap()
+                .filter_map(Result::ok)
+                .filter(|entry| entry.file_name().to_string_lossy().contains("wedged"))
+                .count(),
+            0
+        );
     }
 }

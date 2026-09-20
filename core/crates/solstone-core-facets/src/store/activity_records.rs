@@ -67,6 +67,8 @@ pub enum ActivityRecordStoreError {
     Write(solstone_core_journal_io::AtomicWriteError),
     Json(serde_json::Error),
     Facet(super::error::FacetStoreError),
+    Identity(super::declaration::FacetIdentityError),
+    DestinationMuted { facet: String },
 }
 
 impl std::fmt::Display for ActivityRecordStoreError {
@@ -83,6 +85,10 @@ impl std::fmt::Display for ActivityRecordStoreError {
             Self::Write(error) => error.fmt(formatter),
             Self::Json(error) => error.fmt(formatter),
             Self::Facet(error) => error.fmt(formatter),
+            Self::Identity(error) => error.fmt(formatter),
+            Self::DestinationMuted { facet } => {
+                write!(formatter, "destination facet is muted: {facet}")
+            }
         }
     }
 }
@@ -119,7 +125,13 @@ impl From<super::error::FacetStoreError> for ActivityRecordStoreError {
         Self::Facet(error)
     }
 }
+impl From<super::declaration::FacetIdentityError> for ActivityRecordStoreError {
+    fn from(error: super::declaration::FacetIdentityError) -> Self {
+        Self::Identity(error)
+    }
+}
 
+#[derive(Debug, Clone, PartialEq)]
 #[must_use]
 pub enum AppendOutcome {
     Written(ActivityRecord),
@@ -157,6 +169,7 @@ fn locked_modify_day_records<T>(
     facet: &str,
     day: &str,
     create_if_missing: bool,
+    expected_facet_id: &str,
     modify: impl FnOnce(
         Vec<ActivityRecord>,
     ) -> Result<(Vec<ActivityRecord>, T), ActivityRecordStoreError>,
@@ -170,6 +183,7 @@ fn locked_modify_day_records<T>(
                 ActivityRecordStoreError::Lock(error)
             }
         })?;
+    super::declaration::require_observed_facet_write_identity(root, facet, expected_facet_id)?;
     let path = day_path(root, facet, day)?;
     let _lock = hold_lock(&path, LockOptions::default())?;
     let existed = path.exists();
@@ -326,6 +340,86 @@ pub fn load_activity_records(
         .collect())
 }
 
+/// Admit a write to an existing declaration, adopting only a historical missing ID.
+pub fn admit_activity_destination(
+    root: &Path,
+    facet: &str,
+) -> Result<String, ActivityRecordStoreError> {
+    let _guard = crate::hold_facet_trust_lock(root).map_err(|e| {
+        ActivityRecordStoreError::Identity(super::declaration::FacetIdentityError::Failed(
+            e.to_string(),
+        ))
+    })?;
+    use solstone_core_journal_io::durability::{
+        ArtifactId, DurableObservation, observe_json_durable,
+    };
+    let path = super::paths::declaration_path(root, facet)?;
+    match observe_json_durable::<Value>(ArtifactId::FacetDeclaration, &path) {
+        DurableObservation::Absent => Err(ActivityRecordStoreError::Identity(
+            super::declaration::FacetIdentityError::Absent,
+        )),
+        DurableObservation::Malformed { path, source } => Err(ActivityRecordStoreError::Identity(
+            super::declaration::FacetIdentityError::Failed(format!("{}: {source}", path.display())),
+        )),
+        DurableObservation::Unreadable { path, source } => Err(ActivityRecordStoreError::Identity(
+            super::declaration::FacetIdentityError::Failed(format!("{}: {source}", path.display())),
+        )),
+        DurableObservation::Present(value) => {
+            let Some(object) = value.as_object() else {
+                return Err(ActivityRecordStoreError::Identity(
+                    super::declaration::FacetIdentityError::Failed(format!(
+                        "{}: facet declaration is not an object",
+                        path.display()
+                    )),
+                ));
+            };
+            if let Some(id) = object
+                .get("id")
+                .and_then(Value::as_str)
+                .filter(|id| super::facet_id::is_well_formed_facet_id(id))
+            {
+                Ok(id.to_owned())
+            } else if object.contains_key("id") {
+                Err(ActivityRecordStoreError::Identity(
+                    super::declaration::FacetIdentityError::Invalid,
+                ))
+            } else {
+                super::facet_id::ensure_daily_facet_id(root, facet).map_err(|e| {
+                    ActivityRecordStoreError::Identity(
+                        super::declaration::FacetIdentityError::Failed(e.to_string()),
+                    )
+                })?;
+                Ok(super::declaration::observe_facet_write_identity(
+                    root, facet,
+                )?)
+            }
+        }
+    }
+}
+
+/// Hold lifecycle exclusion across automated enrichment validation and publication.
+pub fn hold_activity_enrichment(
+    root: &Path,
+    facet: &str,
+    expected_id: &str,
+) -> Result<crate::FacetTrustLock, ActivityRecordStoreError> {
+    let guard = crate::hold_facet_trust_lock(root).map_err(|e| {
+        ActivityRecordStoreError::Identity(super::declaration::FacetIdentityError::Failed(
+            e.to_string(),
+        ))
+    })?;
+    super::declaration::require_observed_facet_write_identity(root, facet, expected_id)?;
+    if matches!(
+        super::declaration::observe_facet_destination(root, facet)?,
+        super::declaration::DestinationObservation::Ready { muted: true, .. }
+    ) {
+        return Err(ActivityRecordStoreError::DestinationMuted {
+            facet: facet.to_owned(),
+        });
+    }
+    Ok(guard)
+}
+
 pub fn get_activity_record(
     root: &Path,
     facet: &str,
@@ -341,9 +435,14 @@ pub fn append_activity_record(
     root: &Path,
     facet: &str,
     day: &str,
-    record: ActivityRecord,
+    mut record: ActivityRecord,
 ) -> Result<AppendOutcome, ActivityRecordStoreError> {
-    locked_modify_day_records(root, facet, day, true, |rows| {
+    let facet_id = admit_activity_destination(root, facet)?;
+    record.insert(
+        "destination_id".to_string(),
+        Value::String(facet_id.clone()),
+    );
+    locked_modify_day_records(root, facet, day, true, &facet_id, |rows| {
         let record_id = id(&record).to_owned();
         if !record_id.is_empty() && rows.iter().any(|row| id(row) == record_id) {
             return Ok((rows, AppendOutcome::AlreadyExists));
@@ -366,8 +465,16 @@ pub fn update_activity_record(
     note: &str,
     timestamp: &str,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
-    locked_modify_day_records(root, facet, day, false, |rows| {
+    let current_id = admit_activity_destination(root, facet)?;
+    locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
         let mut result = None;
+        for row in &rows {
+            if id(row) == record_id
+                && let Some(stored_id) = row.get("destination_id").and_then(Value::as_str)
+            {
+                super::declaration::require_observed_facet_write_identity(root, facet, stored_id)?;
+            }
+        }
         let updated = rows
             .into_iter()
             .map(|row| {
@@ -378,6 +485,10 @@ pub fn update_activity_record(
                 for (key, value) in patch {
                     merged.insert(key.clone(), value.clone());
                 }
+                merged.insert(
+                    "destination_id".to_owned(),
+                    Value::String(current_id.clone()),
+                );
                 let edited = append_edit(
                     normalize(merged),
                     actor,
@@ -404,8 +515,16 @@ pub fn set_activity_hidden(
     reason: Option<&str>,
     timestamp: &str,
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
-    locked_modify_day_records(root, facet, day, false, |rows| {
+    let current_id = admit_activity_destination(root, facet)?;
+    locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
         let mut result = None;
+        for row in &rows {
+            if id(row) == record_id
+                && let Some(stored_id) = row.get("destination_id").and_then(Value::as_str)
+            {
+                super::declaration::require_observed_facet_write_identity(root, facet, stored_id)?;
+            }
+        }
         let updated = rows
             .into_iter()
             .map(|row| {
@@ -415,16 +534,23 @@ pub fn set_activity_hidden(
                 let mut normalized = normalize(row);
                 if hidden(&normalized) != hidden_value {
                     normalized.insert("hidden".to_owned(), Value::Bool(hidden_value));
-                    normalized = append_edit(
+                    normalized.insert(
+                        "destination_id".to_owned(),
+                        Value::String(current_id.clone()),
+                    );
+                    let edited = append_edit(
                         normalized,
                         actor,
                         vec!["hidden".to_owned()],
                         reason.unwrap_or(if hidden_value { "muted" } else { "unmuted" }),
                         timestamp,
                     );
+                    result = Some(edited.clone());
+                    edited
+                } else {
+                    result = Some(normalized.clone());
+                    normalized
                 }
-                result = Some(normalized.clone());
-                normalized
             })
             .collect();
         Ok((updated, result))
@@ -596,6 +722,7 @@ mod tests {
     #[test]
     fn append_is_fill_only() {
         let root = tempfile::tempdir().expect("root");
+        crate::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let mut record = ActivityRecord::new();
         record.insert("id".to_owned(), Value::String("meeting_1".to_owned()));
         assert!(matches!(
@@ -605,6 +732,105 @@ mod tests {
         assert!(matches!(
             append_activity_record(root.path(), "work", "20260510", record).expect("read"),
             AppendOutcome::AlreadyExists
+        ));
+    }
+
+    #[test]
+    fn append_refuses_undeclared_muted_or_malformed_destination() {
+        let root = tempfile::tempdir().expect("root");
+        let mut record = ActivityRecord::new();
+        record.insert("id".to_owned(), Value::String("meeting_1".to_owned()));
+
+        // Absent facet
+        let err =
+            append_activity_record(root.path(), "missing", "20260510", record.clone()).unwrap_err();
+        assert!(matches!(
+            err,
+            ActivityRecordStoreError::Identity(
+                super::super::declaration::FacetIdentityError::Absent
+            )
+        ));
+        assert!(!root.path().join("facets/missing").exists());
+
+        // Muted facets preserve owner edits while automated enrichment pauses.
+        crate::create_facet(root.path(), "muted_facet", "Muted", "", "", "", None).unwrap();
+        crate::set_facet_muted(root.path(), "muted_facet", true).unwrap();
+        let outcome =
+            append_activity_record(root.path(), "muted_facet", "20260510", record.clone()).unwrap();
+        assert!(matches!(outcome, AppendOutcome::Written(_)));
+        let mut patch = Map::new();
+        patch.insert("title".to_owned(), Value::String("Updated".to_owned()));
+        let updated = update_activity_record(
+            root.path(),
+            "muted_facet",
+            "20260510",
+            "meeting_1",
+            &patch,
+            "test",
+            "",
+            "2026-05-10T10:00:00Z",
+        )
+        .unwrap();
+        assert_eq!(updated.unwrap()["title"], "Updated");
+        let identity = crate::observe_facet_write_identity(root.path(), "muted_facet").unwrap();
+        assert!(matches!(
+            hold_activity_enrichment(root.path(), "muted_facet", &identity),
+            Err(ActivityRecordStoreError::DestinationMuted { .. })
+        ));
+
+        // Malformed facet declaration
+        std::fs::create_dir_all(root.path().join("facets/bad")).unwrap();
+        std::fs::write(root.path().join("facets/bad/facet.json"), b"not json").unwrap();
+        let err =
+            append_activity_record(root.path(), "bad", "20260510", record.clone()).unwrap_err();
+        assert!(matches!(
+            err,
+            ActivityRecordStoreError::Identity(
+                super::super::declaration::FacetIdentityError::Failed(_)
+            )
+        ));
+        assert_eq!(
+            std::fs::read(root.path().join("facets/bad/facet.json")).unwrap(),
+            b"not json"
+        );
+
+        // Present declaration without ID mints ID at admission
+        std::fs::create_dir_all(root.path().join("facets/noid")).unwrap();
+        std::fs::write(
+            root.path().join("facets/noid/facet.json"),
+            b"{\"title\":\"No ID\"}",
+        )
+        .unwrap();
+        let outcome =
+            append_activity_record(root.path(), "noid", "20260510", record.clone()).unwrap();
+        assert!(matches!(outcome, AppendOutcome::Written(_)));
+        let decl = std::fs::read_to_string(root.path().join("facets/noid/facet.json")).unwrap();
+        assert!(decl.contains("\"id\":"));
+
+        // Replaced facet declaration fails update with Replaced
+        crate::create_facet(root.path(), "repl", "Repl", "", "", "", None).unwrap();
+        append_activity_record(root.path(), "repl", "20260510", record).unwrap();
+        std::fs::write(
+            root.path().join("facets/repl/facet.json"),
+            b"{\"id\":\"00000000-0000-4000-8000-000000000099\",\"title\":\"Replaced\"}",
+        )
+        .unwrap();
+        let repl_err = update_activity_record(
+            root.path(),
+            "repl",
+            "20260510",
+            "meeting_1",
+            &patch,
+            "test",
+            "",
+            "2026-05-10T10:00:00Z",
+        )
+        .unwrap_err();
+        assert!(matches!(
+            repl_err,
+            ActivityRecordStoreError::Identity(
+                super::super::declaration::FacetIdentityError::Replaced
+            )
         ));
     }
 
