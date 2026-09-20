@@ -8,7 +8,7 @@ use solstone_core_journal_io::durability::{
     ArtifactId, DurableObservation, DurableRead, observe_json_durable, read_json_durable, set_aside,
 };
 
-use super::error::FacetStoreError;
+use super::error::{FacetStoreError, FacetWriteError};
 use super::paths::declaration_path;
 
 /// Complete read-compatible facet declaration.
@@ -207,6 +207,30 @@ pub fn observe_facet_destination(
             } else {
                 Ok(DestinationObservation::InvalidId { muted })
             }
+        }
+    }
+}
+
+/// Writer admission for facet-owned content: the destination must be a declared
+/// facet. Observation only, so a damaged declaration is left exactly as found;
+/// an id-less legacy declaration is admitted. Callers writing content hold the
+/// facet trust lock; a caller checking early may call it without.
+pub fn require_declared_facet(journal_root: &Path, facet_dir: &str) -> Result<(), FacetWriteError> {
+    match observe_facet_destination(journal_root, facet_dir)? {
+        DestinationObservation::Ready { .. } | DestinationObservation::LegacyWithoutId { .. } => {
+            Ok(())
+        }
+        DestinationObservation::Absent => Err(FacetWriteError::DeclarationMissing {
+            path: declaration_path(journal_root, facet_dir)?,
+        }),
+        DestinationObservation::InvalidId { .. } => Err(FacetWriteError::DeclarationDamaged {
+            detail: "the id is not well formed".to_owned(),
+        }),
+        DestinationObservation::Malformed(detail) => {
+            Err(FacetWriteError::DeclarationDamaged { detail })
+        }
+        DestinationObservation::Unreadable(detail) => {
+            Err(FacetWriteError::DeclarationUnreadable { detail })
         }
     }
 }

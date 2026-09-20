@@ -18,7 +18,10 @@ use std::path::{Path, PathBuf};
 use chrono::Local;
 use chrono::{NaiveDate, SecondsFormat, Utc};
 use serde_json::{Value, json};
-use solstone_core_facets::{append_action_log, hold_facet_trust_lock, write_news_file};
+use solstone_core_facets::{
+    FacetWriteError, append_action_log, hold_facet_trust_lock, require_declared_facet,
+    write_news_file,
+};
 #[cfg(not(target_os = "ios"))]
 use solstone_core_import_sources::ImportSourcesError;
 #[cfg(not(target_os = "ios"))]
@@ -1210,6 +1213,15 @@ fn news_write(args: &[OsString]) -> Outcome {
     };
     if let Err(error) = require_real_directory(&journal.join("facets").join(facet)) {
         return failure("news write", &error, EXIT_DATA);
+    }
+    // Refuse before reading stdin so a caller does not lose a piped draft. The writer
+    // repeats this check under the facet trust lock.
+    if let Err(error) = require_declared_facet(&journal, facet) {
+        let code = match error {
+            FacetWriteError::DeclarationUnreadable { .. } => EXIT_IO,
+            _ => EXIT_DATA,
+        };
+        return failure("news write", &error.to_string(), code);
     }
     let mut bytes = Vec::new();
     if let Err(error) = io::stdin().read_to_end(&mut bytes) {

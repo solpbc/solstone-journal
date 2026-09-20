@@ -111,9 +111,21 @@ impl From<PathError> for FacetStoreError {
 pub enum FacetWriteError {
     TrustLock(FacetTrustLockError),
     Read(FacetStoreError),
-    AlreadyExists { path: PathBuf },
+    AlreadyExists {
+        path: PathBuf,
+    },
     FacetId(FacetIdError),
-    DeclarationMissing { path: PathBuf },
+    DeclarationMissing {
+        path: PathBuf,
+    },
+    /// The declaration exists but is malformed, not an object, or carries a malformed id.
+    DeclarationDamaged {
+        detail: String,
+    },
+    /// The declaration exists but could not be read.
+    DeclarationUnreadable {
+        detail: String,
+    },
     DeclarationWrite(AtomicWriteError),
     EntityLinkWrite(AtomicWriteError),
     EntityLinkRemoval(PathError),
@@ -144,6 +156,12 @@ impl fmt::Display for FacetWriteError {
                     path.display()
                 )
             }
+            Self::DeclarationDamaged { detail } => {
+                write!(formatter, "facet declaration is damaged: {detail}")
+            }
+            Self::DeclarationUnreadable { detail } => {
+                write!(formatter, "facet declaration could not be read: {detail}")
+            }
             Self::DeclarationWrite(error)
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => error.fmt(formatter),
@@ -162,7 +180,10 @@ impl Error for FacetWriteError {
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => Some(error),
             Self::EntityLinkRemoval(error) => Some(error),
-            Self::AlreadyExists { .. } | Self::DeclarationMissing { .. } => None,
+            Self::AlreadyExists { .. }
+            | Self::DeclarationMissing { .. }
+            | Self::DeclarationDamaged { .. }
+            | Self::DeclarationUnreadable { .. } => None,
         }
     }
 }

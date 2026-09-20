@@ -50,7 +50,7 @@ pub use declaration::{
     DeclaredFacetInventory, DestinationObservation, FacetDeclarationSnapshot, FacetIdentityError,
     facet_write_identity, observe_declared_facet_inventory, observe_facet_declaration,
     observe_facet_destination, observe_facet_write_identity, read_facet_declaration,
-    require_facet_write_identity, require_observed_facet_write_identity,
+    require_declared_facet, require_facet_write_identity, require_observed_facet_write_identity,
 };
 pub use detected_entities::{
     DetectedEntityInput, DetectionUpsertReport, delete_detected_entity, read_detected_entities,

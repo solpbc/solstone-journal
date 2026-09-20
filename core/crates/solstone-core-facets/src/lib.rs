@@ -61,7 +61,7 @@ pub use store::{
     read_log_file, read_news_file, record_facet_candidates, record_import, record_import_nudge,
     record_import_offer_declined, record_observation_ops_strict, refresh_connections_horizon,
     remove_activity, rename_facet, repair_facet_entity_links,
-    repair_facet_entity_links_journal_wide, require_facet_write_identity,
+    repair_facet_entity_links_journal_wide, require_declared_facet, require_facet_write_identity,
     require_observed_facet_write_identity, resolve_facet_id, resolve_observation_entity_dir,
     review_promotion_snapshot, save_detected_entity, save_facet_entity_link,
     scan_facet_relationships, seed_entities, serialize_observation_rows, set_activity_hidden,

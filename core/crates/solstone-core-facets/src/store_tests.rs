@@ -15,12 +15,12 @@ use solstone_core_entity::{
 };
 
 use crate::{
-    FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetStoreError, create_facet,
-    delete_facet, list_facet_entity_directories, read_activity_file, read_facet_declaration,
-    read_facet_entity_link, read_facet_entity_observations, read_log_file, read_news_file,
-    rename_facet, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
-    save_facet_entity_link, set_facet_muted, update_facet, write_activity_file,
-    write_facet_entity_observations, write_log_file, write_news_file,
+    FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetStoreError, FacetWriteError,
+    create_facet, delete_facet, list_facet_entity_directories, read_activity_file,
+    read_facet_declaration, read_facet_entity_link, read_facet_entity_observations, read_log_file,
+    read_news_file, rename_facet, repair_facet_entity_links,
+    repair_facet_entity_links_journal_wide, save_facet_entity_link, set_facet_muted, update_facet,
+    write_activity_file, write_facet_entity_observations, write_log_file, write_news_file,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -222,8 +222,115 @@ fn facet_entity_directory_listing_ignores_non_directory_material() {
 }
 
 #[test]
+fn news_and_log_writers_refuse_an_undeclared_destination_and_create_nothing() {
+    let temporary = TempDir::new();
+    let root = temporary.path();
+    assert!(matches!(
+        write_news_file(root, "undeclared", "20260101.md", "# Late\n"),
+        Err(FacetWriteError::DeclarationMissing { .. })
+    ));
+    assert!(matches!(
+        write_log_file(root, "undeclared", "20260101.jsonl", "{}\n"),
+        Err(FacetWriteError::DeclarationMissing { .. })
+    ));
+    assert!(!root.join("facets/undeclared").exists());
+
+    // A directory is not a declaration.
+    fs::create_dir_all(root.join("facets/bare")).unwrap();
+    assert!(matches!(
+        write_news_file(root, "bare", "20260101.md", "# Late\n"),
+        Err(FacetWriteError::DeclarationMissing { .. })
+    ));
+    assert!(matches!(
+        write_log_file(root, "bare", "20260101.jsonl", "{}\n"),
+        Err(FacetWriteError::DeclarationMissing { .. })
+    ));
+    assert!(!root.join("facets/bare/news").exists());
+    assert!(!root.join("facets/bare/logs").exists());
+}
+
+#[test]
+fn news_and_log_writers_leave_a_damaged_declaration_exactly_as_found() {
+    let cases: [(&str, &[u8]); 3] = [
+        ("malformed json", b"{not json"),
+        ("scalar", b"42"),
+        ("malformed id", br#"{"title":"Work","id":"nope"}"#),
+    ];
+    for (label, bytes) in cases {
+        let temporary = TempDir::new();
+        let root = temporary.path();
+        let declaration = root.join("facets/work/facet.json");
+        fs::create_dir_all(declaration.parent().unwrap()).unwrap();
+        fs::write(&declaration, bytes).unwrap();
+        for result in [
+            write_news_file(root, "work", "20260101.md", "# Late\n"),
+            write_log_file(root, "work", "20260101.jsonl", "{}\n"),
+        ] {
+            assert!(
+                matches!(result, Err(FacetWriteError::DeclarationDamaged { .. })),
+                "{label}: {result:?}"
+            );
+        }
+        assert_eq!(fs::read(&declaration).unwrap(), bytes, "{label}");
+        let siblings: Vec<String> = fs::read_dir(root.join("facets/work"))
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(
+            siblings,
+            vec!["facet.json".to_owned()],
+            "{label}: no set-aside, no content"
+        );
+    }
+
+    // A declaration that cannot be read as a file is refused and left in place too.
+    let temporary = TempDir::new();
+    let root = temporary.path();
+    fs::create_dir_all(root.join("facets/work/facet.json")).unwrap();
+    assert!(write_news_file(root, "work", "20260101.md", "# Late\n").is_err());
+    assert!(root.join("facets/work/facet.json").is_dir());
+    let siblings: Vec<String> = fs::read_dir(root.join("facets/work"))
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(siblings, vec!["facet.json".to_owned()]);
+}
+
+#[test]
+fn news_and_log_writers_admit_declared_muted_and_legacy_id_less_facets() {
+    let temporary = TempDir::new();
+    let root = temporary.path();
+    create_facet(root, "work", "Work", "", "", "", None).unwrap();
+    write_news_file(root, "work", "20260101.md", "# Declared\n").unwrap();
+    write_log_file(root, "work", "20260101.jsonl", "{}\n").unwrap();
+
+    set_facet_muted(root, "work", true).unwrap();
+    write_news_file(root, "work", "20260102.md", "# Muted\n").unwrap();
+
+    // The state `journal facet doctor --fix` and pre-identity journals leave behind.
+    fs::create_dir_all(root.join("facets/legacy")).unwrap();
+    fs::write(
+        root.join("facets/legacy/facet.json"),
+        r#"{"title":"Field Notes"}"#,
+    )
+    .unwrap();
+    write_news_file(root, "legacy", "20260101.md", "# Legacy\n").unwrap();
+    write_log_file(root, "legacy", "20260101.jsonl", "{}\n").unwrap();
+    assert_eq!(
+        read_news_file(root, "legacy", "20260101.md").unwrap(),
+        Some("# Legacy\n".to_owned())
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("facets/legacy/facet.json")).unwrap(),
+        r#"{"title":"Field Notes"}"#,
+        "admission does not mint an id"
+    );
+}
+
+#[test]
 fn facet_content_files_round_trip_without_parsing() {
     let temporary = TempDir::new();
+    create_facet(temporary.path(), "work", "Work", "", "", "", None).unwrap();
     write_activity_file(temporary.path(), "work", "20260305.jsonl", "{\"id\": 1}\n").unwrap();
     write_activity_file(
         temporary.path(),
