@@ -265,12 +265,15 @@ fn run_audio(media: &str, options: &Options, journal_path: &Path, timestamp: &st
     // `--source <hint>`, and `resolve` refuses any name `RegistrySource` does not know --
     // which has no audio variant. The projection derives "audio" from the publication's
     // `import.audio` stream prefix instead, so the hint buys nothing and would break restart.
-    let attempt =
-        match solstone_core_import::admit_running_attempt(journal_path, timestamp, started_at_ms, None)
-        {
-            Ok(facts) => facts,
-            Err(error) => return failure("", &format!("audio import failed: {error}\n"), 1),
-        };
+    let attempt = match solstone_core_import::admit_running_attempt(
+        journal_path,
+        timestamp,
+        started_at_ms,
+        None,
+    ) {
+        Ok(facts) => facts,
+        Err(error) => return failure("", &format!("audio import failed: {error}\n"), 1),
+    };
     let request = AudioImportRequest {
         source_media: PathBuf::from(media),
         journal_root: journal_path.to_path_buf(),

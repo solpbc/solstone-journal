@@ -740,7 +740,9 @@ fn derive_status_and_errors(
                 // 1h wall-clock Running bound with no heartbeat: a slow but live
                 // PDF import older than this flips to Unconfirmed.
                 let now_ms = (now_sec * 1000.0) as u64;
-                if now_ms.saturating_sub(att.started_at_ms) > 3_600_000 {
+                if now_ms.saturating_sub(att.started_at_ms)
+                    > crate::metadata::RUNNING_ATTEMPT_BOUND_MS
+                {
                     (
                         ProjectionStatus::Unconfirmed,
                         Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
@@ -900,7 +902,9 @@ fn derive_status_and_errors(
                     .map(|ms| ms / 1000.0)
                     .unwrap_or(created_at);
                 // 1h wall-clock bound: legacy unfinalized task rows time out after 3600 seconds
-                if now_sec - imported_at > 3600.0 {
+                #[allow(clippy::cast_precision_loss)]
+                let bound_secs = crate::metadata::RUNNING_ATTEMPT_BOUND_MS as f64 / 1000.0;
+                if now_sec - imported_at > bound_secs {
                     (
                         ProjectionStatus::Failed,
                         Some("Import never completed".to_owned()),

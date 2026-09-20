@@ -835,7 +835,11 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let after_temp = TempDir::new().unwrap();
     let mut after_request = request(&after_temp, "after-loop");
     after_request.wait_for_processing = true;
-    after_request.stall_timeout = Duration::from_millis(20);
+    // This arm asserts the ABSENCE of stalls, so its budget only needs to be longer than a
+    // loaded machine's reconcile. At 20ms it was a concurrency detector rather than a stall
+    // detector: enough parallel work in this binary and a healthy segment reads as stalled.
+    // The arm that must actually observe a stall (failure_request, below) keeps its short one.
+    after_request.stall_timeout = Duration::from_secs(10);
     after_request.poll_interval = Duration::from_millis(20);
     let after_wait_request = after_request.clone();
     let after_sidecar = after_request
@@ -1030,9 +1034,21 @@ use solstone_core_import::{
 };
 use solstone_core_import_host::audio_publication::finish_audio_attempt;
 
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 /// Admit an attempt the way `run_audio` does, returning its generation.
+///
+/// The start stamp must be a real recent clock, not a small constant. At `started_at_ms = 1000`
+/// every admitted attempt is dated 1970, so it instantly exceeds the one-hour Running bound and
+/// the projection reports `Unconfirmed` no matter what the terminal write did -- which silently
+/// turned the stalled-segment test into a pass that survived deleting the code under test.
 fn admit(request: &AudioImportRequest) -> u64 {
-    admit_running_attempt(&request.journal_root, &request.import_id, 1_000, None)
+    admit_running_attempt(&request.journal_root, &request.import_id, now_ms(), None)
         .unwrap()
         .generation
 }
@@ -1197,7 +1213,8 @@ async fn a_superseded_generation_touches_nothing_while_a_live_one_publishes() {
     // Control: a live generation does publish and does advance the chain.
     let live = request(&temp, "20260811_160000");
     let live_generation = admit(&live);
-    let live_outcome = fake_import(live.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    let live_outcome =
+        fake_import(live.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
     finish_audio_attempt(
         &live.journal_root,
         &live.import_id,
@@ -1214,9 +1231,14 @@ async fn a_superseded_generation_touches_nothing_while_a_live_one_publishes() {
     // Superseded: generation 1 finishes after generation 2 has been admitted.
     let stale = request(&temp, "20260811_170000");
     let stale_generation = admit(&stale);
-    let stale_outcome =
-        fake_import(stale.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
-    let successor = admit_running_attempt(&stale.journal_root, &stale.import_id, 2_000, None)
+    let stale_outcome = fake_import(
+        stale.clone(),
+        120.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
+    let successor = admit_running_attempt(&stale.journal_root, &stale.import_id, now_ms(), None)
         .unwrap()
         .generation;
     assert!(successor > stale_generation, "a successor was admitted");
@@ -1265,8 +1287,13 @@ async fn an_aborted_import_reads_failed_and_publishes_nothing() {
 
     let control = request(&temp, "20260811_180000");
     let control_generation = admit(&control);
-    let control_outcome =
-        fake_import(control.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    let control_outcome = fake_import(
+        control.clone(),
+        120.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
     finish_audio_attempt(
         &control.journal_root,
         &control.import_id,
@@ -1321,8 +1348,13 @@ async fn a_row_with_no_attempt_keeps_the_landed_legacy_rule() {
     // The admitted row, so this guard cannot be green on a tree where nothing was built.
     let admitted = request(&temp, "20260811_200000");
     let admitted_generation = admit(&admitted);
-    let admitted_outcome =
-        fake_import(admitted.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    let admitted_outcome = fake_import(
+        admitted.clone(),
+        120.0,
+        None,
+        Rc::new(RefCell::new(Vec::new())),
+    )
+    .await;
     finish_audio_attempt(
         &admitted.journal_root,
         &admitted.import_id,
@@ -1360,4 +1392,85 @@ async fn a_row_with_no_attempt_keeps_the_landed_legacy_rule() {
         "the landed legacy rule is preserved verbatim for rows with no attempt"
     );
     assert_eq!(projection.error_stage.as_deref(), Some("timeout"));
+}
+
+/// A segment whose processing failed reads `failed`.
+///
+/// The shared `request()` helper leaves the processing wait off, so without this the
+/// `failed_segments` arm of the terminal classification never executed at all.
+#[tokio::test]
+async fn a_failed_segment_projects_failed() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+    let mut req = request(&temp, "20260811_220000");
+    req.wait_for_processing = true;
+    req.stall_timeout = Duration::from_secs(10);
+    req.poll_interval = Duration::from_millis(1);
+    let generation = admit(&req);
+
+    let outcome = import_audio_with_seams(
+        req.clone(),
+        AudioImportSeams {
+            duration_probe: |_: &Path| Ok(120.0),
+            slice: |_: &Path, output: &Path, _: f64, _: f64| {
+                fs::write(output, b"audio").unwrap();
+                fs::write(
+                    output.with_extension("jsonl"),
+                    format!(
+                        "{{\"_solstone_processing\":{}}}\n",
+                        json!({"schema": "solstone.processing.v1", "state": "failed", "attempts": 3})
+                    ),
+                )
+                .unwrap();
+                Ok(())
+            },
+            emit_observing: |_: &ObservingSegment| {},
+            wait: native_processing_wait,
+        },
+    )
+    .await;
+    assert_eq!(
+        created(outcome.as_ref().unwrap())
+            .processing
+            .failed_segments
+            .len(),
+        1
+    );
+
+    finish_audio_attempt(&req.journal_root, &req.import_id, generation, &outcome);
+    let projection = project_import_result(&req.journal_root, &req.import_id);
+    assert_eq!(projection.status, ProjectionStatus::Failed);
+}
+
+/// A stalled segment reads `unconfirmed`, not `failed`.
+///
+/// Thirty seconds of inactivity is not a verdict -- these segments usually complete later,
+/// and calling that a failure would tell an owner their audio was lost when it was not.
+/// This deliberately diverges from the CLI, which exits non-zero for a stall.
+#[tokio::test]
+async fn a_stalled_segment_projects_unconfirmed_rather_than_failed() {
+    let temp = TempDir::new().unwrap();
+    fs::write(temp.path().join("source.m4a"), b"source").unwrap();
+    let mut req = request(&temp, "20260811_230000");
+    req.wait_for_processing = true;
+    req.stall_timeout = Duration::from_millis(2);
+    req.poll_interval = Duration::from_millis(1);
+    let generation = admit(&req);
+
+    let outcome = fake_import(req.clone(), 120.0, None, Rc::new(RefCell::new(Vec::new()))).await;
+    assert_eq!(
+        created(outcome.as_ref().unwrap())
+            .processing
+            .stalled_segments
+            .len(),
+        1
+    );
+
+    finish_audio_attempt(&req.journal_root, &req.import_id, generation, &outcome);
+    let projection = project_import_result(&req.journal_root, &req.import_id);
+    assert_eq!(
+        projection.status,
+        ProjectionStatus::Unconfirmed,
+        "a stall is not final, so it must not read as a definitive failure"
+    );
 }

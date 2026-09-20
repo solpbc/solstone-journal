@@ -11,17 +11,17 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use solstone_core_import::ImportError;
 use solstone_core_import::metadata::{
-    AttemptState, IMPORT_FAILED_REASON, get_attempt_facts, hold_import_lock,
-    read_provenance, record_completed_attempt_unlocked,
-    record_completed_attempt_with_input_failures_unlocked, record_unconfirmed_attempt_unlocked,
+    AttemptState, IMPORT_FAILED_REASON, get_attempt_facts, hold_import_lock, read_provenance,
+    record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
+    record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::publish::{
     CreatedSegment, NativePublicationOperations, PublicationInput, PublicationOperations,
     RescanFileStatus, publish_with_operations,
 };
 use solstone_core_segment::{StreamAdvance, UnboundStreamAdvanceError};
-use solstone_core_import::ImportError;
 
 use crate::audio::AudioImportOutcome;
 
@@ -105,9 +105,9 @@ enum Terminal {
     Failed,
     /// Not final. Segments usually complete later, so the row reads `unconfirmed`.
     Unconfirmed,
-    /// Content landed, with `n` inputs lost. The row reads `success` with gaps.
-    SucceededWithGaps(u64),
-    Succeeded,
+    /// Content landed. `dropped` inputs were lost, so a non-zero count reads `success`
+    /// with gaps.
+    Succeeded { dropped: u64 },
 }
 
 fn classify(outcome: &Result<AudioImportOutcome, ImportError>) -> Terminal {
@@ -116,17 +116,20 @@ fn classify(outcome: &Result<AudioImportOutcome, ImportError>) -> Terminal {
         return Terminal::Failed;
     };
     let processing = &outcome.created().processing;
+    // Severity first: a segment whose processing failed outranks a chunk that never made it,
+    // and matches the CLI, which exits non-zero for failed and stalled alike. The dropped
+    // count is deliberately NOT consumed by these arms -- it is a separate fact about lost
+    // input, and folding it away would tell an owner the import failed without ever telling
+    // them content was lost.
     if !processing.failed_segments.is_empty() {
         return Terminal::Failed;
     }
     if !processing.stalled_segments.is_empty() {
         return Terminal::Unconfirmed;
     }
-    let dropped = outcome.dropped_chunks().len() as u64;
-    if dropped > 0 {
-        return Terminal::SucceededWithGaps(dropped);
+    Terminal::Succeeded {
+        dropped: outcome.dropped_chunks().len() as u64,
     }
-    Terminal::Succeeded
 }
 
 /// Record the terminal attempt, and the publication record when there is content to publish.
@@ -163,6 +166,7 @@ pub fn finish_audio_attempt(
         .unwrap_or_default()
         .as_millis() as u64;
 
+    let mut publication_failed = false;
     if let Ok(imported) = outcome {
         let created = imported.created();
         if !created.segments.is_empty() {
@@ -174,7 +178,11 @@ pub fn finish_audio_attempt(
                     .and_then(|metadata| get_attempt_facts(&metadata))
                     .is_some_and(|facts| facts.generation == generation)
             };
-            let _ = publish_with_operations(
+            // Inspected, not swallowed. `publish_with_operations` returns Err only when the
+            // `imported.json` write itself failed, and recording Completed over that leaves a
+            // durable record claiming a publication the projection cannot find -- it renders
+            // the row `unconfirmed` while the attempt says completed. Record the truth.
+            let published = publish_with_operations(
                 PublicationInput {
                     journal,
                     import_dir: Some(&import_dir),
@@ -187,8 +195,16 @@ pub fn finish_audio_attempt(
                 },
                 &AudioPublicationOperations,
             );
+            publication_failed = published.is_err();
         }
     }
+
+    // A publication record that could not be written outranks a clean producer run.
+    let terminal = if publication_failed {
+        Terminal::Unconfirmed
+    } else {
+        terminal
+    };
 
     let _ = match terminal {
         Terminal::Failed => record_unconfirmed_attempt_unlocked(
@@ -205,7 +221,7 @@ pub fn finish_audio_attempt(
             finished_at_ms,
             None,
         ),
-        Terminal::SucceededWithGaps(dropped) => {
+        Terminal::Succeeded { dropped } if dropped > 0 => {
             record_completed_attempt_with_input_failures_unlocked(
                 journal,
                 import_id,
@@ -215,7 +231,7 @@ pub fn finish_audio_attempt(
                 dropped,
             )
         }
-        Terminal::Succeeded => record_completed_attempt_unlocked(
+        Terminal::Succeeded { .. } => record_completed_attempt_unlocked(
             journal,
             import_id,
             generation,
