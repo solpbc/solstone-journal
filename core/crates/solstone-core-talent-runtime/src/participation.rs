@@ -44,7 +44,21 @@ pub fn commit(
     let Some(day) = prepared.config.get("day").and_then(Value::as_str) else {
         return Ok(CommitPlan::NoOutput);
     };
+    let destination_id = prepared
+        .config
+        .get("destination_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .ok_or_else(|| {
+            stage_error(
+                "commit",
+                "participation",
+                prepared,
+                "activity destination identity is missing",
+            )
+        })?;
     Ok(CommitPlan::Write(WriteIntent::Participation {
+        destination_id: destination_id.to_owned(),
         output,
         facet: facet.to_owned(),
         day: day.to_owned(),
@@ -56,9 +70,12 @@ pub fn apply_result(
     journal: &std::path::Path,
     output: &str,
     facet: &str,
+    destination_id: &str,
     day: &str,
     activity: &Map<String, Value>,
 ) -> Result<(), String> {
+    let _guard = solstone_core_facets::hold_activity_enrichment(journal, facet, destination_id)
+        .map_err(|error| error.to_string())?;
     // Preserve solstone/talent/participation.py:76-105: malformed model output is ignored.
     let Ok(Value::Object(data)) = serde_json::from_str(output.trim()) else {
         return Ok(());
@@ -73,6 +90,12 @@ pub fn apply_result(
     let Some(entries) = data.get("participation").and_then(Value::as_array) else {
         return Ok(());
     };
+    if solstone_core_facets::get_activity_record(journal, facet, day, record_id)
+        .map_err(|error| error.to_string())?
+        .is_none()
+    {
+        return Err("activity no longer exists".to_owned());
+    }
     let entities = detected_resolution_entities(journal, facet, day)?;
     let origin = |field: &str| json!({"lane":"talent.participation","facet":facet,"day":day,"record_id":record_id,"field":field});
     let mut resolved = Vec::new();
@@ -174,7 +197,8 @@ pub fn apply_result(
         "updated participation",
         &timestamp,
     )
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| error.to_string())?
+    .ok_or("activity no longer exists")?;
     Ok(())
 }
 
@@ -310,6 +334,7 @@ mod tests {
     }
 
     fn write_participation_fixture(root: &Path, labels: Value, speakers: Value) {
+        solstone_core_facets::create_facet(root, FACET, "Work", "", "", "", None).unwrap();
         write_entity(root, "person", "Ada Lovelace", "Person");
         write_entity(root, "tool", "Deploy Bot", "Tool");
         write_entity(root, "project", "Atlas", "Project");
@@ -346,6 +371,7 @@ mod tests {
             root,
             &json!({"participation":[entry]}).to_string(),
             FACET,
+            &solstone_core_facets::observe_facet_write_identity(root, FACET).unwrap(),
             DAY,
             &activity(),
         )

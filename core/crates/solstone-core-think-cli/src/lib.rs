@@ -71,7 +71,8 @@ use solstone_core_segment::SUPERVISOR_MESSAGE;
 use crate::args::{
     ACTIVITY_INCOMPATIBLE, ACTIVITY_REQUIRES_DAY, ACTIVITY_REQUIRES_FACET, CADENCE_INCOMPATIBLE,
     FACET_REQUIRES_ACTIVITY, FLUSH_INCOMPATIBLE, FLUSH_REQUIRES_SEGMENT,
-    MULTI_WORKER_UNLIMITED_JOBS, NO_ACTIVITY_PROMPTS_WITH_ACTIVITY, SEGMENT_WORKERS_RANGE,
+    MULTI_WORKER_UNLIMITED_JOBS, NO_ACTIVITY_PROMPTS_WITH_ACTIVITY,
+    REACTIVATE_INCOMPATIBLE_REFRESH, REACTIVATE_REQUIRES_ACTIVITY, SEGMENT_WORKERS_RANGE,
     SEGMENTS_INCOMPATIBLE, UPDATED_INCOMPATIBLE, WEEKLY_INCOMPATIBLE,
 };
 
@@ -144,9 +145,22 @@ pub fn requires_daily_lifecycle(raw_args: &[String]) -> bool {
     let Ok(args::ParseOutcome::Args(parsed)) = args::parse(raw_args) else {
         return false;
     };
+    if parsed.jobs < 0 {
+        return false;
+    }
+    if let Some(day) = parsed.day.as_deref()
+        && NaiveDate::parse_from_str(day, "%Y%m%d").is_err()
+    {
+        return false;
+    }
+    if validate(&parsed, None, false, LocalEndpointResolution::Bundled, None).is_err() {
+        return false;
+    }
     !parsed.updated
         && !parsed.cadence
         && parsed.activity.is_none()
+        && parsed.facet.is_none()
+        && !parsed.reactivate
         && !parsed.flush
         && !parsed.segments
         && parsed.segment.is_none()
@@ -351,6 +365,7 @@ where
                 activity_id,
                 parsed.facet.as_deref().expect("validated activity facet"),
                 parsed.refresh,
+                parsed.reactivate,
                 parsed.jobs,
             );
             return logged_mode_outcome(log, result);
@@ -569,6 +584,12 @@ fn validate(
             message: message.to_owned(),
         })
     };
+    if args.reactivate && args.activity.is_none() {
+        return usage(REACTIVATE_REQUIRES_ACTIVITY);
+    }
+    if args.reactivate && args.refresh {
+        return usage(REACTIVATE_INCOMPATIBLE_REFRESH);
+    }
     if args.facet.is_some() && args.activity.is_none() {
         return usage(FACET_REQUIRES_ACTIVITY);
     }
@@ -1066,6 +1087,7 @@ mod tests {
     }
 
     fn write_activity_record(journal: &Path, facet: &str, day: &str, record: Value) {
+        let _ = solstone_core_facets::create_facet(journal, facet, facet, "", "", "", None);
         let path = journal
             .join("facets")
             .join(facet)
@@ -1994,7 +2016,8 @@ mod tests {
                 event_counter.fetch_add(1, Ordering::SeqCst)
             }));
         let mut log = test_log(&context, "activity");
-        let result = activity::run(&context, &mut log, "reading_1", "work", false, 2).unwrap();
+        let result =
+            activity::run(&context, &mut log, "reading_1", "work", false, false, 2).unwrap();
         assert_eq!((result.success, result.failed), (3, 0));
         let requests = recorder.requests.lock().unwrap();
         assert_eq!(
@@ -2119,7 +2142,7 @@ mod tests {
             fs::write(path, "output").unwrap();
         }
         let mut log = test_log(&context, "activity");
-        activity::run(&context, &mut log, "reading_1", "work", false, 0).unwrap();
+        activity::run(&context, &mut log, "reading_1", "work", false, false, 0).unwrap();
         assert_eq!(
             recorder
                 .waits
@@ -2211,7 +2234,7 @@ mod tests {
             serde_json::json!({"id":"low", "activity":"reading", "segments":["090000"], "level_avg":0.39}),
         );
         let mut log = test_log(&context, "activity");
-        let low = activity::run(&context, &mut log, "low", "work", false, 2).unwrap();
+        let low = activity::run(&context, &mut log, "low", "work", false, false, 2).unwrap();
         assert_eq!((low.success, low.failed), (0, 0));
         assert!(recorder.requests.lock().unwrap().is_empty());
         assert!(
@@ -2227,7 +2250,7 @@ mod tests {
             serde_json::json!({"id":"full", "activity":"reading", "segments":["090000"], "level_avg":0.4}),
         );
         let mut log = test_log(&context, "segment");
-        let full = activity::run(&context, &mut log, "full", "work", false, 2).unwrap();
+        let full = activity::run(&context, &mut log, "full", "work", false, false, 2).unwrap();
         assert_eq!((full.success, full.failed), (1, 0));
         assert_eq!(recorder.requests.lock().unwrap().len(), 1);
     }
@@ -3274,6 +3297,8 @@ mod tests {
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
         for (segment, sense) in [
             (
@@ -3338,6 +3363,8 @@ mod tests {
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
         for (segment, sense) in [
             (
@@ -3406,6 +3433,8 @@ mod tests {
         )
         .unwrap();
         let (context, recorder) = recorder_context(journal.path(), "20260814", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
         let path = segment_dir(journal.path(), "20260814", "000000_300").join("talents");
         fs::create_dir_all(&path).unwrap();
@@ -3451,6 +3480,8 @@ mod tests {
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 1_786_708_800_000);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
         for (stream, segment, sense) in [
             (
@@ -3518,6 +3549,8 @@ mod tests {
             )],
         );
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
         for (segment, sense) in [
             (
@@ -3565,6 +3598,8 @@ mod tests {
         );
         fs::write(journal.path().join("awareness"), "not a directory").unwrap();
         let (context, recorder) = recorder_context(journal.path(), "20260813", 9);
+        solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "", "", None)
+            .unwrap();
         let context = context.with_talent_roots(talent_root, apps_root);
         // Hydration cannot use the blocked snapshot, so the first replay
         // starts activity; the second minimal idle projection closes it.
@@ -5030,6 +5065,65 @@ mod tests {
             assert!(
                 !args::sense_batch_offenders(&parsed).is_empty()
                     || !args::updated_offenders(&parsed).is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn think_cli_reactivate_flag_parses_and_validates_requirements() {
+        let args = vec![
+            "--day".to_string(),
+            "20260914".to_string(),
+            "--facet".to_string(),
+            "work".to_string(),
+            "--activity".to_string(),
+            "work_090000_300".to_string(),
+            "--reactivate".to_string(),
+        ];
+        let outcome = args::parse(&args).expect("parse reactivate");
+        match outcome {
+            args::ParseOutcome::Args(parsed) => {
+                assert!(parsed.reactivate);
+                assert_eq!(
+                    validate(&parsed, None, false, LocalEndpointResolution::Bundled, None),
+                    Ok(())
+                );
+            }
+            _ => panic!("expected parsed args"),
+        }
+
+        let refresh_incompatible = vec![
+            "--day".to_string(),
+            "20260914".to_string(),
+            "--facet".to_string(),
+            "work".to_string(),
+            "--activity".to_string(),
+            "work_090000_300".to_string(),
+            "--reactivate".to_string(),
+            "--refresh".to_string(),
+        ];
+        if let Ok(args::ParseOutcome::Args(parsed)) = args::parse(&refresh_incompatible) {
+            assert_eq!(
+                validate(&parsed, None, false, LocalEndpointResolution::Bundled, None),
+                Err(CliError::Usage {
+                    message: args::REACTIVATE_INCOMPATIBLE_REFRESH.to_string()
+                })
+            );
+        }
+
+        let missing_activity = vec![
+            "--day".to_string(),
+            "20260914".to_string(),
+            "--facet".to_string(),
+            "work".to_string(),
+            "--reactivate".to_string(),
+        ];
+        if let Ok(args::ParseOutcome::Args(parsed)) = args::parse(&missing_activity) {
+            assert_eq!(
+                validate(&parsed, None, false, LocalEndpointResolution::Bundled, None),
+                Err(CliError::Usage {
+                    message: args::REACTIVATE_REQUIRES_ACTIVITY.to_string()
+                })
             );
         }
     }

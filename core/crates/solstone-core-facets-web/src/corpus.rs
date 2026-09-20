@@ -203,6 +203,36 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
         Sha256::digest(substitute(std::str::from_utf8(&body).expect("UTF-8"), root).as_bytes())
     } else {
         let mut value: Value = serde_json::from_slice(&body).expect("JSON body");
+        if expected["path"]
+            .as_str()
+            .is_some_and(|path| path.starts_with("/app/activities/api/"))
+        {
+            // New writes carry declaration identity. Assert that binding before
+            // comparing the other fields with the frozen pre-identity corpus.
+            fn check_identity(value: &mut Value, root: &Path) {
+                match value {
+                    Value::Object(object) => {
+                        if let Some(id) = object.remove("destination_id") {
+                            assert_eq!(
+                                id,
+                                solstone_core_facets::observe_facet_write_identity(root, "work")
+                                    .unwrap()
+                            );
+                        }
+                        for child in object.values_mut() {
+                            check_identity(child, root);
+                        }
+                    }
+                    Value::Array(items) => {
+                        for child in items {
+                            check_identity(child, root);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            check_identity(&mut value, root);
+        }
         normalize(&mut value, root);
         // Preserve the captured contract except the deliberately revised facet prompt.
         if let Some(copy) = value.get_mut("copy").and_then(Value::as_object_mut)

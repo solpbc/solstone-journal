@@ -99,19 +99,19 @@ How central the entity was to this segment — distinct from `role`. `role` is w
 Centrality is independent of `role`: an entity can be `role: mentioned` yet `level: high` (the whole segment was about it, though it wasn't present), or `role: attendee` yet `level: low` (present but barely involved). Judge centrality from what the segment was actually about, not from whether the entity was attending.
 
 ### facets
-Classify into the owner's configured facets. Always include at least one facet — pick the closest configured facet. If multiple facets fit, include the dominant one as `level: high` and others at `level: medium` or `level: low`. For each:
-- `facet`: The facet ID slug — MUST be one of the configured facets listed in the input
+Classify into the owner's configured enabled facets. If enabled facets are present, include matching facets (dominant as `level: high` and others at `level: medium` or `level: low`). If no facets are configured/enabled or none match the activity, emit an empty array `[]`. For each:
+- `facet`: The facet ID slug — MUST be an exact configured enabled slug listed in the input
 - `activity`: 1-sentence description of what was done for this facet, written the same way as `activity_summary` above — start with a past-tense verb, name no subject. Good: "Refined the sense prompt and re-ran the segment." Wrong: "The user reviewed the sense prompt." This string is rendered verbatim in the owner's recent activity list.
 - `level`: "high" (primary focus), "medium" (significant), "low" (brief/peripheral)
 
-**Facet assignment rules:** Do not invent facet IDs that are not in the configured journal facet list. The array always has at least one entry — pick the closest configured facet even when the match is loose, and use `level: low` to signal weak fit. If a better new name is warranted, put it only in `speculative_facet`, not in `facets[]`.
+**Facet assignment rules:** Do not invent facet IDs that are not in the configured enabled facet list, and do not "pick the closest" when no configured facet actually fits. If no configured facets apply or no facets are configured, emit an empty array `[]` and put any candidate new name only in `speculative_facet`, not in `facets[]`.
 
 ### speculative_facet
-Propose a name for a NEW facet that fits this segment better than any configured facet, or emit `null`.
+Propose a name for a NEW facet that fits this segment, or emit `null`.
 
-Emit a proposed name ONLY when every configured-facet match is weak: every entry you put in `facets[]` is `level: low`. When at least one `facets[]` entry is `level: medium` or `level: high`, emit `null`.
+Emit a proposed name when no configured facets match (empty `facets[]`) or when every configured-facet match is weak (every entry in `facets[]` is `level: low`). When at least one `facets[]` entry is `level: medium` or `level: high`, emit `null`.
 
-This field is purely additive and never changes routing: `facets[]` still must classify the segment into the closest configured facet exactly as described above. Invented names belong ONLY in `speculative_facet`, NEVER in `facets[]`.
+This field is purely additive and never changes routing. Invented names belong ONLY in `speculative_facet`, NEVER in `facets[]`.
 
 The proposed name must be specific and grounded in the observed activity. Write it the way a person would title a folder: a short natural phrase or Title Case name (like the owner's existing facets — "Personal", "Ping Identity", "sol pbc"). Never emit snake_case, kebab-case, or any other identifier-style formatting.
 
@@ -153,13 +153,13 @@ The observable emotional tone of the segment based on conversation tone, speech 
 
 1. Every field is required. Never omit a field.
 2. `entities` and `speakers` may be empty arrays `[]` (subject to rule 8 for speakers when `meeting_detected=true`).
-3. `facets` always has at least one entry — the closest configured facet for the activity. Empty array is not allowed.
+3. `facets` must contain only exact configured enabled facet slugs. If no configured facets match or none are enabled, emit `[]`.
 4. Be precise with density — misclassifying active segments as idle is the worst error.
 5. For `content_type`, choose the single best match — the dominant activity in the segment. If two activities are roughly equal, pick the one with more durable continuation evidence (entities, repeated screen content); the `facets[]` array's `level` field already encodes secondary activity.
 6. Activity summary must describe observable actions, not inferred states.
 7. Skip entities whose name contains a speaker-uncertainty placeholder. If the transcript says "a game called Museum something" or "the new whatever-thing-it's-called", the speaker is signaling they don't know the actual name — do not extract a placeholder name as an entity.
 8. If `meeting_detected=true`, `speakers` must contain at least one entry (use generic labels if no names are identifiable). If `activity_summary` mentions specific named people, projects, or tools, those names should also appear in `entities` (subject to the per-type rules above) — don't reference an entity by name in the summary and then omit it from `entities`.
-9. Emit a `speculative_facet` name only when all `facets[]` entries are `level: low`; otherwise emit `null`. Never invent a `facets[]` ID.
+9. Emit a `speculative_facet` name only when no configured facets match or all `facets[]` entries are `level: low`; otherwise emit `null`. Never invent a `facets[]` ID.
 10. `activity_summary` and every `facets[].activity` begin with a past-tense verb and name no subject — never "I", "You", "We", "The user", "The owner", "The person", or "This person".
 
 Return ONLY the JSON object, no other text or explanation.

@@ -23,6 +23,12 @@ pub struct ActivityRetry {
     pub activity: String,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct BlockedDisposition {
+    pub reason_code: String,
+    pub message: String,
+}
+
 #[derive(Serialize, Deserialize)]
 struct Record {
     version: u32,
@@ -34,6 +40,12 @@ struct Record {
     parked: BTreeSet<String>,
     attempts: u32,
     next_attempt_ms: i64,
+    #[serde(default)]
+    destination_id: Option<String>,
+    #[serde(default)]
+    muted_pause: bool,
+    #[serde(default)]
+    blocked: Option<BlockedDisposition>,
 }
 
 pub(crate) struct ActivityWork {
@@ -59,21 +71,54 @@ fn path(journal: &Path, identity: &ActivityRetry) -> Result<PathBuf, String> {
 
 fn read(path: &Path) -> Result<Option<Record>, String> {
     use solstone_core_journal_io::durability::{
-        ArtifactId, DurableRead, read_json_durable_validated,
+        ArtifactId, DurableObservation, observe_json_durable,
     };
-    match read_json_durable_validated::<Record>(ArtifactId::ActivityWork, path, |record| {
-        if record.version == 1 {
-            Ok(())
-        } else {
-            Err("unsupported activity work version".to_owned())
+    match observe_json_durable::<Record>(ArtifactId::ActivityWork, path) {
+        DurableObservation::Present(record) if record.version == 1 => Ok(Some(record)),
+        DurableObservation::Present(_) => Err("unsupported activity work version".to_owned()),
+        DurableObservation::Absent => Ok(None),
+        DurableObservation::Malformed { path, .. } => {
+            Err(format!("malformed activity work: {}", path.display()))
         }
-    }) {
-        Ok(DurableRead::Present(record)) => Ok(Some(record)),
-        Ok(DurableRead::Absent | DurableRead::SetAside(_) | DurableRead::Unreadable { .. }) => {
-            Ok(None)
-        }
-        Err(e) => Err(e.to_string()),
+        DurableObservation::Unreadable { path, source } => Err(format!(
+            "cannot read activity work {}: {source}",
+            path.display()
+        )),
     }
+}
+
+fn claim(context: &ThinkContext, identity: &ActivityRetry) -> Result<FileLock, String> {
+    let claim_path = crate::segment::activity_provenance_path(
+        context,
+        &identity.day,
+        &identity.facet,
+        &identity.activity,
+    );
+    std::fs::create_dir_all(claim_path.parent().expect("provenance parent"))
+        .map_err(|e| e.to_string())?;
+    hold_lock(
+        &claim_path,
+        LockOptions {
+            timeout: Duration::ZERO,
+            ..LockOptions::default()
+        },
+    )
+    .map_err(|e| e.to_string())
+}
+
+pub(crate) fn has_persisted_disposition(
+    journal: &Path,
+    day: &str,
+    facet: &str,
+    activity: &str,
+) -> Result<bool, String> {
+    let identity = ActivityRetry {
+        day: day.to_owned(),
+        facet: facet.to_owned(),
+        activity: activity.to_owned(),
+    };
+    Ok(read(&path(journal, &identity)?)?
+        .is_some_and(|record| record.blocked.is_some() || record.muted_pause))
 }
 
 /// A connection failure never exhausts its retries. Only the delay is capped.
@@ -82,6 +127,30 @@ fn backoff_ms(attempts: u32) -> i64 {
 }
 
 impl ActivityWork {
+    pub(crate) fn open_existing(
+        context: &ThinkContext,
+        facet: &str,
+        activity: &str,
+    ) -> Result<Option<Self>, String> {
+        let identity = ActivityRetry {
+            day: context.day.clone(),
+            facet: facet.to_owned(),
+            activity: activity.to_owned(),
+        };
+        let path = path(&context.journal, &identity)?;
+        let claim = claim(context, &identity)?;
+        let Some(record) = read(&path)? else {
+            return Ok(None);
+        };
+        if record.identity != identity {
+            return Err("activity work identity mismatch".to_owned());
+        }
+        Ok(Some(Self {
+            path,
+            record,
+            _claim: claim,
+        }))
+    }
     pub(crate) fn begin(
         context: &ThinkContext,
         facet: &str,
@@ -99,18 +168,7 @@ impl ActivityWork {
         std::fs::create_dir_all(directory(&context.journal)).map_err(|e| e.to_string())?;
         // One per-activity claim covers read/dispatch/completion, so a manual
         // command cannot race a queued retry. Other activities remain independent.
-        let claim_path =
-            crate::segment::activity_provenance_path(context, &context.day, facet, activity);
-        std::fs::create_dir_all(claim_path.parent().expect("provenance parent"))
-            .map_err(|e| e.to_string())?;
-        let claim = hold_lock(
-            &claim_path,
-            LockOptions {
-                timeout: Duration::ZERO,
-                ..LockOptions::default()
-            },
-        )
-        .map_err(|e| e.to_string())?;
+        let claim = claim(context, &identity)?;
         let old = read(&path)?;
         if let Some(old) = old.as_ref()
             && (refresh || old.input_hash != input_hash)
@@ -157,6 +215,9 @@ impl ActivityWork {
                 parked: BTreeSet::new(),
                 attempts: 0,
                 next_attempt_ms: 0,
+                destination_id: None,
+                muted_pause: false,
+                blocked: None,
             },
         };
         let work = Self {
@@ -168,8 +229,47 @@ impl ActivityWork {
         Ok(work)
     }
 
+    pub(crate) fn is_complete(&self) -> bool {
+        self.record.remaining.is_empty()
+    }
     pub(crate) fn due(&self, now_ms: i64) -> bool {
+        if self.record.blocked.is_some() || self.record.muted_pause {
+            return false;
+        }
         self.record.remaining.is_empty() || self.record.next_attempt_ms <= now_ms
+    }
+    pub(crate) fn is_blocked(&self) -> bool {
+        self.record.blocked.is_some()
+    }
+    pub(crate) fn blocked_disposition(&self) -> Option<&BlockedDisposition> {
+        self.record.blocked.as_ref()
+    }
+    pub(crate) fn is_muted_pause(&self) -> bool {
+        self.record.muted_pause
+    }
+    pub(crate) fn destination_id(&self) -> Option<&str> {
+        self.record.destination_id.as_deref()
+    }
+    pub(crate) fn set_destination_id(&mut self, id: String) -> Result<(), String> {
+        self.record.destination_id = Some(id);
+        self.save()
+    }
+    pub(crate) fn block(&mut self, reason_code: &str, message: &str) -> Result<(), String> {
+        self.record.blocked = Some(BlockedDisposition {
+            reason_code: reason_code.to_owned(),
+            message: message.to_owned(),
+        });
+        self.save()
+    }
+    pub(crate) fn set_muted_pause(&mut self, paused: bool) -> Result<(), String> {
+        self.record.muted_pause = paused;
+        self.save()
+    }
+    pub(crate) fn reactivate(&mut self) -> Result<(), String> {
+        self.record.blocked = None;
+        self.record.muted_pause = false;
+        self.record.next_attempt_ms = 0;
+        self.save()
     }
     pub(crate) fn parked(&self, name: &str) -> bool {
         self.record.parked.contains(name)
@@ -251,6 +351,36 @@ pub fn due_activity_retries(journal: &Path, now_ms: i64) -> Result<Vec<ActivityR
         };
         if path(journal, &record.identity)? != entry.path() {
             return Err("activity work filename mismatch".to_owned());
+        }
+        let has_finished_use = record
+            .uses
+            .iter()
+            .filter(|(name, _)| record.remaining.contains(*name))
+            .map(|(_, id)| {
+                solstone_core_cortex_client::get_use_end_state(journal, id)
+                    .map_err(|error| error.to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?
+            .contains(&solstone_core_cortex_client::UseEndState::Finish);
+        if record.blocked.is_some() && !has_finished_use {
+            continue;
+        }
+        if record.muted_pause && !has_finished_use {
+            let still_muted = match solstone_core_facets::observe_facet_destination(
+                journal,
+                &record.identity.facet,
+            ) {
+                Ok(solstone_core_facets::DestinationObservation::Ready { id, muted: true }) => {
+                    record
+                        .destination_id
+                        .as_deref()
+                        .is_some_and(|stored| stored == id)
+                }
+                _ => false,
+            };
+            if still_muted {
+                continue;
+            }
         }
         if record.next_attempt_ms <= now_ms
             && (record.remaining.is_empty()
@@ -347,6 +477,9 @@ pub fn seed_activity_retries(journal: &Path, day: &str, now_ms: i64) -> Result<(
                 remaining: uses.keys().cloned().collect(),
                 uses: uses.into_iter().filter(|(_, id)| !id.is_empty()).collect(),
                 parked: BTreeSet::new(),
+                destination_id: None,
+                muted_pause: false,
+                blocked: None,
                 attempts: 0,
                 next_attempt_ms: 0,
             },

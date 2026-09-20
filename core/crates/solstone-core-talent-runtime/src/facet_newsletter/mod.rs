@@ -174,11 +174,23 @@ mod tests {
     fn writes_newsletter_file_not_just_a_commit_result() {
         // Derived from solstone/talent/facet_newsletter.py:880-912.
         let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         apply_result(root.path(), "# Daily\n", "work", "20260101").unwrap();
         assert_eq!(
             std::fs::read_to_string(root.path().join("facets/work/news/20260101.md")).unwrap(),
             "# Daily"
         );
+    }
+    #[test]
+    fn an_undeclared_facet_receives_no_newsletter_and_no_directory() {
+        let root = tempfile::tempdir().unwrap();
+        let error = apply_result(root.path(), "# Late\n", "undeclared", "20260101").unwrap_err();
+        assert!(error.contains("facet declaration is missing"), "{error}");
+        assert!(!root.path().join("facets/undeclared").exists());
+        // Output that would not be written anyway is not a failure, declared or not.
+        apply_result(root.path(), "No activity", "undeclared", "20260101").unwrap();
+        apply_result(root.path(), "  ", "undeclared", "20260101").unwrap();
+        assert!(!root.path().join("facets/undeclared").exists());
     }
     #[test]
     fn packet_failure_and_no_sources_have_distinct_gate_reasons() {

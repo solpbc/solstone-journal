@@ -23,6 +23,7 @@ pub(crate) struct ThinkArgs {
     pub cadence: bool,
     pub dry_run: bool,
     pub sense_batch: bool,
+    pub reactivate: bool,
     pub verbose: bool,
     pub debug: bool,
 }
@@ -50,6 +51,7 @@ impl Default for ThinkArgs {
             cadence: false,
             dry_run: false,
             sense_batch: false,
+            reactivate: false,
             verbose: false,
             debug: false,
         }
@@ -60,6 +62,9 @@ pub(crate) const UPDATED_INCOMPATIBLE: &str = "--updated is incompatible with ";
 pub(crate) const FACET_REQUIRES_ACTIVITY: &str = "--facet requires --activity";
 pub(crate) const ACTIVITY_REQUIRES_FACET: &str = "--activity requires --facet";
 pub(crate) const ACTIVITY_REQUIRES_DAY: &str = "--activity requires --day";
+pub(crate) const REACTIVATE_REQUIRES_ACTIVITY: &str = "--reactivate requires --activity";
+pub(crate) const REACTIVATE_INCOMPATIBLE_REFRESH: &str =
+    "--reactivate is incompatible with --refresh";
 pub(crate) const NO_ACTIVITY_PROMPTS_WITH_ACTIVITY: &str =
     "--no-activity-prompts cannot be combined with --activity";
 pub(crate) const SEGMENT_WORKERS_RANGE: &str = "--segment-workers must be between 1 and 32";
@@ -98,6 +103,7 @@ pub(crate) fn parse(args: &[String]) -> Result<ParseOutcome, String> {
             "--segments" => parsed.segments = true,
             "--facet" => parsed.facet = Some(value("--facet")?),
             "--activity" => parsed.activity = Some(value("--activity")?),
+            "--reactivate" => parsed.reactivate = true,
             "--stream" => parsed.stream = Some(value("--stream")?),
             "--flush" => parsed.flush = true,
             "-j" | "--jobs" => {

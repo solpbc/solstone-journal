@@ -39,7 +39,7 @@ pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, deci
 pub use loader::{
     BoundedStderr, STDERR_LIMIT, classify_loader_failure, read_bounded_stderr, unresolved_library,
 };
-pub use progress::read_segment_progress;
+pub use progress::{read_pending_facet_routing, read_segment_progress};
 pub use safe_text::{
     sanitize_for_terminal, sanitize_os_bytes_for_terminal, sanitize_os_bytes_for_terminal_bounded,
     sanitize_str_for_terminal_bounded, unsafe_ranges,

@@ -12,8 +12,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- suggested facet names no longer become activity destinations before you create the facet. activity results also stay tied to the facet that started them.
+- editing an activity could drop a damaged entry from its saved settings. the edit now stops and leaves those settings unchanged.
+- damaged activity settings now show an error when you open them.
 - restore, prune, recovery key rotation and turning off backup now tell you what went wrong in plain language when they fail, instead of a raw internal code.
 - moving older media off your device to your backup, and bringing it back, now tell you what went wrong in plain language too, instead of a raw internal code.
+- home now catches up after a dropped connection. if your journal finished your "recent activity" summary or your "morning briefing" while the connection was down, they show up when it reconnects, without a reload.
 
 ## [2.0.10] - 2026-09-19
 

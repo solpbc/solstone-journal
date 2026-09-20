@@ -73,6 +73,44 @@ pub fn prepare(
             composed.insert(key, value);
         }
     }
+    if mode == PrepareMode::Execute && composed.get("activity").is_some() {
+        let facet = composed
+            .get("facet")
+            .and_then(Value::as_str)
+            .ok_or_else(|| {
+                PrepareFailure::Refusal("activity destination facet is missing".to_owned())
+            })?;
+        let request_id = composed.get("destination_id");
+        let record_id = composed
+            .get("activity")
+            .and_then(|value| value.get("destination_id"));
+        if request_id.is_some() && record_id.is_some() && request_id != record_id {
+            return Err(PrepareFailure::Refusal(
+                "activity destination identities disagree".to_owned(),
+            ));
+        }
+        let binding = request_id.or(record_id);
+        let destination_id = if let Some(binding) = binding {
+            let expected = binding
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| {
+                    PrepareFailure::Refusal("activity destination identity is invalid".to_owned())
+                })?;
+            let _guard =
+                solstone_core_facets::hold_activity_enrichment(&context.journal, facet, expected)
+                    .map_err(|error| PrepareFailure::Refusal(error.to_string()))?;
+            expected.to_owned()
+        } else {
+            let id = solstone_core_facets::admit_activity_destination(&context.journal, facet)
+                .map_err(|error| PrepareFailure::Refusal(error.to_string()))?;
+            let _guard =
+                solstone_core_facets::hold_activity_enrichment(&context.journal, facet, &id)
+                    .map_err(|error| PrepareFailure::Refusal(error.to_string()))?;
+            id
+        };
+        composed.insert("destination_id".to_owned(), Value::String(destination_id));
+    }
     let (provider, model) = configured_brain(&context.journal);
     composed.insert("provider".to_owned(), Value::String(provider));
     composed.insert("model".to_owned(), Value::String(model));
@@ -539,6 +577,68 @@ mod tests {
             ]))
             .unwrap_err(),
             "Invalid config: 'segment' or 'span' requires 'day'"
+        );
+    }
+
+    #[test]
+    fn activity_preparation_preserves_record_identity_and_rejects_conflicting_bindings() {
+        let root = tempfile::tempdir().unwrap();
+        let paths = RuntimePaths {
+            talent_root: root.path().join("talent"),
+            apps_root: root.path().join("apps"),
+            templates_dir: root.path().join("templates"),
+        };
+        let context = ExecutionContext {
+            journal: root.path().join("journal"),
+        };
+        for path in [&paths.talent_root, &paths.apps_root, &paths.templates_dir] {
+            fs::create_dir_all(path).unwrap();
+        }
+        fs::create_dir_all(context.journal.join("config")).unwrap();
+        fs::write(
+            context.journal.join("config/journal.json"),
+            r#"{"providers":{"active":{"provider":"test","model":"test-model"}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            paths.talent_root.join("probe.md"),
+            "{\n\"type\":\"generate\"\n}\nbody",
+        )
+        .unwrap();
+        solstone_core_facets::create_facet(&context.journal, "work", "Work", "", "", "", None)
+            .unwrap();
+        let id =
+            solstone_core_facets::observe_facet_write_identity(&context.journal, "work").unwrap();
+        let request = json!({"name":"probe","day":"20260101","facet":"work","activity":{"id":"a","destination_id":id,"segments":[]}}).as_object().unwrap().clone();
+        let prepared = prepare(request.clone(), &paths, &context, PrepareMode::Execute).unwrap();
+        assert_eq!(prepared.config["destination_id"], id);
+        let mut conflicting = request.clone();
+        conflicting.insert(
+            "destination_id".to_owned(),
+            json!("00000000-0000-4000-8000-000000000099"),
+        );
+        assert!(
+            prepare(conflicting, &paths, &context, PrepareMode::Execute)
+                .unwrap_err()
+                .to_string()
+                .contains("disagree")
+        );
+        solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
+        solstone_core_facets::create_facet(
+            &context.journal,
+            "work",
+            "Replacement",
+            "",
+            "",
+            "",
+            None,
+        )
+        .unwrap();
+        assert!(
+            prepare(request, &paths, &context, PrepareMode::Execute)
+                .unwrap_err()
+                .to_string()
+                .contains("replaced")
         );
     }
 

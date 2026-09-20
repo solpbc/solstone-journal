@@ -3090,6 +3090,13 @@ fn native_think_all_modes_produce_their_falsifying_observables_without_python() 
         .journal
         .join("facets/work/activities/20260101.jsonl");
     fs::create_dir_all(record.parent().expect("activity parent")).expect("create activity parent");
+    // A destination facet is declared, not merely a directory: an undeclared one refuses
+    // with `destination_missing` and never starts the activity.
+    fs::write(
+        context.journal.join("facets/work/facet.json"),
+        r#"{"title":"Work","id":"6f1a2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"}"#,
+    )
+    .expect("declare facet");
     fs::write(
         record,
         r#"{"id":"meeting_1","activity":"meeting","segments":["090000_60"],"source":"user","level_avg":1.0}"#,

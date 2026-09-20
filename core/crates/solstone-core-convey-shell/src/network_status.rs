@@ -1338,10 +1338,10 @@ mod tests {
             status_body.home_address_unusable,
             Some("REACH_HOME_ADDRESS_UNUSABLE")
         );
-        assert_eq!(status_body.lan_accessible, false);
+        assert!(!status_body.lan_accessible);
         assert_eq!(status_body.reachability, "lan-unreachable");
         assert_eq!(status_body.home_candidates.len(), 1);
-        assert_eq!(status_body.home_candidates[0].selected, false);
+        assert!(!status_body.home_candidates[0].selected);
         assert_eq!(status_body.home_candidates[0].source, "override");
     }
 

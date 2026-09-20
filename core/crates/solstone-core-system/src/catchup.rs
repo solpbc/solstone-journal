@@ -979,8 +979,16 @@ pub fn eligible_catchup_days(
     exclude: &BTreeSet<String>,
     now: SystemTime,
 ) -> Result<Vec<String>, CatchupError> {
-    let natural = crate::daily_coverage::reconcile_days(journal, force_days, now.into())
+    let mut natural = crate::daily_coverage::reconcile_days(journal, force_days, now.into())
         .map_err(CatchupError::State)?;
+    natural.extend(days_with_expired_retry_for(
+        journal,
+        exclude,
+        now,
+        Some(KIND_SEGMENT_REPAIR),
+    )?);
+    natural.sort();
+    natural.dedup();
     let natural = natural.into_iter().filter(|day| !exclude.contains(day));
     let eligible_natural = natural
         .into_iter()
@@ -1026,6 +1034,15 @@ pub fn days_with_expired_retry(
     exclude: &BTreeSet<String>,
     now: SystemTime,
 ) -> Result<Vec<String>, CatchupError> {
+    days_with_expired_retry_for(journal, exclude, now, None)
+}
+
+fn days_with_expired_retry_for(
+    journal: &Path,
+    exclude: &BTreeSet<String>,
+    now: SystemTime,
+    only_kind: Option<&str>,
+) -> Result<Vec<String>, CatchupError> {
     let now = now
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -1040,6 +1057,7 @@ pub fn days_with_expired_retry(
         };
         let kind = record.get("command_kind").and_then(Value::as_str);
         if !matches!(kind, Some(KIND_DAILY_CATCHUP | KIND_SEGMENT_REPAIR))
+            || only_kind.is_some_and(|expected| kind != Some(expected))
             || exclude.contains(day)
             || record.get("active").is_some_and(json_truthy)
         {
@@ -2493,6 +2511,49 @@ mod tests {
             )
             .expect("after retry"),
             capped_with_forced
+        );
+    }
+
+    #[test]
+    fn expired_segment_repair_is_natural_even_without_daily_adoption() {
+        let bed = Bed::new("routing-repair-natural");
+        let day = "20200101";
+        bed.write(
+            "chronicle/20200101/health/stream.updated",
+            br#"{"version":1,"generation":1,"fingerprint":null}"#,
+        );
+        record_segment_repair_attempt(&bed.root, day, 1.0);
+        record_segment_repair_outcome(
+            &bed.root,
+            day,
+            SegmentRepairOutcome {
+                success: false,
+                timed_out: false,
+                timeout_seconds: None,
+                ended_at: 1.0,
+                cleared: Some(0),
+                remaining: Some(1),
+            },
+        );
+        assert!(
+            eligible_catchup_days(
+                &bed.root,
+                &[],
+                &BTreeSet::new(),
+                UNIX_EPOCH + Duration::from_secs(600)
+            )
+            .unwrap()
+            .is_empty()
+        );
+        assert_eq!(
+            eligible_catchup_days(
+                &bed.root,
+                &[],
+                &BTreeSet::new(),
+                UNIX_EPOCH + Duration::from_secs(601)
+            )
+            .unwrap(),
+            vec![day.to_owned()]
         );
     }
 

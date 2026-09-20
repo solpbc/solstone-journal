@@ -429,6 +429,26 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     );
     assert!(!orphan.join("facet.json").exists());
 
+    // A directory of orphaned content is not a declaration: the write is refused before
+    // stdin is read (no stdin is supplied, so reaching the read would fail differently).
+    let refused = run_journal_with_journal(
+        &["news", "write", "field-notes", "--day", "20260808"],
+        Some(&path),
+        &journal,
+    );
+    assert_eq!(refused.status.code(), Some(65));
+    assert!(
+        String::from_utf8_lossy(&refused.stderr).contains("facet declaration is missing"),
+        "{}",
+        String::from_utf8_lossy(&refused.stderr)
+    );
+    assert!(!orphan.join("news/20260808.md").exists());
+    assert_eq!(
+        fs::read(orphan.join("news/20260807.md")).expect("orphan content untouched"),
+        b"existing\n"
+    );
+    assert!(!orphan.join("facet.json").exists());
+
     fs::write(orphan.join("facet.json"), b"{\"title\":\"Field Notes\"}\n")
         .expect("declare news facet");
     let markdown = b"# Today\n\nKept byte-for-byte.\n";

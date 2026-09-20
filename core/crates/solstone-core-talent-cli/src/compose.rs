@@ -53,11 +53,12 @@ pub fn compose_talent(
             .parent()
             .ok_or_else(|| format!("talent {}: prompt path has no parent", config.key))?;
         let mut parsed = load_talent_schema(&config.key, talent_dir, schema_path)?;
-        // 🔴 The shipped schemas carry a literal `__RUNTIME_FACETS__` in their `facet`
-        // enums, and nothing replaced it -- so the model's only permitted facet value
-        // WAS the placeholder. Substitute the owner's real facets here, where the
-        // journal root is in hand.
-        crate::facets_context::substitute_runtime_facets(&mut parsed, journal_root);
+        let policy = if config.key == "sense" {
+            crate::facets_context::RuntimeFacetsPolicy::SenseEmptyRouting
+        } else {
+            crate::facets_context::RuntimeFacetsPolicy::DropEnum
+        };
+        crate::facets_context::substitute_runtime_facets(&mut parsed, journal_root, policy)?;
         composed.insert("json_schema".to_owned(), parsed);
         composed.remove("schema");
     }

@@ -27,14 +27,42 @@ pub(crate) fn run(
     activity_id: &str,
     facet: &str,
     refresh: bool,
+    reactivate: bool,
     max_concurrency: i64,
 ) -> Result<ModeResult, String> {
-    let Some(record) = get_activity_record(&context.journal, facet, &context.day, activity_id)
-        .map_err(|error| error.to_string())?
-    else {
-        // Source-derived, not measured: thinking.py:3109-3117 treats a missing
-        // activity record as failure rather than an empty successful run.
-        return Ok(failed("activity record"));
+    let record = get_activity_record(&context.journal, facet, &context.day, activity_id)
+        .map_err(|error| error.to_string())?;
+    let Some(record) = record else {
+        let message = "no activity record exists for this classification. after correcting the declaration, reprocess the source segment.";
+        if let Some(mut work) = ActivityWork::open_existing(context, facet, activity_id)? {
+            let configs = load_talent_configs(
+                &context.talent_root,
+                &context.apps_root,
+                None,
+                TalentFilter {
+                    r#type: None,
+                    schedule: Some("activity"),
+                    include_disabled: true,
+                },
+            )?;
+            let reconciled =
+                reconcile_finished(context, log, &mut work, &configs, activity_id, facet)?;
+            if work.is_complete() {
+                work.finish(context)?;
+                return Ok(reconciled);
+            }
+            return block_destination(
+                &mut work,
+                context,
+                log,
+                activity_id,
+                facet,
+                "activity_missing",
+                message,
+            );
+        }
+        log_disposition(context, log, activity_id, facet, "projection_only", message);
+        return Ok(failed(message));
     };
     if activity_contract::is_synthetic(&record) || !activity_contract::has_nonempty_span(&record) {
         // Source-derived, not measured: thinking.py:3122-3130 skips synthetic
@@ -68,6 +96,132 @@ pub(crate) fn run(
         configs.iter().map(|c| c.key.clone()).collect(),
         refresh,
     )?;
+
+    let reconciled = reconcile_finished(context, log, &mut work, &configs, activity_id, facet)?;
+    if work.is_complete() {
+        work.finish(context)?;
+        return Ok(reconciled);
+    }
+
+    let stored_id = work.destination_id().map(str::to_owned).or_else(|| {
+        record
+            .get("destination_id")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    });
+
+    let destination = solstone_core_facets::observe_facet_destination(&context.journal, facet)
+        .map_err(|error| error.to_string())?;
+    use solstone_core_facets::DestinationObservation;
+    let (facet_id, is_muted) = match destination {
+        DestinationObservation::Absent => {
+            return block_destination(
+                &mut work,
+                context,
+                log,
+                activity_id,
+                facet,
+                "destination_missing",
+                "the destination facet is missing. after restoring its declaration, retry with --reactivate; otherwise reclassify the source segment.",
+            );
+        }
+        DestinationObservation::Malformed(_) | DestinationObservation::InvalidId { .. } => {
+            return block_destination(
+                &mut work,
+                context,
+                log,
+                activity_id,
+                facet,
+                "declaration_malformed",
+                "the facet declaration is malformed. correct it, then retry with --reactivate.",
+            );
+        }
+        DestinationObservation::Unreadable(_) => {
+            if work.is_muted_pause() {
+                work.set_muted_pause(false)?;
+            }
+            if work.due(context.event_now_ms()) {
+                work.start_attempt(context.event_now_ms())?;
+            }
+            let message = if work.is_blocked() {
+                "the facet declaration could not be read. after restoring access, retry the blocked activity with --reactivate."
+            } else {
+                "the facet declaration could not be read. the unfinished activity will retry automatically."
+            };
+            log_disposition(
+                context,
+                log,
+                activity_id,
+                facet,
+                "declaration_unreadable",
+                message,
+            );
+            return Ok(failed(message));
+        }
+        DestinationObservation::LegacyWithoutId { muted } => {
+            if stored_id.is_some() {
+                return block_destination(
+                    &mut work,
+                    context,
+                    log,
+                    activity_id,
+                    facet,
+                    "destination_replaced",
+                    "the destination facet was replaced. reclassify the source segment; an old result cannot be applied to the replacement.",
+                );
+            }
+            let id = solstone_core_facets::admit_activity_destination(&context.journal, facet)
+                .map_err(|error| error.to_string())?;
+            (id, muted)
+        }
+        DestinationObservation::Ready { id, muted } => (id, muted),
+    };
+    if stored_id.as_ref().is_some_and(|stored| *stored != facet_id) {
+        return block_destination(
+            &mut work,
+            context,
+            log,
+            activity_id,
+            facet,
+            "destination_replaced",
+            "the destination facet was replaced. reclassify the source segment; an old result cannot be applied to the replacement.",
+        );
+    }
+    if work.destination_id().is_none() {
+        work.set_destination_id(facet_id.clone())?;
+    }
+    if is_muted {
+        work.set_muted_pause(true)?;
+        let message = if work.is_blocked() {
+            "the destination facet is muted. unmute it, then retry the blocked activity with --reactivate."
+        } else {
+            "the destination facet is muted. unmute it to resume unfinished activity processing."
+        };
+        log_disposition(
+            context,
+            log,
+            activity_id,
+            facet,
+            "destination_muted",
+            message,
+        );
+        return Ok(failed(message));
+    }
+    if reactivate {
+        work.reactivate()?;
+    } else {
+        if work.is_muted_pause() {
+            work.set_muted_pause(false)?;
+        }
+        if work.is_blocked() {
+            return Ok(failed(
+                work.blocked_disposition()
+                    .map(|d| d.message.as_str())
+                    .unwrap_or("activity blocked"),
+            ));
+        }
+    }
+
     if !work.due(context.event_now_ms()) {
         return Ok(failed("activity retry pending"));
     }
@@ -90,7 +244,7 @@ pub(crate) fn run(
     log.log("started", context.now_ms, start);
 
     let runtime = runtime()?;
-    let mut total = ModeResult::default();
+    let mut total = reconciled;
     for (priority, configs) in groups {
         log.log(
             "group.start",
@@ -170,6 +324,7 @@ pub(crate) fn run(
                 &record,
                 activity_id,
                 facet,
+                &facet_id,
                 kind,
                 refresh,
                 resume,
@@ -295,6 +450,113 @@ pub(crate) fn run(
     Ok(total)
 }
 
+fn reconcile_finished(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    work: &mut ActivityWork,
+    configs: &[solstone_core_talent_config::TalentConfig],
+    activity_id: &str,
+    facet: &str,
+) -> Result<ModeResult, String> {
+    let mut result = ModeResult::default();
+    for config in configs {
+        let Some(id) = work.use_id(&config.key).map(str::to_owned) else {
+            continue;
+        };
+        if !work.contains(&config.key)
+            || get_use_end_state(&context.journal, &id).map_err(|error| error.to_string())?
+                != UseEndState::Finish
+        {
+            continue;
+        }
+        let events = read_use_events(&context.journal, &id).map_err(|error| error.to_string())?;
+        let output_changed = events
+            .iter()
+            .rev()
+            .find(|event| event["event"] == "finish")
+            .and_then(|event| event.get("output_changed"))
+            .and_then(Value::as_bool);
+        let format = config
+            .metadata
+            .get("output")
+            .and_then(Value::as_str)
+            .unwrap_or("md");
+        let item = PendingUse {
+            use_id: id.clone(),
+            name: config.key.clone(),
+            facet: Some(facet.to_owned()),
+            output_path: Some(
+                context
+                    .journal
+                    .join("facets")
+                    .join(facet)
+                    .join("activities")
+                    .join(&context.day)
+                    .join(activity_id)
+                    .join(format!(
+                        "{}.{}",
+                        get_output_name(&config.key),
+                        if format == "json" { "json" } else { "md" }
+                    )),
+            ),
+            index_output: activity_contract::is_explicit_generate(&config.metadata)
+                && format != "json",
+        };
+        crate::dispatch::maybe_rescan_output(
+            context,
+            &item,
+            &solstone_core_cortex_client::UseCompletion {
+                end_state: UseEndState::Finish,
+                finish_fields: solstone_core_cortex_client::FinishFields { output_changed },
+            },
+        );
+        log_complete(log, context, activity_id, facet, &config.key, &id, "finish");
+        log.finish()?;
+        work.complete(&config.key)?;
+        result.success += 1;
+        result.success_names.push(config.key.clone());
+    }
+    Ok(result)
+}
+
+fn log_disposition(
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    activity: &str,
+    facet: &str,
+    reason: &str,
+    message: &str,
+) {
+    log.log(
+        "activity.destination",
+        context.event_now_ms(),
+        fields(
+            context,
+            activity,
+            facet,
+            Map::from_iter([
+                ("reason_code".to_owned(), Value::String(reason.to_owned())),
+                ("next_action".to_owned(), Value::String(message.to_owned())),
+            ]),
+        ),
+    );
+}
+
+fn block_destination(
+    work: &mut ActivityWork,
+    context: &ThinkContext,
+    log: &mut RunLogWriter,
+    activity: &str,
+    facet: &str,
+    reason: &str,
+    message: &str,
+) -> Result<ModeResult, String> {
+    work.block(reason, message)?;
+    log_disposition(context, log, activity, facet, reason, message);
+    log.finish()?;
+    Ok(failed(message))
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "Mirrors the activity request shape at thinking.py:3345-3383."
@@ -306,6 +568,7 @@ fn queue(
     record: &Map<String, Value>,
     activity_id: &str,
     facet: &str,
+    facet_id: &str,
     kind: &str,
     refresh: bool,
     resume: Option<String>,
@@ -320,6 +583,10 @@ fn queue(
         .unwrap_or("md");
     let mut request = Map::from_iter([
         ("facet".to_owned(), Value::String(facet.to_owned())),
+        (
+            "destination_id".to_owned(),
+            Value::String(facet_id.to_owned()),
+        ),
         ("day".to_owned(), Value::String(context.day.clone())),
         ("activity".to_owned(), Value::Object(record.clone())),
         ("schedule".to_owned(), Value::String("activity".to_owned())),

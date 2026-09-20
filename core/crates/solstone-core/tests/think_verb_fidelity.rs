@@ -27,7 +27,7 @@ fn think_usage_is_owner_facing_and_refusals_are_detailed() {
     assert_eq!(help.stderr, b"");
     assert_eq!(
         help.stdout,
-        b"usage: journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n"
+        b"usage: journal think [-h] [--day DAY] [--segment SEGMENT] [--refresh] [--from-scratch] [--segments] [--facet NAME] [--activity ID] [--reactivate] [--stream STREAM] [--flush] [-j N] [--no-timeout] [--segment-workers N] [--no-activity-prompts] [--skip-talents SKIP_TALENTS] [--live] [--updated] [--weekly] [--cadence] [--dry-run] [--sense-batch] [-v] [-d]\n"
     );
     let output = command(&["think", "--facet", "work"], &journal)
         .output()
@@ -116,6 +116,20 @@ fn think_preserves_all_thirteen_semantic_refusal_messages() {
         (
             &["--segments", "--jobs", "0", "--segment-workers", "2"],
             "--jobs 0 is incompatible with multi-worker --segments; set --jobs to a positive bound or --segment-workers 1",
+        ),
+        (&["--reactivate"], "--reactivate requires --activity"),
+        (
+            &[
+                "--reactivate",
+                "--refresh",
+                "--activity",
+                "a",
+                "--facet",
+                "f",
+                "--day",
+                "20260813",
+            ],
+            "--reactivate is incompatible with --refresh",
         ),
     ];
     for (args, message) in cases {

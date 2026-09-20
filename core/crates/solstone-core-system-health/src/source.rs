@@ -132,7 +132,12 @@ pub fn day_is_complete_with(
         // unit records.  Admitting unverified history here makes an unreadable
         // health log read as a clean day.  Keeping unverified history out of the
         // BACKLOG COUNTS is a different question, answered where those are taken.
-        Ok(coverage.state.is_current())
+        if !coverage.state.is_current() {
+            return Ok(false);
+        }
+        let routing =
+            crate::read_pending_facet_routing(&FilesystemHealthLogSource::new(journal), day)?;
+        Ok(routing.value.is_empty() && routing.malformed_line_count == 0)
     }
 }
 

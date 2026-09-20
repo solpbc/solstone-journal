@@ -7,6 +7,7 @@ use solstone_core_journal_io::{AtomicWriteOptions, path_lexists, read_text, writ
 
 use crate::hold_facet_trust_lock;
 
+use super::declaration::require_declared_facet;
 use super::error::{FacetStoreError, FacetWriteError};
 use super::paths::{FacetContentKind, content_file_path};
 
@@ -38,6 +39,7 @@ pub fn write_news_file(
     contents: &str,
 ) -> Result<(), FacetWriteError> {
     let _trust = hold_facet_trust_lock(journal_root)?;
+    require_declared_facet(journal_root, facet_dir)?;
     let path = content_file_path(
         journal_root,
         facet_dir,

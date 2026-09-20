@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::path::PathBuf;
 
 use axum::{body::Bytes, extract::Path, http::StatusCode, response::Response};
@@ -10,8 +9,8 @@ use serde_json::{Map, Value, json};
 use crate::{
     facets,
     http::{
-        activity_not_found, facet_not_found, invalid_config_value, json_response,
-        missing_request_body, missing_required_field, settings_operation_failed,
+        activity_not_found, activity_settings_unavailable, facet_not_found, invalid_config_value,
+        json_response, missing_request_body, missing_required_field, settings_operation_failed,
     },
     icons,
     request_body::{JsonBody, json_body},
@@ -29,7 +28,11 @@ pub async fn for_facet(journal_root: PathBuf, Path(facet_name): Path<String>) ->
     if facets::facet(&journal_root, &facet_name).is_none() {
         return facet_not_found();
     }
-    let mut activities = read_attached(&journal_root, &facet_name);
+    let mut activities =
+        match solstone_core_facets::read_activity_definitions(&journal_root, &facet_name) {
+            Ok(rows) => rows.into_iter().map(public_record).collect::<Vec<_>>(),
+            Err(_) => return activity_settings_unavailable(),
+        };
     if activities.is_empty() {
         activities = default_records()
             .into_iter()
@@ -278,23 +281,6 @@ fn slug(value: &str) -> String {
     } else {
         slug
     }
-}
-
-fn read_attached(journal_root: &std::path::Path, facet_name: &str) -> Vec<Value> {
-    let path = journal_root
-        .join("facets")
-        .join(facet_name)
-        .join("activities/activities.jsonl");
-    fs::read_to_string(path)
-        .ok()
-        .map(|text| {
-            text.lines()
-                .filter(|line| !line.trim().is_empty())
-                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-                .map(public_record)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn default_records() -> Vec<Value> {

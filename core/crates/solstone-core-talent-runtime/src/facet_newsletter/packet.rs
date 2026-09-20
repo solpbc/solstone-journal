@@ -993,6 +993,7 @@ mod tests {
     fn prior_newsletter_uses_the_newest_day_before_cursor() {
         // Derived from solstone/talent/facet_newsletter.py:319-359 and solstone/think/facets.py:464-549.
         let root = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         solstone_core_facets::write_news_file(root.path(), "work", "20260101.md", "older").unwrap();
         solstone_core_facets::write_news_file(root.path(), "work", "20260102.md", "newer").unwrap();
         let mut gaps = Vec::new();

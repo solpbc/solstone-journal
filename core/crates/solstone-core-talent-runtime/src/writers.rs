@@ -31,6 +31,7 @@ pub enum WriteIntent {
         record: Map<String, Value>,
     },
     Story {
+        destination_id: String,
         talent: String,
         facet: String,
         day: String,
@@ -42,6 +43,7 @@ pub enum WriteIntent {
         output_path: Option<String>,
     },
     Participation {
+        destination_id: String,
         output: String,
         facet: String,
         day: String,
@@ -89,11 +91,46 @@ pub enum WriteIntent {
     },
 }
 
-pub fn write_output_if_configured(prepared: &PreparedTalent, output: &str) -> Result<bool, String> {
-    let Some(path) = prepared.config.get("output_path").and_then(Value::as_str) else {
+pub fn write_output_if_configured(
+    prepared: &PreparedTalent,
+    context: &ExecutionContext,
+    output: &str,
+) -> Result<bool, String> {
+    let Some(path_str) = prepared.config.get("output_path").and_then(Value::as_str) else {
         return Ok(false);
     };
-    write_output(PathBuf::from(path), output).map_err(|error| error.to_string())
+    let path = PathBuf::from(path_str);
+    let activity_owned = prepared.config.get("activity").is_some()
+        || prepared.config.get("schedule").and_then(Value::as_str) == Some("activity")
+        || prepared.config.get("destination_id").is_some();
+    if activity_owned {
+        let facet = prepared
+            .config
+            .get("facet")
+            .and_then(Value::as_str)
+            .ok_or("activity output is missing its destination facet")?;
+        let expected = prepared
+            .config
+            .get("destination_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .ok_or("activity output is missing its destination identity")?;
+        let _guard =
+            solstone_core_facets::hold_activity_enrichment(&context.journal, facet, expected)
+                .map_err(|error| error.to_string())?;
+        let directory = solstone_core_journal_io::contained_path(
+            &context.journal,
+            &format!("facets/{facet}/activities"),
+        )
+        .map_err(|error| error.to_string())?;
+        let contained = solstone_core_journal_io::realpath_non_strict(&path)
+            .map_err(|error| error.to_string())?;
+        if !contained.starts_with(&directory) {
+            return Err("activity output is outside its destination facet".to_owned());
+        }
+        return write_output(contained, output).map_err(|error| error.to_string());
+    }
+    write_output(path, output).map_err(|error| error.to_string())
 }
 
 pub fn write_output(path: PathBuf, output: &str) -> Result<bool, std::io::Error> {
@@ -129,14 +166,23 @@ pub fn apply(
             Ok(CommitDisposition::Written)
         }
         CommitPlan::Write(WriteIntent::Story {
+            destination_id,
             talent,
             facet,
             day,
             record_id,
             value,
         }) => {
-            crate::story::apply_story(&context.journal, &talent, &facet, &day, &record_id, &value)
-                .map_err(|detail| StageError::new("commit", "story", talent, detail))?;
+            crate::story::apply_story(
+                &context.journal,
+                &talent,
+                &facet,
+                &destination_id,
+                &day,
+                &record_id,
+                &value,
+            )
+            .map_err(|detail| StageError::new("commit", "story", talent, detail))?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::DailySchedule {
@@ -160,15 +206,23 @@ pub fn apply(
             Ok(CommitDisposition::Written)
         }
         CommitPlan::Write(WriteIntent::Participation {
+            destination_id,
             output,
             facet,
             day,
             activity,
         }) => {
-            crate::participation::apply_result(&context.journal, &output, &facet, &day, &activity)
-                .map_err(|detail| {
-                    StageError::new("write-intent", "participation", "participation", detail)
-                })?;
+            crate::participation::apply_result(
+                &context.journal,
+                &output,
+                &facet,
+                &destination_id,
+                &day,
+                &activity,
+            )
+            .map_err(|detail| {
+                StageError::new("write-intent", "participation", "participation", detail)
+            })?;
             Ok(CommitDisposition::CommittedNoOutput)
         }
         CommitPlan::Write(WriteIntent::Schedule { output, day }) => {
@@ -357,6 +411,165 @@ mod tests {
 
     use super::*;
 
+    #[test]
+    fn activity_commit_intents_fence_replacement_and_deletion_before_side_effects() {
+        use crate::contract::{ParsedOutput, PrePostState};
+        for hook in ["story", "participation"] {
+            for transition in ["unchanged", "replaced", "deleted", "muted", "missing_row"] {
+                let root = tempfile::tempdir().unwrap();
+                let context = ExecutionContext {
+                    journal: root.path().to_path_buf(),
+                };
+                solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None)
+                    .unwrap();
+                let id = solstone_core_facets::observe_facet_write_identity(root.path(), "work")
+                    .unwrap();
+                let row = json!({"id":"activity-1","activity":"work","segments":[]});
+                let row_path = root.path().join("facets/work/activities/20260101.jsonl");
+                fs::create_dir_all(row_path.parent().unwrap()).unwrap();
+                // Historical rows without destination_id must still be fenced by preparation.
+                fs::write(&row_path, format!("{row}\n")).unwrap();
+                let prepared = PreparedTalent {
+                    name: hook.to_owned(),
+                    config: json!({
+                        "facet":"work", "day":"20260101", "activity":row, "destination_id":id
+                    })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                };
+                let state = PrePostState::None;
+                let plan = if hook == "story" {
+                    crate::story::commit(
+                        ParsedOutput::Json(json!({"body":"updated", "topics":[], "confidence":1,
+                        "commitments":[], "closures":[], "decisions":[], "relations":[]})),
+                        &prepared,
+                        &state,
+                    )
+                    .unwrap()
+                } else {
+                    crate::participation::commit(
+                        ParsedOutput::Text(
+                            json!({"participation":[{"name":"New Name","role":"mentioned"}]})
+                                .to_string(),
+                        ),
+                        &prepared,
+                        &state,
+                    )
+                    .unwrap()
+                };
+                match transition {
+                    "replaced" => {
+                        solstone_core_facets::delete_facet(root.path(), "work").unwrap();
+                        solstone_core_facets::create_facet(
+                            root.path(),
+                            "work",
+                            "Replacement",
+                            "",
+                            "",
+                            "",
+                            None,
+                        )
+                        .unwrap();
+                        fs::create_dir_all(row_path.parent().unwrap()).unwrap();
+                        fs::write(&row_path, format!("{row}\n")).unwrap();
+                    }
+                    "deleted" => {
+                        solstone_core_facets::delete_facet(root.path(), "work").unwrap();
+                    }
+                    "muted" => {
+                        solstone_core_facets::set_facet_muted(root.path(), "work", true).unwrap();
+                    }
+                    "missing_row" => {
+                        fs::remove_file(&row_path).unwrap();
+                    }
+                    _ => {}
+                }
+                let before = fs::read(&row_path).ok();
+                let result = apply(plan, &context);
+                if transition == "unchanged" {
+                    assert!(result.is_ok(), "{hook}: {result:?}");
+                    assert_ne!(fs::read(&row_path).ok(), before);
+                } else {
+                    assert!(result.is_err(), "{hook} {transition}");
+                    assert_eq!(fs::read(&row_path).ok(), before);
+                    assert!(!root.path().join("entities").exists());
+                    if transition == "deleted" {
+                        assert!(!root.path().join("facets/work").exists());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn activity_raw_output_uses_context_root_and_holds_destination_lock() {
+        let temp = tempfile::tempdir().unwrap();
+        let journal = temp.path().join("facets/journal");
+        solstone_core_facets::create_facet(&journal, "work", "Work", "", "", "", None).unwrap();
+        let id = solstone_core_facets::observe_facet_write_identity(&journal, "work").unwrap();
+        let path = journal.join("facets/work/activities/out.json");
+        let mut prepared = PreparedTalent {
+            name: "test".to_owned(),
+            config: json!({
+                "facet":"work", "activity":{"id":"a"}, "destination_id":id, "output_path":path
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        };
+        let context = ExecutionContext {
+            journal: journal.clone(),
+        };
+        assert!(write_output_if_configured(&prepared, &context, "first").unwrap());
+        prepared.config.remove("destination_id");
+        assert!(write_output_if_configured(&prepared, &context, "missing binding").is_err());
+        prepared
+            .config
+            .insert("destination_id".to_owned(), json!(id));
+        prepared.config.insert(
+            "output_path".to_owned(),
+            json!(journal.join("outside.json")),
+        );
+        assert!(write_output_if_configured(&prepared, &context, "wrong path").is_err());
+        prepared
+            .config
+            .insert("output_path".to_owned(), json!(path));
+        let link = temp.path().join("journal-link");
+        std::os::unix::fs::symlink(&journal, &link).unwrap();
+        prepared.config.insert(
+            "output_path".to_owned(),
+            json!(link.join("facets/work/activities/20260101/a/out.json")),
+        );
+        assert!(
+            write_output_if_configured(
+                &prepared,
+                &ExecutionContext { journal: link },
+                "through link"
+            )
+            .unwrap()
+        );
+        assert!(
+            journal
+                .join("facets/work/activities/20260101/a/out.json")
+                .exists()
+        );
+        prepared
+            .config
+            .insert("output_path".to_owned(), json!(path));
+        let guard = solstone_core_facets::hold_activity_enrichment(&journal, "work", &id).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let worker = std::thread::spawn(move || {
+            tx.send(()).unwrap();
+            write_output_if_configured(&prepared, &context, "stale")
+        });
+        rx.recv().unwrap();
+        solstone_core_facets::delete_facet(&journal, "work").unwrap();
+        drop(guard);
+        assert!(worker.join().unwrap().is_err());
+        assert!(!journal.join("facets/work").exists());
+    }
+
     fn reset_index_warnings() {
         TEST_INDEX_WARNINGS.with(|warnings| warnings.set(0));
     }
@@ -521,6 +734,7 @@ mod tests {
         fs::write(root.path().join("facets"), b"not a directory").unwrap();
         let error = apply(
             CommitPlan::Write(WriteIntent::Story {
+                destination_id: "00000000-0000-4000-8000-000000000001".to_owned(),
                 talent: "conversation".to_owned(),
                 facet: "work".to_owned(),
                 day: "20260101".to_owned(),
