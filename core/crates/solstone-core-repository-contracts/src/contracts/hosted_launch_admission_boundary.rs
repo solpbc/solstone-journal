@@ -271,6 +271,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "agents_enable",
+        include_str!("../../../solstone-core-convey-shell/src/agents_enable.rs"),
+    ),
+    (
+        "convey",
         "assets",
         include_str!("../../../solstone-core-convey-shell/src/assets.rs"),
     ),
