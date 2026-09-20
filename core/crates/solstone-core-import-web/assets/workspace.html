@@ -2244,10 +2244,9 @@ function showProgressView(importId, eventData = null) {
     // error text. Escaping it makes it safe to put in the page; it does not make
     // it owner copy. The panel says what we can stand behind, the way the detail
     // drawer does with its own fixed line.
-    const desc = 'import status unavailable';
+    // The heading already says it; a second copy of the same words adds nothing.
     completionHtml = `
       <div class="import-completion-summary unavailable">
-        <div class="progress-gap-chip" style="margin-bottom: 0.5rem; color: #9a3412;">${escapeHtml(desc)}</div>
         <div class="import-action-row">
           <button type="button" class="import-primary-btn" data-import-check-status="${escapeHtml(importId)}">check status</button>
           <a href="#" class="import-secondary-btn" onclick="showGrid(); return false;">import another source</a>
