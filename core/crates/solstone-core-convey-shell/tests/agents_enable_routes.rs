@@ -119,7 +119,7 @@ async fn wait_operation(app: axum::Router, expected_phase: &str) -> Value {
 }
 
 #[tokio::test]
-async fn enable_flow_ac1_consent_url_and_crockford_nonce() {
+async fn enable_flow_opens_the_solstone_me_consent_link_and_polls_its_nonce() {
     let root = journal();
     let registry = Arc::new(OperationRegistry::default());
     let poll = Arc::new(StaticPoll::new(SmePollOutcome::Continue));
@@ -166,7 +166,7 @@ async fn enable_flow_ac1_consent_url_and_crockford_nonce() {
 }
 
 #[tokio::test]
-async fn enable_flow_ac2_needs_subscription_terminal_outcome() {
+async fn enable_flow_needs_subscription_is_terminal_and_leaves_the_capability_off() {
     let root = journal();
     let registry = Arc::new(OperationRegistry::default());
     let mut payload = Map::new();
@@ -206,7 +206,7 @@ async fn enable_flow_ac2_needs_subscription_terminal_outcome() {
 }
 
 #[tokio::test]
-async fn enable_flow_ac3_approved_terminal_outcome() {
+async fn enable_flow_approved_turns_the_capability_on() {
     let root = journal();
     let registry = Arc::new(OperationRegistry::default());
     let mut payload = Map::new();
@@ -238,7 +238,7 @@ async fn enable_flow_ac3_approved_terminal_outcome() {
 }
 
 #[tokio::test]
-async fn enable_flow_ac4_consent_link_expired_and_malformed_failures() {
+async fn enable_flow_expired_and_malformed_handoffs_end_with_a_named_error() {
     // Sub-case 1: consent_link_expired
     {
         let root = journal();

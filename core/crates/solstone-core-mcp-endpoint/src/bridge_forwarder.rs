@@ -7,6 +7,7 @@
 //! owns the one loopback listener; this side owns the bounded bridge session
 //! and reconnect lifecycle only.
 
+use std::path::Path;
 use std::sync::Arc;
 
 use ring::rand::{SecureRandom as _, SystemRandom};
@@ -31,20 +32,30 @@ fn loopback_target() -> std::net::SocketAddr {
     std::net::SocketAddr::from(([127, 0, 0, 1], MCP_ENDPOINT_LOOPBACK_PORT))
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum ReconnectWait {
-    TerminalSubscription { delay: Duration },
-    ShortRetry,
-}
-
-pub(crate) fn reconnect_wait_for_carrier_error(
+/// Wait out one failed reconnect. A missing subscription holds for its fixed
+/// delay and leaves the backoff alone; any other failure takes the short
+/// jittered backoff and doubles it.
+async fn wait_after_failed_connect(
     error: &McpBridgeCarrierError,
-    _backoff_cap_seconds: u64,
-) -> ReconnectWait {
+    journal_root: &Path,
+    address: Option<&str>,
+    legs: (&str, &str, &str),
+    shutdown: &mut watch::Receiver<bool>,
+    backoff_cap_seconds: &mut u64,
+) {
     if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(error) {
-        ReconnectWait::TerminalSubscription { delay }
+        let next_attempt = chrono::Utc::now()
+            + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(300));
+        crate::owner_state::write_mcp_needs_subscription_state(
+            journal_root,
+            address,
+            legs,
+            next_attempt,
+        );
+        wait_for_fixed_delay(shutdown, delay).await;
     } else {
-        ReconnectWait::ShortRetry
+        wait_for_retry(shutdown, *backoff_cap_seconds).await;
+        *backoff_cap_seconds = backoff_cap_seconds.saturating_mul(2).min(60);
     }
 }
 
@@ -62,24 +73,15 @@ pub(crate) async fn run(
             Ok(session) => session,
             Err(McpBridgeCarrierError::Cancelled) if shutdown_requested(shutdown) => return Ok(()),
             Err(ref error) => {
-                match reconnect_wait_for_carrier_error(error, backoff_cap_seconds) {
-                    ReconnectWait::TerminalSubscription { delay } => {
-                        let next_attempt = chrono::Utc::now()
-                            + chrono::Duration::from_std(delay)
-                                .unwrap_or_else(|_| chrono::Duration::seconds(300));
-                        crate::owner_state::write_mcp_needs_subscription_state(
-                            owner.journal_path(),
-                            None,
-                            ("waiting", "waiting", "waiting"),
-                            next_attempt,
-                        );
-                        wait_for_fixed_delay(shutdown, delay).await;
-                    }
-                    ReconnectWait::ShortRetry => {
-                        wait_for_retry(shutdown, backoff_cap_seconds).await;
-                        backoff_cap_seconds = (backoff_cap_seconds.saturating_mul(2)).min(60);
-                    }
-                }
+                wait_after_failed_connect(
+                    error,
+                    owner.journal_path(),
+                    None,
+                    ("waiting", "waiting", "waiting"),
+                    shutdown,
+                    &mut backoff_cap_seconds,
+                )
+                .await;
                 continue;
             }
         };
@@ -127,25 +129,15 @@ pub(crate) async fn run_bound_session(
                         return Ok(());
                     }
                     Err(ref error) => {
-                        match reconnect_wait_for_carrier_error(error, backoff_cap_seconds) {
-                            ReconnectWait::TerminalSubscription { delay } => {
-                                let next_attempt = chrono::Utc::now()
-                                    + chrono::Duration::from_std(delay)
-                                        .unwrap_or_else(|_| chrono::Duration::seconds(300));
-                                crate::owner_state::write_mcp_needs_subscription_state(
-                                    owner.journal_path(),
-                                    Some(tls.authorized_hostname()),
-                                    ("done", "done", "waiting"),
-                                    next_attempt,
-                                );
-                                wait_for_fixed_delay(shutdown, delay).await;
-                            }
-                            ReconnectWait::ShortRetry => {
-                                wait_for_retry(shutdown, backoff_cap_seconds).await;
-                                backoff_cap_seconds =
-                                    (backoff_cap_seconds.saturating_mul(2)).min(60);
-                            }
-                        }
+                        wait_after_failed_connect(
+                            error,
+                            owner.journal_path(),
+                            Some(tls.authorized_hostname()),
+                            ("done", "done", "waiting"),
+                            shutdown,
+                            &mut backoff_cap_seconds,
+                        )
+                        .await;
                         continue;
                     }
                 }
@@ -304,23 +296,103 @@ mod tests {
         }
     }
 
-    #[test]
-    fn ac7_reconnect_wait_for_needs_subscription_is_terminal_subscription() {
-        let err = McpBridgeCarrierError::NeedsSubscription;
-        match reconnect_wait_for_carrier_error(&err, 5) {
-            ReconnectWait::TerminalSubscription { delay } => {
-                assert!(delay >= Duration::from_secs(300));
-            }
-            ReconnectWait::ShortRetry => panic!("expected TerminalSubscription"),
+    fn journal_with_state_directory() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().expect("fixture journal");
+        std::fs::create_dir_all(journal.path().join("mcp-endpoint")).expect("state directory");
+        journal
+    }
+
+    async fn settle() {
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
         }
     }
 
-    #[test]
-    fn ac8_reconnect_wait_for_account_is_short_retry() {
-        let err = McpBridgeCarrierError::Account;
-        assert_eq!(
-            reconnect_wait_for_carrier_error(&err, 5),
-            ReconnectWait::ShortRetry
-        );
+    #[tokio::test(start_paused = true)]
+    async fn a_missing_subscription_holds_a_reconnect_five_minutes_and_keeps_the_backoff() {
+        let journal = journal_with_state_directory();
+        let root = journal.path().to_path_buf();
+        let (_keep, mut shutdown) = watch::channel(false);
+        let task = tokio::spawn(async move {
+            let mut backoff_cap_seconds = 4_u64;
+            wait_after_failed_connect(
+                &McpBridgeCarrierError::NeedsSubscription,
+                &root,
+                Some("aaaqeaye.solstone.me"),
+                ("done", "done", "waiting"),
+                &mut shutdown,
+                &mut backoff_cap_seconds,
+            )
+            .await;
+            backoff_cap_seconds
+        });
+        settle().await;
+        let state = crate::owner_state::read_mcp_owner_state(journal.path()).expect("owner state");
+        assert_eq!(state.status, "needs_subscription");
+        assert_eq!(state.address.as_deref(), Some("aaaqeaye.solstone.me"));
+
+        tokio::time::advance(Duration::from_secs(299)).await;
+        settle().await;
+        assert!(!task.is_finished(), "the hold ended inside five minutes");
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        settle().await;
+        assert_eq!(task.await.expect("task"), 4);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn any_other_reconnect_failure_keeps_the_short_backoff_and_doubles_it() {
+        for (error, before, after) in [
+            (McpBridgeCarrierError::Account, 1_u64, 2_u64),
+            (McpBridgeCarrierError::Connect, 8, 16),
+            (McpBridgeCarrierError::Tls, 60, 60),
+        ] {
+            let journal = journal_with_state_directory();
+            let root = journal.path().to_path_buf();
+            let (_keep, mut shutdown) = watch::channel(false);
+            let mut backoff_cap_seconds = before;
+            tokio::time::timeout(
+                Duration::from_secs(61),
+                wait_after_failed_connect(
+                    &error,
+                    &root,
+                    None,
+                    ("waiting", "waiting", "waiting"),
+                    &mut shutdown,
+                    &mut backoff_cap_seconds,
+                ),
+            )
+            .await
+            .expect("a short backoff never exceeds sixty seconds");
+            assert_eq!(backoff_cap_seconds, after, "{error}");
+            assert!(
+                crate::owner_state::read_mcp_owner_state(journal.path()).is_none(),
+                "{error} wrote a subscription state"
+            );
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shutdown_request_ends_the_subscription_hold() {
+        let journal = journal_with_state_directory();
+        let root = journal.path().to_path_buf();
+        let (send, mut shutdown) = watch::channel(false);
+        let task = tokio::spawn(async move {
+            let mut backoff_cap_seconds = 1_u64;
+            wait_after_failed_connect(
+                &McpBridgeCarrierError::NeedsSubscription,
+                &root,
+                None,
+                ("waiting", "waiting", "waiting"),
+                &mut shutdown,
+                &mut backoff_cap_seconds,
+            )
+            .await;
+        });
+        settle().await;
+        assert!(!task.is_finished());
+        send.send_replace(true);
+        settle().await;
+        assert!(task.is_finished());
     }
 }

@@ -26,7 +26,7 @@ use crate::assets;
 
 pub const SERVICE: &str = "sme";
 const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
-const BUSY_ERROR: &str = "The service operation is already running. Try again in a moment.";
+const BUSY_ERROR: &str = "a request to turn on solstone.me is already open. finish it or wait for it to end, then try again.";
 const BUSY_DETAIL: &str = "operation already running";
 
 #[derive(Clone, Debug)]
@@ -60,6 +60,10 @@ struct SmeRuntime {
 
 struct PortalPoll;
 
+fn handoff_url(base_url: &str, nonce: &str) -> String {
+    format!("{base_url}/handoff/solstone-me?nonce={nonce}")
+}
+
 impl SmePoll for PortalPoll {
     fn poll(&self, base_url: &str, nonce: &str) -> SmePollOutcome {
         let agent = ureq::Agent::config_builder()
@@ -71,7 +75,7 @@ impl SmePoll for PortalPoll {
             .build()
             .new_agent();
         let response = match agent
-            .get(&format!("{base_url}/handoff/solstone-me?nonce={nonce}"))
+            .get(&handoff_url(base_url, nonce))
             .header("Connection", "close")
             .call()
         {
@@ -353,7 +357,10 @@ fn outcome(phase: Phase, code: &str, subscribe_url: Option<String>) -> HandoffRe
     HandoffResult {
         phase,
         guidance: guidance(code),
-        retryable: matches!(code, "expired" | "network_error" | "local_error"),
+        retryable: matches!(
+            code,
+            "expired" | "network_error" | "local_error" | "malformed"
+        ),
         subscribe_url,
     }
 }
@@ -372,4 +379,49 @@ fn copy(name: &str) -> String {
         .ok()
         .and_then(|value| value.get(name).and_then(Value::as_str).map(str::to_owned))
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn payload(value: Value) -> Map<String, Value> {
+        value.as_object().cloned().expect("object")
+    }
+
+    #[test]
+    fn the_handoff_path_uses_the_customer_facing_name() {
+        assert_eq!(
+            handoff_url("https://services.solstone.app", "ABC123"),
+            "https://services.solstone.app/handoff/solstone-me?nonce=ABC123"
+        );
+    }
+
+    #[test]
+    fn the_portal_names_the_service_sme_in_its_json_and_that_exact_value_is_required() {
+        let approved =
+            json!({"service": "sme", "state": "approved", "approved_at": "2026-09-20T12:00:00Z"});
+        assert_eq!(classify_payload(&payload(approved)), Ok(("approved", None)));
+
+        let renamed = json!({"service": "solstone-me", "state": "approved", "approved_at": "2026-09-20T12:00:00Z"});
+        assert_eq!(classify_payload(&payload(renamed)), Err(()));
+    }
+
+    #[test]
+    fn a_needs_subscription_body_needs_an_https_subscribe_url_and_nothing_extra() {
+        let url = "https://services.solstone.app/services/solstone-me";
+        let good = json!({"service": "sme", "state": "needs_subscription", "subscribe_url": url});
+        assert_eq!(
+            classify_payload(&payload(good)),
+            Ok(("needs_subscription", Some(url.to_owned())))
+        );
+
+        for bad in [
+            json!({"service": "sme", "state": "needs_subscription"}),
+            json!({"service": "sme", "state": "needs_subscription", "subscribe_url": "http://services.solstone.app/x"}),
+            json!({"service": "sme", "state": "needs_subscription", "subscribe_url": url, "extra": true}),
+        ] {
+            assert_eq!(classify_payload(&payload(bad.clone())), Err(()), "{bad}");
+        }
+    }
 }

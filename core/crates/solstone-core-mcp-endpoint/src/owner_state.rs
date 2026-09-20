@@ -93,9 +93,9 @@ pub(crate) fn write_mcp_needs_subscription_state(
     next_attempt_at: DateTime<Utc>,
 ) {
     let detail = if address.is_some() {
-        "solstone.me needs an active subscription. your address is saved; your journal will try to reconnect on its own."
+        "solstone.me needs an active subscription. your address is kept, and your journal keeps trying on its own."
     } else {
-        "solstone.me needs an active subscription before an address can be minted. your journal will check again on its own."
+        "solstone.me needs an active subscription. your journal keeps trying on its own."
     };
     let state = McpOwnerState {
         schema: 1,

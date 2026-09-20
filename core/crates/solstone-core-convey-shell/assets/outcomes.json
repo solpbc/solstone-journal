@@ -16,15 +16,14 @@
     "relay_rejected": "the relay couldn't finish setting up your private network (error {code})."
   },
   "SME_ALREADY_ENABLED_DETAIL": "solstone.me is already on",
-  "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't prepare the consent link",
+  "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't start turning on solstone.me. try again.",
   "SME_OUTCOME_GUIDANCE": {
     "approved": null,
-    "pending": "keep the approval page open while the request finishes.",
-    "revoked": "consent was not granted. start a new enable flow when ready.",
-    "expired": "this enable link is no longer active. start a new enable flow.",
-    "malformed": "the service response was not understood. update solstone and try again.",
-    "network_error": "the service could not be reached. check network access and try again.",
-    "local_error": "local service state could not be written. check journal permissions and try again.",
-    "needs_subscription": "solstone.me needs an active subscription before it can turn on. your consent is saved; set one up, then enable again."
+    "revoked": "try again when you're ready.",
+    "expired": "the request wasn't allowed within about fifteen minutes. turn solstone.me on again when you're ready.",
+    "malformed": "services.solstone.app replied in a way this computer didn't expect. try again in a bit.",
+    "network_error": "couldn't reach services.solstone.app. check this computer's connection and try again.",
+    "local_error": "this computer couldn't finish turning on solstone.me. try again.",
+    "needs_subscription": "once the subscription is active, go back and turn solstone.me on again."
   }
 }

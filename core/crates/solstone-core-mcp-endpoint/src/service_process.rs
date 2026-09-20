@@ -161,58 +161,18 @@ async fn run_endpoint_topology(
         return Ok(());
     };
 
-    let mut tunnel_shutdown = shutdown_receive.clone();
-    let tunnel = loop {
-        match owner
-            .connect_mcp_endpoint_tunnel(&mut tunnel_shutdown)
-            .await
-        {
-            Ok(tunnel) => break tunnel,
-            Err(_) if shutdown_requested(&shutdown_receive) => return Ok(()),
-            Err(ref error) => match first_connect_on_carrier_error(error) {
-                FirstConnectAction::StayAlive(delay) => {
-                    let next_attempt = chrono::Utc::now()
-                        + chrono::Duration::from_std(delay)
-                            .unwrap_or_else(|_| chrono::Duration::seconds(300));
-                    crate::owner_state::write_mcp_needs_subscription_state(
-                        &journal_root,
-                        None,
-                        ("waiting", "waiting", "waiting"),
-                        next_attempt,
-                    );
-                    let mut sleep = std::pin::pin!(tokio::time::sleep(delay));
-                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
-                    loop {
-                        tokio::select! {
-                            _ = &mut sleep => break,
-                            _ = ticker.tick() => {
-                                if shutdown_requested(&shutdown_receive) {
-                                    return Ok(());
-                                }
-                                if !capability_enabled(&journal_root) {
-                                    return Ok(());
-                                }
-                            }
-                        }
-                    }
-                    if shutdown_requested(&shutdown_receive) || !capability_enabled(&journal_root) {
-                        return Ok(());
-                    }
-                }
-                FirstConnectAction::ExitTunnel => {
-                    crate::owner_state::write_mcp_owner_state(
-                        &journal_root,
-                        "failed",
-                        None,
-                        ("failed", "waiting", "waiting"),
-                        Some(
-                            "this computer could not reach services.solstone.app; it will try again when the service restarts",
-                        ),
-                    );
-                    return Err(McpServiceError::Tunnel);
-                }
-            },
+    let Some(tunnel) = acquire_tunnel(&journal_root, &shutdown_receive, || {
+        let mut attempt_shutdown = shutdown_receive.clone();
+        let owner = &owner;
+        async move {
+            owner
+                .connect_mcp_endpoint_tunnel(&mut attempt_shutdown)
+                .await
         }
+    })
+    .await?
+    else {
+        return Ok(());
     };
     let (tls, forwarder_session) = tunnel.into_service_parts();
     let tls = Arc::new(tls);
@@ -272,19 +232,7 @@ async fn run_endpoint_topology(
                 () = tokio::time::sleep(std::time::Duration::from_secs(3)) => {
                     let active = state_tls.ordinary_certificate_is_active();
                     let current_state = crate::owner_state::read_mcp_owner_state(&state_root);
-                    let hold_is_current = current_state
-                        .as_ref()
-                        .is_some_and(|state| {
-                            (state.certificate_leg == "not_this_week"
-                                || state.status == "needs_subscription")
-                                && state
-                                    .next_attempt_at
-                                    .is_some_and(|next| next > chrono::Utc::now())
-                        });
-                    let is_subscription = current_state
-                        .as_ref()
-                        .is_some_and(|state| state.status == "needs_subscription");
-                    if hold_is_current && (is_subscription || !active) {
+                    if keeps_stored_state(current_state.as_ref(), active, chrono::Utc::now()) {
                         continue;
                     }
                     crate::owner_state::write_mcp_owner_state(
@@ -361,6 +309,69 @@ async fn run_endpoint_topology(
     result
 }
 
+/// Wait for the first account-authorized tunnel.
+///
+/// `Ok(None)` means the service was asked to stop, or the capability was turned
+/// off, while waiting. A missing subscription is held for
+/// `first_connect_on_carrier_error`'s delay instead of ending the process, so
+/// the supervisor does not restart it every few seconds.
+async fn acquire_tunnel<T, F, Fut>(
+    journal_root: &Path,
+    shutdown: &watch::Receiver<bool>,
+    mut connect: F,
+) -> Result<Option<T>, McpServiceError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, crate::bridge_carrier::McpBridgeCarrierError>>,
+{
+    loop {
+        match connect().await {
+            Ok(tunnel) => return Ok(Some(tunnel)),
+            Err(_) if shutdown_requested(shutdown) => return Ok(None),
+            Err(ref error) => match first_connect_on_carrier_error(error) {
+                FirstConnectAction::StayAlive(delay) => {
+                    let next_attempt = chrono::Utc::now()
+                        + chrono::Duration::from_std(delay)
+                            .unwrap_or_else(|_| chrono::Duration::seconds(300));
+                    crate::owner_state::write_mcp_needs_subscription_state(
+                        journal_root,
+                        None,
+                        ("waiting", "waiting", "waiting"),
+                        next_attempt,
+                    );
+                    let mut sleep = std::pin::pin!(tokio::time::sleep(delay));
+                    let mut ticker = tokio::time::interval(std::time::Duration::from_secs(1));
+                    loop {
+                        tokio::select! {
+                            _ = &mut sleep => break,
+                            _ = ticker.tick() => {
+                                if shutdown_requested(shutdown) || !capability_enabled(journal_root) {
+                                    return Ok(None);
+                                }
+                            }
+                        }
+                    }
+                    if shutdown_requested(shutdown) || !capability_enabled(journal_root) {
+                        return Ok(None);
+                    }
+                }
+                FirstConnectAction::ExitTunnel => {
+                    crate::owner_state::write_mcp_owner_state(
+                        journal_root,
+                        "failed",
+                        None,
+                        ("failed", "waiting", "waiting"),
+                        Some(
+                            "this computer could not reach services.solstone.app; it will try again when the service restarts",
+                        ),
+                    );
+                    return Err(McpServiceError::Tunnel);
+                }
+            },
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FirstConnectAction {
     StayAlive(std::time::Duration),
@@ -375,6 +386,30 @@ pub(crate) fn first_connect_on_carrier_error(
     } else {
         FirstConnectAction::ExitTunnel
     }
+}
+
+/// A subscription hold outlives its `next_attempt_at` by the longest a retry can
+/// take (ten seconds for the account request, ten for the bridge) plus one state
+/// writer tick, so the writer does not report the address as open while that
+/// retry is still in flight.
+const SUBSCRIPTION_RETRY_GRACE_SECONDS: i64 = 30;
+
+/// Whether the periodic state writer must leave the stored state alone.
+fn keeps_stored_state(
+    state: Option<&crate::owner_state::McpOwnerState>,
+    certificate_active: bool,
+    now: chrono::DateTime<chrono::Utc>,
+) -> bool {
+    let Some(state) = state else {
+        return false;
+    };
+    let Some(next_attempt_at) = state.next_attempt_at else {
+        return false;
+    };
+    if state.status == "needs_subscription" {
+        return next_attempt_at + chrono::Duration::seconds(SUBSCRIPTION_RETRY_GRACE_SECONDS) > now;
+    }
+    state.certificate_leg == "not_this_week" && next_attempt_at > now && !certificate_active
 }
 
 fn capability_enabled(journal_root: &Path) -> bool {
@@ -421,10 +456,226 @@ async fn wait_for_shutdown_signal(shutdown: watch::Sender<bool>) {
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
-    use super::{FirstConnectAction, capability_enabled, first_connect_on_carrier_error};
+    use tokio::sync::watch;
+    use tokio::task::JoinHandle;
+
+    use super::{
+        FirstConnectAction, McpServiceError, acquire_tunnel, capability_enabled,
+        first_connect_on_carrier_error, keeps_stored_state,
+    };
     use crate::bridge_carrier::McpBridgeCarrierError;
+    use crate::owner_state::read_mcp_owner_state;
+
+    fn enabled_journal() -> tempfile::TempDir {
+        let journal = tempfile::tempdir().expect("fixture journal");
+        fs::create_dir_all(journal.path().join("config")).expect("config directory");
+        fs::create_dir_all(journal.path().join("mcp-endpoint")).expect("state directory");
+        fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"mcp_endpoint":{"enabled":true}}"#,
+        )
+        .expect("enabled config");
+        journal
+    }
+
+    fn spawn_first_connect(
+        root: PathBuf,
+        shutdown: watch::Receiver<bool>,
+        attempts: Arc<AtomicUsize>,
+        first_failure: McpBridgeCarrierError,
+    ) -> JoinHandle<Result<Option<()>, McpServiceError>> {
+        tokio::spawn(async move {
+            acquire_tunnel(&root, &shutdown, || {
+                let attempt = attempts.fetch_add(1, Ordering::SeqCst);
+                async move {
+                    if attempt == 0 {
+                        Err(first_failure)
+                    } else {
+                        Ok(())
+                    }
+                }
+            })
+            .await
+        })
+    }
+
+    async fn settle() {
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_missing_subscription_waits_five_minutes_before_the_next_attempt() {
+        let journal = enabled_journal();
+        let (_keep, shutdown) = watch::channel(false);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let task = spawn_first_connect(
+            journal.path().to_path_buf(),
+            shutdown,
+            Arc::clone(&attempts),
+            McpBridgeCarrierError::NeedsSubscription,
+        );
+        settle().await;
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+
+        let state = read_mcp_owner_state(journal.path()).expect("owner state");
+        assert_eq!(state.status, "needs_subscription");
+        let wait = state.next_attempt_at.expect("next attempt") - chrono::Utc::now();
+        assert!((295..=300).contains(&wait.num_seconds()), "{wait}");
+        assert!(
+            !state
+                .detail
+                .unwrap_or_default()
+                .contains("could not reach services.solstone.app")
+        );
+
+        tokio::time::advance(Duration::from_secs(299)).await;
+        settle().await;
+        assert_eq!(
+            attempts.load(Ordering::SeqCst),
+            1,
+            "a second attempt inside five minutes"
+        );
+        assert!(!task.is_finished());
+
+        tokio::time::advance(Duration::from_secs(2)).await;
+        settle().await;
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+        assert_eq!(task.await.expect("task"), Ok(Some(())));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn any_other_first_connect_failure_still_ends_the_service_at_once() {
+        for error in [
+            McpBridgeCarrierError::Account,
+            McpBridgeCarrierError::Deadline,
+            McpBridgeCarrierError::Connect,
+            McpBridgeCarrierError::Tls,
+            McpBridgeCarrierError::Io,
+            McpBridgeCarrierError::Pop,
+            McpBridgeCarrierError::State,
+        ] {
+            let journal = enabled_journal();
+            let (_keep, shutdown) = watch::channel(false);
+            let attempts = Arc::new(AtomicUsize::new(0));
+            let counter = Arc::clone(&attempts);
+            let result = acquire_tunnel(journal.path(), &shutdown, || {
+                counter.fetch_add(1, Ordering::SeqCst);
+                async move { Err::<(), _>(error) }
+            })
+            .await;
+            assert_eq!(result, Err(McpServiceError::Tunnel), "{error}");
+            assert_eq!(attempts.load(Ordering::SeqCst), 1, "{error}");
+            let state = read_mcp_owner_state(journal.path()).expect("owner state");
+            assert_eq!(state.status, "failed", "{error}");
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn turning_the_capability_off_ends_the_subscription_wait() {
+        let journal = enabled_journal();
+        let (_keep, shutdown) = watch::channel(false);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let task = spawn_first_connect(
+            journal.path().to_path_buf(),
+            shutdown,
+            Arc::clone(&attempts),
+            McpBridgeCarrierError::NeedsSubscription,
+        );
+        settle().await;
+        fs::write(
+            journal.path().join("config/journal.json"),
+            r#"{"mcp_endpoint":{"enabled":false}}"#,
+        )
+        .expect("disabled config");
+        tokio::time::advance(Duration::from_secs(2)).await;
+        settle().await;
+        assert!(task.is_finished());
+        assert_eq!(task.await.expect("task"), Ok(None));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn the_state_writer_leaves_a_subscription_hold_alone_while_its_retry_can_still_answer() {
+        let journal = enabled_journal();
+        let next = chrono::Utc::now() + chrono::Duration::seconds(300);
+        crate::owner_state::write_mcp_needs_subscription_state(
+            journal.path(),
+            Some("aaaqeaye.solstone.me"),
+            ("done", "done", "waiting"),
+            next,
+        );
+        let state = read_mcp_owner_state(journal.path()).expect("owner state");
+        let at = |seconds: i64| next + chrono::Duration::seconds(seconds);
+        assert!(
+            keeps_stored_state(Some(&state), true, at(-1)),
+            "hold running"
+        );
+        assert!(
+            keeps_stored_state(Some(&state), true, at(10)),
+            "retry in flight"
+        );
+        assert!(
+            keeps_stored_state(Some(&state), true, at(29)),
+            "retry still bounded"
+        );
+        assert!(
+            !keeps_stored_state(Some(&state), true, at(31)),
+            "a retry that ended without rewriting the state means the subscription is active"
+        );
+        assert!(!keeps_stored_state(None, true, at(0)));
+    }
+
+    #[test]
+    fn the_certificate_allowance_hold_keeps_its_original_rules() {
+        let journal = enabled_journal();
+        let next = chrono::Utc::now() + chrono::Duration::seconds(300);
+        crate::owner_state::write_mcp_rate_limit_state(
+            journal.path(),
+            "aaaqeaye.solstone.me",
+            next,
+        );
+        let state = read_mcp_owner_state(journal.path()).expect("owner state");
+        let now = next - chrono::Duration::seconds(10);
+        assert!(
+            keeps_stored_state(Some(&state), false, now),
+            "held while no certificate is active"
+        );
+        assert!(
+            !keeps_stored_state(Some(&state), true, now),
+            "an active certificate ends the hold"
+        );
+        assert!(
+            !keeps_stored_state(Some(&state), false, next + chrono::Duration::seconds(1)),
+            "no grace after the allowance window: the subscription grace does not apply here"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_shutdown_request_ends_the_subscription_wait() {
+        let journal = enabled_journal();
+        let (send, shutdown) = watch::channel(false);
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let task = spawn_first_connect(
+            journal.path().to_path_buf(),
+            shutdown,
+            Arc::clone(&attempts),
+            McpBridgeCarrierError::NeedsSubscription,
+        );
+        settle().await;
+        send.send_replace(true);
+        tokio::time::advance(Duration::from_secs(2)).await;
+        settle().await;
+        assert!(task.is_finished());
+        assert_eq!(task.await.expect("task"), Ok(None));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
 
     #[test]
     fn capability_recheck_fails_closed_before_network_or_listener_work() {
