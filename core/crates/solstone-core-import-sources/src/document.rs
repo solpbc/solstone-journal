@@ -655,7 +655,14 @@ pub struct PreparedDocumentImport {
     pub errors: Vec<String>,
     pub hard_failures: Vec<String>,
     pub timestamps: Vec<SystemTime>,
+    // Kept alive until the whole import is done. On Windows the render directory is
+    // already an `Arc` by the time it gets here: the worker request holds a clone so the
+    // directory survives native helper cleanup (see `PdfWorkerResources`). The element type
+    // follows that shadowing rather than fighting it.
+    #[cfg(not(windows))]
     pub _render_dirs: Vec<TemporaryRenderDirectory>,
+    #[cfg(windows)]
+    pub _render_dirs: Vec<std::sync::Arc<TemporaryRenderDirectory>>,
 }
 
 pub fn prepare_document_import(
