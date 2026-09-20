@@ -41,7 +41,8 @@ use solstone_core_sol_link::{
     DeviceDoorAuthorization, DeviceDoorVerifier, spawn_authorization_refresh,
 };
 use spl_home::{
-    DEFAULT_DECODER_BUFFER_BYTES, HomeConfig, HomeConnection, MuxLimits, RefusalCounts,
+    CarrierCounts, DEFAULT_DECODER_BUFFER_BYTES, HomeConfig, HomeConnection, MuxLimits,
+    RefusalCounts,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{TcpListener, TcpStream};
@@ -78,6 +79,11 @@ const MAX_PAIRING_FAILURES: usize = 3;
 // carrier that is refusing is still open while the owner is watching uploads
 // fail, which is exactly when the record has to already exist.
 const REFUSAL_REPORT_INTERVAL: Duration = Duration::from_secs(5);
+/// `SessionPolicy.deferralLimit` in the Swift client: how long it will tolerate
+/// a late PONG before calling the path lost. A PING behind a full send buffer
+/// during a bulk upload is legitimately late for most of this window, so a
+/// shorter bar here would fire on every large upload.
+const CLIENT_DEFERRAL_LIMIT_MS: u64 = 30_000;
 // The refusal class a well-behaved peer provokes by holding more concurrent
 // streams than a carrier admits. The other three classes mean a misbehaving
 // peer or a local accounting failure; they stay in the log rather than on the
@@ -1138,6 +1144,7 @@ async fn serve_carrier(
         connection.refusals(),
         &mut reported_refusals,
     );
+    report_carrier_close(cid.as_ref(), connection.carrier_counts());
     if let Some((id, _, _)) = pairing_control {
         config.pairing_registry.release(id);
     }
@@ -1229,6 +1236,53 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for StallBoundStream<S> {
 /// The door reads a running tally rather than being notified per refusal, so
 /// this writes the **increase** and advances `reported`. Writing the total
 /// would compound the count on every tick.
+/// Whether a carrier's ending is worth an operator's attention.
+///
+/// Abnormal endings always are. A normal ending is only notable when this side
+/// had gone silent for longer than the client's own tolerance, because below
+/// that the client itself would not have minded.
+fn carrier_close_is_notable(counts: CarrierCounts) -> bool {
+    counts.close.is_abnormal()
+        || counts
+            .longest_gap_ms
+            .is_some_and(|gap| gap >= CLIENT_DEFERRAL_LIMIT_MS)
+}
+
+/// One line per carrier end, naming why it ended and whether this side was
+/// answering while it lasted.
+///
+/// Nothing recorded either of these before, so a carrier that went quiet and
+/// one nobody asked looked identical afterwards, and two investigations three
+/// days apart each had to infer which had happened.
+///
+/// ⚠ `warn` only when the ending was abnormal or this side had gone silent
+/// longer than the client's own 30 s deferral limit; `debug` otherwise. The
+/// journal runs at the `warn` default, so an unconditional `warn` here would
+/// be one line per disconnect for every client, forever.
+fn report_carrier_close(cid: Option<&LinkedDeviceCid>, counts: CarrierCounts) {
+    let cid = cid.map_or("-", |cid| cid.as_str());
+    let answered = counts.pings_answered;
+    // A gap is only meaningful against the peer's own ping cadence, so the two
+    // are reported together and neither is reported alone.
+    let current = counts
+        .current_gap_ms
+        .map_or_else(|| "never".to_owned(), |gap| gap.to_string());
+    let longest = counts
+        .longest_gap_ms
+        .map_or_else(|| "never".to_owned(), |gap| gap.to_string());
+    if carrier_close_is_notable(counts) {
+        log::warn!(
+            "paired-device carrier closed cid={cid} reason={:?} answered={answered} gap_ms={current} longest_gap_ms={longest}",
+            counts.close
+        );
+    } else {
+        log::debug!(
+            "paired-device carrier closed cid={cid} reason={:?} answered={answered} gap_ms={current} longest_gap_ms={longest}",
+            counts.close
+        );
+    }
+}
+
 fn report_carrier_refusals(
     config: &DoorConnectionConfig,
     cid: Option<&LinkedDeviceCid>,
@@ -1779,5 +1833,73 @@ mod access_tests {
             !*close.borrow(),
             "the reaper preserves a successful response until its peer closes"
         );
+    }
+}
+
+#[cfg(test)]
+mod carrier_close_report_tests {
+    use super::{CLIENT_DEFERRAL_LIMIT_MS, carrier_close_is_notable};
+    use spl_home::{CarrierClose, CarrierCounts};
+
+    fn counts(close: CarrierClose, longest_gap_ms: Option<u64>) -> CarrierCounts {
+        CarrierCounts {
+            pings_answered: if longest_gap_ms.is_some() { 4 } else { 0 },
+            current_gap_ms: longest_gap_ms,
+            longest_gap_ms,
+            close,
+        }
+    }
+
+    #[test]
+    fn an_ordinary_disconnect_is_not_notable() {
+        // Every mobile client that backgrounds produces one of these. At warn
+        // it would be a line per disconnect, forever.
+        assert!(!carrier_close_is_notable(counts(
+            CarrierClose::PeerEof { truncated: false },
+            Some(800)
+        )));
+        assert!(!carrier_close_is_notable(counts(
+            CarrierClose::LocalClose,
+            Some(1_200)
+        )));
+    }
+
+    #[test]
+    fn a_carrier_nobody_pinged_is_not_notable() {
+        // Relay-path carriers never ping. They must not read as silent.
+        assert!(!carrier_close_is_notable(counts(
+            CarrierClose::PeerEof { truncated: false },
+            None
+        )));
+    }
+
+    #[test]
+    fn a_clean_ending_after_a_long_silence_is_notable() {
+        assert!(carrier_close_is_notable(counts(
+            CarrierClose::PeerEof { truncated: false },
+            Some(CLIENT_DEFERRAL_LIMIT_MS)
+        )));
+    }
+
+    #[test]
+    fn a_silence_the_client_itself_would_tolerate_is_not_notable() {
+        // Below the client's own deferral limit it would not have called the
+        // path lost, so neither do we. A shorter bar fires on bulk uploads.
+        assert!(!carrier_close_is_notable(counts(
+            CarrierClose::PeerEof { truncated: false },
+            Some(CLIENT_DEFERRAL_LIMIT_MS - 1)
+        )));
+    }
+
+    #[test]
+    fn an_abnormal_ending_is_notable_however_short_the_gap() {
+        assert!(carrier_close_is_notable(counts(
+            CarrierClose::PeerReadFailed,
+            Some(5)
+        )));
+        assert!(carrier_close_is_notable(counts(
+            CarrierClose::WriteFailed,
+            None
+        )));
     }
 }
