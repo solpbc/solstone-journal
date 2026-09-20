@@ -32,7 +32,8 @@ fn loopback_target() -> std::net::SocketAddr {
     std::net::SocketAddr::from(([127, 0, 0, 1], MCP_ENDPOINT_LOOPBACK_PORT))
 }
 
-/// Wait out one failed reconnect. A missing subscription holds for its fixed
+/// Wait out one failed reconnect. A refusal the account service explains (a
+/// missing subscription, or a request it did not accept) holds for its fixed
 /// delay and leaves the backoff alone; any other failure takes the short
 /// jittered backoff and doubles it.
 async fn wait_after_failed_connect(
@@ -43,15 +44,10 @@ async fn wait_after_failed_connect(
     shutdown: &mut watch::Receiver<bool>,
     backoff_cap_seconds: &mut u64,
 ) {
-    if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(error) {
+    if let Some((hold, delay)) = crate::bridge_carrier::registration_hold(error) {
         let next_attempt = chrono::Utc::now()
             + chrono::Duration::from_std(delay).unwrap_or_else(|_| chrono::Duration::seconds(300));
-        crate::owner_state::write_mcp_needs_subscription_state(
-            journal_root,
-            address,
-            legs,
-            next_attempt,
-        );
+        crate::owner_state::write_mcp_hold_state(journal_root, hold, address, legs, next_attempt);
         wait_for_fixed_delay(shutdown, delay).await;
     } else {
         wait_for_retry(shutdown, *backoff_cap_seconds).await;
@@ -308,15 +304,14 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_missing_subscription_holds_a_reconnect_five_minutes_and_keeps_the_backoff() {
+    async fn assert_a_reconnect_hold(failure: McpBridgeCarrierError, status: &str) {
         let journal = journal_with_state_directory();
         let root = journal.path().to_path_buf();
         let (_keep, mut shutdown) = watch::channel(false);
         let task = tokio::spawn(async move {
             let mut backoff_cap_seconds = 4_u64;
             wait_after_failed_connect(
-                &McpBridgeCarrierError::NeedsSubscription,
+                &failure,
                 &root,
                 Some("aaaqeaye.solstone.me"),
                 ("done", "done", "waiting"),
@@ -328,7 +323,7 @@ mod tests {
         });
         settle().await;
         let state = crate::owner_state::read_mcp_owner_state(journal.path()).expect("owner state");
-        assert_eq!(state.status, "needs_subscription");
+        assert_eq!(state.status, status);
         assert_eq!(state.address.as_deref(), Some("aaaqeaye.solstone.me"));
 
         tokio::time::advance(Duration::from_secs(299)).await;
@@ -338,6 +333,20 @@ mod tests {
         tokio::time::advance(Duration::from_secs(2)).await;
         settle().await;
         assert_eq!(task.await.expect("task"), 4);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_missing_subscription_holds_a_reconnect_five_minutes_and_keeps_the_backoff() {
+        assert_a_reconnect_hold(
+            McpBridgeCarrierError::NeedsSubscription,
+            "needs_subscription",
+        )
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_request_the_service_did_not_accept_holds_a_reconnect_five_minutes_too() {
+        assert_a_reconnect_hold(McpBridgeCarrierError::NotAccepted, "not_accepted").await;
     }
 
     #[tokio::test(start_paused = true)]

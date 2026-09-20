@@ -161,6 +161,7 @@ pub enum McpBridgeCarrierError {
     Pop,
     State,
     NeedsSubscription,
+    NotAccepted,
 }
 
 impl fmt::Display for McpBridgeCarrierError {
@@ -175,15 +176,32 @@ impl fmt::Display for McpBridgeCarrierError {
             Self::Pop => "MCP bridge proof-of-possession failed",
             Self::State => "MCP endpoint certificate state could not be loaded",
             Self::NeedsSubscription => "MCP bridge subscription required",
+            Self::NotAccepted => "MCP bridge registration was not accepted",
         })
     }
 }
 
 impl std::error::Error for McpBridgeCarrierError {}
 
-pub fn needs_subscription_retry(error: &McpBridgeCarrierError) -> Option<Duration> {
+/// A refusal from the account service that the journal waits out instead of retrying at once.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum RegistrationHold {
+    NeedsSubscription,
+    NotAccepted,
+}
+
+pub(crate) const REGISTRATION_HOLD_DELAY: Duration = Duration::from_secs(300);
+
+pub(crate) fn registration_hold(
+    error: &McpBridgeCarrierError,
+) -> Option<(RegistrationHold, Duration)> {
     match error {
-        McpBridgeCarrierError::NeedsSubscription => Some(Duration::from_secs(300)),
+        McpBridgeCarrierError::NeedsSubscription => {
+            Some((RegistrationHold::NeedsSubscription, REGISTRATION_HOLD_DELAY))
+        }
+        McpBridgeCarrierError::NotAccepted => {
+            Some((RegistrationHold::NotAccepted, REGISTRATION_HOLD_DELAY))
+        }
         _ => None,
     }
 }

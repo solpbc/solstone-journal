@@ -450,6 +450,7 @@ enum McpAccountResponseWireError {
     BridgeAddressIpv4,
     BridgeAddressDenied,
     NeedsSubscription,
+    NotAccepted,
 }
 
 impl fmt::Display for McpAccountResponseWireError {
@@ -498,6 +499,7 @@ impl fmt::Display for McpAccountResponseWireError {
                 "MCP account registration response bridge address is denied"
             }
             Self::NeedsSubscription => "MCP account registration subscription required",
+            Self::NotAccepted => "MCP account registration was not accepted",
         })
     }
 }
@@ -589,6 +591,7 @@ enum McpAccountError {
     HttpFraming,
     Response,
     NeedsSubscription,
+    NotAccepted,
 }
 
 impl fmt::Display for McpAccountError {
@@ -606,6 +609,7 @@ impl fmt::Display for McpAccountError {
             Self::HttpFraming => "MCP account registration response framing is invalid",
             Self::Response => "MCP account registration response is invalid",
             Self::NeedsSubscription => "MCP account registration subscription required",
+            Self::NotAccepted => "MCP account registration was not accepted",
         })
     }
 }
@@ -664,6 +668,14 @@ fn parse_account_registration_response(
     headers: &[(Vec<u8>, Vec<u8>)],
     body: &[u8],
 ) -> Result<McpAccountResponseWire, McpAccountResponseWireError> {
+    if status == 401 {
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
+            && value.get("error").and_then(serde_json::Value::as_str) == Some("invalid_token")
+        {
+            return Err(McpAccountResponseWireError::NotAccepted);
+        }
+        return Err(McpAccountResponseWireError::UnexpectedStatus);
+    }
     if status == 402 {
         if let Ok(value) = serde_json::from_slice::<serde_json::Value>(body)
             && value.get("error").and_then(serde_json::Value::as_str) == Some("needs_subscription")
@@ -747,6 +759,7 @@ pub(crate) async fn establish_mcp_bridge_carrier(
         .await
         .map_err(|error| match error {
             McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
+            McpAccountError::NotAccepted => McpBridgeCarrierError::NotAccepted,
             _ => McpBridgeCarrierError::Account,
         })?;
     establish_initial_bridge_carrier(
@@ -771,6 +784,7 @@ pub(crate) async fn refresh_mcp_bridge_authority(
         .await
         .map_err(|error| match error {
             McpAccountError::NeedsSubscription => McpBridgeCarrierError::NeedsSubscription,
+            McpAccountError::NotAccepted => McpBridgeCarrierError::NotAccepted,
             _ => McpBridgeCarrierError::Account,
         })?;
     Ok(registration_into_authority(registration))
@@ -906,6 +920,7 @@ async fn run_fixed_account_attempt<I: AccountAttemptIo, C: AccountClock>(
                 McpAccountResponseWireError::NeedsSubscription => {
                     McpAccountError::NeedsSubscription
                 }
+                McpAccountResponseWireError::NotAccepted => McpAccountError::NotAccepted,
                 _ => McpAccountError::Response,
             })?;
     validate_account_registration(wire, owner, wall_start, wall_end)
@@ -4829,6 +4844,60 @@ mod tests {
             &clock,
         ));
         assert_eq!(result.err(), Some(McpAccountError::Response));
+    }
+
+    #[test]
+    fn account_registration_401_invalid_token_maps_to_not_accepted_error() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
+        let clock = TestAccountClock::new(REGISTRATION_WALL_START);
+        let attempt = |status_line: &[u8], body: &[u8]| {
+            let response = [
+                status_line,
+                &b"Content-Type: application/json\r\n"[..],
+                format!("Content-Length: {}\r\n", body.len()).as_bytes(),
+                &b"Connection: close\r\n\r\n"[..],
+                body,
+            ]
+            .concat();
+            let mut io = TestAccountAttemptIo::success(clock.clone(), response);
+            let (_sender, mut shutdown) = watch::channel(false);
+            account_runtime()
+                .block_on(run_fixed_account_attempt(
+                    &owner,
+                    &mut shutdown,
+                    &mut io,
+                    &clock,
+                ))
+                .err()
+        };
+        assert_eq!(
+            attempt(
+                b"HTTP/1.1 401 Unauthorized\r\n",
+                br#"{"error":"invalid_token"}"#
+            ),
+            Some(McpAccountError::NotAccepted)
+        );
+        for other_body in [&br#"{"error":"other"}"#[..], b"{}", b"not json"] {
+            assert_eq!(
+                attempt(b"HTTP/1.1 401 Unauthorized\r\n", other_body),
+                Some(McpAccountError::Response),
+                "a 401 without the exact invalid_token body stays a plain failure"
+            );
+        }
+        assert_eq!(
+            attempt(
+                b"HTTP/1.1 409 Conflict\r\n",
+                br#"{"error":"deletion_in_progress"}"#
+            ),
+            Some(McpAccountError::Response)
+        );
+        assert_eq!(
+            attempt(
+                b"HTTP/1.1 402 Payment Required\r\n",
+                br#"{"error":"needs_subscription"}"#
+            ),
+            Some(McpAccountError::NeedsSubscription)
+        );
     }
 
     #[test]

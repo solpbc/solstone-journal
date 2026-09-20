@@ -606,12 +606,13 @@ async fn run_renewal_fetcher(
                     }
                 }
                 Err(ref err) => {
-                    if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(err) {
+                    if let Some((hold, delay)) = crate::bridge_carrier::registration_hold(err) {
                         let next_attempt = chrono::Utc::now()
                             + chrono::Duration::from_std(delay)
                                 .unwrap_or_else(|_| chrono::Duration::seconds(300));
-                        crate::owner_state::write_mcp_needs_subscription_state(
+                        crate::owner_state::write_mcp_hold_state(
                             owner.journal_path(),
+                            hold,
                             Some(binding.hostname()),
                             ("done", "done", "waiting"),
                             next_attempt,

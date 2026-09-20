@@ -169,7 +169,7 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
     } else if owner_state.as_ref().is_some_and(|state| {
         matches!(
             state.status.as_str(),
-            "offline" | "failed" | "needs_subscription"
+            "offline" | "failed" | "needs_subscription" | "not_accepted"
         )
     }) {
         owner_state
@@ -560,8 +560,9 @@ mod tests {
         )
         .unwrap();
         let next_attempt = Utc::now() + Duration::seconds(300);
-        crate::owner_state::write_mcp_needs_subscription_state(
+        crate::owner_state::write_mcp_hold_state(
             journal_root,
+            crate::bridge_carrier::RegistrationHold::NeedsSubscription,
             None,
             ("waiting", "waiting", "waiting"),
             next_attempt,
@@ -573,6 +574,33 @@ mod tests {
         assert_eq!(
             value["subscribe_url"],
             "https://services.solstone.app/services/solstone-me"
+        );
+    }
+
+    #[test]
+    fn state_projects_not_accepted_status_and_no_subscribe_url() {
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"enabled":true}}"#,
+        )
+        .unwrap();
+        crate::owner_state::write_mcp_hold_state(
+            journal_root,
+            crate::bridge_carrier::RegistrationHold::NotAccepted,
+            None,
+            ("waiting", "waiting", "waiting"),
+            Utc::now() + Duration::seconds(300),
+        );
+
+        let value = state_value(journal_root).unwrap();
+        assert_eq!(value["status"], "not_accepted");
+        assert!(
+            value.get("subscribe_url").is_none(),
+            "a refusal that is not about a subscription must not offer one"
         );
     }
 

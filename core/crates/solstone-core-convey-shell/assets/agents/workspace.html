@@ -148,6 +148,15 @@
     return frame('agents', state.owner_state?.address ? 'your address and your agents are kept, with what each may see.' : 'your agents and what they can see stay as they are.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>the solstone.me address needs a subscription</h2><p>your journal checks again about every five minutes, and solstone.me starts working once the subscription is active.</p>${next ? `<p class="meta">next check: ${esc(new Date(next).toLocaleString())}.</p>` : ''}<div class="button-row"><a class="btn primary" href="${esc(subscribeUrl)}" target="_blank" rel="noopener">set up a subscription</a><button class="btn" data-action="turn-off-now">stop and turn off</button></div></div></section>${connections()}`);
   }
 
+  function usesConsentFlow() {
+    return !state.owner_state?.address || state.owner_state?.status === 'not_accepted';
+  }
+
+  function notAcceptedPage() {
+    const next = state.owner_state?.next_attempt_at;
+    return frame('agents', state.owner_state?.address ? 'your address and your agents are kept, with what each may see.' : 'your agents and what they can see stay as they are.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>solstone.me didn't accept this journal's request</h2><p>if you haven't allowed solstone.me for this journal yet, turn solstone.me off and back on to do that. your journal keeps trying on its own, about every five minutes.</p>${next ? `<p class="meta">next check: ${esc(new Date(next).toLocaleString())}.</p>` : ''}<div class="button-row"><button class="btn primary" data-action="turn-off-now">stop and turn off</button></div></div></section>${connections()}`);
+  }
+
   function enableNeedsSubscriptionPage(op) {
     const url = op.subscribe_url || "https://services.solstone.app/services/solstone-me";
     return frame('solstone.me', 'solstone.me is not on yet.', `<section class="card pad status"><div class="mark" aria-hidden="true">◉</div><div><h2><span class="dot wait"></span>the solstone.me address needs a subscription</h2><p>${esc(op.guidance || 'once the subscription is active, go back and turn solstone.me on again.')}</p><div class="button-row"><a class="btn primary" href="${esc(url)}" target="_blank" rel="noopener">set up a subscription</a><button class="btn" data-action="dismiss-enable">back</button></div></div></section><div class="section">${explainers()}</div>`);
@@ -179,6 +188,7 @@
     else if (state.status === 'offline') view.innerHTML = offlinePage();
     else if (state.status === 'renewal_overdue') view.innerHTML = renewalPage();
     else if (state.status === 'needs_subscription') view.innerHTML = needsSubscriptionPage();
+    else if (state.status === 'not_accepted') view.innerHTML = notAcceptedPage();
     else if (state.status !== 'on') view.innerHTML = enrollmentPage();
     else view.innerHTML = onPage();
     const scope = document.getElementById('scope');
@@ -232,7 +242,7 @@
     view.innerHTML = '<p class="lead">loading agents…</p>';
     try {
       state = await api('/app/agents/api/state');
-      if (!state.enabled && !state.owner_state?.address) {
+      if (!state.enabled && usesConsentFlow()) {
         await checkEnableOp();
       } else {
         enableOp = null;
@@ -259,7 +269,7 @@
       if (action === 'reload' || action === 'refresh') await reload();
       else if (action === 'dismiss-enable') { clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }
       else if (action === 'turn-on') {
-        if (!state.owner_state?.address) {
+        if (usesConsentFlow()) {
           try {
             const start = await api('/app/agents/api/enable', jsonOptions('POST', {}));
             enableOp = start?.operation;

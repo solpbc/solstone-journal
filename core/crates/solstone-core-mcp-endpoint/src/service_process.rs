@@ -329,12 +329,13 @@ where
             Ok(tunnel) => return Ok(Some(tunnel)),
             Err(_) if shutdown_requested(shutdown) => return Ok(None),
             Err(ref error) => match first_connect_on_carrier_error(error) {
-                FirstConnectAction::StayAlive(delay) => {
+                FirstConnectAction::StayAlive(hold, delay) => {
                     let next_attempt = chrono::Utc::now()
                         + chrono::Duration::from_std(delay)
                             .unwrap_or_else(|_| chrono::Duration::seconds(300));
-                    crate::owner_state::write_mcp_needs_subscription_state(
+                    crate::owner_state::write_mcp_hold_state(
                         journal_root,
+                        hold,
                         None,
                         ("waiting", "waiting", "waiting"),
                         next_attempt,
@@ -374,15 +375,15 @@ where
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum FirstConnectAction {
-    StayAlive(std::time::Duration),
+    StayAlive(crate::bridge_carrier::RegistrationHold, std::time::Duration),
     ExitTunnel,
 }
 
 pub(crate) fn first_connect_on_carrier_error(
     error: &crate::bridge_carrier::McpBridgeCarrierError,
 ) -> FirstConnectAction {
-    if let Some(delay) = crate::bridge_carrier::needs_subscription_retry(error) {
-        FirstConnectAction::StayAlive(delay)
+    if let Some((hold, delay)) = crate::bridge_carrier::registration_hold(error) {
+        FirstConnectAction::StayAlive(hold, delay)
     } else {
         FirstConnectAction::ExitTunnel
     }
@@ -406,7 +407,7 @@ fn keeps_stored_state(
     let Some(next_attempt_at) = state.next_attempt_at else {
         return false;
     };
-    if state.status == "needs_subscription" {
+    if matches!(state.status.as_str(), "needs_subscription" | "not_accepted") {
         return next_attempt_at + chrono::Duration::seconds(SUBSCRIPTION_RETRY_GRACE_SECONDS) > now;
     }
     state.certificate_leg == "not_this_week" && next_attempt_at > now && !certificate_active
@@ -468,7 +469,7 @@ mod tests {
         FirstConnectAction, McpServiceError, acquire_tunnel, capability_enabled,
         first_connect_on_carrier_error, keeps_stored_state,
     };
-    use crate::bridge_carrier::McpBridgeCarrierError;
+    use crate::bridge_carrier::{McpBridgeCarrierError, RegistrationHold};
     use crate::owner_state::read_mcp_owner_state;
 
     fn enabled_journal() -> tempfile::TempDir {
@@ -510,8 +511,7 @@ mod tests {
         }
     }
 
-    #[tokio::test(start_paused = true)]
-    async fn a_missing_subscription_waits_five_minutes_before_the_next_attempt() {
+    async fn assert_a_hold_waits_five_minutes(failure: McpBridgeCarrierError, status: &str) {
         let journal = enabled_journal();
         let (_keep, shutdown) = watch::channel(false);
         let attempts = Arc::new(AtomicUsize::new(0));
@@ -519,13 +519,13 @@ mod tests {
             journal.path().to_path_buf(),
             shutdown,
             Arc::clone(&attempts),
-            McpBridgeCarrierError::NeedsSubscription,
+            failure,
         );
         settle().await;
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
 
         let state = read_mcp_owner_state(journal.path()).expect("owner state");
-        assert_eq!(state.status, "needs_subscription");
+        assert_eq!(state.status, status);
         let wait = state.next_attempt_at.expect("next attempt") - chrono::Utc::now();
         assert!((295..=300).contains(&wait.num_seconds()), "{wait}");
         assert!(
@@ -548,6 +548,20 @@ mod tests {
         settle().await;
         assert_eq!(attempts.load(Ordering::SeqCst), 2);
         assert_eq!(task.await.expect("task"), Ok(Some(())));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_missing_subscription_waits_five_minutes_before_the_next_attempt() {
+        assert_a_hold_waits_five_minutes(
+            McpBridgeCarrierError::NeedsSubscription,
+            "needs_subscription",
+        )
+        .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_request_the_service_did_not_accept_waits_five_minutes_before_the_next_attempt() {
+        assert_a_hold_waits_five_minutes(McpBridgeCarrierError::NotAccepted, "not_accepted").await;
     }
 
     #[tokio::test(start_paused = true)]
@@ -605,8 +619,9 @@ mod tests {
     fn the_state_writer_leaves_a_subscription_hold_alone_while_its_retry_can_still_answer() {
         let journal = enabled_journal();
         let next = chrono::Utc::now() + chrono::Duration::seconds(300);
-        crate::owner_state::write_mcp_needs_subscription_state(
+        crate::owner_state::write_mcp_hold_state(
             journal.path(),
+            RegistrationHold::NeedsSubscription,
             Some("aaaqeaye.solstone.me"),
             ("done", "done", "waiting"),
             next,
@@ -630,6 +645,24 @@ mod tests {
             "a retry that ended without rewriting the state means the subscription is active"
         );
         assert!(!keeps_stored_state(None, true, at(0)));
+    }
+
+    #[test]
+    fn the_state_writer_leaves_a_not_accepted_hold_alone_for_the_same_window() {
+        let journal = enabled_journal();
+        let next = chrono::Utc::now() + chrono::Duration::seconds(300);
+        crate::owner_state::write_mcp_hold_state(
+            journal.path(),
+            RegistrationHold::NotAccepted,
+            None,
+            ("waiting", "waiting", "waiting"),
+            next,
+        );
+        let state = read_mcp_owner_state(journal.path()).expect("owner state");
+        let at = |seconds: i64| next + chrono::Duration::seconds(seconds);
+        assert!(keeps_stored_state(Some(&state), true, at(-1)));
+        assert!(keeps_stored_state(Some(&state), true, at(29)));
+        assert!(!keeps_stored_state(Some(&state), true, at(31)));
     }
 
     #[test]
@@ -691,7 +724,14 @@ mod tests {
     fn first_connect_error_classification() {
         assert_eq!(
             first_connect_on_carrier_error(&McpBridgeCarrierError::NeedsSubscription),
-            FirstConnectAction::StayAlive(Duration::from_secs(300))
+            FirstConnectAction::StayAlive(
+                RegistrationHold::NeedsSubscription,
+                Duration::from_secs(300)
+            )
+        );
+        assert_eq!(
+            first_connect_on_carrier_error(&McpBridgeCarrierError::NotAccepted),
+            FirstConnectAction::StayAlive(RegistrationHold::NotAccepted, Duration::from_secs(300))
         );
         for other_error in [
             McpBridgeCarrierError::Account,
