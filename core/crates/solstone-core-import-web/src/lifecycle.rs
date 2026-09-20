@@ -1230,9 +1230,12 @@ fn spawn_inprocess_import(
                 // `solstone_core_import_sources::document::WindowsPdfWorker`, which does
                 // not exist: the only `WindowsPdfWorker` is a PRIVATE struct in
                 // `solstone-core`'s own `import_sources.rs`, in a crate this one does not
-                // depend on. Nothing caught it because `make ci` and `make ci-full` never
-                // compile the Windows cfg, and `make ci-full-windows` runs only at release
-                // time.
+                // depend on. `ci-full` DOES carry a Windows cross-check leg
+                // (`windows-crosscheck`, `default_full = true`); it was green here because
+                // its sweep marks a package EXCLUDED when the package's full transitive
+                // dependency closure contains a registered exclusion root, and this crate
+                // reaches `ring` and `libsqlite3-sys`. So the crate was never compiled for
+                // Windows at all. That propagation defect is carried on `vpe-382`.
                 //
                 // ⛔ Do not paper this over by inventing a worker here. Wiring it means
                 // moving `WindowsPdfWorker` and its `solstone_core_local::install::
@@ -1254,35 +1257,35 @@ fn spawn_inprocess_import(
                 > = Err("document import has no PDF worker on windows yet".to_owned());
                 #[cfg(windows)]
                 let worker = match windows_worker {
-                        Ok(w) => w,
-                        Err(_) => {
-                            let finished_at_ms = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)
-                                .unwrap_or_default()
-                                .as_millis() as u64;
-                            let _ = solstone_core_import::record_unconfirmed_attempt(
-                                &root,
-                                &import_id,
-                                generation,
-                                finished_at_ms,
-                                Some(solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
-                            );
-                            let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
-                            solstone_core_import::events::emit_importer_error(
-                                &emitter,
-                                &solstone_core_import::events::ImporterError {
-                                    import_id: import_id.clone(),
-                                    stage: "execution".to_owned(),
-                                    error: solstone_core_import::IMPORT_FAILED_REASON.to_owned(),
-                                    duration_ms: 0,
-                                    partial_outputs: vec![],
-                                    generation: Some(generation),
-                                    attempt_id: Some(format!("{import_id}:{generation}")),
-                                },
-                            );
-                            return;
-                        }
-                    };
+                    Ok(w) => w,
+                    Err(_) => {
+                        let finished_at_ms = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_millis() as u64;
+                        let _ = solstone_core_import::record_unconfirmed_attempt(
+                            &root,
+                            &import_id,
+                            generation,
+                            finished_at_ms,
+                            Some(solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
+                        );
+                        let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
+                        solstone_core_import::events::emit_importer_error(
+                            &emitter,
+                            &solstone_core_import::events::ImporterError {
+                                import_id: import_id.clone(),
+                                stage: "execution".to_owned(),
+                                error: solstone_core_import::IMPORT_FAILED_REASON.to_owned(),
+                                duration_ms: 0,
+                                partial_outputs: vec![],
+                                generation: Some(generation),
+                                attempt_id: Some(format!("{import_id}:{generation}")),
+                            },
+                        );
+                        return;
+                    }
+                };
 
                 let model = solstone_core_generate::OneShotClient::sibling()
                     .ok()
