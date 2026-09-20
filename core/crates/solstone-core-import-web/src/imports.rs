@@ -527,6 +527,10 @@ pub(crate) async fn detail(
     let projection = solstone_core_import::project_import_result(&state.root, &timestamp);
     if projection.is_native() {
         body.extend(projection.native_row_overlay());
+        // Same lowercase display name the list row carries for this source.
+        if let Some(display) = source(&projection.source_type).map(|item| item.display_name) {
+            body.insert("source_display".into(), json!(display));
+        }
     }
     body.insert(
         "status".into(),

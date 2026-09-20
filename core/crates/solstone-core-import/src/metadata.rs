@@ -24,6 +24,14 @@ pub enum AttemptState {
     Unconfirmed,
 }
 
+/// The only failure text an attempt records for an import that definitively failed. The
+/// cause stays with the operator (the producer's returned error, the CLI, the log): an
+/// attempt's reason reaches the owner, so it is never a raw diagnostic.
+pub const IMPORT_FAILED_REASON: &str = "import failed";
+
+/// The only reason an attempt records when its outcome could not be established.
+pub const IMPORT_UNCONFIRMED_REASON: &str = "this import couldn't be confirmed as finished.";
+
 /// Authoritative attempt facts stored in `imports/<id>/import.json`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttemptFacts {
@@ -360,7 +368,7 @@ pub fn write_import_metadata(
             }
             // The durable task id wins when there is one; a start that has none yet
             // (the queued path records it here for the first time) keeps the caller's.
-            if let Some(tid) = existing.get("task_id") {
+            if let Some(tid) = existing.get("task_id").filter(|tid| !tid.is_null()) {
                 merged.insert("task_id".to_owned(), tid.clone());
             }
         }

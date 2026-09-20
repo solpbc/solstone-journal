@@ -55,11 +55,11 @@ pub use events::{
     emit_importer_status, emit_observe_observed, emit_observe_observing, emit_supervisor_drain,
 };
 pub use metadata::{
-    AttemptFacts, AttemptState, ImportMetadata, admit_running_attempt, get_attempt_facts,
-    hold_import_lock, read_import_metadata, read_provenance, record_completed_attempt,
-    record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
-    record_running_attempt, record_unconfirmed_attempt, record_unconfirmed_attempt_unlocked,
-    write_import_metadata,
+    AttemptFacts, AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, ImportMetadata,
+    admit_running_attempt, get_attempt_facts, hold_import_lock, read_import_metadata,
+    read_provenance, record_completed_attempt, record_completed_attempt_unlocked,
+    record_completed_attempt_with_input_failures_unlocked, record_running_attempt,
+    record_unconfirmed_attempt, record_unconfirmed_attempt_unlocked, write_import_metadata,
 };
 pub use projection::{ImportProjection, ProjectionStatus, project_import_result};
 pub use publish::{

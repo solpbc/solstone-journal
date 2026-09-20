@@ -13,9 +13,10 @@ use solstone_core_import::events::{
     emit_importer_error, emit_importer_started,
 };
 use solstone_core_import::metadata::{
-    AttemptState, admit_running_attempt, get_attempt_facts, read_provenance,
-    record_completed_attempt_unlocked, record_completed_attempt_with_input_failures_unlocked,
-    record_unconfirmed_attempt, record_unconfirmed_attempt_unlocked,
+    AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON, admit_running_attempt,
+    get_attempt_facts, read_provenance, record_completed_attempt_unlocked,
+    record_completed_attempt_with_input_failures_unlocked, record_unconfirmed_attempt,
+    record_unconfirmed_attempt_unlocked,
 };
 use solstone_core_import::publish::{
     PublicationInput, PublicationOperations, PublicationRecord, PublicationStatus,
@@ -239,7 +240,7 @@ where
                     request.import_id,
                     generation,
                     finished_at_ms,
-                    Some(err.to_string()),
+                    Some(IMPORT_FAILED_REASON.to_owned()),
                 );
                 emit_importer_error(
                     &emitter,
@@ -283,7 +284,7 @@ where
                     request.import_id,
                     generation,
                     finished_at_ms,
-                    Some(err_msg.clone()),
+                    Some(IMPORT_FAILED_REASON.to_owned()),
                 );
                 emit_importer_error(
                     &emitter,
@@ -364,7 +365,7 @@ where
                         request.import_id,
                         generation,
                         finished_at_ms,
-                        Some(err.to_string()),
+                        Some(IMPORT_FAILED_REASON.to_owned()),
                     );
                     emit_importer_error(
                         &emitter,
@@ -434,7 +435,7 @@ where
                             request.import_id,
                             generation,
                             finished_at_ms,
-                            Some(meta_err.to_string()),
+                            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
                         );
                         emit_importer_error(
                             &emitter,
@@ -511,7 +512,7 @@ where
                         request.import_id,
                         generation,
                         finished_at_ms,
-                        Some("import failed".to_owned()),
+                        Some(IMPORT_FAILED_REASON.to_owned()),
                     );
                     emit_importer_error(
                         &emitter,
@@ -601,7 +602,7 @@ where
                         request.import_id,
                         generation,
                         finished_at_ms,
-                        Some(meta_err.to_string()),
+                        Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
                     );
                     emit_importer_error(
                         &emitter,
@@ -669,7 +670,7 @@ where
                     request.import_id,
                     generation,
                     finished_at_ms,
-                    Some("import failed".to_owned()),
+                    Some(IMPORT_FAILED_REASON.to_owned()),
                 );
                 emit_importer_error(
                     &emitter,
@@ -848,6 +849,53 @@ mod tests {
         fn emit_drain(&self, journal: &Path, revision: Option<&str>, day: &str) {
             solstone_core_import::NativePublicationOperations.emit_drain(journal, revision, day);
         }
+    }
+
+    #[test]
+    fn a_marker_blocked_at_install_is_a_failed_import_with_no_diagnostic_shown_to_the_owner() {
+        let temp = tempfile::Builder::new()
+            .prefix("test-marker-at-install-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path();
+        let img_path = root.join("sample.png");
+        fs::write(&img_path, TINY_PNG).unwrap();
+        let id = "20260408_184000";
+
+        let result = run_native_producer(
+            NativeProducerRequest {
+                journal_root: root,
+                source_path: &img_path,
+                import_id: id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &crate::NullDocumentModelClient,
+            &FailingPublicationOps,
+        );
+        // The operator's error carries the real cause...
+        let error = result
+            .expect_err("a blocked marker is not success")
+            .to_string();
+        assert!(error.contains("forced health marker failure"), "{error}");
+
+        // ...and the owner-visible projection is a definitive failure with the fixed text only.
+        let projection = solstone_core_import::project_import_result(root, id);
+        assert_eq!(
+            projection.status,
+            solstone_core_import::ProjectionStatus::Failed,
+            "{projection:?}"
+        );
+        assert_eq!(projection.error.as_deref(), Some("import failed"));
+        let shown = format!("{:?} {:?}", projection.error, projection.error_stage);
+        assert!(!shown.contains("forced health marker failure"), "{shown}");
+        assert!(!shown.contains(root.to_str().unwrap()), "{shown}");
     }
 
     #[test]

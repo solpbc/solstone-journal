@@ -1412,6 +1412,11 @@ pub(crate) mod tests {
         assert_eq!(native_row["status"], "success");
         assert_eq!(native_row["entries_written"], 1);
         assert_eq!(native_row["source_type"], "image");
+        assert!(native_row["target_day"].is_string(), "{native_row}");
+        assert_eq!(
+            native_row["source_display"], "image",
+            "list and detail name it alike"
+        );
         assert_eq!(native_row["has_gaps"], true);
         assert!(
             native_row["unavailable_description"].is_string(),
@@ -1434,6 +1439,8 @@ pub(crate) mod tests {
             json_request(root, "GET", &format!("/app/import/api/{native}")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(detail["entries_written"], 1);
+        assert_eq!(detail["source_display"], "image");
+        assert!(detail["target_day"].is_string(), "{detail}");
         assert_eq!(detail["has_gaps"], true);
         assert!(detail["generation"].is_number(), "{detail}");
         let (_, legacy_detail) =

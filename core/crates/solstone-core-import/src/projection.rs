@@ -12,7 +12,8 @@ use serde_json::{Map, Value};
 use solstone_core_journal_io::path_lexists;
 
 use crate::metadata::{
-    AttemptFacts, AttemptRead, AttemptState, read_attempt_facts, read_provenance,
+    AttemptFacts, AttemptRead, AttemptState, IMPORT_FAILED_REASON, IMPORT_UNCONFIRMED_REASON,
+    read_attempt_facts, read_provenance,
 };
 use crate::publish::{PublicationRecord, PublicationStatus};
 
@@ -105,8 +106,10 @@ impl ImportProjection {
             Value::String(self.source_type.clone()),
         );
         map.insert(
-            "source_display".to_owned(),
-            Value::String(self.source_display.clone()),
+            "target_day".to_owned(),
+            self.target_day
+                .as_ref()
+                .map_or(Value::Null, |day| Value::String(day.clone())),
         );
         map.insert("entries_written".to_owned(), number(self.entries_written));
         map.insert("entities_seeded".to_owned(), number(self.entities_seeded));
@@ -626,6 +629,16 @@ fn derive_source_type(
         if let Some(src) = meta.get("source").and_then(Value::as_str) {
             return src.to_owned();
         }
+        // The native producer records the registry source it was started for.
+        if let Some(hint) = meta
+            .get("source_hint")
+            .and_then(Value::as_str)
+            .filter(|hint| {
+                !hint.is_empty() && hint.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+            })
+        {
+            return hint.to_owned();
+        }
         if let Some(mime) = meta.get("mime_type").and_then(Value::as_str) {
             if mime.starts_with("image/") {
                 return "image".to_owned();
@@ -709,16 +722,14 @@ fn derive_status_and_errors(
                     if pub_rec.status == PublicationStatus::Failure {
                         return (
                             ProjectionStatus::Failed,
-                            att.failure_reason
-                                .clone()
-                                .or_else(|| Some("import failed".to_owned())),
+                            Some(IMPORT_FAILED_REASON.to_owned()),
                             Some("publication".to_owned()),
                         );
                     }
                     if pub_rec.status == PublicationStatus::Success {
                         return (
                             ProjectionStatus::Unconfirmed,
-                            Some("this import couldn't be confirmed as finished.".to_owned()),
+                            Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
                             Some("finalization".to_owned()),
                         );
                     }
@@ -729,7 +740,7 @@ fn derive_status_and_errors(
                 if now_ms.saturating_sub(att.started_at_ms) > 3_600_000 {
                     (
                         ProjectionStatus::Unconfirmed,
-                        Some("this import couldn't be confirmed as finished.".to_owned()),
+                        Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
                         Some("timeout".to_owned()),
                     )
                 } else {
@@ -742,17 +753,23 @@ fn derive_status_and_errors(
                 if publication.is_some_and(|record| record.status == PublicationStatus::Failure) {
                     return (
                         ProjectionStatus::Failed,
-                        att.failure_reason
-                            .clone()
-                            .or_else(|| Some("import failed".to_owned())),
+                        Some(IMPORT_FAILED_REASON.to_owned()),
                         Some("publication".to_owned()),
+                    );
+                }
+                // A producer that knew the import had failed says so with the fixed reason;
+                // anything else (an interruption, a completion it could not record, text an
+                // earlier build stored) is unconfirmed, and the stored text is never shown.
+                if att.failure_reason.as_deref() == Some(IMPORT_FAILED_REASON) {
+                    return (
+                        ProjectionStatus::Failed,
+                        Some(IMPORT_FAILED_REASON.to_owned()),
+                        Some("execution".to_owned()),
                     );
                 }
                 (
                     ProjectionStatus::Unconfirmed,
-                    att.failure_reason.clone().or_else(|| {
-                        Some("this import couldn't be confirmed as finished.".to_owned())
-                    }),
+                    Some(IMPORT_UNCONFIRMED_REASON.to_owned()),
                     Some("finalization".to_owned()),
                 )
             }
@@ -762,9 +779,7 @@ fn derive_status_and_errors(
                         PublicationStatus::Success => (ProjectionStatus::Success, None, None),
                         PublicationStatus::Failure => (
                             ProjectionStatus::Failed,
-                            att.failure_reason
-                                .clone()
-                                .or_else(|| Some("import failed".to_owned())),
+                            Some(IMPORT_FAILED_REASON.to_owned()),
                             Some("publication".to_owned()),
                         ),
                     }
@@ -778,8 +793,12 @@ fn derive_status_and_errors(
                         (ProjectionStatus::Failed, Some(err_str), stage)
                     } else if raw.get("processed") == Some(&Value::Bool(true)) {
                         (ProjectionStatus::Success, None, None)
-                    } else if let Some(reason) = &att.failure_reason {
-                        (ProjectionStatus::Failed, Some(reason.clone()), None)
+                    } else if att.failure_reason.is_some() {
+                        (
+                            ProjectionStatus::Failed,
+                            Some(IMPORT_FAILED_REASON.to_owned()),
+                            None,
+                        )
                     } else {
                         (
                             ProjectionStatus::Unconfirmed,
@@ -787,8 +806,12 @@ fn derive_status_and_errors(
                             Some("publication".to_owned()),
                         )
                     }
-                } else if let Some(reason) = &att.failure_reason {
-                    (ProjectionStatus::Failed, Some(reason.clone()), None)
+                } else if att.failure_reason.is_some() {
+                    (
+                        ProjectionStatus::Failed,
+                        Some(IMPORT_FAILED_REASON.to_owned()),
+                        None,
+                    )
                 } else {
                     (
                         ProjectionStatus::Unconfirmed,
@@ -1161,6 +1184,91 @@ mod tests {
                 .native_row_overlay()
                 .get("input_failures")
                 .is_none()
+        );
+    }
+
+    fn write_attempt_with_reason(journal: &Path, id: &str, state: &str, reason: &str) {
+        let dir = journal.join("imports").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        let metadata = serde_json::json!({
+            "original_filename": "test.png",
+            "source_hint": "image",
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": state,
+                "started_at_ms": 1000,
+                "failure_reason": reason
+            }
+        });
+        fs::write(
+            dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_definitive_failure_reads_failed_and_no_stored_text_reaches_the_owner() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+
+        // A producer that knew it failed records the fixed reason: failed, with that reason.
+        write_attempt_with_reason(
+            journal,
+            "20260101_120010",
+            "unconfirmed",
+            IMPORT_FAILED_REASON,
+        );
+        let failed = project_import_result(journal, "20260101_120010");
+        assert_eq!(failed.status, ProjectionStatus::Failed, "{failed:?}");
+        assert_eq!(failed.error.as_deref(), Some(IMPORT_FAILED_REASON));
+
+        // Text an earlier build stored (a raw diagnostic with a path) is unconfirmed and is
+        // never shown: the owner sees the fixed sentence instead.
+        let raw = "cannot write /home/owner/journal/chronicle/20260101/health/stream.updated";
+        write_attempt_with_reason(journal, "20260101_120011", "unconfirmed", raw);
+        let unconfirmed = project_import_result(journal, "20260101_120011");
+        assert_eq!(
+            unconfirmed.status,
+            ProjectionStatus::Unconfirmed,
+            "{unconfirmed:?}"
+        );
+        assert_eq!(
+            unconfirmed.error.as_deref(),
+            Some(IMPORT_UNCONFIRMED_REASON)
+        );
+        assert!(!unconfirmed.error.unwrap_or_default().contains('/'));
+
+        // A completed attempt carrying stored failure text also shows only the fixed reason.
+        write_attempt_with_reason(journal, "20260101_120012", "completed", raw);
+        let completed = project_import_result(journal, "20260101_120012");
+        assert_eq!(completed.status, ProjectionStatus::Failed, "{completed:?}");
+        assert_eq!(completed.error.as_deref(), Some(IMPORT_FAILED_REASON));
+    }
+
+    #[test]
+    fn an_attempt_only_row_names_its_source_and_carries_its_day() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120013");
+        write_attempt(journal, id, "running", 1000);
+        // The attempt-only import.json the CLI path writes has a source hint, no source_type.
+        let path = journal.join("imports").join(id).join("import.json");
+        let mut metadata: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        metadata["source_hint"] = serde_json::json!("image");
+        fs::write(&path, serde_json::to_vec(&metadata).unwrap()).unwrap();
+        let projection = project_import_result(journal, id);
+        assert_eq!(projection.source_type, "image", "{projection:?}");
+
+        let overlay = ImportProjection {
+            target_day: Some("20260101".to_owned()),
+            ..projection
+        }
+        .native_row_overlay();
+        assert_eq!(overlay["target_day"], "20260101");
+        assert!(
+            overlay.get("source_display").is_none(),
+            "display names are the route's"
         );
     }
 

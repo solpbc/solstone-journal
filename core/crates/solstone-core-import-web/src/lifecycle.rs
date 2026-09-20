@@ -1229,7 +1229,7 @@ fn spawn_inprocess_import(
                         Duration::from_secs(90),
                     ) {
                         Ok(w) => w,
-                        Err(err) => {
+                        Err(_) => {
                             let finished_at_ms = SystemTime::now()
                                 .duration_since(UNIX_EPOCH)
                                 .unwrap_or_default()
@@ -1239,7 +1239,7 @@ fn spawn_inprocess_import(
                                 &import_id,
                                 generation,
                                 finished_at_ms,
-                                Some(err.to_string()),
+                                Some(solstone_core_import::IMPORT_FAILED_REASON.to_owned()),
                             );
                             let emitter = solstone_core_import::events::EventEmitter::new(&root, None);
                             solstone_core_import::events::emit_importer_error(
@@ -1247,7 +1247,7 @@ fn spawn_inprocess_import(
                                 &solstone_core_import::events::ImporterError {
                                     import_id: import_id.clone(),
                                     stage: "execution".to_owned(),
-                                    error: err.to_string(),
+                                    error: solstone_core_import::IMPORT_FAILED_REASON.to_owned(),
                                     duration_ms: 0,
                                     partial_outputs: vec![],
                                     generation: Some(generation),
@@ -1830,6 +1830,15 @@ mod tests {
             |_, _, _, _, _, _| {},
         );
         assert_eq!(response.status(), StatusCode::OK);
+        // The queued start records its task id durably: without it the row has no clock
+        // and no way to time out, and stays pending for good.
+        let stored = solstone_core_import::read_import_metadata(root.path(), "ts").unwrap();
+        assert!(
+            stored
+                .get("task_id")
+                .is_some_and(|task_id| !task_id.is_null()),
+            "{stored:?}"
+        );
         assert_eq!(
             *captured.borrow(),
             vec![
