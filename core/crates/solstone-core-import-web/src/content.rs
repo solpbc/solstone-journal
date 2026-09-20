@@ -572,4 +572,46 @@ mod tests {
         let result = derive_content_items(root, timestamp);
         assert!(result.is_err(), "corrupt jsonl should fail closed");
     }
+
+    #[test]
+    fn a_corrupt_message_line_after_a_valid_header_also_fails_closed() {
+        // The previous test is corrupt on its first line; this one is corrupt only in the
+        // message lines after a valid header, which is where a lenient parser hides it.
+        let temp = tempdir().unwrap();
+        let root = temp.path();
+        let timestamp = "20260101_120001";
+        let import_dir = root.join("imports").join(timestamp);
+        fs::create_dir_all(&import_dir).unwrap();
+        let file_path = root.join("chronicle/20260101/import.chatgpt/convo/item.jsonl");
+        fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        fs::write(
+            &file_path,
+            "{\"imported\":{\"id\":\"x\"}}\n{\"role\":\"user\",\"text\":\"kept\"}\n{ not json\n",
+        )
+        .unwrap();
+        fs::write(
+            import_dir.join("imported.json"),
+            json!({
+                "source_type": "chatgpt",
+                "all_created_files": [file_path.to_str().unwrap()]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        assert!(
+            derive_content_items(root, timestamp).is_err(),
+            "a corrupt message line must not be skipped"
+        );
+    }
+
+    #[test]
+    fn the_content_manifest_reader_refuses_a_corrupt_row_instead_of_dropping_it() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("content_manifest.jsonl");
+        fs::write(&path, "{\"id\":\"a\"}\n{ not json\n{\"id\":\"c\"}\n").unwrap();
+        let error = read_jsonl(&path).expect_err("a corrupt row must be an error");
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        fs::write(&path, "{\"id\":\"a\"}\n\n{\"id\":\"c\"}\n").unwrap();
+        assert_eq!(read_jsonl(&path).unwrap().len(), 2, "blank lines are fine");
+    }
 }

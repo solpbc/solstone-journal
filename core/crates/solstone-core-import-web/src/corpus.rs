@@ -1087,6 +1087,9 @@ pub(crate) mod tests {
         metadata["facet"] = json!("work");
         fs::write(path, serde_json::to_vec(&metadata).unwrap()).unwrap();
 
+        let info = crate::imports::load_import_info(root.path(), timestamp).unwrap();
+        assert_eq!(info.values["facet"], json!("work"));
+        // The durable metadata reader agrees.
         let meta = solstone_core_import::read_import_metadata(root.path(), timestamp).unwrap();
         assert_eq!(meta.get("facet").and_then(Value::as_str), Some("work"));
     }
