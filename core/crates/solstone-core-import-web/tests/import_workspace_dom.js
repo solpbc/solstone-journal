@@ -98,6 +98,19 @@ function assertEscaperIsReal(context) {
   );
 }
 
+// What a browser actually stores in the fragment: a space, a double quote,
+// angle brackets and a backtick come back percent-encoded, and so does anything
+// outside ASCII. A value handed to the setter is therefore not always the value
+// read back, which is what lets a "nothing changed" assignment look like a
+// change to the caller that wrote it.
+const FRAGMENT_ESCAPES = { ' ': '%20', '"': '%22', '<': '%3C', '>': '%3E', '`': '%60' };
+
+function normalizeFragment(value) {
+  return String(value)
+    .replace(/[ "<>`]/g, (char) => FRAGMENT_ESCAPES[char])
+    .replace(/[^\x00-\x7F]/g, (char) => encodeURIComponent(char));
+}
+
 // A browser normalizes what the hash setter is handed and delivers hashchange
 // as a queued task -- never inside the assignment. Both halves matter: a dedup
 // flag cleared on the line after the assignment is already clear when the
@@ -116,7 +129,7 @@ class QueuedHashLocation {
 
   set hash(value) {
     const raw = value === null || value === undefined ? '' : String(value);
-    const next = !raw ? '' : (raw.startsWith('#') ? raw : `#${raw}`);
+    const next = normalizeFragment(!raw ? '' : (raw.startsWith('#') ? raw : `#${raw}`));
     if (next === this._hash) {
       return;
     }
@@ -166,6 +179,19 @@ function selectorLookup(rowsByValue) {
     }
     const value = match[1].replace(/\\(.)/g, '$1');
     return rowsByValue[value] || null;
+  };
+}
+
+// The same validation in front of a lookup that answers by selector shape
+// rather than by attribute value: any attribute selector still has to parse.
+function strictSelector(handler) {
+  return (selector) => {
+    if (selector.includes('[') && !ATTRIBUTE_SELECTOR.test(selector)) {
+      const error = new Error(`Failed to execute 'querySelector': '${selector}' is not a valid selector.`);
+      error.name = 'SyntaxError';
+      throw error;
+    }
+    return handler(selector);
   };
 }
 
@@ -960,7 +986,11 @@ function runDistinctUnconfirmedAndUnavailablePanels() {
   // Unavailable panel
   vm.runInContext("showProgressView('1700000002', { import_id: '1700000002', status: 'unavailable', unavailable_description: 'metadata corrupted' })", context);
   assert.ok(guideSteps.innerHTML.includes('import status unavailable') || guideSteps.innerHTML.includes('import unavailable'), 'unavailable title rendered');
-  assert.ok(guideSteps.innerHTML.includes('metadata corrupted'), 'unavailable description rendered');
+  // unavailable_description is a server field that can carry a provider's own
+  // error text, so the panel states the fact in our own words instead of
+  // repeating it. (This assertion previously required the server string to be
+  // rendered; the surface it asserts is now the opposite one.)
+  assert.ok(!guideSteps.innerHTML.includes('metadata corrupted'), 'the server description is not used as owner copy');
   assert.ok(guideSteps.innerHTML.includes('check status'), 'check status button rendered');
   assert.ok(!guideSteps.innerHTML.includes('repeatSource'), 'no repeat button on unavailable');
 
@@ -1381,6 +1411,191 @@ async function runHashChangeDedupConsumesTheFlag() {
   cases += 1;
 }
 
+// The browser stores a normalised fragment, so navigating twice to a view whose
+// id carries a space (the quick flow's timestamp field is free text and flows
+// into progress/<ts>) assigns a value that reads back identical: no event fires,
+// and a flag left raised swallows the owner's next navigation.
+async function runNavigateToDropsTheFlagWhenTheFragmentDoesNotChange() {
+  const context = vm.createContext({ console, Promise });
+  const location = new QueuedHashLocation('');
+  const seen = [];
+  context.window = { location };
+  context.document = { getElementById: () => null, querySelector: () => null };
+  context.currentGuideSource = null;
+  context.navigatingHash = false;
+  context.loadGuidedFlow = async (name) => { seen.push(`guide:${name}`); };
+  context.showProgressView = (id) => { seen.push(`progress:${id}`); };
+  context.reconcileImportState = async () => {};
+
+  vm.runInContext(functionSource(workspace, 'navigateTo'), context);
+  vm.runInContext(functionSource(workspace, 'handleHashChange'), context);
+  location.onhashchange = () => context.handleHashChange();
+
+  await vm.runInContext("navigateTo('progress/20260919 1')", context);
+  await drain(location);
+  assert.strictEqual(
+    location.hash,
+    '#progress/20260919%201',
+    'the browser stores the fragment percent-encoded'
+  );
+
+  // The stored hash no longer looks like the one navigateTo would write, so the
+  // guard lets it through and the assignment changes nothing.
+  await vm.runInContext("navigateTo('progress/20260919 1')", context);
+  await drain(location);
+
+  const before = seen.length;
+  location.hash = '#guide/claude';
+  await drain(location);
+  assert.deepStrictEqual(
+    seen.slice(before),
+    ['guide:claude'],
+    'the owner\'s next navigation is still acted on after an assignment that changed nothing'
+  );
+
+  // The same holds for the other characters a browser rewrites.
+  for (const id of ['a"b', 'a<b>c', 'a`b', 'dagbok-ø']) {
+    const runs = [];
+    const scoped = vm.createContext({ console, Promise });
+    const scopedLocation = new QueuedHashLocation('');
+    scoped.window = { location: scopedLocation };
+    scoped.document = { getElementById: () => null, querySelector: () => null };
+    scoped.currentGuideSource = null;
+    scoped.navigatingHash = false;
+    scoped.loadGuidedFlow = async (name) => { runs.push(name); };
+    scoped.showProgressView = () => {};
+    scoped.reconcileImportState = async () => {};
+    vm.runInContext(functionSource(workspace, 'navigateTo'), scoped);
+    vm.runInContext(functionSource(workspace, 'handleHashChange'), scoped);
+    scopedLocation.onhashchange = () => scoped.handleHashChange();
+
+    await vm.runInContext(`navigateTo(${JSON.stringify(`progress/${id}`)})`, scoped);
+    await drain(scopedLocation);
+    await vm.runInContext(`navigateTo(${JSON.stringify(`progress/${id}`)})`, scoped);
+    await drain(scopedLocation);
+    scopedLocation.hash = '#guide/plaud';
+    await drain(scopedLocation);
+    assert.deepStrictEqual(runs, ['plaud'], `a normalised ${id} does not leave the dedup flag raised`);
+  }
+  cases += 1;
+}
+
+// navigateTo writes the hash after its awaits. An owner who leaves while a read
+// is in flight -- "import another source" goes to the grid -- must not be pulled
+// back by the navigation that was already on its way out.
+async function runNavigateToDoesNotReassertAStaleHash() {
+  const context = vm.createContext({ console, Promise });
+  const location = new QueuedHashLocation('#guide/image');
+  let releaseRead;
+  const readInFlight = new Promise((resolve) => { releaseRead = resolve; });
+  context.window = { location, _guidedClientItemId: 'item-1' };
+  context.document = { getElementById: () => null, querySelector: () => null };
+  context.currentGuideSource = 'image';
+  context.currentGuidedFile = null;
+  context.currentGuidedSaved = null;
+  context.navigatingHash = false;
+  context.loadGuidedFlow = async () => {};
+  context.showProgressView = () => {};
+  context.reconcileImportState = async () => { await readInFlight; };
+
+  vm.runInContext(functionSource(workspace, 'navigateTo'), context);
+  vm.runInContext(functionSource(workspace, 'showGrid'), context);
+  vm.runInContext(functionSource(workspace, 'handleHashChange'), context);
+  location.onhashchange = () => context.handleHashChange();
+
+  const pending = vm.runInContext("navigateTo('progress/1700000001')", context);
+  // The owner does not wait for the read: they take the way back to the grid.
+  vm.runInContext('showGrid()', context);
+  assert.strictEqual(location.hash, '', 'the owner is on the grid');
+
+  releaseRead();
+  await pending;
+  await drain(location);
+
+  assert.strictEqual(
+    location.hash,
+    '',
+    'the navigation that was mid-await does not write its hash over the owner\'s'
+  );
+  cases += 1;
+}
+
+// The panel repaints from what was stored, not from the raw event. An importer
+// event that carries null for a count it cannot answer this tick had its nulls
+// dropped on the way into the store and then put straight back for the repaint,
+// blanking the "4/10 items" the owner was watching. Both call sites are
+// exercised: with the import's row on screen, and without it.
+function runRepaintSeesTheFactsThatWereStored() {
+  for (const scenario of [{ name: 'no row on screen', row: false }, { name: 'row on screen', row: true }]) {
+    const guideSteps = new Element();
+    const statusCell = new Element();
+    const context = vm.createContext({ console });
+    const row = {
+      classList: { add() {}, remove() {} },
+      dataset: {},
+      querySelector: (selector) => (selector === '.status-cell' ? statusCell : null),
+    };
+    context.window = {
+      location: { hash: '#progress/1700000075' },
+      CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
+    };
+    context.document = {
+      getElementById: (id) => (id === 'guideSteps' ? guideSteps : null),
+      querySelector: () => (scenario.row ? row : null),
+    };
+    context.importEvents = {
+      '1700000075': {
+        import_id: '1700000075', event: 'status', status: 'running', stage: 'writing',
+        generation: 2, items_total: 10, items_processed: 4,
+      },
+    };
+    context.importGenerationFloor = { '1700000075': 2 };
+    context.sourceMetadataByName = {};
+    context.currentGuideSource = null;
+    context.getImportById = () => null;
+    installRealEscapeHtml(context);
+    assertEscaperIsReal(context);
+    context.humanStageName = (s) => s;
+    context.formatElapsed = () => '0s';
+    context.formatDateRange = () => '';
+    context.clearPendingImport = () => {};
+    context.trackPendingImport = () => {};
+    context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+
+    vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+    vm.runInContext(functionSource(workspace, 'formatProgressStats'), context);
+    vm.runInContext(functionSource(workspace, 'renderProgressStats'), context);
+    vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+    vm.runInContext(functionSource(workspace, 'showProgressView'), context);
+    vm.runInContext(functionSource(workspace, 'refreshInlineProgress'), context);
+    vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
+
+    vm.runInContext("showProgressView('1700000075')", context);
+    assert.ok(
+      guideSteps.innerHTML.includes('4/10 items'),
+      `the panel starts on the progress it was given (${scenario.name})`
+    );
+
+    // The next importer tick knows the stage but not the item counts.
+    vm.runInContext(
+      "updateImportRow('1700000075', { import_id: '1700000075', event: 'status', status: 'running',"
+      + ' stage: \'writing\', generation: 2, items_total: null, items_processed: null })',
+      context
+    );
+
+    assert.strictEqual(
+      context.importEvents['1700000075'].items_total,
+      10,
+      `the store keeps the count the event could not answer (${scenario.name})`
+    );
+    assert.ok(
+      guideSteps.innerHTML.includes('4/10 items'),
+      `and the repaint shows what the store kept, not the nulls that were dropped (${scenario.name})`
+    );
+    cases += 1;
+  }
+}
+
 // repeatSource puts focus on the drop area the owner is about to use. The
 // re-entrant loadGuidedFlow that the stale dedup flag allowed rewrote
 // #guideSteps straight afterwards, detaching the node that had just taken it --
@@ -1636,12 +1851,254 @@ async function runCanonicalReadOutranksTheGenerationFloor() {
     guideSteps.innerHTML.includes('import status unavailable'),
     'the open panel says the status is unavailable'
   );
-  assert.ok(guideSteps.innerHTML.includes('metadata could not be read'), 'and carries the reason it was given');
+  assert.ok(
+    !guideSteps.innerHTML.includes('metadata could not be read'),
+    'and states it in our words rather than repeating the server description'
+  );
   assert.strictEqual(
     context.importGenerationFloor['1700000001'],
     1,
     'a read with no generation does not move the generation floor'
   );
+  cases += 1;
+}
+
+// isTerminalState is what the terminal guard reads, so a state missing from it
+// is a state a later running update can overwrite. unconfirmed and unavailable
+// are ends of the road as much as completed and failed are.
+function runTerminalStateCoversEveryEndState() {
+  const context = vm.createContext({ console });
+  context.document = { querySelector: () => null, getElementById: () => null };
+  context.refreshInlineProgress = () => {};
+  context.clearPendingImport = () => {};
+  context.trackPendingImport = () => {};
+  context.importGenerationFloor = {};
+  context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+  vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
+
+  for (const state of ['completed', 'success', 'failed', 'error', 'unconfirmed', 'unavailable']) {
+    assert.strictEqual(
+      vm.runInContext(`isTerminalState(${JSON.stringify(state)})`, context),
+      true,
+      `${state} is an end state`
+    );
+  }
+  for (const state of ['running', 'started', 'status', 'pending', undefined]) {
+    assert.strictEqual(
+      vm.runInContext(`isTerminalState(${JSON.stringify(state)})`, context),
+      false,
+      `${state} is not an end state`
+    );
+  }
+
+  // And the guard reads it: a status-only unconfirmed answer is terminal, so it
+  // lands on a completed record instead of being turned away as a downgrade.
+  context.importEvents = {
+    '1700000085': { import_id: '1700000085', event: 'completed', status: 'success', entries_written: 60 },
+  };
+  vm.runInContext(
+    "updateImportRow('1700000085', { import_id: '1700000085', status: 'unconfirmed', entries_written: null })",
+    context
+  );
+  assert.strictEqual(
+    context.importEvents['1700000085'].status,
+    'unconfirmed',
+    'an unconfirmed answer is terminal, so it is allowed to land on a terminal record'
+  );
+  cases += 1;
+}
+
+// The floor is the memory that survives a record without a generation on it --
+// the one startGuidedImport writes when an import starts. If nothing raises it,
+// a delayed event from an older run walks straight back in.
+function runGenerationFloorIsRaisedByEveryEvent() {
+  const context = vm.createContext({ console });
+  context.document = { querySelector: () => null, getElementById: () => null };
+  context.importEvents = {};
+  context.importGenerationFloor = {};
+  context.refreshInlineProgress = () => {};
+  context.clearPendingImport = () => {};
+  context.trackPendingImport = () => {};
+  context.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+  vm.runInContext(functionSource(workspace, 'isTerminalState'), context);
+  vm.runInContext(functionSource(workspace, 'updateImportRow'), context);
+
+  vm.runInContext(
+    "updateImportRow('1700000086', { import_id: '1700000086', event: 'status', status: 'running',"
+    + " stage: 'writing', generation: 3 })",
+    context
+  );
+  assert.strictEqual(context.importGenerationFloor['1700000086'], 3, 'an event raises the floor to its generation');
+
+  // startGuidedImport writes a record with no generation on it. The floor is
+  // the only thing that still knows a generation 3 has been seen.
+  context.importEvents['1700000086'] = {
+    import_id: '1700000086', event: 'started', stage: 'initialization',
+  };
+  vm.runInContext(
+    "updateImportRow('1700000086', { import_id: '1700000086', event: 'completed', status: 'success',"
+    + ' generation: 2, entries_written: 999 })',
+    context
+  );
+  assert.strictEqual(
+    context.importEvents['1700000086'].event,
+    'started',
+    'a delayed event from an older generation is turned away by the floor alone'
+  );
+  assert.strictEqual(
+    context.importEvents['1700000086'].entries_written,
+    undefined,
+    'and it brings none of its facts with it'
+  );
+  cases += 1;
+}
+
+// One payload, every attribute and text node an import writes from server- or
+// URL-derived text. Each of these was an escape nothing would have noticed the
+// loss of.
+function runEveryOwnerSinkEscapes() {
+  // --- the progress panel: failed error text, stalled import id ---
+  const guideSteps = new Element();
+  const panelContext = vm.createContext({ console });
+  panelContext.document = { getElementById: (id) => (id === 'guideSteps' ? guideSteps : null) };
+  panelContext.window = {
+    location: { hash: `#progress/${ESCAPE_PAYLOAD}` },
+    CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
+  };
+  panelContext.sourceMetadataByName = {};
+  panelContext.currentGuideSource = null;
+  panelContext.importEvents = {};
+  panelContext.getImportById = () => null;
+  installRealEscapeHtml(panelContext);
+  assertEscaperIsReal(panelContext);
+  panelContext.humanStageName = (s) => s;
+  panelContext.formatElapsed = () => '0s';
+  panelContext.renderProgressStats = () => '';
+  panelContext.formatDateRange = () => '';
+  vm.runInContext(functionSource(workspace, 'formatStatValue'), panelContext);
+  vm.runInContext(functionSource(workspace, 'showProgressView'), panelContext);
+
+  vm.runInContext(
+    `showProgressView('1700000087', { import_id: '1700000087', event: 'error', status: 'failed',`
+    + ` error: ${JSON.stringify(ESCAPE_PAYLOAD)} })`,
+    panelContext
+  );
+  assert.ok(
+    guideSteps.innerHTML.includes(`<strong>error:</strong> ${ESCAPED_PAYLOAD}`),
+    'the failed panel escapes the error it was handed'
+  );
+  assert.ok(!guideSteps.innerHTML.includes('<b>'), 'and no payload markup reaches the failed panel');
+
+  vm.runInContext(
+    `showProgressView(${JSON.stringify(ESCAPE_PAYLOAD)}, { import_id: ${JSON.stringify(ESCAPE_PAYLOAD)},`
+    + ' stalled: true })',
+    panelContext
+  );
+  assert.ok(
+    guideSteps.innerHTML.includes(`<strong>import id:</strong> ${ESCAPED_PAYLOAD}`),
+    'the stalled panel escapes the import id'
+  );
+  assert.ok(!guideSteps.innerHTML.includes('<b>'), 'and no payload markup reaches the stalled panel');
+
+  // --- the live row: started stage, status detail, error detail, gap chip ---
+  const statusCell = new Element();
+  const rowContext = vm.createContext({ console });
+  const row = {
+    classList: { add() {}, remove() {} },
+    dataset: {},
+    querySelector: (selector) => (selector === '.status-cell' ? statusCell : null),
+  };
+  rowContext.document = { querySelector: () => row, getElementById: () => null };
+  rowContext.window = { location: { hash: '' } };
+  rowContext.importEvents = {};
+  rowContext.importGenerationFloor = {};
+  rowContext.sourceMetadataByName = {};
+  rowContext.refreshInlineProgress = () => {};
+  rowContext.clearPendingImport = () => {};
+  rowContext.trackPendingImport = () => {};
+  rowContext.IMPORT_ROW_EVENTS = new Set(['started', 'status', 'completed', 'error']);
+  installRealEscapeHtml(rowContext);
+  assertEscaperIsReal(rowContext);
+  vm.runInContext(`const STAGE_NAMES = ${arrowBody(workspace, 'const STAGE_NAMES =')};`, rowContext);
+  for (const name of [
+    'capitalizeStage', 'humanStageName', 'formatElapsed', 'formatProgressStats',
+    'renderSourceDisplay', 'formatImportStats', 'isTerminalState', 'updateImportRow',
+  ]) {
+    vm.runInContext(functionSource(workspace, name), rowContext);
+  }
+
+  vm.runInContext(
+    `updateImportRow('r1', { import_id: 'r1', event: 'started', stage: ${JSON.stringify(ESCAPE_PAYLOAD)} })`,
+    rowContext
+  );
+  assert.ok(!statusCell.innerHTML.includes('<b>'), 'the started row escapes its stage name');
+  assert.ok(statusCell.innerHTML.includes('&lt;b&gt;'), 'and renders it as text');
+
+  vm.runInContext(
+    `updateImportRow('r2', { import_id: 'r2', event: 'status', stage: 'writing', items_total: 2,`
+    + ` items_processed: 1, earliest_date: ${JSON.stringify(ESCAPE_PAYLOAD)} })`,
+    rowContext
+  );
+  assert.ok(!statusCell.innerHTML.includes('<b>'), 'the status row escapes its progress detail');
+  assert.ok(statusCell.innerHTML.includes('&lt;b&gt;'), 'and renders the detail as text');
+
+  vm.runInContext(
+    `updateImportRow('r3', { import_id: 'r3', event: 'error', error: ${JSON.stringify(ESCAPE_PAYLOAD)} })`,
+    rowContext
+  );
+  assert.ok(!statusCell.innerHTML.includes('<b>'), 'the error row escapes the error text');
+  assert.ok(statusCell.innerHTML.includes('&lt;b&gt;'), 'and renders the error as text');
+
+  vm.runInContext(
+    "updateImportRow('r4', { import_id: 'r4', event: 'status', status: 'running', stage: 'writing', has_gaps: true })",
+    rowContext
+  );
+  assert.ok(
+    statusCell.innerHTML.includes('contains gaps'),
+    'a live row that reports gaps still shows the chip that says so'
+  );
+
+  // --- the history table: row error detail, source cell, filter options ---
+  const historyContext = vm.createContext({ console });
+  vm.runInContext([
+    "const window = {",
+    "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
+    "};",
+    "const sourceIconSvgByName = {};",
+    "const sourceMetadataByName = {};",
+    "let currentSourceFilter = '';",
+    `let cachedSources = [{ name: ${JSON.stringify(ESCAPE_PAYLOAD)}, display_name: ${JSON.stringify(ESCAPE_PAYLOAD)} }];`,
+  ].join('\n'), historyContext);
+  installRealEscapeHtml(historyContext);
+  assertEscaperIsReal(historyContext);
+  for (const name of [
+    'capitalizeStage', 'renderSourceDisplay', 'formatImportStats', 'renderImportRow', 'buildHistoryHeader',
+  ]) {
+    vm.runInContext(functionSource(workspace, name), historyContext);
+  }
+
+  const failedRowHtml = vm.runInContext(
+    `renderImportRow({ timestamp: 'h1', status: 'failed', imported_at: 1700000000,`
+    + ` error: ${JSON.stringify(ESCAPE_PAYLOAD)}, error_stage: ${JSON.stringify(ESCAPE_PAYLOAD)} })`,
+    historyContext
+  );
+  assert.ok(!failedRowHtml.includes('<b>'), 'the history row escapes the error it reports');
+  assert.ok(failedRowHtml.includes('&lt;b&gt;'), 'and renders it as text');
+
+  const sourceHtml = vm.runInContext(
+    `renderSourceDisplay('plaud', ${JSON.stringify(ESCAPE_PAYLOAD)})`,
+    historyContext
+  );
+  assert.ok(sourceHtml.includes(ESCAPED_PAYLOAD), 'the source cell escapes its display text');
+  assert.ok(!sourceHtml.includes('<b>'), 'and no payload markup reaches the source cell');
+
+  const headerHtml = vm.runInContext('buildHistoryHeader(1, 1)', historyContext);
+  assert.ok(
+    headerHtml.includes(`<option value="${ESCAPED_PAYLOAD}"`),
+    'the source filter escapes the option value'
+  );
+  assert.ok(!headerHtml.includes('<b>'), 'and no payload markup reaches the filter');
   cases += 1;
 }
 
@@ -1714,6 +2171,159 @@ function runDetailDropsFactsThatDoNotApply() {
     ImportDetail.kvRow('status', ESCAPE_PAYLOAD).includes(`<dd>${ESCAPED_PAYLOAD}</dd>`),
     'the detail rows escape what they render'
   );
+  cases += 1;
+}
+
+// One page is a page, not "1 pages".
+function runDetailPageCountMatchesItsNumber() {
+  const ImportDetail = loadImportDetailModule();
+
+  const oneHtml = ImportDetail.renderDetail({
+    status: 'success', import_json: {}, imported_json: {}, unavailable_pages: 1,
+  });
+  assert.ok(
+    oneHtml.includes('<dd>1 page could not be extracted</dd>'),
+    'a single unavailable page reads as one page'
+  );
+  assert.ok(!oneHtml.includes('1 pages'), '"1 pages" is gone');
+
+  const manyHtml = ImportDetail.renderDetail({
+    status: 'success', import_json: {}, imported_json: {}, unavailable_pages: 4,
+  });
+  assert.ok(
+    manyHtml.includes('<dd>4 pages could not be extracted</dd>'),
+    'more than one reads as pages'
+  );
+
+  const noneHtml = ImportDetail.renderDetail({
+    status: 'success', import_json: {}, imported_json: {}, unavailable_pages: 0,
+  });
+  assert.ok(
+    !noneHtml.includes('<dt>unavailable pages</dt>'),
+    'an import that lost no pages says nothing about pages'
+  );
+  cases += 1;
+}
+
+// unavailable_description is a server field. It can carry a provider's own
+// error text, and escaping it makes it safe to put on the page without making
+// it something we are willing to say to an owner.
+function runUnavailablePanelNeverEchoesTheServer() {
+  const guideSteps = new Element();
+  const context = vm.createContext({ console });
+  const hostile = 'ORA-01017: invalid username/password; logon denied <b>at</b> pg-7';
+  context.document = { getElementById: (id) => (id === 'guideSteps' ? guideSteps : null) };
+  context.window = {
+    location: { hash: '#progress/1700000088' },
+    CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
+  };
+  context.sourceMetadataByName = {};
+  context.currentGuideSource = null;
+  context.importEvents = {};
+  context.getImportById = () => ({
+    timestamp: '1700000088', status: 'unavailable', unavailable_description: hostile,
+  });
+  installRealEscapeHtml(context);
+  assertEscaperIsReal(context);
+  context.humanStageName = (s) => s;
+  context.formatElapsed = () => '0s';
+  context.renderProgressStats = () => '';
+  context.formatDateRange = () => '';
+
+  vm.runInContext(functionSource(workspace, 'formatStatValue'), context);
+  vm.runInContext(functionSource(workspace, 'showProgressView'), context);
+
+  vm.runInContext(
+    `showProgressView('1700000088', { import_id: '1700000088', status: 'unavailable',`
+    + ` unavailable_description: ${JSON.stringify(hostile)} })`,
+    context
+  );
+
+  assert.ok(
+    guideSteps.innerHTML.includes('import status unavailable'),
+    'the panel says what we can stand behind'
+  );
+  assert.ok(!guideSteps.innerHTML.includes('ORA-01017'), 'and never repeats the server text');
+  assert.ok(!guideSteps.innerHTML.includes('logon denied'), 'not any part of it');
+  assert.ok(guideSteps.innerHTML.includes('check status'), 'the way on is still offered');
+
+  // The same holds when the panel falls back to the import list rather than a
+  // live event.
+  vm.runInContext("showProgressView('1700000088')", context);
+  assert.ok(!guideSteps.innerHTML.includes('ORA-01017'), 'including when the description comes from the list');
+  cases += 1;
+}
+
+// A source name is server data, and an inline onclick puts it in a script
+// context where one escape is all that stands between the page and the string.
+// The card carries it as data and the delegated listener reads it.
+async function runSourceCardsCarryNoInlineHandler() {
+  const grid = new Element();
+  const context = vm.createContext({ console, Promise });
+  context.document = { getElementById: (id) => (id === 'importGrid' ? grid : null) };
+  context.window = {};
+  context.cachedSources = [];
+  context.sourceMetadataByName = {};
+  context.sourceIconSvgByName = {};
+  context.fetch = async () => ({
+    json: async () => ({
+      items: [
+        { name: ESCAPE_PAYLOAD, display_name: 'Odd source', description: 'a source with a name like that' },
+        { name: 'quick', display_name: 'Quick import', description: 'paste or drop' },
+      ],
+    }),
+  });
+  installRealEscapeHtml(context);
+  assertEscaperIsReal(context);
+  vm.runInContext(functionSource(workspace, 'loadSourceGrid'), context);
+  await vm.runInContext('loadSourceGrid()', context);
+
+  assert.ok(!/onclick=/.test(grid.innerHTML), 'no source card carries an inline handler');
+  assert.ok(
+    grid.innerHTML.includes(`data-import-source="${ESCAPED_PAYLOAD}"`),
+    'the source name is escaped into a data attribute'
+  );
+  assert.ok(grid.innerHTML.includes('data-import-quick="true"'), 'the quick card is marked as itself');
+  assert.ok(!grid.innerHTML.includes('<b>'), 'no payload markup reaches the grid');
+
+  // And the delegated listener acts on it, so the card is not inert.
+  const clickContext = vm.createContext({ console });
+  const navigated = [];
+  let quickOpened = 0;
+  clickContext.navigateTo = (view) => { navigated.push(view); };
+  clickContext.showQuickImport = () => { quickOpened += 1; };
+  clickContext.reconcileImportState = () => {};
+  clickContext.repeatSource = () => {};
+  clickContext.window = { location: { href: '' } };
+  clickContext.document = { addEventListener: () => {} };
+  vm.runInContext(
+    `function handleDocumentClick(event) ${arrowBody(workspace, "document.addEventListener('click', event =>")}`,
+    clickContext
+  );
+
+  const cardTarget = (attributes) => ({
+    closest: (selector) => {
+      const wanted = selector.split(',').map((part) => part.trim().replace(/^\[|\]$/g, ''));
+      return wanted.some((name) => Object.prototype.hasOwnProperty.call(attributes, name))
+        ? {
+          hasAttribute: (name) => Object.prototype.hasOwnProperty.call(attributes, name),
+          getAttribute: (name) => (Object.prototype.hasOwnProperty.call(attributes, name) ? attributes[name] : null),
+        }
+        : null;
+    },
+  });
+
+  clickContext.sourceEvent = { target: cardTarget({ 'data-import-source': ESCAPE_PAYLOAD }), stopPropagation() {} };
+  vm.runInContext('handleDocumentClick(sourceEvent)', clickContext);
+  assert.deepStrictEqual(
+    navigated,
+    [`guide/${ESCAPE_PAYLOAD}`],
+    'clicking a source card opens that source, name and all'
+  );
+
+  clickContext.quickEvent = { target: cardTarget({ 'data-import-quick': 'true' }), stopPropagation() {} };
+  vm.runInContext('handleDocumentClick(quickEvent)', clickContext);
+  assert.strictEqual(quickOpened, 1, 'and the quick card opens the quick flow');
   cases += 1;
 }
 
@@ -1944,7 +2554,9 @@ async function runCheckStatusFocusLandsOnThePanel() {
   ];
 
   for (const scenario of scenarios) {
-    const importId = '1700000080';
+    // An id with a quote in it: the selector this restore builds goes through
+    // CSS.escape like the row selectors do, or the browser throws on it.
+    const importId = '1700000080"x';
     const context = vm.createContext({ console, Promise });
     const doc = { activeElement: null };
     const guideSteps = new Element();
@@ -1973,21 +2585,21 @@ async function runCheckStatusFocusLandsOnThePanel() {
       },
     });
 
-    panel.querySelector = (selector) => {
+    panel.querySelector = strictSelector((selector) => {
       assert.ok(
         selector.startsWith('[data-import-check-status='),
         'the panel is asked for its own check-status button'
       );
       return panelButton;
-    };
+    });
     doc.getElementById = (id) => (id === 'guideSteps' ? guideSteps : null);
-    doc.querySelector = (selector) => {
+    doc.querySelector = strictSelector((selector) => {
       if (selector === '.import-progress-panel') return panel;
       // The history table comes before the panel in the document, so a
       // document-wide lookup returns its button, not the panel's.
       if (selector.startsWith('[data-import-check-status=')) return rowButton;
       return null;
-    };
+    });
     doc.body = { contains: (element) => Boolean(element && element.attached) };
     doc.activeElement = pressedButton;
 
@@ -2180,11 +2792,20 @@ Promise.resolve()
   .then(runFormatStatValueEscapesAndHandlesEmDash)
   .then(runAsyncNavigateToWithGuideFetch)
   .then(runHashChangeDedupConsumesTheFlag)
+  .then(runNavigateToDropsTheFlagWhenTheFragmentDoesNotChange)
+  .then(runNavigateToDoesNotReassertAStaleHash)
+  .then(runRepaintSeesTheFactsThatWereStored)
   .then(runRepeatSourceFocusSurvivesTheQueuedHashChange)
   .then(runAuthoritativeRunningReadKeepsACompletedImportComplete)
   .then(runRunningReadKeepsKnownFacts)
   .then(runCanonicalReadOutranksTheGenerationFloor)
+  .then(runTerminalStateCoversEveryEndState)
+  .then(runGenerationFloorIsRaisedByEveryEvent)
+  .then(runEveryOwnerSinkEscapes)
   .then(runDetailDropsFactsThatDoNotApply)
+  .then(runDetailPageCountMatchesItsNumber)
+  .then(runUnavailablePanelNeverEchoesTheServer)
+  .then(runSourceCardsCarryNoInlineHandler)
   .then(runUnknownUsesTheEmDashInTheHistoryTable)
   .then(runMeasuredZeroIsNotUnknown)
   .then(runImportIdSelectorsEscapeQuotes)
