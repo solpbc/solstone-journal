@@ -308,9 +308,20 @@
     return match ? `/app/transcripts/${encodeURIComponent(match[1])}` : null;
   }
 
-  function kvRow(label, value) {
-    const display = hasValue(value) ? String(value) : '—';
-    return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(display)}</dd>`;
+  // A fact that does not apply to this import is dropped, not dashed: a clean
+  // success owes the owner nothing about "failed at" or "unavailable pages",
+  // and a page of dashes reads as a list of things that went wrong. `always` is
+  // for the facts the status itself makes meaningful -- the counts an import
+  // that ran should have, the time a finished import finished, the reason a
+  // failed one failed. There the blank is the answer, so it is shown.
+  function kvRow(label, value, options = {}) {
+    const { always = false } = options;
+    if (!hasValue(value)) {
+      return always
+        ? `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(strings.unknown)}</dd>`
+        : '';
+    }
+    return `<dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(value))}</dd>`;
   }
 
   function sectionHtml(title, rows) {
@@ -385,21 +396,30 @@
     const unavailDesc = data?.unavailable_description
       ? strings.image_description_gap_detail
       : null;
+    // An import that reached an end state should be able to say what it wrote,
+    // even if the answer is "we don't know" -- so the counts carry a dash. The
+    // failure keys belong to a failure and the completion time to a completion;
+    // on any other status they are not unknown, they are not applicable.
+    const finished = derived.status === strings.completed;
+    const didFail = derived.status === strings.failed;
+    const countsApply = finished
+      || derived.status === strings.unconfirmed
+      || derived.status === strings.status_unavailable;
     return sectionHtml(strings.processing_facts, [
       kvRow(strings.status, derived.status),
       kvRow(strings.source, source),
       kvRow(strings.target_day, importedJson.target_day || data?.target_day),
       kvRow(strings.date_range, formatDateRange(importedJson.date_range || data?.date_range)),
-      kvRow(strings.entries, formatCount(importedJson.entries_written ?? data?.entries_written, strings.entry, strings.entries)),
-      kvRow(strings.entities, formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, strings.entity, strings.entities)),
-      kvRow(strings.files, formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files)),
+      kvRow(strings.entries, formatCount(importedJson.entries_written ?? data?.entries_written, strings.entry, strings.entries), { always: countsApply }),
+      kvRow(strings.entities, formatCount((importedJson.entities_seeded ?? data?.entities_seeded) ?? null, strings.entity, strings.entities), { always: countsApply }),
+      kvRow(strings.files, formatCount(importedJson.total_files_created ?? data?.total_files_created, strings.file, strings.files), { always: countsApply }),
       kvRow(strings.unavailable_description, unavailDesc),
       kvRow(strings.unavailable_pages, unavailPages),
       data?.has_gaps ? kvRow(strings.has_gaps, 'yes') : '',
-      kvRow(strings.completed_at, formatDateTime(importedJson.processing_completed)),
-      kvRow(strings.failed_at, formatDateTime(importedJson.processing_failed)),
-      kvRow(strings.failed_stage, data?.error_stage),
-      kvRow(strings.error, data?.error)
+      kvRow(strings.completed_at, formatDateTime(importedJson.processing_completed), { always: finished }),
+      kvRow(strings.failed_at, formatDateTime(importedJson.processing_failed), { always: didFail }),
+      kvRow(strings.failed_stage, data?.error_stage, { always: didFail }),
+      kvRow(strings.error, data?.error, { always: didFail })
     ]);
   }
 

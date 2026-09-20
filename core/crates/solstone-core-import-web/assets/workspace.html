@@ -749,6 +749,10 @@ window._quickSaved = null;
 window._guidedClientItemId = null;
 let importEvents = {};
 const importGenerationFloor = {};
+// One page session's worth of generation floors. The list route's own ceiling is
+// IMPORT_PAGE_SIZE a page, so this holds several pages of history before it
+// starts dropping the oldest entry nothing is using.
+const IMPORT_GENERATION_FLOOR_CAP = 500;
 let importsCache = [];
 let currentSourceFilter = '';
 // G3-310: 417 imports at 25 a page took sixteen clicks to reach the oldest, and
@@ -829,10 +833,17 @@ async function navigateTo(view, options = {}) {
     currentGuideSource = null;
   }
 
+  // hashchange is delivered as a queued task, so a flag raised and dropped
+  // around the assignment is already down by the time the handler reads it:
+  // every programmatic navigation re-entered navigateTo and redid the work it
+  // had just finished -- a second GET for a progress view, and a second
+  // loadGuidedFlow that rewrote guideSteps under the focus repeatSource had
+  // just placed. The handler consumes the flag instead. It is only ever raised
+  // for an assignment that genuinely changes the fragment, so an assignment
+  // that fires no event cannot leave it stuck up.
   if (updateHash && window.location.hash !== nextHash) {
     navigatingHash = true;
     window.location.hash = nextHash;
-    navigatingHash = false;
   }
 }
 
@@ -848,6 +859,7 @@ window.addEventListener('hashchange', handleHashChange);
 
 function handleHashChange() {
   if (navigatingHash) {
+    navigatingHash = false;
     return;
   }
   const hash = (window.location.hash || '').replace(/^#/, '');
@@ -1042,9 +1054,11 @@ function renderProgressStats(eventData) {
   return `<div class="import-progress-stats">${stats.map(stat => `<div class="import-progress-stat">${escapeHtml(stat)}</div>`).join('')}</div>`;
 }
 
-function renderSourceDisplay(sourceType, sourceDisplay, fallbackText = '-') {
+// An unknown reads as an em dash everywhere the history table renders one, the
+// way the stats column already does. A measured zero is a number and stays 0.
+function renderSourceDisplay(sourceType, sourceDisplay, fallbackText = '—') {
   const iconSvg = sourceIconSvgByName[sourceType] || '';
-  const displayText = sourceDisplay || fallbackText || '-';
+  const displayText = sourceDisplay || fallbackText || '—';
   return `<div class="import-source-inline">${iconSvg ? `<span class="import-source-inline-icon" aria-hidden="true">${iconSvg}</span>` : ''}<span>${escapeHtml(displayText)}</span></div>`;
 }
 
@@ -1083,7 +1097,7 @@ function buildHistoryHeader(total, totalEntriesWritten) {
 function renderImportRow(imp) {
   const importedAtMs = (imp.imported_at || imp.created_at) * 1000;
   const importedAt = window.JournalFormat.timestamp(importedAtMs);
-  const targetDayDisplay = imp.target_day ? window.JournalFormat.day(imp.target_day) : '-';
+  const targetDayDisplay = imp.target_day ? window.JournalFormat.day(imp.target_day) : '—';
 
   let statusClass;
   let statusText;
@@ -1126,10 +1140,10 @@ function renderImportRow(imp) {
   const recordedDisplay = typeof imp.source_display === 'string' ? imp.source_display.trim() : '';
   const recordedIsFilename = /\.[a-z0-9]{2,5}$/i.test(recordedDisplay);
   const sourceDisplayText = knownSourceName || (recordedIsFilename ? '' : recordedDisplay);
-  const fileDisplay = imp.original_filename || (recordedIsFilename ? recordedDisplay : '') || '-';
+  const fileDisplay = imp.original_filename || (recordedIsFilename ? recordedDisplay : '') || '—';
   const sourceCell = sourceDisplayText
     ? renderSourceDisplay(imp.source_type || '', sourceDisplayText, sourceDisplayText)
-    : '-';
+    : '—';
   const statsText = formatImportStats(imp.entries_written, imp.entities_seeded);
   const encodedId = encodeURIComponent(imp.timestamp);
 
@@ -1141,7 +1155,7 @@ function renderImportRow(imp) {
   if (imp.target_day) {
     html += `<a href="/app/transcripts/${encodeURIComponent(imp.target_day)}" class="timestamp-link">${escapeHtml(targetDayDisplay)}</a>`;
   } else {
-    html += '-';
+    html += '—';
   }
   html += '</td>';
   html += `<td>${escapeHtml(fileDisplay)}</td>`;
@@ -1172,6 +1186,7 @@ async function loadImports() {
     }
     const imports = data.imports;
     importsCache = imports;
+    pruneImportGenerationFloor();
     totalImports = data.total;
     const container = document.getElementById('importListContent');
     clearImportListErrors();
@@ -1364,12 +1379,58 @@ function markRowStalled(importId) {
     row.classList.add('import-row--stalled');
     const statusCell = row.querySelector('.status-cell');
     if (statusCell) {
-      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">check status</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import ID: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
+      statusCell.innerHTML = `<span class="import-status stalled">stalled</span><button type="button" class="import-retry-btn" data-import-check-status="${escapeHtml(importId)}">check status</button><div class="progress-detail import-stalled-meta">stalled: no updates in 10 minutes. import id: ${escapeHtml(importId)}. ${window.CONVEY_COPY.RELOAD_HINT}</div><div class="import-retry-result"></div>`;
     }
   }
 
   refreshInlineProgress(importId);
   reconcileImportState(importId, { fromStall: true });
+}
+
+// The floor is module state that nothing ever pruned: a tab left open through a
+// few hundred imports kept a generation for every id it had ever seen. An id is
+// dropped once the history list no longer carries it and nothing in flight
+// refers to it.
+//
+// Pinned, and never dropped: the import the open progress view is showing --
+// that is the entry repeatSource depends on when it walks away from that view
+// and a delayed event for the old run lands afterwards -- and any import still
+// running, which is the only kind a stale event can still arrive for. An import
+// that has already finished is guarded by its own terminal state, so its floor
+// goes when it scrolls out of the history list.
+function pruneImportGenerationFloor() {
+  const tracked = Object.keys(importGenerationFloor);
+  if (!tracked.length) {
+    return;
+  }
+  const pinned = new Set();
+  const hash = (window.location.hash || '').replace(/^#/, '');
+  if (hash.startsWith('progress/')) {
+    pinned.add(hash.split('/')[1]);
+  }
+  Object.keys(importEvents).forEach(id => {
+    const event = importEvents[id];
+    if (event && !isTerminalState(event.event || event.status)) {
+      pinned.add(id);
+    }
+  });
+  const listed = new Set(importsCache.map(item => item.timestamp));
+  tracked.forEach(id => {
+    if (!pinned.has(id) && !listed.has(id)) {
+      delete importGenerationFloor[id];
+    }
+  });
+  const remaining = Object.keys(importGenerationFloor);
+  if (remaining.length <= IMPORT_GENERATION_FLOOR_CAP) {
+    return;
+  }
+  // Still over the cap after the list pass: the oldest unpinned ids go first.
+  // Import ids are timestamps, so they sort oldest to newest as strings.
+  const droppable = remaining.filter(id => !pinned.has(id)).sort();
+  let excess = remaining.length - IMPORT_GENERATION_FLOOR_CAP;
+  for (let index = 0; index < droppable.length && excess > 0; index += 1, excess -= 1) {
+    delete importGenerationFloor[droppable[index]];
+  }
 }
 
 function isTerminalState(eventOrStatus) {
@@ -1396,15 +1457,25 @@ function updateImportRow(importId, eventData, options = {}) {
     if (typeof newGen === 'number') {
       importGenerationFloor[importId] = Math.max(importGenerationFloor[importId] || 0, newGen);
     }
-    if (existing && !authoritative) {
-      if (isTerminalState(existing.event || existing.status) && !isTerminalState(eventData.event || eventData.status)) {
+    const incomingTerminal = isTerminalState(eventData.event || eventData.status);
+    // authoritative means "canonical for the generation gate", nothing more. A
+    // canonical read that says running does not erase a completed import: the
+    // only thing that outranks a terminal record is a later generation, which
+    // is a genuine re-run. Without this, one reconcile on the way into a
+    // progress view rewrote a finished import back to running.
+    if (existing) {
+      if (isTerminalState(existing.event || existing.status) && !incomingTerminal) {
         if (!(typeof currGen === 'number' && typeof newGen === 'number' && newGen > currGen)) {
           return;
         }
       }
     }
+    // A read of an import that is still going carries null for every fact it
+    // cannot answer yet. Merging those nulls would blank counts the owner has
+    // already been shown, so an unfinished update contributes only the keys it
+    // actually has an answer for.
     const cleanEventData = Object.fromEntries(
-      Object.entries(eventData).filter(([_, v]) => v !== undefined)
+      Object.entries(eventData).filter(([_, v]) => v !== undefined && (incomingTerminal || v !== null))
     );
     importEvents[importId] = { ...(existing || {}), ...cleanEventData };
     if (IMPORT_ROW_EVENTS.has(eventData.event)) {
@@ -2174,8 +2245,11 @@ function showProgressView(importId, eventData = null) {
     `;
   }
 
+  // tabindex="-1" is the landing place for focus when an answer repaints this
+  // panel out from under the button that asked for it: without somewhere to go,
+  // focus falls to <body> and a keyboard owner starts the page over.
   guideSteps.innerHTML = `
-    <div class="import-progress-panel">
+    <div class="import-progress-panel" tabindex="-1">
       <div class="import-step-number">progress</div>
       <h3 class="import-progress-title">${escapeHtml(displayName)}</h3>
       <p class="import-progress-message">${escapeHtml(stageLabel)}</p>
@@ -2337,14 +2411,29 @@ async function reconcileImportState(importId, options = {}) {
     const checkId = activeEl && typeof activeEl.getAttribute === 'function'
       ? activeEl.getAttribute('data-import-check-status')
       : null;
-    if (checkId) {
-      const safe = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(checkId) : checkId;
-      const btn = document.querySelector(`[data-import-check-status="${safe}"]`);
-      if (btn && typeof btn.focus === 'function') {
-        btn.focus();
-      }
-    } else if (activeEl && typeof activeEl.focus === 'function' && document.body && document.body.contains(activeEl)) {
+    const stillAttached = Boolean(
+      activeEl && document.body && typeof document.body.contains === 'function' && document.body.contains(activeEl)
+    );
+    if (stillAttached && typeof activeEl.focus === 'function') {
       activeEl.focus();
+    } else if (checkId) {
+      // The answer repaints the panel, so the button that was pressed is gone.
+      // The panel's own button is where focus belongs -- a document-wide lookup
+      // can land on the history row's button for the same import instead -- and
+      // a panel that has no button any more (it succeeded, or it failed) takes
+      // focus itself rather than letting it fall to <body>.
+      const safe = typeof CSS !== 'undefined' && typeof CSS.escape === 'function' ? CSS.escape(checkId) : checkId;
+      const selector = `[data-import-check-status="${safe}"]`;
+      const panel = typeof document.querySelector === 'function'
+        ? document.querySelector('.import-progress-panel')
+        : null;
+      const panelBtn = panel && typeof panel.querySelector === 'function' ? panel.querySelector(selector) : null;
+      const target = panelBtn
+        || panel
+        || (typeof document.querySelector === 'function' ? document.querySelector(selector) : null);
+      if (target && typeof target.focus === 'function') {
+        target.focus();
+      }
     }
   }
 }
