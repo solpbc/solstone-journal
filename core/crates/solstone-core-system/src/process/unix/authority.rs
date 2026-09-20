@@ -22,10 +22,10 @@ use super::spawn::ManagedProcess;
 use super::terminate::terminate_exact_instance;
 use crate::lifecycle::{
     AdmissionIdentity, AdmissionIntent, AdmissionResult, AdmissionResultState,
-    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV, ParentLossGeneration,
-    ParentLossLedger, ParentLossPhase, read_parent_loss_admission_acknowledgement,
-    write_parent_loss_admission_intent, write_parent_loss_admission_result,
-    write_parent_loss_admission_spawn_identity,
+    HOSTED_GENERATION_ENV, HOSTED_LAUNCH_ID_ENV, HOSTED_PARENT_LAUNCH_ID_ENV,
+    ParentLossAdmissionError, ParentLossGeneration, ParentLossLedger, ParentLossPhase,
+    read_parent_loss_admission_acknowledgement, write_parent_loss_admission_intent,
+    write_parent_loss_admission_result, write_parent_loss_admission_spawn_identity,
 };
 use solstone_core_journal_io::{LockOptions, hold_lock};
 
@@ -704,6 +704,9 @@ fn finish_hosted_admission(
         .map_err(|error| LaunchError::Admission(error.to_string()))?;
     let deadline = Instant::now() + provenance.acknowledgement_timeout;
     loop {
+        if Instant::now() >= deadline {
+            break;
+        }
         match read_parent_loss_admission_acknowledgement(
             &provenance.journal,
             provenance.generation,
@@ -725,10 +728,10 @@ fn finish_hosted_admission(
                 return Ok(());
             }
             Ok(Some(_)) => break,
-            Ok(None) if Instant::now() < deadline => {
+            Ok(None) | Err(ParentLossAdmissionError::Json(_)) => {
                 thread::sleep(Duration::from_millis(10));
             }
-            Ok(None) | Err(_) => break,
+            Err(_) => break,
         }
     }
     let result_state = match terminate_rejected_hosted_child(authority) {
@@ -898,7 +901,8 @@ fn production_confirm(pid: u32) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::fs;
+    use std::fs::{self, File, OpenOptions};
+    use std::io::Write;
     use std::path::PathBuf;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, Ordering};
@@ -906,8 +910,9 @@ mod tests {
 
     use super::super::super::SpawnOptions;
     use crate::lifecycle::{
-        AdmissionResult, AdmissionResultState, HostedServiceKind, ParentLossLedger,
-        ParentLossPhase, acknowledge_parent_loss_admission, write_parent_loss_admission_result,
+        AdmissionAcknowledgement, AdmissionResult, AdmissionResultState, HostedServiceKind,
+        ParentLossLedger, ParentLossPhase, acknowledge_parent_loss_admission,
+        write_parent_loss_admission_result,
     };
     use crate::process::{InstanceVerdict, ProcessBirth, ProcessInstance};
 
@@ -969,6 +974,97 @@ mod tests {
             .mark_admitting(active.generation, coordinator)
             .expect("admitting generation");
         (ledger, active.generation, coordinator)
+    }
+
+    fn admission_fixture(
+        name: &str,
+        launch_id: &str,
+        timeout: Duration,
+    ) -> (
+        JournalBed,
+        ParentLossLedger,
+        HostedLaunchProvenance,
+        LaunchAuthority,
+        LaunchedProcessIdentity,
+    ) {
+        let bed = JournalBed::new(name);
+        let (ledger, generation, _) = admitting_generation(&bed.root);
+        let provenance = HostedLaunchProvenance {
+            journal: bed.root.clone(),
+            generation,
+            launch_id: launch_id.to_owned(),
+            service: None,
+            parent_launch_id: Some("parent-service".to_owned()),
+            acknowledgement_timeout: timeout,
+        };
+        let authority = launch_managed_request(
+            Disposition::InheritedParentScope,
+            ManagedLaunchRequest {
+                command: vec!["/bin/sleep".to_owned(), "60".to_owned()],
+                options: SpawnOptions {
+                    journal_root: bed.root.clone(),
+                    reference: launch_id.to_owned(),
+                    day: None,
+                    sink: None,
+                    environment: BTreeMap::new(),
+                },
+            },
+        )
+        .expect("launch managed child");
+        let identity = authority.exact_identity().expect("exact child identity");
+        (bed, ledger, provenance, authority, identity)
+    }
+
+    fn partial_acknowledgement(
+        ledger: &ParentLossLedger,
+        generation: ParentLossGeneration,
+        launch_id: &str,
+    ) -> (File, PathBuf) {
+        let directory = ledger
+            .generation_path(generation)
+            .join("admissions")
+            .join(launch_id);
+        fs::create_dir_all(&directory).expect("acknowledgement directory");
+        let path = directory.join("acknowledgement.json");
+        let file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .expect("partial acknowledgement");
+        (file, path)
+    }
+
+    fn complete_acknowledgement(mut file: File, identity: AdmissionIdentity) {
+        let acknowledgement = AdmissionAcknowledgement {
+            schema: 1,
+            identity,
+        };
+        let mut bytes =
+            serde_json::to_vec_pretty(&acknowledgement).expect("serialize acknowledgement");
+        bytes.push(b'\n');
+        file.write_all(&bytes).expect("write acknowledgement");
+        file.sync_all().expect("sync acknowledgement");
+    }
+
+    fn wait_for_file(path: &Path) {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !path.exists() {
+            assert!(Instant::now() < deadline, "timed out waiting for {path:?}");
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn admission_result(
+        ledger: &ParentLossLedger,
+        generation: ParentLossGeneration,
+        launch_id: &str,
+    ) -> AdmissionResult {
+        let path = ledger
+            .generation_path(generation)
+            .join("admissions")
+            .join(launch_id)
+            .join("result.json");
+        serde_json::from_slice(&fs::read(path).expect("admission result")).expect("result JSON")
     }
 
     struct JournalBed {
@@ -1222,5 +1318,126 @@ mod tests {
                 .phase,
             ParentLossPhase::Admitting
         ));
+    }
+
+    #[test]
+    fn incomplete_acknowledgement_completed_before_deadline_admits_child() {
+        let launch_id = "partial-acknowledgement";
+        let (_bed, ledger, provenance, mut authority, identity) = admission_fixture(
+            "hosted-partial-acknowledgement",
+            launch_id,
+            Duration::from_secs(1),
+        );
+        let generation = provenance.generation;
+        let expected = AdmissionIdentity {
+            generation,
+            launch_id: launch_id.to_owned(),
+            instance: identity.instance,
+            uid: identity.uid,
+            parent_launch_id: provenance.parent_launch_id.clone(),
+        };
+        let (file, path) = partial_acknowledgement(&ledger, generation, launch_id);
+        assert!(
+            fs::read(&path)
+                .expect("incomplete acknowledgement")
+                .is_empty()
+        );
+        let spawn_identity_path = ledger
+            .generation_path(generation)
+            .join("admissions")
+            .join(launch_id)
+            .join("spawn-identity.json");
+        let writer = thread::spawn(move || {
+            wait_for_file(&spawn_identity_path);
+            thread::sleep(Duration::from_millis(100));
+            complete_acknowledgement(file, expected);
+        });
+
+        let finish = finish_hosted_admission(&mut authority, identity, &provenance);
+        writer.join().expect("acknowledgement writer");
+        finish.expect("partial acknowledgement admits before deadline");
+        assert!(matches!(
+            admission_result(&ledger, generation, launch_id).state,
+            AdmissionResultState::Admitted
+        ));
+        assert!(matches!(authority.poll(), Ok(None)));
+        authority
+            .terminate(Duration::from_secs(2))
+            .expect("terminate child");
+        authority.cleanup();
+    }
+
+    #[test]
+    fn acknowledgement_completed_after_deadline_does_not_admit_child() {
+        let launch_id = "late-acknowledgement";
+        let (_bed, ledger, provenance, mut authority, identity) = admission_fixture(
+            "hosted-late-acknowledgement",
+            launch_id,
+            Duration::from_millis(50),
+        );
+        let generation = provenance.generation;
+        let pid = authority.pid();
+        let expected = AdmissionIdentity {
+            generation,
+            launch_id: launch_id.to_owned(),
+            instance: identity.instance,
+            uid: identity.uid,
+            parent_launch_id: provenance.parent_launch_id.clone(),
+        };
+        let (file, path) = partial_acknowledgement(&ledger, generation, launch_id);
+        assert!(
+            fs::read(&path)
+                .expect("incomplete acknowledgement")
+                .is_empty()
+        );
+        let spawn_identity_path = ledger
+            .generation_path(generation)
+            .join("admissions")
+            .join(launch_id)
+            .join("spawn-identity.json");
+        let writer = thread::spawn(move || {
+            wait_for_file(&spawn_identity_path);
+            thread::sleep(Duration::from_millis(100));
+            complete_acknowledgement(file, expected);
+        });
+
+        let error = finish_hosted_admission(&mut authority, identity, &provenance)
+            .expect_err("late acknowledgement rejects child");
+        writer.join().expect("acknowledgement writer");
+        assert!(matches!(error, LaunchError::Admission(_)));
+        assert!(matches!(
+            admission_result(&ledger, generation, launch_id).state,
+            AdmissionResultState::RejectedAndReaped { .. }
+        ));
+        wait_until_gone(pid);
+        authority.cleanup();
+    }
+
+    #[test]
+    fn matching_acknowledgement_cannot_admit_after_deadline() {
+        let launch_id = "expired-acknowledgement";
+        let (_bed, ledger, provenance, mut authority, identity) =
+            admission_fixture("hosted-expired-acknowledgement", launch_id, Duration::ZERO);
+        let generation = provenance.generation;
+        let pid = authority.pid();
+        let expected = AdmissionIdentity {
+            generation,
+            launch_id: launch_id.to_owned(),
+            instance: identity.instance,
+            uid: identity.uid,
+            parent_launch_id: provenance.parent_launch_id.clone(),
+        };
+        let (file, _) = partial_acknowledgement(&ledger, generation, launch_id);
+        complete_acknowledgement(file, expected);
+
+        let error = finish_hosted_admission(&mut authority, identity, &provenance)
+            .expect_err("expired acknowledgement rejects child");
+        assert!(matches!(error, LaunchError::Admission(_)));
+        assert!(matches!(
+            admission_result(&ledger, generation, launch_id).state,
+            AdmissionResultState::RejectedAndReaped { .. }
+        ));
+        wait_until_gone(pid);
+        authority.cleanup();
     }
 }
