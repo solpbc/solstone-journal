@@ -56,7 +56,6 @@
     unconfirmed_explanation: "this import couldn't be confirmed as finished.",
     status_unavailable: 'import status unavailable',
     image_description_gap_detail: 'image saved without visual description',
-    image_description_gap_completion: 'original saved (description unavailable)',
     processing: 'processing…',
     failed_line: 'failed while processing',
     completed_in: 'completed in',
@@ -78,7 +77,6 @@
     staged: 'staged',
     importer: 'importer',
     processed: 'processed',
-    nothing_left: 'nothing left this machine',
     profile_link: 'review profile settings',
     collision_title: 'owner identity differs between journals',
     collision_body_before_target: 'this journal belongs to ',
@@ -538,7 +536,7 @@
     if (hasValue(importedJson?.source_type)) {
       clauses.push(`${importedJson.source_type} ${strings.importer}`);
     }
-    clauses.push(strings.nothing_left);
+    if (clauses.length === 0) return '';
     return `<p class="drawer-provenance">${clauses.map(escapeHtml).join(' · ')}</p>`;
   }
 

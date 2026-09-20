@@ -2261,6 +2261,28 @@ function runDetailDropsFactsThatDoNotApply() {
     assert.ok(!unavailableHtml.includes(`<dt>${label}</dt>`), `and nothing about "${label}"`);
   }
 
+  // The provenance line names only what the record proves. It used to close every
+  // import's drawer on "nothing left this machine", a custody claim the drawer
+  // cannot back: importing a document calls a model, and which model answers is
+  // one journal-wide setting the drawer never sees. With the clause gone, a record
+  // with neither a time nor a source has nothing to say and must render no line,
+  // rather than an empty paragraph.
+  for (const [name, html] of [
+    ['a clean success', successHtml],
+    ['a sparse success', sparseHtml],
+    ['an unavailable import', unavailableHtml],
+  ]) {
+    assert.ok(!html.includes('left this machine'), `${name} makes no claim about where the data went`);
+  }
+  assert.ok(
+    successHtml.includes('<p class="drawer-provenance">processed '),
+    'the provenance line still says when the import was processed'
+  );
+  assert.ok(
+    !unavailableHtml.includes('drawer-provenance'),
+    'a record with no time and no source renders no empty provenance line'
+  );
+
   const failedHtml = ImportDetail.renderDetail({
     status: 'failed', import_json: {}, imported_json: {}, error: 'disk full',
   });
