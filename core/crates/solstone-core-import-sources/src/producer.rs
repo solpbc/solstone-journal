@@ -313,8 +313,8 @@ where
     // Step 4: Publication Critical Section under hold_import_lock
     let _lock =
         solstone_core_import::metadata::hold_import_lock(request.journal_root, request.import_id)
-            .map_err(|_| NativeProducerError::PublicationFailed {
-            detail: "import failed".to_owned(),
+            .map_err(|error| NativeProducerError::PublicationFailed {
+            detail: format!("the import is busy: {error}"),
         })?;
 
     // Check generation under lock
@@ -379,7 +379,7 @@ where
                         },
                     );
                     return Err(NativeProducerError::PublicationFailed {
-                        detail: "import failed".to_owned(),
+                        detail: err.to_string(),
                     });
                 }
             };
@@ -449,7 +449,7 @@ where
                             },
                         );
                         return Err(NativeProducerError::PublicationFailed {
-                            detail: "import failed".to_owned(),
+                            detail: meta_err.to_string(),
                         });
                     }
                     emit_importer_completed(
@@ -526,7 +526,7 @@ where
                         },
                     );
                     Err(NativeProducerError::PublicationFailed {
-                        detail: "import failed".to_owned(),
+                        detail: "one or more publication operations failed".to_owned(),
                     })
                 }
             }
@@ -616,7 +616,7 @@ where
                         },
                     );
                     return Err(NativeProducerError::PublicationFailed {
-                        detail: "import failed".to_owned(),
+                        detail: meta_err.to_string(),
                     });
                 }
 
@@ -684,7 +684,11 @@ where
                     },
                 );
                 Err(NativeProducerError::SourceFailed {
-                    detail: "import failed".to_owned(),
+                    detail: if import_res.hard_failures.is_empty() {
+                        "the document import produced no entries".to_owned()
+                    } else {
+                        import_res.hard_failures.join("; ")
+                    },
                 })
             }
         }
@@ -775,6 +779,137 @@ mod tests {
         }
 
         fn emit_drain(&self, _journal: &Path, _revision: Option<&str>, _day: &str) {}
+    }
+
+    /// Real publication operations, except that the day's health marker can be touched
+    /// only once: the touch when the original is installed succeeds and the one during
+    /// publication fails, the way a marker blocked after install would.
+    struct MarkerFailsAtPublication {
+        touches: std::sync::atomic::AtomicUsize,
+    }
+
+    impl PublicationOperations for MarkerFailsAtPublication {
+        fn advance_stream(
+            &self,
+            journal: &Path,
+            segment: &CreatedSegment,
+        ) -> Result<StreamAdvance, UnboundStreamAdvanceError> {
+            solstone_core_import::NativePublicationOperations.advance_stream(journal, segment)
+        }
+
+        fn rescan_file(&self, journal: &Path, path: &Path) -> Result<RescanFileStatus, String> {
+            solstone_core_import::NativePublicationOperations.rescan_file(journal, path)
+        }
+
+        fn touch_stream_health_marker(&self, journal: &Path, day: &str) -> Result<(), String> {
+            if self
+                .touches
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                == 0
+            {
+                solstone_core_import::NativePublicationOperations
+                    .touch_stream_health_marker(journal, day)
+            } else {
+                Err("blocked publication marker".to_owned())
+            }
+        }
+
+        fn emit_observed(
+            &self,
+            journal: &Path,
+            revision: Option<&str>,
+            day: &str,
+            segment: &str,
+            stream: &str,
+        ) {
+            solstone_core_import::NativePublicationOperations
+                .emit_observed(journal, revision, day, segment, stream);
+        }
+
+        fn emit_enrichment_ready(
+            &self,
+            journal: &Path,
+            revision: Option<&str>,
+            import_id: &str,
+            importer: &str,
+            days: &[String],
+            entries_written: u64,
+        ) {
+            solstone_core_import::NativePublicationOperations.emit_enrichment_ready(
+                journal,
+                revision,
+                import_id,
+                importer,
+                days,
+                entries_written,
+            );
+        }
+
+        fn emit_drain(&self, journal: &Path, revision: Option<&str>, day: &str) {
+            solstone_core_import::NativePublicationOperations.emit_drain(journal, revision, day);
+        }
+    }
+
+    #[test]
+    fn a_day_marker_that_fails_at_publication_is_terminal_after_the_content_is_installed() {
+        let temp = tempfile::Builder::new()
+            .prefix("test-marker-at-publication-")
+            .tempdir()
+            .unwrap();
+        let root = temp.path();
+        let img_path = root.join("sample.png");
+        fs::write(&img_path, TINY_PNG).unwrap();
+        let id = "20260408_183000";
+
+        let result = run_native_producer(
+            NativeProducerRequest {
+                journal_root: root,
+                source_path: &img_path,
+                import_id: id,
+                source: RegistrySource::Image,
+                revision: None,
+                password: None,
+                force: false,
+                expected_generation: None,
+                before_publication: None,
+            },
+            &NullWireClient,
+            &NullPdfWorker,
+            &crate::NullDocumentModelClient,
+            &MarkerFailsAtPublication {
+                touches: std::sync::atomic::AtomicUsize::new(0),
+            },
+        );
+        assert!(
+            result.is_err(),
+            "a blocked publication marker is not success"
+        );
+
+        // The owner's original stays installed, the publication is recorded as a failure,
+        // and the projection calls it failed (not merely unconfirmed).
+        let installed = fs::read_dir(root.join("chronicle"))
+            .unwrap()
+            .flatten()
+            .flat_map(|day| {
+                fs::read_dir(day.path().join("import.image"))
+                    .unwrap()
+                    .flatten()
+            })
+            .any(|segment| segment.path().join("original.png").is_file());
+        assert!(installed, "original must remain installed");
+        let record: Value = serde_json::from_slice(
+            &fs::read(root.join("imports").join(id).join("imported.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["status"], "failure");
+        assert_eq!(record["day_markers"][0]["outcome"]["status"], "failed");
+        let projection = solstone_core_import::project_import_result(root, id);
+        assert_eq!(
+            projection.status,
+            solstone_core_import::ProjectionStatus::Failed,
+            "{projection:?}"
+        );
+        assert_eq!(projection.error_stage.as_deref(), Some("publication"));
     }
 
     #[test]
@@ -1222,9 +1357,7 @@ mod tests {
             &crate::NullDocumentModelClient,
             &solstone_core_import::NativePublicationOperations,
         );
-        assert!(
-            matches!(res, Err(NativeProducerError::SourceFailed { ref detail }) if detail == "import failed")
-        );
+        assert!(matches!(res, Err(NativeProducerError::SourceFailed { .. })));
         let proj = solstone_core_import::project_import_result(root, id);
         assert_ne!(proj.status, solstone_core_import::ProjectionStatus::Success);
     }

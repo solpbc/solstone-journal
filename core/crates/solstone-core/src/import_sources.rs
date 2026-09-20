@@ -150,9 +150,8 @@ fn run_document(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         Ok(outcome) => outcome,
         Err(error) => {
             return failure(format!(
-                "{} import failed: {}\n",
-                dispatch.source.name(),
-                producer_owner_message(&error)
+                "{} import failed: {error}\n",
+                dispatch.source.name()
             ));
         }
     };
@@ -388,9 +387,8 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         Ok(outcome) => outcome,
         Err(error) => {
             return failure(format!(
-                "{} import failed: {}\n",
-                dispatch.source.name(),
-                producer_owner_message(&error)
+                "{} import failed: {error}\n",
+                dispatch.source.name()
             ));
         }
     };
@@ -502,22 +500,9 @@ fn refuse_if_live_running(
         return None;
     }
     Some(failure(format!(
-        "{} import failed: import failed\n",
+        "{} import failed: another import of this file is already running\n",
         source.name()
     )))
-}
-
-fn producer_owner_message(
-    error: &solstone_core_import_sources::NativeProducerError,
-) -> &'static str {
-    match error {
-        solstone_core_import_sources::NativeProducerError::PublicationFailed { detail }
-            if detail.contains("interrupted") =>
-        {
-            "this import was interrupted before finalizing."
-        }
-        _ => "import failed",
-    }
 }
 
 fn render_result(source: RegistrySource, result: ImportResult) -> CliRun {
@@ -638,7 +623,8 @@ mod tests {
         );
         assert!(matches!(
             read_health_marker(journal.path(), &day, HealthMarkerKind::Stream).unwrap(),
-            HealthMarkerState::Versioned { marker, .. } if marker.generation == 1
+            // Touched when the original is installed and again by publication.
+            HealthMarkerState::Versioned { marker, .. } if marker.generation == 2
         ));
     }
 
@@ -664,6 +650,7 @@ mod tests {
 
         assert_ne!(run.exit_code, 0);
         assert!(run.stderr.contains("image import failed:"));
+        assert!(run.stderr.contains("publication failed"), "{}", run.stderr);
         let record: serde_json::Value = serde_json::from_slice(
             &fs::read(journal.path().join("imports/20260809_090000/imported.json")).unwrap(),
         )
@@ -676,7 +663,7 @@ mod tests {
     }
 
     #[test]
-    fn image_day_marker_failure_is_terminal_after_content_publication() {
+    fn image_day_marker_blocked_at_install_is_terminal_and_the_original_stays() {
         let journal = tempfile::tempdir().unwrap();
         let img = journal.path().join("sample.png");
         fs::write(&img, TINY_PNG).unwrap();
@@ -693,8 +680,17 @@ mod tests {
         let dispatch = image_dispatch(&img, "20260809_090000");
         let run = run(dispatch, journal.path());
 
+        // The marker is touched as soon as the original is installed, so a blocked marker
+        // stops the import there: typed, terminal, and the owner's original is retained.
+        // (A marker that fails later, during publication, is covered by the producer test
+        // `a_day_marker_that_fails_at_publication_is_terminal_after_the_content_is_installed`.)
         assert_ne!(run.exit_code, 0);
-        assert!(run.stderr.contains("image import failed:"));
+        assert!(
+            run.stderr.contains("image import failed:"),
+            "{}",
+            run.stderr
+        );
+        assert!(run.stderr.contains("remains installed"), "{}", run.stderr);
         assert!(
             journal
                 .path()
@@ -705,12 +701,6 @@ mod tests {
                 .join("original.png")
                 .is_file()
         );
-        let record: serde_json::Value = serde_json::from_slice(
-            &fs::read(journal.path().join("imports/20260809_090000/imported.json")).unwrap(),
-        )
-        .unwrap();
-        assert_eq!(record["status"], "failure");
-        assert_eq!(record["day_markers"][0]["outcome"]["status"], "failed");
     }
 
     #[test]
@@ -749,6 +739,7 @@ mod tests {
         let run = run(dispatch, journal.path());
         assert_ne!(run.exit_code, 0, "{}", run.stderr);
         assert!(run.stderr.contains("image import failed:"));
+        assert!(run.stderr.contains("already running"), "{}", run.stderr);
 
         let meta =
             solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
