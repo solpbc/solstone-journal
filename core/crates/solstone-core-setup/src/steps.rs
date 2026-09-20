@@ -25,6 +25,7 @@ use crate::user_config::{read_user_config, write_user_config};
 #[cfg(not(windows))]
 use crate::wrapper::{
     WrapperEnvironment, WrapperError, ensure_user_bin_on_path, provision_wrappers,
+    retire_legacy_launchers,
 };
 use crate::wrapper::{is_live_app_owned_child_launcher, wrapper_paths};
 
@@ -1510,16 +1511,6 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
     }
     #[cfg(not(windows))]
     {
-        if context.args.skip_wrapper {
-            let mut result = StepResult::new(
-                StepName::Wrapper,
-                StepStatus::Skipped,
-                Vec::new(),
-                (context.now)(),
-            );
-            result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
-            return Ok(result);
-        }
         let environment = WrapperEnvironment {
             home_dir: context.home_dir.clone(),
             curdir: context.project_root.clone(),
@@ -1527,6 +1518,39 @@ fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecut
             backup_dir: context.wrapper_backup_dir.clone(),
             legacy_replacement: context.legacy_replacement,
         };
+        if context.args.skip_wrapper {
+            // The caller writes no wrapper of its own, but a recognized V1
+            // launcher must not stay behind answering as the old version.
+            let mut result = StepResult::new(
+                StepName::Wrapper,
+                StepStatus::Skipped,
+                Vec::new(),
+                (context.now)(),
+            );
+            result.reason = Some(SkipReason::SkipWrapper.as_str().to_owned());
+            if context.legacy_replacement {
+                match retire_legacy_launchers(&environment) {
+                    Ok(removed) if !removed.is_empty() => result.notes.push(
+                        "removed the older version's command-line tools; their backups are in ~/.local/share/solstone/setup-backups"
+                            .into(),
+                    ),
+                    Ok(_) => {}
+                    // Optional cleanup: warn and let setup finish. Whatever
+                    // could not be retired is restored, so nothing is worse
+                    // than before, and the next run tries again.
+                    Err(error) => {
+                        result.status = StepStatus::Warning;
+                        result.error = Some(StepErrorPayload::WrapperWarning(WrapperWarning {
+                            message: format!(
+                                "could not remove the older version's command-line tools: {error}"
+                            ),
+                            fix_hint: "setup tries again the next time it runs.".into(),
+                        }));
+                    }
+                }
+            }
+            return Ok(result);
+        }
         let paths = wrapper_paths(&context.home_dir);
         match provision_wrappers(
             &environment,
@@ -3045,6 +3069,131 @@ mod tests {
                 "--skip-path must not create {login_file}"
             );
         }
+    }
+
+    /// Journal.app always passes `--skip-wrapper`, so a V1 launcher it finds would
+    /// otherwise keep answering as the old version for good.
+    #[cfg(unix)]
+    #[test]
+    fn skip_wrapper_retires_recognized_v1_launchers_only_when_replacing_v1() {
+        use std::os::unix::fs::PermissionsExt;
+        let (args, resolved, root, home) = fixture("wrapper-skip-retire", &["--skip-wrapper"]);
+        let home = fs::canonicalize(&home).unwrap();
+        let generation = home
+            .join("Library/Application Support/sol/runtime/1.4.16_py20260601_0123456789abcdef/bin");
+        let public_bin = home.join(".local/bin");
+        fs::create_dir_all(&generation).unwrap();
+        fs::create_dir_all(&public_bin).unwrap();
+        for command in ["sol", "journal"] {
+            let target = generation.join(command);
+            fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
+            fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+            let public = public_bin.join(command);
+            fs::write(
+                &public,
+                format!(
+                    "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                    target.display()
+                ),
+            )
+            .unwrap();
+            fs::set_permissions(&public, fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+
+        // Not replacing V1: skipped, and nothing is touched.
+        let result = step_wrapper(&mut context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        ))
+        .unwrap();
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert!(public_bin.join("journal").exists() && public_bin.join("sol").exists());
+
+        // Replacing V1: still skipped, but the recognized launchers are retired,
+        // backed up, and no V2 wrapper is written in their place.
+        let mut ctx = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        ctx.legacy_replacement = true;
+        let result = step_wrapper(&mut ctx).unwrap();
+        assert_eq!(result.status, StepStatus::Skipped);
+        assert_eq!(
+            result.reason.as_deref(),
+            Some(SkipReason::SkipWrapper.as_str())
+        );
+        for command in ["sol", "journal", "solstone"] {
+            assert!(!public_bin.join(command).exists(), "{command} must be gone");
+        }
+        assert_eq!(
+            fs::read_dir(root.join("wrapper-backups")).unwrap().count(),
+            2
+        );
+        assert_eq!(
+            result.notes.len(),
+            1,
+            "the manifest keeps a trace of the retirement"
+        );
+    }
+
+    /// The cleanup is optional: when it cannot complete, setup still finishes and
+    /// the launchers are left exactly as found.
+    #[cfg(unix)]
+    #[test]
+    fn skip_wrapper_retirement_failure_is_a_warning_not_a_failed_setup() {
+        use std::os::unix::fs::PermissionsExt;
+        let (args, resolved, root, home) = fixture("wrapper-skip-retire-warn", &["--skip-wrapper"]);
+        let home = fs::canonicalize(&home).unwrap();
+        let generation = home
+            .join("Library/Application Support/sol/runtime/1.4.16_py20260601_0123456789abcdef/bin");
+        let public_bin = home.join(".local/bin");
+        fs::create_dir_all(&generation).unwrap();
+        fs::create_dir_all(&public_bin).unwrap();
+        let target = generation.join("journal");
+        fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+        let public = public_bin.join("journal");
+        let body = format!(
+            "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+            target.display()
+        );
+        fs::write(&public, &body).unwrap();
+        fs::set_permissions(&public, fs::Permissions::from_mode(0o755)).unwrap();
+        // A regular file where the backup directory must be makes retirement fail.
+        fs::write(root.join("wrapper-backups"), "not a directory").unwrap();
+        let mut runner = FakeRunner::new(Vec::new());
+        let mut prompt = Prompt(false);
+        let mut ctx = context(
+            &args,
+            &resolved,
+            &root,
+            &home,
+            &mut runner,
+            &mut prompt,
+            None,
+        );
+        ctx.legacy_replacement = true;
+
+        let result = step_wrapper(&mut ctx).unwrap();
+
+        assert_eq!(result.status, StepStatus::Warning);
+        assert!(matches!(
+            result.error,
+            Some(StepErrorPayload::WrapperWarning(_))
+        ));
+        assert_eq!(fs::read_to_string(&public).unwrap(), body);
     }
 
     /// A degraded optional asset must not cost the owner their whole journal.

@@ -556,6 +556,11 @@ struct NamespaceLease {
     _owner_admission: OwnerAdmissionLease,
 }
 
+/// The admission refusal for wrapper or service artifacts that belong to another
+/// installation. Callers that word a recovery for the owner match on it.
+pub const FOREIGN_ARTIFACTS_REFUSAL: &str =
+    "existing wrapper or service artifacts are bound to a different installation";
+
 /// Provider failures, including unsafe storage states that require repair.
 #[derive(Debug)]
 pub enum IdentityError {
@@ -2151,9 +2156,9 @@ fn validate_initial_evidence(request: &SetupAdmissionRequest) -> Result<(), Iden
         (ArtifactBindingEvidence::Guarded(_), _) => Err(IdentityError::AdmissionRefused(
             "existing wrapper or service artifacts are guarded, but no matching installation record exists in identity storage",
         )),
-        (ArtifactBindingEvidence::Foreign, _) => Err(IdentityError::AdmissionRefused(
-            "existing wrapper or service artifacts are bound to a different installation",
-        )),
+        (ArtifactBindingEvidence::Foreign, _) => {
+            Err(IdentityError::AdmissionRefused(FOREIGN_ARTIFACTS_REFUSAL))
+        }
         _ => Err(IdentityError::AdmissionRefused(
             "existing artifacts have no valid bootstrap evidence",
         )),
@@ -2167,9 +2172,12 @@ fn validate_existing_evidence(
     match artifacts {
         ArtifactBindingEvidence::Fresh | ArtifactBindingEvidence::LegacyUnguarded => Ok(()),
         ArtifactBindingEvidence::Guarded(fields) if fields.matches_identity(binding) => Ok(()),
-        ArtifactBindingEvidence::Guarded(_) | ArtifactBindingEvidence::Foreign => Err(
-            IdentityError::AdmissionRefused("artifact guard does not match the admitted root"),
-        ),
+        ArtifactBindingEvidence::Guarded(_) => Err(IdentityError::AdmissionRefused(
+            "artifact guard does not match the admitted root",
+        )),
+        ArtifactBindingEvidence::Foreign => {
+            Err(IdentityError::AdmissionRefused(FOREIGN_ARTIFACTS_REFUSAL))
+        }
         ArtifactBindingEvidence::Malformed | ArtifactBindingEvidence::Ambiguous => Err(
             IdentityError::AdmissionRefused("artifact binding is malformed or ambiguous"),
         ),

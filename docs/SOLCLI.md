@@ -346,11 +346,15 @@ Step names are fixed and ordered: `doctor`, `journal`, `install_models`, `skills
 Skipped, warning, or resumed reasons are fixed: `--skip-models`, `--skip-brain`, `--skip-models implies --skip-brain`, `--skip-skills`, `--skip-service`, `--skip-wrapper`, `a provider is already configured`, `provider config is not in the expected shape`, `local provider unavailable on this host`, `local bootstrap did not start`, `sol on this Mac already keeps this journal`, `prior_run_ok`, `resumed_after_restart`.
 
 The `wrapper` setup step provisions both managed wrappers in-process for source
-and packaged installs. It backs up a non-owned alias under `/tmp` before
-overwriting it. When `--skip-wrapper` is passed, the step is skipped entirely
-and no alias is inspected or replaced. Provisioning failures emit
-`step.warning` and setup still exits successfully so the next run can repair
-the wrappers.
+and packaged installs. It backs up a replaced alias under
+`~/.local/share/solstone/setup-backups/` before overwriting it. When
+`--skip-wrapper` is passed, no wrapper is written. Where setup is replacing a
+previous-version install, the launchers it positively recognizes as that
+install's (`sol`, `journal`, `solstone`, `mlx-vlm-server`) are still backed up
+there and removed; anything else at those paths is left alone. If that cleanup
+cannot complete, setup emits `step.warning` and still exits successfully.
+Provisioning failures emit `step.warning` and setup still exits successfully so
+the next run can repair the wrappers.
 
 ### Doctor pass-through
 

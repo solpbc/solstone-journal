@@ -1022,8 +1022,24 @@ V1_HOME=$BASE/v1-home
 mkdir -p "$V1_HOME/.local/bin"
 printf '%s\n' '#!/usr/bin/python3' 'from solstone.think.sol_cli import journal_main' >"$V1_HOME/.local/bin/journal"
 chmod 755 "$V1_HOME/.local/bin/journal"
-expect_refuse v1-handoff v1-remains-setup-owned \
+expect_refuse upgrade-not-installed v1-upgrade-names-the-plain-install \
 	env HOME="$V1_HOME" "$INSTALL" --upgrade --prefix "$BASE/v1-prefix" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL"
+# A Python journal launcher is not a route: the plain install fetches the tree and
+# runs its own setup by absolute path, which is what replaces the old install.
+V1_ARGS=$BASE/v1-setup-args
+if env HOME="$V1_HOME" SOLSTONE_SETUP_ARGS_LOG="$V1_ARGS" \
+	"$INSTALL" --no-path --prefix "$BASE/v1-prefix" --archive "$ARCHIVE" --sha256 "$SHA" --release "$REL" \
+	>"$BASE/v1-install.out" 2>&1; then
+	if [ -x "$BASE/v1-prefix/current/bin/journal" ] \
+		&& [ "$(sed -n '1p' "$V1_ARGS")" = setup ] \
+		&& [ "$(sed -n '3p' "$V1_ARGS")" = --installer-transaction ]; then
+		pass "python journal launcher installs the tree and runs its setup"
+	else
+		fail "python journal launcher install did not run the tree's setup: $(cat "$V1_ARGS" 2>/dev/null)"
+	fi
+else
+	fail "python journal launcher blocked the install: $(cat "$BASE/v1-install.out")"
+fi
 
 PACKAGE_BIN=$BASE/package-bin
 mkdir -p "$PACKAGE_BIN"

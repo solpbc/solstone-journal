@@ -41,10 +41,11 @@ use identity_evidence::{
 };
 use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
-    ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession, IdentityError,
-    JournalToken, OwnerBase, PlatformTag, SetupAdmission, SetupAdmissionRequest,
-    admit_clean_uninstall, admit_setup, admit_setup_with_effective_journal_validator,
-    journal_token_from_path, load_installation_binding, namespace_name, root_token_from_path,
+    ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession,
+    FOREIGN_ARTIFACTS_REFUSAL, IdentityError, JournalToken, OwnerBase, PlatformTag, SetupAdmission,
+    SetupAdmissionRequest, admit_clean_uninstall, admit_setup,
+    admit_setup_with_effective_journal_validator, journal_token_from_path,
+    load_installation_binding, namespace_name, root_token_from_path,
 };
 use solstone_core_journal::{
     resolve_checkout_root_from_executable_dir, resolve_identity_root_from_executable_dir,
@@ -258,6 +259,15 @@ fn identity_recovery_paths(
     // the printed remedy is the same on every host and cannot change under us
     // between rendering the message and the owner running it.
     let mut paths = vec![(wrappers.journal, "-f"), (wrappers.solstone, "-f")];
+    // A V1 `sol` is never a V2 wrapper, so setup would leave it answering the old
+    // line; list it only when the exact V1 recognizer says the file is V1's.
+    let sol = home_dir.join(".local/bin/sol");
+    if matches!(
+        legacy_launcher::classify(home_dir, &sol, "sol"),
+        Ok(Some(_))
+    ) {
+        paths.push((sol, "-f"));
+    }
     if let Some(service) = steps::service_artifact_path(home_dir)? {
         paths.push((service, "-f"));
     }
@@ -271,6 +281,12 @@ fn identity_recovery_paths(
         ));
     }
     Ok(paths)
+}
+
+/// A path as one POSIX shell word. The printed steps are meant to be pasted, and
+/// a Mac's identity storage lives under `Application Support`, which has a space.
+fn shell_quote(path: &std::path::Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
 }
 
 fn installation_identity_dir(home_dir: &std::path::Path) -> Result<PathBuf, IdentityError> {
@@ -315,9 +331,19 @@ fn report_identity_failure<W: Write>(
     namespace: Option<&str>,
 ) -> ExitCode {
     let code = identity_error_code(error);
-    let (recovery, recovery_error) = match identity_recovery_paths(home_dir, namespace) {
-        Ok(paths) => (paths, None),
-        Err(error) => (Vec::new(), Some(error)),
+    // Another installation's working tools and service are not this one's to
+    // clear: the standard steps below would delete them.
+    let foreign = matches!(
+        error,
+        IdentityError::AdmissionRefused(reason) if *reason == FOREIGN_ARTIFACTS_REFUSAL
+    );
+    let (recovery, recovery_error) = if foreign {
+        (Vec::new(), None)
+    } else {
+        match identity_recovery_paths(home_dir, namespace) {
+            Ok(paths) => (paths, None),
+            Err(error) => (Vec::new(), Some(error)),
+        }
     };
     // Shape follows the shared setup/service-install recovery copy: the
     // owner-visible line first, the internal reason under `details:`.
@@ -332,7 +358,7 @@ fn report_identity_failure<W: Write>(
     // no-bootstrap-evidence state is the dedicated recovery for this branch.
     let steps = recovery
         .iter()
-        .map(|(path, flag)| format!("\n    rm {flag} {}", path.display()))
+        .map(|(path, flag)| format!("\n    rm {flag} {}", shell_quote(path)))
         .collect::<String>();
     // ⚠ Platform-specific, and it must follow the same cfg as
     // `service_artifact_path` -- on macOS that path is a LaunchAgent plist, so a
@@ -346,9 +372,13 @@ fn report_identity_failure<W: Write>(
         "\n    systemctl --user disable --now solstone.service"
     };
     let mut message = format!(
-        "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup files, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
+        "this installation couldn't be verified.\n\ndetails: {error}\n\nto recover, stop the service, remove this installation's setup artifacts, and run `journal setup` again:{stop_service}{steps}\n\nyour journal itself is untouched. none of these holds your memories."
     );
-    if cfg!(windows) {
+    if foreign {
+        message = format!(
+            "this installation couldn't be verified.\n\ndetails: {error}\n\nthe command-line tools or background support on this computer were set up by a different solstone installation, so nothing was changed."
+        );
+    } else if cfg!(windows) {
         let commands = recovery
             .iter()
             .map(|(path, flag)| {
@@ -1463,7 +1493,7 @@ mod tests {
                 let recurse = if flag == "-rf" { " -Recurse" } else { "" };
                 format!("Remove-Item -LiteralPath '{quoted}' -Force{recurse}")
             } else {
-                format!("rm {flag} {}", path.display())
+                format!("rm {flag} {}", shell_quote(&path))
             };
             assert!(text.contains(&command), "missing command {command}: {text}");
         }
@@ -1859,6 +1889,263 @@ mod tests {
             fs::read_to_string(&wrapper_path).unwrap(),
             wrapper_before,
             "a refused admission must never rewrite the foreign wrapper it could not vouch for"
+        );
+        // Another installation's working tools are not this one's to remove, so
+        // the refusal prints no command at all.
+        for command in ["rm ", "launchctl", "systemctl", "Remove-Item"] {
+            assert!(
+                !stderr.contains(command),
+                "a foreign-installation refusal must print no commands, found {command:?}: {stderr}"
+            );
+        }
+        assert!(
+            stderr.contains("were set up by a different solstone installation")
+                && stderr.contains("nothing was changed"),
+            "stderr: {stderr}"
+        );
+    }
+
+    /// The same refusal reached by a root that setup already admitted: it must not
+    /// print the standard steps either, because they would delete the other
+    /// installation's wrappers.
+    #[test]
+    fn an_admitted_root_meeting_another_installations_wrappers_prints_no_commands() {
+        let root = root("identity-admitted-foreign");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        let journal = root.join("journal");
+        fs::create_dir_all(&executable_dir).unwrap();
+        let run = |stdout: &mut Vec<u8>, stderr: &mut Vec<u8>| {
+            let args = parsed(
+                &[
+                    "--yes".into(),
+                    "--journal".into(),
+                    journal.display().to_string(),
+                    "--skip-models".into(),
+                    "--skip-skills".into(),
+                    "--skip-service".into(),
+                    "--skip-brain".into(),
+                ],
+                &root,
+            );
+            let doctor = CommandOutput {
+                exit_code: 0,
+                stdout: "{}".into(),
+                stderr: String::new(),
+                timed_out: false,
+            };
+            run_owner_setup_with_io(
+                args,
+                home.clone(),
+                executable_dir.clone(),
+                root.to_path_buf(),
+                false,
+                false,
+                seams(vec![doctor]),
+                stdout,
+                stderr,
+            )
+        };
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        assert_eq!(run(&mut stdout, &mut stderr), ExitCode::SUCCESS);
+
+        // Another installation now owns both wrappers.
+        let foreign_root = root.join("a-completely-different-installation");
+        fs::create_dir_all(&foreign_root).unwrap();
+        let foreign_namespace = namespace_name(
+            PlatformTag::current(),
+            &root_token_from_path(&foreign_root).unwrap(),
+        );
+        let foreign_guard = GuardFields {
+            namespace: foreign_namespace,
+            id: solstone_core_installation_identity::InstallationId::parse(
+                "00112233445566778899aabbccddeeff",
+            )
+            .unwrap(),
+            generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
+            journal_token: journal_token_from_path(&journal).unwrap(),
+        };
+        for (command, name) in [
+            (crate::wrapper::WrapperCommand::Solstone, "solstone"),
+            (crate::wrapper::WrapperCommand::Journal, "journal"),
+        ] {
+            let foreign = crate::wrapper::render_wrapper(
+                command,
+                &journal,
+                &foreign_root.join(name),
+                &foreign_guard,
+            )
+            .unwrap();
+            fs::write(home.join(".local/bin").join(name), foreign).unwrap();
+        }
+
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        assert_eq!(run(&mut stdout, &mut stderr), ExitCode::from(2));
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(
+            stderr.contains("were set up by a different solstone installation"),
+            "{stderr}"
+        );
+        for command in ["rm ", "launchctl", "systemctl"] {
+            assert!(!stderr.contains(command), "found {command:?}: {stderr}");
+        }
+    }
+
+    #[test]
+    fn a_foreign_installation_refusal_lists_no_remedy_paths_in_jsonl() {
+        let home = std::env::temp_dir().join("setup foreign owner");
+        let namespace = "c".repeat(64);
+        let mut stdout: Vec<u8> = Vec::new();
+        let mut stderr: Vec<u8> = Vec::new();
+        let exit = report_identity_failure(
+            true,
+            &mut stdout,
+            &mut stderr,
+            &IdentityError::AdmissionRefused(FOREIGN_ARTIFACTS_REFUSAL),
+            &home,
+            Some(namespace.as_str()),
+        );
+        assert_eq!(format!("{exit:?}"), format!("{:?}", ExitCode::from(2)));
+        let failed: serde_json::Value = String::from_utf8(stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|event| event["event"] == "step.failed")
+            .expect("a step.failed event");
+        assert_eq!(failed["error"]["remedy"], serde_json::json!([]));
+        assert!(
+            !failed["error"]["message"].as_str().unwrap().contains("rm "),
+            "{failed}"
+        );
+    }
+
+    /// The printed steps are pasted into a shell. An unquoted path with a space in
+    /// it (a Mac's `Application Support`) splits into two words and the `rm` does
+    /// nothing, so read each printed line back the way a POSIX shell would.
+    #[cfg(unix)]
+    #[test]
+    fn printed_recovery_commands_are_one_shell_word_per_path() {
+        /// POSIX word splitting for the quoting the printed lines use.
+        fn shell_words(line: &str) -> Vec<String> {
+            let (mut words, mut word, mut quoted, mut started) =
+                (Vec::new(), String::new(), false, false);
+            let mut chars = line.chars();
+            while let Some(character) = chars.next() {
+                match character {
+                    '\'' => {
+                        quoted = !quoted;
+                        started = true;
+                    }
+                    '\\' if !quoted => {
+                        word.push(chars.next().expect("a character after a backslash"));
+                        started = true;
+                    }
+                    character if character.is_whitespace() && !quoted => {
+                        if started {
+                            words.push(std::mem::take(&mut word));
+                            started = false;
+                        }
+                    }
+                    character => {
+                        word.push(character);
+                        started = true;
+                    }
+                }
+            }
+            assert!(!quoted, "unterminated quote in {line:?}");
+            if started {
+                words.push(word);
+            }
+            words
+        }
+
+        let root = root("recovery-shell");
+        fs::create_dir_all(root.join("owner's home/Library/Application Support")).unwrap();
+        let home = fs::canonicalize(root.join("owner's home")).unwrap();
+        let namespace = "d".repeat(64);
+        let recovery = identity_recovery_paths(&home, Some(namespace.as_str())).unwrap();
+        let mut stdout: Vec<u8> = Vec::new();
+        let mut stderr: Vec<u8> = Vec::new();
+        report_identity_failure(
+            false,
+            &mut stdout,
+            &mut stderr,
+            &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
+            &home,
+            Some(namespace.as_str()),
+        );
+        let text = String::from_utf8(stderr).unwrap();
+        let commands = text
+            .lines()
+            .filter(|line| line.starts_with("    rm "))
+            .map(shell_words)
+            .collect::<Vec<_>>();
+        assert_eq!(commands.len(), recovery.len(), "{text}");
+        for (words, (path, flag)) in commands.iter().zip(&recovery) {
+            assert_eq!(
+                words,
+                &vec![
+                    "rm".to_owned(),
+                    (*flag).to_owned(),
+                    path.to_string_lossy().into_owned()
+                ],
+                "the printed line must be exactly `rm {flag} <one word>`: {text}"
+            );
+        }
+    }
+
+    /// A V1 `sol` is listed for removal only when the exact V1 recognizer claims
+    /// it; an owner-authored file at the same path is never named.
+    #[cfg(unix)]
+    #[test]
+    fn the_remedy_lists_sol_only_when_it_is_a_recognized_v1_launcher() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = root("recovery-sol");
+        fs::create_dir_all(root.join("home/.local/bin")).unwrap();
+        let home = fs::canonicalize(root.join("home")).unwrap();
+        let sol = home.join(".local/bin/sol");
+        let listed = |home: &Path| {
+            identity_recovery_paths(home, None)
+                .unwrap()
+                .iter()
+                .any(|(path, flag)| path.ends_with(".local/bin/sol") && *flag == "-f")
+        };
+
+        fs::write(&sol, "#!/bin/sh\necho owner\n").unwrap();
+        fs::set_permissions(&sol, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(!listed(&home), "an unrecognized sol must not be listed");
+
+        let target = home.join(
+            "Library/Application Support/sol/runtime/1.4.16_py20260601_0123456789abcdef/bin/sol",
+        );
+        fs::create_dir_all(target.parent().unwrap()).unwrap();
+        fs::write(&target, "#!/bin/sh\nexit 0\n").unwrap();
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(
+            &sol,
+            format!(
+                "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                target.display()
+            ),
+        )
+        .unwrap();
+        fs::set_permissions(&sol, fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(listed(&home), "a recognized V1 sol must be listed");
+
+        let mut stdout: Vec<u8> = Vec::new();
+        let mut stderr: Vec<u8> = Vec::new();
+        report_identity_failure(
+            false,
+            &mut stdout,
+            &mut stderr,
+            &IdentityError::AdmissionRefused("artifact binding is malformed or ambiguous"),
+            &home,
+            None,
+        );
+        let text = String::from_utf8(stderr).unwrap();
+        assert!(
+            text.contains(&format!("rm -f {}", shell_quote(&sol))),
+            "the printed recovery must name the V1 sol: {text}"
         );
     }
 

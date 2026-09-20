@@ -265,6 +265,12 @@ pub fn validate_wrapper_pair(journal: &Path, executable_dir: &Path) -> Result<()
     Ok(())
 }
 
+pub fn retire_legacy_launchers(
+    _environment: &WrapperEnvironment,
+) -> Result<Vec<PathBuf>, WrapperError> {
+    Ok(Vec::new())
+}
+
 pub fn provision_wrappers(
     _environment: &WrapperEnvironment,
     _journal: &Path,

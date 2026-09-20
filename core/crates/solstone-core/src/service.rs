@@ -560,6 +560,22 @@ fn remove_runtime_registration(platform: Platform, target: &Path) -> Result<(), 
 }
 
 fn start(platform: Platform, home: &Path) -> Result<u8, String> {
+    let journal = kickstart(platform, home)?;
+    wait_started(&journal, READY_TIMEOUT, POLL_INTERVAL)?;
+    println!("service started");
+    Ok(0)
+}
+
+fn wait_started(journal: &Path, timeout: Duration, poll: Duration) -> Result<(), String> {
+    match wait_ready(journal, timeout, poll) {
+        Some(_) => Ok(()),
+        None => Err(ready_timeout_message(journal)),
+    }
+}
+
+/// Asks the service manager to start the unit and returns the journal it serves;
+/// the caller owns waiting for readiness.
+fn kickstart(platform: Platform, home: &Path) -> Result<PathBuf, String> {
     let _lock = service_lock(home)?;
     let target = unit_path(platform, home);
     require_managed(platform, &target)?;
@@ -578,8 +594,7 @@ fn start(platform: Platform, home: &Path) -> Result<u8, String> {
         }
     };
     require_success(result, "start service")?;
-    println!("service started");
-    Ok(0)
+    Ok(journal)
 }
 
 fn stop(platform: Platform, home: &Path) -> Result<u8, String> {
@@ -705,16 +720,18 @@ fn status(platform: Platform, home: &Path) -> Result<ExitCode, String> {
 fn up(platform: Platform, home: &Path) -> Result<ExitCode, String> {
     let target = unit_path(platform, home);
     require_managed(platform, &target)?;
-    match observe_runtime(platform, &target)? {
+    let started = match observe_runtime(platform, &target)? {
         RuntimeTruth::Absent | RuntimeTruth::Managed { active: false } => {
-            start(platform, home)?;
+            kickstart(platform, home)?;
+            true
         }
-        RuntimeTruth::Managed { active: true } => {}
+        RuntimeTruth::Managed { active: true } => false,
         other => return Err(runtime_error("up", other)),
-    }
+    };
     let journal = resolved_journal()?;
-    if wait_ready(&journal, READY_TIMEOUT, POLL_INTERVAL).is_none() {
-        return Err(ready_timeout_message(&journal));
+    wait_started(&journal, READY_TIMEOUT, POLL_INTERVAL)?;
+    if started {
+        println!("service started");
     }
     let _ = status(platform, home)?;
     Ok(ExitCode::SUCCESS)
@@ -2086,6 +2103,20 @@ mod tests {
 
         assert_eq!(ready_timeout_message(journal.path()), READY_TIMEOUT_MESSAGE);
         assert!(!journal.path().join("health").exists());
+    }
+
+    #[test]
+    fn start_does_not_report_success_for_a_service_that_never_became_ready() {
+        let journal = tempfile::tempdir_in("/var/tmp").unwrap();
+
+        assert_eq!(
+            wait_started(
+                journal.path(),
+                Duration::from_millis(200),
+                Duration::from_millis(20),
+            ),
+            Err(READY_TIMEOUT_MESSAGE.to_owned())
+        );
     }
 
     #[test]

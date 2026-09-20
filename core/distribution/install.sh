@@ -31,7 +31,6 @@
 #   route-busy
 #   route-unknown
 #   package-route
-#   v1-handoff
 #   upgrade-not-installed
 #   lane-unknown
 #   setup-failed
@@ -1369,10 +1368,6 @@ detect_existing_route() {
 	elif [ "$_package_present" -eq 1 ]; then
 		ROUTE=package
 		refuse package-route "this install is owned by the package database; run: ${_package_command}"
-	elif [ -f "$HOME/.local/bin/journal" ] \
-		&& grep -E 'python|solstone\.think\.sol_cli' "$HOME/.local/bin/journal" >/dev/null 2>&1; then
-		ROUTE=v1
-		refuse v1-handoff "the Python install remains owned by journal setup; run: journal setup"
 	elif [ "$UPGRADE" -eq 1 ]; then
 		refuse upgrade-not-installed "no installed journal route was detected; run the documented install command without --upgrade"
 	fi

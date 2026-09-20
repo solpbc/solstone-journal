@@ -712,6 +712,124 @@ pub fn validate_journal_path_for_wrapper(journal: &Path) -> Result<(), WrapperEr
     Ok(())
 }
 
+fn legacy_main_expectations(
+    environment: &WrapperEnvironment,
+    main_paths: &[(&str, PathBuf)],
+    legacy_mains: &[(String, Option<legacy_launcher::LegacyLauncher>)],
+) -> Vec<LegacyExpectation> {
+    main_paths
+        .iter()
+        .zip(legacy_mains)
+        .filter_map(|((command, path), (_, launcher))| {
+            launcher.clone().map(|launcher| LegacyExpectation {
+                home: environment.home_dir.clone(),
+                path: path.clone(),
+                command: (*command).to_owned(),
+                launcher,
+            })
+        })
+        .collect()
+}
+
+/// The `sol` and `mlx-vlm-server` launchers that the V1 recognizer claims and
+/// that come from the same installation as a recognized `solstone`/`journal`.
+///
+/// A launcher that cannot be inspected is reported as the returned error and
+/// does not hide the ones that could be.
+fn legacy_companions(
+    environment: &WrapperEnvironment,
+    legacy_mains: &[(String, Option<legacy_launcher::LegacyLauncher>)],
+) -> (Vec<LegacyExpectation>, Result<(), String>) {
+    let mut companions = Vec::new();
+    let mut inspected = Ok(());
+    for (command, companion, main_indices) in [
+        (
+            "sol",
+            environment.home_dir.join(".local/bin/sol"),
+            [Some(0_usize), Some(1_usize)],
+        ),
+        (
+            "mlx-vlm-server",
+            environment.home_dir.join(".local/bin/mlx-vlm-server"),
+            [Some(1_usize), None],
+        ),
+    ] {
+        let launcher = match legacy_launcher::classify(&environment.home_dir, &companion, command) {
+            Ok(launcher) => launcher,
+            Err(error) => {
+                inspected = inspected.and(Err(error));
+                continue;
+            }
+        };
+        if let Some(companion_launcher) = launcher
+            && main_indices.into_iter().flatten().any(|index| {
+                legacy_mains[index]
+                    .1
+                    .as_ref()
+                    .is_some_and(|main| main.same_installation(&companion_launcher))
+            })
+        {
+            companions.push(LegacyExpectation {
+                home: environment.home_dir.clone(),
+                path: companion,
+                command: command.to_owned(),
+                launcher: companion_launcher,
+            });
+        }
+    }
+    (companions, inspected)
+}
+
+/// Removes the V1 launchers the exact V1 recognizer claims -- backed up first,
+/// through the same path `provision_wrappers` takes when it replaces them -- and
+/// writes no V2 wrapper. For callers that skip wrapper provisioning but must not
+/// leave a 1.x `sol` or `journal` answering. Anything not positively recognized,
+/// or that cannot be inspected, is left exactly as it is.
+pub fn retire_legacy_launchers(
+    environment: &WrapperEnvironment,
+) -> Result<Vec<PathBuf>, WrapperError> {
+    let paths = wrapper_paths(&environment.home_dir);
+    let _lock = wrapper_lock(&environment.home_dir)?;
+    let main_paths = [("solstone", paths.solstone), ("journal", paths.journal)];
+    let legacy_mains = main_paths
+        .iter()
+        .map(|(command, path)| {
+            let launcher =
+                legacy_launcher::classify(&environment.home_dir, path, command).unwrap_or(None);
+            ((*command).to_owned(), launcher)
+        })
+        .collect::<Vec<_>>();
+    let mut expectations = legacy_main_expectations(environment, &main_paths, &legacy_mains);
+    expectations.extend(legacy_companions(environment, &legacy_mains).0);
+    let removals = expectations
+        .iter()
+        .map(|expectation| expectation.path.clone())
+        .collect::<Vec<_>>();
+    if removals.is_empty() {
+        return Ok(removals);
+    }
+    let snapshots = removals
+        .iter()
+        .map(|path| snapshot_path(path).map(|snapshot| (path.clone(), snapshot)))
+        .collect::<Result<Vec<_>, _>>()?;
+    let backup_directory = prepare_backup_directory(environment)?;
+    for (path, snapshot) in &snapshots {
+        let name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("wrapper");
+        backup_snapshot(snapshot, name, &backup_directory)?;
+    }
+    write_wrappers_and_remove_with(
+        &[],
+        &removals,
+        &snapshots,
+        &expectations,
+        &mut |from, to| fs::rename(from, to),
+    )?;
+    Ok(removals)
+}
+
 pub fn provision_wrappers(
     environment: &WrapperEnvironment,
     journal: &Path,
@@ -748,18 +866,7 @@ pub fn provision_wrappers(
         })
         .collect::<Result<Vec<_>, _>>()
         .map_err(WrapperError)?;
-    let mut legacy_expectations = main_paths
-        .iter()
-        .zip(&legacy_mains)
-        .filter_map(|((command, path), (_, launcher))| {
-            launcher.clone().map(|launcher| LegacyExpectation {
-                home: environment.home_dir.clone(),
-                path: path.clone(),
-                command: (*command).to_owned(),
-                launcher,
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut legacy_expectations = legacy_main_expectations(environment, &main_paths, &legacy_mains);
     for ((command, (state, _)), (_, legacy)) in states.iter().zip(&legacy_mains) {
         if matches!(
             state,
@@ -773,36 +880,11 @@ pub fn provision_wrappers(
     }
 
     let mut removals = Vec::new();
-    for (command, companion, main_indices) in [
-        (
-            "sol",
-            environment.home_dir.join(".local/bin/sol"),
-            [Some(0_usize), Some(1_usize)],
-        ),
-        (
-            "mlx-vlm-server",
-            environment.home_dir.join(".local/bin/mlx-vlm-server"),
-            [Some(1_usize), None],
-        ),
-    ] {
-        if let Some(companion_launcher) =
-            legacy_launcher::classify(&environment.home_dir, &companion, command)
-                .map_err(WrapperError)?
-            && main_indices.into_iter().flatten().any(|index| {
-                legacy_mains[index]
-                    .1
-                    .as_ref()
-                    .is_some_and(|main| main.same_installation(&companion_launcher))
-            })
-        {
-            removals.push(companion.clone());
-            legacy_expectations.push(LegacyExpectation {
-                home: environment.home_dir.clone(),
-                path: companion,
-                command: command.to_owned(),
-                launcher: companion_launcher,
-            });
-        }
+    let (companions, inspected) = legacy_companions(environment, &legacy_mains);
+    inspected.map_err(WrapperError)?;
+    for companion in companions {
+        removals.push(companion.path.clone());
+        legacy_expectations.push(companion);
     }
 
     let mut snapshot_paths = main_paths
@@ -1660,6 +1742,174 @@ mod tests {
                 .iter()
                 .any(|name| name.starts_with("sol.old-symlink-"))
         );
+    }
+
+    /// Lays down the 1.3.31 app-owned `sol` and `journal` launchers and returns
+    /// the public bin directory.
+    fn app_owned_v1_launchers(env: &WrapperEnvironment) -> PathBuf {
+        let generation = env
+            .home_dir
+            .join("Library/Application Support/sol/runtime/0.6.24_py20260510_bbd54541379bee6d");
+        let legacy_bin = generation.join("bin");
+        let public_bin = env.home_dir.join(".local/bin");
+        fs::create_dir_all(&legacy_bin).unwrap();
+        fs::create_dir_all(&public_bin).unwrap();
+        for command in ["sol", "journal"] {
+            write_executable(&legacy_bin.join(command), "#!/bin/sh\nexit 0\n");
+            write_executable(
+                &public_bin.join(command),
+                &format!(
+                    "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+                    legacy_bin.join(command).display()
+                ),
+            );
+        }
+        public_bin
+    }
+
+    #[test]
+    fn retiring_recognized_v1_launchers_backs_them_up_and_writes_no_wrapper() {
+        let root = root("retire-v1-launchers");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        let public_bin = app_owned_v1_launchers(&env);
+
+        let removed = retire_legacy_launchers(&env).unwrap();
+
+        assert_eq!(removed.len(), 2, "{removed:?}");
+        for command in ["sol", "journal", "solstone"] {
+            assert!(
+                !public_bin.join(command).exists(),
+                "{command} must be gone and no V2 wrapper written"
+            );
+        }
+        let backups = fs::read_dir(env.backup_dir())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        for command in ["sol", "journal"] {
+            assert!(
+                backups
+                    .iter()
+                    .any(|name| name.starts_with(&format!("{command}.old-symlink-"))),
+                "missing {command} backup in {backups:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn retiring_the_uv_tool_shape_removes_the_symlinks_and_keeps_their_backups() {
+        let root = root("retire-v1-uv-tool");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        let legacy_bin = env.home_dir.join(".local/share/uv/tools/solstone/bin");
+        let public_bin = env.home_dir.join(".local/bin");
+        fs::create_dir_all(&public_bin).unwrap();
+        for command in ["solstone", "sol"] {
+            let launcher = legacy_bin.join(command);
+            write_executable(&launcher, &legacy_python_launcher(command));
+            symlink(&launcher, public_bin.join(command)).unwrap();
+        }
+
+        let removed = retire_legacy_launchers(&env).unwrap();
+
+        assert_eq!(removed.len(), 2, "{removed:?}");
+        for command in ["solstone", "sol", "journal"] {
+            assert!(
+                !public_bin.join(command).exists() && !public_bin.join(command).is_symlink(),
+                "{command} must be gone and no V2 wrapper written"
+            );
+        }
+        for command in ["solstone", "sol"] {
+            let backup = fs::read_dir(env.backup_dir())
+                .unwrap()
+                .flatten()
+                .find(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with(&format!("{command}.old-symlink-"))
+                })
+                .unwrap_or_else(|| panic!("no {command} backup"));
+            assert_eq!(
+                fs::read_link(backup.path()).unwrap(),
+                legacy_bin.join(command)
+            );
+        }
+        // The launchers the symlinks pointed at are the old install's own files.
+        assert!(legacy_bin.join("solstone").exists());
+    }
+
+    #[test]
+    fn retiring_leaves_a_sol_that_belongs_to_a_different_installation() {
+        let root = root("retire-v1-other-sol");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        let public_bin = app_owned_v1_launchers(&env);
+        // A recognized `sol` from another generation than the recognized `journal`.
+        let other = env
+            .home_dir
+            .join("Library/Application Support/sol/runtime/0.6.25_py20260510_bbd54541379bee6d/bin");
+        write_executable(&other.join("sol"), "#!/bin/sh\nexit 0\n");
+        let other_sol = format!(
+            "#!/bin/sh\n# managed-version: app-owned-child\nexec '{}' \"$@\"\n",
+            other.join("sol").display()
+        );
+        write_executable(&public_bin.join("sol"), &other_sol);
+
+        let removed = retire_legacy_launchers(&env).unwrap();
+
+        assert_eq!(removed, vec![public_bin.join("journal")]);
+        assert_eq!(
+            fs::read_to_string(public_bin.join("sol")).unwrap(),
+            other_sol
+        );
+    }
+
+    #[test]
+    fn an_uninspectable_companion_does_not_strand_a_recognized_sol() {
+        let root = root("retire-v1-dangling-companion");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        let public_bin = app_owned_v1_launchers(&env);
+        symlink(root.join("gone"), public_bin.join("mlx-vlm-server")).unwrap();
+
+        let removed = retire_legacy_launchers(&env).unwrap();
+
+        assert_eq!(removed.len(), 2, "{removed:?}");
+        assert!(!public_bin.join("sol").exists());
+        assert!(!public_bin.join("journal").exists());
+        assert!(public_bin.join("mlx-vlm-server").is_symlink());
+    }
+
+    #[test]
+    fn retiring_leaves_everything_it_does_not_recognize_exactly_as_it_is() {
+        let root = root("retire-v1-controls");
+        let mut env = environment(&root);
+        env.legacy_replacement = true;
+        let public_bin = app_owned_v1_launchers(&env);
+        // An owner-authored `sol`, a V2 wrapper's stand-in and a dangling link.
+        write_executable(&public_bin.join("sol"), "#!/bin/sh\necho owner\n");
+        write_executable(&public_bin.join("solstone"), "owner solstone");
+        symlink(root.join("gone"), public_bin.join("mlx-vlm-server")).unwrap();
+
+        let removed = retire_legacy_launchers(&env).unwrap();
+
+        assert_eq!(removed, vec![public_bin.join("journal")]);
+        assert_eq!(
+            fs::read_to_string(public_bin.join("sol")).unwrap(),
+            "#!/bin/sh\necho owner\n"
+        );
+        assert_eq!(
+            fs::read_to_string(public_bin.join("solstone")).unwrap(),
+            "owner solstone"
+        );
+        assert!(public_bin.join("mlx-vlm-server").is_symlink());
+
+        // With nothing recognized there is nothing to do and nothing is backed up.
+        let removed = retire_legacy_launchers(&env).unwrap();
+        assert!(removed.is_empty());
     }
 
     #[test]
