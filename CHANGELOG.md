@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an import still in progress, unconfirmed, unavailable, or failed no longer says where it landed. completed imports still show where to find what they added, and image and document imports use the same source name in their detail and history views.
 - an audio import used to read as failed about an hour after you started it, even though the audio had already imported successfully. it now shows its real outcome, and the import history now names it "audio" instead of leaving it blank.
 
 ## [2.0.11] - 2026-09-20

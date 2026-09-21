@@ -2231,11 +2231,53 @@ function runDetailDropsFactsThatDoNotApply() {
     },
   };
   const successHtml = ImportDetail.renderDetail(cleanSuccess);
+  assert.ok(successHtml.includes('<h2>where this landed</h2>'), 'a completed import says where it landed');
+  assert.ok(successHtml.includes('href="#content"'), 'a completed import can lead to its imported content');
   for (const label of ['unavailable description', 'unavailable pages', 'failed at', 'failed stage', 'error']) {
     assert.ok(!successHtml.includes(`<dt>${label}</dt>`), `a clean success says nothing about "${label}"`);
   }
   assert.ok(!successHtml.includes('<dd>—</dd>'), 'a clean success renders no dashes at all');
   assert.ok(successHtml.includes('<dt>entries</dt><dd>60 entries</dd>'), 'the facts it does have are still rendered');
+
+  const canonicalSourceHtml = ImportDetail.renderDetail({
+    ...cleanSuccess,
+    source_type: 'image',
+    source_display: 'image',
+  });
+  assert.ok(
+    canonicalSourceHtml.includes('<dt>source</dt><dd>image</dd>'),
+    'the detail uses the route’s canonical source name'
+  );
+  assert.ok(
+    !canonicalSourceHtml.includes('<dt>source</dt><dd>Images</dd>'),
+    'the raw import metadata cannot override the canonical source name'
+  );
+
+  const collisionHtml = ImportDetail.renderDetail({
+    status: 'success',
+    target_day: '20260706',
+    import_json: {},
+    imported_json: {
+      target_day: '20260706',
+      principal_collision: { target_name: 'Ada', source_name: 'Ada Lovelace' },
+    },
+  });
+  assert.ok(
+    collisionHtml.includes('<h2>where this landed</h2>'),
+    'a completed import with an identity warning still says where it landed'
+  );
+
+  for (const status of ['failed', 'unconfirmed', 'unavailable', 'running', 'pending']) {
+    const html = ImportDetail.renderDetail({
+      status,
+      target_day: '20260706',
+      import_json: {},
+      imported_json: { target_day: '20260706' },
+    });
+    assert.ok(html.includes('<div class="drawer">'), `${status} still renders its bookkeeping drawer`);
+    assert.ok(!html.includes('<h2>where this landed</h2>'), `${status} does not claim a settled landing`);
+    assert.ok(!html.includes('href="#content"'), `${status} does not link to unsettled imported content`);
+  }
 
   const successWithoutCounts = {
     status: 'success',
@@ -2290,11 +2332,70 @@ function runDetailDropsFactsThatDoNotApply() {
   assert.ok(failedHtml.includes('<dt>failed at</dt><dd>—</dd>'), 'and owes the owner the time, even unknown');
   assert.ok(!failedHtml.includes('<dt>entries</dt>'), 'a failure does not report counts it never produced');
 
+  const highlightsHtml = ImportDetail.renderDetail({
+    status: 'failed',
+    import_json: {},
+    imported_json: {},
+    decision_highlights: {
+      staged_entities: [{ source_name: 'Ada', target_name: 'Ada Lovelace', staging_path: 'entities/ada.json' }],
+    },
+  });
+  assert.ok(highlightsHtml.includes('Ada → Ada Lovelace'), 'merge evidence uses the relationship arrow');
+  assert.ok(!highlightsHtml.includes('Ada -&gt; Ada Lovelace'), 'merge evidence no longer uses an ASCII arrow');
+
   assert.ok(
     ImportDetail.kvRow('status', ESCAPE_PAYLOAD).includes(`<dd>${ESCAPED_PAYLOAD}</dd>`),
     'the detail rows escape what they render'
   );
   cases += 1;
+}
+
+function runLoadErrorsUseHouseLowercase() {
+  const loadMoreError = new Element();
+  const table = {
+    parentNode: {
+      insertBefore(element) {
+        loadMoreError.innerHTML = element.innerHTML;
+      },
+      appendChild(element) {
+        loadMoreError.innerHTML = element.innerHTML;
+      },
+    },
+  };
+  const context = vm.createContext({ console, Error, Promise });
+  context.window = {
+    CONVEY_COPY: { RELOAD_HINT: 'reload to try again.' },
+    apiJson: () => Promise.reject(new Error('network unavailable')),
+  };
+  context.document = {
+    querySelector: (selector) => (selector === '.import-table' ? table : null),
+    getElementById: (id) => (id === 'importLoadMoreError' ? null : null),
+    createElement: () => new Element(),
+  };
+  context.importDetailPathSegment = 'import-1';
+  installRealEscapeHtml(context);
+  assertEscaperIsReal(context);
+  vm.runInContext(functionSource(workspace, 'renderLoadMoreError'), context);
+  const fullWorkspace = fs.readFileSync(path.join(crateDir, 'assets/workspace.html'), 'utf8');
+  vm.runInContext(functionSource(fullWorkspace, 'loadImportDetail'), context);
+
+  vm.runInContext("renderLoadMoreError(new Error('network unavailable'))", context);
+  assert.ok(loadMoreError.innerHTML.includes("couldn&#39;t load more imports."), 'the load-more failure uses house lowercase');
+  assert.ok(!loadMoreError.innerHTML.includes("Couldn&#39;t"), 'the load-more failure has no title case');
+
+  const importMeta = new Element();
+  const overview = new Element();
+  context.document.getElementById = (id) => {
+    if (id === 'importMeta') return importMeta;
+    if (id === 'overviewContent') return overview;
+    return null;
+  };
+  vm.runInContext('loadImportDetail()', context);
+  return new Promise((resolve) => setImmediate(resolve)).then(() => {
+    assert.ok(importMeta.innerHTML.includes("couldn&#39;t load import details."), 'the detail failure uses house lowercase');
+    assert.ok(!importMeta.innerHTML.includes("Couldn&#39;t"), 'the detail failure has no title case');
+    cases += 1;
+  });
 }
 
 // One page is a page, not "1 pages".
@@ -2929,6 +3030,7 @@ Promise.resolve()
   .then(runEveryOwnerSinkEscapes)
   .then(runDetailDropsFactsThatDoNotApply)
   .then(runDetailPageCountMatchesItsNumber)
+  .then(runLoadErrorsUseHouseLowercase)
   .then(runUnavailablePanelNeverEchoesTheServer)
   .then(runSourceCardsCarryNoInlineHandler)
   .then(runUnknownUsesTheEmDashInTheHistoryTable)
