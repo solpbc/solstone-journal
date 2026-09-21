@@ -844,12 +844,14 @@ fn prepare_schema_node(node: &mut Value) {
             // prompt) -- so they now pass through unmodified, and canonical
             // response validation (which already enforces every field
             // regardless) is no longer the only thing keeping this shape
-            // honest. See records/decisions for the two llama.cpp grammar
-            // limits this measurement found and the shipped-schema patterns it
-            // required rewriting to stay inside them: no bare `\d`/`\w`/`\s`
-            // regex shorthand (character classes only), and no top-level
-            // alternation between two independently anchored branches (write
-            // an optional pattern as `^(|X)$`, never `^$|^X$`).
+            // honest. That same measurement found two llama.cpp grammar
+            // limits, and every shipped schema pattern was rewritten to stay
+            // inside them: no bare `\d`/`\w`/`\s` regex shorthand (character
+            // classes only), and no top-level alternation between two
+            // independently anchored branches (write an optional pattern as
+            // `^(|X)$`, never `^$|^X$`) -- see
+            // `shipped_talent_schemas_avoid_local_grammar_incompatible_regex`
+            // below for the enforced contract.
             object.remove("x-truncate");
             let array = matches!(object.get("type"), Some(Value::String(kind)) if kind == "array")
                 || matches!(object.get("type"), Some(Value::Array(kinds)) if kinds.iter().any(|kind| kind == "array"));
@@ -1870,7 +1872,7 @@ mod tests {
     }
 
     /// The two llama.cpp grammar limits measured 2026-09-21 against the pinned
-    /// build (b10068, 571d0d540) on a real GPU host (fedora), directly:
+    /// build (b10068, 571d0d540) on a real GPU host, directly:
     /// `\d`/`\w`/`\s` regex shorthand and a bare backslash-digit class make the
     /// server return `400 failed to parse grammar` outright (reproduced on
     /// `\d\d:\d\d` alone, no alternation involved); a `pattern` shaped as two
@@ -1881,8 +1883,8 @@ mod tests {
     /// whole alternation (`^(|X)$`) and explicit `[0-9]`/`[^ )]` classes both
     /// measured clean, 8/8 and 3/3 samples respectively, including against an
     /// adversarial "meeting from 1:00pm to 1:30pm" prompt that had been
-    /// reliably producing a time RANGE in production
-    /// (`vpe-405`/`morning_briefing`, 2026-09-21 suze triage).
+    /// reliably producing a time RANGE in production (`morning_briefing`'s
+    /// `your_day` items, found in live triage 2026-09-21).
     ///
     /// `pattern` now flows unmodified to the local provider (see
     /// `prepare_schema_node` above), so a shipped schema carrying either shape
