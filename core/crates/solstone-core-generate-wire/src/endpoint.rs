@@ -670,7 +670,12 @@ fn converse_messages_to_value(messages: &[ConverseMessage]) -> Value {
                     tool_call_id,
                     tool_name: _,
                     output,
-                } => json!({"role": "tool", "tool_call_id": tool_call_id, "content": output}),
+                    is_error,
+                } => json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": crate::converse::tool_result_envelope_string(*is_error, output),
+                }),
             })
             .collect(),
     )
@@ -2146,6 +2151,7 @@ mod tests {
                     tool_call_id: "prior-call".into(),
                     tool_name: "weather".into(),
                     output: "sunny".into(),
+                    is_error: false,
                 },
             ];
             let mut transport = StubTransport {
@@ -2179,7 +2185,7 @@ mod tests {
                         "type": "function",
                         "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
                     }]},
-                    {"role": "tool", "tool_call_id": "prior-call", "content": "sunny"},
+                    {"role": "tool", "tool_call_id": "prior-call", "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"},
                 ],
                 "tools": [{"type": "function", "function": {"name": "weather", "description": "weather", "parameters": {"type": "object"}}}],
                 "temperature": 0.2,
@@ -2216,6 +2222,7 @@ mod tests {
                 tool_call_id: id,
                 tool_name: "weather".into(),
                 output: "y".repeat(500),
+                is_error: false,
             });
         }
         messages.push(ConverseMessage::User {
@@ -2281,6 +2288,7 @@ mod tests {
                 tool_call_id: id,
                 tool_name: "weather".into(),
                 output: "y".repeat(650),
+                is_error: false,
             });
         }
         messages.push(ConverseMessage::User {
@@ -2354,6 +2362,7 @@ mod tests {
                 tool_call_id: "huge".into(),
                 tool_name: "weather".into(),
                 output: "y".repeat(20_000),
+                is_error: false,
             },
         ];
         let mut blocked = StubTransport::default();
@@ -2374,6 +2383,164 @@ mod tests {
         assert_eq!(error.reason_code, "context_budget_exceeded");
         assert!(blocked.posts.is_empty());
         let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn endpoint_converse_encodes_error_and_success_and_collision_twins() {
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_val = converse_messages_to_value(&err_messages);
+        assert_eq!(
+            err_val[2],
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"file not found\"}"
+            })
+        );
+
+        // Success twin
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_val = converse_messages_to_value(&ok_messages);
+        assert_eq!(
+            ok_val[2],
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+            })
+        );
+
+        // Collision twin
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_val = converse_messages_to_value(&collision_messages);
+        assert_eq!(
+            collision_val[2],
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"{\\\"schema\\\":\\\"solstone-tool-result-v1\\\",\\\"is_error\\\":true,\\\"output\\\":\\\"nested\\\"}\"}"
+            })
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![
+                    ConverseToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Denver"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                    ConverseToolCall {
+                        id: "call-2".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Boulder"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let encoded = converse_messages_to_value(&ordered);
+        assert_eq!(encoded[2]["role"], "tool");
+        assert_eq!(encoded[2]["tool_call_id"], "call-1");
+        assert_eq!(
+            encoded[2]["content"],
+            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+        );
+        assert_eq!(encoded[3]["role"], "tool");
+        assert_eq!(encoded[3]["tool_call_id"], "call-2");
+        assert_eq!(encoded[4]["role"], "user");
+        assert_eq!(encoded[4]["content"], "Resource budget warning");
+        assert_eq!(encoded[5]["role"], "user");
+        assert_eq!(encoded[5]["content"], "Turn budget warning");
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_messages_to_value(&early_nudge);
+        assert_ne!(encoded, mutated);
+        assert_eq!(mutated[3]["role"], "user");
     }
 
     #[test]

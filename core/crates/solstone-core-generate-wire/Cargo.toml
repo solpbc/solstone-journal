@@ -14,12 +14,13 @@ base64 = "0.22.1"
 chrono.workspace = true
 image.workspace = true
 jsonschema.workspace = true
+regex = "1.13.1"
+serde = { workspace = true }
 serde_json.workspace = true
 solstone-core-generate.workspace = true
 solstone-core-local.workspace = true
 solstone-core-spp-ratls.workspace = true
 ureq = { workspace = true, features = ["rustls"] }
-regex = "1.13.1"
 
 [features]
 test-hooks = []

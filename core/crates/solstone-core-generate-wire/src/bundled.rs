@@ -214,6 +214,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::converse::*;
 
     fn request() -> GenerateRequest {
         GenerateRequest {
@@ -579,6 +580,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: r#"{"temperature_c":20}"#.into(),
+                is_error: false,
             },
             ConverseMessage::Assistant {
                 text: "It is 20°C.".into(),
@@ -620,7 +622,10 @@ mod tests {
         let (base_url, path, body) = &posts[0];
         assert_eq!(base_url, "http://127.0.0.1:1234");
         assert_eq!(path, "/v1/chat/completions");
-        let expected_body = oracle_case("tool-roundtrip-wire")["body"].clone();
+        let mut expected_body = oracle_case("tool-roundtrip-wire")["body"].clone();
+        expected_body["messages"][3]["content"] = Value::String(
+            r#"{"schema":"solstone-tool-result-v1","is_error":false,"output":"{\"temperature_c\":20}"}"#.to_string(),
+        );
         assert_eq!(
             serde_json::to_string(body).expect("production-built body serializes"),
             serde_json::to_string(&expected_body).expect("oracle body serializes")
@@ -633,6 +638,96 @@ mod tests {
         wrong_arguments["messages"][2]["tool_calls"][0]["function"]["arguments"] =
             json!({"city": "Denver"});
         assert_ne!(wrong_arguments, expected_body);
+        drop(posts);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn bundled_converse_preserves_assistant_results_nudge_ordering() {
+        let journal = journal_path();
+        let request = converse_request();
+        let messages = vec![
+            ConverseMessage::User {
+                text: "check".into(),
+            },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![
+                    ConverseToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Denver"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                    ConverseToolCall {
+                        id: "call-2".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Boulder"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "not found".into(),
+                is_error: true,
+            },
+            ConverseMessage::User {
+                text: "Budget warning: 80% used".into(),
+            },
+        ];
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "Read current weather".into(),
+            parameters: json!({"type": "object"}),
+        }];
+        let mut transport = StubTransport::success();
+        bundled_converse_with(
+            BundledConverseCall {
+                request: &request,
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                config: &Map::new(),
+                runtime: &EndpointRuntime::default(),
+            },
+            &mut transport,
+            |_| ConnectOutcome::Ready {
+                server: oracle_server(),
+            },
+            Instant::now(),
+        )
+        .expect("bundled Converse succeeds");
+
+        let posts = transport.posts.lock().expect("posts");
+        assert_eq!(posts.len(), 1);
+        let posted_messages = posts[0].2["messages"].as_array().expect("messages array");
+        assert_eq!(posted_messages.len(), 5);
+        assert_eq!(posted_messages[0]["role"], "user");
+        assert_eq!(posted_messages[1]["role"], "assistant");
+        assert_eq!(posted_messages[2]["role"], "tool");
+        assert_eq!(posted_messages[2]["tool_call_id"], "call-1");
+        assert_eq!(
+            posted_messages[2]["content"],
+            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+        );
+        assert_eq!(posted_messages[3]["role"], "tool");
+        assert_eq!(posted_messages[3]["tool_call_id"], "call-2");
+        assert_eq!(
+            posted_messages[3]["content"],
+            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"not found\"}"
+        );
+        assert_eq!(posted_messages[4]["role"], "user");
+        assert_eq!(posted_messages[4]["content"], "Budget warning: 80% used");
         drop(posts);
         let _ = std::fs::remove_dir_all(journal);
     }

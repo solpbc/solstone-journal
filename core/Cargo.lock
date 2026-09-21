@@ -3709,6 +3709,7 @@ dependencies = [
 name = "solstone-core-cogitate-runtime"
 version = "2.0.11"
 dependencies = [
+ "log",
  "serde",
  "serde_json",
  "solstone-core-cogitate",
@@ -4143,6 +4144,7 @@ dependencies = [
  "image",
  "jsonschema",
  "regex",
+ "serde",
  "serde_json",
  "socket2",
  "solstone-core-generate",
