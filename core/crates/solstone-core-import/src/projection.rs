@@ -991,7 +991,7 @@ fn derive_metrics(
         // was an image/document allow-list, which meant every new source had to remember to
         // add itself to a list it has no reason to know about -- and a source that forgot
         // rendered a successful row with a blank count.
-        if entries_written.is_none() && !pub_rec.segments.is_empty() {
+        if entries_written.is_none() {
             entries_written = Some(pub_rec.segments.len() as u64);
         }
     }

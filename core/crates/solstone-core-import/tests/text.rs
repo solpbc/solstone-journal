@@ -12,9 +12,11 @@ use solstone_core_generate::{
     RefusedResponse,
 };
 use solstone_core_import::{
-    TextImportError, TextWirePhase, WireClient, process_transcript_with_wire,
+    TextCreated, TextImportError, TextImportOutcome, TextWirePhase, WireClient,
+    process_transcript_with_wire,
 };
 use solstone_core_journal_io::{HealthMarkerKind, HealthMarkerState, read_health_marker};
+use solstone_core_segment::{ImportSource, Kind, StreamHints};
 
 struct RecordingWire {
     responses: RefCell<VecDeque<Result<GenerateResponse, ClientError>>>,
@@ -94,7 +96,7 @@ fn run(
     day: &Path,
     wire: &RecordingWire,
     audio_duration: Option<u64>,
-) -> Result<Vec<PathBuf>, TextImportError> {
+) -> TextImportOutcome {
     process_transcript_with_wire(
         path,
         day,
@@ -106,6 +108,30 @@ fn run(
         audio_duration,
         wire,
     )
+}
+
+fn run_ok(
+    path: &Path,
+    day: &Path,
+    wire: &RecordingWire,
+    audio_duration: Option<u64>,
+) -> Vec<TextCreated> {
+    match run(path, day, wire, audio_duration) {
+        TextImportOutcome::Success(work) => work.created,
+        TextImportOutcome::Failed { error, .. } => panic!("expected success, got error: {error:?}"),
+    }
+}
+
+fn run_err(
+    path: &Path,
+    day: &Path,
+    wire: &RecordingWire,
+    audio_duration: Option<u64>,
+) -> (Vec<TextCreated>, TextImportError) {
+    match run(path, day, wire, audio_duration) {
+        TextImportOutcome::Failed { created, error } => (created.created, error),
+        TextImportOutcome::Success(_) => panic!("expected failure, got success"),
+    }
 }
 
 fn rows(path: &Path) -> Vec<Value> {
@@ -130,19 +156,22 @@ fn oracle_case(name: &str) -> Value {
     oracle["cases"][name].clone()
 }
 
-fn assert_created_matches_oracle(created: &[PathBuf], expected: &Value) {
+fn assert_created_matches_oracle(created: &[TextCreated], expected: &Value) {
     let expected_created = expected["created"].as_array().unwrap();
     assert_eq!(created.len(), expected_created.len());
-    for (path, expected) in created.iter().zip(expected_created) {
+    for (item, expected) in created.iter().zip(expected_created) {
         assert_eq!(
-            path.parent().unwrap().file_name().unwrap(),
+            item.path.parent().unwrap().file_name().unwrap(),
             expected["segment_dir"].as_str().unwrap()
         );
         assert_eq!(
-            path.file_name().unwrap(),
+            item.path.file_name().unwrap(),
             expected["file"].as_str().unwrap()
         );
-        assert_eq!(rows(path), expected["rows"].as_array().unwrap().clone());
+        assert_eq!(
+            rows(&item.path),
+            expected["rows"].as_array().unwrap().clone()
+        );
     }
 }
 
@@ -173,7 +202,7 @@ fn ac1_gap_derived_durations_no_audio_duration_matches_oracle() {
     let wire = RecordingWire::new(standard_responses(&[
         "12:00:00", "12:00:12", "12:00:45", "12:05:01",
     ]));
-    let created = run(&source, &day, &wire, None).unwrap();
+    let created = run_ok(&source, &day, &wire, None);
     assert_created_matches_oracle(
         &created,
         &oracle_case("gap_derived_durations_no_audio_duration"),
@@ -186,7 +215,7 @@ fn ac1_last_segment_uses_audio_duration_matches_oracle() {
     let wire = RecordingWire::new(standard_responses(&[
         "12:00:00", "12:00:00", "12:00:30", "12:05:00",
     ]));
-    let created = run(&source, &day, &wire, Some(600)).unwrap();
+    let created = run_ok(&source, &day, &wire, Some(600));
     assert_created_matches_oracle(&created, &oracle_case("last_segment_uses_audio_duration"));
 }
 
@@ -206,9 +235,11 @@ fn ac1_out_of_order_raises_after_prior_write() {
             "",
         )),
     ]);
-    let error = run(&source, &day, &wire, None).unwrap_err();
+    let (created, error) = run_err(&source, &day, &wire, None);
     let expected = oracle_case("out_of_order_raises");
     assert_eq!(error.to_string(), expected["raised"]["message"]);
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].segment, "120000_300");
     assert!(
         day.join("import.text/120000_300/conversation_transcript.jsonl")
             .exists()
@@ -222,9 +253,12 @@ fn ac1_audio_duration_too_short_raises_after_prior_writes() {
     let wire = RecordingWire::new(standard_responses(&[
         "12:00:00", "12:00:00", "12:00:30", "12:05:00",
     ]));
-    let error = run(&source, &day, &wire, Some(10)).unwrap_err();
+    let (created, error) = run_err(&source, &day, &wire, Some(10));
     let expected = oracle_case("audio_duration_too_short_raises");
     assert_eq!(error.to_string(), expected["raised"]["message"]);
+    assert_eq!(created.len(), 2);
+    assert_eq!(created[0].segment, "120000_30");
+    assert_eq!(created[1].segment, "120030_270");
     assert!(
         day.join("import.text/120000_30/conversation_transcript.jsonl")
             .exists()
@@ -252,8 +286,10 @@ fn stream_marker_advances_before_a_later_segment_wire_failure() {
         }),
     ]);
 
-    let error = run(&source, &day, &wire, None).unwrap_err();
+    let (created, error) = run_err(&source, &day, &wire, None);
 
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].segment, "120000_30");
     assert!(matches!(
         error,
         TextImportError::Wire {
@@ -288,8 +324,10 @@ fn marker_failure_is_typed_and_retains_the_written_segment() {
         )),
     ]);
 
-    let error = run(&source, &day, &wire, None).unwrap_err();
+    let (created, error) = run_err(&source, &day, &wire, None);
 
+    assert_eq!(created.len(), 1);
+    assert_eq!(created[0].segment, "120000_5");
     assert!(matches!(
         &error,
         TextImportError::StreamMarker {
@@ -314,7 +352,7 @@ fn ac2_falsy_wrapper_is_skipped_matches_oracle() {
         refused(),
         generated(wrapper(json!([{"start": "12:05:00", "text": "z"}]), "", "")),
     ]);
-    let created = run(&source, &day, &wire, None).unwrap();
+    let created = run_ok(&source, &day, &wire, None);
     assert_created_matches_oracle(&created, &oracle_case("falsy_wrapper_is_skipped"));
 }
 
@@ -339,24 +377,24 @@ fn ac3_relativizes_entries_and_clamps_zero_duration_to_one_second() {
             "",
         )),
     ]);
-    let created = run(&source, &day, &wire, None).unwrap();
+    let created = run_ok(&source, &day, &wire, None);
     assert_eq!(
-        created[0].parent().unwrap().file_name().unwrap(),
+        created[0].path.parent().unwrap().file_name().unwrap(),
         "120000_1"
     );
     assert_eq!(
-        rows(&created[0])[1],
+        rows(&created[0].path)[1],
         json!({"start": "00:00:00", "text": "before", "source": "import"})
     );
     assert_eq!(
-        rows(&created[0])[2],
+        rows(&created[0].path)[2],
         json!({"start": "not-a-time", "text": "unchanged", "source": "import"})
     );
     assert_eq!(
-        rows(&created[0])[3],
+        rows(&created[0].path)[3],
         json!({"text": "missing-start", "source": "import"})
     );
-    assert_eq!(rows(&created[0])[4], json!({"start": "00:00:00"}));
+    assert_eq!(rows(&created[0].path)[4], json!({"start": "00:00:00"}));
 }
 
 #[test]
@@ -370,7 +408,7 @@ fn ac4_header_keeps_caller_and_model_setting_slots_distinct() {
             "office",
         )),
     ]);
-    let created = process_transcript_with_wire(
+    let outcome = process_transcript_with_wire(
         &source,
         &day,
         "12:00:00",
@@ -380,10 +418,11 @@ fn ac4_header_keeps_caller_and_model_setting_slots_distinct() {
         Some("caller-setting"),
         None,
         &wire,
-    )
-    .unwrap();
+    );
+    let created = outcome.created();
+    assert_eq!(created.len(), 1);
     assert_eq!(
-        rows(&created[0])[0],
+        rows(&created[0].path)[0],
         json!({
             "imported": {"id": "id", "facet": "work", "setting": "caller-setting"},
             "raw": "../../../imports/id/t.txt",
@@ -405,12 +444,13 @@ fn ac5_raw_back_reference_is_destination_independent() {
             generated(boundaries(&["12:00:00"])),
             generated(wrapper(json!([{"start": "12:00:00", "text": "x"}]), "", "")),
         ]);
-        let created = process_transcript_with_wire(
+        let outcome = process_transcript_with_wire(
             &source, day_dir, "12:00:00", import_id, stream, None, None, None, &wire,
-        )
-        .unwrap();
+        );
+        let created = outcome.created();
+        assert_eq!(created.len(), 1);
         assert_eq!(
-            rows(&created[0])[0]["raw"],
+            rows(&created[0].path)[0]["raw"],
             format!("../../../imports/{import_id}/t.txt")
         );
         let staged = temporary
@@ -433,7 +473,7 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
         generated(boundaries(&["12:00:00"])),
         generated(wrapper(json!([{"start": "12:00:00", "text": "x"}]), "", "")),
     ]);
-    run(&source, &day, &wire, None).unwrap();
+    run_ok(&source, &day, &wire, None);
     let requests = wire.requests.borrow();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[0].context, "observe.detect.segment");
@@ -476,7 +516,7 @@ fn ac7_recording_wire_receives_the_two_generate_request_shapes() {
 fn stamp_half_is_not_a_transcript_clock() {
     let (_temporary, source, day) = setup();
     let wire = RecordingWire::new(vec![refused(), refused()]);
-    let error = process_transcript_with_wire(
+    let outcome = process_transcript_with_wire(
         &source,
         &day,
         "062652",
@@ -486,12 +526,17 @@ fn stamp_half_is_not_a_transcript_clock() {
         None,
         None,
         &wire,
-    )
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        TextImportError::InvalidTime { value } if value == "062652"
-    ));
+    );
+    match outcome {
+        TextImportOutcome::Failed { created, error } => {
+            assert!(created.created.is_empty());
+            assert!(matches!(
+                error,
+                TextImportError::InvalidTime { value } if value == "062652"
+            ));
+        }
+        TextImportOutcome::Success(_) => panic!("expected failure"),
+    }
 }
 
 #[test]
@@ -500,10 +545,14 @@ fn ac8_unsupported_extension_is_rejected() {
     let source = temporary.path().join("t.pdf");
     fs::write(&source, "nope").unwrap();
     let wire = RecordingWire::new(Vec::new());
-    assert!(matches!(
-        run(&source, &day, &wire, None),
-        Err(TextImportError::UnsupportedFormat { .. })
-    ));
+    let outcome = run(&source, &day, &wire, None);
+    match outcome {
+        TextImportOutcome::Failed { created, error } => {
+            assert!(created.created.is_empty());
+            assert!(matches!(error, TextImportError::UnsupportedFormat { .. }));
+        }
+        TextImportOutcome::Success(_) => panic!("expected failure"),
+    }
 }
 
 #[test]
@@ -515,9 +564,9 @@ fn boundary_refusal_is_named_and_wire_failures_propagate_by_phase() {
     // success over an empty import (the empty-success case this test originally
     // closed). Wire IO failures still propagate by phase.
     let boundary_refusal = RecordingWire::new(vec![refused(), refused()]);
-    let created = run(&source, &day, &boundary_refusal, None).expect("fallback writes");
+    let created = run_ok(&source, &day, &boundary_refusal, None);
     assert_eq!(created.len(), 1);
-    let written = rows(&created[0]);
+    let written = rows(&created[0].path);
     assert_eq!(written[1]["text"], "one\ntwo\nthree");
     assert_eq!(written[1]["start"], "00:00:00");
 
@@ -525,12 +574,14 @@ fn boundary_refusal_is_named_and_wire_failures_propagate_by_phase() {
         primary: "down".to_owned(),
         cleanup: None,
     })]);
+    let (created_bf, error_bf) = run_err(&source, &day, &boundary_failure, None);
+    assert!(created_bf.is_empty());
     assert!(matches!(
-        run(&source, &day, &boundary_failure, None),
-        Err(TextImportError::Wire {
+        error_bf,
+        TextImportError::Wire {
             phase: TextWirePhase::SegmentBoundary,
             ..
-        })
+        }
     ));
 
     let conversion_failure = RecordingWire::new(vec![
@@ -540,12 +591,14 @@ fn boundary_refusal_is_named_and_wire_failures_propagate_by_phase() {
             cleanup: None,
         }),
     ]);
+    let (created_cf, error_cf) = run_err(&source, &day, &conversion_failure, None);
+    assert!(created_cf.is_empty());
     assert!(matches!(
-        run(&source, &day, &conversion_failure, None),
-        Err(TextImportError::Wire {
+        error_cf,
+        TextImportError::Wire {
             phase: TextWirePhase::SegmentJson,
             ..
-        })
+        }
     ));
 }
 
@@ -557,10 +610,50 @@ fn collisions_choose_and_report_a_different_segment_key() {
         generated(boundaries(&["12:00:00"])),
         generated(wrapper(json!([{"start": "12:00:00", "text": "x"}]), "", "")),
     ]);
-    let created = run(&source, &day, &wire, None).unwrap();
+    let created = run_ok(&source, &day, &wire, None);
     assert_ne!(
-        created[0].parent().unwrap().file_name().unwrap(),
+        created[0].path.parent().unwrap().file_name().unwrap(),
         "120000_5"
     );
-    assert!(created[0].exists());
+    assert!(created[0].path.exists());
+}
+
+#[test]
+fn text_created_identity_carries_complete_metadata() {
+    let (_temporary, source, day) = setup();
+    let wire = RecordingWire::new(vec![
+        generated(boundaries(&["12:00:00"])),
+        generated(wrapper(
+            json!([{"start": "12:00:00", "text": "hello"}]),
+            "",
+            "",
+        )),
+    ]);
+    let created = run_ok(&source, &day, &wire, None);
+    assert_eq!(created.len(), 1);
+    let item = &created[0];
+    assert_eq!(item.day, "20260311");
+    assert_eq!(item.segment, "120000_5");
+    assert_eq!(item.stream, "import.text");
+    assert_eq!(
+        item.hints,
+        StreamHints {
+            kind: Some(Kind::Imported(ImportSource::Named("text".to_owned()))),
+            host: None,
+            platform: None,
+        }
+    );
+    assert_eq!(item.created_segment().day, "20260311");
+    assert_eq!(item.created_segment().segment, "120000_5");
+}
+
+#[test]
+fn zero_segment_boundaries_ok_then_refused_returns_success_empty() {
+    let (_temporary, source, day) = setup();
+    let wire = RecordingWire::new(vec![generated(boundaries(&["12:00:00"])), refused()]);
+    let outcome = run(&source, &day, &wire, None);
+    let TextImportOutcome::Success(work) = outcome else {
+        panic!("expected Success with empty created, got {:?}", outcome);
+    };
+    assert!(work.created.is_empty());
 }

@@ -4288,6 +4288,7 @@ dependencies = [
 name = "solstone-core-import-host"
 version = "2.0.11"
 dependencies = [
+ "axum",
  "chrono",
  "ffmpeg-next",
  "ffmpeg-sys-next",
@@ -4295,13 +4296,16 @@ dependencies = [
  "serde_json",
  "solstone-core-body-ingest",
  "solstone-core-callosum",
+ "solstone-core-generate",
  "solstone-core-import",
+ "solstone-core-import-web",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
  "solstone-core-segment",
  "solstone-core-system-health",
  "tempfile",
  "tokio",
+ "tower",
 ]
 
 [[package]]

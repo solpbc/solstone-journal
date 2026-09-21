@@ -18,7 +18,57 @@ use solstone_core_journal_io::{
     bump_stream_marker, find_available_segment_with_occupied, health_marker_path, write_jsonl,
 };
 
-use crate::ModelDetectionError;
+use solstone_core_segment::{ImportSource, Kind, StreamHints};
+
+use crate::{CreatedSegment, ModelDetectionError};
+
+/// One segment created and written to disk during text import.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TextCreated {
+    pub day: String,
+    pub segment: String,
+    pub stream: String,
+    pub hints: StreamHints,
+    pub path: PathBuf,
+}
+
+impl TextCreated {
+    /// Convert to the publication segment descriptor.
+    pub fn created_segment(&self) -> CreatedSegment {
+        CreatedSegment {
+            day: self.day.clone(),
+            segment: self.segment.clone(),
+            stream: self.stream.clone(),
+            hints: self.hints.clone(),
+        }
+    }
+}
+
+/// Work completed so far by a text import.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TextImportWork {
+    pub created: Vec<TextCreated>,
+}
+
+/// Outcome of processing a generic transcript. Always carries identities written to disk.
+#[derive(Debug)]
+pub enum TextImportOutcome {
+    Success(TextImportWork),
+    Failed {
+        created: TextImportWork,
+        error: TextImportError,
+    },
+}
+
+impl TextImportOutcome {
+    /// Return the slice of segments written to disk.
+    pub fn created(&self) -> &[TextCreated] {
+        match self {
+            Self::Success(work) => &work.created,
+            Self::Failed { created, .. } => &created.created,
+        }
+    }
+}
 
 const PRIVATE_IMPORT_FILE_MODE: u32 = 0o600;
 const SEGMENT_PROMPT: &str = include_str!("text_assets/detect_transcript_segment.md");
@@ -162,7 +212,7 @@ impl WireClient for SystemWireClient {
 /// contract exactly. `audio_duration` is currently supplied by no native
 /// dispatcher, but remains public so the final-segment duration contract is
 /// available to its future owner. A refused or unparseable boundary-detection
-/// response returns an empty result without writing files; a refused or
+/// response returns an empty outcome without writing files; a refused or
 /// unparseable per-segment response skips only that segment and continues.
 #[allow(clippy::too_many_arguments)]
 pub fn process_transcript(
@@ -174,7 +224,7 @@ pub fn process_transcript(
     facet: Option<&str>,
     setting: Option<&str>,
     audio_duration: Option<u64>,
-) -> Result<Vec<PathBuf>, TextImportError> {
+) -> TextImportOutcome {
     process_transcript_with_wire(
         path,
         day_dir,
@@ -202,16 +252,42 @@ pub fn process_transcript_with_wire(
     setting: Option<&str>,
     audio_duration: Option<u64>,
     wire: &dyn WireClient,
-) -> Result<Vec<PathBuf>, TextImportError> {
-    let text = read_transcript(path)?;
-    let raw_filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| TextImportError::RawFilename {
-            path: path.to_path_buf(),
-        })?;
-    let (journal_root, day) = journal_marker_context(day_dir)?;
-    stage_raw_source(day_dir, import_id, path, raw_filename)?;
+) -> TextImportOutcome {
+    let text = match read_transcript(path) {
+        Ok(text) => text,
+        Err(error) => {
+            return TextImportOutcome::Failed {
+                created: TextImportWork::default(),
+                error,
+            };
+        }
+    };
+    let raw_filename = match path.file_name().and_then(|name| name.to_str()) {
+        Some(name) => name,
+        None => {
+            return TextImportOutcome::Failed {
+                created: TextImportWork::default(),
+                error: TextImportError::RawFilename {
+                    path: path.to_path_buf(),
+                },
+            };
+        }
+    };
+    let (journal_root, day) = match journal_marker_context(day_dir) {
+        Ok(ctx) => ctx,
+        Err(error) => {
+            return TextImportOutcome::Failed {
+                created: TextImportWork::default(),
+                error,
+            };
+        }
+    };
+    if let Err(error) = stage_raw_source(day_dir, import_id, path, raw_filename) {
+        return TextImportOutcome::Failed {
+            created: TextImportWork::default(),
+            error,
+        };
+    }
     let (segments, native_fallback) = match segment_transcript(wire, &text, start_time) {
         Ok(segments) => (segments, false),
         Err(ModelDetectionError::Unavailable) => (whole_file_segment(&text, start_time), true),
@@ -219,14 +295,25 @@ pub fn process_transcript_with_wire(
             (whole_file_segment(&text, start_time), true)
         }
         Err(ModelDetectionError::Failed(source)) => {
-            return Err(TextImportError::Wire {
-                phase: TextWirePhase::SegmentBoundary,
-                source,
-            });
+            return TextImportOutcome::Failed {
+                created: TextImportWork::default(),
+                error: TextImportError::Wire {
+                    phase: TextWirePhase::SegmentBoundary,
+                    source,
+                },
+            };
         }
     };
 
-    let recording_start_seconds = time_to_seconds(start_time)?;
+    let recording_start_seconds = match time_to_seconds(start_time) {
+        Ok(s) => s,
+        Err(error) => {
+            return TextImportOutcome::Failed {
+                created: TextImportWork::default(),
+                error,
+            };
+        }
+    };
     let parent = day_dir.join(stream);
     let mut occupied = HashSet::new();
     let mut created = Vec::new();
@@ -242,19 +329,39 @@ pub fn process_transcript_with_wire(
             }
             Err(ModelDetectionError::Unavailable) => continue,
             Err(ModelDetectionError::Failed(source)) => {
-                return Err(TextImportError::Wire {
-                    phase: TextWirePhase::SegmentJson,
-                    source,
-                });
+                return TextImportOutcome::Failed {
+                    created: TextImportWork { created },
+                    error: TextImportError::Wire {
+                        phase: TextWirePhase::SegmentJson,
+                        source,
+                    },
+                };
             }
         };
 
-        let segment_start_seconds = time_to_seconds(&segment.start_at)?;
+        let segment_start_seconds = match time_to_seconds(&segment.start_at) {
+            Ok(s) => s,
+            Err(error) => {
+                return TextImportOutcome::Failed {
+                    created: TextImportWork { created },
+                    error,
+                };
+            }
+        };
         let mut entries = wrapper.entries;
         relativize_entries(&mut entries, segment_start_seconds);
 
         let duration = if let Some(next) = segments.get(index + 1) {
-            i128::from(time_to_seconds(&next.start_at)?) - i128::from(segment_start_seconds)
+            let next_start = match time_to_seconds(&next.start_at) {
+                Ok(s) => s,
+                Err(error) => {
+                    return TextImportOutcome::Failed {
+                        created: TextImportWork { created },
+                        error,
+                    };
+                }
+            };
+            i128::from(next_start) - i128::from(segment_start_seconds)
         } else if let Some(audio_duration) = audio_duration.filter(|duration| *duration != 0) {
             i128::from(audio_duration)
                 - (i128::from(segment_start_seconds) - i128::from(recording_start_seconds))
@@ -263,18 +370,33 @@ pub fn process_transcript_with_wire(
         };
         let time_part = segment.start_at.replace(':', "");
         if duration < 0 {
-            return Err(TextImportError::NegativeDuration {
-                duration,
-                time_part,
-            });
+            return TextImportOutcome::Failed {
+                created: TextImportWork { created },
+                error: TextImportError::NegativeDuration {
+                    duration,
+                    time_part,
+                },
+            };
         }
         let candidate = format!("{time_part}_{}", duration.max(1));
-        let Some(segment_key) =
-            find_available_segment_with_occupied(&parent, &candidate, 100, &occupied)
-                .map_err(TextImportError::SegmentDeconflict)?
-        else {
-            return Err(TextImportError::SegmentKeyUnavailable { candidate });
-        };
+        let segment_key =
+            match find_available_segment_with_occupied(&parent, &candidate, 100, &occupied)
+                .map_err(TextImportError::SegmentDeconflict)
+            {
+                Ok(Some(key)) => key,
+                Ok(None) => {
+                    return TextImportOutcome::Failed {
+                        created: TextImportWork { created },
+                        error: TextImportError::SegmentKeyUnavailable { candidate },
+                    };
+                }
+                Err(error) => {
+                    return TextImportOutcome::Failed {
+                        created: TextImportWork { created },
+                        error,
+                    };
+                }
+            };
 
         let output = parent
             .join(&segment_key)
@@ -288,27 +410,50 @@ pub fn process_transcript_with_wire(
             wrapper.topics.as_deref(),
             wrapper.setting.as_deref(),
         );
-        write_jsonl(
+        if let Err(source) = write_jsonl(
             &output,
             rows,
             AtomicWriteOptions {
                 mode: Some(PRIVATE_IMPORT_FILE_MODE),
             },
-        )
-        .map_err(|source| TextImportError::Write {
-            path: output.clone(),
-            source,
-        })?;
-        bump_stream_marker(journal_root, day).map_err(|source| TextImportError::StreamMarker {
-            path: health_marker_path(journal_root, day, HealthMarkerKind::Stream),
+        ) {
+            return TextImportOutcome::Failed {
+                created: TextImportWork { created },
+                error: TextImportError::Write {
+                    path: output,
+                    source,
+                },
+            };
+        }
+
+        let hints = StreamHints {
+            kind: Some(Kind::Imported(ImportSource::Named("text".to_owned()))),
+            host: None,
+            platform: None,
+        };
+
+        created.push(TextCreated {
             day: day.to_owned(),
-            source,
-        })?;
+            segment: segment_key.clone(),
+            stream: stream.to_owned(),
+            hints,
+            path: output,
+        });
+
+        if let Err(source) = bump_stream_marker(journal_root, day) {
+            return TextImportOutcome::Failed {
+                created: TextImportWork { created },
+                error: TextImportError::StreamMarker {
+                    path: health_marker_path(journal_root, day, HealthMarkerKind::Stream),
+                    day: day.to_owned(),
+                    source,
+                },
+            };
+        }
         occupied.insert(segment_key);
-        created.push(output);
     }
 
-    Ok(created)
+    TextImportOutcome::Success(TextImportWork { created })
 }
 
 fn journal_marker_context(day_dir: &Path) -> Result<(&Path, &str), TextImportError> {
