@@ -316,7 +316,7 @@ async fn ac1_text_import_n_greater_than_one_success_direct_and_routes() {
     assert_eq!(row.get("status").and_then(Value::as_str), Some("success"));
     assert_eq!(row.get("source_type").and_then(Value::as_str), Some("text"));
     assert_eq!(row.get("entries_written").and_then(Value::as_u64), Some(2));
-    assert!(row.get("error").map_or(true, Value::is_null));
+    assert!(row.get("error").is_none_or(Value::is_null));
 
     // 3. Real detail route
     let app = solstone_core_import_web::routes(journal.clone());
@@ -334,7 +334,7 @@ async fn ac1_text_import_n_greater_than_one_success_direct_and_routes() {
         detail_json.get("entries_written").and_then(Value::as_u64),
         Some(2)
     );
-    assert!(detail_json.get("error").map_or(true, Value::is_null));
+    assert!(detail_json.get("error").is_none_or(Value::is_null));
 
     // 4. imported.json publication record
     let import_dir = journal.join("imports").join(timestamp);
@@ -384,7 +384,7 @@ async fn ac1_fresh_text_import_success_direct_and_routes() {
         .expect("row exists in list");
     assert_eq!(row.get("status").and_then(Value::as_str), Some("success"));
     assert_eq!(row.get("entries_written").and_then(Value::as_u64), Some(1));
-    assert!(row.get("error").map_or(true, Value::is_null));
+    assert!(row.get("error").is_none_or(Value::is_null));
 
     // 3. Real detail route
     let app = solstone_core_import_web::routes(journal.clone());
@@ -398,7 +398,7 @@ async fn ac1_fresh_text_import_success_direct_and_routes() {
         detail_json.get("entries_written").and_then(Value::as_u64),
         Some(1)
     );
-    assert!(detail_json.get("error").map_or(true, Value::is_null));
+    assert!(detail_json.get("error").is_none_or(Value::is_null));
 
     // 4. import.json attempt record
     let provenance = read_provenance(&journal, timestamp)
