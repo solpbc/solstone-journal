@@ -45,6 +45,14 @@ impl fmt::Display for ArchiveSafetyPhase {
     }
 }
 
+/// Structured mutation disposition for archive merge failures.
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum MergeMutationState {
+    NotMutated,
+    MayHaveMutated,
+    Unknown,
+}
+
 /// Error returned by a source seam or archive merge transaction.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ImportSourcesError {
@@ -89,6 +97,7 @@ pub enum ImportSourcesError {
     ExtractionCleanupFailed {
         extraction_dir: PathBuf,
         detail: String,
+        mutation: MergeMutationState,
     },
     LockBusy {
         protected_path: PathBuf,
@@ -127,7 +136,35 @@ pub enum ImportSourcesError {
     },
     MergePublishFailed {
         detail: String,
+        mutation: MergeMutationState,
     },
+}
+
+impl ImportSourcesError {
+    #[must_use]
+    pub fn mutation_state(&self) -> MergeMutationState {
+        match self {
+            Self::ExtractionCleanupFailed { mutation, .. }
+            | Self::MergePublishFailed { mutation, .. } => *mutation,
+            Self::Unimplemented { .. }
+            | Self::ArchiveNotFound { .. }
+            | Self::ArchiveTooLarge { .. }
+            | Self::ArchiveInvalid { .. }
+            | Self::ArchiveEntryEncrypted { .. }
+            | Self::ArchiveUnsafeEntry { .. }
+            | Self::ArchiveUncompressedTooLarge { .. }
+            | Self::ArchiveInsufficientSpace { .. }
+            | Self::ExtractionFailed { .. }
+            | Self::LockBusy { .. }
+            | Self::LockFailed { .. }
+            | Self::DecisionLogWrite { .. }
+            | Self::StagingWrite { .. }
+            | Self::SegmentMerge { .. }
+            | Self::EntityMerge { .. }
+            | Self::FacetMerge { .. }
+            | Self::ImportMerge { .. } => MergeMutationState::NotMutated,
+        }
+    }
 }
 
 impl fmt::Display for ImportSourcesError {
@@ -188,6 +225,7 @@ impl fmt::Display for ImportSourcesError {
             Self::ExtractionCleanupFailed {
                 extraction_dir,
                 detail,
+                ..
             } => write!(
                 formatter,
                 "failed cleaning extraction {}: {detail}",
@@ -233,7 +271,7 @@ impl fmt::Display for ImportSourcesError {
                 "import merge failed at {}: {detail}",
                 path.display()
             ),
-            Self::MergePublishFailed { detail } => {
+            Self::MergePublishFailed { detail, .. } => {
                 write!(formatter, "archive merge publish failed: {detail}")
             }
         }

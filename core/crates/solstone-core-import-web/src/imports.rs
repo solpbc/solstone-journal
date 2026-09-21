@@ -638,4 +638,138 @@ mod tests {
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["source_display"], "audio", "{body:?}");
     }
+
+    #[tokio::test]
+    async fn list_and_detail_project_completed_attempt_only_archive_as_success() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260809_120000");
+        let import_dir = journal.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        let metadata = json!({
+            "original_filename": "archive.zip",
+            "source_type": "journal_archive",
+            "source_hint": "journal_archive",
+            "task_id": id,
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": "completed",
+                "started_at_ms": 1_000,
+            }
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+        };
+
+        // Test list endpoint
+        let list_resp = list(State(state.clone()), Query(HashMap::new())).await;
+        let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list_body: Value = serde_json::from_slice(&list_bytes).unwrap();
+        let imports = list_body["imports"].as_array().expect("imports array");
+        let row = imports
+            .iter()
+            .find(|r| r["timestamp"] == id)
+            .expect("row exists");
+        assert_eq!(row["status"], "success", "{row:?}");
+        assert_eq!(row["source_type"], "journal_archive", "{row:?}");
+        assert!(row["error"].is_null(), "{row:?}");
+
+        // Test detail endpoint
+        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "success", "{body:?}");
+        assert_eq!(body["source_type"], "journal_archive", "{body:?}");
+        assert!(body["error"].is_null(), "{body:?}");
+    }
+
+    #[tokio::test]
+    async fn lock_failed_import_surfaces_safe_error_string_without_raw_path() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260809_120001");
+        let import_dir = journal.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        let metadata = json!({
+            "source_type": "journal_archive",
+            "source_hint": "journal_archive",
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": "unconfirmed",
+                "started_at_ms": 1_000,
+                "finished_at_ms": 2_000,
+                "duration_ms": 1_000,
+                "failure_reason": "import failed"
+            }
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+        };
+
+        // Test list endpoint
+        let list_resp = list(State(state.clone()), Query(HashMap::new())).await;
+        let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list_body: Value = serde_json::from_slice(&list_bytes).unwrap();
+        let imports = list_body["imports"].as_array().expect("imports array");
+        let row = imports
+            .iter()
+            .find(|r| r["timestamp"] == id)
+            .expect("row exists");
+        assert_eq!(row["status"], "failed", "{row:?}");
+        assert_eq!(row["error"], "import failed", "{row:?}");
+
+        // Test detail endpoint
+        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "failed", "{body:?}");
+        assert_eq!(body["error"], "import failed", "{body:?}");
+
+        // Assert neither error nor any detail field exposes the absolute journal path
+        let raw_path = journal.to_string_lossy();
+        fn assert_no_path(val: &Value, raw_path: &str) {
+            match val {
+                Value::String(s) => {
+                    assert!(
+                        !s.contains(raw_path),
+                        "value contained raw journal path: {s}"
+                    );
+                }
+                Value::Array(arr) => {
+                    for item in arr {
+                        assert_no_path(item, raw_path);
+                    }
+                }
+                Value::Object(map) => {
+                    for (k, v) in map {
+                        assert!(!k.contains(raw_path), "key contained raw journal path: {k}");
+                        assert_no_path(v, raw_path);
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert_no_path(&body, &raw_path);
+        assert_no_path(&list_body, &raw_path);
+    }
 }

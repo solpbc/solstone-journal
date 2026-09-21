@@ -39,7 +39,7 @@ use solstone_core_transfer_manifest::{
 use tar::{Archive, EntryType};
 use zip::ZipArchive;
 
-use crate::{ArchiveSafetyPhase, ImportSourcesError};
+use crate::{ArchiveSafetyPhase, ImportSourcesError, MergeMutationState};
 
 /// Trailing-slash authored tree prunes, copied from `PORTABLE_DENY` in
 /// `solstone-core-journal-archive/src/deny.rs` (the `config/` … `solstone/`
@@ -427,6 +427,16 @@ fn is_eight_digit_day(name: &str) -> bool {
     name.len() == 8 && name.as_bytes().iter().all(|byte| byte.is_ascii_digit())
 }
 
+/// Validate an archive before admission without acquiring locks or creating directories.
+pub fn validate_archive_preflight(
+    archive_path: &Path,
+    options: &ArchiveMergeOptions,
+) -> Result<(), ImportSourcesError> {
+    let kind = classify_archive(archive_path)?;
+    validate_archive(archive_path, kind, options)?;
+    Ok(())
+}
+
 /// Validate, extract, and merge an archive while holding the target merge lock.
 pub fn merge_journal_archive(
     archive_path: &Path,
@@ -471,6 +481,21 @@ pub fn merge_journal_archive(
         }
     };
     let outcome = merge_extracted(&extraction, target_journal_root, &artifact_dir, reindexer);
+    #[cfg(test)]
+    let extraction_cleanup = if EXTRACTION_CLEANUP_FAIL.with(|cell| cell.get()) {
+        Err(io::Error::other(
+            "injected post-merge extraction cleanup failure",
+        ))
+    } else {
+        fs::remove_dir_all(&extraction_dir).and_then(|()| {
+            if extraction_dir.exists() {
+                Err(io::Error::other("directory remains"))
+            } else {
+                Ok(())
+            }
+        })
+    };
+    #[cfg(not(test))]
     let extraction_cleanup = fs::remove_dir_all(&extraction_dir).and_then(|()| {
         if extraction_dir.exists() {
             Err(io::Error::other("directory remains"))
@@ -485,6 +510,7 @@ pub fn merge_journal_archive(
         (Ok(_), Err(error)) => Err(ImportSourcesError::ExtractionCleanupFailed {
             extraction_dir,
             detail: error.to_string(),
+            mutation: MergeMutationState::MayHaveMutated,
         }),
     }
 }
@@ -686,6 +712,18 @@ fn extract_zip_archive(
         extraction_dir: run_dir.to_path_buf(),
         detail: error.to_string(),
     })?;
+    #[cfg(test)]
+    if EXTRACT_CLEANUP_FAIL.with(|cell| cell.get()) {
+        return cleanup_extraction(
+            path,
+            run_dir,
+            ImportSourcesError::ExtractionFailed {
+                archive: path.to_path_buf(),
+                extraction_dir: run_dir.to_path_buf(),
+                detail: "injected extract failure".to_owned(),
+            },
+        );
+    }
     let required = expanded_size.saturating_add(options.free_space_reserve_bytes);
     let available =
         available_bytes(run_dir).map_err(|detail| ImportSourcesError::ExtractionFailed {
@@ -1148,6 +1186,17 @@ fn cleanup_extraction(
     run_dir: &Path,
     original: ImportSourcesError,
 ) -> Result<PathBuf, ImportSourcesError> {
+    #[cfg(test)]
+    if EXTRACT_CLEANUP_FAIL.with(|cell| cell.get()) {
+        return Err(ImportSourcesError::ExtractionCleanupFailed {
+            extraction_dir: run_dir.to_path_buf(),
+            detail: format!(
+                "injected extraction cleanup failure while handling {}",
+                path.display()
+            ),
+            mutation: MergeMutationState::NotMutated,
+        });
+    }
     match fs::remove_dir_all(run_dir).and_then(|()| {
         if run_dir.exists() {
             Err(io::Error::other("directory remains"))
@@ -1159,6 +1208,7 @@ fn cleanup_extraction(
         Err(error) => Err(ImportSourcesError::ExtractionCleanupFailed {
             extraction_dir: run_dir.to_path_buf(),
             detail: format!("while handling {}: {error}", path.display()),
+            mutation: MergeMutationState::NotMutated,
         }),
     }
 }
@@ -2150,6 +2200,7 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
                 rewrite_identity_map_cache(target).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
                         detail: error.to_string(),
+                        mutation: MergeMutationState::MayHaveMutated,
                     }
                 })?;
             }
@@ -2167,13 +2218,18 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
         Ok(())
     })();
     if let Err(error) = result {
+        let mutation = if state.published.is_empty() {
+            MergeMutationState::NotMutated
+        } else {
+            MergeMutationState::MayHaveMutated
+        };
         let undo_failures = undo_publish(target, state);
         let detail = if undo_failures.is_empty() {
             error.to_string()
         } else {
             format!("{error}; undo incomplete: {}", undo_failures.join("; "))
         };
-        return Err(ImportSourcesError::MergePublishFailed { detail });
+        return Err(ImportSourcesError::MergePublishFailed { detail, mutation });
     }
     let published_days = state
         .chronicle_units
@@ -2200,6 +2256,7 @@ fn publish_transaction(target: &Path, state: &mut MergeState) -> Result<(), Impo
                 "stream marker update failed after archive content was published: {}; published content was not rolled back",
                 marker_failures.join("; ")
             ),
+            mutation: MergeMutationState::MayHaveMutated,
         });
     }
     Ok(())
@@ -2228,14 +2285,24 @@ fn publish_one(
     unit: &PublishUnit,
 ) -> Result<(), ImportSourcesError> {
     let relative = unit.relative().to_owned();
+    let mutation = if state.published.is_empty() {
+        MergeMutationState::NotMutated
+    } else {
+        MergeMutationState::MayHaveMutated
+    };
+    if state.published.is_empty() {
+        maybe_fail_publish(0)?;
+    }
     let destination = join_contained(target, &relative).map_err(|error| {
         ImportSourcesError::MergePublishFailed {
             detail: error.to_string(),
+            mutation,
         }
     })?;
     let staged = join_contained(&state.staged_publish, &relative).map_err(|error| {
         ImportSourcesError::MergePublishFailed {
             detail: error.to_string(),
+            mutation,
         }
     })?;
     match unit {
@@ -2248,6 +2315,7 @@ fn publish_one(
             })
             .map_err(|error| ImportSourcesError::MergePublishFailed {
                 detail: error.to_string(),
+                mutation,
             })?;
             state.published.push(UndoRecord {
                 kind: UndoKind::UnlinkNew,
@@ -2259,6 +2327,7 @@ fn publish_one(
                 let bytes =
                     fs::read(&staged).map_err(|error| ImportSourcesError::MergePublishFailed {
                         detail: error.to_string(),
+                        mutation,
                     })?;
                 write_bytes_exclusive(
                     &destination,
@@ -2267,6 +2336,7 @@ fn publish_one(
                 )
                 .map_err(|error| ImportSourcesError::MergePublishFailed {
                     detail: error.to_string(),
+                    mutation,
                 })?;
                 mark_entity_json(state, &relative);
                 state.published.push(UndoRecord {
@@ -2278,23 +2348,27 @@ fn publish_one(
                 let undo = join_contained(&state.publish_undo, &relative).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
                         detail: error.to_string(),
+                        mutation,
                     }
                 })?;
                 if let Some(parent) = undo.parent() {
                     fs::create_dir_all(parent).map_err(|error| {
                         ImportSourcesError::MergePublishFailed {
                             detail: error.to_string(),
+                            mutation,
                         }
                     })?;
                 }
                 fs::copy(&destination, &undo).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
                         detail: error.to_string(),
+                        mutation,
                     }
                 })?;
                 let bytes =
                     fs::read(&staged).map_err(|error| ImportSourcesError::MergePublishFailed {
                         detail: error.to_string(),
+                        mutation,
                     })?;
                 atomic_replace(
                     &destination,
@@ -2303,6 +2377,7 @@ fn publish_one(
                 )
                 .map_err(|error| ImportSourcesError::MergePublishFailed {
                     detail: error.to_string(),
+                    mutation,
                 })?;
                 mark_entity_json(state, &relative);
                 state.published.push(UndoRecord {
@@ -2313,11 +2388,13 @@ fn publish_one(
             Ok(_) => {
                 return Err(ImportSourcesError::MergePublishFailed {
                     detail: format!("kind mismatch at {relative}"),
+                    mutation,
                 });
             }
             Err(error) => {
                 return Err(ImportSourcesError::MergePublishFailed {
                     detail: error.to_string(),
+                    mutation,
                 });
             }
         },
@@ -2340,6 +2417,11 @@ fn publish_pending_ambiguities(
     if state.pending_ambiguities.is_empty() {
         return Ok(());
     }
+    let mutation = if state.published.is_empty() {
+        MergeMutationState::NotMutated
+    } else {
+        MergeMutationState::MayHaveMutated
+    };
     let live = target.join("entities/ambiguities.jsonl");
     let relative = "entities/ambiguities.jsonl";
     match fs::symlink_metadata(&live) {
@@ -2347,17 +2429,20 @@ fn publish_pending_ambiguities(
             let undo = join_contained(&state.publish_undo, relative).map_err(|error| {
                 ImportSourcesError::MergePublishFailed {
                     detail: error.to_string(),
+                    mutation,
                 }
             })?;
             if let Some(parent) = undo.parent() {
                 fs::create_dir_all(parent).map_err(|error| {
                     ImportSourcesError::MergePublishFailed {
                         detail: error.to_string(),
+                        mutation,
                     }
                 })?;
             }
             fs::copy(&live, &undo).map_err(|error| ImportSourcesError::MergePublishFailed {
                 detail: error.to_string(),
+                mutation,
             })?;
             state.published.push(UndoRecord {
                 kind: UndoKind::Restore,
@@ -2373,11 +2458,13 @@ fn publish_pending_ambiguities(
         Ok(_) => {
             return Err(ImportSourcesError::MergePublishFailed {
                 detail: "kind mismatch at entities/ambiguities.jsonl".to_owned(),
+                mutation,
             });
         }
         Err(error) => {
             return Err(ImportSourcesError::MergePublishFailed {
                 detail: error.to_string(),
+                mutation,
             });
         }
     }
@@ -2385,6 +2472,7 @@ fn publish_pending_ambiguities(
         record_ambiguity_observation(target, observation).map_err(|error| {
             ImportSourcesError::MergePublishFailed {
                 detail: error.to_string(),
+                mutation,
             }
         })?;
     }
@@ -2492,6 +2580,8 @@ thread_local! {
     static PUBLISH_FAIL_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     static UNDO_CRASH_AFTER: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
     static UNDO_DROP_PREIMAGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EXTRACTION_CLEANUP_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static EXTRACT_CLEANUP_FAIL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 #[cfg(test)]
@@ -2512,6 +2602,16 @@ pub fn inject_undo_crash_after(count: Option<usize>) {
 #[cfg(test)]
 pub fn inject_undo_drop_preimages(drop: bool) {
     UNDO_DROP_PREIMAGES.with(|cell| cell.set(drop));
+}
+
+#[cfg(test)]
+pub fn inject_extraction_cleanup_fail(fail: bool) {
+    EXTRACTION_CLEANUP_FAIL.with(|cell| cell.set(fail));
+}
+
+#[cfg(test)]
+pub fn inject_extract_cleanup_fail(fail: bool) {
+    EXTRACT_CLEANUP_FAIL.with(|cell| cell.set(fail));
 }
 
 #[cfg(test)]
@@ -2546,8 +2646,14 @@ fn maybe_fail_publish(count: usize) -> Result<(), ImportSourcesError> {
             }
         });
         if fail {
+            let mutation = if count == 0 {
+                MergeMutationState::NotMutated
+            } else {
+                MergeMutationState::MayHaveMutated
+            };
             return Err(ImportSourcesError::MergePublishFailed {
                 detail: "injected publish failure".to_owned(),
+                mutation,
             });
         }
     }
@@ -2740,6 +2846,8 @@ mod tests {
             inject_publish_fail_after(None);
             inject_undo_crash_after(None);
             inject_undo_drop_preimages(false);
+            inject_extraction_cleanup_fail(false);
+            inject_extract_cleanup_fail(false);
         }
     }
 
@@ -3244,7 +3352,7 @@ mod tests {
         inject_undo_drop_preimages(true);
         let error = merge_journal_archive(&archive, &target, &options, None).unwrap_err();
         match error {
-            ImportSourcesError::MergePublishFailed { detail } => {
+            ImportSourcesError::MergePublishFailed { detail, .. } => {
                 assert!(
                     detail.contains("undo incomplete"),
                     "expected nested undo failures in {detail}"
@@ -3479,5 +3587,114 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.path);
         }
+    }
+
+    #[test]
+    fn extraction_cleanup_failure_at_extract_is_not_mutated() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[("chronicle/20260101/120000_60/value", b"source")],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let before_target = journal_family_snapshot(&target);
+        inject_extract_cleanup_fail(true);
+
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert!(matches!(
+            error,
+            ImportSourcesError::ExtractionCleanupFailed {
+                mutation: MergeMutationState::NotMutated,
+                ..
+            }
+        ));
+        assert_eq!(journal_family_snapshot(&target), before_target);
+    }
+
+    #[test]
+    fn extraction_cleanup_failure_post_merge_is_may_have_mutated() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[("chronicle/20260101/120000_60/value", b"source")],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        inject_extraction_cleanup_fail(true);
+
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert!(matches!(
+            error,
+            ImportSourcesError::ExtractionCleanupFailed {
+                mutation: MergeMutationState::MayHaveMutated,
+                ..
+            }
+        ));
+        assert_eq!(
+            fs::read(target.join("chronicle/20260101/120000_60/value")).unwrap(),
+            b"source"
+        );
+    }
+
+    #[test]
+    fn merge_publish_failed_before_first_commit_is_not_mutated() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[("chronicle/20260101/120000_60/value", b"source")],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        let before_target = journal_family_snapshot(&target);
+        inject_publish_fail_after(Some(0));
+
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert_eq!(error.mutation_state(), MergeMutationState::NotMutated);
+        assert_eq!(journal_family_snapshot(&target), before_target);
+    }
+
+    #[test]
+    fn merge_publish_failed_after_first_commit_is_may_have_mutated() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[
+                ("chronicle/20260101/120000_60/value", b"a"),
+                ("chronicle/20260102/120000_60/value", b"b"),
+            ],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        inject_publish_fail_after(Some(1));
+
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert_eq!(error.mutation_state(), MergeMutationState::MayHaveMutated);
+    }
+
+    #[test]
+    fn stream_marker_failure_after_publish_is_may_have_mutated() {
+        let _reset = FaultReset;
+        let tree = PlanTree::new();
+        let archive = write_zip(
+            &tree.path,
+            &[("chronicle/20260101/120000_60/value", b"source")],
+        );
+        let target = tree.path.join("target");
+        fs::create_dir(&target).unwrap();
+        // Cause touch_stream_health_marker to fail by creating a directory where the file would be
+        fs::create_dir_all(target.join("chronicle/20260101/health/stream.updated")).unwrap();
+
+        let error =
+            merge_journal_archive(&archive, &target, &merge_options(&tree), None).unwrap_err();
+        assert_eq!(error.mutation_state(), MergeMutationState::MayHaveMutated);
     }
 }

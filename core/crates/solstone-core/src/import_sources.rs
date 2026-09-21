@@ -15,14 +15,17 @@ use std::ffi::OsString;
 use solstone_core_generate::OneShotClient;
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::publish::NativePublicationOperations;
-use solstone_core_import::{ImportResult, RegistrySource, cli_render};
+use solstone_core_import::{
+    AttemptFacts, AttemptState, ImportError, ImportResult, RegistrySource, cli_render,
+};
 use solstone_core_import_host::cli_argv::RegistryDispatch;
 use solstone_core_import_sources::archive::{
     ArchiveMergeOptions, ArchiveMergeResult, FullReindexRequester, ReindexStatus, RetryDisposition,
-    merge_journal_archive, plan_journal_archive,
+    merge_journal_archive, plan_journal_archive, validate_archive_preflight,
 };
 use solstone_core_import_sources::{
-    ImportSourcesError, chatgpt, claude, document, gemini, ics, image, kindle, obsidian,
+    ImportSourcesError, MergeMutationState, chatgpt, claude, document, gemini, ics, image, kindle,
+    obsidian,
 };
 #[cfg(windows)]
 use solstone_core_local::install::pdfium_readiness::verified_windows_pdfium_package;
@@ -40,8 +43,9 @@ struct SupervisorRescan {
 impl FullReindexRequester for SupervisorRescan {
     fn request_full_reindex(&self) -> Result<bool, String> {
         match send_indexer_rescan(&self.journal) {
-            RescanOutcome::Queued => Ok(true),
-            RescanOutcome::Unavailable | RescanOutcome::NotNeeded => Ok(false),
+            RescanOutcome::Queued | RescanOutcome::Unavailable | RescanOutcome::NotNeeded => {
+                Ok(true)
+            }
         }
     }
 }
@@ -421,7 +425,33 @@ fn run_image(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
     render_result(dispatch.source, result)
 }
 
+pub type RecordCompletedAttemptFn<'a> = dyn Fn(&Path, &str, u64, u64, Option<u64>, Option<String>) -> Result<AttemptFacts, ImportError>
+    + 'a;
+
+pub type RecordUnconfirmedAttemptFn<'a> =
+    dyn Fn(&Path, &str, u64, u64, Option<String>) -> Result<AttemptFacts, ImportError> + 'a;
+
+pub struct ArchiveTerminalSeams<'a> {
+    pub after_admit: Option<&'a (dyn Fn() + 'a)>,
+    pub record_completed: &'a RecordCompletedAttemptFn<'a>,
+    pub record_unconfirmed: &'a RecordUnconfirmedAttemptFn<'a>,
+}
+
+const DEFAULT_ARCHIVE_TERMINAL_SEAMS: ArchiveTerminalSeams<'static> = ArchiveTerminalSeams {
+    after_admit: None,
+    record_completed: &solstone_core_import::record_completed_attempt_unlocked,
+    record_unconfirmed: &solstone_core_import::record_unconfirmed_attempt_unlocked,
+};
+
 fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
+    run_archive_with_seams(dispatch, journal, &DEFAULT_ARCHIVE_TERMINAL_SEAMS)
+}
+
+fn run_archive_with_seams(
+    dispatch: RegistryDispatch,
+    journal: &Path,
+    seams: &ArchiveTerminalSeams<'_>,
+) -> CliRun {
     if dispatch.dry_run {
         return match plan_journal_archive(&dispatch.media) {
             Ok(plan) => success(cli_render::source_preview(dispatch.source, &plan.into())),
@@ -435,33 +465,167 @@ fn run_archive(dispatch: RegistryDispatch, journal: &Path) -> CliRun {
         working_root: journal.join("imports").join("archive-merge-work"),
         ..ArchiveMergeOptions::default()
     };
-    match merge_journal_archive(
+    if let Err(error) = validate_archive_preflight(&dispatch.media, &options) {
+        return archive_failure(dispatch.source, error);
+    }
+    if let Some(refused) = refuse_if_live_running(journal, &dispatch.timestamp, dispatch.source) {
+        return refused;
+    }
+    let started_at_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let facts = match solstone_core_import::admit_running_attempt(
+        journal,
+        &dispatch.timestamp,
+        started_at_ms,
+        Some("journal_archive"),
+    ) {
+        Ok(f) => f,
+        Err(err) => {
+            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
+        }
+    };
+    if let Some(hook) = seams.after_admit {
+        hook();
+    }
+    let _import_lock = match solstone_core_import::hold_import_lock(journal, &dispatch.timestamp) {
+        Ok(lock) => lock,
+        Err(err) => {
+            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
+        }
+    };
+    let provenance = match solstone_core_import::read_provenance(journal, &dispatch.timestamp) {
+        Ok(Some(p)) => p,
+        Ok(None) => {
+            return failure(format!(
+                "{} import failed: missing provenance for attempt {}\n",
+                dispatch.source.name(),
+                dispatch.timestamp
+            ));
+        }
+        Err(err) => {
+            return failure(format!("{} import failed: {err}\n", dispatch.source.name()));
+        }
+    };
+    let current_facts = match solstone_core_import::get_attempt_facts(&provenance) {
+        Some(f) => f,
+        None => {
+            return failure(format!(
+                "{} import failed: missing attempt facts for {}\n",
+                dispatch.source.name(),
+                dispatch.timestamp
+            ));
+        }
+    };
+    if current_facts.generation != facts.generation || current_facts.state != AttemptState::Running
+    {
+        return failure(format!(
+            "{} import failed: attempt {}:{} was superseded\n",
+            dispatch.source.name(),
+            dispatch.timestamp,
+            facts.generation
+        ));
+    }
+    let merge_result = merge_journal_archive(
         &dispatch.media,
         journal,
         &options,
         Some(&SupervisorRescan {
             journal: journal.to_path_buf(),
         }),
-    ) {
+    );
+    let finished_at_ms = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    let duration_ms = Some(finished_at_ms.saturating_sub(facts.started_at_ms));
+    match merge_result {
         Ok(outcome) => match outcome.retry_disposition {
-            RetryDisposition::Applied => success(cli_render::source_archive_merge_complete(
-                dispatch.source,
-                outcome.merge_summary.segments_copied,
-                outcome.merge_summary.imports_copied,
-                outcome.merge_summary.entities_created,
-                outcome.merge_summary.entities_merged,
-                outcome.merge_summary.facets_created,
-                outcome.merge_summary.facets_merged,
-            )),
+            RetryDisposition::Applied => {
+                let rec = (seams.record_completed)(
+                    journal,
+                    &dispatch.timestamp,
+                    facts.generation,
+                    finished_at_ms,
+                    duration_ms,
+                    None,
+                );
+                if let Err(err) = rec {
+                    return failure(format!(
+                        "{} import failed: failed to record completed attempt: {err}\n",
+                        dispatch.source.name()
+                    ));
+                }
+                success(cli_render::source_archive_merge_complete(
+                    dispatch.source,
+                    outcome.merge_summary.segments_copied,
+                    outcome.merge_summary.imports_copied,
+                    outcome.merge_summary.entities_created,
+                    outcome.merge_summary.entities_merged,
+                    outcome.merge_summary.facets_created,
+                    outcome.merge_summary.facets_merged,
+                ))
+            }
             RetryDisposition::IdempotentNoop => {
+                let rec = (seams.record_completed)(
+                    journal,
+                    &dispatch.timestamp,
+                    facts.generation,
+                    finished_at_ms,
+                    duration_ms,
+                    None,
+                );
+                if let Err(err) = rec {
+                    return failure(format!(
+                        "{} import failed: failed to record completed attempt: {err}\n",
+                        dispatch.source.name()
+                    ));
+                }
                 success(cli_render::source_archive_already_present(dispatch.source))
             }
-            RetryDisposition::Incomplete => failure(cli_render::source_archive_incomplete(
-                dispatch.source,
-                &archive_incomplete_detail(&outcome),
-            )),
+            RetryDisposition::Incomplete => {
+                let rec = (seams.record_unconfirmed)(
+                    journal,
+                    &dispatch.timestamp,
+                    facts.generation,
+                    finished_at_ms,
+                    Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON.to_owned()),
+                );
+                if let Err(err) = rec {
+                    return failure(format!(
+                        "{} import failed: failed to record attempt: {err}\n",
+                        dispatch.source.name()
+                    ));
+                }
+                failure(cli_render::source_archive_incomplete(
+                    dispatch.source,
+                    &archive_incomplete_detail(&outcome),
+                ))
+            }
         },
-        Err(error) => archive_failure(dispatch.source, error),
+        Err(error) => {
+            let reason = match error.mutation_state() {
+                MergeMutationState::NotMutated => solstone_core_import::IMPORT_FAILED_REASON,
+                MergeMutationState::MayHaveMutated | MergeMutationState::Unknown => {
+                    solstone_core_import::IMPORT_UNCONFIRMED_REASON
+                }
+            };
+            let rec = (seams.record_unconfirmed)(
+                journal,
+                &dispatch.timestamp,
+                facts.generation,
+                finished_at_ms,
+                Some(reason.to_owned()),
+            );
+            if let Err(err) = rec {
+                return failure(format!(
+                    "{} import failed: {error}; failed to record attempt: {err}\n",
+                    dispatch.source.name()
+                ));
+            }
+            archive_failure(dispatch.source, error)
+        }
     }
 }
 
@@ -732,5 +896,672 @@ mod tests {
         let after = solstone_core_import::get_attempt_facts(&meta).unwrap();
         assert_eq!(after.generation, 1);
         assert_eq!(after.state, solstone_core_import::AttemptState::Running);
+    }
+
+    fn write_test_archive(dir: &Path, name: &str, members: &[(&str, &[u8])]) -> PathBuf {
+        let archive = dir.join(name);
+        let mut writer = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, bytes) in members {
+            use std::io::Write;
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(bytes).unwrap();
+        }
+        writer.finish().unwrap();
+        archive
+    }
+
+    fn archive_dispatch(archive_path: &Path, timestamp: &str) -> RegistryDispatch {
+        RegistryDispatch {
+            source: RegistrySource::JournalArchive,
+            media: archive_path.to_path_buf(),
+            timestamp: timestamp.to_owned(),
+            dry_run: false,
+            force: false,
+        }
+    }
+
+    fn journal_family_snapshot(root: &Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+        let mut snapshot = std::collections::BTreeMap::new();
+        for family in ["chronicle", "entities", "facets", "imports"] {
+            let path = root.join(family);
+            if !path.exists() {
+                continue;
+            }
+            fn walk(dir: &Path, files: &mut Vec<PathBuf>) {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries.filter_map(Result::ok) {
+                        let path = entry.path();
+                        if path.is_dir() {
+                            walk(&path, files);
+                        } else if path.is_file() {
+                            files.push(path);
+                        }
+                    }
+                }
+            }
+            let mut files = Vec::new();
+            walk(&path, &mut files);
+            for entry in files {
+                let relative = entry
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                snapshot.insert(relative, fs::read(entry).unwrap());
+            }
+        }
+        snapshot
+    }
+
+    #[test]
+    fn archive_dry_run_previews_without_admission() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+        let mut dispatch = archive_dispatch(&archive, "20260809_090000");
+        dispatch.dry_run = true;
+        let run = run(dispatch, journal.path());
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stdout.contains("preview:"));
+
+        // Confirm no attempt was admitted
+        let meta =
+            solstone_core_import::read_provenance(journal.path(), "20260809_090000").unwrap();
+        assert!(meta.is_none());
+    }
+
+    #[test]
+    fn archive_invalid_fails_preflight_without_admission() {
+        let journal = tempfile::tempdir().unwrap();
+        let invalid_archive = journal.path().join("invalid.zip");
+        fs::write(&invalid_archive, b"not a zip").unwrap();
+
+        let dispatch = archive_dispatch(&invalid_archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0);
+        assert!(run.stderr.contains("journal_archive import failed:"));
+
+        // Confirm no attempt was admitted
+        let meta =
+            solstone_core_import::read_provenance(journal.path(), "20260809_090000").unwrap();
+        assert!(meta.is_none());
+    }
+
+    #[test]
+    fn archive_success_records_completed_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[
+                (
+                    "chronicle/20260809/090000_10/stream.json",
+                    b"foreign stream data",
+                ),
+                (
+                    "entities/person/entity.json",
+                    br#"{"id":"person","name":"Person","type":"Person"}"#,
+                ),
+            ],
+        );
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_eq!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stdout.contains("import complete"), "{}", run.stdout);
+
+        // Confirm completed attempt facts are recorded
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Completed);
+        assert!(facts.finished_at_ms.is_some());
+        assert!(facts.failure_reason.is_none());
+
+        // Confirm source_hint is journal_archive and recognized by RegistrySource
+        assert_eq!(
+            meta.get("source_hint"),
+            Some(&serde_json::Value::String("journal_archive".into()))
+        );
+        assert_eq!(
+            RegistrySource::from_name("journal_archive"),
+            Some(RegistrySource::JournalArchive)
+        );
+
+        // Confirm no imported.json was created
+        assert!(
+            !journal
+                .path()
+                .join("imports/20260809_090000/imported.json")
+                .exists()
+        );
+
+        // Confirm foreign stream.json was copied with exact bytes
+        assert_eq!(
+            fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260809/090000_10/stream.json")
+            )
+            .unwrap(),
+            b"foreign stream data"
+        );
+
+        // Confirm projection projects Success
+        let proj = solstone_core_import::project_import_result(journal.path(), "20260809_090000");
+        assert_eq!(proj.status, solstone_core_import::ProjectionStatus::Success);
+        assert_eq!(proj.source_type, "journal_archive");
+    }
+
+    #[test]
+    fn archive_idempotent_second_run_is_completed_success() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+        let dispatch1 = archive_dispatch(&archive, "20260809_090000");
+        let run1 = run(dispatch1, journal.path());
+        assert_eq!(run1.exit_code, 0, "{}", run1.stderr);
+
+        // Second run on same journal
+        let dispatch2 = archive_dispatch(&archive, "20260809_090001");
+        let run2 = run(dispatch2, journal.path());
+        assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
+        assert!(
+            run2.stdout.to_lowercase().contains("already present"),
+            "{}",
+            run2.stdout
+        );
+
+        let meta2 =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090001").unwrap();
+        let facts2 = solstone_core_import::get_attempt_facts(&meta2).unwrap();
+        assert_eq!(facts2.generation, 1);
+        assert_eq!(facts2.state, solstone_core_import::AttemptState::Completed);
+
+        let proj2 = solstone_core_import::project_import_result(journal.path(), "20260809_090001");
+        assert_eq!(
+            proj2.status,
+            solstone_core_import::ProjectionStatus::Success
+        );
+    }
+
+    #[test]
+    fn archive_cli_refuses_live_running_attempt() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+        let now_ms = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let facts = solstone_core_import::admit_running_attempt(
+            journal.path(),
+            "20260809_090000",
+            now_ms,
+            Some("journal_archive"),
+        )
+        .unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Running);
+
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stderr.contains("journal_archive import failed:"));
+        assert!(run.stderr.contains("already running"), "{}", run.stderr);
+    }
+
+    #[test]
+    fn archive_merge_incomplete_records_unconfirmed() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir_all(journal.path().join("entities/person")).unwrap();
+        fs::write(
+            journal.path().join("entities/person/entity.json"),
+            br#"{"id":"person","name":"Person 1","summary":"Diff 1"}"#,
+        )
+        .unwrap();
+
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person 2","summary":"Diff 2"}"#,
+            )],
+        );
+
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+        assert!(
+            run.stderr.contains("journal_archive import incomplete:"),
+            "{}",
+            run.stderr
+        );
+
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Unconfirmed);
+        assert_eq!(
+            facts.failure_reason.as_deref(),
+            Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON)
+        );
+
+        let proj = solstone_core_import::project_import_result(journal.path(), "20260809_090000");
+        assert_eq!(
+            proj.status,
+            solstone_core_import::ProjectionStatus::Unconfirmed
+        );
+    }
+
+    #[test]
+    fn archive_merge_failure_not_mutated_records_failed() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+        // Put a regular file at `entities` in journal to cause merge to fail with NotMutated
+        fs::write(journal.path().join("entities"), b"blocker").unwrap();
+        let before_snapshot = journal_family_snapshot(journal.path());
+
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+        assert!(run.stderr.contains("journal_archive import failed:"));
+
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Unconfirmed);
+        assert_eq!(
+            facts.failure_reason.as_deref(),
+            Some(solstone_core_import::IMPORT_FAILED_REASON)
+        );
+
+        let proj = solstone_core_import::project_import_result(journal.path(), "20260809_090000");
+        assert_eq!(proj.status, solstone_core_import::ProjectionStatus::Failed);
+
+        let after_snapshot = journal_family_snapshot(journal.path());
+        assert_eq!(
+            after_snapshot
+                .into_iter()
+                .filter(|(k, _)| !k.starts_with("imports/20260809_090000"))
+                .collect::<std::collections::BTreeMap<_, _>>(),
+            before_snapshot
+        );
+    }
+
+    #[test]
+    fn archive_merge_failure_may_have_mutated_records_unconfirmed() {
+        let journal = tempfile::tempdir().unwrap();
+        // Existing foreign stream.json in chronicle
+        fs::create_dir_all(journal.path().join("chronicle/20260809/080000_10")).unwrap();
+        fs::write(
+            journal
+                .path()
+                .join("chronicle/20260809/080000_10/stream.json"),
+            b"foreign stream data",
+        )
+        .unwrap();
+        // Block stream update marker directory after segment publish
+        fs::create_dir_all(
+            journal
+                .path()
+                .join("chronicle/20260809/health/stream.updated"),
+        )
+        .unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[("chronicle/20260809/120000_60/stream.json", b"stream data")],
+        );
+
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+
+        // Copied chronicle/20260809/120000_60/stream.json bytes equal archive member (b"stream data"). Foreign stream unchanged.
+        assert_eq!(
+            fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260809/120000_60/stream.json")
+            )
+            .unwrap(),
+            b"stream data"
+        );
+        assert_eq!(
+            fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260809/080000_10/stream.json")
+            )
+            .unwrap(),
+            b"foreign stream data"
+        );
+
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_eq!(facts.generation, 1);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Unconfirmed);
+        assert_eq!(
+            facts.failure_reason.as_deref(),
+            Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON)
+        );
+
+        let proj = solstone_core_import::project_import_result(journal.path(), "20260809_090000");
+        assert_eq!(
+            proj.status,
+            solstone_core_import::ProjectionStatus::Unconfirmed
+        );
+    }
+
+    #[test]
+    fn archive_supersession_vs_mutating_control() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+
+        let before_snapshot = journal_family_snapshot(journal.path());
+        let dispatch1 = archive_dispatch(&archive, "20260809_090000");
+
+        // Run 1: superseded right after admission
+        let journal_path = journal.path().to_path_buf();
+        let superseding_hook = move || {
+            let now_ms = SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+            solstone_core_import::admit_running_attempt(
+                &journal_path,
+                "20260809_090000",
+                now_ms + 10,
+                Some("journal_archive"),
+            )
+            .unwrap();
+        };
+
+        let seams = ArchiveTerminalSeams {
+            after_admit: Some(&superseding_hook),
+            ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
+        };
+        let run1 = run_archive_with_seams(dispatch1, journal.path(), &seams);
+        assert_ne!(run1.exit_code, 0, "{}", run1.stderr);
+
+        // Verify generation 2 was not overwritten and target data was not mutated
+        let meta1 =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts1 = solstone_core_import::get_attempt_facts(&meta1).unwrap();
+        assert_eq!(facts1.generation, 2);
+
+        let after_snapshot = journal_family_snapshot(journal.path());
+        assert_eq!(
+            after_snapshot
+                .into_iter()
+                .filter(|(k, _)| !k.starts_with("imports/20260809_090000"))
+                .collect::<std::collections::BTreeMap<_, _>>(),
+            before_snapshot
+        );
+
+        // Run 2: control run without supersession hook mutates the target
+        let dispatch2 = archive_dispatch(&archive, "20260809_090001");
+        let run2 = run(dispatch2, journal.path());
+        assert_eq!(run2.exit_code, 0, "{}", run2.stderr);
+        assert!(journal.path().join("entities/person/entity.json").exists());
+    }
+
+    #[test]
+    fn archive_death_after_admit_bounded() {
+        let journal = tempfile::tempdir().unwrap();
+        let start_ms = 1_000_000u64;
+        solstone_core_import::admit_running_attempt(
+            journal.path(),
+            "20260809_090000",
+            start_ms,
+            Some("journal_archive"),
+        )
+        .unwrap();
+
+        // Inside bound -> Running
+        let clock_running =
+            (start_ms + solstone_core_import::RUNNING_ATTEMPT_BOUND_MS - 500) as f64 / 1000.0;
+        let proj_running = solstone_core_import::projection::project_import_result_with_clock(
+            journal.path(),
+            "20260809_090000",
+            clock_running,
+        );
+        assert_eq!(
+            proj_running.status,
+            solstone_core_import::ProjectionStatus::Running
+        );
+
+        // Past bound -> Unconfirmed with IMPORT_UNCONFIRMED_REASON
+        let clock_unconfirmed =
+            (start_ms + solstone_core_import::RUNNING_ATTEMPT_BOUND_MS + 500) as f64 / 1000.0;
+        let proj_unconfirmed = solstone_core_import::projection::project_import_result_with_clock(
+            journal.path(),
+            "20260809_090000",
+            clock_unconfirmed,
+        );
+        assert_eq!(
+            proj_unconfirmed.status,
+            solstone_core_import::ProjectionStatus::Unconfirmed
+        );
+        assert_eq!(
+            proj_unconfirmed.error.as_deref(),
+            Some(solstone_core_import::IMPORT_UNCONFIRMED_REASON)
+        );
+        assert_eq!(proj_unconfirmed.error_stage.as_deref(), Some("timeout"));
+        assert_ne!(
+            proj_unconfirmed.error.as_deref(),
+            Some("Import never completed")
+        );
+    }
+
+    #[test]
+    fn legacy_no_attempt_vs_admitted_row() {
+        let journal = tempfile::tempdir().unwrap();
+        // Row A: no-attempt archive-shaped row (task_id set, no attempt)
+        let row_a_dir = journal.path().join("imports/20260809_080000");
+        fs::create_dir_all(&row_a_dir).unwrap();
+        let row_a_meta = serde_json::json!({
+            "task_id": "20260809_080000",
+            "source_type": "journal_archive",
+            "source_hint": "journal_archive",
+            "upload_timestamp": 1_000_000,
+        });
+        fs::write(
+            row_a_dir.join("import.json"),
+            serde_json::to_vec(&row_a_meta).unwrap(),
+        )
+        .unwrap();
+
+        let clock = 2_000_000.0;
+        let proj_a = solstone_core_import::projection::project_import_result_with_clock(
+            journal.path(),
+            "20260809_080000",
+            clock,
+        );
+        assert_eq!(
+            proj_a.status,
+            solstone_core_import::ProjectionStatus::Failed
+        );
+        assert_eq!(proj_a.error.as_deref(), Some("Import never completed"));
+        assert_eq!(proj_a.error_stage.as_deref(), Some("timeout"));
+
+        // Row B: admitted completed archive merge (CLI 0, attempt completed, projection Success)
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+        let dispatch_b = archive_dispatch(&archive, "20260809_090000");
+        let run_b = run(dispatch_b, journal.path());
+        assert_eq!(run_b.exit_code, 0, "{}", run_b.stderr);
+
+        let meta_b =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts_b = solstone_core_import::get_attempt_facts(&meta_b).unwrap();
+        assert_eq!(facts_b.state, solstone_core_import::AttemptState::Completed);
+
+        let proj_b = solstone_core_import::projection::project_import_result_with_clock(
+            journal.path(),
+            "20260809_090000",
+            clock,
+        );
+        assert_eq!(
+            proj_b.status,
+            solstone_core_import::ProjectionStatus::Success
+        );
+        assert!(proj_b.error.is_none());
+
+        // Confirm Row A metadata was not mutated
+        let raw_a_bytes = fs::read(row_a_dir.join("import.json")).unwrap();
+        let raw_a_val: serde_json::Value = serde_json::from_slice(&raw_a_bytes).unwrap();
+        assert!(raw_a_val.get("attempt").is_none());
+    }
+
+    #[test]
+    fn archive_terminal_recorder_stub_failure() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "chronicle/20260809/090000_10/stream.json",
+                b"foreign stream data",
+            )],
+        );
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+
+        let stubbed_record_completed =
+            |path: &Path, _t: &str, _g: u64, _f: u64, _d: Option<u64>, _e: Option<String>| {
+                Err(solstone_core_import::ImportError::LockFailed {
+                    path: path.to_path_buf(),
+                    message: "mock lock failed".into(),
+                })
+            };
+
+        let seams = ArchiveTerminalSeams {
+            record_completed: &stubbed_record_completed,
+            ..DEFAULT_ARCHIVE_TERMINAL_SEAMS
+        };
+
+        let run = run_archive_with_seams(dispatch, journal.path(), &seams);
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+
+        // Content was merged, foreign stream.json bytes unchanged
+        assert_eq!(
+            fs::read(
+                journal
+                    .path()
+                    .join("chronicle/20260809/090000_10/stream.json")
+            )
+            .unwrap(),
+            b"foreign stream data"
+        );
+
+        // imported.json was not created
+        assert!(
+            !journal
+                .path()
+                .join("imports/20260809_090000/imported.json")
+                .exists()
+        );
+
+        // Attempt in import.json remains Running (not completed) because terminal record failed
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_ne!(facts.state, solstone_core_import::AttemptState::Completed);
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Running);
+    }
+
+    #[test]
+    fn archive_lock_failed_cli_non_zero_and_attempt_failed() {
+        let journal = tempfile::tempdir().unwrap();
+        let archive = write_test_archive(
+            journal.path(),
+            "valid.zip",
+            &[(
+                "entities/person/entity.json",
+                br#"{"id":"person","name":"Person","type":"Person"}"#,
+            )],
+        );
+
+        // Create a directory at the sidecar lockfile location to force archive-merge lock acquisition failure
+        fs::create_dir_all(journal.path().join("health/locks/archive-merge.lock")).unwrap();
+
+        let before_snapshot = journal_family_snapshot(journal.path());
+        let dispatch = archive_dispatch(&archive, "20260809_090000");
+        let run = run(dispatch, journal.path());
+        assert_ne!(run.exit_code, 0, "{}", run.stderr);
+        let expected_lock_prefix = format!(
+            "archive merge lock failed at {}",
+            journal.path().join("health/locks/archive-merge").display()
+        );
+        assert!(
+            run.stderr.contains(&expected_lock_prefix),
+            "stderr did not contain {:?}; was: {}",
+            expected_lock_prefix,
+            run.stderr
+        );
+
+        // Attempt recorded as failed
+        let meta =
+            solstone_core_import::read_import_metadata(journal.path(), "20260809_090000").unwrap();
+        let facts = solstone_core_import::get_attempt_facts(&meta).unwrap();
+        assert_eq!(facts.state, solstone_core_import::AttemptState::Unconfirmed);
+        assert_eq!(
+            facts.failure_reason.as_deref(),
+            Some(solstone_core_import::IMPORT_FAILED_REASON)
+        );
+
+        let after_snapshot = journal_family_snapshot(journal.path());
+        assert_eq!(
+            after_snapshot
+                .into_iter()
+                .filter(|(k, _)| !k.starts_with("imports/20260809_090000"))
+                .collect::<std::collections::BTreeMap<_, _>>(),
+            before_snapshot
+        );
     }
 }

@@ -818,11 +818,7 @@ fn derive_status_and_errors(
                         None,
                     )
                 } else {
-                    (
-                        ProjectionStatus::Unconfirmed,
-                        Some("import status unavailable".to_owned()),
-                        Some("publication".to_owned()),
-                    )
+                    (ProjectionStatus::Success, None, None)
                 }
             }
         }
@@ -1541,5 +1537,101 @@ mod tests {
         assert_eq!(projection.source_type, "chatgpt");
         assert_eq!(projection.source_display, "ChatGPT");
         assert_eq!(projection.status, ProjectionStatus::Success);
+    }
+
+    #[test]
+    fn attempt_only_completed_archive_projects_success_without_imported_json() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_090000";
+        let import_dir = journal.join("imports").join(import_id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "source_type": "journal_archive",
+                "attempt": {
+                    "attempt_id": format!("{import_id}:1"),
+                    "generation": 1,
+                    "state": "completed",
+                    "started_at_ms": 1_000,
+                    "finished_at_ms": 2_000,
+                    "duration_ms": 1_000
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let projection = project_import_result(journal, import_id);
+        assert_eq!(projection.source_type, "journal_archive");
+        assert_eq!(projection.status, ProjectionStatus::Success);
+        assert_eq!(projection.error, None);
+        assert_eq!(projection.error_stage, None);
+    }
+
+    #[test]
+    fn attempt_only_failed_archive_projects_failed_without_imported_json() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_090001";
+        let import_dir = journal.join("imports").join(import_id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "source_type": "journal_archive",
+                "attempt": {
+                    "attempt_id": format!("{import_id}:1"),
+                    "generation": 1,
+                    "state": "unconfirmed",
+                    "started_at_ms": 1_000,
+                    "finished_at_ms": 2_000,
+                    "duration_ms": 1_000,
+                    "failure_reason": "import failed"
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let projection = project_import_result(journal, import_id);
+        assert_eq!(projection.source_type, "journal_archive");
+        assert_eq!(projection.status, ProjectionStatus::Failed);
+        assert_eq!(projection.error.as_deref(), Some("import failed"));
+    }
+
+    #[test]
+    fn attempt_only_unconfirmed_archive_projects_unconfirmed() {
+        let dir = tempdir().unwrap();
+        let journal = dir.path();
+        let import_id = "20260809_090002";
+        let import_dir = journal.join("imports").join(import_id);
+        fs::create_dir_all(&import_dir).unwrap();
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "source_type": "journal_archive",
+                "attempt": {
+                    "attempt_id": format!("{import_id}:1"),
+                    "generation": 1,
+                    "state": "unconfirmed",
+                    "started_at_ms": 1_000,
+                    "finished_at_ms": 2_000,
+                    "duration_ms": 1_000,
+                    "failure_reason": "this import couldn't be confirmed as finished."
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let projection = project_import_result(journal, import_id);
+        assert_eq!(projection.source_type, "journal_archive");
+        assert_eq!(projection.status, ProjectionStatus::Unconfirmed);
+        assert_eq!(
+            projection.error.as_deref(),
+            Some("this import couldn't be confirmed as finished.")
+        );
     }
 }
