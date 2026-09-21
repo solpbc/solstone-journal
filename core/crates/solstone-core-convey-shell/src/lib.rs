@@ -120,6 +120,8 @@ mod entities;
 #[cfg(feature = "host")]
 mod link_health_cache;
 #[cfg(feature = "host")]
+mod loopback_guard;
+#[cfg(feature = "host")]
 mod network;
 #[cfg(feature = "host")]
 mod network_status;
@@ -402,6 +404,9 @@ async fn serve_loopback(
 ) {
     use solstone_core_convey_http::identity::AccessBasis;
     use solstone_core_convey_http::serve::{serve_connection, tcp_builder};
+    // Every connection here is `Localhost`, the owner. The guard is layered on
+    // this listener alone; the door serves the shared routes without it.
+    let router = loopback_guard::apply_layer(router);
     loop {
         let Ok((stream, _)) = listeners.accept().await else {
             continue;

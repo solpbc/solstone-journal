@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- on the computer your journal runs on, your journal's web app now only works at `localhost`, `127.0.0.1` or `[::1]`, and turns away a change sent to it by another website. `http://localhost:5015` and your paired devices work as before.
+
 ### Fixed
 
 - an import still in progress, unconfirmed, unavailable, or failed no longer says where it landed. completed imports still show where to find what they added, and image and document imports use the same source name in their detail and history views.

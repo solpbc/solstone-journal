@@ -72,6 +72,19 @@ localhost owner authority (`AccessBasis::Localhost`). Source deletion requires t
 same linked-device identity; its source path selects an allowed source but does not
 alter authorization or the journal-wide deletion scope.
 
+**Loopback provenance.** Every loopback request is the owner
+(`AccessBasis::Localhost`), so the loopback listener also checks where a request
+came from. A request whose `Host` (or absolute-form target) is not `localhost`,
+`127.0.0.1` or `[::1]`, with an optional numeric port, is refused with 403
+`host_not_allowed`. A request that is not GET, HEAD, OPTIONS or TRACE is refused
+with 403 `cross_origin_blocked` when its `Sec-Fetch-Site` is not `same-origin`,
+`same-site` or `none`, or its `Origin` host is not one of those three names. A
+request with neither header, such as one from the `solstone` CLI, passes. The
+guard is layered in `serve_loopback` only (`loopback_guard.rs`), and acts on
+`AccessBasis::Localhost` alone: the paired-device door serves the same routes
+under `Host: spl.local` and is not subject to it. Anything that reaches the
+loopback port through a proxy or tunnel under another name is refused.
+
 **Pagination.** Offset/limit (max 100) or a cursor; no list endpoint returns
 an unbounded full array.
 
