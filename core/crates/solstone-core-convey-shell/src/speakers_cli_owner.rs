@@ -16,6 +16,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_journal_io::SegmentLayout;
 
 use crate::JournalRoot;
+use crate::speakers_source::is_safe_source_component;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, decode_required_stream_layout_value, lookup_segment,
 };
@@ -40,6 +41,14 @@ pub async fn tag(Extension(root): Extension<Arc<JournalRoot>>, request: Request)
     let Some(source) = body.get("source").and_then(Value::as_str) else {
         return required("source");
     };
+    if !is_safe_source_component(source) {
+        return err(
+            "invalid_request_value",
+            "source name is invalid.",
+            "use one file name, without a path",
+            StatusCode::BAD_REQUEST,
+        );
+    }
     let speaker = match solstone_core_speaker_resolve::owner_admission::admitted_owner_id(&root.0) {
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Admitted(id) => id,
         solstone_core_speaker_resolve::owner_admission::OwnerAdmission::Invalid => {

@@ -926,6 +926,7 @@ mod tests {
             Err(PathError::InvalidRelativePath { .. })
         ));
         let segment = segment_path(&journal, "20260102", "123456_300", "other", true).unwrap();
+        assert!(segment_path(&journal, "20260102", "123456_300", "../escaped", true).is_err());
         fs::create_dir_all(day.join("080000_300")).unwrap();
         fs::create_dir_all(day.join("health/654321_300")).unwrap();
         fs::create_dir_all(day.join("other/093000_300_summary")).unwrap();

@@ -27,6 +27,7 @@ use crate::speakers_calendar::{
     load_speaker_labels, parse_segment, speaker_sentence_needs_review, value_truthy,
 };
 use crate::speakers_npz::{SegmentEmbeddings, load_segment_embeddings};
+use crate::speakers_source::is_safe_source_component;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, decode_stream_layout, lookup_segment,
 };
@@ -102,6 +103,13 @@ pub async fn review(
             "invalid_day",
             "that day couldn't be used.",
             "Invalid day format",
+        );
+    }
+    if !is_safe_source_component(&source) {
+        return bad_request(
+            "invalid_request_value",
+            "source name is invalid.",
+            "use one file name, without a path",
         );
     }
     spawn_blocking_response(OwnerReadRole::SpeakersReview, move || {

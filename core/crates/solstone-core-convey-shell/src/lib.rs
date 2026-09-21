@@ -156,6 +156,7 @@ pub mod speakers_owner_write;
 mod speakers_owner_write;
 mod speakers_quality;
 mod speakers_review;
+mod speakers_source;
 mod sse;
 #[cfg(test)]
 mod status_mark;

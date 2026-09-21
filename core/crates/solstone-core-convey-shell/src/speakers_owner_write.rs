@@ -38,6 +38,7 @@ use crate::JournalRoot;
 use crate::speakers_attribution::action;
 use crate::speakers_known::intra_cosine_p25;
 use crate::speakers_quality::awareness_voiceprint;
+use crate::speakers_source::is_safe_source_component;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, decode_stream_layout_value, lookup_segment,
 };
@@ -175,6 +176,14 @@ pub async fn confirm(Extension(root): Extension<Arc<JournalRoot>>, request: Requ
     let Some(source) = body.get("source").and_then(Value::as_str) else {
         return missing_fields();
     };
+    if !is_safe_source_component(source) {
+        return err(
+            "invalid_request_value",
+            "source name is invalid.",
+            "use one file name, without a path",
+            StatusCode::BAD_REQUEST,
+        );
+    }
     let Some(sentence_id) = body.get("sentence_id").and_then(Value::as_i64) else {
         return missing_fields();
     };
@@ -398,6 +407,14 @@ pub async fn classify(Extension(root): Extension<Arc<JournalRoot>>, request: Req
     let Some(source) = body.get("source").and_then(Value::as_str) else {
         return missing_fields();
     };
+    if !is_safe_source_component(source) {
+        return err(
+            "invalid_request_value",
+            "source name is invalid.",
+            "use one file name, without a path",
+            StatusCode::BAD_REQUEST,
+        );
+    }
     let Some(principal) = admitted_principal_id(&root.0) else {
         return owner_identity_invalid();
     };
