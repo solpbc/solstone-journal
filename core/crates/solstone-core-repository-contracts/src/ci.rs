@@ -123,20 +123,28 @@ pub struct CoverageEntry {
 /// re-parsing the leg's own log.
 pub const COVERAGE_REPORT_PATH_ENV: &str = "SOLSTONE_CI_COVERAGE_PATH";
 
+fn write_coverage_report_to_path(
+    path: Option<&std::ffi::OsStr>,
+    entries: &[CoverageEntry],
+) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let json = serde_json::to_vec_pretty(entries).map_err(|error| error.to_string())?;
+    fs::write(path, json).map_err(|error| {
+        format!(
+            "write CI coverage report {}: {error}",
+            Path::new(path).display()
+        )
+    })
+}
+
 /// Writes a leg's coverage entries to the path the runner named in
 /// `COVERAGE_REPORT_PATH_ENV`. A leg invoked directly, outside the runner
 /// (no path set), is a no-op.
 pub fn write_coverage_report(entries: &[CoverageEntry]) -> Result<(), String> {
-    let Some(path) = std::env::var_os(COVERAGE_REPORT_PATH_ENV) else {
-        return Ok(());
-    };
-    let json = serde_json::to_vec_pretty(entries).map_err(|error| error.to_string())?;
-    fs::write(&path, json).map_err(|error| {
-        format!(
-            "write CI coverage report {}: {error}",
-            Path::new(&path).display()
-        )
-    })
+    let path = std::env::var_os(COVERAGE_REPORT_PATH_ENV);
+    write_coverage_report_to_path(path.as_deref(), entries)
 }
 
 /// Reads a leg's coverage report written via `write_coverage_report`. Coverage
@@ -1607,10 +1615,6 @@ mod tests {
 
     #[test]
     fn write_coverage_report_is_a_noop_without_a_runner_path() {
-        assert!(
-            std::env::var_os(COVERAGE_REPORT_PATH_ENV).is_none(),
-            "no other test in this binary may set the runner's coverage path"
-        );
-        assert_eq!(write_coverage_report(&[]), Ok(()));
+        assert_eq!(write_coverage_report_to_path(None, &[]), Ok(()));
     }
 }
