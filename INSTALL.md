@@ -2,20 +2,20 @@
 
 These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
 
-**supported platforms:** linux, and macos on Apple Silicon. windows is not yet supported. The solstone app already runs on mac; this guide is how you install the journal there too.
+**supported platforms:** linux, and macos 15 or later on Apple Silicon. windows is not yet supported. On mac, the journal app is the only supported way to run the journal.
 
 The latest version of these instructions is at https://solstone.app/install.
 
 ## Before you begin
 
-### Check whether solstone is already installed
+### Check whether solstone is already installed on linux
 
 ```bash
 solstone --version 2>&1 && journal service status 2>&1
 ```
 
-If `solstone` is not on PATH, the install has not been done yet. Proceed.
-If both commands succeed and the second command reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
+If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead.
+On linux, if both commands succeed and the second command reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 
 ### Prerequisites
 
@@ -29,11 +29,11 @@ sudo pacman -S libgomp         # Arch
 
 ## Install the journal on linux
 
-⚠ **linux only.** the tree is built for `linux-x86_64` and `linux-aarch64`, and the bootstrap refuses any other system. For mac, see [install the journal on mac](#install-the-journal-on-mac).
+⚠ **linux only.** the tree is built for `linux-x86_64` and `linux-aarch64`, and the bootstrap refuses any other system. For mac, see [install on mac](#install-on-mac).
 
 ### Where the files come from
 
-The release channel is `updates.solstone.app`. `install.sh` accepts only that host, re-checking on every redirect hop; loopback is allowed for testing, and `--origin` overrides. `install.sh` lives in this repository at `core/distribution/install.sh`, and is served at `https://solstone.app/install.sh` (mirrored, unchanged, at `https://updates.solstone.app/solstone-journal/install.sh`).
+The release channel is `updates.solstone.app`. The main installer lives in the [solstone repository](https://github.com/solpbc/solstone) and is served at `https://solstone.app/install.sh`. On linux it verifies the platform release, then delegates journal setup to the signed bootstrap versioned with that release. The journal bootstrap lives in this repository at `core/distribution/install.sh`; its compatibility URL is `https://updates.solstone.app/solstone-journal/install.sh`, and it refuses macos.
 
 One command does the whole thing, including signed-manifest verification and `journal setup`:
 
@@ -66,7 +66,7 @@ If `minisign` is absent, `install.sh` refuses and prints the install command for
 This local-file route verifies the manifest signature, then checks its digests for the selected archive, checksum, and release record before installing. Give it all five files:
 
 ```bash
-sh install.sh --archive solstone-journal-<version>-linux-<arch>.tar.gz \
+sh core/distribution/install.sh --archive solstone-journal-<version>-linux-<arch>.tar.gz \
               --sha256 solstone-journal-<version>-linux-<arch>.sha256 \
               --release solstone-journal-<version>-linux-<arch>.release \
               --manifest solstone-journal-<version>-linux-<arch>.manifest.json \
@@ -107,74 +107,27 @@ Either one puts `solstone` and `journal` on PATH for every account on the machin
 
 There is no separate download for talking to a journal running elsewhere. The tree carries `solstone` alongside the journal binaries, so one install covers both roles. You carry a few binaries you will not run, and nothing else changes.
 
-## Install the journal on mac
+## Install on mac
 
-Apple Silicon only. `install.sh` refuses any other mac by name.
+Apple Silicon and macos 15 or later are required. The journal app is the only supported way to run the journal on a mac. Download it from [solstone.app/download/journal](https://solstone.app/download/journal), move it to Applications, and open it. First run helps you name and locate your journal.
 
-Same origin and same bootstrap as linux, above. `install.sh` lives in this repository at `core/distribution/install.sh`.
-
-Every release names its files `solstone-journal-<version>-macos-arm64`. The two containers are a `.tar.gz` and a signed, notarized, stapled `.pkg`. Each release also carries a `.sha256`, a `.manifest.json`, a `.manifest.json.minisig`, a `.release` record, and a `.signing.json`.
-
-### The archive
-
-This local-file route does not need administrator rights and it does not write `/usr/local`. The installer verifies minisign itself. To verify before running it, use these commands and compare the tarball digest with its exact `files` entry in the signed manifest. This does not replace Apple's signature on the `.pkg`.
+To install the journal app from the terminal:
 
 ```bash
-minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
-  -p solstone-journal-release.pub
-shasum -a 256 solstone-journal-<version>-macos-arm64.tar.gz
+curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal
 ```
 
-```bash
-sh core/distribution/install.sh \
-  --archive solstone-journal-<version>-macos-arm64.tar.gz \
-  --sha256 solstone-journal-<version>-macos-arm64.sha256 \
-  --release solstone-journal-<version>-macos-arm64.release \
-  --manifest solstone-journal-<version>-macos-arm64.manifest.json \
-  --minisig solstone-journal-<version>-macos-arm64.manifest.json.minisig
-```
+Use `--components all` to install both the journal app and the solstone app. The installer verifies the signed, notarized app bundles and puts them in `/Applications`. Each app handles its own updates after that. The low-level journal bootstrap in this repository refuses macos so it cannot create a second runtime, PATH wrapper, or launchd service.
 
-With no `--prefix` it installs under `~/.local/solstone-journal`, points a `current` symlink at the live version, and runs `journal setup --yes` from that build. It writes the tree receipt under that prefix. On mac it writes the PATH block to both `~/.zprofile` (zsh, the login shell) and `~/.profile`. `--no-path` skips that edit, so a throwaway or side-by-side prefix does not touch your login files. On success it prints the version, the prefix, and how to pick up PATH.
+If you have an older command-line journal installation, install the journal app and open it. The app adopts the existing journal only when it can verify the installation it is taking over. If anything is unclear, it stops and tells you what needs attention. Your journal stays where it is. See the [mac migration guidance](https://solstone.app/install#macos-migration) or [contact support](https://support.solstone.app) if you need a hand.
 
-macos logs you into zsh, which never reads `~/.profile`. Open a new terminal, or:
-
-```bash
-. ~/.zprofile
-journal --version
-```
-
-**To verify the archive by hand:** `install.sh` already does this for you. macos has no `sha256sum`; use:
-
-```bash
-shasum -a 256 -c solstone-journal-<version>-macos-arm64.sha256
-```
-
-The checksum file covers the `.tar.gz`, `.pkg`, `.release`, and `.signing.json`. If you only have the archive-route files, checks for the absent `.pkg` and `.signing.json` will complain; those missing-file messages do not mean the tarball digest failed.
-
-### The package
-
-The `.pkg` is the `/usr/local` route: same tree, signed with Developer ID Installer, notarized, and stapled. `/usr/local/bin` is already on the default PATH via `/etc/paths`. Apple's signature is that chain. Our minisign check is a step you take; `installer` does not run it.
-
-```bash
-minisign -Vm solstone-journal-<version>-macos-arm64.manifest.json \
-  -p solstone-journal-release.pub
-shasum -a 256 solstone-journal-<version>-macos-arm64.pkg
-sudo installer -pkg solstone-journal-<version>-macos-arm64.pkg -target /
-```
-
-Compare the package digest with its exact `files` entry in the signed manifest before running `installer`.
-
-That writes the live system prefix. Do not run it on a machine whose `/usr/local` you are not ready to change.
-
-The solstone app on your mac still installs from its own signed bundle, under [install the solstone app on your devices](#install-the-solstone-app-on-your-devices). That is a different package from the journal.
-
-## Set up
+## Set up on linux
 
 ```bash
 journal setup
 ```
 
-This runs the setup readiness doctor battery and confirms the journal directory at `~/journal`. It fetches the local transcription model (~1 GB), installs the `solstone` skill for Claude Code, Codex, and Gemini, and installs the journal-side `solstone` and `journal` router skills so journal agents can help tend the journal. It then starts a background service (`systemd` on linux, `launchd` on mac at `~/Library/LaunchAgents/org.solpbc.solstone.plist`) listening on http://localhost:5015. The default port is shared across logins. A second journal on that port, including one started under another login, cannot bind it.
+This runs the setup readiness doctor battery and confirms the journal directory at `~/journal`. It fetches the local transcription model (~1 GB), installs the `solstone` skill for Claude Code, Codex, and Gemini, and installs the journal-side `solstone` and `journal` router skills so journal agents can help tend the journal. It then starts a systemd user service listening on http://localhost:5015. The default port is shared across logins. A second journal on that port, including one started under another login, cannot bind it.
 
 Let your human know: **open http://localhost:5015 in a browser**. The first-run wizard walks them through setting their identity and choosing a provider.
 
@@ -190,8 +143,8 @@ If the service fails to start, check `journal service logs`.
 
 Choose a provider in settings → providers. The available paths have different hardware needs and data flows.
 
-- **local built-in, the default.** a capable setup needs **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). The `solstone check` command checks first and tells you what will not fit; on linux it also needs a supported hardware GPU (see [set up](#set-up)).
-- **an engine you bring yourself**, if your machine cannot clear that bar or you would rather not spend its power. Configure the solstone app with Google (Gemini), OpenAI, or Anthropic using **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). You can also configure it with your own endpoint instead of a cloud provider: a model you run yourself, on this machine or another one you control. You can switch any time in settings → providers.
+- **local built-in, the default.** a capable setup needs **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). The `solstone check` command checks first and tells you what will not fit; on linux it also needs a supported hardware GPU (see [set up on linux](#set-up-on-linux)).
+- **a model you bring yourself**, if your machine cannot clear that bar or you would rather not spend its power. Configure the solstone app with Google (Gemini), OpenAI, or Anthropic using **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). You can also configure it with your own endpoint instead of a cloud provider: a model you run yourself, on this machine or another one you control. You can switch any time in settings → providers.
 - **confidential processing**, if you would rather not run a provider yourself. Available to approved scouts. It is off until you turn it on. While it is active, your journal verifies the service before material leaves; if it cannot verify the service, the material stays in your journal. See [what material reaches your AI provider](DATA-FLOW.md) for the full conditions and data flow.
 
 For the full picture of what is sent, to whom, and under whose terms, see [what material reaches your AI provider](DATA-FLOW.md).
@@ -208,7 +161,7 @@ Your journal works alongside the solstone app: the app takes in what you share w
 
 **tmux terminal sessions:** follow `solstone-tmux`'s own INSTALL guide, which also carries the steps for retiring a previous Python installation.
 
-## Moving from a pip, uv or pipx install
+## Moving from a pip, uv or pipx install on linux
 
 **Your journal itself is untouched by any of this.** It is a folder of dated directories and no installer owns it.
 
@@ -228,9 +181,13 @@ That one setup command finds a real prior install, its `solstone`, `journal`, an
 
 When setup replaces recognized legacy launchers, it keeps durable recovery backups under `~/.local/share/solstone/setup-backups/` before touching those launchers.
 
-⚠ **There is no CUDA build of the tree.** If you were on `solstone-journal-cuda`, transcription moves to the CPU runtime. It uses the same model on the CPU, so long recordings take longer to process; nothing else about them changes. The local *model* provider still uses your GPU where it can. That path is separate and is described under [set up](#set-up).
+⚠ **There is no CUDA build of the tree.** If you were on `solstone-journal-cuda`, transcription moves to the CPU runtime. It uses the same model on the CPU, so long recordings take longer to process; nothing else about them changes. The local *model* provider still uses your GPU where it can. That path is separate and is described under [set up on linux](#set-up-on-linux).
 
 ## Upgrading
+
+On mac, each app handles its own updates. The shell installer verifies an existing app and leaves it unchanged; it does not replace or upgrade app bundles.
+
+On linux, use the route that owns the installation:
 
 For a tree install, `sh install.sh --upgrade` is the whole upgrade: it preserves the recorded lane unless `--lane` is explicit, verifies the signed release, flips `current`, and repoints the managed wrapper and service through setup. If a package owns the install, the tree installer refuses. This release has no package repository, so download the newer local `.deb` or `.rpm`, repeat the applicable package install command above, then run `journal setup`.
 
@@ -266,7 +223,7 @@ journal setup --journal /path/to/your/journal --accept-existing-journal
 
 With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `~/.config/solstone/config.toml`, then `~/journal`. On a machine with no prior config that last step starts fresh, and a fresh `~/journal` looks like a working install even though your actual history is untouched at the old path.
 
-## Uninstall
+## Uninstall on linux
 
 **None of this removes your journal.** It is a folder of dated directories and it survives every step below.
 
@@ -275,42 +232,28 @@ With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 2. Optional: remove the installed `solstone` agent skill: `solstone skills uninstall`.
 3. Remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
-   - Archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile` (and on mac, `~/.zprofile`), marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
-   - mac `.pkg` install: use the receipt the installer registered. It names every file the
-     package put on disk.
+   - Archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile`, marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
 
-     ⚠ **do not pipe `pkgutil --files` into `rm -rf`.** it lists directories too (`bin`, `lib`,
-     `share`), and `/usr/local` is shared with Homebrew, Docker, VS Code and anything else on this
-     machine. A raw `rm -rf` over the full list takes all of it with the package.
+## Uninstall on mac
 
-     ```bash
-     pkgutil --files app.solstone.journal --only-files | while IFS= read -r f; do
-       sudo rm -- "/usr/local/$f"
-     done
-     pkgutil --files app.solstone.journal --only-dirs \
-       | awk '{ print gsub(/\//,"/"), $0 }' | sort -rn | cut -d' ' -f2- \
-       | while IFS= read -r d; do
-         sudo rmdir "/usr/local/$d" 2>/dev/null || true
-       done
-     sudo pkgutil --forget app.solstone.journal
-     ```
+Drag `/Applications/journal.app` and `/Applications/solstone.app` to Trash. This does not remove your journal.
 
-     The first loop removes only the files the package installed. Nothing else in `/usr/local` is
-     touched. The second removes the directories it created, deepest first, and only the ones that
-     are empty afterward; `rmdir` refuses a directory that still holds something else, so `bin`
-     itself (shared with other tools) is left standing. the third clears the receipt.
-4. mac only: drag `/Applications/solstone.app` to Trash.
-5. mac only, optional: remove the solstone app's data and the Parakeet model cache:
-   ```bash
-   rm -rf ~/Library/Application\ Support/solstone/
-   ```
-   This evicts the Parakeet cache; reinstall will re-download it.
-6. mac only, optional: reset privacy permissions:
-   ```bash
-   tccutil reset Microphone app.solstone.observer
-   tccutil reset ScreenCapture app.solstone.observer
-   ```
-   Or use System Settings → Privacy & Security.
+Optional: remove the solstone app's data and the Parakeet model cache:
+
+```bash
+rm -rf ~/Library/Application\ Support/solstone/
+```
+
+This evicts the Parakeet cache; reinstall will re-download it.
+
+Optional: reset privacy permissions:
+
+```bash
+tccutil reset Microphone app.solstone.observer
+tccutil reset ScreenCapture app.solstone.observer
+```
+
+Or use System Settings → Privacy & Security.
 
 ## Done
 

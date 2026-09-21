@@ -196,6 +196,10 @@ expect_refuse unsupported-platform platform-os \
 	env SOLSTONE_UNAME_S=Darwin SOLSTONE_UNAME_M=x86_64 HOME="$BASE/home" \
 	"$INSTALL" --prefix "$BASE/p" --version 1.0.22 --archive /nope --sha256 /nope --release /nope
 
+expect_refuse unsupported-platform platform-macos-app-only \
+	env SOLSTONE_UNAME_S=Darwin SOLSTONE_UNAME_M=arm64 HOME="$BASE/home" \
+	"$INSTALL" --prefix "$BASE/p" --version 1.0.22 --archive /nope --sha256 /nope --release /nope
+
 expect_refuse unsupported-platform platform-arch \
 	env SOLSTONE_UNAME_S=Linux SOLSTONE_UNAME_M=ppc64 HOME="$BASE/home" \
 	"$INSTALL" --prefix "$BASE/p" --version 1.0.22 --archive /nope --sha256 /nope --release /nope
@@ -282,22 +286,6 @@ make_tree_tar "$ARCHIVE" "$STAGE"
 sha_sidecar "$ARCHIVE" "$SHA"
 make_release "$REL" 1.0.22 "$TARGET"
 
-# The same archive installer consumes the current ten-field macOS release
-# record, including the three archive-chain digests.
-MAC_STAGE=$BASE/mac-stage
-MAC_ARCHIVE=$BASE/mac.tar.gz
-MAC_SHA=$BASE/mac.sha256
-MAC_REL=$BASE/mac.release
-make_tree_tar "$MAC_ARCHIVE" "$MAC_STAGE"
-sha_sidecar "$MAC_ARCHIVE" "$MAC_SHA"
-make_macos_release "$MAC_REL" 1.0.22
-if env HOME="$BASE/mac-home" SOLSTONE_UNAME_S=Darwin SOLSTONE_UNAME_M=arm64 \
-	"$INSTALL" --no-path --prefix "$BASE/mac-prefix" --archive "$MAC_ARCHIVE" \
-	--sha256 "$MAC_SHA" --release "$MAC_REL" >/dev/null; then
-	pass "macos ten-field release installs through the archive route"
-else
-	fail "macos ten-field release was refused"
-fi
 HOME=$BASE/home
 mkdir -p "$HOME"
 PREFIX=$BASE/prefix

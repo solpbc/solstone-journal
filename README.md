@@ -22,7 +22,7 @@ Your journal is a folder of dated directories on a machine you choose. You can r
 - **daily and weekly synthesis.** A morning briefing, an upcoming schedule, a weekly reflection, a newsletter per facet, written from your own material.
 - **imports.** Audio and images, documents, calendar files, Kindle highlights, Obsidian vaults, conversation exports from ChatGPT, Claude and Gemini, Plaud devices, Apple Health and Oura body data, and archives from another journal.
 - **full-text search.** From the command line and from your agents: `solstone call journal search`.
-- **your agents, your choice.** Claude Code, Codex, Gemini CLI, or anything that runs a shell reads your journal through the `solstone` CLI and the skills `journal setup` installs. The journal does not chat with you. Your agent does, grounded in your journal.
+- **your agents, your choice.** Claude Code, Codex, Gemini CLI, or anything that runs a shell reads your journal through its solstone skill. The journal does not chat with you. Your agent does, grounded in your journal.
 - **local by default.** Transcription, speaker analysis and thinking run on your own machine unless you choose otherwise.
 
 <img src="docs/static/screenshot-transcripts.png" alt="a speaker-attributed transcript in the journal's web interface" width="800">
@@ -52,24 +52,30 @@ Each solstone app has its own repository. Start at the [family index](https://gi
 
 As of September 2026:
 
-- **2.x is the native line, on the release channel.** The journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. The Python line ended at 1.0.22, and `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install)).
-- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), and macos on Apple Silicon (tarball, signed and notarized `.pkg`). The solstone app already runs on windows; the journal does not yet.
+- **2.x is the native line, on the release channel.** On linux, the journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. On mac, the journal app owns the runtime. The Python line ended at 1.0.22, and the linux `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install-on-linux)).
+- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), and the journal app on Apple Silicon macs running macos 15 or later. The solstone app already runs on windows; the journal does not yet.
 - **Chat is gone.** The 2.x line removes the chat bar, the chat page and `solstone chat`. Chats already in a journal stay on disk and are no longer shown. To ask questions of your journal, use your own agent or the command line.
 - **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick start
 
-One command fetches the signed release, verifies it, installs it, and runs setup:
+On a mac, install the journal app, then open it:
+
+```bash
+curl -fsSL https://solstone.app/install.sh | sh -s -- --components journal
+```
+
+Use `--components all` to install the journal app and the solstone app together. The installer verifies the signed, notarized app bundles and puts them in `/Applications`; each app handles its own updates.
+
+On linux, one command fetches the signed release, verifies it, installs it, and runs setup:
 
 ```bash
 curl -fsSL https://solstone.app/install.sh | sh
 ```
 
-With release files already on disk, the same script takes them as arguments; that route, the `.deb` and `.rpm`, the mac `.pkg`, and every prerequisite are in [INSTALL.md](INSTALL.md).
+Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and both migration paths are in [INSTALL.md](INSTALL.md). Linux setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Open **http://localhost:5015**. On mac, open the journal app instead. First run sets your identity and lets you choose a provider.
 
-The install runs `journal setup` for you. Setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Open **http://localhost:5015**. The first-run wizard sets your identity and lets you choose a provider. Then install the solstone app on your other devices and pair each one from the journal's network app.
-
-Not sure a computer is up to running the local models? Once the tree is on PATH:
+On linux, check whether a computer is ready for the local models after the tree is on PATH:
 
 ```bash
 journal check        # gpu, memory, disk, and the bundled models: a one-shot readiness verdict
@@ -77,9 +83,9 @@ journal check        # gpu, memory, disk, and the bundled models: a one-shot rea
 
 The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. See [choosing a provider](INSTALL.md#choosing-a-provider).
 
-## Two commands
+## Two linux commands
 
-The tree puts two executables on your PATH with different authority.
+The linux tree puts two executables on your PATH with different authority.
 
 | command | what it is for | reaches the journal |
 |---------|---------------|---------------------|
@@ -113,7 +119,7 @@ Run `solstone` or `journal` with no arguments for the full grouped list. The dev
 The journal ships no agent of its own. It carries a memory and the tools to read it, and lets you choose who thinks.
 
 - **Your coding agent, from any project.** `journal setup` installs the `solstone` skill into Claude Code, Codex and Gemini CLI when they are configured. With it, an agent in any directory can search your memory, look up a person, check today's schedule, or read a transcript through `solstone call`, and every mutating call it makes is logged in the journal. The skill is [here](core/payload/solstone/talent/solstone/SKILL.md).
-- **Agents inside the journal.** The journal's own processing is done by *talents*: small agents with a markdown prompt and a closed, typed set of things they are allowed to write. A morning briefing, the upcoming schedule, participation, screen description, segment sense, speaker attribution, a weekly reflection, a facet newsletter, and the rest live in [core/payload/solstone/talent/](core/payload/solstone/talent/). They run on whichever model you configured. Their runtime contract is [docs/COGITATE.md](docs/COGITATE.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
+- **Processing inside the journal.** Small, bounded agents produce briefings, schedules, reflections, screen descriptions, speaker attribution, and other useful views. They run on whichever model you configured, with a closed, typed set of things they are allowed to write. Their prompts live in [core/payload/solstone/talent/](core/payload/solstone/talent/), and their runtime contract is [docs/COGITATE.md](docs/COGITATE.md). A coding agent whose working directory is the journal itself gets its own `journal` skill, [here](core/payload/solstone/talent/journal/SKILL.md).
 - **MCP.** A TLS-protected MCP endpoint exposes seven read-only tools: `list_facets`, `search`, `fetch`, `list_transcripts`, `get_transcript`, `list_entities`, and `get_entity`. The journal listens on loopback, while the owner-authorized bridge makes the endpoint reachable by an owner's remote agents. It exists behind the `journal-mcp-endpoint` build feature and a per-journal capability flag, and is not in a default build. Details and its OAuth pairing flow: [docs/SOLCLI.md](docs/SOLCLI.md#journal-mcp-endpoint), [docs/MCP_OAUTH.md](docs/MCP_OAUTH.md).
 
 What an agent gets back is structured and citable. This is `solstone call entities network` against the fixture journal in this repository:
