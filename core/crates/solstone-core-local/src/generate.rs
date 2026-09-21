@@ -832,9 +832,25 @@ pub fn prepare_local_schema(schema: &Value) -> Value {
 fn prepare_schema_node(node: &mut Value) {
     match node {
         Value::Object(object) => {
-            for key in ["pattern", "minLength", "maxLength", "x-truncate"] {
-                object.remove(key);
-            }
+            // `x-truncate` is solstone's own post-hoc-truncation annotation (see
+            // solstone-core-generate-wire::schema_validation), not a JSON Schema
+            // keyword any provider's structured-output feature could act on; it
+            // is never safe to forward. `pattern`/`minLength`/`maxLength` used to
+            // be stripped here too, on the assumption the local llama-server
+            // couldn't honor them via grammar. Measured 2026-09-21 against the
+            // pinned build (b10068, 571d0d540) directly: it DOES build a working
+            // grammar for `pattern`/`minLength`/`maxLength` and reliably
+            // constrains generation with them (8/8 clean on an adversarial
+            // prompt) -- so they now pass through unmodified, and canonical
+            // response validation (which already enforces every field
+            // regardless) is no longer the only thing keeping this shape
+            // honest. See records/decisions for the two llama.cpp grammar
+            // limits this measurement found and the shipped-schema patterns it
+            // required rewriting to stay inside them: no bare `\d`/`\w`/`\s`
+            // regex shorthand (character classes only), and no top-level
+            // alternation between two independently anchored branches (write
+            // an optional pattern as `^(|X)$`, never `^$|^X$`).
+            object.remove("x-truncate");
             let array = matches!(object.get("type"), Some(Value::String(kind)) if kind == "array")
                 || matches!(object.get("type"), Some(Value::Array(kinds)) if kinds.iter().any(|kind| kind == "array"));
             if array && !object.contains_key("maxItems") {
@@ -1825,8 +1841,147 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_string(&schema_body).unwrap(),
-            r#"{"model":"served-model","messages":[{"role":"user","content":"schema"}],"temperature":0.5,"max_tokens":128,"stream":false,"chat_template_kwargs":{"enable_thinking":false},"top_p":0.8,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"response_format":{"type":"json_schema","json_schema":{"name":"local_schema","schema":{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"},"maxItems":192},"literal":{"const":{"pattern":"must-stay"}}}},"strict":true}}}"#
+            r#"{"model":"served-model","messages":[{"role":"user","content":"schema"}],"temperature":0.5,"max_tokens":128,"stream":false,"chat_template_kwargs":{"enable_thinking":false},"top_p":0.8,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"response_format":{"type":"json_schema","json_schema":{"name":"local_schema","schema":{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string","pattern":"^[a-z]+$","minLength":2,"maxLength":10},"maxItems":192},"literal":{"const":{"pattern":"must-stay"}}}},"strict":true}}}"#
         );
+    }
+
+    // AC: 2026-09-21, measured directly against the pinned llama-server (b10068,
+    // 571d0d540) on fedora. pattern/minLength/maxLength now pass through --
+    // this asserts that explicitly, separate from the x-truncate/maxItems test
+    // above, so a future change to the stripped-key list has a test that names
+    // exactly what must keep flowing.
+    #[test]
+    fn prepare_local_schema_preserves_pattern_and_length_bounds() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "time": {"type": "string", "pattern": "^(|([0-1][0-9]|2[0-3]):[0-5][0-9])$", "maxLength": 5},
+                "note": {"type": "string", "minLength": 1, "maxLength": 700}
+            }
+        });
+        let prepared = prepare_local_schema(&schema);
+        assert_eq!(
+            prepared["properties"]["time"]["pattern"],
+            schema["properties"]["time"]["pattern"]
+        );
+        assert_eq!(prepared["properties"]["time"]["maxLength"], 5);
+        assert_eq!(prepared["properties"]["note"]["minLength"], 1);
+        assert_eq!(prepared["properties"]["note"]["maxLength"], 700);
+    }
+
+    /// The two llama.cpp grammar limits measured 2026-09-21 against the pinned
+    /// build (b10068, 571d0d540) on a real GPU host (fedora), directly:
+    /// `\d`/`\w`/`\s` regex shorthand and a bare backslash-digit class make the
+    /// server return `400 failed to parse grammar` outright (reproduced on
+    /// `\d\d:\d\d` alone, no alternation involved); a `pattern` shaped as two
+    /// independently anchored branches joined by top-level alternation
+    /// (`^$|^X$`) parses but silently emits the literal `^`/`$` characters
+    /// instead of enforcing either branch (reproduced on `^$|^[0-9][0-9]:...$`
+    /// -- the model returned `{"time":"$"}`). A single anchor pair wrapping the
+    /// whole alternation (`^(|X)$`) and explicit `[0-9]`/`[^ )]` classes both
+    /// measured clean, 8/8 and 3/3 samples respectively, including against an
+    /// adversarial "meeting from 1:00pm to 1:30pm" prompt that had been
+    /// reliably producing a time RANGE in production
+    /// (`vpe-405`/`morning_briefing`, 2026-09-21 suze triage).
+    ///
+    /// `pattern` now flows unmodified to the local provider (see
+    /// `prepare_schema_node` above), so a shipped schema carrying either shape
+    /// stops enforcing anything for real owners and, worse, may 400 every
+    /// local call that reaches it. This walks every shipped talent schema and
+    /// asserts neither shape recurs.
+    #[test]
+    fn shipped_talent_schemas_avoid_local_grammar_incompatible_regex() {
+        let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repository root")
+            .to_path_buf();
+        let mut schema_dirs = vec![repository_root.join("core/payload/solstone/talent")];
+        let apps_dir = repository_root.join("core/payload/solstone/apps");
+        if let Ok(entries) = std::fs::read_dir(&apps_dir) {
+            for entry in entries.flatten() {
+                let talent_dir = entry.path().join("talent");
+                if talent_dir.is_dir() {
+                    schema_dirs.push(talent_dir);
+                }
+            }
+        }
+        let mut schema_files = Vec::new();
+        for dir in &schema_dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|ext| ext.to_str()) == Some("json")
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".schema.json"))
+                {
+                    schema_files.push(path);
+                }
+            }
+        }
+        assert!(
+            schema_files.len() >= 3,
+            "expected to find the shipped talent schemas from repository root {}, found {}",
+            repository_root.display(),
+            schema_files.len()
+        );
+
+        let mut violations = Vec::new();
+        for path in &schema_files {
+            let contents = std::fs::read_to_string(path).expect("read schema file");
+            let schema: Value = serde_json::from_str(&contents).expect("schema is valid JSON");
+            collect_pattern_violations(&schema, &path.display().to_string(), &mut violations);
+        }
+        assert!(
+            violations.is_empty(),
+            "shipped talent schema pattern(s) incompatible with the local llama-server grammar \
+             engine (see this test's doc comment for the measured failure shapes):\n{}",
+            violations.join("\n")
+        );
+    }
+
+    fn collect_pattern_violations(node: &Value, path: &str, violations: &mut Vec<String>) {
+        match node {
+            Value::Object(object) => {
+                if let Some(Value::String(pattern)) = object.get("pattern") {
+                    if pattern.contains("\\d")
+                        || pattern.contains("\\D")
+                        || pattern.contains("\\w")
+                        || pattern.contains("\\W")
+                        || pattern.contains("\\s")
+                        || pattern.contains("\\S")
+                    {
+                        violations.push(format!(
+                            "{path}: pattern {pattern:?} uses \\d/\\w/\\s regex shorthand -- \
+                             the local grammar engine only supports explicit character classes \
+                             (e.g. [0-9], not \\d)"
+                        ));
+                    }
+                    if pattern.contains("$|^") {
+                        violations.push(format!(
+                            "{path}: pattern {pattern:?} joins two independently anchored \
+                             branches with top-level alternation (`X$|^Y`) -- wrap the whole \
+                             alternation in one anchor pair instead (`^(X|Y)$`)"
+                        ));
+                    }
+                }
+                for (key, value) in object {
+                    if key != "const" && key != "enum" {
+                        collect_pattern_violations(value, path, violations);
+                    }
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    collect_pattern_violations(value, path, violations);
+                }
+            }
+            _ => {}
+        }
     }
 
     #[test]
