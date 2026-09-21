@@ -1120,8 +1120,17 @@ fn validate_release_configure_args(
     components: &[String],
     target: &str,
 ) -> Result<(), ProduceError> {
+    // Excludes only `--prefix=`: its value is the build script's own OUT_DIR,
+    // a per-build cargo hash that can coincidentally contain "03" (e.g. a
+    // directory named `ffmpeg-sys-next-039b...`), which previously reddened
+    // a build whose real flag was the correct `-O3`. Every other arg --
+    // including a bare injected token -- is still scanned.
     let mistyped_optimization = ["-", "0", "3"].concat();
-    if args.iter().any(|arg| arg.contains(&mistyped_optimization)) {
+    if args
+        .iter()
+        .filter(|arg| !arg.starts_with("--prefix="))
+        .any(|arg| arg.contains(&mistyped_optimization))
+    {
         return Err(incomplete_ffmpeg_evidence(
             "release configure receipt contains invalid optimization flag",
         ));
@@ -1926,6 +1935,47 @@ mod tests {
         );
         validate_release_configure_args(&linux_args, &[], "x86_64-unknown-linux-gnu")
             .expect("the same arguments are valid on a non-windows lane");
+    }
+
+    #[test]
+    fn mistyped_optimization_check_ignores_a_coincidental_prefix_path_hash() {
+        // A real build once failed here: `--prefix=` carries the build
+        // script's own OUT_DIR, a per-build cargo hash that can contain "03"
+        // by coincidence (`ffmpeg-sys-next-039b...`), and an unscoped
+        // substring search over every arg matched it even though the actual
+        // optimization flag was the correct `-O3`.
+        let args: Vec<String> = [
+            "--prefix=/var/tmp/x/build/ffmpeg-sys-next-039b3f72b135618a/out/dist",
+            "--enable-cross-compile",
+            "--disable-debug",
+            "--enable-stripping",
+            "--extra-cflags=-O3 -ffast-math -funroll-loops",
+        ]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect();
+        validate_release_configure_args(&args, &[], "aarch64-unknown-linux-musl")
+            .expect("a prefix path containing \"03\" must not read as a mistyped flag");
+    }
+
+    #[test]
+    fn mistyped_optimization_check_still_catches_a_real_typo() {
+        let args: Vec<String> = [
+            "--prefix=/var/tmp/x/build/ffmpeg-sys-next-abc123/out/dist",
+            "--enable-cross-compile",
+            "--disable-debug",
+            "--enable-stripping",
+            "--extra-cflags=-03 -ffast-math -funroll-loops",
+        ]
+        .iter()
+        .map(|arg| (*arg).to_owned())
+        .collect();
+        let error = validate_release_configure_args(&args, &[], "aarch64-unknown-linux-musl")
+            .expect_err("a genuinely mistyped -03 in --extra-cflags must still be caught");
+        assert!(
+            error.to_string().contains("invalid optimization flag"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
