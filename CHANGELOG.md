@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- an audio import used to read as failed about an hour after you started it, even though the audio had already imported successfully. it now shows its real outcome, and the import history now names it "audio" instead of leaving it blank.
+
 ## [2.0.11] - 2026-09-20
 
 ### Added

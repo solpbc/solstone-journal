@@ -682,7 +682,7 @@ fn derive_source_display(source_type: &str) -> String {
         "obsidian" => "Obsidian".to_owned(),
         "oura" => "Oura".to_owned(),
         "plaud" => "Plaud".to_owned(),
-        "audio" => "Audio".to_owned(),
+        "audio" => "audio".to_owned(),
         _ => {
             let mut chars = source_type.chars();
             match chars.next() {
