@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.12] - 2026-09-21
+
 ### Fixed
 
 - this is a security fix. on the computer your journal runs on, your journal's web app used to accept requests from other websites. it now only works at `localhost`, `127.0.0.1` or `[::1]`, and turns away a change sent to it by another website. `http://localhost:5015` and your paired devices work as before.

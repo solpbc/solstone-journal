@@ -756,7 +756,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "solstone-core-artifact-download"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "sha2",
  "solstone-core-assets",
@@ -766,7 +766,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-assets"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "serde",
  "serde_json",
@@ -774,7 +774,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-brain"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -790,7 +790,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-distribution"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "flate2",
  "minisign",
@@ -810,14 +810,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-ffmpeg-build-support"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "sha2",
 ]
 
 [[package]]
 name = "solstone-core-installation-identity"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "getrandom 0.3.4",
  "nix",
@@ -827,14 +827,14 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "toml_edit",
 ]
 
 [[package]]
 name = "solstone-core-journal-config"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "iana-time-zone",
  "serde",
@@ -847,7 +847,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-config-write"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "serde_json",
  "solstone-core-journal-config",
@@ -856,7 +856,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-journal-io"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "chrono",
  "getrandom 0.3.4",
@@ -872,7 +872,7 @@ dependencies = [
 
 [[package]]
 name = "solstone-core-local"
-version = "2.0.11"
+version = "2.0.12"
 dependencies = [
  "chrono",
  "flate2",
