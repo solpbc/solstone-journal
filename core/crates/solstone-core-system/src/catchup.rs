@@ -341,10 +341,7 @@ pub fn record_daily_catchup_attempt(
         // preserves repairs that overlap or begin while the daily task runs.
         let prior_repair = entries
             .get(&catchup_state_key(day, KIND_SEGMENT_REPAIR))
-            .filter(|repair| {
-                repair.get("active").is_some_and(Value::is_null)
-                    && repair.get("fingerprint").and_then(Value::as_str) == Some(fingerprint)
-            })
+            .filter(|repair| repair.get("active").is_some_and(Value::is_null))
             .cloned()
             .unwrap_or(Value::Null);
         record.insert(SEGMENT_REPAIR_AT_ADMISSION.to_owned(), prior_repair);
@@ -1508,13 +1505,653 @@ mod tests {
     }
 
     #[test]
+    fn completed_daily_catchup_supersedes_inactive_repair_with_older_fingerprint() {
+        for reconcile in [false, true] {
+            for mutate_after_admission in [false, true] {
+                let bed = Bed::new(&format!(
+                    "daily-supersedes-older-{reconcile}-{mutate_after_admission}"
+                ));
+                let day = "20260101";
+                record_segment_repair_attempt(&bed.root, day, 1.0);
+                record_segment_repair_outcome(
+                    &bed.root,
+                    day,
+                    SegmentRepairOutcome {
+                        success: false,
+                        timed_out: false,
+                        timeout_seconds: None,
+                        ended_at: 5.0,
+                        cleared: Some(32),
+                        remaining: Some(2),
+                    },
+                );
+                bed.segment_file(day, "120000_1", "audio.json", b"chronicle-input-b");
+                let fingerprint_b = read_raw_input_fingerprint(&bed.root, day).unwrap();
+                let admitted = admit_daily_catchup(&bed.root, day, "catchup", 10.0).unwrap();
+                assert_eq!(admitted.fingerprint, fingerprint_b);
+
+                let repair_key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+                let daily_key = catchup_state_key(day, KIND_DAILY_CATCHUP);
+                let initial_repair = read_catchup_state(&bed.root)["entries"][&repair_key].clone();
+                assert_eq!(
+                    read_catchup_state(&bed.root)["entries"][&daily_key]
+                        [SEGMENT_REPAIR_AT_ADMISSION],
+                    initial_repair,
+                    "admission snapshot must capture inactive repair A even though fingerprint is older than B"
+                );
+
+                if mutate_after_admission {
+                    update_catchup_state(&bed.root, false, |entries| {
+                        entries
+                            .get_mut(&repair_key)
+                            .unwrap()
+                            .as_object_mut()
+                            .unwrap()
+                            .insert(
+                                "fingerprint".to_owned(),
+                                json!("post-admission-fingerprint"),
+                            );
+                        true
+                    });
+                }
+                let expected_repair = read_catchup_state(&bed.root)["entries"][&repair_key].clone();
+
+                crate::daily_coverage::configure_no_daily_work(&bed.root);
+                bed.write(
+                    "chronicle/20260101/health/daily.updated",
+                    daily_marker(admitted.generation, &fingerprint_b),
+                );
+                if reconcile {
+                    reconcile_stale_catchup_attempts(
+                        &bed.root,
+                        UNIX_EPOCH + Duration::from_secs(20),
+                    )
+                    .unwrap();
+                } else {
+                    assert!(
+                        record_daily_catchup_outcome(
+                            &bed.root,
+                            day,
+                            "catchup",
+                            admitted.generation,
+                            &fingerprint_b,
+                            daily_outcome(20.0, 0),
+                        )
+                        .unwrap()
+                    );
+                }
+                let state = read_catchup_state(&bed.root);
+                let entries = catchup_entries(&state).unwrap();
+                assert_eq!(
+                    entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)]["last_outcome"],
+                    "completed"
+                );
+                if mutate_after_admission {
+                    assert_eq!(
+                        entries[&repair_key], expected_repair,
+                        "mutated repair must be preserved"
+                    );
+                } else {
+                    assert!(
+                        !entries.contains_key(&repair_key),
+                        "older inactive repair must be settled and removed by proven daily catchup"
+                    );
+                }
+                assert!(
+                    !entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)]
+                        .as_object()
+                        .unwrap()
+                        .contains_key(SEGMENT_REPAIR_AT_ADMISSION)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn daily_catchup_completion_preserves_repair_mutated_after_admission() {
+        for reconcile in [false, true] {
+            for mutation in ["fingerprint", "active", "attempt-data", "unknown-sentinel"] {
+                let bed = Bed::new(&format!("preserve-mutated-{mutation}-{reconcile}"));
+                let day = "20260101";
+                record_segment_repair_attempt(&bed.root, day, 1.0);
+                record_segment_repair_outcome(
+                    &bed.root,
+                    day,
+                    SegmentRepairOutcome {
+                        success: false,
+                        timed_out: false,
+                        timeout_seconds: None,
+                        ended_at: 5.0,
+                        cleared: Some(32),
+                        remaining: Some(2),
+                    },
+                );
+                bed.segment_file(day, "120000_1", "audio.json", b"chronicle-input-b");
+                let fingerprint_b = read_raw_input_fingerprint(&bed.root, day).unwrap();
+                let admitted = admit_daily_catchup(&bed.root, day, "catchup", 10.0).unwrap();
+                assert_eq!(admitted.fingerprint, fingerprint_b);
+
+                let repair_key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+                update_catchup_state(&bed.root, false, |entries| {
+                    let repair = entries
+                        .get_mut(&repair_key)
+                        .unwrap()
+                        .as_object_mut()
+                        .unwrap();
+                    match mutation {
+                        "fingerprint" => {
+                            repair.insert(
+                                "fingerprint".to_owned(),
+                                json!("post-admission-fingerprint"),
+                            );
+                        }
+                        "active" => {
+                            repair.insert(
+                                "active".to_owned(),
+                                json!({"ref": "overlapping-repair", "started_at": 15.0}),
+                            );
+                        }
+                        "attempt-data" => {
+                            repair.insert("attempts".to_owned(), json!(2));
+                            repair.insert("last_outcome".to_owned(), json!("progressing"));
+                            repair.insert("cleared".to_owned(), json!(10));
+                            repair.insert("remaining".to_owned(), json!(1));
+                            repair.insert("next_retry_at".to_owned(), json!(605.0));
+                            repair.insert("exit_reason".to_owned(), json!("wall_clock_exceeded"));
+                        }
+                        "unknown-sentinel" => {
+                            repair.insert("sentinel".to_owned(), json!("keep"));
+                        }
+                        _ => unreachable!(),
+                    }
+                    true
+                });
+                let expected_repair = read_catchup_state(&bed.root)["entries"][&repair_key].clone();
+
+                crate::daily_coverage::configure_no_daily_work(&bed.root);
+                bed.write(
+                    "chronicle/20260101/health/daily.updated",
+                    daily_marker(admitted.generation, &fingerprint_b),
+                );
+                if reconcile {
+                    reconcile_stale_catchup_attempts(
+                        &bed.root,
+                        UNIX_EPOCH + Duration::from_secs(20),
+                    )
+                    .unwrap();
+                } else {
+                    assert!(
+                        record_daily_catchup_outcome(
+                            &bed.root,
+                            day,
+                            "catchup",
+                            admitted.generation,
+                            &fingerprint_b,
+                            daily_outcome(20.0, 0),
+                        )
+                        .unwrap()
+                    );
+                }
+                let state = read_catchup_state(&bed.root);
+                let entries = catchup_entries(&state).unwrap();
+                assert_eq!(
+                    entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)]["last_outcome"],
+                    "completed"
+                );
+                if reconcile && mutation == "active" {
+                    assert!(
+                        entries.contains_key(&repair_key),
+                        "active repair must not be settled/removed by daily catchup completion"
+                    );
+                    assert!(
+                        entries[&repair_key]["active"].is_null(),
+                        "stale active repair was reconciled to inactive"
+                    );
+                } else {
+                    assert_eq!(
+                        entries[&repair_key], expected_repair,
+                        "mutated repair must be preserved for case {mutation} (reconcile: {reconcile})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn daily_catchup_completion_preserves_repair_active_or_created_after_admission() {
+        for reconcile in [false, true] {
+            for case in ["active-at-admission", "created-after-admission"] {
+                let bed = Bed::new(&format!("preserve-timing-{case}-{reconcile}"));
+                let day = "20260101";
+                if case == "active-at-admission" {
+                    record_segment_repair_attempt(&bed.root, day, 1.0);
+                }
+                bed.segment_file(day, "120000_1", "audio.json", b"chronicle-input-b");
+                let fingerprint_b = read_raw_input_fingerprint(&bed.root, day).unwrap();
+                let admitted = admit_daily_catchup(&bed.root, day, "catchup", 10.0).unwrap();
+
+                let daily_key = catchup_state_key(day, KIND_DAILY_CATCHUP);
+                if case == "active-at-admission" {
+                    assert_eq!(
+                        read_catchup_state(&bed.root)["entries"][&daily_key]
+                            [SEGMENT_REPAIR_AT_ADMISSION],
+                        Value::Null,
+                        "active repair must not be captured at admission"
+                    );
+                }
+
+                if case == "created-after-admission" {
+                    record_segment_repair_attempt(&bed.root, day, 12.0);
+                    record_segment_repair_outcome(
+                        &bed.root,
+                        day,
+                        SegmentRepairOutcome {
+                            success: false,
+                            timed_out: false,
+                            timeout_seconds: None,
+                            ended_at: 15.0,
+                            cleared: Some(10),
+                            remaining: Some(1),
+                        },
+                    );
+                }
+                let repair_key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+                let expected_repair = read_catchup_state(&bed.root)["entries"][&repair_key].clone();
+                assert!(expected_repair.is_object());
+
+                crate::daily_coverage::configure_no_daily_work(&bed.root);
+                bed.write(
+                    "chronicle/20260101/health/daily.updated",
+                    daily_marker(admitted.generation, &fingerprint_b),
+                );
+                if reconcile {
+                    reconcile_stale_catchup_attempts(
+                        &bed.root,
+                        UNIX_EPOCH + Duration::from_secs(20),
+                    )
+                    .unwrap();
+                } else {
+                    assert!(
+                        record_daily_catchup_outcome(
+                            &bed.root,
+                            day,
+                            "catchup",
+                            admitted.generation,
+                            &fingerprint_b,
+                            daily_outcome(20.0, 0),
+                        )
+                        .unwrap()
+                    );
+                }
+                let state = read_catchup_state(&bed.root);
+                let entries = catchup_entries(&state).unwrap();
+                assert_eq!(
+                    entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)]["last_outcome"],
+                    "completed"
+                );
+                if reconcile && case == "active-at-admission" {
+                    assert!(
+                        entries.contains_key(&repair_key),
+                        "active repair must not be settled/removed by daily catchup completion"
+                    );
+                    assert!(
+                        entries[&repair_key]["active"].is_null(),
+                        "stale active repair was reconciled to inactive"
+                    );
+                } else {
+                    assert_eq!(
+                        entries[&repair_key], expected_repair,
+                        "case {case} must be preserved (reconcile: {reconcile})"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn daily_catchup_non_completion_preserves_admitted_inactive_repair() {
+        let cases = [
+            (
+                "superseded-stream",
+                false,
+                "superseded",
+                Some("stream_advanced"),
+            ),
+            (
+                "superseded-stream",
+                true,
+                "superseded",
+                Some("stream_advanced"),
+            ),
+            (
+                "superseded-fingerprint",
+                false,
+                "superseded",
+                Some("fingerprint_changed"),
+            ),
+            (
+                "superseded-fingerprint",
+                true,
+                "superseded",
+                Some("fingerprint_changed"),
+            ),
+            (
+                "terminal-timeout",
+                false,
+                "timeout",
+                Some("wall_clock_exceeded"),
+            ),
+            (
+                "terminal-failed",
+                false,
+                "error",
+                Some("daily_catchup_failed"),
+            ),
+            (
+                "terminal-progressing",
+                false,
+                "progressing",
+                Some("daily_catchup_failed"),
+            ),
+            (
+                "reconcile-interrupted-no-marker-no-coverage",
+                true,
+                "interrupted",
+                Some("interrupted"),
+            ),
+            (
+                "reconcile-interrupted-coverage-no-marker",
+                true,
+                "interrupted",
+                Some("interrupted"),
+            ),
+            #[cfg(target_os = "linux")]
+            (
+                "unreadable-fingerprint",
+                false,
+                "error",
+                Some("fingerprint_unreadable"),
+            ),
+            #[cfg(target_os = "linux")]
+            (
+                "unreadable-fingerprint",
+                true,
+                "error",
+                Some("fingerprint_unreadable"),
+            ),
+        ];
+
+        for (case_name, reconcile, expected_outcome, expected_reason) in cases {
+            let bed = Bed::new(&format!("non-completion-{case_name}-{reconcile}"));
+            let day = "20260101";
+            record_segment_repair_attempt(&bed.root, day, 1.0);
+            record_segment_repair_outcome(
+                &bed.root,
+                day,
+                SegmentRepairOutcome {
+                    success: false,
+                    timed_out: false,
+                    timeout_seconds: None,
+                    ended_at: 5.0,
+                    cleared: Some(32),
+                    remaining: Some(2),
+                },
+            );
+            bed.segment_file(day, "120000_1", "audio.json", b"chronicle-input-b");
+            let fingerprint_b = read_raw_input_fingerprint(&bed.root, day).unwrap();
+            let admitted = admit_daily_catchup(&bed.root, day, "catchup", 10.0).unwrap();
+            let repair_key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+            let daily_key = catchup_state_key(day, KIND_DAILY_CATCHUP);
+
+            let state_before = read_catchup_state(&bed.root);
+            let entries_before = catchup_entries(&state_before).unwrap();
+            let before_repair = entries_before[&repair_key].clone();
+            assert_eq!(
+                entries_before[&daily_key][SEGMENT_REPAIR_AT_ADMISSION], before_repair,
+                "case {case_name}: admitted snapshot must retain initial repair"
+            );
+
+            match case_name {
+                "superseded-stream" => {
+                    bed.write(
+                        "chronicle/20260101/health/stream.updated",
+                        br#"{"version":1,"generation":3,"fingerprint":null}"#,
+                    );
+                }
+                "superseded-fingerprint" => {
+                    bed.segment_file(day, "120000_2", "audio.json", b"chronicle-input-c");
+                }
+                "terminal-progressing" => {
+                    record_daily_catchup_progress(&bed.root, day, 10, 2);
+                }
+                "reconcile-interrupted-coverage-no-marker" => {
+                    crate::daily_coverage::configure_no_daily_work(&bed.root);
+                }
+                #[cfg(target_os = "linux")]
+                "unreadable-fingerprint" => {
+                    use std::ffi::OsString;
+                    use std::os::unix::ffi::OsStringExt;
+                    let unreadable = bed
+                        .root
+                        .join(format!("chronicle/{day}/000000_1"))
+                        .join(OsString::from_vec(vec![0xff]));
+                    fs::create_dir_all(unreadable.parent().unwrap()).unwrap();
+                    fs::write(&unreadable, b"raw").unwrap();
+                }
+                _ => {}
+            }
+
+            if reconcile {
+                reconcile_stale_catchup_attempts(&bed.root, UNIX_EPOCH + Duration::from_secs(20))
+                    .unwrap();
+            } else {
+                let outcome = match case_name {
+                    "terminal-timeout" => DailyCatchupOutcome {
+                        success: false,
+                        timed_out: true,
+                        timeout_seconds: Some(10.0),
+                        ended_at: 20.0,
+                        exit_code: -1,
+                        exit_status: "timeout".to_owned(),
+                    },
+                    "terminal-failed" | "terminal-progressing" => DailyCatchupOutcome {
+                        success: false,
+                        timed_out: false,
+                        timeout_seconds: None,
+                        ended_at: 20.0,
+                        exit_code: 1,
+                        exit_status: "error".to_owned(),
+                    },
+                    _ => daily_outcome(20.0, 0),
+                };
+                record_daily_catchup_outcome(
+                    &bed.root,
+                    day,
+                    "catchup",
+                    admitted.generation,
+                    &fingerprint_b,
+                    outcome,
+                )
+                .unwrap();
+            }
+
+            let state_after = read_catchup_state(&bed.root);
+            let entries_after = catchup_entries(&state_after).unwrap();
+
+            // Repair key is byte-identical to pre-consumer A
+            assert_eq!(
+                entries_after[&repair_key], before_repair,
+                "admitted repair must remain intact for case {case_name}"
+            );
+
+            // Every other key except daily key is unchanged
+            for (k, v) in entries_before {
+                if k != &daily_key {
+                    assert_eq!(entries_after.get(k), Some(v), "key {k} must not change");
+                }
+            }
+            assert_eq!(
+                entries_before.len(),
+                entries_after.len(),
+                "no extra ledger keys added"
+            );
+
+            // Daily key structural assertions
+            let daily_after = entries_after[&daily_key].as_object().unwrap();
+            assert!(
+                !daily_after.contains_key(SEGMENT_REPAIR_AT_ADMISSION),
+                "case {case_name}: admission snapshot must be stripped"
+            );
+            assert_eq!(daily_after["active"], Value::Null);
+            assert_eq!(
+                daily_after["last_outcome"], expected_outcome,
+                "case {case_name}"
+            );
+            assert_eq!(
+                daily_after["reason_code"].as_str(),
+                expected_reason,
+                "case {case_name}"
+            );
+
+            if case_name == "terminal-progressing" {
+                assert_eq!(
+                    daily_after["daily_progress"],
+                    json!({"cleared": 10, "remaining": 2})
+                );
+                assert_eq!(daily_after["consecutive_non_completion"], json!(0));
+                assert_eq!(daily_after["next_retry_at"], json!(620.0));
+                assert!(daily_after["entered_backoff_at"].is_null());
+                assert!(daily_after["notified_at"].is_null());
+            } else if expected_outcome == "superseded" {
+                assert_eq!(daily_after["consecutive_non_completion"], json!(0));
+                assert_eq!(daily_after["next_retry_at"], json!(0));
+                assert!(daily_after["entered_backoff_at"].is_null());
+                assert!(daily_after["notified_at"].is_null());
+            } else {
+                assert_eq!(daily_after["consecutive_non_completion"], json!(1));
+                assert_eq!(daily_after["next_retry_at"], json!(620.0));
+                assert!(daily_after["entered_backoff_at"].is_null());
+                assert!(daily_after["notified_at"].is_null());
+            }
+        }
+    }
+
+    #[test]
+    fn completed_daily_catchup_clears_expired_repair_natural_eligibility_and_sentinel_preserves() {
+        for with_sentinel in [false, true] {
+            let bed = Bed::new(&format!("r6-natural-clearance-{with_sentinel}"));
+            let day = "20200101";
+            let now = UNIX_EPOCH + Duration::from_secs(601);
+
+            bed.write(
+                "chronicle/20200101/health/stream.updated",
+                br#"{"version":1,"generation":1,"fingerprint":null}"#,
+            );
+            record_segment_repair_attempt(&bed.root, day, 1.0);
+            record_segment_repair_outcome(
+                &bed.root,
+                day,
+                SegmentRepairOutcome {
+                    success: false,
+                    timed_out: false,
+                    timeout_seconds: None,
+                    ended_at: 1.0,
+                    cleared: Some(0),
+                    remaining: Some(1),
+                },
+            );
+
+            bed.segment_file(day, "120000_1", "audio.json", b"new-chronicle-input");
+            let fingerprint_b = read_raw_input_fingerprint(&bed.root, day).unwrap();
+
+            assert_eq!(
+                eligible_catchup_days(&bed.root, &[], &BTreeSet::new(), now).unwrap(),
+                vec![day.to_owned()]
+            );
+
+            let admitted =
+                admit_daily_catchup(&bed.root, day, "supervisor-catchup-20200101", 601.0).unwrap();
+            assert_eq!(admitted.fingerprint, fingerprint_b);
+
+            if with_sentinel {
+                let repair_key = catchup_state_key(day, KIND_SEGMENT_REPAIR);
+                update_catchup_state(&bed.root, false, |entries| {
+                    entries
+                        .get_mut(&repair_key)
+                        .unwrap()
+                        .as_object_mut()
+                        .unwrap()
+                        .insert("sentinel".to_owned(), json!("keep"));
+                    true
+                });
+            }
+
+            crate::daily_coverage::configure_no_daily_work(&bed.root);
+            bed.write(
+                "chronicle/20200101/health/daily.updated",
+                daily_marker(admitted.generation, &fingerprint_b),
+            );
+            assert!(
+                record_daily_catchup_outcome(
+                    &bed.root,
+                    day,
+                    "supervisor-catchup-20200101",
+                    admitted.generation,
+                    &fingerprint_b,
+                    daily_outcome(620.0, 0),
+                )
+                .unwrap()
+            );
+
+            let state = read_catchup_state(&bed.root);
+            let entries = catchup_entries(&state).unwrap();
+            let daily = &entries[&catchup_state_key(day, KIND_DAILY_CATCHUP)];
+            assert_eq!(daily["last_outcome"], "completed");
+            assert!(
+                !daily
+                    .as_object()
+                    .unwrap()
+                    .contains_key(SEGMENT_REPAIR_AT_ADMISSION)
+            );
+
+            if with_sentinel {
+                let repair = &entries[&catchup_state_key(day, KIND_SEGMENT_REPAIR)];
+                assert_eq!(repair["sentinel"], "keep");
+                assert_eq!(repair["next_retry_at"], 601.0);
+            } else {
+                assert!(!entries.contains_key(&catchup_state_key(day, KIND_SEGMENT_REPAIR)));
+            }
+
+            let next_scan = eligible_catchup_days(
+                &bed.root,
+                &[],
+                &BTreeSet::new(),
+                now + Duration::from_secs(60),
+            )
+            .unwrap();
+
+            if with_sentinel {
+                assert_eq!(
+                    next_scan,
+                    vec![day.to_owned()],
+                    "sentinel repair was preserved, so expired retry is still naturally eligible"
+                );
+            } else {
+                assert!(
+                    next_scan.is_empty(),
+                    "repair was settled, so day has no remaining natural eligibility"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn daily_catchup_preserves_unproven_or_overlapping_repairs() {
         for case in [
             "active-before",
             "overlap-finishes",
             "changed-after",
             "new-after",
-            "different-input",
             "no-marker",
             "wrong-reference",
             "wrong-generation",
@@ -1522,6 +2159,7 @@ mod tests {
             let bed = Bed::new(case);
             let day = "20260101";
             let fingerprint = empty_fingerprint();
+            crate::daily_coverage::configure_no_daily_work(&bed.root);
             let failed = SegmentRepairOutcome {
                 success: false,
                 timed_out: false,
@@ -1535,14 +2173,6 @@ mod tests {
                 if !matches!(case, "active-before" | "overlap-finishes") {
                     record_segment_repair_outcome(&bed.root, day, failed);
                 }
-            }
-            if case == "different-input" {
-                update_catchup_state(&bed.root, false, |entries| {
-                    entries
-                        .get_mut(&catchup_state_key(day, KIND_SEGMENT_REPAIR))
-                        .unwrap()["fingerprint"] = json!("different-input");
-                    true
-                });
             }
             record_daily_catchup_attempt(&bed.root, day, "catchup", 10.0, 2, &fingerprint);
             if matches!(case, "changed-after" | "new-after") {
