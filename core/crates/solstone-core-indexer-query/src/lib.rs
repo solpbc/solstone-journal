@@ -22,10 +22,11 @@ mod test_support;
 pub use compile::{CompileOutcome, QueryCompilation, compile_query};
 pub use edges::{
     DirectedCounts, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeFiltersPayload,
-    EdgeQueryError, EntityTypeLookup, EvidenceRow, KindSummary, NetworkNeighbor,
-    NetworkOverviewRequest, NetworkOverviewResponse, NetworkRequest, NetworkResponse,
-    OverviewEntity, OverviewTotals, is_safe_entity_id_component, load_edge_evidence,
-    load_entity_network, load_network_overview, open_edges_reader,
+    EdgeQueryError, EntityTypeLookup, EvidenceRow, KindSummary, NETWORK_EVIDENCE_LIMIT_MAX,
+    NETWORK_NEIGHBOR_LIMIT_MAX, NetworkNeighbor, NetworkOverviewRequest, NetworkOverviewResponse,
+    NetworkRequest, NetworkResponse, OverviewEntity, OverviewTotals, is_safe_entity_id_component,
+    load_edge_evidence, load_entity_network, load_network_overview, network_bound_detail,
+    open_edges_reader,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use execute::QueryCounters;
