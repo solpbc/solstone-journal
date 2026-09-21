@@ -56,27 +56,69 @@ pub(crate) fn record_followup_failure(result: &mut ModeResult, label: &str, erro
     result.failed_names.push(format!("{label} ({error})"));
 }
 
-fn use_log_error(journal: &Path, use_id: &str) -> Option<String> {
-    let events = read_use_events(journal, use_id).ok()?;
-    events.iter().rev().find_map(|event| {
-        (event.get("event").and_then(Value::as_str) == Some("error")
+/// The last terminal `"event":"error"` record in a durable use log, shared by
+/// [`use_log_error`] and [`use_log_failure_detail`] so the two never disagree
+/// about which event they are reading.
+fn terminal_error_event(events: &[Value]) -> Option<&Value> {
+    events.iter().rev().find(|event| {
+        event.get("event").and_then(Value::as_str) == Some("error")
             && event
                 .get("terminal")
                 .and_then(Value::as_bool)
-                .unwrap_or(true))
-        .then(|| {
+                .unwrap_or(true)
+    })
+}
+
+fn use_log_error(journal: &Path, use_id: &str) -> Option<String> {
+    let events = read_use_events(journal, use_id).ok()?;
+    let event = terminal_error_event(&events)?;
+    event
+        .get("reason_code")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
             event
-                .get("reason_code")
+                .get("error")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
-                .or_else(|| {
-                    event
-                        .get("error")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned)
-                })
-        })?
-    })
+        })
+}
+
+/// The structured context a terminal use-log error carries beyond its
+/// `reason_code`/`error` summary — e.g. `SchemaValidationFailed`'s per-field
+/// jsonschema violations (`schema_validation`), or a refusal's `reason` /
+/// `retryable` / `blocking` / `provider`. `use_log_error` above reduces the
+/// same event to one canonical string for capping/attribution; this keeps
+/// whatever else the worker recorded so a `talent.fail` row is explainable
+/// without a session going and reading `~/journal/talents/<name>/<use_id>.jsonl`
+/// by hand. Deliberately general — a new `RuntimeOutcome` field surfaces here
+/// automatically, so this never needs a new per-failure-class extractor.
+/// Measured 2026-09-21: `schema_validation` was captured at the source
+/// (`solstone-core-talent-runtime`'s `emit_outcome`) and durably logged, but
+/// nothing downstream ever read it back out, so `journal doctor`, the
+/// chronicle `talent.fail` row and the day-index `error_message` all showed
+/// only the generic string `"talent output failed schema validation"`.
+pub(crate) fn use_log_failure_detail(journal: &Path, use_id: &str) -> Option<Value> {
+    let events = read_use_events(journal, use_id).ok()?;
+    let event = terminal_error_event(&events)?;
+    let object = event.as_object()?;
+    const SURFACED_ELSEWHERE: &[&str] = &[
+        "event",
+        "terminal",
+        "name",
+        "reason_code",
+        "error",
+        "ts",
+        "use_id",
+        "day",
+    ];
+    let mut detail = Map::new();
+    for (key, value) in object {
+        if !SURFACED_ELSEWHERE.contains(&key.as_str()) {
+            detail.insert(key.clone(), value.clone());
+        }
+    }
+    (!detail.is_empty()).then(|| Value::Object(detail))
 }
 
 pub(crate) fn timeout_cause(timeout: &TimedOutUse) -> &'static str {
@@ -643,7 +685,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{failure_cause, named_failure, use_log_terminal};
+    use super::{failure_cause, named_failure, use_log_failure_detail, use_log_terminal};
 
     fn write_blocked_local_runtime(journal: &std::path::Path) {
         let path = journal.join("health/providers/runtime/local.json");
@@ -782,6 +824,72 @@ mod tests {
             failure_cause(journal.path(), "use-1", "error"),
             "incomplete_json_length"
         );
+    }
+
+    // AC: 2026-09-21, a real suze `morning_briefing` failure. reason_code alone
+    // (`schema_validation_failed`) told an operator nothing about which field the model
+    // got wrong; the jsonschema errors were captured at the source and durably logged,
+    // but nothing downstream ever read them back out. `use_log_failure_detail` is the fix
+    // — it must surface the structured `schema_validation` value, while `failure_cause`
+    // keeps returning the bare reason_code unchanged (capping/canonicalization key on it).
+    #[test]
+    fn use_log_failure_detail_surfaces_schema_validation_errors() {
+        let journal = tempfile::tempdir().expect("journal");
+        let dir = journal.path().join("talents/morning_briefing");
+        fs::create_dir_all(&dir).expect("use log directory");
+        fs::write(
+            dir.join("use-schema.jsonl"),
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-schema\",\"provider\":\"local\"}\n",
+                "{\"event\":\"error\",\"terminal\":true,\"name\":\"morning_briefing\",",
+                "\"error\":\"talent output failed schema validation\",",
+                "\"schema_validation\":{\"valid\":false,\"errors\":[{\"path\":\"/your_day/5/time\",",
+                "\"constraint\":\"pattern\",\"message\":\"bad time\"}]},",
+                "\"reason_code\":\"schema_validation_failed\"}\n",
+            ),
+        )
+        .expect("write use log");
+
+        assert_eq!(
+            failure_cause(journal.path(), "use-schema", "error"),
+            "schema_validation_failed"
+        );
+        let detail = use_log_failure_detail(journal.path(), "use-schema")
+            .expect("schema_validation detail must surface");
+        assert_eq!(
+            detail["schema_validation"]["errors"][0]["path"],
+            "/your_day/5/time"
+        );
+        // Fields already surfaced through reason_code/error/name/etc. must not be
+        // duplicated into detail.
+        assert!(detail.get("reason_code").is_none());
+        assert!(detail.get("error").is_none());
+        assert!(detail.get("name").is_none());
+    }
+
+    // AC: a plain reason_code/error terminal (the common case) carries nothing beyond
+    // what `failure_cause` already returns, so there is no empty `{}` detail blob to
+    // write into every ordinary `talent.fail` row.
+    #[test]
+    fn use_log_failure_detail_is_none_when_the_terminal_carries_nothing_extra() {
+        let journal = tempfile::tempdir().expect("journal");
+        write_use_start(journal.path(), "use-plain", "local");
+        let use_log = journal
+            .path()
+            .join("talents/timeline--segment_summary/use-plain.jsonl");
+        let mut existing = fs::read_to_string(&use_log).expect("read use log");
+        existing.push_str(
+            "{\"event\":\"error\",\"terminal\":true,\"use_id\":\"use-plain\",\"error\":\"boom\",\"reason_code\":\"unknown\"}\n",
+        );
+        fs::write(&use_log, existing).expect("write use log");
+
+        assert_eq!(use_log_failure_detail(journal.path(), "use-plain"), None);
+    }
+
+    #[test]
+    fn use_log_failure_detail_is_none_with_no_use_log() {
+        let journal = tempfile::tempdir().expect("journal");
+        assert_eq!(use_log_failure_detail(journal.path(), "use-missing"), None);
     }
 
     #[test]

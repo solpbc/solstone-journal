@@ -7,7 +7,7 @@ use solstone_core_talent_config::{TalentFilter, load_talent_configs};
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DEFAULT_THINK_TIMEOUT, DrainOutcome, ModeResult, PendingUse, dispatch_prepared, excluded,
-    failure_cause, grouped, merge_mode_result, runtime,
+    failure_cause, grouped, merge_mode_result, runtime, use_log_failure_detail,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -755,6 +755,12 @@ fn log_daily_failure(
     let mut fields = daily_terminal_fields_for(context, name, facet, state);
     if let Some(use_id) = use_id {
         fields.insert("use_id".to_owned(), Value::String(use_id.to_owned()));
+        // reason_code is the canonical, capped-on string; detail is whatever else the
+        // worker's terminal error carried (e.g. schema_validation's per-field jsonschema
+        // violations) — see use_log_failure_detail's own doc for why this is separate.
+        if let Some(detail) = use_log_failure_detail(&context.journal, use_id) {
+            fields.insert("detail".to_owned(), detail);
+        }
     }
     fields.insert(
         "reason_code".to_owned(),
@@ -899,6 +905,75 @@ mod tests {
         let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
         assert_eq!(loaded.failure_count, 0);
         assert_eq!(loaded.frozen_packet, Some(json!({"packet":"new"})));
+    }
+
+    // AC: 2026-09-21, a real suze `morning_briefing` failure. Before this fix, the
+    // chronicle `talent.fail` row for a schema_invalid failure carried only
+    // `reason_code`, and the actual jsonschema violations (which field the local model
+    // got wrong) were readable only by opening the raw per-use log by hand. This proves
+    // the fix end to end: `log_daily_failure` must now attach that detail to the
+    // durable chronicle event it writes.
+    #[test]
+    fn log_daily_failure_writes_schema_validation_detail_into_the_chronicle_event() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260625";
+        let use_dir = root.join("talents/morning_briefing");
+        std::fs::create_dir_all(&use_dir).unwrap();
+        std::fs::write(
+            use_dir.join("use-mb.jsonl"),
+            concat!(
+                "{\"event\":\"start\",\"use_id\":\"use-mb\"}\n",
+                "{\"event\":\"error\",\"terminal\":true,\"name\":\"morning_briefing\",",
+                "\"error\":\"talent output failed schema validation\",",
+                "\"schema_validation\":{\"valid\":false,\"errors\":[{\"path\":\"/your_day/5/time\",",
+                "\"constraint\":\"pattern\",\"message\":\"bad time\"}]},",
+                "\"reason_code\":\"schema_validation_failed\"}\n",
+            ),
+        )
+        .unwrap();
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        log_daily_failure(
+            &mut log,
+            &context,
+            "morning_briefing",
+            None,
+            Some("use-mb"),
+            "error",
+            "schema_invalid",
+        );
+        log.finish().unwrap();
+
+        let health_dir = root.join("chronicle").join(day).join("health");
+        let mut found = None;
+        for entry in std::fs::read_dir(&health_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+            for line in std::fs::read_to_string(&path).unwrap().lines() {
+                let row: Value = serde_json::from_str(line).unwrap();
+                if row.get("event") == Some(&Value::String("talent.fail".to_owned()))
+                    && row.get("name") == Some(&Value::String("morning_briefing".to_owned()))
+                {
+                    found = Some(row);
+                }
+            }
+        }
+        let row = found.expect("talent.fail row for morning_briefing");
+        assert_eq!(row["reason_code"], "schema_invalid");
+        assert_eq!(
+            row["detail"]["schema_validation"]["errors"][0]["path"],
+            "/your_day/5/time"
+        );
     }
 
     #[test]

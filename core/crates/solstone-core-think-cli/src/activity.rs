@@ -13,7 +13,7 @@ use solstone_core_talent_runtime::activity_contract;
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DEFAULT_THINK_TIMEOUT, DrainOutcome, ModeResult, PendingUse, drain_with_deadline_observed,
-    grouped, merge_mode_result, runtime,
+    grouped, merge_mode_result, runtime, use_log_failure_detail,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -832,6 +832,14 @@ fn log_fail(
     // `state`, and 195 of 374 failures on 2026-09-04 were unexplained by construction.
     if let Some(reason) = reason {
         extra.insert("reason_code".to_owned(), Value::String(reason.to_owned()));
+        // Same gap as daily mode's log_daily_failure: reason_code alone drops whatever
+        // else the worker's terminal error carried (e.g. schema_validation's per-field
+        // violations).
+        if let Some(detail) =
+            use_id.and_then(|use_id| use_log_failure_detail(&context.journal, use_id))
+        {
+            extra.insert("detail".to_owned(), detail);
+        }
     }
     let base = fields(context, activity, facet, extra);
     let event_ms = context.event_now_ms();
