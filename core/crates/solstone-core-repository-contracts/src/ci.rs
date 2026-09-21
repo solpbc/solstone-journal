@@ -106,6 +106,47 @@ pub struct CargoSuite {
     pub required_features: Vec<String>,
 }
 
+/// A leg that declares a scope (a workspace or package set) and does not
+/// exercise all of it reports one `CoverageEntry` per sweep, naming how many
+/// of the declared units were excluded and why. See
+/// `rust-engineering-standard.md` § 3.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CoverageEntry {
+    pub scope: String,
+    pub declared: usize,
+    pub excluded: usize,
+    pub basis: String,
+}
+
+/// Environment variable the runner sets to a per-item path before spawning a
+/// leg, so the leg can hand back structured coverage without the runner
+/// re-parsing the leg's own log.
+pub const COVERAGE_REPORT_PATH_ENV: &str = "SOLSTONE_CI_COVERAGE_PATH";
+
+/// Writes a leg's coverage entries to the path the runner named in
+/// `COVERAGE_REPORT_PATH_ENV`. A leg invoked directly, outside the runner
+/// (no path set), is a no-op.
+pub fn write_coverage_report(entries: &[CoverageEntry]) -> Result<(), String> {
+    let Some(path) = std::env::var_os(COVERAGE_REPORT_PATH_ENV) else {
+        return Ok(());
+    };
+    let json = serde_json::to_vec_pretty(entries).map_err(|error| error.to_string())?;
+    fs::write(&path, json).map_err(|error| {
+        format!(
+            "write CI coverage report {}: {error}",
+            Path::new(&path).display()
+        )
+    })
+}
+
+/// Reads a leg's coverage report written via `write_coverage_report`. Coverage
+/// is additive and never gates a leg's own verdict, so an absent or
+/// unparseable report reads as `None` rather than an error.
+pub fn read_coverage_report(path: &Path) -> Option<Vec<CoverageEntry>> {
+    let text = fs::read_to_string(path).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
 pub fn load_registry(path: &Path) -> Result<Registry, String> {
     let text = fs::read_to_string(path)
         .map_err(|error| format!("read suite registry {}: {error}", path.display()))?;
@@ -1517,5 +1558,59 @@ mod tests {
         .expect("fifth package lookalike");
         let errors = validate_boundary(temp.path()).expect_err("fifth package must red");
         assert!(errors.iter().any(|error| error.contains("b::")));
+    }
+
+    #[test]
+    fn coverage_report_round_trips_through_the_runner_path() {
+        let temp = TempDir::new().expect("tempdir");
+        let path = temp.path().join("005-windows-crosscheck.coverage.json");
+        let entries = vec![
+            CoverageEntry {
+                scope: "lib".to_owned(),
+                declared: 128,
+                excluded: 73,
+                basis: "ring, libsqlite3-sys, ffmpeg-sys-next (native-msvc-build-oracle)"
+                    .to_owned(),
+            },
+            CoverageEntry {
+                scope: "tests".to_owned(),
+                declared: 134,
+                excluded: 79,
+                basis: "ring, libsqlite3-sys, ffmpeg-sys-next (native-msvc-build-oracle)"
+                    .to_owned(),
+            },
+        ];
+        fs::write(
+            &path,
+            serde_json::to_vec_pretty(&entries).expect("serialize coverage"),
+        )
+        .expect("write coverage fixture");
+
+        let read = read_coverage_report(&path).expect("coverage report parses");
+        assert_eq!(read.len(), 2);
+        assert_eq!(read[0].scope, "lib");
+        assert_eq!(read[0].declared, 128);
+        assert_eq!(read[0].excluded, 73);
+        assert_eq!(read[1].scope, "tests");
+        assert_eq!(read[1].excluded, 79);
+    }
+
+    #[test]
+    fn coverage_report_absent_or_invalid_reads_as_none_not_an_error() {
+        let temp = TempDir::new().expect("tempdir");
+        assert!(read_coverage_report(&temp.path().join("missing.json")).is_none());
+
+        let garbage = temp.path().join("garbage.json");
+        fs::write(&garbage, "not json").expect("write garbage fixture");
+        assert!(read_coverage_report(&garbage).is_none());
+    }
+
+    #[test]
+    fn write_coverage_report_is_a_noop_without_a_runner_path() {
+        assert!(
+            std::env::var_os(COVERAGE_REPORT_PATH_ENV).is_none(),
+            "no other test in this binary may set the runner's coverage path"
+        );
+        assert_eq!(write_coverage_report(&[]), Ok(()));
     }
 }

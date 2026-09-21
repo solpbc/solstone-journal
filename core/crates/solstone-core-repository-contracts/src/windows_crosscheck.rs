@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use crate::ci::CoverageEntry;
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -77,7 +78,7 @@ impl Sweep {
     }
 }
 
-pub fn run(repo: &Path, config_path: &Path) -> Result<(), String> {
+pub fn run(repo: &Path, config_path: &Path) -> Result<Vec<CoverageEntry>, String> {
     let config = load_config(config_path)?;
     let metadata = cargo_metadata(repo, &config.target)?;
     validate_census(repo, &metadata, &config)?;
@@ -89,9 +90,10 @@ pub fn run(repo: &Path, config_path: &Path) -> Result<(), String> {
         probe_exclusion(repo, &config.target, exclusion, package)?;
     }
 
-    sweep(repo, &config.target, &metadata, &exclusions, Sweep::Library)?;
-    sweep(repo, &config.target, &metadata, &exclusions, Sweep::Tests)?;
-    Ok(())
+    Ok(vec![
+        sweep(repo, &config.target, &metadata, &exclusions, Sweep::Library)?,
+        sweep(repo, &config.target, &metadata, &exclusions, Sweep::Tests)?,
+    ])
 }
 
 fn load_config(path: &Path) -> Result<CrosscheckConfig, String> {
@@ -335,7 +337,7 @@ fn sweep(
     metadata: &Metadata,
     exclusions: &[(&Exclusion, PackageKey)],
     sweep: Sweep,
-) -> Result<(), String> {
+) -> Result<CoverageEntry, String> {
     let workspace = metadata.workspace_members.iter().collect::<BTreeSet<_>>();
     let packages = metadata
         .packages
@@ -349,12 +351,14 @@ fn sweep(
                     .any(|target| target.kind.iter().any(|kind| kind == "lib"))
         })
         .collect::<Vec<_>>();
-    let exclusion_ids = exclusions
+    let exclusion_index = exclusions
         .iter()
-        .map(|(exclusion, key)| (key, exclusion.package.as_str()))
+        .enumerate()
+        .map(|(index, (_, key))| (key, index))
         .collect::<BTreeMap<_, _>>();
     let mut passed = 0usize;
     let mut excluded = 0usize;
+    let mut hit_roots = vec![false; exclusions.len()];
 
     println!(
         "\nWindows {} sweep ({} packages)",
@@ -365,15 +369,16 @@ fn sweep(
         let closure = dependency_packages(repo, target, &package.name, sweep)?;
         let roots = closure
             .iter()
-            .filter_map(|key| exclusion_ids.get(key).copied())
+            .filter_map(|key| exclusion_index.get(key).copied())
             .collect::<BTreeSet<_>>();
         if !roots.is_empty() {
             excluded += 1;
-            println!(
-                "EXCLUDED\t{}\t{}",
-                package.name,
-                roots.into_iter().collect::<Vec<_>>().join(",")
-            );
+            let mut names = Vec::with_capacity(roots.len());
+            for index in roots {
+                hit_roots[index] = true;
+                names.push(exclusions[index].0.package.as_str());
+            }
+            println!("EXCLUDED\t{}\t{}", package.name, names.join(","));
             continue;
         }
         let output = cargo_check(repo, target, &package.name, sweep)?;
@@ -395,7 +400,37 @@ fn sweep(
         excluded,
         passed + excluded
     );
-    Ok(())
+    Ok(CoverageEntry {
+        scope: sweep.label().to_owned(),
+        declared: passed + excluded,
+        excluded,
+        basis: format_hit_roots_basis(exclusions, &hit_roots),
+    })
+}
+
+/// The registered exclusion roots this sweep actually excluded a package for,
+/// grouped by class in declaration order — e.g. `"ring, libsqlite3-sys,
+/// ffmpeg-sys-next (native-msvc-build-oracle)"`.
+fn format_hit_roots_basis(exclusions: &[(&Exclusion, PackageKey)], hit_roots: &[bool]) -> String {
+    let mut groups: Vec<(&str, Vec<&str>)> = Vec::new();
+    for (index, (exclusion, _)) in exclusions.iter().enumerate() {
+        if !hit_roots[index] {
+            continue;
+        }
+        let class = exclusion.class.as_str();
+        match groups
+            .iter_mut()
+            .find(|(group_class, _)| *group_class == class)
+        {
+            Some((_, names)) => names.push(exclusion.package.as_str()),
+            None => groups.push((class, vec![exclusion.package.as_str()])),
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(class, names)| format!("{} ({class})", names.join(", ")))
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 fn cargo_check(repo: &Path, target: &str, package: &str, sweep: Sweep) -> Result<Output, String> {
@@ -596,11 +631,82 @@ fn output_text(output: &Output) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{PackageKey, parse_package_tree, validate_exclusive_diagnostic};
+    use super::{
+        Exclusion, PackageKey, format_hit_roots_basis, parse_package_tree,
+        validate_exclusive_diagnostic,
+    };
 
     const MARKER: &str = "solstone-core-journal-io requires a Unix target: atomic write, locking, and lease durability guarantees have no portable backend";
     const PACKAGE: &str = "solstone-core-journal-io";
     const PACKAGE_ID: &str = "path+file:///repo/core/crates/solstone-core-journal-io#2.0.0";
+
+    fn exclusion(package: &str, class: &str) -> Exclusion {
+        Exclusion {
+            package: package.to_owned(),
+            version: None,
+            class: class.to_owned(),
+            reason: "test fixture".to_owned(),
+            expected_stderr: Vec::new(),
+            exclusive_diagnostic: None,
+        }
+    }
+
+    fn package_key(name: &str, version: &str) -> PackageKey {
+        PackageKey {
+            name: name.to_owned(),
+            version: version.to_owned(),
+        }
+    }
+
+    #[test]
+    fn hit_roots_basis_groups_by_class_in_declared_order() {
+        let ring = exclusion("ring", "native-msvc-build-oracle");
+        let libsqlite3_sys = exclusion("libsqlite3-sys", "native-msvc-build-oracle");
+        let ffmpeg_sys_next = exclusion("ffmpeg-sys-next", "native-msvc-build-oracle");
+        let exclusions = [
+            (&ring, package_key("ring", "0.17.14")),
+            (&libsqlite3_sys, package_key("libsqlite3-sys", "0.38.2")),
+            (&ffmpeg_sys_next, package_key("ffmpeg-sys-next", "9.0.0")),
+        ];
+
+        assert_eq!(
+            format_hit_roots_basis(&exclusions, &[true, true, true]),
+            "ring, libsqlite3-sys, ffmpeg-sys-next (native-msvc-build-oracle)"
+        );
+    }
+
+    #[test]
+    fn hit_roots_basis_only_names_roots_this_sweep_actually_hit() {
+        let ring = exclusion("ring", "native-msvc-build-oracle");
+        let libsqlite3_sys = exclusion("libsqlite3-sys", "native-msvc-build-oracle");
+        let exclusions = [
+            (&ring, package_key("ring", "0.17.14")),
+            (&libsqlite3_sys, package_key("libsqlite3-sys", "0.38.2")),
+        ];
+
+        assert_eq!(
+            format_hit_roots_basis(&exclusions, &[true, false]),
+            "ring (native-msvc-build-oracle)"
+        );
+        assert_eq!(format_hit_roots_basis(&exclusions, &[false, false]), "");
+    }
+
+    #[test]
+    fn hit_roots_basis_groups_distinct_classes_in_first_appearance_order() {
+        let a = exclusion("root-a", "class-one");
+        let b = exclusion("root-b", "class-two");
+        let c = exclusion("root-c", "class-one");
+        let exclusions = [
+            (&a, package_key("root-a", "1.0.0")),
+            (&b, package_key("root-b", "1.0.0")),
+            (&c, package_key("root-c", "1.0.0")),
+        ];
+
+        assert_eq!(
+            format_hit_roots_basis(&exclusions, &[true, true, true]),
+            "root-a, root-c (class-one); root-b (class-two)"
+        );
+    }
 
     #[test]
     fn package_tree_parser_deduplicates_exact_name_and_version_pairs() {
