@@ -140,7 +140,7 @@ fn generic_text_timestamp_writes_a_segment_from_the_stamp() {
         .unwrap(),
     )
     .unwrap();
-    assert_eq!(marker["generation"], 1);
+    assert_eq!(marker["generation"], 2);
     assert!(
         !journal
             .path()

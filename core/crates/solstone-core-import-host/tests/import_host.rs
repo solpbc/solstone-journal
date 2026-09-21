@@ -7,3 +7,5 @@ mod audio;
 mod cli_argv;
 #[path = "cli_journal_source.rs"]
 mod cli_journal_source;
+#[path = "text.rs"]
+mod text;

@@ -2692,6 +2692,8 @@ if (document.readyState === 'loading') {
 .import-content-item-title { font-weight: 600; flex: 1; }
 .import-content-item-date { color: #888; font-size: 0.85em; white-space: nowrap; }
 .import-content-item-type { color: #666; font-size: 0.8em; background: #f0f0f0; padding: 2px 6px; border-radius: 3px; }
+.import-content-item-link { display: block; text-decoration: none; color: inherit; }
+.import-content-item-arrow { color: #888; }
 .import-content-item-preview { color: #666; font-size: 0.9em; padding: 0 1em 0.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-content-item-body { display: none; padding: 0.75em 1em; border-top: 1px solid #e5e5e5; background: #fafafa; }
 .import-content-item.expanded .import-content-item-body { display: block; }
@@ -2875,6 +2877,27 @@ function renderContentItems(items) {
       note: 'note',
     }[item.type] || item.type;
     const date = item.date ? window.JournalFormat.day(item.date) : '';
+    // Audio has no inline reader: each segment deep-links straight to that segment in
+    // the transcripts app rather than expanding in place, so it gets no toggle/body.
+    if (item.type === 'audio') {
+      const segment = item.segments && item.segments[0];
+      const day = segment?.day || '';
+      const key = segment?.key || '';
+      const stream = segment?.stream || '';
+      if (day && key) {
+        const segmentTime = window.JournalFormat.segmentTime(key);
+        html += `
+          <a class="import-content-item import-content-item-link" href="/app/transcripts/${encodeURIComponent(day)}?stream=${encodeURIComponent(stream)}#${encodeURIComponent(key)}">
+            <div class="import-content-item-header">
+              <span class="import-content-item-type">${typeLabel}</span>
+              <span class="import-content-item-title">${escapeContentHtml(item.title)}</span>
+              <span class="import-content-item-date">${date}${segmentTime ? ` · ${escapeContentHtml(segmentTime)}` : ''}</span>
+              <span class="import-content-item-arrow" aria-hidden="true">→</span>
+            </div>
+          </a>`;
+        return;
+      }
+    }
     html += `
       <div class="import-content-item" data-item-id="${item.id}" tabindex="0" role="button" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();toggleContentItem(this)}">
         <div class="import-content-item-header" onclick="toggleContentItem(this.parentElement)">

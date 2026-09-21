@@ -17,6 +17,16 @@ function scriptFromWorkspace() {
   return workspaceScript[1];
 }
 
+// The import content pane (renderContentItems and neighbors) lives in workspace.html's
+// second <script> block, not the submission-form one scriptFromWorkspace() returns.
+function contentPaneScriptFromWorkspace() {
+  const source = fs.readFileSync(path.join(crateDir, 'assets/workspace.html'), 'utf8');
+  const scripts = [...source.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  const contentScript = scripts.find(([, script]) => script.includes('function renderContentItems('));
+  assert.ok(contentScript, 'import content pane script exists');
+  return contentScript[1];
+}
+
 function balancedBlock(source, start) {
   const open = source.indexOf('{', start);
   assert.ok(open >= 0, 'block opening brace exists');
@@ -311,6 +321,7 @@ function assertFacetAbsentAndSettingPreserved(request, setting) {
 }
 
 const workspace = scriptFromWorkspace();
+const contentPaneScript = contentPaneScriptFromWorkspace();
 let cases = 0;
 
 async function runQuickSubmit() {
@@ -1316,6 +1327,54 @@ function runSingularPageUnavailable() {
 
   vm.runInContext("showProgressView('1700000002', { import_id: '1700000002', status: 'success', unavailable_pages: 2 })", context);
   assert.ok(guideSteps.innerHTML.includes('2 pages unavailable'), 'plural 2 pages unavailable rendered');
+  cases += 1;
+}
+
+function runAudioContentItemsLinkToTranscriptsInsteadOfExpanding() {
+  const contentItems = new Element();
+  const context = vm.createContext({ console });
+  context.document = {
+    getElementById: (id) => (id === 'contentItems' ? contentItems : null),
+  };
+  context.window = {
+    JournalFormat: {
+      day: (value) => value,
+      segmentTime: (segment) => `${segment.slice(0, 2)}:${segment.slice(2, 4)}:${segment.slice(4, 6)}`,
+    },
+  };
+
+  vm.runInContext(functionSource(contentPaneScript, 'escapeContentHtml'), context);
+  vm.runInContext(functionSource(contentPaneScript, 'stripMarkdown'), context);
+  vm.runInContext(functionSource(contentPaneScript, 'renderContentItems'), context);
+
+  vm.runInContext(
+    [
+      'renderContentItems([',
+      '  { id: "item_0", title: "voice-memo.m4a", date: "20260910", type: "audio", stream: "import.audio",',
+      '    segments: [{ day: "20260910", key: "090000_300", stream: "import.audio" }] },',
+      '  { id: "seg-0", title: "a chat segment", date: "20260910", type: "conversation", preview: "hi",',
+      '    meta: {}, segments: [] }',
+      '])',
+    ].join('\n'),
+    context
+  );
+
+  const html = contentItems.innerHTML;
+  const audioMatch = html.match(/<a class="import-content-item import-content-item-link"[^>]*>[\s\S]*?<\/a>/);
+  assert.ok(audioMatch, 'the audio item renders as a real anchor');
+  assert.ok(
+    audioMatch[0].includes('href="/app/transcripts/20260910?stream=import.audio#090000_300"'),
+    `audio item deep-links to its own day/stream/segment: ${audioMatch[0]}`
+  );
+  assert.ok(audioMatch[0].includes('09:00:00'), 'segment time is shown via JournalFormat.segmentTime');
+  assert.ok(
+    !audioMatch[0].includes('toggleContentItem') && !audioMatch[0].includes('import-content-item-body'),
+    'the audio item carries no expand-in-place affordance alongside its link'
+  );
+  assert.ok(
+    html.includes('toggleContentItem'),
+    'a non-audio item in the same list still gets the ordinary expand-in-place markup'
+  );
   cases += 1;
 }
 
@@ -3013,6 +3072,7 @@ Promise.resolve()
   .then(runAuthoritativeUpdateBypassesGenerationFloor)
   .then(runLiveEventClearsStalled)
   .then(runSingularPageUnavailable)
+  .then(runAudioContentItemsLinkToTranscriptsInsteadOfExpanding)
   .then(runFormatStatValueEscapesAndHandlesEmDash)
   .then(runAsyncNavigateToWithGuideFetch)
   .then(runHashChangeDedupConsumesTheFlag)

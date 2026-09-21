@@ -362,6 +362,7 @@ function createEnvironment(manifestDir, options = {}) {
     LinkCopy: {
       ...Object.fromEntries(REQUIRED_COPY_KEYS.map((key) => [key, `copy-${key}`])),
       PAIR_NETWORK_LINE: 'network {time}',
+      PAIR_PUBLIC_ADDRESS_LINE: 'public {time}',
       SUCCESS_HEADING: 'heading {label}',
       SUCCESS_SUBHEAD: 'subhead {short_fp}',
       DEVICE_LABEL_DEFAULT_FORMAT: 'label-{month}-{day}',
@@ -463,6 +464,7 @@ function material(overrides = {}) {
     expires_in: 125,
     device_label: 'sample device',
     ca_fingerprint: 'abcdef0123456789',
+    home_address_is_public: false,
     ...overrides,
   };
 }
@@ -508,6 +510,14 @@ async function main() {
     assert.match(body.device_label, /^label-[a-z]{3}-\d{1,2}$/);
     started.resolve(response(material({ device_label: body.device_label })));
     await settle();
+  });
+
+  await testCase('public home addresses render public-address guidance without network guidance', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response(material({ home_address_is_public: true })));
+    env.click(env.opener);
+    await settle();
+    assert.strictEqual(env.nodes.get('link-pairing-network-line').textContent, 'public 2:05');
   });
 
   await testCase('completion uses the non-empty label echoed by pair start', async () => {

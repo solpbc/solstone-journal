@@ -346,13 +346,7 @@ detect_target() {
 		esac
 		;;
 	darwin)
-		# Intel Macs are deliberately not a target: the journal runtime is
-		# Apple Silicon only. Refusing by name beats installing a tree whose
-		# binaries cannot execute.
-		case ${_arch_lc} in
-		arm64 | aarch64) TARGET=macos-arm64 ;;
-		*) refuse unsupported-platform "arch=${_arch}" ;;
-		esac
+		refuse unsupported-platform "macos uses journal.app; install it with https://solstone.app/install.sh"
 		;;
 	*) refuse unsupported-platform "os=${_os}" ;;
 	esac

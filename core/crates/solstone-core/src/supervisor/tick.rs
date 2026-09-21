@@ -346,67 +346,72 @@ pub(crate) async fn run(
             false,
             tick,
         );
-        if !state.no_daily
-            && !state.is_remote_mode
-            && !processing_is_deferred(&state.journal)
-            && !no_thinking_engine_chosen(&state.journal)
-            && tick.duration_since(state.last_activity_retry_drain) >= RETRY_EXPIRY_INTERVAL
-        {
-            state.last_activity_retry_drain = tick;
-            let today = wall.format("%Y%m%d").to_string();
-            if state.activity_retry_seed_day.as_deref() != Some(today.as_str()) {
+        let today = wall.format("%Y%m%d").to_string();
+        let (seed_outcome, drain_outcome) = activity_retry_drain_with(
+            state.no_daily,
+            state.is_remote_mode,
+            processing_is_deferred(&state.journal),
+            no_thinking_engine_chosen(&state.journal),
+            &mut state.activity_retry_seed_day,
+            &mut state.last_activity_retry_drain,
+            &today,
+            tick,
+            || {
                 let yesterday = (wall.date_naive() - chrono::Duration::days(1))
                     .format("%Y%m%d")
                     .to_string();
-                let seeded = [yesterday, today.clone()].iter().try_for_each(|day| {
+                [yesterday, today.clone()].iter().try_for_each(|day| {
                     solstone_core_think_cli::seed_activity_retries(
                         &state.journal,
                         day,
                         wall.timestamp_millis(),
                     )
-                });
-                match seeded {
-                    Ok(()) => state.activity_retry_seed_day = Some(today),
-                    Err(error) => log::warn!("supervisor: activity retry recovery failed: {error}"),
-                }
-            }
-            if let Err(error) =
-                run_activity_retry_drain(&state.journal, &state.queue, wall.timestamp_millis())
-            {
-                log::warn!("supervisor: activity retry drain failed: {error}");
-            }
+                })
+            },
+            || run_activity_retry_drain(&state.journal, &state.queue, wall.timestamp_millis()),
+        );
+        if let Some(Err(error)) = seed_outcome {
+            log::warn!("supervisor: activity retry recovery failed: {error}");
+        }
+        if let Some(Err(error)) = drain_outcome {
+            log::warn!("supervisor: activity retry drain failed: {error}");
         }
         if !state.no_daily {
-            let daily_drain = match handle_daily_tasks(
-                &state.journal,
-                &state.queue,
-                state.is_remote_mode,
-                &mut state.daily,
-                &mut state.flush,
-                wall.date_naive(),
-                wall_now,
-            ) {
-                Ok(did_drain) => did_drain,
-                Err(error) => {
-                    log::warn!("supervisor: daily catchup drain failed: {error}");
-                    false
-                }
-            };
-            if daily_drain {
-                // The rollover drain has just considered the same state; do
-                // not immediately replay it through the retry-expiry path.
-                state.last_retry_expiry_drain = scan_finished(tick);
-            } else if let Err(error) = handle_retry_expiry_drain(
-                state.is_remote_mode,
-                processing_is_deferred(&state.journal),
-                &state.journal,
-                &state.queue,
+            let daily_outcome = compose_daily_and_retry_expiry_with(
                 &mut state.last_retry_expiry_drain,
-                wall.date_naive(),
                 tick,
-                wall_now,
-            ) {
-                log::warn!("supervisor: retry-expiry catchup drain failed: {error}");
+                || {
+                    handle_daily_tasks(
+                        &state.journal,
+                        &state.queue,
+                        state.is_remote_mode,
+                        &mut state.daily,
+                        &mut state.flush,
+                        wall.date_naive(),
+                        wall_now,
+                    )
+                },
+                |last_drain| {
+                    handle_retry_expiry_drain(
+                        state.is_remote_mode,
+                        processing_is_deferred(&state.journal),
+                        &state.journal,
+                        &state.queue,
+                        last_drain,
+                        wall.date_naive(),
+                        tick,
+                        wall_now,
+                    )
+                },
+            );
+            match daily_outcome {
+                Ok(()) => {}
+                Err(DailyOrExpiryError::Daily(error)) => {
+                    log::warn!("supervisor: daily catchup drain failed: {error}");
+                }
+                Err(DailyOrExpiryError::RetryExpiry(error)) => {
+                    log::warn!("supervisor: retry-expiry catchup drain failed: {error}");
+                }
             }
         }
         if let Some(scheduler) = state.scheduler.as_mut() {
@@ -607,6 +612,70 @@ fn handle_retry_expiry_drain(
         // and the four-day cap.
         run_catchup_drain(journal, queue, exclude, &[], now)
     })
+}
+
+type ActivityRetryDrainOutcome = (Option<Result<(), String>>, Option<Result<(), String>>);
+
+#[allow(clippy::too_many_arguments)] // The tick's clock/watermark seams remain explicitly injectable.
+fn activity_retry_drain_with(
+    no_daily: bool,
+    is_remote_mode: bool,
+    is_deferred: bool,
+    no_engine: bool,
+    seed_day: &mut Option<String>,
+    last_drain: &mut Instant,
+    today: &str,
+    tick: Instant,
+    seed: impl FnOnce() -> Result<(), String>,
+    drain: impl FnOnce() -> Result<(), String>,
+) -> ActivityRetryDrainOutcome {
+    if no_daily
+        || is_remote_mode
+        || is_deferred
+        || no_engine
+        || tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL
+    {
+        return (None, None);
+    }
+
+    let seed_result = if seed_day.as_deref() != Some(today) {
+        let res = seed();
+        if res.is_ok() {
+            *seed_day = Some(today.to_owned());
+        }
+        Some(res)
+    } else {
+        None
+    };
+
+    let drain_result = Some(drain());
+    *last_drain = scan_finished(tick);
+    (seed_result, drain_result)
+}
+
+#[derive(Debug)]
+enum DailyOrExpiryError {
+    Daily(CatchupError),
+    RetryExpiry(CatchupError),
+}
+
+fn compose_daily_and_retry_expiry_with(
+    last_retry_expiry_drain: &mut Instant,
+    tick: Instant,
+    rollover: impl FnOnce() -> Result<bool, CatchupError>,
+    retry_expiry: impl FnOnce(&mut Instant) -> Result<(), CatchupError>,
+) -> Result<(), DailyOrExpiryError> {
+    match rollover() {
+        Ok(true) => {
+            *last_retry_expiry_drain = scan_finished(tick);
+            Ok(())
+        }
+        Err(error) => {
+            *last_retry_expiry_drain = scan_finished(tick);
+            Err(DailyOrExpiryError::Daily(error))
+        }
+        Ok(false) => retry_expiry(last_retry_expiry_drain).map_err(DailyOrExpiryError::RetryExpiry),
+    }
 }
 
 /// The retry-expiry gate and throttle around one catch-up scan. The throttle runs from when
@@ -2915,6 +2984,401 @@ mod tests {
 
         assert_eq!(pending(&queue), 0);
         assert_eq!(last_drain, origin);
+    }
+
+    #[test]
+    fn activity_retry_drain_all_outcomes_and_timing() {
+        for seed_succeeds in [true, false] {
+            for drain_succeeds in [true, false] {
+                let tick = Instant::now()
+                    .checked_sub(Duration::from_secs(5))
+                    .expect("host uptime exceeds five seconds");
+                let mut last_drain = tick
+                    .checked_sub(RETRY_EXPIRY_INTERVAL)
+                    .expect("host uptime exceeds the interval");
+                let mut seed_day = None;
+                let mut seed_calls = 0;
+                let mut drain_calls = 0;
+                let mut drain_ended = None;
+
+                let (seed_outcome, drain_outcome) = activity_retry_drain_with(
+                    false,
+                    false,
+                    false,
+                    false,
+                    &mut seed_day,
+                    &mut last_drain,
+                    "20260102",
+                    tick,
+                    || {
+                        seed_calls += 1;
+                        if seed_succeeds {
+                            Ok(())
+                        } else {
+                            Err("seed-failed".to_owned())
+                        }
+                    },
+                    || {
+                        drain_calls += 1;
+                        std::thread::sleep(Duration::from_millis(20));
+                        drain_ended = Some(Instant::now());
+                        if drain_succeeds {
+                            Ok(())
+                        } else {
+                            Err("drain-failed".to_owned())
+                        }
+                    },
+                );
+                let after = Instant::now();
+
+                assert_eq!(seed_calls, 1);
+                assert_eq!(drain_calls, 1);
+                assert_eq!(
+                    seed_outcome.as_ref().map(Result::is_ok),
+                    Some(seed_succeeds)
+                );
+                assert_eq!(
+                    drain_outcome.as_ref().map(Result::is_ok),
+                    Some(drain_succeeds)
+                );
+
+                if seed_succeeds {
+                    assert_eq!(seed_day.as_deref(), Some("20260102"));
+                } else {
+                    assert_eq!(seed_day, None);
+                }
+
+                let drain_ended = drain_ended.expect("drain ran");
+                assert!(
+                    drain_ended <= last_drain && last_drain <= after,
+                    "D <= M <= A bound holds (seed_ok: {seed_succeeds}, drain_ok: {drain_succeeds})"
+                );
+
+                let marker = last_drain;
+
+                // Tick just before M + INTERVAL is throttled (0 calls, marker unchanged)
+                let before_interval_tick =
+                    marker + RETRY_EXPIRY_INTERVAL - Duration::from_millis(5);
+                let mut seed_again = 0;
+                let mut drain_again = 0;
+                let (s2, d2) = activity_retry_drain_with(
+                    false,
+                    false,
+                    false,
+                    false,
+                    &mut seed_day,
+                    &mut last_drain,
+                    "20260102",
+                    before_interval_tick,
+                    || {
+                        seed_again += 1;
+                        Ok(())
+                    },
+                    || {
+                        drain_again += 1;
+                        Ok(())
+                    },
+                );
+                assert_eq!(seed_again, 0);
+                assert_eq!(drain_again, 0);
+                assert_eq!(s2, None);
+                assert_eq!(d2, None);
+                assert_eq!(last_drain, marker, "marker must not change when throttled");
+
+                // Tick at M + INTERVAL runs
+                let at_interval_tick = marker + RETRY_EXPIRY_INTERVAL;
+                let (s3, d3) = activity_retry_drain_with(
+                    false,
+                    false,
+                    false,
+                    false,
+                    &mut seed_day,
+                    &mut last_drain,
+                    "20260102",
+                    at_interval_tick,
+                    || {
+                        seed_again += 1;
+                        Ok(())
+                    },
+                    || {
+                        drain_again += 1;
+                        Ok(())
+                    },
+                );
+                assert_eq!(drain_again, 1);
+                assert!(d3.is_some());
+                if seed_succeeds {
+                    // Already marked, seed skipped
+                    assert_eq!(seed_again, 0);
+                    assert_eq!(s3, None);
+                } else {
+                    // Was not marked on previous failure, so retries seed
+                    assert_eq!(seed_again, 1);
+                    assert!(s3.is_some());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn activity_retry_drain_skip_predicates_and_already_seeded() {
+        let tick = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let initial_drain = tick
+            .checked_sub(RETRY_EXPIRY_INTERVAL)
+            .expect("host uptime exceeds the interval");
+
+        // 1. Already seeded today -> seed 0, drain 1, marker follows drain (D <= M <= A)
+        let mut seed_day = Some("20260102".to_owned());
+        let mut last_drain = initial_drain;
+        let mut seed_calls = 0;
+        let mut drain_calls = 0;
+        let mut drain_ended = None;
+        let (s, d) = activity_retry_drain_with(
+            false,
+            false,
+            false,
+            false,
+            &mut seed_day,
+            &mut last_drain,
+            "20260102",
+            tick,
+            || {
+                seed_calls += 1;
+                Ok(())
+            },
+            || {
+                drain_calls += 1;
+                std::thread::sleep(Duration::from_millis(20));
+                drain_ended = Some(Instant::now());
+                Ok(())
+            },
+        );
+        let after = Instant::now();
+        assert_eq!(seed_calls, 0);
+        assert_eq!(drain_calls, 1);
+        assert_eq!(s, None);
+        assert_eq!(d, Some(Ok(())));
+        assert_eq!(seed_day.as_deref(), Some("20260102"));
+        let drain_ended = drain_ended.expect("drain ran");
+        assert!(drain_ended <= last_drain && last_drain <= after);
+
+        // 2. Skip twins: no_daily, remote, deferred, no_engine, not-yet-due
+        let skip_cases = [
+            (true, false, false, false, initial_drain), // no_daily
+            (false, true, false, false, initial_drain), // remote
+            (false, false, true, false, initial_drain), // deferred
+            (false, false, false, true, initial_drain), // no_engine
+            (false, false, false, false, tick),         // not-yet-due (last_drain = tick)
+        ];
+
+        for (no_daily, remote, deferred, no_engine, drain_ts) in skip_cases {
+            let mut s_day = None;
+            let mut l_drain = drain_ts;
+            let mut s_count = 0;
+            let mut d_count = 0;
+            let (s_res, d_res) = activity_retry_drain_with(
+                no_daily,
+                remote,
+                deferred,
+                no_engine,
+                &mut s_day,
+                &mut l_drain,
+                "20260102",
+                tick,
+                || {
+                    s_count += 1;
+                    Ok(())
+                },
+                || {
+                    d_count += 1;
+                    Ok(())
+                },
+            );
+            assert_eq!(s_count, 0);
+            assert_eq!(d_count, 0);
+            assert_eq!(s_res, None);
+            assert_eq!(d_res, None);
+            assert_eq!(s_day, None);
+            assert_eq!(l_drain, drain_ts);
+        }
+    }
+
+    #[test]
+    fn daily_catchup_failure_suppresses_same_tick_retry_expiry() {
+        let tick = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let initial_drain = tick
+            .checked_sub(RETRY_EXPIRY_INTERVAL)
+            .expect("host uptime exceeds the interval");
+        let mut last_drain = initial_drain;
+
+        let mut rollover_calls = 0;
+        let mut retry_calls = 0;
+        let mut catchup_ended = None;
+
+        let outcome = compose_daily_and_retry_expiry_with(
+            &mut last_drain,
+            tick,
+            || {
+                rollover_calls += 1;
+                std::thread::sleep(Duration::from_millis(20));
+                catchup_ended = Some(Instant::now());
+                Err(CatchupError::State(
+                    "distinctive-daily-catchup-failure".to_owned(),
+                ))
+            },
+            |_last_drain| {
+                retry_calls += 1;
+                Ok(())
+            },
+        );
+        let after = Instant::now();
+
+        assert_eq!(rollover_calls, 1);
+        assert_eq!(
+            retry_calls, 0,
+            "retry-expiry must not run in the same tick as a failed rollover"
+        );
+        assert!(matches!(
+            outcome,
+            Err(DailyOrExpiryError::Daily(CatchupError::State(ref msg)))
+                if msg == "distinctive-daily-catchup-failure"
+        ));
+        let catchup_ended = catchup_ended.expect("catchup ran");
+        assert!(
+            catchup_ended <= last_drain && last_drain <= after,
+            "marker must be stamped from completion via scan_finished(tick)"
+        );
+    }
+
+    #[test]
+    fn daily_and_retry_expiry_not_due_and_success_composition() {
+        let tick = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let initial_drain = tick
+            .checked_sub(RETRY_EXPIRY_INTERVAL)
+            .expect("host uptime exceeds the interval");
+
+        // 1. Rollover NotDue (Ok(false)) -> retry-expiry called, compose does not stamp
+        let mut last_drain = initial_drain;
+        let mut rollover_calls = 0;
+        let mut retry_calls = 0;
+        let outcome = compose_daily_and_retry_expiry_with(
+            &mut last_drain,
+            tick,
+            || {
+                rollover_calls += 1;
+                Ok(false)
+            },
+            |_last_drain| {
+                retry_calls += 1;
+                Ok(())
+            },
+        );
+        assert_eq!(rollover_calls, 1);
+        assert_eq!(retry_calls, 1);
+        assert!(outcome.is_ok());
+        assert_eq!(
+            last_drain, initial_drain,
+            "compose does not stamp on NotDue"
+        );
+
+        // 2. Rollover Success (Ok(true)) -> retry-expiry 0, stamps marker, returns Ok(())
+        let mut last_drain = initial_drain;
+        let mut rollover_calls = 0;
+        let mut retry_calls = 0;
+        let mut catchup_ended = None;
+        let outcome = compose_daily_and_retry_expiry_with(
+            &mut last_drain,
+            tick,
+            || {
+                rollover_calls += 1;
+                std::thread::sleep(Duration::from_millis(20));
+                catchup_ended = Some(Instant::now());
+                Ok(true)
+            },
+            |_last_drain| {
+                retry_calls += 1;
+                Ok(())
+            },
+        );
+        let after = Instant::now();
+        assert_eq!(rollover_calls, 1);
+        assert_eq!(
+            retry_calls, 0,
+            "retry-expiry must not run when rollover drained"
+        );
+        assert!(outcome.is_ok());
+        let catchup_ended = catchup_ended.expect("catchup ran");
+        assert!(catchup_ended <= last_drain && last_drain <= after);
+    }
+
+    #[test]
+    fn daily_catchup_failure_allows_retry_expiry_after_interval() {
+        let tick = Instant::now()
+            .checked_sub(Duration::from_secs(5))
+            .expect("host uptime exceeds five seconds");
+        let initial_drain = tick
+            .checked_sub(RETRY_EXPIRY_INTERVAL)
+            .expect("host uptime exceeds the interval");
+        let mut last_drain = initial_drain;
+
+        // Tick 0: Failed rollover stamps last_drain (M), retry-expiry not called
+        let outcome0 = compose_daily_and_retry_expiry_with(
+            &mut last_drain,
+            tick,
+            || Err(CatchupError::State("rollover-error".to_owned())),
+            |_drain| panic!("retry-expiry must not be called on failed rollover"),
+        );
+        assert!(matches!(outcome0, Err(DailyOrExpiryError::Daily(_))));
+        let marker = last_drain;
+
+        // Tick 1: Just before M + INTERVAL, rollover is NotDue (Ok(false)).
+        // retry_expiry_drain_with is called via compose, but throttled (scan called 0 times, marker unchanged).
+        let tick_before = marker + RETRY_EXPIRY_INTERVAL - Duration::from_millis(5);
+        let mut scan_calls = 0;
+        let outcome1 = compose_daily_and_retry_expiry_with(
+            &mut last_drain,
+            tick_before,
+            || Ok(false),
+            |drain| {
+                retry_expiry_drain_with(false, false, drain, date(3), tick_before, |_| {
+                    scan_calls += 1;
+                    Ok(())
+                })
+            },
+        );
+        assert!(outcome1.is_ok());
+        assert_eq!(
+            scan_calls, 0,
+            "retry-expiry must be throttled before interval"
+        );
+        assert_eq!(last_drain, marker, "marker must not change when throttled");
+
+        // Tick 2: At M + INTERVAL, rollover is NotDue (Ok(false)).
+        // retry_expiry_drain_with is called via compose, runs scan (1 call) and advances marker.
+        let tick_at = marker + RETRY_EXPIRY_INTERVAL;
+        let outcome2 = compose_daily_and_retry_expiry_with(
+            &mut last_drain,
+            tick_at,
+            || Ok(false),
+            |drain| {
+                retry_expiry_drain_with(false, false, drain, date(3), tick_at, |_| {
+                    scan_calls += 1;
+                    Ok(())
+                })
+            },
+        );
+        assert!(outcome2.is_ok());
+        assert_eq!(scan_calls, 1, "retry-expiry must run at/after interval");
+        assert!(
+            marker < last_drain,
+            "marker advances after retry-expiry scan"
+        );
     }
 
     #[test]
