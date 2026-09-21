@@ -1,4 +1,4 @@
 {
-  "HOME_ADDRESS_INVALID": "use an address on your network or VPN, with port {port}, like 192.168.1.44:{port}",
+  "HOME_ADDRESS_INVALID": "use the address your journal is reachable at, with port {port}: either one on your own network, like 192.168.1.44:{port}, or a public address you've exported.",
   "HOME_ADDRESS_HOSTNAME_UNSUPPORTED": "this needs an ip address — to reach home by name from anywhere, turn on your private network"
 }

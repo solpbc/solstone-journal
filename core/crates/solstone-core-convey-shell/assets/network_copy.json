@@ -64,6 +64,7 @@
   "REACH_HOME_ADDRESS_LABEL": "home address",
   "REACH_HOME_ADDRESS_UNUSABLE": "this saved address can't be used for pairing.",
   "REACH_HOST_ADDRESS_DISCLOSURE": "▸ use a different address",
+  "REACH_HOST_ADDRESS_NOTE": "this can be an address on your own network, your VPN, or a public address you've exported yourself, for example by forwarding a port on your router.",
   "REACH_HOST_ADDRESS_PLACEHOLDER": "192.168.1.44:7657",
   "REACH_HOST_ADDRESS_APPLY_LABEL": "apply",
   "REACH_HOST_ADDRESS_CLEAR_LABEL": "clear",

@@ -212,6 +212,7 @@
             "REACH_HOST_ADDRESS_APPLY_LABEL": "apply",
             "REACH_HOST_ADDRESS_CLEAR_LABEL": "clear",
             "REACH_HOST_ADDRESS_DISCLOSURE": "\u25b8 use a different address",
+            "REACH_HOST_ADDRESS_NOTE": "this can be an address on your own network, your VPN, or a public address you've exported yourself, for example by forwarding a port on your router.",
             "REACH_HOST_ADDRESS_PLACEHOLDER": "192.168.1.44:7657",
             "REACH_SELECTOR_HINT": "your choice, switch anytime. either way, what syncs is end-to-end encrypted and only your devices can read it.",
             "REACH_SELECTOR_TITLE": "how your devices reach your journal",
