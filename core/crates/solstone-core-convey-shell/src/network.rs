@@ -212,10 +212,38 @@ pub(crate) async fn pair_start(
             "expires_in": response.expires_in,
             "device_label": response.device_label,
             "ca_fingerprint": response.ca_fingerprint,
+            "home_address_is_public": request.configured_home.address.is_some_and(is_public_ipv4),
         }))
         .into_response(),
         Err(error) => pairing_refusal(error),
     }
+}
+
+/// Whether an admitted direct-pairing IPv4 address is a public literal.
+///
+/// This mirrors the literal-only branch used by the mobile pairing clients.
+/// The configured home path is IPv4-only, so an absent or non-mintable address
+/// remains on the private-network guidance; this function never verifies
+/// reachability or performs DNS.
+fn is_public_ipv4(address: std::net::Ipv4Addr) -> bool {
+    let [first, second, third, _] = address.octets();
+    !matches!(
+        (first, second, third),
+        (0, _, _)
+            | (10, _, _)
+            | (100, 64..=127, _)
+            | (127, _, _)
+            | (169, 254, _)
+            | (172, 16..=31, _)
+            | (192, 0, _)
+            | (192, 2, _)
+            | (192, 88, 99)
+            | (192, 168, _)
+            | (198, 18..=19, _)
+            | (198, 51, 100)
+            | (203, 0, 113)
+            | (224..=255, _, _)
+    )
 }
 
 pub(crate) async fn nonce_status(
@@ -1093,6 +1121,7 @@ mod tests {
             .expect("response");
         assert_eq!(response.status(), StatusCode::OK);
         let omitted = app
+            .clone()
             .oneshot(
                 Request::post("/start")
                     .header("content-type", "application/json")
@@ -1132,17 +1161,42 @@ mod tests {
                 "pair_link",
                 "expires_in",
                 "device_label",
-                "ca_fingerprint"
+                "ca_fingerprint",
+                "home_address_is_public"
             ]
         );
         assert_eq!(value["expires_in"], 300);
         assert_eq!(value["device_label"], "phone");
+        assert_eq!(value["home_address_is_public"], false);
         assert!(
             NonceStore::new(temporary.path())
                 .peek(value["nonce"].as_str().expect("nonce"))
                 .expect("stored nonce")
                 .same_machine
         );
+
+        fs::write(
+            temporary.path().join("config/journal.json"),
+            r#"{"pairing":{"home_address":"8.8.8.8:7657"}}"#,
+        )
+        .expect("public config");
+        let public_response = app
+            .oneshot(
+                Request::post("/start")
+                    .header("content-type", "application/json")
+                    .body(Body::from(payload.as_slice()))
+                    .expect("request"),
+            )
+            .await
+            .expect("public response");
+        assert_eq!(public_response.status(), StatusCode::OK);
+        let public_body: Value = serde_json::from_slice(
+            &to_bytes(public_response.into_body(), usize::MAX)
+                .await
+                .expect("public body"),
+        )
+        .expect("public JSON");
+        assert_eq!(public_body["home_address_is_public"], true);
     }
 
     #[test]

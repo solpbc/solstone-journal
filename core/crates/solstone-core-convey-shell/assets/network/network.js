@@ -168,6 +168,7 @@
         && Number.isFinite(body.expires_in)
         && body.expires_in > 0
         && (body.device_label === undefined || typeof body.device_label === 'string')
+        && typeof body.home_address_is_public === 'boolean'
         && typeof global.qrcode === 'function'
       );
     }
@@ -176,7 +177,10 @@
       const label = typeof body.device_label === 'string' ? body.device_label.trim() : '';
       elements.label.textContent = label;
       elements.labelRow.hidden = !label;
-      elements.networkLine.textContent = copy('PAIR_NETWORK_LINE').replace('{time}', formatExpiry(body.expires_in));
+      const networkCopy = body.home_address_is_public
+        ? 'PAIR_PUBLIC_ADDRESS_LINE'
+        : 'PAIR_NETWORK_LINE';
+      elements.networkLine.textContent = copy(networkCopy).replace('{time}', formatExpiry(body.expires_in));
       elements.fingerprint.textContent = body.ca_fingerprint;
       elements.linkValue.textContent = body.pair_link;
       renderCode(body.pair_link);
