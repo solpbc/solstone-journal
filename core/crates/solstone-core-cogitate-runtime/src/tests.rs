@@ -1691,8 +1691,10 @@ fn successful_and_failed_tool_results_differ_only_by_output_and_is_error() {
 #[test]
 fn turn_threshold_nudge_follows_every_result_of_a_multi_call_turn() {
     let _guard = install_warn_capture();
-    let mut config = RunConfig::default();
-    config.max_turns = 4;
+    let config = RunConfig {
+        max_turns: 4,
+        ..Default::default()
+    };
     let warmup = turn_with_id(
         "r1",
         "",
