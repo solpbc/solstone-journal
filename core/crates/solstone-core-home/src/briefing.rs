@@ -104,10 +104,8 @@ pub fn render_sections(briefing: &Value) -> Value {
             sections.insert(key.to_owned(), rows.into());
         }
     }
-    for (key, left, right) in [
-        ("your_day", "time", "text"),
-        ("reading", "facet", "summary"),
-    ] {
+    {
+        let (key, left, right) = ("reading", "facet", "summary");
         let rows = briefing
             .get(key)
             .and_then(Value::as_array)
@@ -134,6 +132,32 @@ pub fn render_sections(briefing: &Value) -> Value {
         if !rows.is_empty() {
             sections.insert(key.to_owned(), rows.into());
         }
+    }
+    let your_day = briefing
+        .get("your_day")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(Value::as_object)
+                .filter_map(|row| {
+                    let text = row.get("text").and_then(Value::as_str).unwrap_or("").trim();
+                    let label = your_day_time_label(row);
+                    (!label.is_empty() || !text.is_empty()).then(|| {
+                        if !label.is_empty() && !text.is_empty() {
+                            format!("- **{label}**: {text}")
+                        } else if !label.is_empty() {
+                            format!("- **{label}**")
+                        } else {
+                            format!("- {text}")
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    if !your_day.is_empty() {
+        sections.insert("your_day".to_owned(), your_day.into());
     }
     let needs = needs_items(briefing)
         .iter()
@@ -165,11 +189,8 @@ pub fn meeting_count(briefing: &Value) -> i64 {
         .and_then(Value::as_array)
         .map(|rows| {
             rows.iter()
-                .filter(|row| {
-                    row.get("time")
-                        .and_then(Value::as_str)
-                        .is_some_and(|time| !time.trim().is_empty())
-                })
+                .filter_map(Value::as_object)
+                .filter(|row| !your_day_time_label(row).is_empty())
                 .count() as i64
         })
         .unwrap_or(0)
@@ -180,4 +201,63 @@ fn value_text(value: &Value) -> String {
         .as_str()
         .map(str::to_owned)
         .unwrap_or_else(|| value.to_string())
+}
+
+fn field_text<'a>(row: &'a serde_json::Map<String, Value>, key: &str) -> &'a str {
+    row.get(key).and_then(Value::as_str).unwrap_or("").trim()
+}
+
+/// A `your_day` item's clock label, mirroring `solstone-core-format`'s
+/// `content::morning_briefing::time_label` (duplicated rather than shared --
+/// the two crates render different surfaces and neither depends on the
+/// other). `start == end` (or either one blank) collapses to a single point;
+/// `end` alone with no `start` still reads as a point-in-time at `end`.
+fn your_day_time_label(row: &serde_json::Map<String, Value>) -> String {
+    let start = field_text(row, "start");
+    let end = field_text(row, "end");
+    match (start.is_empty(), end.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => start.to_owned(),
+        (true, false) => end.to_owned(),
+        (false, false) if start == end => start.to_owned(),
+        (false, false) => format!("{start}–{end}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn your_day_renders_a_window_and_treats_end_only_as_a_point() {
+        let sections = render_sections(&json!({"your_day":[
+            {"start":"13:00","end":"13:30","text":"Team sync."},
+            {"start":"","end":"14:00","text":"Odd shape."},
+            {"start":"","end":"","text":"No fixed time."}
+        ]}));
+        assert_eq!(
+            sections["your_day"],
+            "- **13:00–13:30**: Team sync.\n- **14:00**: Odd shape.\n- No fixed time."
+        );
+    }
+
+    #[test]
+    fn meeting_count_counts_either_side_of_the_window_and_ignores_untimed_items() {
+        let briefing = json!({"your_day":[
+            {"start":"09:00","end":"09:00","text":"a"},
+            {"start":"","end":"10:00","text":"b"},
+            {"start":"","end":"","text":"c"}
+        ]});
+        assert_eq!(meeting_count(&briefing), 2);
+    }
+
+    #[test]
+    fn summary_reads_meeting_count_off_the_new_start_end_shape() {
+        let briefing = json!({"your_day":[{"start":"09:00","end":"09:30","text":"a"}]});
+        let sections = render_sections(&briefing);
+        assert_eq!(
+            summary(Some(&briefing), &sections, 0),
+            "morning briefing: 1 meeting, 0 items need attention"
+        );
+    }
 }

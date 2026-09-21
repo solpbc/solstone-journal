@@ -736,6 +736,8 @@ async fn index_plate_network_returns_neighbors_for_a_directory_hit() {
         )
     );
     assert_eq!(body["entity_id"], "person-ada");
+    assert_eq!(body["limit"], 25);
+    assert_eq!(body["evidence_limit"], 5);
     assert_eq!(body["neighbors"][0]["entity_id"], "person-bob");
     assert_eq!(body["neighbors"][0]["evidence_class"], "semantic");
     assert_eq!(body["neighbors"][0]["count"], 1);
@@ -1212,6 +1214,64 @@ async fn index_plate_negative_limit_is_invalid_request() {
         .await,
         "invalid_request_value",
         400,
+    );
+}
+
+#[tokio::test]
+async fn index_plate_network_bounds_reject_before_resolution() {
+    let journal = Journal::new();
+    let cases = [
+        ("limit=-1", "limit must be between 0 and 100"),
+        ("limit=101", "limit must be between 0 and 100"),
+        (
+            "evidence_limit=-1",
+            "evidence_limit must be between 0 and 5",
+        ),
+        ("evidence_limit=6", "evidence_limit must be between 0 and 5"),
+        (
+            "limit=9223372036854775808",
+            "limit must be between 0 and 100",
+        ),
+        (
+            "evidence_limit=9223372036854775808",
+            "evidence_limit must be between 0 and 5",
+        ),
+        (
+            "limit=-9223372036854775809",
+            "limit must be between 0 and 100",
+        ),
+    ];
+    for (query_param, expected_detail) in cases {
+        let (status, body) = call(
+            journal.path(),
+            &format!("/app/entities/api/network?entity=Nobody&{query_param}"),
+        )
+        .await;
+        assert_eq!(status, 400, "for query param: {query_param}");
+        assert_eq!(body["reason_code"], "invalid_request_value");
+        assert_eq!(body["error"], "Entity request refused");
+        assert_eq!(body["detail"], expected_detail);
+        assert!(!journal.path().join("indexer").exists());
+    }
+
+    let (status, body) = call(
+        journal.path(),
+        "/app/entities/api/history?entity=Nobody&limit=101",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(body["resolved"], Value::Null);
+    assert_eq!(body["query"], "Nobody");
+    assert!(!body.to_string().contains("must be between"));
+
+    let (status, body) = call(journal.path(), "/app/entities/api/overview?limit=101").await;
+    assert_eq!(status, 503);
+    assert_eq!(body["reason_code"], "edge_index_unavailable");
+    assert!(
+        !body["detail"]
+            .as_str()
+            .unwrap_or("")
+            .contains("must be between")
     );
 }
 
