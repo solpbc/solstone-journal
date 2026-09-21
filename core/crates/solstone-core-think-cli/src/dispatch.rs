@@ -525,23 +525,10 @@ impl DrainOutcome {
 
 /// Shared equivalent of `_drain_priority_batch` (`thinking.py:991-1042`).
 /// The client policy is `think()` and its explicit outcome deadline is 610 seconds.
-pub(crate) fn drain(
-    context: &ThinkContext,
-    runtime: &tokio::runtime::Runtime,
-    pending: Vec<PendingUse>,
-) -> ModeResult {
-    drain_with_deadline(context, runtime, pending, Some(DEFAULT_THINK_TIMEOUT))
-}
-
-pub(crate) fn drain_with_deadline(
-    context: &ThinkContext,
-    runtime: &tokio::runtime::Runtime,
-    pending: Vec<PendingUse>,
-    deadline: Option<Duration>,
-) -> ModeResult {
-    drain_with_deadline_observed(context, runtime, pending, deadline, &mut |_, _| {})
-}
-
+/// Every mode now supplies its own observer (`daily`/`segment`/`activity`/`cadence`/
+/// `weekly` all log `talent.complete`/`talent.fail` per item as of 2026-09-21), so
+/// there is no remaining no-op-observer wrapper here -- call this directly with
+/// `&mut |_, _| {}` where a caller genuinely has nothing to log.
 pub(crate) fn drain_with_deadline_observed(
     context: &ThinkContext,
     runtime: &tokio::runtime::Runtime,

@@ -1384,7 +1384,13 @@ mod tests {
         let second =
             dispatch::dispatch(&context, &runtime, &config, "daily", None, true, Map::new())
                 .unwrap();
-        let result = dispatch::drain(&context, &runtime, vec![first, second]);
+        let result = dispatch::drain_with_deadline_observed(
+            &context,
+            &runtime,
+            vec![first, second],
+            Some(dispatch::DEFAULT_THINK_TIMEOUT),
+            &mut |_, _| {},
+        );
         assert_eq!((result.success, result.failed), (2, 0));
         assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
@@ -1424,7 +1430,13 @@ mod tests {
             } else {
                 let _ = fs::remove_file(path);
             }
-            dispatch::drain(&context, &runtime, vec![pending]);
+            dispatch::drain_with_deadline_observed(
+                &context,
+                &runtime,
+                vec![pending],
+                Some(dispatch::DEFAULT_THINK_TIMEOUT),
+                &mut |_, _| {},
+            );
         };
         run(Some(true), true);
         assert_eq!(index.0.lock().unwrap().len(), 1);
@@ -1467,7 +1479,13 @@ mod tests {
             let path = std::path::PathBuf::from(path);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(&path, "output").unwrap();
-            let result = dispatch::drain(&context, &runtime, vec![pending]);
+            let result = dispatch::drain_with_deadline_observed(
+                &context,
+                &runtime,
+                vec![pending],
+                Some(dispatch::DEFAULT_THINK_TIMEOUT),
+                &mut |_, _| {},
+            );
             assert_eq!((result.success, result.failed), (1, 0));
         }
         assert_eq!(index.0.lock().unwrap().len(), 3);
@@ -1496,7 +1514,13 @@ mod tests {
         let path = std::path::PathBuf::from(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "output").unwrap();
-        dispatch::drain(&context, &runtime, vec![pending]);
+        dispatch::drain_with_deadline_observed(
+            &context,
+            &runtime,
+            vec![pending],
+            Some(dispatch::DEFAULT_THINK_TIMEOUT),
+            &mut |_, _| {},
+        );
         assert_eq!(index.0.lock().unwrap().len(), 3);
     }
 
