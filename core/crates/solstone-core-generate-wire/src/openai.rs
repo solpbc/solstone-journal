@@ -309,10 +309,11 @@ fn converse_request_body(
                 tool_call_id,
                 tool_name: _,
                 output,
+                is_error,
             } => input.push(json!({
                 "type": "function_call_output",
                 "call_id": tool_call_id,
-                "output": output,
+                "output": crate::converse::tool_result_envelope_string(*is_error, output),
             })),
         }
     }
@@ -1289,6 +1290,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: "sunny".into(),
+                is_error: false,
             },
         ];
         let tools = vec![ConverseToolSpec {
@@ -1306,7 +1308,7 @@ mod tests {
                     {"role":"user","content":[{"type":"input_text","text":"ask"}]},
                     {"role":"assistant","content":[{"type":"output_text","text":"working"}]},
                     {"type":"function_call","call_id":"call-1","name":"weather","arguments":"{\"city\":\"Denver\"}"},
-                    {"type":"function_call_output","call_id":"call-1","output":"sunny"}
+                    {"type":"function_call_output","call_id":"call-1","output":"{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"}
                 ],
                 "tools":[{"type":"function","name":"weather","description":"weather","parameters":{"type":"object"}}]
             }))
@@ -1326,7 +1328,180 @@ mod tests {
                 "gpt"
             ))
         );
+    }
 
+    #[test]
+    fn openai_converse_encodes_error_and_success_and_collision_twins() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_body = converse_request_body(&request(), &err_messages, &tools, "gpt");
+        assert_eq!(
+            err_body["input"][4],
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"file not found\"}"
+            })
+        );
+
+        // Success twin
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_body = converse_request_body(&request(), &ok_messages, &tools, "gpt");
+        assert_eq!(
+            ok_body["input"][4],
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+            })
+        );
+
+        // Collision twin (output string equals envelope JSON, but outer is_error is false)
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_body = converse_request_body(&request(), &collision_messages, &tools, "gpt");
+        assert_eq!(
+            collision_body["input"][4],
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"{\\\"schema\\\":\\\"solstone-tool-result-v1\\\",\\\"is_error\\\":true,\\\"output\\\":\\\"nested\\\"}\"}"
+            })
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![
+                    ConverseToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city":"Denver"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                    ConverseToolCall {
+                        id: "call-2".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city":"Boulder"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let body = converse_request_body(&request(), &ordered, &tools, "gpt");
+        let input = body["input"].as_array().expect("input");
+        assert_eq!(input[5]["type"], "function_call_output");
+        assert_eq!(input[5]["call_id"], "call-1");
+        assert_eq!(
+            input[5]["output"],
+            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+        );
+        assert_eq!(input[6]["type"], "function_call_output");
+        assert_eq!(input[6]["call_id"], "call-2");
+        assert_eq!(input[7]["role"], "user");
+        assert_eq!(input[7]["content"][0]["text"], "Resource budget warning");
+        assert_eq!(input[8]["role"], "user");
+        assert_eq!(input[8]["content"][0]["text"], "Turn budget warning");
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_request_body(&request(), &early_nudge, &tools, "gpt");
+        assert_ne!(body["input"], mutated["input"]);
+        assert_eq!(mutated["input"][6]["role"], "user");
+    }
+
+    #[test]
+    fn converse_responses_parse_turn_and_tool_shapes_after_envelope() {
         let offered = ["weather".to_owned()].into_iter().collect();
         let OpenAiConverseResult::Turn(turn) = parse_converse_response(&json!({
             "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},

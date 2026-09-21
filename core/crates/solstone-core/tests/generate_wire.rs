@@ -592,6 +592,7 @@ fn bundled_native_loopback_converse_preserves_tool_results_and_rejects_prose_too
                 tool_call_id: call.id.clone(),
                 tool_name: call.name,
                 output: "sunny".into(),
+                is_error: false,
             },
         ],
         &tools,
@@ -612,7 +613,10 @@ fn bundled_native_loopback_converse_preserves_tool_results_and_rejects_prose_too
         serde_json::from_str(&chat_requests[1].body).expect("second chat JSON");
     assert_eq!(second_body["messages"][2]["role"], "tool");
     assert_eq!(second_body["messages"][2]["tool_call_id"], "call-1");
-    assert_eq!(second_body["messages"][2]["content"], "sunny");
+    assert_eq!(
+        second_body["messages"][2]["content"],
+        "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+    );
     let _ = std::fs::remove_dir_all(journal);
 
     let prose_journal = root("native-converse-prose");

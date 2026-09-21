@@ -282,10 +282,21 @@ fn converse_request_body(
                 tool_call_id,
                 tool_name: _,
                 output,
-            } => json!({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": tool_call_id, "content": output}],
-            }),
+                is_error,
+            } => {
+                let mut block = json!({
+                    "type": "tool_result",
+                    "tool_use_id": tool_call_id,
+                    "content": output,
+                });
+                if *is_error {
+                    block["is_error"] = serde_json::Value::Bool(true);
+                }
+                json!({
+                    "role": "user",
+                    "content": [block],
+                })
+            }
         })
         .collect::<Vec<_>>();
     let mut body = json!({
@@ -1090,6 +1101,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: "sunny".into(),
+                is_error: false,
             },
         ];
         let tools = vec![ConverseToolSpec {
@@ -1126,7 +1138,190 @@ mod tests {
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&swapped)
         );
+    }
 
+    #[test]
+    fn anthropic_converse_encodes_error_and_success_and_collision_twins() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type": "object"}),
+        }];
+
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_body = converse_request_body(&request(), &err_messages, &tools, "model");
+        assert_eq!(
+            err_body["messages"][2],
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "file not found", "is_error": true}]
+            })
+        );
+
+        // Success twin (omits is_error)
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_body = converse_request_body(&request(), &ok_messages, &tools, "model");
+        assert_eq!(
+            ok_body["messages"][2],
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "sunny"}]
+            })
+        );
+        assert!(
+            ok_body["messages"][2]["content"][0]
+                .get("is_error")
+                .is_none()
+        );
+
+        // Collision twin (output is envelope JSON string, but is_error is false)
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_body =
+            converse_request_body(&request(), &collision_messages, &tools, "model");
+        assert_eq!(
+            collision_body["messages"][2],
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": collision_output}]
+            })
+        );
+        assert!(
+            collision_body["messages"][2]["content"][0]
+                .get("is_error")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type": "object"}),
+        }];
+        let calls = vec![
+            ConverseToolCall {
+                id: "call-1".into(),
+                name: "weather".into(),
+                arguments: json!({"city": "Denver"}),
+                not_offered: false,
+                thought_signature: None,
+            },
+            ConverseToolCall {
+                id: "call-2".into(),
+                name: "weather".into(),
+                arguments: json!({"city": "Boulder"}),
+                not_offered: false,
+                thought_signature: None,
+            },
+        ];
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: calls.clone(),
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let body = converse_request_body(&request(), &ordered, &tools, "model");
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[2]["content"][0]["type"], "tool_result");
+        assert_eq!(messages[2]["content"][0]["tool_use_id"], "call-1");
+        assert_eq!(messages[3]["content"][0]["type"], "tool_result");
+        assert_eq!(messages[3]["content"][0]["tool_use_id"], "call-2");
+        assert_eq!(
+            messages[4],
+            json!({"role":"user","content":[{"type":"text","text":"Resource budget warning"}]})
+        );
+        assert_eq!(
+            messages[5],
+            json!({"role":"user","content":[{"type":"text","text":"Turn budget warning"}]})
+        );
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_request_body(&request(), &early_nudge, &tools, "model");
+        assert_ne!(body["messages"], mutated["messages"]);
+        assert_eq!(mutated["messages"][3]["content"][0]["type"], "text");
+    }
+
+    #[test]
+    fn converse_responses_parse_turn_and_tool_shapes() {
         let offered = ["weather".to_owned()].into_iter().collect();
         let turn = parse_converse_response(&json!({
             "model":"model", "stop_reason":"tool_use",
