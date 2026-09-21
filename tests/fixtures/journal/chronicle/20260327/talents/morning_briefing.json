@@ -14,30 +14,34 @@
   },
   "your_day": [
     {
-      "time": "09:00",
+      "start": "09:00",
+      "end": "09:00",
       "text": "Sync with Sarah Chen on the Q2 product roadmap. Last met 2 weeks ago; discussed launch timeline (from your [March standup](sol://20260313/archon/091500_300))."
     },
     {
-      "time": "11:30",
+      "start": "11:30",
+      "end": "11:30",
       "text": "1:1 with Marcus about the infrastructure migration. He's been blocked on the DNS cutover (from your [Thursday 1:1](sol://20260325/archon/113000_1800))."
     },
     {
-      "time": "14:00",
+      "start": "14:00",
+      "end": "14:00",
       "text": "Design review for the new onboarding flow with the UX team."
     },
     {
-      "time": "",
+      "start": "",
+      "end": "",
       "text": "Review and respond to the open comments on the auth middleware PR."
     }
   ],
   "yesterday": [
-    "Shipped the entity intelligence pipeline refactor \u2014 3x faster lookups on large journals ([work newsletter](sol://facets/work/news/20260326)).",
+    "Shipped the entity intelligence pipeline refactor — 3x faster lookups on large journals ([work newsletter](sol://facets/work/news/20260326)).",
     "Had a productive brainstorm with Anika on the notification system. She proposed a priority-based queue ([work newsletter](sol://facets/work/news/20260326)).",
     "Decided to delay the mobile app beta by one week to fix the sync regression ([work newsletter](sol://facets/work/news/20260326))."
   ],
   "needs_attention": [
     {
-      "text": "Follow up with investors on the Series A term sheet \u2014 response was due yesterday (committed [March 20](sol://20260320/archon/101500_600))",
+      "text": "Follow up with investors on the Series A term sheet — response was due yesterday (committed [March 20](sol://20260320/archon/101500_600))",
       "source_id": "sol://20260320/archon/101500_600"
     },
     {
@@ -50,8 +54,8 @@
     }
   ],
   "forward_look": [
-    "**Monday** \u2014 All-hands presentation on Q1 results. Slides need final review by Friday (from [schedule](sol://20260327/talents/schedule)).",
-    "**Wednesday** \u2014 Deadline for the compliance audit documentation.",
+    "**Monday** — All-hands presentation on Q1 results. Slides need final review by Friday (from [schedule](sol://20260327/talents/schedule)).",
+    "**Wednesday** — Deadline for the compliance audit documentation.",
     "Sarah mentioned wanting to discuss the API rate limiting strategy next week (from [schedule](sol://20260327/talents/schedule))."
   ],
   "reading": [

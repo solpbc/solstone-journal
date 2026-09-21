@@ -2639,14 +2639,16 @@
             "your_day": [
               {
                 "text": "standup",
-                "time": "09:00"
+                "start": "09:00",
+                "end": "09:00"
               },
               {
                 "text": "no time"
               },
               {
                 "text": " ",
-                "time": " "
+                "start": " ",
+                "end": " "
               },
               "not a dict"
             ]
@@ -2713,7 +2715,8 @@
             "your_day": [
               {
                 "text": "standup",
-                "time": "09:00"
+                "start": "09:00",
+                "end": "09:00"
               }
             ]
           },
@@ -2735,7 +2738,8 @@
             "your_day": [
               {
                 "text": "standup",
-                "time": "09:00"
+                "start": "09:00",
+                "end": "09:00"
               }
             ]
           },

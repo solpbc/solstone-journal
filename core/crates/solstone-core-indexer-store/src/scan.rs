@@ -5289,7 +5289,7 @@ mod tests {
         write(
             &root,
             "chronicle/20260717/talents/morning_briefing.json",
-            r#"{"metadata":{"coverage_preamble":"Daily briefing."},"your_day":[{"time":"09:00","text":"Meet Alice."}],"yesterday":["Shipped."],"needs_attention":[{"text":"Review."}],"forward_look":["Prepare."],"reading":[{"facet":"work","summary":"News."}]}"#,
+            r#"{"metadata":{"coverage_preamble":"Daily briefing."},"your_day":[{"start":"09:00","end":"09:00","text":"Meet Alice."}],"yesterday":["Shipped."],"needs_attention":[{"text":"Review."}],"forward_look":["Prepare."],"reading":[{"facet":"work","summary":"News."}]}"#,
         );
 
         let report = scan_journal(&root, true).expect("scan talent json");

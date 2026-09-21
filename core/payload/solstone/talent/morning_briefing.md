@@ -25,7 +25,7 @@ Return only the JSON object. Do not wrap it in a markdown fence. Do not include 
 {
   "metadata": $briefing_metadata,
   "your_day": [
-    {"time": "HH:MM or empty string", "text": "today's prioritized agenda item"}
+    {"start": "HH:MM or empty string", "end": "HH:MM or empty string", "text": "today's prioritized agenda item"}
   ],
   "yesterday": [
     "what happened yesterday"
@@ -94,7 +94,7 @@ $decisions
 
 **Source attribution.** Attribute high-consequence factual claims to their source using inline parenthetical links with `sol://` URIs when a source URI is present in the packet. Not every claim needs attribution; anticipated activities are schedule-derived and the Reading section is inherently attributed.
 
-**Your Day** - What's ahead today. Lead with anticipated activities in chronological order. Put a zero-padded `HH:MM` in `time` when the item has a specific start time; otherwise use `""`. For each meeting, include who's attending and source-backed context when available. If no anticipated activities exist, lead with the highest-priority follow-ups or pulse needs.
+**Your Day** - What's ahead today. Lead with anticipated activities in chronological order (by `start`, then by `end` for items with no `start`). Put a zero-padded `HH:MM` in `start` when the item has a specific start time; otherwise use `""`. Put a zero-padded `HH:MM` in `end` only when the item has a known, distinct end time (e.g. a meeting from 13:00 to 13:30); otherwise use `""` — never leave `end` equal to `start` on purpose and never write a range like "13:00-13:30" into `text` or into either time field. A point-in-time item (a deadline, a reminder, an appointment with no announced duration) gets only `start`; only set `end` when the source packet actually gives you a distinct end time. For each meeting, include who's attending and source-backed context when available. If no anticipated activities exist, lead with the highest-priority follow-ups or pulse needs.
 
 **Yesterday** - What happened. Draw from facet newsletters, pulse, and decisions. Highlight accomplishments, consequential decisions, and notable interactions. Keep to 3-5 bullets max. Only include if facet newsletters or decisions have content for the analysis day.
 

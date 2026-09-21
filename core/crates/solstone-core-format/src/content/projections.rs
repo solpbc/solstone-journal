@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn projection_matches_committed_document() {
         let briefing: JsonObject = serde_json::from_str(
-            r#"{"metadata":{"coverage_preamble":"\n\nCoverage starts.\n\nCoverage continues.\n\n\n"},"your_day":[{"time":"09:00","text":"Timed item."},{"text":"Untimed item."},{"time":"10:00","text":""}],"yesterday":[],"needs_attention":[42,{"text":"Review the report."}],"forward_look":["Plan next week."],"reading":[{"facet":"personal"},{"summary":"Loose summary."},{"facet":"work","summary":"Newsletter."}]}"#,
+            r#"{"metadata":{"coverage_preamble":"\n\nCoverage starts.\n\nCoverage continues.\n\n\n"},"your_day":[{"start":"09:00","end":"09:00","text":"Timed item."},{"text":"Untimed item."},{"start":"10:00","end":"10:00","text":""}],"yesterday":[],"needs_attention":[42,{"text":"Review the report."}],"forward_look":["Plan next week."],"reading":[{"facet":"personal"},{"summary":"Loose summary."},{"facet":"work","summary":"Newsletter."}]}"#,
         )
         .expect("briefing fixture input parses");
         // Committed text fixtures end with a newline; rendered documents do not.
