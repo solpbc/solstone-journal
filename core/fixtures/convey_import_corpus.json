@@ -1725,19 +1725,19 @@
         "why": "detail for an import that does not exist"
       },
       {
-        "body_sha256": "568bc8e91a427944e62a339234bb0dbffe6c8fb49d1ac91c44029c6e60764afc",
+        "body_sha256": "4eaba73815af186c67589456b46af439a4bca6295fd10c2007c0e4c9f825c09b",
         "body_sha256_basis": "canonical-json",
         "content_type": "application/json",
         "json": {
           "detail": "No content available",
-          "error": "that import isn't in your journal.",
-          "reason_code": "import_not_found"
+          "error": "there's nothing to browse for this import.",
+          "reason_code": "import_content_unavailable"
         },
         "method": "GET",
         "normalized_fields": [],
         "path": "/app/import/api/20260801_120000/content",
         "status": 404,
-        "why": "content for an import with no manifest and none derivable: refusal, not an empty 200"
+        "why": "content for an import with no manifest and none derivable: refusal, not an empty 200, and distinct from an actually-missing import"
       },
       {
         "body_sha256": "de7e7bea5fb5a05ebfb0844ff9b385e6a6b27db29c40925e325ac80fcefaef24",

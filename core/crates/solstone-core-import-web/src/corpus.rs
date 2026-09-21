@@ -581,7 +581,11 @@ pub(crate) mod tests {
         let (status, body) =
             json_request(root.path(), "GET", &format!("/app/import/api/{OK}/content")).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
-        assert_eq!(body["reason_code"], "import_not_found");
+        // Distinct from `import_not_found`'s reason_code and message: this import exists
+        // and is visible in the list, it just has nothing browsable — "isn't in your
+        // journal" would be wrong here.
+        assert_eq!(body["reason_code"], "import_content_unavailable");
+        assert_eq!(body["error"], "there's nothing to browse for this import.");
         let corrupt = "20260106_000000";
         let directory = root.path().join("imports").join(corrupt);
         fs::create_dir_all(&directory).unwrap();
@@ -1542,6 +1546,96 @@ pub(crate) mod tests {
 
         let (_, hist_body) = json_request(root, "GET", &format!("/app/import/api/{hist_id}")).await;
         assert_eq!(hist_body["attempt"]["duration_ms"], Value::Null);
+    }
+
+    #[tokio::test]
+    async fn native_audio_content_lists_each_segment_with_its_own_day_and_key() {
+        let temp = phase_root("empty");
+        let root = temp.path();
+
+        let id = "20260910_090000";
+        let dir = root.join("imports").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("import.json"),
+            json!({
+                "original_filename": "voice-memo.m4a",
+                "file_size": 12345,
+                "mime_type": "audio/m4a",
+                "source": "audio"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("imported.json"),
+            json!({
+                "schema": "solstone.import.publication.v1",
+                "status": "success",
+                "segments": [
+                    {"day": "20260910", "segment": "090000_300", "stream": "import.audio"},
+                    {"day": "20260910", "segment": "090500_300", "stream": "import.audio"},
+                    {"day": "20260910", "segment": "091000_300", "stream": "import.audio"}
+                ],
+                "indexing": [],
+                "day_markers": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let (status, body) =
+            json_request(root, "GET", &format!("/app/import/api/{id}/content")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["source_type"], "audio");
+        assert_eq!(body["total"], 3);
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 3);
+        let expected_keys = ["090000_300", "090500_300", "091000_300"];
+        for (item, expected_key) in items.iter().zip(expected_keys) {
+            assert_eq!(item["type"], "audio");
+            assert_eq!(item["stream"], "import.audio");
+            assert_eq!(item["date"], "20260910");
+            let segments = item["segments"].as_array().unwrap();
+            assert_eq!(segments.len(), 1);
+            assert_eq!(
+                segments[0]["key"], expected_key,
+                "each item must carry its own segment's key, not segments[0] repeated"
+            );
+            assert_eq!(segments[0]["day"], "20260910");
+        }
+
+        // A zero-surviving-segments audio import still 404s through the same route.
+        let empty_id = "20260910_091500";
+        let empty_dir = root.join("imports").join(empty_id);
+        fs::create_dir_all(&empty_dir).unwrap();
+        fs::write(
+            empty_dir.join("import.json"),
+            json!({
+                "original_filename": "aborted.m4a",
+                "file_size": 0,
+                "mime_type": "audio/m4a",
+                "source": "audio"
+            })
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            empty_dir.join("imported.json"),
+            json!({
+                "schema": "solstone.import.publication.v1",
+                "status": "success",
+                "segments": [],
+                "indexing": [],
+                "day_markers": []
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let (empty_status, empty_body) =
+            json_request(root, "GET", &format!("/app/import/api/{empty_id}/content")).await;
+        assert_eq!(empty_status, StatusCode::NOT_FOUND);
+        assert_eq!(empty_body["reason_code"], "import_content_unavailable");
     }
 
     #[tokio::test]
