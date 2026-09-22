@@ -28,8 +28,8 @@ pub fn facet_not_found() -> Response {
 pub fn last_enabled_facet() -> Response {
     error_envelope(
         "last_enabled_facet",
-        "your journal needs at least one facet turned on.",
-        "turn on another facet first, then try again",
+        "your journal needs at least one facet that isn't muted.",
+        "unmute or add another facet first, then try again",
         StatusCode::CONFLICT,
     )
     .into_response()
