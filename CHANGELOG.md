@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.13] - 2026-09-22
+
 ### Added
 
 - agents can now read from your journal, once you turn it on. Claude, Codex, or any agent that speaks MCP can search and read your journal, within what you let it see: your whole journal, or only the facets you choose. it reads only, and can't add, change or delete anything. this is off by default; nothing is reachable until you turn it on, and you can turn it off any time.
