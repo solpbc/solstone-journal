@@ -16,7 +16,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - this is a security fix. a paired device could ask for a speaker recording using a path built to reach outside where your journal keeps them. it's now rejected before your journal reads anything, and naming or reviewing a speaker works the same as before.
 - on mac, the journal could silently stall backfilling a missed day, or finishing today's day, with no error shown. both now run reliably.
 - viewing an entity with a lot of connections in its network could stall or time out. it now loads reliably, with the same results as before.
-- your morning briefing could show a broken time for something that spans a range, like a meeting from 9 to 10; it now shows the real start and end. this also holds your own local model to the same format rules as every other provider, for your schedule, daily schedule and morning briefing.
+- your morning briefing could show a broken time for something that spans a range, like a meeting from 9 to 10; it now shows the real start and end. this also holds your own local model to the same format rules as every other provider, for your schedule and morning briefing.
 
 ## [2.0.12] - 2026-09-21
 
