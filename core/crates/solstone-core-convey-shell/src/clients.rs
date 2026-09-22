@@ -1714,7 +1714,7 @@ mod tests {
         // Case difference on raw path -> 403
         let upper_target = format!(
             "SHA256:{}",
-            &client_a["sha256:".len()..].to_ascii_uppercase()
+            client_a["sha256:".len()..].to_ascii_uppercase()
         );
         let mut req_case = Request::delete(format!("/app/network/api/clients/{upper_target}"))
             .body(Body::empty())
