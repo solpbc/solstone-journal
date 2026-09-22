@@ -61,3 +61,10 @@ tower.workspace = true
 name = "think_cli_callosum_transport"
 path = "tests/think_cli_callosum_transport.rs"
 required-features = ["test-hooks"]
+
+# Loopback HTTP 400 is a network boundary, so it stays out of the routine
+# library harness and runs only with the test-hooks integration target.
+[[test]]
+name = "daily_provider_rejection_loopback"
+path = "tests/daily_provider_rejection_loopback.rs"
+required-features = ["test-hooks"]

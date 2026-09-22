@@ -41,6 +41,65 @@ pub mod test_support {
         crate::dispatch::runtime()
     }
 
+    pub fn reserve_daily_attempt(
+        journal: &Path,
+        identity: &solstone_core_journal_io::DailyUnitIdentity,
+        evidence_rev: &str,
+        contract_digest: &str,
+        frozen_packet: &Value,
+        today: &str,
+        reserved_use: &str,
+        from_scratch: bool,
+        retry: bool,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        crate::daily::reserve_daily_attempt(
+            journal,
+            identity,
+            evidence_rev,
+            contract_digest,
+            frozen_packet,
+            today,
+            reserved_use,
+            from_scratch,
+            retry,
+            now_ms,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn log_daily_terminal(
+        journal: &Path,
+        day: &str,
+        name: &str,
+        use_id: &str,
+        reason_code: &str,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let context = crate::context::ThinkContext::new_with_event_clock(
+            journal,
+            day.to_owned(),
+            journal.join("chronicle").join(day),
+            now_ms,
+            std::sync::Arc::new(move || now_ms),
+        )?;
+        let mut log = crate::run_log::RunLogWriter::open(journal, day, "daily");
+        let pending = crate::dispatch::PendingUse {
+            name: name.to_owned(),
+            facet: None,
+            use_id: use_id.to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        crate::daily::log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            crate::dispatch::DrainOutcome::fail("error", reason_code),
+        );
+        log.finish()
+    }
+
     pub fn emit_segment_dispatch(journal: &Path, day: &str, now_ms: i64) -> Result<bool, String> {
         let mut log = crate::run_log::RunLogWriter::open(journal, day, "segment");
         let emitted = crate::segment::write_dispatch_event(

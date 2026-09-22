@@ -3576,6 +3576,19 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-local::live_schema_compatibility"
+package = "solstone-core-local"
+target = "live_schema_compatibility"
+set = "component"
+areas = ["system", "talents"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-local::local_runtime_transport"
 package = "solstone-core-local"
 target = "local_runtime_transport"
@@ -4290,6 +4303,19 @@ prerequisites = ["cargo-cache"]
 timeout = "standard"
 default_full = true
 required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-think-cli::daily_provider_rejection_loopback"
+package = "solstone-core-think-cli"
+target = "daily_provider_rejection_loopback"
+set = "component"
+areas = ["commands", "system"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
