@@ -844,14 +844,13 @@ fn prepare_schema_node(node: &mut Value) {
             // prompt) -- so they now pass through unmodified, and canonical
             // response validation (which already enforces every field
             // regardless) is no longer the only thing keeping this shape
-            // honest. That same measurement found two llama.cpp grammar
-            // limits, and every shipped schema pattern was rewritten to stay
-            // inside them: no bare `\d`/`\w`/`\s` regex shorthand (character
-            // classes only), and no top-level alternation between two
-            // independently anchored branches (write an optional pattern as
-            // `^(|X)$`, never `^$|^X$`) -- see
-            // `shipped_talent_schemas_avoid_local_grammar_incompatible_regex`
-            // below for the enforced contract.
+            // honest. The measured portable subset shared by bundled and
+            // endpoint grammar engines excludes bare `\d`/`\w`/`\s` regex
+            // shorthand, independently anchored alternatives, and empty
+            // alternation branches (write optional content as `^(X)?$`) -- see
+            // `shipped_talent_schemas_stay_in_the_portable_local_regex_subset`
+            // below for the cheap recurrence guard. Live grammar compilation
+            // remains a separate integration proof.
             object.remove("x-truncate");
             let array = matches!(object.get("type"), Some(Value::String(kind)) if kind == "array")
                 || matches!(object.get("type"), Some(Value::Array(kinds)) if kinds.iter().any(|kind| kind == "array"));
@@ -1879,12 +1878,17 @@ mod tests {
     /// independently anchored branches joined by top-level alternation
     /// (`^$|^X$`) parses but silently emits the literal `^`/`$` characters
     /// instead of enforcing either branch (reproduced on `^$|^[0-9][0-9]:...$`
-    /// -- the model returned `{"time":"$"}`). A single anchor pair wrapping the
-    /// whole alternation (`^(|X)$`) and explicit `[0-9]`/`[^ )]` classes both
+    /// -- the model returned `{"time":"$"}`). Explicit `[0-9]`/`[^ )]` classes
     /// measured clean, 8/8 and 3/3 samples respectively, including against an
     /// adversarial "meeting from 1:00pm to 1:30pm" prompt that had been
     /// reliably producing a time RANGE in production (`morning_briefing`'s
     /// `your_day` items, found in live triage 2026-09-21).
+    ///
+    /// A second deployed grammar family, SGLang 0.5.14 with xgrammar 0.2.1,
+    /// rejects `^(|X)$` while compiling its EBNF (`Expect element, but got |`).
+    /// Both engines accept the equivalent `^(X)?$`. This scanner guards the
+    /// measured incompatible shapes; it does not claim to compile a provider
+    /// grammar. The ignored live-schema integration test supplies that proof.
     ///
     /// `pattern` now flows unmodified to the local provider (see
     /// `prepare_schema_node` above), so a shipped schema carrying either shape
@@ -1892,7 +1896,7 @@ mod tests {
     /// local call that reaches it. This walks every shipped talent schema and
     /// asserts neither shape recurs.
     #[test]
-    fn shipped_talent_schemas_avoid_local_grammar_incompatible_regex() {
+    fn shipped_talent_schemas_stay_in_the_portable_local_regex_subset() {
         let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .ancestors()
             .nth(3)
@@ -1940,8 +1944,8 @@ mod tests {
         }
         assert!(
             violations.is_empty(),
-            "shipped talent schema pattern(s) incompatible with the local llama-server grammar \
-             engine (see this test's doc comment for the measured failure shapes):\n{}",
+            "shipped talent schema pattern(s) outside the measured portable local grammar \
+             subset (see this test's doc comment for the engine matrix):\n{}",
             violations.join("\n")
         );
     }
@@ -1970,6 +1974,13 @@ mod tests {
                              alternation in one anchor pair instead (`^(X|Y)$`)"
                         ));
                     }
+                    if pattern.contains("(|") || pattern.contains("|)") {
+                        violations.push(format!(
+                            "{path}: pattern {pattern:?} contains an empty alternation branch -- \
+                             endpoint grammar engines reject that shape; express optional content \
+                             with a quantified non-empty group (`^(X)?$`)"
+                        ));
+                    }
                 }
                 for (key, value) in object {
                     if key != "const" && key != "enum" {
@@ -1983,6 +1994,87 @@ mod tests {
                 }
             }
             _ => {}
+        }
+    }
+
+    #[test]
+    fn portable_subset_guard_rejects_each_measured_failure_shape() {
+        for pattern in [
+            r"^\d\d:\d\d$",
+            r"^$|^[0-9]+$",
+            r"^(|[0-9]+)$",
+            r"^([0-9]+|)$",
+        ] {
+            let schema = json!({"type": "string", "pattern": pattern});
+            let mut violations = Vec::new();
+            collect_pattern_violations(&schema, "fixture", &mut violations);
+            assert_eq!(
+                violations.len(),
+                1,
+                "the portable-subset guard must reject {pattern:?}: {violations:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn morning_briefing_optional_patterns_keep_their_language() {
+        let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repository root");
+        let contents = std::fs::read_to_string(
+            repository_root.join("core/payload/solstone/talent/morning_briefing.schema.json"),
+        )
+        .expect("read morning briefing schema");
+        let schema: Value = serde_json::from_str(&contents).expect("schema is valid JSON");
+        let cases = [
+            (
+                "/properties/your_day/items/properties/start/pattern",
+                &["", "00:00", "23:59"][..],
+                &["24:00", "9:00", "12:60", " 12:00"][..],
+            ),
+            (
+                "/properties/your_day/items/properties/end/pattern",
+                &["", "00:00", "23:59"][..],
+                &["24:00", "9:00", "12:60", "12:00 "][..],
+            ),
+            (
+                "/properties/needs_attention/items/properties/source_id/pattern",
+                &["", "sol://facet/day/item"][..],
+                &[
+                    "http://facet/day/item",
+                    "sol://has space",
+                    "sol://ends)here",
+                ][..],
+            ),
+        ];
+        for (pointer, accepted, rejected) in &cases {
+            let pattern = schema
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .unwrap_or_else(|| panic!("missing pattern at {pointer}"));
+            let expression = regex::Regex::new(pattern).expect("shipped pattern compiles");
+            for value in *accepted {
+                assert!(
+                    expression.is_match(value),
+                    "{pointer} must accept {value:?} via {pattern:?}"
+                );
+            }
+            for value in *rejected {
+                assert!(
+                    !expression.is_match(value),
+                    "{pointer} must reject {value:?} via {pattern:?}"
+                );
+            }
+        }
+
+        let prepared = prepare_local_schema(&schema);
+        for (pointer, _, _) in &cases {
+            assert_eq!(
+                prepared.pointer(pointer),
+                schema.pointer(pointer),
+                "schema preparation must preserve {pointer}"
+            );
         }
     }
 

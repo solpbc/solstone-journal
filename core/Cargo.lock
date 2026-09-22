@@ -4596,6 +4596,7 @@ dependencies = [
  "minisign",
  "nix",
  "rcgen",
+ "regex",
  "rustls",
  "serde",
  "serde_json",
