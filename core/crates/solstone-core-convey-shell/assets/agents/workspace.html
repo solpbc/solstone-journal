@@ -23,8 +23,8 @@
   let pairingCode = null;
 
   async function api(path, options) { return window.apiJson(path, options); }
-  function jsonOptions(method, body) { return {method, headers:{'content-type':'application/json','x-solstone-owner':'1'}, body:JSON.stringify(body)}; }
-  function ownerOptions(method) { return {method, headers:{'x-solstone-owner':'1'}}; }
+  function jsonOptions(method, body) { return {method, headers:{'content-type':'application/json'}, body:JSON.stringify(body)}; }
+  function ownerOptions(method) { return {method}; }
   function notify(message) { window.AppServices?.notifications?.show?.({title:'agents', body:message}); }
   function address() { return state?.owner_state?.address || state?.certificate?.hostname || 'your journal address'; }
   function endpoint() { return address() === 'your journal address' ? address() : `https://${address()}/mcp`; }

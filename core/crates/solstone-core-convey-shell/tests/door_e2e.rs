@@ -5360,3 +5360,159 @@ async fn the_loopback_guard_stops_at_the_loopback_listener_and_the_door_serves_t
     assert_eq!(observations.lock().expect("observations").len(), 5);
     handle.shutdown();
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn linked_device_can_manage_agents_and_unpair_over_confined_door() {
+    let fixture = Fixture::established(2);
+    let ledger_path = fixture.root.join("link/authorized_clients.json");
+    let before = fs::read(&ledger_path).expect("ledger before");
+    let ledger_val: serde_json::Value = serde_json::from_slice(&before).expect("ledger JSON");
+    let fp_second = ledger_val[1]["fingerprint"]
+        .as_str()
+        .expect("fingerprint")
+        .to_owned();
+
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let composed = router(fixture.root.clone()).merge(solstone_core_mcp_endpoint::owner_routes(
+        fixture.root.clone(),
+    ));
+    let handle = bind_with_authorization(
+        options(&fixture, composed.clone(), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            composed,
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+
+    let mut carrier = live_carrier(&fixture, door_port(handle.door_outcome())).await;
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+
+    // GET /app/agents/api/state -> 200
+    let res = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "GET",
+        "/app/agents/api/state",
+        &[],
+        &[],
+    )
+    .await
+    .expect("get state");
+    assert_eq!(res.status, 200);
+
+    // PUT /app/agents/api/capability -> 200 and enabled: true
+    let res = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "PUT",
+        "/app/agents/api/capability",
+        &[("content-type".into(), "application/json".into())],
+        br#"{"enabled":true}"#,
+    )
+    .await
+    .expect("put capability");
+    assert_eq!(res.status, 200);
+    let body: serde_json::Value = serde_json::from_slice(&res.body).expect("json body");
+    assert_eq!(body["enabled"], true);
+
+    // POST /app/network/unpair with fingerprint of second client -> 200 and client removed
+    let unpair_body = format!(r#"{{"fingerprint":"{fp_second}"}}"#);
+    let res = exchange_over_carrier(
+        &mut carrier,
+        &mut decoder,
+        ids.allocate(),
+        "POST",
+        "/app/network/unpair",
+        &[("content-type".into(), "application/json".into())],
+        unpair_body.as_bytes(),
+    )
+    .await
+    .expect("unpair second client");
+    assert_eq!(res.status, 200);
+    let after: serde_json::Value =
+        serde_json::from_slice(&fs::read(&ledger_path).expect("ledger after")).expect("json");
+    assert_eq!(after.as_array().unwrap().len(), 1);
+    assert_ne!(after[0]["fingerprint"], fp_second);
+
+    handle.shutdown();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn pairing_peer_is_confined_from_agents_pair_start_and_label_patch() {
+    let fixture = Fixture::established(1);
+    let cid = format!("sha256:{:x}", Sha256::digest(fixture.client_der(0)));
+    let (authorization_sender, authorization) = watch::channel(DeviceDoorAuthorization::from(
+        AuthorizedClientsRead::Missing,
+    ));
+    let composed = router(fixture.root.clone()).merge(solstone_core_mcp_endpoint::owner_routes(
+        fixture.root.clone(),
+    ));
+    let handle = bind_with_authorization(
+        options(&fixture, composed.clone(), 0),
+        solstone_core_convey_shell::authorization_gate::authorized_router_with_router(
+            composed,
+            fixture.root.clone(),
+            authorization,
+        ),
+        authorization_sender,
+    )
+    .await
+    .expect("serve");
+    open_pairing_window(&fixture, "confined-peer");
+    let mut carrier = live_certless_carrier(door_port(handle.door_outcome()))
+        .await
+        .expect("certless TLS admission");
+    let mut decoder = FrameDecoder::new();
+    let mut ids = FrameDialer::default();
+    let tunnel_body = b"pairing tunnel may only use /app/network/pair".to_vec();
+
+    let label_path_network = format!("/app/network/api/clients/{cid}/label");
+    let label_path_link = format!("/app/link/api/clients/{cid}/label");
+    let cases: [(&str, &str, &[u8]); 5] = [
+        ("GET", "/app/agents/api/state", b""),
+        (
+            "POST",
+            "/app/network/pair-start",
+            br#"{"device_label":"peer"}"#,
+        ),
+        (
+            "POST",
+            "/app/link/pair-start",
+            br#"{"device_label":"peer"}"#,
+        ),
+        ("PATCH", &label_path_network, br#"{"label":"new"}"#),
+        ("PATCH", &label_path_link, br#"{"label":"new"}"#),
+    ];
+    for (method, path, body) in cases {
+        let headers = if body.is_empty() {
+            vec![]
+        } else {
+            vec![("content-type".into(), "application/json".into())]
+        };
+        let response = exchange_over_carrier(
+            &mut carrier,
+            &mut decoder,
+            ids.allocate(),
+            method,
+            path,
+            &headers,
+            body,
+        )
+        .await
+        .expect("carrier response");
+        assert_eq!(response.status, 403, "{method} {path}");
+        assert_eq!(response.body, tunnel_body, "{method} {path}");
+    }
+    handle.shutdown();
+}

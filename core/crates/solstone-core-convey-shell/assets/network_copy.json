@@ -82,7 +82,7 @@
   "CHECK_AGAIN_LABEL": "check again",
   "CHECK_PAIRING_CTA": "check pairing",
   "PAIR_START_FAIL_BODY": "couldn't start pairing. try again.",
-  "PAIR_START_PAIRED_DEVICE_BODY": "you're looking at your journal from a paired device. to add another one, open your journal's network app on the computer it lives on.",
+  "PAIR_START_PAIRED_DEVICE_BODY": "pairing didn't start. this request isn't allowed to open a pairing window.",
   "PRIVATE_LINK_DISABLE_CTA": "turn off your private network",
   "PRIVATE_LINK_DISABLE_CONFIRM": "turn off your private network? your devices will only reach your journal over your own network, on the same wifi or your own VPN, until you turn it back on.",
   "PRIVATE_LINK_SETTING_UP": "setting up your private network…",

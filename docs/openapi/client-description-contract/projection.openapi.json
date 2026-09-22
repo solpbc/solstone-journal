@@ -291,7 +291,7 @@
     },
     "/app/network/api/clients/{cid}/label": {
       "patch": {
-        "description": "Set or clear the journal owner override label for a linked device (localhost owner authority only).",
+        "description": "Set or clear the owner override label for a paired device. The computer the journal runs on and a device already paired to it may both set it.",
         "operationId": "client.patchClientLabel",
         "parameters": [
           {
@@ -343,7 +343,7 @@
                 }
               }
             },
-            "description": "Localhost owner authority required"
+            "description": "Owner access required"
           },
           "404": {
             "content": {

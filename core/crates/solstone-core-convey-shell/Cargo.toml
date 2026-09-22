@@ -204,3 +204,6 @@ tokio = { workspace = true, features = ["macros", "rt"] }
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["connect", "handshake"] }
 x509-parser = "0.16.0"
+
+[target.'cfg(unix)'.dev-dependencies]
+solstone-core-mcp-endpoint.workspace = true

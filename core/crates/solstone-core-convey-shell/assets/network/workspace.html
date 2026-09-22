@@ -1857,7 +1857,7 @@ function clientLabelHTML(client) {
   const reported = facts.length ? `<dl>${facts.map(([label, value]) =>
     `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>`
     : "<p>device details haven't been shared yet.</p>";
-  const editor = clientLabels.canEdit() ? `
+  const editor = `
     <form data-label-cid="${cid}" aria-busy="${state.pending}">
       <label for="client-label-${cid}">your name for this device</label>
       <input id="client-label-${cid}" data-label-action="input" type="text" value="${escapeHtml(state.draft)}"
@@ -1868,7 +1868,7 @@ function clientLabelHTML(client) {
         <button type="button" data-label-action="clear" aria-disabled="${state.pending}">clear your name</button>
         <button type="button" data-label-action="cancel" aria-disabled="${state.pending}">cancel edit</button>
       </div>
-    </form>` : '';
+    </form>`;
   return `<div class="client-label-section">${editor}
     <p role="status" class="client-label-status">${escapeHtml(state.message)}</p>${reported}</div>`;
 }
@@ -1963,7 +1963,7 @@ async function loadClients() {
       });
     }
     if (epoch !== clientsEpoch) return;
-    const clients = clientLabels.receive(payload.clients, payload.can_edit_labels);
+    const clients = clientLabels.receive(payload.clients);
 
     // Rebuild on every poll so grouped headers stay aligned with server ordering.
     const activeEl = document.activeElement;

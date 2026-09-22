@@ -6,9 +6,9 @@
 //! These POST routes have no local-owner check. That is intentional:
 //! pairing is itself an owner act, so a paired device may rewrite the home
 //! address, enable or disable the private link, and forget a device that never
-//! delivered anything. `pair-start` and `nonce-status` in `network.rs` do
-//! require a local owner, because those mint and inspect enrollment windows.
-//! Do not add a local-owner gate here.
+//! delivered anything. `pair-start` and `nonce-status` in `network.rs` admit
+//! any owner through `require_access`, and a `same_machine` mint still requires
+//! hardened loopback. Do not add a local-owner gate here.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;

@@ -15,6 +15,7 @@ use chrono::{SecondsFormat, Utc};
 use serde::Serialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::committed::{
     CommittedIdentity, CommittedIdentityError, load_committed_identity,
@@ -34,7 +35,7 @@ use solstone_core_journal_config::read_direct_door_port;
 
 use crate::JournalRoot;
 use crate::link_health_cache::{RelayHealthCache, RelayHealthCacheStore};
-use crate::network::{hardened_loopback, read_posture};
+use crate::network::read_posture;
 use crate::network_writes::NetworkOperationsOverride;
 
 const DEFAULT_RELAY_URL: &str = "https://link.solstone.app";
@@ -336,10 +337,10 @@ pub(crate) fn private_link_body(
 pub(crate) async fn local_endpoints(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     snapshot: Option<Extension<PairingSnapshot>>,
 ) -> Response {
-    if !hardened_loopback(&basis, &headers) {
+    if !require_access(&basis) {
         return StatusCode::NOT_FOUND.into_response();
     }
     let snapshot = snapshot
@@ -1473,8 +1474,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn local_endpoints_require_hardened_loopback_and_publish_raw_snapshot() {
+    async fn local_endpoints_publish_raw_snapshot_for_owners() {
+        use crate::network::NETWORK_ROUTE_PREFIXES;
+        use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};
+
         let temporary = TempDir::new();
+        std::fs::create_dir_all(temporary.path().join("config")).expect("config directory");
+        std::fs::write(
+            temporary.path().join("config/journal.json"),
+            br#"{"setup":{"completed_at":1}}"#,
+        )
+        .expect("established config");
         let root = Arc::new(JournalRoot(temporary.path().to_owned()));
         let snapshot = snapshot(vec![
             (Ipv4Addr::new(10, 0, 0, 2), EndpointScope::Lan),
@@ -1496,7 +1506,7 @@ mod tests {
                 )
                 .await
                 .expect("response");
-            assert_eq!(response.status(), StatusCode::NOT_FOUND, "{header}");
+            assert_eq!(response.status(), StatusCode::OK, "{header}");
         }
         let response = app
             .oneshot(
@@ -1527,7 +1537,7 @@ mod tests {
             .layer(Extension(AccessBasis::PairingPeer {
                 carrier: Carrier::Direct,
             }))
-            .layer(Extension(snapshot))
+            .layer(Extension(snapshot.clone()))
             .layer(Extension(root));
         let response = non_loopback
             .oneshot(
@@ -1538,5 +1548,43 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
+
+        let cid = LinkedDeviceCid::try_from(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        let linked_basis = AccessBasis::LinkedDevice {
+            cid,
+            carrier: Carrier::Direct,
+        };
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let full_app = crate::router(temporary.path().to_path_buf())
+                .layer(Extension(snapshot.clone()))
+                .layer(Extension(linked_basis.clone()));
+            let response = full_app
+                .oneshot(
+                    Request::get(format!("{prefix}/local-endpoints"))
+                        .body(Body::empty())
+                        .expect("request"),
+                )
+                .await
+                .expect("response");
+            assert_eq!(response.status(), StatusCode::OK, "{prefix}");
+            let body: Value = serde_json::from_slice(
+                &to_bytes(response.into_body(), usize::MAX)
+                    .await
+                    .expect("body"),
+            )
+            .expect("JSON");
+            assert_eq!(body["v"], 1, "{prefix}");
+            assert_eq!(
+                body["endpoints"],
+                json!([
+                    {"ip":"10.0.0.2","port":7657,"scope":"lan"},
+                    {"ip":"203.0.113.9","port":7657,"scope":"vpn"}
+                ]),
+                "{prefix}"
+            );
+        }
     }
 }

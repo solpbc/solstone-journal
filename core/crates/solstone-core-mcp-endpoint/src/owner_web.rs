@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Local-owner control plane for journal agent connections.
+//! Owner control plane for journal agent connections.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -13,7 +13,7 @@ use crate::{
 };
 use axum::body::Body;
 use axum::extract::{Extension, Path, Query};
-use axum::http::{Method, Request, StatusCode};
+use axum::http::{Request, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
@@ -21,6 +21,7 @@ use axum::{Json, Router};
 use chrono::{Datelike, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_journal_config::{
     McpEndpointCapability, mcp_endpoint_capability, read_journal_config,
@@ -47,30 +48,18 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
             put(set_permission),
         )
         .route("/app/agents/api/activity", get(activity))
-        .route_layer(middleware::from_fn(require_local_owner))
+        .route_layer(middleware::from_fn(admit_owner))
         .layer(Extension(journal))
 }
 
-async fn require_local_owner(request: Request<Body>, next: Next) -> Response {
-    let is_local = matches!(
-        request.extensions().get::<AccessBasis>(),
-        Some(AccessBasis::Localhost)
-    );
-    if !is_local {
+async fn admit_owner(request: Request<Body>, next: Next) -> Response {
+    let is_owner = request
+        .extensions()
+        .get::<AccessBasis>()
+        .map(require_access)
+        .unwrap_or(false);
+    if !is_owner {
         return StatusCode::NOT_FOUND.into_response();
-    }
-    if request.method() != Method::GET
-        && request
-            .headers()
-            .get("x-solstone-owner")
-            .and_then(|value| value.to_str().ok())
-            != Some("1")
-    {
-        return refusal(
-            "owner_request_required",
-            "this change must come from your journal",
-            StatusCode::FORBIDDEN,
-        );
     }
     next.run(request).await
 }
@@ -623,7 +612,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn owner_routes_are_absent_without_localhost_provenance() {
+    async fn owner_routes_are_absent_without_owner_provenance() {
+        use axum::http::Method;
+        use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};
+
         let temp = TempDir::new_in("/var/tmp").unwrap();
         let route = "/app/agents/api/state";
         let hidden = owner_routes(temp.path().to_path_buf())
@@ -631,6 +623,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(hidden.status(), StatusCode::NOT_FOUND);
+
+        let mut peer_req = Request::builder().uri(route).body(Body::empty()).unwrap();
+        peer_req.extensions_mut().insert(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        });
+        let peer_res = owner_routes(temp.path().to_path_buf())
+            .oneshot(peer_req)
+            .await
+            .unwrap();
+        assert_eq!(peer_res.status(), StatusCode::NOT_FOUND);
 
         let mut request = Request::builder().uri(route).body(Body::empty()).unwrap();
         request.extensions_mut().insert(AccessBasis::Localhost);
@@ -640,17 +642,45 @@ mod tests {
             .unwrap();
         assert_eq!(visible.status(), StatusCode::OK);
 
-        let mut cross_site = Request::builder()
+        let cid = LinkedDeviceCid::try_from(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+
+        let mut linked_req = Request::builder().uri(route).body(Body::empty()).unwrap();
+        linked_req
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid: cid.clone(),
+                carrier: Carrier::Direct,
+            });
+        let linked_res = owner_routes(temp.path().to_path_buf())
+            .oneshot(linked_req)
+            .await
+            .unwrap();
+        assert_eq!(linked_res.status(), StatusCode::OK);
+
+        let mut linked_put = Request::builder()
             .method(Method::PUT)
             .uri("/app/agents/api/capability")
             .header("content-type", "application/json")
             .body(Body::from(r#"{"enabled":true}"#))
             .unwrap();
-        cross_site.extensions_mut().insert(AccessBasis::Localhost);
-        let refused = owner_routes(temp.path().to_path_buf())
-            .oneshot(cross_site)
+        linked_put
+            .extensions_mut()
+            .insert(AccessBasis::LinkedDevice {
+                cid,
+                carrier: Carrier::Direct,
+            });
+        let put_res = owner_routes(temp.path().to_path_buf())
+            .oneshot(linked_put)
             .await
             .unwrap();
-        assert_eq!(refused.status(), StatusCode::FORBIDDEN);
+        assert_eq!(put_res.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(put_res.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["enabled"], true);
     }
 }

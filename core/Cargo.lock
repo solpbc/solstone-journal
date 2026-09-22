@@ -3836,6 +3836,7 @@ dependencies = [
  "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "solstone-core-local",
+ "solstone-core-mcp-endpoint",
  "solstone-core-npy",
  "solstone-core-profile-web",
  "solstone-core-push",

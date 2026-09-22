@@ -463,4 +463,31 @@ mod tests {
             status_and_reason(guarded(), Some(AccessBasis::Localhost), "localhost:5015").await;
         assert_eq!(status, StatusCode::OK);
     }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn loopback_guard_refuses_cross_origin_agents_capability_mutation() {
+        let temp = tempfile::TempDir::new_in("/var/tmp").unwrap();
+        let journal = temp.path().to_path_buf();
+        let app = apply_layer(solstone_core_mcp_endpoint::owner_routes(journal))
+            .layer(Extension(AccessBasis::Localhost));
+
+        let request = Request::builder()
+            .method(Method::PUT)
+            .uri("/app/agents/api/capability")
+            .header("host", "localhost")
+            .header("origin", "https://evil.example")
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"enabled":true}"#))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let reason = serde_json::from_slice::<Value>(&body)
+            .ok()
+            .and_then(|json| json["reason_code"].as_str().map(str::to_owned));
+        assert_eq!(reason.as_deref(), Some("cross_origin_blocked"));
+    }
 }

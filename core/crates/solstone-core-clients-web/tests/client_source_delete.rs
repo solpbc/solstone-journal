@@ -400,14 +400,22 @@ async fn criterion_3_receipt_shape_and_linked_device_identity() {
 }
 
 #[tokio::test]
-async fn linked_device_identity_is_required_even_with_legacy_bearer_headers() {
-    let bed = Bed::new();
-    bed.location_only("20260805", "location", "070000_17");
-    let (status, body) = call_as(bed.path(), "location", AccessBasis::Localhost, &[]).await;
-    assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["reason_code"], "linked_device_required");
+async fn location_erase_admits_localhost_and_refuses_a_non_owner() {
+    let bed_local = Bed::new();
+    bed_local.location_only("20260805", "location", "070000_17");
+    let (status, body) = call_as(bed_local.path(), "location", AccessBasis::Localhost, &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_receipt_shape(&body);
+    assert_eq!(body["removed"]["segments"], 1);
+    assert_eq!(
+        bed_local.listing("chronicle/20260805/location/070000_17"),
+        BTreeSet::from(["tombstone.json".to_owned()])
+    );
+
+    let bed_peer = Bed::new();
+    bed_peer.location_only("20260805", "location", "070000_17");
     let (status, body) = call_as(
-        bed.path(),
+        bed_peer.path(),
         "location",
         AccessBasis::PairingPeer {
             carrier: Carrier::Direct,
@@ -416,17 +424,27 @@ async fn linked_device_identity_is_required_even_with_legacy_bearer_headers() {
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["reason_code"], "linked_device_required");
+    assert_eq!(body["reason_code"], "owner_access_required");
+    assert!(
+        bed_peer
+            .path()
+            .join("chronicle/20260805/location/070000_17/location.jsonl")
+            .is_file()
+    );
+
+    let bed_anon = Bed::new();
+    bed_anon.location_only("20260805", "location", "070000_17");
     let (status, body) = call_without_identity(
-        bed.path(),
+        bed_anon.path(),
         "location",
         &[("Authorization", "Bearer abcdefghijklmnop-observer-handle")],
     )
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(body["reason_code"], "linked_device_required");
+    assert_eq!(body["reason_code"], "owner_access_required");
     assert!(
-        bed.path()
+        bed_anon
+            .path()
             .join("chronicle/20260805/location/070000_17/location.jsonl")
             .is_file()
     );

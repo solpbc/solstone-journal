@@ -16,6 +16,7 @@ use axum::routing::{get, post};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
+use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::ledger::{
     AuthorizationLedger, AuthorizedClientsLoadError, AuthorizedClientsMutationError,
@@ -149,8 +150,8 @@ pub(crate) fn read_posture(journal_root: &std::path::Path) -> &'static str {
     }
 }
 
-/// Pair-start accepts only the local owner; a linked device or pairing peer has
-/// no authority to mint additional enrollment windows.
+/// Pair-start admits any owner (`Localhost` or `LinkedDevice`); a same_machine
+/// mint still requires a hardened loopback inside the mint.
 pub(crate) async fn pair_start(
     Extension(root): Extension<Arc<JournalRoot>>,
     Extension(basis): Extension<AccessBasis>,
@@ -158,10 +159,10 @@ pub(crate) async fn pair_start(
     headers: HeaderMap,
     Json(body): Json<Value>,
 ) -> Response {
-    if !require_local_owner(&basis) {
+    if !require_access(&basis) {
         return refusal(
             "pairing_request_invalid",
-            "local owner access is required",
+            "owner access is required",
             StatusCode::FORBIDDEN,
         );
     }
@@ -251,10 +252,10 @@ pub(crate) async fn nonce_status(
     Extension(basis): Extension<AccessBasis>,
     Query(query): Query<NonceQuery>,
 ) -> Response {
-    if !require_local_owner(&basis) {
+    if !require_access(&basis) {
         return refusal(
             "pairing_request_invalid",
-            "local owner access is required",
+            "owner access is required",
             StatusCode::FORBIDDEN,
         );
     }
@@ -762,10 +763,6 @@ fn emit_pair_complete(journal_root: &std::path::Path, fingerprint: &str) {
     if sender.send_line(&line).is_err() {
         log::debug!("paired-device Callosum pair-complete notification unavailable");
     }
-}
-
-fn require_local_owner(basis: &AccessBasis) -> bool {
-    matches!(basis, AccessBasis::Localhost)
 }
 
 pub(crate) fn hardened_loopback(basis: &AccessBasis, headers: &HeaderMap) -> bool {
@@ -1961,6 +1958,69 @@ mod tests {
             let response = app.clone().oneshot(request).await.expect("response");
             assert_ne!(response.status(), StatusCode::FOUND, "{path}");
             assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
+        }
+    }
+
+    #[tokio::test]
+    async fn linked_device_pair_start_and_nonce_status_on_both_prefixes() {
+        use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};
+
+        let cid = LinkedDeviceCid::try_from(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        let basis = AccessBasis::LinkedDevice {
+            cid,
+            carrier: Carrier::Direct,
+        };
+
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let temporary = TempDir::new();
+            committed_identity(temporary.path());
+            fs::write(
+                temporary.path().join("config/journal.json"),
+                r#"{"setup":{"completed_at":1},"pairing":{"home_address":"10.0.0.2:7657"}}"#,
+            )
+            .expect("config");
+            let app = crate::router(temporary.path().to_path_buf()).layer(Extension(basis.clone()));
+
+            // same_machine: true -> 400 pairing_request_invalid
+            let (status, body) = post_json(
+                app.clone(),
+                &format!("{prefix}/pair-start"),
+                json!({"device_label": "phone", "same_machine": true}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{prefix}");
+            assert_eq!(body["reason_code"], "pairing_request_invalid", "{prefix}");
+            assert_eq!(
+                body["detail"], "same-machine pairing requires a hardened loopback request",
+                "{prefix}"
+            );
+            assert!(
+                !temporary.path().join("link/nonces.json").exists(),
+                "{prefix}: nonces.json must not be created on rejected same-machine mint"
+            );
+
+            // same_machine: false -> 200 and nonce present
+            let (status, body) = post_json(
+                app.clone(),
+                &format!("{prefix}/pair-start"),
+                json!({"device_label": "phone", "same_machine": false}),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{prefix}");
+            let nonce = body["nonce"].as_str().expect("nonce string");
+
+            // nonce-status query -> 200
+            let (status, body) = request_json(
+                app.clone(),
+                &format!("{prefix}/api/pair/nonce-status?nonce={nonce}"),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "{prefix}");
+            assert_eq!(body["present"], true, "{prefix}");
+            assert_eq!(body["used"], false, "{prefix}");
         }
     }
 }

@@ -13,6 +13,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::get;
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_sol_link::client_description::{
     JournalIdentityMeta, PatchClientLabelRequest, PutSelfDescriptionRequest,
@@ -230,15 +231,12 @@ async fn patch_label(
             StatusCode::FORBIDDEN,
         );
     };
-    match basis {
-        AccessBasis::Localhost => {}
-        AccessBasis::LinkedDevice { .. } | AccessBasis::PairingPeer { .. } => {
-            return crate::network::refusal(
-                "client_description_forbidden",
-                "owner localhost access required",
-                StatusCode::FORBIDDEN,
-            );
-        }
+    if !require_access(&basis) {
+        return crate::network::refusal(
+            "client_description_forbidden",
+            "owner access is required",
+            StatusCode::FORBIDDEN,
+        );
     }
     let Json(request) = match body {
         Ok(json) => json,
@@ -282,10 +280,7 @@ async fn patch_label(
     }
 }
 
-async fn list(
-    Extension(root): Extension<Arc<JournalRoot>>,
-    basis: Option<Extension<AccessBasis>>,
-) -> Response {
+async fn list(Extension(root): Extension<Arc<JournalRoot>>) -> Response {
     let descriptions = match read_descriptions(&root.0) {
         Ok(descriptions) => descriptions,
         Err(_) => {
@@ -299,7 +294,6 @@ async fn list(
     match inspect_clients_at(&root.0, now_ms()) {
         ClientInspection::Empty { clients, activity }
         | ClientInspection::Ready { clients, activity } => Json(json!({
-            "can_edit_labels": matches!(basis, Some(Extension(AccessBasis::Localhost))),
             "clients": clients
                 .iter()
                 .map(|client| client_json(client, activity, descriptions.get(&client.cid)))
@@ -618,7 +612,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn label_editor_capability_comes_from_authenticated_access_basis() {
+    async fn client_list_omits_can_edit_labels_for_every_basis() {
         let journal = EstablishedJournal::new();
         let app = crate::router(journal.0.path().to_path_buf());
         let cid = LinkedDeviceCid::try_from(
@@ -636,7 +630,6 @@ mod tests {
                 carrier: Carrier::Direct,
             }),
         ] {
-            let editable = matches!(basis, Some(AccessBasis::Localhost));
             let mut req = Request::get("/app/network/api/clients")
                 .body(Body::empty())
                 .unwrap();
@@ -645,7 +638,7 @@ mod tests {
             }
             let (status, body) = request(app.clone(), req).await;
             assert_eq!(status, StatusCode::OK);
-            assert_eq!(body["can_edit_labels"], editable);
+            assert!(body.get("can_edit_labels").is_none());
         }
     }
 
@@ -780,7 +773,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, json!({"clients": [], "can_edit_labels": false}));
+        assert_eq!(body, json!({"clients": []}));
 
         fs::create_dir_all(journal.0.path().join("link/authorized_clients.json"))
             .expect("unreadable ledger");
@@ -1231,21 +1224,52 @@ mod tests {
         journal.write_ledger(json!([client(cid_str, "phone")]));
         let app = crate::router(journal.0.path().to_path_buf());
 
-        // 1. PATCH from linked device -> 403 Forbidden (localhost only)
-        let mut req_patch_remote =
+        // 1. PATCH from linked device -> 200 OK on both prefixes using a separate journal
+        let sep_journal = EstablishedJournal::new();
+        sep_journal.write_ledger(json!([client(cid_str, "phone")]));
+        let sep_app = crate::router(sep_journal.0.path().to_path_buf());
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let mut req_patch_remote =
+                Request::patch(format!("{prefix}/api/clients/{cid_str}/label"))
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(json!({"label": "Remote Label"}).to_string()))
+                    .expect("request");
+            req_patch_remote
+                .extensions_mut()
+                .insert(AccessBasis::LinkedDevice {
+                    cid: cid.clone(),
+                    carrier: Carrier::Direct,
+                });
+            let (status, body) = request(sep_app.clone(), req_patch_remote).await;
+            assert_eq!(status, StatusCode::OK, "{prefix}");
+            assert_eq!(body["display_label"], "Remote Label", "{prefix}");
+        }
+
+        // 1b. PATCH from pairing peer -> 403 Forbidden ("owner access is required")
+        let mut req_patch_peer =
             Request::patch(format!("/app/network/api/clients/{cid_str}/label"))
                 .header("Content-Type", "application/json")
-                .body(Body::from(json!({"label": "New Name"}).to_string()))
+                .body(Body::from(json!({"label": "Peer Label"}).to_string()))
                 .expect("request");
-        req_patch_remote
+        req_patch_peer
             .extensions_mut()
-            .insert(AccessBasis::LinkedDevice {
-                cid: cid.clone(),
+            .insert(AccessBasis::PairingPeer {
                 carrier: Carrier::Direct,
             });
-        let (status, body) = request(app.clone(), req_patch_remote).await;
+        let (status, body) = request(app.clone(), req_patch_peer).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
         assert_eq!(body["reason_code"], "client_description_forbidden");
+        assert_eq!(body["detail"], "owner access is required");
+
+        // 1c. PATCH with missing basis -> 403 Forbidden ("access basis required")
+        let req_patch_nobasis = Request::patch(format!("/app/network/api/clients/{cid_str}/label"))
+            .header("Content-Type", "application/json")
+            .body(Body::from(json!({"label": "No Basis Label"}).to_string()))
+            .expect("request");
+        let (status, body) = request(app.clone(), req_patch_nobasis).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "client_description_forbidden");
+        assert_eq!(body["detail"], "access basis required");
 
         // 2. PATCH unknown CID with Localhost -> 404 Not Found
         let mut req_patch_unknown = Request::patch(

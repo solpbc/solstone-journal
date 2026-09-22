@@ -561,10 +561,8 @@
 
   function createClientLabels({ request, changed }) {
     const editors = new Map();
-    let editable = false;
     function editor(cid) { return editors.get(cid); }
-    function receive(clients, allowed) {
-      editable = allowed === true;
+    function receive(clients) {
       const present = new Set(clients.map(row => row.cid));
       for (const cid of editors.keys()) if (!present.has(cid)) editors.delete(cid);
       return clients.map(row => {
@@ -586,7 +584,7 @@
     }
     function input(cid, value) {
       const state = editor(cid);
-      if (!state || state.pending || !editable) return;
+      if (!state || state.pending) return;
       state.draft = value; state.dirty = true; state.message = '';
     }
     function cancel(cid) {
@@ -597,7 +595,7 @@
     }
     async function save(cid, clear = false) {
       const state = editor(cid);
-      if (!state || state.pending || !editable) return;
+      if (!state || state.pending) return;
       const label = clear ? null : state.draft.trim() || null;
       if (label !== null && (new TextEncoder().encode(label).length > 80 || /[\p{Cc}]/u.test(label))) {
         state.message = 'use a shorter name without control characters.'; changed(cid); return;
@@ -623,16 +621,14 @@
         if (error?.status === 404) {
           editors.delete(cid); changed(cid); return;
         }
-        if (error?.status === 403) editable = false;
         state.message = error?.status === 400 ? 'use a shorter name without control characters.'
-          : error?.status === 403 ? "change this name from the journal's own device."
           : "couldn't confirm the save. check the current name before trying again.";
         state.dirty = true;
       } finally {
         if (editors.get(cid) === state) { state.pending = false; changed(cid); }
       }
     }
-    return { receive, editor, input, cancel, save, canEdit: () => editable };
+    return { receive, editor, input, cancel, save };
   }
 
   const NetworkRender = {
