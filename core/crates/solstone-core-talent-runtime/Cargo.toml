@@ -9,6 +9,9 @@ publish = false
 [lints]
 workspace = true
 
+[features]
+test-hooks = []
+
 [dependencies]
 caseless = "0.2.2"
 chrono.workspace = true

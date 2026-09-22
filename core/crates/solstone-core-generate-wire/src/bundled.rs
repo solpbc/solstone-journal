@@ -925,7 +925,7 @@ mod tests {
             Instant::now(),
         )
         .expect_err("tool contract failure");
-        assert_eq!(error.reason_code, "local_endpoint_contract_failed");
+        assert_eq!(error.reason_code, "provider_request_rejected");
         let permit = acquire_local_slot(&admission_dir(&journal), 1, Some(Duration::ZERO), false)
             .expect("failure released admission");
         drop(permit);

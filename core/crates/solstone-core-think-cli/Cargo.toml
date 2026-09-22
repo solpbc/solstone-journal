@@ -48,6 +48,8 @@ tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
 solstone-core-generate.workspace = true
+solstone-core-generate-wire.workspace = true
+solstone-core-talent-runtime = { workspace = true, features = ["test-hooks"] }
 solstone-core-cogitate-wire.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 filetime = "0.2.29"

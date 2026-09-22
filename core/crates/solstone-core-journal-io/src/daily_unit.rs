@@ -170,6 +170,8 @@ pub struct DailyUnitRecord {
     pub failure_count: u32,
     #[serde(default)]
     pub environmental_retry_day: Option<String>,
+    #[serde(default)]
+    pub attempt_day: Option<String>,
     pub updated_at_ms: i64,
 }
 
@@ -199,6 +201,7 @@ impl DailyUnitRecord {
             attempts: 0,
             failure_count: 0,
             environmental_retry_day: None,
+            attempt_day: None,
             updated_at_ms: chrono::Utc::now().timestamp_millis(),
         }
     }
@@ -788,6 +791,7 @@ mod tests {
             attempts: 1,
             failure_count: 0,
             environmental_retry_day: None,
+            attempt_day: None,
             updated_at_ms: 1000,
         };
 
@@ -818,6 +822,29 @@ mod tests {
         assert!(loaded.is_reusable_for("sha-evidence-1", "sha-contract-1"));
         assert!(!loaded.is_reusable_for("sha-evidence-2", "sha-contract-1"));
         assert!(!loaded.is_reusable_for("sha-evidence-1", "sha-contract-2"));
+    }
+
+    #[test]
+    fn test_daily_unit_record_deserialization_without_attempt_day() {
+        let raw = serde_json::json!({
+            "version": DAILY_UNIT_RECORD_VERSION,
+            "identity": {
+                "day": "20260324",
+                "name": "schedule",
+                "facet": null
+            },
+            "status": "unfinished",
+            "evidence_revision": "sha-1",
+            "contract_digest": "sha-2",
+            "use_id": "use-1",
+            "attempts": 1,
+            "failure_count": 0,
+            "updated_at_ms": 1000
+        })
+        .to_string();
+
+        let record: DailyUnitRecord = serde_json::from_str(&raw).unwrap();
+        assert_eq!(record.attempt_day, None);
     }
 
     #[test]

@@ -552,7 +552,7 @@ mod tests {
 
     use super::*;
 
-    fn request() -> GenerateRequest {
+    pub(crate) fn request() -> GenerateRequest {
         GenerateRequest {
             id: None,
             context: "test.confidential".into(),
@@ -573,7 +573,7 @@ mod tests {
         }
     }
 
-    fn endpoint(port: u16) -> ByoEndpoint {
+    pub(crate) fn endpoint(port: u16) -> ByoEndpoint {
         ByoEndpoint {
             base_url: format!("http://127.0.0.1:{port}"),
             served_model_id: "served".into(),
@@ -584,7 +584,7 @@ mod tests {
         }
     }
 
-    fn verdict() -> CompositeVerdict {
+    pub(crate) fn verdict() -> CompositeVerdict {
         let tcb = TcbVersion {
             boot_loader: None,
             tee: None,
@@ -630,7 +630,7 @@ mod tests {
         }
     }
 
-    fn journal(name: &str) -> PathBuf {
+    pub(crate) fn journal(name: &str) -> PathBuf {
         let path = std::env::temp_dir().join(format!(
             "solstone-confidential-{name}-{}",
             std::process::id()
@@ -713,15 +713,24 @@ mod tests {
         }
     }
 
-    struct RecordingChannel {
+    pub(crate) struct RecordingChannel {
         written: Rc<RefCell<Vec<u8>>>,
         response: io::Cursor<Vec<u8>>,
     }
 
     impl RecordingChannel {
         fn new(written: Rc<RefCell<Vec<u8>>>, response_body: &str) -> Self {
+            Self::with_status(written, 200, "OK", response_body)
+        }
+
+        pub(crate) fn with_status(
+            written: Rc<RefCell<Vec<u8>>>,
+            status: u16,
+            reason: &str,
+            response_body: &str,
+        ) -> Self {
             let framed = format!(
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{response_body}",
+                "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\n\r\n{response_body}",
                 response_body.len()
             );
             Self {
@@ -1294,4 +1303,49 @@ mod tests {
             PathBuf::from("/explicit")
         );
     }
+}
+
+#[cfg(test)]
+#[test]
+fn confidential_generate_contract_400_is_provider_request_rejected() {
+    let written = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let written_for_channel = written.clone();
+    let runtime = EndpointRuntime::default();
+    let path = tests::journal("confidential_400");
+    let endpoint = tests::endpoint(1);
+    let error_body = "unexpected contract error";
+    let result = confidential_generate_with(
+        ConfidentialCall {
+            request: &tests::request(),
+            journal_path: &path,
+            endpoint: &endpoint,
+            config: &serde_json::Map::new(),
+            runtime: &runtime,
+            now: std::time::UNIX_EPOCH,
+        },
+        |_| NvattestEnsureStatus::AlreadyInstalled,
+        |_, _| {
+            Ok(EstablishedChannel {
+                verdict: tests::verdict(),
+                stream: Box::new(tests::RecordingChannel::with_status(
+                    written_for_channel,
+                    400,
+                    "Bad Request",
+                    error_body,
+                )),
+            })
+        },
+    );
+    let ConfidentialResult::Failed(failure) = result else {
+        panic!("expected confidential failure");
+    };
+    assert_eq!(
+        failure.reason_code,
+        Some("provider_request_rejected".to_owned())
+    );
+    assert_eq!(
+        failure.detail,
+        Some("the local endpoint rejected the request".to_owned())
+    );
+    let _ = std::fs::remove_dir_all(path);
 }

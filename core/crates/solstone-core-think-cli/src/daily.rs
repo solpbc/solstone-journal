@@ -575,6 +575,11 @@ fn reserve_daily_attempt(
                 "newer maintenance window already owns publication".to_owned(),
             ));
         }
+        let keep_attempt_day = same
+            && !from_scratch
+            && record.status == solstone_core_journal_io::DailyUnitStatus::Unfinished
+            && record.frozen_packet.is_some();
+        let kept_attempt_day = record.attempt_day.clone();
         if !same || from_scratch {
             let accepted = record.accepted.take();
             record = solstone_core_journal_io::DailyUnitRecord::new(
@@ -596,6 +601,11 @@ fn reserve_daily_attempt(
         record.use_id = Some(reserved_use.to_owned());
         record.status = solstone_core_journal_io::DailyUnitStatus::Unfinished;
         record.attempts = record.attempts.saturating_add(1);
+        if keep_attempt_day {
+            record.attempt_day = kept_attempt_day;
+        } else {
+            record.attempt_day = Some(today.to_owned());
+        }
         record.updated_at_ms = now_ms;
         *slot = Some(record);
         Ok(())
@@ -700,6 +710,37 @@ fn log_daily_terminal(
                     } else {
                         solstone_core_journal_io::DailyUnitStatus::Failed
                     };
+                    if reason == "provider_request_rejected"
+                        && solstone_core_system::daily_coverage::daily_failure_capped(
+                            reason,
+                            record.failure_count,
+                        )
+                    {
+                        let day = if let Some(day) = record.attempt_day.as_ref() {
+                            day.clone()
+                        } else {
+                            let instant = if let Some(instant) =
+                                chrono::DateTime::from_timestamp_millis(record.updated_at_ms)
+                            {
+                                instant
+                            } else if let Some(instant) =
+                                chrono::DateTime::from_timestamp_millis(context.event_now_ms())
+                            {
+                                instant
+                            } else {
+                                return Err(solstone_core_journal_io::DailyUnitError::Malformed(
+                                    "unrepresentable daily attempt timestamp".to_owned(),
+                                ));
+                            };
+                            solstone_core_system::daily_coverage::local_day(
+                                &context.journal,
+                                instant,
+                            )
+                            .map_err(solstone_core_journal_io::DailyUnitError::Malformed)?
+                        };
+                        record.attempt_day = Some(day.clone());
+                        record.environmental_retry_day = Some(day);
+                    }
                 }
                 Ok(())
             },
@@ -977,6 +1018,953 @@ mod tests {
     }
 
     #[test]
+    fn provider_request_rejected_caps_and_forbids_second_same_day_reservation() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"original"}),
+            day,
+            "use-rej-1",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        let before_fold = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(before_fold.status, DailyUnitStatus::Unfinished);
+        assert_eq!(before_fold.attempt_day.as_deref(), Some("20260914"));
+        assert_eq!(before_fold.environmental_retry_day, None);
+        assert_eq!(before_fold.use_id.as_deref(), Some("use-rej-1"));
+        assert_eq!(before_fold.updated_at_ms, 1);
+        assert_eq!(before_fold.failure_count, 0);
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-rej-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.status, DailyUnitStatus::Capped);
+        assert_eq!(
+            loaded.reason_code,
+            Some("provider_request_rejected".to_owned())
+        );
+        assert_eq!(loaded.attempt_day, Some("20260914".to_owned()));
+        assert_eq!(loaded.environmental_retry_day, Some("20260914".to_owned()));
+        assert_eq!(loaded.failure_count, 1);
+
+        let second = reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"retry"}),
+            day,
+            "use-rej-2",
+            false,
+            false,
+            2,
+        );
+        assert!(
+            second.is_err(),
+            "second reservation was allowed: {second:?}"
+        );
+    }
+
+    #[test]
+    fn provider_request_rejected_multi_day_fold_preserves_reservation_day_and_allows_next_day() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            r#"{"identity":{"timezone":"UTC"}}"#,
+        )
+        .unwrap();
+
+        let day1 = "20260914";
+        let day2 = "20260915";
+        let identity = DailyUnitIdentity::new(day1, "schedule", None);
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"original"}),
+            day1,
+            "use-multiday-1",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        // Terminal fold occurs with ThinkContext event_now_ms 1789453800000 (2026-09-15T06:30:00Z)
+        let context = ThinkContext::new(
+            root,
+            day1.to_owned(),
+            root.join("chronicle").join(day1),
+            1_789_453_800_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day1, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-multiday-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.status, DailyUnitStatus::Capped);
+        assert_eq!(loaded.attempt_day.as_deref(), Some(day1));
+        assert_eq!(loaded.environmental_retry_day.as_deref(), Some(day1));
+
+        // One reserve on "20260915" succeeds
+        let second = reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"retry"}),
+            day2,
+            "use-multiday-2",
+            false,
+            false,
+            2,
+        );
+        assert!(second.is_ok(), "reservation on next day failed: {second:?}");
+
+        // A second reserve on "20260915" fails
+        let third = reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"retry2"}),
+            day2,
+            "use-multiday-3",
+            false,
+            false,
+            3,
+        );
+        assert!(
+            third.is_err(),
+            "second reservation on day 2 succeeded: {third:?}"
+        );
+    }
+
+    #[test]
+    fn legacy_record_without_attempt_day_recovers_day_from_updated_at_ms() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            r#"{"identity":{"timezone":"America/Los_Angeles"}}"#,
+        )
+        .unwrap();
+
+        // 1. Unfinished record, attempt_day None, updated_at_ms = 1789453800000
+        let day = "20260914";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = DailyUnitStatus::Unfinished;
+        record.attempts = 1;
+        record.failure_count = 1;
+        record.attempt_day = None;
+        record.updated_at_ms = 1_789_453_800_000;
+        record.use_id = Some("use-legacy-1".to_owned());
+        record.lock_token = Some("use-legacy-1".to_owned());
+        save_daily_unit_record(root, &record).unwrap();
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-legacy-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.status, DailyUnitStatus::Capped);
+        assert_eq!(loaded.attempt_day.as_deref(), Some("20260914"));
+        assert_eq!(loaded.environmental_retry_day.as_deref(), Some("20260914"));
+
+        // 2. A second record with updated_at_ms = i64::MAX and event_now_ms = 1789453800000 consumes 20260914, not 20260915
+        let identity2 = DailyUnitIdentity::new(day, "summarize", None);
+        let mut record2 = DailyUnitRecord::new(identity2.clone(), "E", "C");
+        record2.status = DailyUnitStatus::Unfinished;
+        record2.attempts = 1;
+        record2.failure_count = 1;
+        record2.attempt_day = None;
+        record2.updated_at_ms = i64::MAX;
+        record2.use_id = Some("use-legacy-2".to_owned());
+        record2.lock_token = Some("use-legacy-2".to_owned());
+        save_daily_unit_record(root, &record2).unwrap();
+
+        let context2 = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_789_453_800_000,
+        )
+        .unwrap();
+        let mut log2 = RunLogWriter::open(root, day, "daily");
+        let pending2 = PendingUse {
+            name: "summarize".to_owned(),
+            facet: None,
+            use_id: "use-legacy-2".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log2,
+            &context2,
+            &pending2,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log2.finish().unwrap();
+
+        let loaded2 = load_daily_unit_record(root, &identity2).unwrap().unwrap();
+        assert_eq!(loaded2.status, DailyUnitStatus::Capped);
+        assert_eq!(loaded2.attempt_day.as_deref(), Some("20260914"));
+        assert_eq!(loaded2.environmental_retry_day.as_deref(), Some("20260914"));
+    }
+
+    #[test]
+    fn fresh_reserve_with_timezone_stores_attempt_day() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            r#"{"identity":{"timezone":"America/Los_Angeles"}}"#,
+        )
+        .unwrap();
+
+        let instant = chrono::DateTime::from_timestamp_millis(1_789_453_800_000).unwrap();
+        let today = solstone_core_system::daily_coverage::local_day(root, instant).unwrap();
+        assert_eq!(today, "20260914");
+
+        let identity = DailyUnitIdentity::new(&today, "schedule", None);
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"original"}),
+            &today,
+            "use-tz-1",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.attempt_day.as_deref(), Some("20260914"));
+
+        let context = ThinkContext::new(
+            root,
+            today.clone(),
+            root.join("chronicle").join(&today),
+            1_789_453_800_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, &today, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-tz-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let folded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(folded.status, DailyUnitStatus::Capped);
+        assert_eq!(folded.attempt_day.as_deref(), Some("20260914"));
+        assert_eq!(folded.environmental_retry_day.as_deref(), Some("20260914"));
+    }
+
+    #[test]
+    fn provider_request_rejected_concurrent_reserves_on_same_day_fail() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = DailyUnitStatus::Capped;
+        record.failure_count = 1;
+        record.reason_code = Some("provider_request_rejected".to_owned());
+        record.attempt_day = Some(day.to_owned());
+        record.environmental_retry_day = Some(day.to_owned());
+        save_daily_unit_record(root, &record).unwrap();
+
+        let successes = std::thread::scope(|scope| {
+            let handles = (0..2)
+                .map(|i| {
+                    let identity = &identity;
+                    scope.spawn(move || {
+                        reserve_daily_attempt(
+                            root,
+                            identity,
+                            "E",
+                            "C",
+                            &json!({"packet":"retry"}),
+                            day,
+                            &format!("use-concurrent-{i}"),
+                            false,
+                            false,
+                            1,
+                        )
+                        .is_ok()
+                    })
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap() as usize)
+                .sum::<usize>()
+        });
+        assert_eq!(successes, 0);
+
+        let _ = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert!(
+            reserve_daily_attempt(
+                root,
+                &identity,
+                "E",
+                "C",
+                &json!({"packet":"retry"}),
+                day,
+                "use-after-reload",
+                false,
+                false,
+                1,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn provider_request_rejected_concurrent_reserves_on_next_day_yield_one_winner() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let next_day = "20260915";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = DailyUnitStatus::Capped;
+        record.failure_count = 1;
+        record.reason_code = Some("provider_request_rejected".to_owned());
+        record.attempt_day = Some(day.to_owned());
+        record.environmental_retry_day = Some(day.to_owned());
+        save_daily_unit_record(root, &record).unwrap();
+
+        let results = std::thread::scope(|scope| {
+            let handles = (0..2)
+                .map(|i| {
+                    let identity = &identity;
+                    let use_id = format!("use-next-{i}");
+                    scope.spawn(move || {
+                        (
+                            use_id.clone(),
+                            reserve_daily_attempt(
+                                root,
+                                identity,
+                                "E",
+                                "C",
+                                &json!({"packet":"retry"}),
+                                next_day,
+                                &use_id,
+                                false,
+                                false,
+                                2,
+                            )
+                            .is_ok(),
+                        )
+                    })
+                })
+                .collect::<Vec<_>>();
+            handles
+                .into_iter()
+                .map(|h| h.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        let success_count = results.iter().filter(|(_, ok)| *ok).count();
+        assert_eq!(success_count, 1);
+        let (winner_use_id, _) = results.iter().find(|(_, ok)| *ok).unwrap().clone();
+        let (loser_use_id, _) = results.iter().find(|(_, ok)| !*ok).unwrap().clone();
+
+        assert!(
+            reserve_daily_attempt(
+                root,
+                &identity,
+                "E",
+                "C",
+                &json!({"packet":"retry"}),
+                next_day,
+                "use-later",
+                false,
+                false,
+                2,
+            )
+            .is_err()
+        );
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.use_id.as_deref(), Some(winner_use_id.as_str()));
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let loser_pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: loser_use_id,
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &loser_pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+
+        let winner_pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: winner_use_id.clone(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &winner_pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let final_loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(final_loaded.use_id.as_deref(), Some(winner_use_id.as_str()));
+        assert_eq!(final_loaded.attempt_day.as_deref(), Some(next_day));
+        assert_eq!(
+            final_loaded.environmental_retry_day.as_deref(),
+            Some(next_day)
+        );
+    }
+
+    #[test]
+    fn failed_record_retry_on_next_day_stamps_attempt_day_and_caps_on_rejection() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let next_day = "20260915";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
+        record.status = DailyUnitStatus::Failed;
+        record.reason_code = None;
+        record.failure_count = 0;
+        record.attempt_day = Some(day.to_owned());
+        record.environmental_retry_day = None;
+        save_daily_unit_record(root, &record).unwrap();
+
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"original"}),
+            next_day,
+            "use-failed-retry",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.attempt_day.as_deref(), Some(next_day));
+        assert_eq!(loaded.environmental_retry_day, None);
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-failed-retry".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let folded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(folded.status, DailyUnitStatus::Capped);
+        assert_eq!(folded.attempt_day.as_deref(), Some(next_day));
+        assert_eq!(folded.environmental_retry_day.as_deref(), Some(next_day));
+
+        assert!(
+            reserve_daily_attempt(
+                root,
+                &identity,
+                "E",
+                "C",
+                &json!({"packet":"original"}),
+                next_day,
+                "use-second-retry",
+                false,
+                false,
+                2,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn capped_record_new_contract_digest_resets_failure_count_and_stamps_attempt_day() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let next_day = "20260915";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        let mut record = DailyUnitRecord::new(identity.clone(), "E", "C1");
+        record.status = DailyUnitStatus::Capped;
+        record.failure_count = 1;
+        record.reason_code = Some("provider_request_rejected".to_owned());
+        record.attempt_day = Some(day.to_owned());
+        record.environmental_retry_day = Some(day.to_owned());
+        save_daily_unit_record(root, &record).unwrap();
+
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C2",
+            &json!({"packet":"new_contract"}),
+            next_day,
+            "use-c2-1",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.failure_count, 0);
+        assert_eq!(loaded.environmental_retry_day, None);
+        assert_eq!(loaded.attempt_day.as_deref(), Some(next_day));
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-c2-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "provider_request_rejected"),
+        );
+        log.finish().unwrap();
+
+        let folded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(folded.status, DailyUnitStatus::Capped);
+        assert_eq!(folded.attempt_day.as_deref(), Some(next_day));
+        assert_eq!(folded.environmental_retry_day.as_deref(), Some(next_day));
+
+        assert!(
+            reserve_daily_attempt(
+                root,
+                &identity,
+                "E",
+                "C2",
+                &json!({"packet":"new_contract"}),
+                next_day,
+                "use-c2-2",
+                false,
+                false,
+                2,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn model_not_found_sets_environmental_retry_day_on_next_reservation() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"original"}),
+            day,
+            "use-mnf-1",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-mnf-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", "model_not_found"),
+        );
+        log.finish().unwrap();
+
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.status, DailyUnitStatus::Capped);
+        assert_eq!(loaded.failure_count, 1);
+        assert_eq!(loaded.environmental_retry_day, None);
+
+        assert!(
+            reserve_daily_attempt(
+                root,
+                &identity,
+                "E",
+                "C",
+                &json!({"packet":"retry"}),
+                day,
+                "use-mnf-2",
+                false,
+                false,
+                2,
+            )
+            .is_ok()
+        );
+        let loaded2 = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded2.environmental_retry_day.as_deref(), Some(day));
+
+        assert!(
+            reserve_daily_attempt(
+                root,
+                &identity,
+                "E",
+                "C",
+                &json!({"packet":"retry"}),
+                day,
+                "use-mnf-3",
+                false,
+                false,
+                3,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn cross_boundary_loopback_400_to_capped_daily_unit_with_detail() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let sentinels = [
+            "SENTINEL_CRED_9f3a",
+            "SENTINEL_PROVIDER_e1d4",
+            "SENTINEL_OWNER_b7c2",
+        ];
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut request_buf = Vec::new();
+            let mut buffer = [0_u8; 4096];
+            loop {
+                let Ok(read) = stream.read(&mut buffer) else {
+                    break;
+                };
+                if read == 0 {
+                    break;
+                }
+                request_buf.extend_from_slice(&buffer[..read]);
+                if let Some(header_end) = request_buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let header = String::from_utf8_lossy(&request_buf[..header_end]);
+                    let content_length = header
+                        .lines()
+                        .filter_map(|line| line.split_once(':'))
+                        .find(|(name, _)| name.eq_ignore_ascii_case("content-length"))
+                        .and_then(|(_, value)| value.trim().parse::<usize>().ok())
+                        .unwrap_or_default();
+                    if request_buf.len() >= header_end + 4 + content_length {
+                        break;
+                    }
+                }
+            }
+            let body = r#"{"type":"BadRequestError","code":400,"message":"Failed to compile json grammar: SENTINEL_CRED_9f3a SENTINEL_PROVIDER_e1d4 SENTINEL_OWNER_b7c2"}"#;
+            let response = format!(
+                "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = stream.write_all(response.as_bytes());
+        });
+
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let day = "20260914";
+        let identity = DailyUnitIdentity::new(day, "schedule", None);
+
+        // 1. Reserve attempt
+        reserve_daily_attempt(
+            root,
+            &identity,
+            "E",
+            "C",
+            &json!({"packet":"original"}),
+            day,
+            "use-loopback-1",
+            false,
+            false,
+            1,
+        )
+        .unwrap();
+
+        // 2. Execute via public endpoint_generate to our mock server
+        let endpoint = solstone_core_local::ByoEndpoint {
+            base_url: format!("http://127.0.0.1:{port}"),
+            served_model_id: "test-model".into(),
+            credential: None,
+            parallel_slots: Some(1),
+            is_confidential: false,
+            is_bundled: false,
+        };
+        let request = solstone_core_generate::GenerateRequest {
+            id: None,
+            context: "schedule".into(),
+            contents: vec![solstone_core_generate::ContentPart::Text {
+                text: "prompt".into(),
+            }],
+            system_instruction: None,
+            temperature: 0.2,
+            max_output_tokens: 64,
+            thinking_budget: None,
+            timeout_s: Some(5.0),
+            json_output: false,
+            json_schema: None,
+            enforce_responsiveness: false,
+            attempt_index: 0,
+            exclusive_admission: false,
+            transport_retries: None,
+        };
+        let config = json!({"providers": {"local": {"served_context_window": 4096}}})
+            .as_object()
+            .unwrap()
+            .clone();
+        let runtime = solstone_core_generate_wire::EndpointRuntime::default();
+        let result = solstone_core_generate_wire::endpoint_generate(
+            &request, root, &endpoint, &config, &runtime,
+        );
+        let solstone_core_generate_wire::EndpointResult::Failed(failure) = result else {
+            panic!("expected failure from 400 endpoint");
+        };
+        let refusal = solstone_core_generate_wire::refusal_for(
+            &solstone_core_generate_wire::LaneOutcome::EndpointFailure(failure.clone()),
+            "local",
+            None,
+        );
+        let wire_reason_code = refusal
+            .reason_code
+            .as_ref()
+            .map(solstone_core_generate::ReasonCodeValue::as_wire)
+            .unwrap();
+
+        let refusal_response = solstone_core_generate::RefusedResponse {
+            id: None,
+            reason: solstone_core_generate::RefusalReason::ProviderResponseInvalid,
+            reason_code: refusal.reason_code.clone(),
+            retryable: refusal.retryable,
+            blocking: refusal.blocking,
+            reset_at_ms: None,
+            provider: Some("local".to_owned()),
+            detail: refusal.detail.clone(),
+        };
+
+        // 3. Emit outcome through talent-runtime
+        let use_dir = root.join("talents/schedule");
+        std::fs::create_dir_all(&use_dir).unwrap();
+        let start_line = "{\"event\":\"start\",\"use_id\":\"use-loopback-1\"}\n";
+        let mut worker_log_bytes = start_line.as_bytes().to_vec();
+        let error = solstone_core_talent_runtime::StageError::new(
+            "generate",
+            "runtime",
+            "schedule".to_owned(),
+            refusal.detail.clone(),
+        );
+        solstone_core_talent_runtime::emit_outcome_for_test(
+            &mut worker_log_bytes,
+            solstone_core_talent_runtime::RuntimeOutcome::GenerateRefused {
+                error,
+                response: Box::new(refusal_response),
+            },
+        );
+        std::fs::write(use_dir.join("use-loopback-1.jsonl"), worker_log_bytes).unwrap();
+
+        // 4. Log daily terminal
+        let context = ThinkContext::new(
+            root,
+            day.to_owned(),
+            root.join("chronicle").join(day),
+            1_000_000,
+        )
+        .unwrap();
+        let mut log = RunLogWriter::open(root, day, "daily");
+        let pending = PendingUse {
+            name: "schedule".to_owned(),
+            facet: None,
+            use_id: "use-loopback-1".to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            DrainOutcome::fail("error", wire_reason_code),
+        );
+        log.finish().unwrap();
+
+        // 5. Assert capped daily unit record state
+        let loaded = load_daily_unit_record(root, &identity).unwrap().unwrap();
+        assert_eq!(loaded.status, DailyUnitStatus::Capped);
+        assert_eq!(loaded.reason_code.as_deref(), Some(wire_reason_code));
+        assert_eq!(loaded.attempt_day.as_deref(), Some("20260914"));
+        assert_eq!(loaded.environmental_retry_day.as_deref(), Some("20260914"));
+
+        // 6. Assert chronicle event has the detail matching failure.detail
+        let health_dir = root.join("chronicle").join(day).join("health");
+        let mut found = None;
+        for entry in std::fs::read_dir(&health_dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+                continue;
+            }
+            for line in std::fs::read_to_string(&path).unwrap().lines() {
+                let row: Value = serde_json::from_str(line).unwrap();
+                if row.get("event") == Some(&Value::String("talent.fail".to_owned()))
+                    && row.get("name") == Some(&Value::String("schedule".to_owned()))
+                {
+                    found = Some((row, line.to_owned()));
+                }
+            }
+        }
+        let (row, row_line) = found.expect("expected talent.fail event");
+        assert_eq!(row["detail"]["detail"].as_str(), failure.detail.as_deref());
+
+        // 7. Verify sentinels never appear in failure.detail, refusal.detail, or chronicle row
+        for s in &sentinels {
+            assert!(!failure.detail.as_deref().unwrap_or("").contains(s));
+            assert!(!refusal.detail.contains(s));
+            assert!(!row_line.contains(s));
+        }
+
+        server.join().unwrap();
+    }
+
+    #[test]
     fn ordinary_resume_keeps_retained_result_actions_and_owner_receipts() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -986,6 +1974,7 @@ mod tests {
         record.generated_result = Some(json!({"response":"[original]"}));
         record.action_plan = Some(json!({"plan":"prepared"}));
         record.receipts = vec![json!({"action":"committed"})];
+        record.attempt_day = Some("20260901".to_owned());
         save_daily_unit_record(root, &record).unwrap();
         reserve_daily_attempt(
             root,
@@ -1006,6 +1995,7 @@ mod tests {
         assert_eq!(loaded.action_plan, record.action_plan);
         assert_eq!(loaded.receipts, record.receipts);
         assert_eq!(loaded.lock_token.as_deref(), Some("replacement"));
+        assert_eq!(loaded.attempt_day.as_deref(), Some("20260901"));
     }
 
     #[test]

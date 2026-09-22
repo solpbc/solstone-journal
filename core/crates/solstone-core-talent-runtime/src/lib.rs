@@ -1108,9 +1108,19 @@ fn emit_outcome(writer: &mut impl Write, outcome: RuntimeOutcome) {
             if let Some(degraded) = error.degraded {
                 event["degraded"] = *degraded;
             }
+            if response.reason_code.as_ref().map(ReasonCodeValue::as_wire)
+                == Some("provider_request_rejected")
+            {
+                event["detail"] = json!(response.detail);
+            }
             emit(writer, event);
         }
     }
+}
+
+#[cfg(feature = "test-hooks")]
+pub fn emit_outcome_for_test(writer: &mut impl std::io::Write, outcome: RuntimeOutcome) {
+    emit_outcome(writer, outcome);
 }
 
 #[cfg(test)]
@@ -3434,5 +3444,105 @@ mod tests {
                 "owner_conflict_kind": "alias_claimed",
             })
         );
+    }
+
+    #[test]
+    fn emit_outcome_includes_detail_for_provider_request_rejected() {
+        let (root, paths, context) = fixture(
+            "refused_detail",
+            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+        );
+        let prepared = prepare::prepare(
+            json!({"name":"refused_detail", "day":"20260101"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            prepare::PrepareMode::Execute,
+        )
+        .unwrap();
+        let error = stage_error(
+            "generate",
+            "runtime",
+            &prepared,
+            "the local endpoint rejected the request".to_owned(),
+        );
+        let response_val = test_support::refused_response_value(
+            Some("provider_request_rejected"),
+            true,
+            false,
+            "local",
+            "the local endpoint rejected the request",
+        );
+        let solstone_core_generate::GenerateResponse::Refused(response) =
+            solstone_core_generate::decode_one_shot_response(&response_val.to_string()).unwrap()
+        else {
+            panic!("expected Refused");
+        };
+        let mut output = Vec::new();
+        emit_outcome(
+            &mut output,
+            RuntimeOutcome::GenerateRefused {
+                error,
+                response: Box::new(response),
+            },
+        );
+        let evts = events(&output);
+        assert_eq!(evts.len(), 1);
+        assert_eq!(evts[0]["reason_code"], "provider_request_rejected");
+        assert_eq!(evts[0]["detail"], "the local endpoint rejected the request");
+        assert_eq!(evts[0]["retryable"], true);
+        assert_eq!(evts[0]["blocking"], false);
+        let _ = root;
+    }
+
+    #[test]
+    fn emit_outcome_omits_detail_for_other_refusals() {
+        let (root, paths, context) = fixture(
+            "refused_other",
+            r#"{"type":"generate", "load":{"transcripts":false}}"#,
+        );
+        let prepared = prepare::prepare(
+            json!({"name":"refused_other", "day":"20260101"})
+                .as_object()
+                .unwrap()
+                .clone(),
+            &paths,
+            &context,
+            prepare::PrepareMode::Execute,
+        )
+        .unwrap();
+        let error = stage_error(
+            "generate",
+            "runtime",
+            &prepared,
+            "context budget exceeded".to_owned(),
+        );
+        let response_val = test_support::refused_response_value(
+            Some("context_budget_exceeded"),
+            false,
+            true,
+            "local",
+            "context budget exceeded",
+        );
+        let solstone_core_generate::GenerateResponse::Refused(response) =
+            solstone_core_generate::decode_one_shot_response(&response_val.to_string()).unwrap()
+        else {
+            panic!("expected Refused");
+        };
+        let mut output = Vec::new();
+        emit_outcome(
+            &mut output,
+            RuntimeOutcome::GenerateRefused {
+                error,
+                response: Box::new(response),
+            },
+        );
+        let evts = events(&output);
+        assert_eq!(evts.len(), 1);
+        assert_eq!(evts[0]["reason_code"], "context_budget_exceeded");
+        assert_eq!(evts[0].get("detail"), None);
+        let _ = root;
     }
 }
