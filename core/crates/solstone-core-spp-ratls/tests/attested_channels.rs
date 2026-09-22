@@ -4,6 +4,7 @@
 //! Real-boundary RA-TLS channel tests that bind loopback sockets.
 
 use std::{
+    collections::BTreeSet,
     io::{self, Read, Write},
     net::{Ipv4Addr, SocketAddrV4, TcpListener},
     path::Path,
@@ -25,14 +26,15 @@ use rustls::{
 };
 use socket2::{Domain, Protocol, Socket, Type};
 use solstone_core_spp_attest::{
-    CpuBundle,
+    CpuBundle, PcrMode,
     nvgpu::claims::GpuAppraisal,
-    snp::{CpuAppraisal, CpuTcb, TcbVersion},
+    snp::{CpuAppraisal, CpuTcb, TcbVersion, check_pcr_fingerprint},
 };
 use solstone_core_spp_ratls::{
     AttestationFailureKind, AttestationStateStore, AttestedChannel, CompositeVerdict,
     CompositeVerificationError, CompositeVerificationInput, CompositeVerifier, RatlsChannelError,
     RatlsEndpoint, classify_channel_failure, establish_attested_channel,
+    qualification::{QualificationRequest, qualification_policy, run_qualification},
     ratls::contract::{
         COMPOSITE_EVIDENCE_OID, CompositeEvidence, EXPORTER_BYTES, EXPORTER_LABEL,
         EXPORTER_PROOF_MEDIA_TYPE, ExporterProof, exporter_binding, exporter_context,
@@ -284,14 +286,15 @@ enum GatewayResponse {
 
 struct GatewayPlan {
     proof: GatewayResponse,
-    application_response: Option<Vec<u8>>,
+    application_responses: Vec<Vec<u8>>,
+    capture_unanswered_application: bool,
 }
 
 #[derive(Default)]
 struct GatewayObservation {
     preface: Vec<u8>,
     exporter_request: Vec<u8>,
-    application_request: Vec<u8>,
+    application_requests: Vec<Vec<u8>>,
 }
 
 struct Gateway {
@@ -455,10 +458,15 @@ fn start_gateway(config: ServerConfig, plan: GatewayPlan) -> Gateway {
         if let Some(response) = response {
             stream.write_all(&response).expect("proof response");
         }
-        if let Some(response) = plan.application_response {
-            observation.application_request =
-                read_http_request(&mut stream).expect("bounded application request");
+        for response in plan.application_responses {
+            let request = read_http_request(&mut stream).expect("bounded application request");
+            observation.application_requests.push(request);
             stream.write_all(&response).expect("application response");
+        }
+        if plan.capture_unanswered_application {
+            observation
+                .application_requests
+                .extend(read_http_request(&mut stream).ok());
         }
         observed_sender.send(observation).expect("observation send");
     });
@@ -521,6 +529,73 @@ fn rejected(result: Result<AttestedChannel, RatlsChannelError>) -> RatlsChannelE
     }
 }
 
+fn certificate_with_distinct_evidence(owner_nonce: &[u8]) -> (ServerConfig, CompositeEvidence) {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
+    let params = CertificateParams::new(vec!["spp-engine".to_owned()]).expect("params");
+    let base_certificate = params.self_signed(&key).expect("base certificate");
+    let (_, parsed) = x509_parser::prelude::X509Certificate::from_der(base_certificate.der())
+        .expect("parse base certificate");
+    let evidence = CompositeEvidence {
+        owner_nonce: owner_nonce.to_vec(),
+        tls_spki_der: parsed.public_key().raw.to_vec(),
+        amd_report: b"distinct-amd-report".to_vec(),
+        hcl_report: b"distinct-hcl-report".to_vec(),
+        ak_public_key_pem: TEST_AK_PUBLIC_PEM.as_bytes().to_vec(),
+        quote_message: b"distinct-quote-message".to_vec(),
+        quote_signature: b"distinct-quote-signature".to_vec(),
+        quote_pcrs: b"distinct-quote-pcrs".to_vec(),
+        amd_ark_pem: b"distinct-amd-ark".to_vec(),
+        amd_ask_pem: b"distinct-amd-ask".to_vec(),
+        amd_vcek_pem: b"distinct-amd-vcek".to_vec(),
+        gpu_envelope: b"test GPU envelope".to_vec(),
+    };
+    let mut params = CertificateParams::new(vec!["spp-engine".to_owned()]).expect("params");
+    let mut extension = CustomExtension::from_oid_content(
+        &[
+            2,
+            25,
+            3_708_997_813,
+            3_535_365_757,
+            2_172_800_616,
+            1_077_671_698,
+        ],
+        evidence.to_der(),
+    );
+    extension.set_criticality(true);
+    params.custom_extensions.push(extension);
+    let certificate = params.self_signed(&key).expect("evidence certificate");
+    let config = server_config(
+        &[&rustls::version::TLS13],
+        CertificateDer::from(certificate.der().to_vec()),
+        PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
+    );
+    (config, evidence)
+}
+
+struct TempTestDir(std::path::PathBuf);
+impl TempTestDir {
+    fn new(suffix: &str) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "spp-ratls-qual-{suffix}-{}-{id}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("create temp test dir");
+        Self(path)
+    }
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+impl Drop for TempTestDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[test]
 fn tls_client_rejects_a_tls12_only_gateway() {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test key");
@@ -539,7 +614,8 @@ fn tls_client_rejects_a_tls12_only_gateway() {
         config,
         GatewayPlan {
             proof: GatewayResponse::None,
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     assert_eq!(
@@ -558,7 +634,8 @@ fn certificate_rejection_writes_no_exporter_http_payload_and_closes() {
         config,
         GatewayPlan {
             proof: GatewayResponse::None,
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     let error = rejected(establish(gateway.port, &RejectingCompositeVerifier));
@@ -589,7 +666,8 @@ fn exporter_mismatch_rejects_after_a_verified_certificate() {
         config,
         GatewayPlan {
             proof: GatewayResponse::Static(response),
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     assert_eq!(
@@ -624,7 +702,8 @@ fn proof_headers_cannot_overshoot_the_cap() {
         config,
         GatewayPlan {
             proof: GatewayResponse::Static(response),
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     assert_eq!(
@@ -647,7 +726,8 @@ fn proof_body_length_cannot_exceed_the_cap() {
         config,
         GatewayPlan {
             proof: GatewayResponse::Static(response),
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     assert_eq!(
@@ -665,7 +745,8 @@ fn proof_headers_require_crlf_framing() {
         config,
         GatewayPlan {
             proof: GatewayResponse::Static(b"HTTP/1.1 200 OK\nContent-Length: 0\r\n\r\n".to_vec()),
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     assert_eq!(
@@ -683,7 +764,8 @@ fn non_200_exporter_proof_is_rejected() {
         config,
         GatewayPlan {
             proof: GatewayResponse::Static(static_response(503, b"unavailable")),
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     assert_eq!(
@@ -701,7 +783,8 @@ fn exact_spprat1_preface_nonce_and_exporter_request_establish_channel() {
         config,
         GatewayPlan {
             proof: GatewayResponse::ValidProof(Box::new(evidence)),
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     let channel = establish(gateway.port, &AcceptingCompositeVerifier).expect("attested channel");
@@ -765,7 +848,8 @@ fn certificate_evidence_nonce_spki_criticality_and_presence_are_enforced() {
             config,
             GatewayPlan {
                 proof: GatewayResponse::None,
-                application_response: None,
+                application_responses: vec![],
+                capture_unanswered_application: false,
             },
         );
         let error = rejected(establish(gateway.port, &AcceptingCompositeVerifier));
@@ -786,7 +870,8 @@ fn live_post_attestation_json_request_has_exact_framing_with_and_without_authori
             config,
             GatewayPlan {
                 proof: GatewayResponse::ValidProof(Box::new(evidence)),
-                application_response: Some(static_response(200, response_body)),
+                application_responses: vec![static_response(200, response_body)],
+                capture_unanswered_application: false,
             },
         );
         let mut channel =
@@ -812,7 +897,10 @@ fn live_post_attestation_json_request_has_exact_framing_with_and_without_authori
             body.len(),
             std::str::from_utf8(body).expect("fixture JSON")
         );
-        assert_eq!(observation.application_request, expected.as_bytes());
+        assert_eq!(
+            observation.application_requests,
+            vec![expected.into_bytes()]
+        );
     }
 }
 
@@ -822,7 +910,8 @@ fn missing_evidence_teardown_precedes_failure_recording() {
         certificate_without_evidence(),
         GatewayPlan {
             proof: GatewayResponse::None,
-            application_response: None,
+            application_responses: vec![],
+            capture_unanswered_application: false,
         },
     );
     let error = rejected(establish(gateway.port, &AcceptingCompositeVerifier));
@@ -845,4 +934,270 @@ fn missing_evidence_teardown_precedes_failure_recording() {
         state.failure.expect("failure").reason_code,
         "certificate_extension_missing"
     );
+}
+
+#[test]
+fn qualification_record_mode_persists_distinct_evidence_and_computes_fingerprint_without_content() {
+    let nonce = [7u8; 32];
+    let (config, evidence) = certificate_with_distinct_evidence(&nonce);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::ValidProof(Box::new(evidence)),
+            application_responses: vec![],
+            capture_unanswered_application: false,
+        },
+    );
+    let temp_dir = TempTestDir::new("record-mode");
+    let policy = qualification_policy(PcrMode::Record, BTreeSet::new());
+    let request = QualificationRequest {
+        host: "127.0.0.1".into(),
+        port: gateway.port,
+        policy: policy.clone(),
+        output_dir: temp_dir.path().to_path_buf(),
+        model: None,
+        content: false,
+        owner_nonce: nonce,
+        now: SystemTime::UNIX_EPOCH,
+        socket_timeout: Duration::from_secs(2),
+    };
+    let success = run_qualification(&request, Path::new("unused"), &AcceptingCompositeVerifier)
+        .expect("qualification success");
+
+    let nonce_hex = std::fs::read_to_string(temp_dir.path().join("nonce.hex")).expect("nonce.hex");
+    assert_eq!(
+        nonce_hex,
+        nonce.iter().map(|b| format!("{b:02x}")).collect::<String>()
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("akpub.pem")).expect("akpub"),
+        success.evidence.ak_public_key_pem
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("quote.msg")).expect("quote.msg"),
+        success.evidence.quote_message
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("quote.sig")).expect("quote.sig"),
+        success.evidence.quote_signature
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("quote.pcrs")).expect("quote.pcrs"),
+        success.evidence.quote_pcrs
+    );
+    assert_eq!(
+        std::fs::read(temp_dir.path().join("hcl_report.bin")).expect("hcl_report"),
+        success.evidence.hcl_report
+    );
+
+    assert_eq!(success.evidence.quote_message, b"distinct-quote-message");
+    assert_eq!(
+        success.evidence.quote_signature,
+        b"distinct-quote-signature"
+    );
+    assert_eq!(success.evidence.quote_pcrs, b"distinct-quote-pcrs");
+    assert_eq!(success.evidence.hcl_report, b"distinct-hcl-report");
+
+    let expected_pcr_sha256 =
+        check_pcr_fingerprint(&success.evidence.quote_pcrs, &policy).expect("fingerprint");
+    assert_eq!(success.pcr_sha256, Some(expected_pcr_sha256));
+
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
+}
+
+#[test]
+fn qualification_pin_mode_mismatch_rejects_before_application_and_leaves_output_clean() {
+    let nonce = [7u8; 32];
+    let (config, evidence) = certificate_with_evidence(&nonce, true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::ValidProof(Box::new(evidence)),
+            application_responses: vec![],
+            capture_unanswered_application: true,
+        },
+    );
+    let temp_dir = TempTestDir::new("pin-mismatch");
+    let mut pins = BTreeSet::new();
+    pins.insert("0".repeat(64));
+    let policy = qualification_policy(PcrMode::Pin, pins);
+    let request = QualificationRequest {
+        host: "127.0.0.1".into(),
+        port: gateway.port,
+        policy,
+        output_dir: temp_dir.path().to_path_buf(),
+        model: Some("probe-model".into()),
+        content: true,
+        owner_nonce: nonce,
+        now: SystemTime::UNIX_EPOCH,
+        socket_timeout: Duration::from_secs(2),
+    };
+    let error = run_qualification(&request, Path::new("unused"), &AcceptingCompositeVerifier)
+        .expect_err("pin mismatch rejected");
+    assert!(error.to_string().contains("pcr_pin_mismatch"));
+    assert_eq!(error.reason_code, "pcr_pin_mismatch");
+
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
+
+    for filename in [
+        "nonce.hex",
+        "akpub.pem",
+        "quote.msg",
+        "quote.sig",
+        "quote.pcrs",
+        "hcl_report.bin",
+    ] {
+        assert!(!temp_dir.path().join(filename).exists());
+    }
+}
+
+#[test]
+fn qualification_unreachable_gateway_returns_error_and_leaves_output_clean() {
+    let socket =
+        Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).expect("refusal socket");
+    socket
+        .bind(&SocketAddrV4::new(Ipv4Addr::LOCALHOST, 0).into())
+        .expect("bind refusal socket without listen");
+    socket
+        .set_nonblocking(true)
+        .expect("refusal socket can be inspected without blocking");
+    let port = socket
+        .local_addr()
+        .expect("refusal address")
+        .as_socket()
+        .expect("IP address")
+        .port();
+
+    let temp_dir = TempTestDir::new("unreachable");
+    let policy = qualification_policy(PcrMode::Record, BTreeSet::new());
+    let request = QualificationRequest {
+        host: "127.0.0.1".into(),
+        port,
+        policy,
+        output_dir: temp_dir.path().to_path_buf(),
+        model: None,
+        content: false,
+        owner_nonce: [7u8; 32],
+        now: SystemTime::UNIX_EPOCH,
+        socket_timeout: Duration::from_secs(2),
+    };
+    let error = run_qualification(&request, Path::new("unused"), &AcceptingCompositeVerifier)
+        .expect_err("unreachable gateway");
+    assert!(error.to_string().contains("gateway_unreachable"));
+    assert_eq!(error.reason_code, "gateway_unreachable");
+
+    for filename in [
+        "nonce.hex",
+        "akpub.pem",
+        "quote.msg",
+        "quote.sig",
+        "quote.pcrs",
+        "hcl_report.bin",
+    ] {
+        assert!(!temp_dir.path().join(filename).exists());
+    }
+}
+
+#[test]
+fn qualification_success_with_no_content_sends_no_application_requests() {
+    let nonce = [7u8; 32];
+    let (config, evidence) = certificate_with_evidence(&nonce, true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::ValidProof(Box::new(evidence)),
+            application_responses: vec![],
+            capture_unanswered_application: false,
+        },
+    );
+    let temp_dir = TempTestDir::new("no-content");
+    let policy = qualification_policy(PcrMode::Record, BTreeSet::new());
+    let request = QualificationRequest {
+        host: "127.0.0.1".into(),
+        port: gateway.port,
+        policy,
+        output_dir: temp_dir.path().to_path_buf(),
+        model: None,
+        content: false,
+        owner_nonce: nonce,
+        now: SystemTime::UNIX_EPOCH,
+        socket_timeout: Duration::from_secs(2),
+    };
+    run_qualification(&request, Path::new("unused"), &AcceptingCompositeVerifier)
+        .expect("qualification success");
+
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert!(observation.application_requests.is_empty());
+}
+
+#[test]
+fn qualification_success_with_content_sends_chat_and_multipart_transcription_requests() {
+    let nonce = [7u8; 32];
+    let (config, evidence) = certificate_with_evidence(&nonce, true, false);
+    let gateway = start_gateway(
+        config,
+        GatewayPlan {
+            proof: GatewayResponse::ValidProof(Box::new(evidence)),
+            application_responses: vec![
+                static_response(200, br#"{"choices":[]}"#),
+                static_response(200, br#"{"text":"hello"}"#),
+            ],
+            capture_unanswered_application: false,
+        },
+    );
+    let temp_dir = TempTestDir::new("with-content");
+    let policy = qualification_policy(PcrMode::Record, BTreeSet::new());
+    let request = QualificationRequest {
+        host: "127.0.0.1".into(),
+        port: gateway.port,
+        policy,
+        output_dir: temp_dir.path().to_path_buf(),
+        model: Some("probe-model".into()),
+        content: true,
+        owner_nonce: nonce,
+        now: SystemTime::UNIX_EPOCH,
+        socket_timeout: Duration::from_secs(2),
+    };
+    run_qualification(&request, Path::new("unused"), &AcceptingCompositeVerifier)
+        .expect("qualification success");
+
+    let port = gateway.port;
+    let observation = gateway.finish();
+    assert_preface(&observation);
+    assert_eq!(observation.exporter_request, exact_exporter_request());
+    assert_eq!(observation.application_requests.len(), 2);
+
+    let chat_request =
+        std::str::from_utf8(&observation.application_requests[0]).expect("chat UTF-8");
+    assert!(chat_request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
+    assert!(chat_request.contains("Content-Type: application/json\r\n"));
+    assert!(chat_request.contains(&format!("Host: 127.0.0.1:{port}\r\n")));
+    assert!(!chat_request.contains("Authorization:"));
+    assert!(
+        chat_request.contains("\"model\":\"probe-model\"")
+            || chat_request.contains("\"model\": \"probe-model\"")
+    );
+    assert!(chat_request.contains("qualification"));
+
+    let stt_request = &observation.application_requests[1];
+    let stt_header =
+        std::str::from_utf8(stt_request.split(|b| *b == b'\r').next().unwrap_or(&[])).unwrap_or("");
+    assert_eq!(stt_header, "POST /v1/audio/transcriptions HTTP/1.1");
+    let stt_str = String::from_utf8_lossy(stt_request);
+    assert!(
+        stt_str.contains("Content-Type: multipart/form-data; boundary=solstone-confidential-stt-")
+    );
+    assert!(stt_str.contains(&format!("Host: 127.0.0.1:{port}\r\n")));
+    assert!(!stt_str.contains("Authorization:"));
+    assert!(stt_str.contains("filename=\"audio.wav\""));
+    assert!(stt_str.contains("name=\"response_format\"\r\n\r\nverbose_json\r\n"));
+    assert!(stt_str.contains("name=\"timestamp_granularities[]=word\"\r\n\r\nword\r\n"));
 }
