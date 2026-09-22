@@ -473,12 +473,12 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
                     let reason_code = "provider_request_rejected";
                     let (retryable, blocking) =
                         crate::converse::converse_failure_flags(reason_code);
-                    return Err(ConverseFailure {
+                    Err(ConverseFailure {
                         reason_code: reason_code.to_owned(),
                         retryable,
                         blocking,
                         detail: Some(rejection.detail.to_owned()),
-                    });
+                    })
                 }
             };
         }
