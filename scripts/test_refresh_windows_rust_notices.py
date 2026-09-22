@@ -181,6 +181,30 @@ class GitPinVendorDelta(unittest.TestCase):
         with self.assertRaisesRegex(refresh.RefreshError, "moved package prefix"):
             refresh.admit_git_pin_vendor_delta(prior, fresh, (self.prefix,))
 
+class SourceOfferArchive(unittest.TestCase):
+    def test_checkout_git_metadata_is_not_archived(self):
+        import io
+        import pathlib
+        import tarfile
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as root:
+            checkout = pathlib.Path(root)
+            (checkout / ".git" / "logs").mkdir(parents=True)
+            (checkout / ".git" / "config").write_text("[remote]\n")
+            (checkout / ".git" / "logs" / "HEAD").write_text("identity\n")
+            (checkout / ".cargo-ok").write_text("")
+            (checkout / "src").mkdir()
+            (checkout / "src" / "lib.rs").write_text("")
+            (checkout / "LICENSE").write_text("licence\n")
+
+            data = refresh.source_tar(checkout)
+
+        with tarfile.open(fileobj=io.BytesIO(data)) as tar:
+            names = sorted(tar.getnames())
+        self.assertEqual(names, ["LICENSE", "src", "src/lib.rs"])
+
+
 
 if __name__ == "__main__":
     unittest.main()
