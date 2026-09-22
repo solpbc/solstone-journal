@@ -6,6 +6,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- a recent update left most of what went into your journal filed under none of your facets, so it was missing from your activity lists, including today's. from this release on, your journal files what goes into it under the facet that fits best. what was already filed under no facet stays that way.
+
+### Changed
+
+- your journal now always keeps at least one facet turned on. if no facet is on when your journal starts, it adds one called Personal, and you can't turn off or delete the last facet that's on.
+
 ## [2.0.14] - 2026-09-22
 
 ### Fixed
