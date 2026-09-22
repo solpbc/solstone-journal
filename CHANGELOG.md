@@ -6,9 +6,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.14] - 2026-09-22
+
 ### Fixed
 
-- this is a security fix. a paired device could unpair a different device from your journal. paired devices can now unpair only themselves, while you can still unpair any device from the network page or command line.
+- this is a security fix. a paired device could unpair a different device from your journal. paired devices can now unpair only themselves, while you can still unpair any device from the network page or command line on the computer your journal runs on.
+- your morning briefing works again when your journal uses the configured SGLang local-model service. the last update could stop every briefing before the model answered.
+- reading documents, understanding screens and writing stories no longer stop before the local model included with your journal can answer. the last update could send format rules that stopped this work before the model answered.
+- when a local-model service rejects the same daily request, your journal now waits until the next day before trying it again instead of repeatedly retrying it.
 
 ## [2.0.13] - 2026-09-22
 
