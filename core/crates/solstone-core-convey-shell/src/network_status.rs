@@ -730,7 +730,6 @@ mod tests {
     use axum::http::Request;
     use axum::routing::get;
     use serde_json::json;
-    use solstone_core_convey_http::identity::Carrier;
     use solstone_core_sol_link::establish;
     use solstone_core_sol_link::pairing::addresses::LocalEndpoint;
     use solstone_core_spl::REASON_SERVICE_TOKEN_REJECTED;
