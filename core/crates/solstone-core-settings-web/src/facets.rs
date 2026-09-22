@@ -16,7 +16,8 @@ use serde_json::{Map, Value, json};
 use crate::{
     http::{
         facet_not_found, invalid_config_value, invalid_request_value, json_response,
-        missing_request_body, missing_required_field, settings_operation_failed,
+        last_enabled_facet, missing_request_body, missing_required_field,
+        settings_operation_failed,
     },
     icons,
     request_body::{JsonBody, json_body},
@@ -290,10 +291,14 @@ pub async fn update(
     {
         return settings_operation_failed();
     }
-    if let Some(muted) = data.get("muted").and_then(Value::as_bool)
-        && solstone_core_facets::set_facet_muted(&journal_root, &facet_name, muted).is_err()
-    {
-        return settings_operation_failed();
+    if let Some(muted) = data.get("muted").and_then(Value::as_bool) {
+        match solstone_core_facets::set_facet_muted(&journal_root, &facet_name, muted) {
+            Ok(()) => {}
+            Err(solstone_core_facets::FacetWriteError::LastEnabledFacet { .. }) => {
+                return last_enabled_facet();
+            }
+            Err(_) => return settings_operation_failed(),
+        }
     }
     if let Some(muted) = data.get("muted").and_then(Value::as_bool)
         && current
@@ -334,6 +339,12 @@ pub async fn delete(
     if facet(&journal_root, &facet_name).is_none() {
         return facet_not_found();
     }
+    // Refuse before logging a delete that will not happen; the store re-checks under lock.
+    if solstone_core_facets::observe_declared_facet_inventory(&journal_root)
+        .is_ok_and(|inventory| inventory.enabled == [facet_name.as_str()])
+    {
+        return last_enabled_facet();
+    }
     if solstone_core_facets::append_action_log(
         &journal_root,
         None,
@@ -349,6 +360,7 @@ pub async fn delete(
     match solstone_core_facets::delete_facet(&journal_root, &facet_name) {
         Ok(true) => json_response(json!({"success":true,"facet":facet_name})),
         Ok(false) => facet_not_found(),
+        Err(solstone_core_facets::FacetWriteError::LastEnabledFacet { .. }) => last_enabled_facet(),
         Err(_) => settings_operation_failed(),
     }
 }

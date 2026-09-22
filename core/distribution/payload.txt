@@ -61,5 +61,4 @@ solstone/think/services/spp_attest/roots/amd/Turin/ark.pem
 solstone/think/services/spp_attest/roots/amd/Turin/ask.pem
 solstone/think/templates/activity_preamble.md
 solstone/think/templates/daily_preamble.md
-solstone/think/templates/facet_naming.md
 solstone/think/templates/segment_preamble.md

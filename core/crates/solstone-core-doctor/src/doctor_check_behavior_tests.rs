@@ -73,6 +73,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "client_delivery_stall",
     "client_ingest_health",
     "device_day_listing",
+    "facet_routing",
     "client_transport_refusal",
     "orphan_segment_pdf",
     "default_stt_ready",
@@ -690,6 +691,12 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 );
             }
         }
+        "facet_routing" => {
+            write_sensed_segment(&context, "090000_300", true);
+            if !ok {
+                write_sensed_segment(&context, "091000_300", false);
+            }
+        }
         "device_day_listing" => {
             write_bound_device_stream(&context, "desk_01", DEVICE_DAY_LISTING_CID);
             if !ok {
@@ -795,6 +802,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                     | "client_delivery_stall"
                     | "client_ingest_health"
                     | "device_day_listing"
+                    | "facet_routing"
                     | "client_transport_refusal"
                     | "orphan_segment_pdf"
                     | "default_stt_ready"
@@ -821,6 +829,7 @@ fn check_severity_table_matches_reference() {
         ("client_delivery_stall", Severity::Advisory),
         ("client_ingest_health", Severity::Advisory),
         ("device_day_listing", Severity::Advisory),
+        ("facet_routing", Severity::Advisory),
         ("client_transport_refusal", Severity::Advisory),
         ("orphan_segment_pdf", Severity::Advisory),
         ("default_stt_ready", Severity::Advisory),
@@ -855,6 +864,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
         ("client_delivery_stall", SecondBranch::DifferentStatus),
         ("client_ingest_health", SecondBranch::DifferentStatus),
         ("device_day_listing", SecondBranch::DifferentStatus),
+        ("facet_routing", SecondBranch::DifferentStatus),
         ("client_transport_refusal", SecondBranch::DifferentStatus),
         ("orphan_segment_pdf", SecondBranch::DifferentStatus),
         ("default_stt_ready", SecondBranch::DifferentStatus),
@@ -3302,4 +3312,36 @@ fn journal_caught_up_treats_committed_or_capped_started_receipt_as_ambiguous() {
         assert!(!fix.contains("caught up"), "{status:?}: {fix}");
         assert!(!fix.contains("journal reprocess"), "{status:?}: {fix}");
     }
+}
+
+fn write_sensed_segment(context: &CheckContext, segment: &str, routed: bool) {
+    let talents = context
+        .journal_path
+        .join("chronicle/20260920/default")
+        .join(segment)
+        .join("talents");
+    fs::create_dir_all(&talents).unwrap();
+    fs::write(talents.join("sense.json"), br#"{"density":"active"}"#).unwrap();
+    let facets: &[u8] = if routed {
+        br#"[{"facet":"personal","activity":"Met.","level":"high"}]"#
+    } else {
+        b"[]"
+    };
+    fs::write(talents.join("facets.json"), facets).unwrap();
+}
+
+#[test]
+fn facet_routing_warns_when_active_segments_reach_no_facet() {
+    let context = fixture();
+    assert_eq!(result("facet_routing", &context).status, Status::Skip);
+    write_sensed_segment(&context, "090000_300", true);
+    assert_eq!(result("facet_routing", &context).status, Status::Ok);
+    write_sensed_segment(&context, "091000_300", false);
+    let warn = result("facet_routing", &context);
+    assert_eq!(warn.status, Status::Warn);
+    assert!(
+        warn.detail.contains("1 of 2 active segments"),
+        "{}",
+        warn.detail
+    );
 }

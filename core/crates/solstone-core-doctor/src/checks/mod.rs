@@ -11,6 +11,7 @@ pub mod config_dir_readable;
 pub mod default_stt_ready;
 pub mod device_day_listing;
 pub mod disk_space;
+pub mod facet_routing;
 pub mod journal_caught_up;
 pub mod journal_dir_writable;
 pub mod journal_durability;

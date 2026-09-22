@@ -956,6 +956,16 @@ mod tests {
             Ok(())
         })
         .unwrap();
+        // A journal keeps one enabled facet; the sibling lets "work" go.
+        let _ = solstone_core_facets::create_facet(
+            root.path(),
+            "personal",
+            "Personal",
+            "",
+            "",
+            "",
+            None,
+        );
         solstone_core_facets::delete_facet(root.path(), "work").unwrap();
         with_daily_unit_authority(root.path(), &identity, |authority| {
             // A retry has a fresh publication fence but retains the same plan
@@ -1657,6 +1667,16 @@ mod tests {
                 solstone_core_facets::detach_facet_entity(root.path(), "work", &batch.entity_id)
                     .unwrap();
             } else {
+                // A journal keeps one enabled facet; the sibling lets "work" go.
+                let _ = solstone_core_facets::create_facet(
+                    root.path(),
+                    "personal",
+                    "Personal",
+                    "",
+                    "",
+                    "",
+                    None,
+                );
                 solstone_core_facets::delete_facet(root.path(), "work").unwrap();
                 if mutation == "replace" {
                     solstone_core_facets::create_facet(
@@ -1736,6 +1756,16 @@ mod tests {
                 authority.checkpoint()
             })
             .unwrap();
+            // A journal keeps one enabled facet; the sibling lets "work" go.
+            let _ = solstone_core_facets::create_facet(
+                root.path(),
+                "personal",
+                "Personal",
+                "",
+                "",
+                "",
+                None,
+            );
             solstone_core_facets::delete_facet(root.path(), "work").unwrap();
             with_daily_unit_authority(root.path(), &identity, |authority| {
                 let error = publish_daily_publication(
@@ -1812,6 +1842,16 @@ mod tests {
         prepared.config.insert(
             "_daily_artifact_before".into(),
             json!({"facets/work/news/20260910.md":null}),
+        );
+        // A journal keeps one enabled facet; the sibling lets "work" go.
+        let _ = solstone_core_facets::create_facet(
+            root.path(),
+            "personal",
+            "Personal",
+            "",
+            "",
+            "",
+            None,
         );
         solstone_core_facets::delete_facet(root.path(), "work").unwrap();
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
@@ -2114,6 +2154,16 @@ mod tests {
             &[],
         )
         .unwrap();
+        // A journal keeps one enabled facet; the sibling lets "work" go.
+        let _ = solstone_core_facets::create_facet(
+            journal.path(),
+            "personal",
+            "Personal",
+            "",
+            "",
+            "",
+            None,
+        );
         solstone_core_facets::delete_facet(journal.path(), "work").unwrap();
         let error = solstone_core_facets::publish_review_attachment(
             journal.path(),
@@ -2152,6 +2202,16 @@ mod tests {
             }],
             no_output: false,
         };
+        // A journal keeps one enabled facet; the sibling lets "work" go.
+        let _ = solstone_core_facets::create_facet(
+            journal.path(),
+            "personal",
+            "Personal",
+            "",
+            "",
+            "",
+            None,
+        );
         solstone_core_facets::delete_facet(journal.path(), "work").unwrap();
         with_daily_unit_authority(journal.path(), &identity, |authority| {
             let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");

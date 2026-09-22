@@ -130,6 +130,10 @@ pub enum FacetWriteError {
     EntityLinkWrite(AtomicWriteError),
     EntityLinkRemoval(PathError),
     ContentWrite(AtomicWriteError),
+    /// Muting or deleting this facet would leave the journal nowhere to route activity.
+    LastEnabledFacet {
+        facet: String,
+    },
 }
 
 pub use solstone_core_entity::{
@@ -166,6 +170,10 @@ impl fmt::Display for FacetWriteError {
             | Self::EntityLinkWrite(error)
             | Self::ContentWrite(error) => error.fmt(formatter),
             Self::EntityLinkRemoval(error) => error.fmt(formatter),
+            Self::LastEnabledFacet { facet } => write!(
+                formatter,
+                "facet '{facet}' is the only enabled facet; a journal keeps at least one"
+            ),
         }
     }
 }
@@ -183,7 +191,8 @@ impl Error for FacetWriteError {
             Self::AlreadyExists { .. }
             | Self::DeclarationMissing { .. }
             | Self::DeclarationDamaged { .. }
-            | Self::DeclarationUnreadable { .. } => None,
+            | Self::DeclarationUnreadable { .. }
+            | Self::LastEnabledFacet { .. } => None,
         }
     }
 }

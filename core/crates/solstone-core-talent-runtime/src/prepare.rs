@@ -623,6 +623,16 @@ mod tests {
                 .to_string()
                 .contains("disagree")
         );
+        // A journal keeps one enabled facet; the sibling lets "work" go.
+        let _ = solstone_core_facets::create_facet(
+            &context.journal,
+            "personal",
+            "Personal",
+            "",
+            "",
+            "",
+            None,
+        );
         solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
         solstone_core_facets::create_facet(
             &context.journal,

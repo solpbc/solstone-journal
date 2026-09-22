@@ -25,6 +25,16 @@ pub fn facet_not_found() -> Response {
         .into_response()
 }
 
+pub fn last_enabled_facet() -> Response {
+    error_envelope(
+        "last_enabled_facet",
+        "your journal needs at least one facet turned on.",
+        "turn on another facet first, then try again",
+        StatusCode::CONFLICT,
+    )
+    .into_response()
+}
+
 pub fn settings_operation_failed() -> Response {
     settings_operation_failed_with_detail(
         "something went wrong — try again, and if it persists, check the health dashboard",

@@ -154,6 +154,14 @@ the device sees nothing but the same generic network error either way. Knowing
 which of the two occurred is the remediation; a device that keeps provoking it
 is worth reporting.
 
+`journal doctor` also runs the `facet_routing` advisory check. Over the newest
+two chronicle days it counts active segments whose Sense output filed them under
+no facet, and warns above 10%. Activity lists are built from those routes, so an
+unrouted segment is missing from them. A journal always keeps one enabled facet
+(the supervisor gives a journal with none a `personal` facet at start), so a
+warning points at damaged facet declarations or a Sense regression, not an empty
+journal.
+
 `journal doctor` reports `capture_health` and `client_delivery_stall` from whether the solstone app on each assessed device is still adding to the journal.
 Their JSON and JSONL payloads also include registry completeness, delivery state, reach, and any parsed devices that are not yet part of that delivery assessment under `client_delivery`. Human warnings use reach only to distinguish an app that is still running but not adding from a device that appears offline and may be asleep; machine reason tokens remain in JSON and JSONL.
 

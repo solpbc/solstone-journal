@@ -94,6 +94,9 @@ fn client_ingest(c: &CheckContext) -> RunnerResult {
 fn device_day_listing(c: &CheckContext) -> RunnerResult {
     checks::device_day_listing::run(c, CHECK_DEVICE_DAY_LISTING)
 }
+fn facet_routing(c: &CheckContext) -> RunnerResult {
+    checks::facet_routing::run(c, CHECK_FACET_ROUTING)
+}
 fn client_transport_refusal(c: &CheckContext) -> RunnerResult {
     checks::client_transport_refusal::run(c, CHECK_CLIENT_TRANSPORT_REFUSAL)
 }
@@ -208,6 +211,11 @@ const CHECK_CLIENT_INGEST: Check = Check {
 };
 const CHECK_DEVICE_DAY_LISTING: Check = Check {
     name: "device_day_listing",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_FACET_ROUTING: Check = Check {
+    name: "facet_routing",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -335,6 +343,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_DEVICE_DAY_LISTING,
         runner: device_day_listing,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_FACET_ROUTING,
+        runner: facet_routing,
         deferred: None,
     },
     RegistryEntry {

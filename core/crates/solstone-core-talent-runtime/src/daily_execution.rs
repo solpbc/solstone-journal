@@ -745,6 +745,16 @@ mod tests {
             if changed_owner == "outcome" {
                 std::fs::write(&outcome_path, "Owner outcome correction\n").unwrap();
             } else {
+                // A journal keeps one enabled facet; the sibling lets "work" go.
+                let _ = solstone_core_facets::create_facet(
+                    &context.journal,
+                    "personal",
+                    "Personal",
+                    "",
+                    "",
+                    "",
+                    None,
+                );
                 solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
                 observer_fixture(root.path());
                 assert_ne!(

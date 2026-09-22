@@ -135,6 +135,7 @@ pub use seeding::{
     SeedEntityOutcome, seed_entities,
 };
 pub use write::{
-    FacetRenameResult, create_facet, delete_facet, delete_facet_entity_link, rename_facet,
-    save_facet_entity_link, set_facet_entity_link_detached, set_facet_muted, update_facet,
+    DEFAULT_FACET, FacetRenameResult, create_facet, delete_facet, delete_facet_entity_link,
+    ensure_default_facet, rename_facet, save_facet_entity_link, set_facet_entity_link_detached,
+    set_facet_muted, update_facet,
 };

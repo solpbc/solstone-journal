@@ -459,6 +459,16 @@ fn muted_destination_pauses_activity_work_and_unmuting_resumes_without_replaying
     assert!(replay(&context, &["090000_300", "090500_300"], true).is_err());
 
     // Mute destination facet
+    // A journal keeps one enabled facet; the sibling lets "work" go.
+    let _ = solstone_core_facets::create_facet(
+        &context.journal,
+        "personal",
+        "Personal",
+        "",
+        "",
+        "",
+        None,
+    );
     solstone_core_facets::set_facet_muted(&context.journal, "work", true).unwrap();
 
     let next = later(&context, 60_001);
@@ -786,10 +796,30 @@ fn paused_work_reclassifies_missing_destination_then_folds_late_finish() {
     let (_journal, _roots, context, recorder) = fixture();
     fail_first(&context, &recorder);
     assert!(replay(&context, &["090000_300", "090500_300"], true).is_err());
+    // A journal keeps one enabled facet; the sibling lets "work" go.
+    let _ = solstone_core_facets::create_facet(
+        &context.journal,
+        "personal",
+        "Personal",
+        "",
+        "",
+        "",
+        None,
+    );
     solstone_core_facets::set_facet_muted(&context.journal, "work", true).unwrap();
     let next = later(&context, 60_001);
     let mut log = test_log(&next, "mute");
     activity::run(&next, &mut log, "work_090000_300", "work", false, false, 1).unwrap();
+    // A journal keeps one enabled facet; the sibling lets "work" go.
+    let _ = solstone_core_facets::create_facet(
+        &context.journal,
+        "personal",
+        "Personal",
+        "",
+        "",
+        "",
+        None,
+    );
     solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
     assert_eq!(
         due_activity_retries(&context.journal, next.now_ms)
