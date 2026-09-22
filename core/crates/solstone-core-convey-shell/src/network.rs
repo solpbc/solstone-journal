@@ -331,83 +331,34 @@ pub(crate) async fn devices(Extension(root): Extension<Arc<JournalRoot>>) -> Res
     Json(json!({"devices": devices})).into_response()
 }
 
-pub(crate) fn removal_target_allowed(basis: Option<&AccessBasis>, raw_target: &str) -> bool {
-    match basis {
-        Some(AccessBasis::Localhost) => true,
-        Some(AccessBasis::LinkedDevice { cid, .. }) => cid.as_str() == raw_target,
-        Some(AccessBasis::PairingPeer { .. }) | None => false,
-    }
-}
-
-pub(crate) fn removal_forbidden() -> Response {
-    refusal(
-        "device_removal_forbidden",
-        "device removal is not allowed for this connection",
-        StatusCode::FORBIDDEN,
-    )
-}
-
-fn is_json_content_type(headers: &HeaderMap) -> bool {
-    let Some(header) = headers.get(axum::http::header::CONTENT_TYPE) else {
-        return false;
-    };
-    let Ok(header_str) = header.to_str() else {
-        return false;
-    };
-    let media_type = header_str.split(';').next().unwrap_or("").trim();
-    media_type.eq_ignore_ascii_case("application/json")
-}
-
-pub(crate) async fn unpair(
-    Extension(root): Extension<Arc<JournalRoot>>,
-    basis: Option<Extension<AccessBasis>>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    if !is_json_content_type(&headers) {
-        return refusal(
-            "unsupported_media_type",
-            "content type must be application/json",
-            StatusCode::UNSUPPORTED_MEDIA_TYPE,
-        );
-    }
+pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: Bytes) -> Response {
     let object = serde_json::from_slice::<Value>(&body)
         .ok()
         .and_then(|value| value.as_object().cloned())
         .unwrap_or_default();
-    let raw_fingerprint = object.get("fingerprint").and_then(Value::as_str);
-    let trimmed_fingerprint = raw_fingerprint
+    let fingerprint = object
+        .get("fingerprint")
+        .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let raw_device_label = object.get("device_label").and_then(Value::as_str);
-    let trimmed_device_label = raw_device_label
+    let device_label = object
+        .get("device_label")
+        .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
-
-    let target = match (trimmed_fingerprint, trimmed_device_label) {
-        (Some(trimmed), _) => {
-            let raw = raw_fingerprint.unwrap_or_default();
-            if !removal_target_allowed(basis.as_ref().map(|Extension(b)| b), raw) {
-                return removal_forbidden();
+    let target = match (fingerprint, device_label) {
+        (Some(fingerprint), _) => fingerprint.to_owned(),
+        (None, Some(label)) => match resolve_unpair_label(&root.0, label) {
+            Ok(Some(fingerprint)) => fingerprint,
+            Ok(None) => {
+                return refusal(
+                    "paired_device_not_found",
+                    "paired device not found",
+                    StatusCode::BAD_REQUEST,
+                );
             }
-            trimmed.to_owned()
-        }
-        (None, Some(label)) => {
-            if basis.as_ref().map(|Extension(b)| b) != Some(&AccessBasis::Localhost) {
-                return removal_forbidden();
-            }
-            match resolve_unpair_label(&root.0, label) {
-                Ok(Some(fingerprint)) => fingerprint,
-                Ok(None) => {
-                    return refusal(
-                        "paired_device_not_found",
-                        "paired device not found",
-                        StatusCode::BAD_REQUEST,
-                    );
-                }
-                Err(error) => return unpair_label_refusal(error),
-            }
-        }
+            Err(error) => return unpair_label_refusal(error),
+        },
         (None, None) => {
             return refusal(
                 "missing_required_field",
@@ -875,7 +826,7 @@ mod tests {
     use axum::http::{Request, header};
     use axum::routing::get;
     use axum::{Extension, Router};
-    use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
+    use solstone_core_convey_http::identity::{AccessBasis, Carrier};
     use solstone_core_sol_link::ca::{generate_ca, jid_from_spki};
     use solstone_core_sol_link::pairing::ConfiguredHomeDecision;
     use tower::ServiceExt;
@@ -1617,12 +1568,15 @@ mod tests {
     }
 
     async fn post_json(app: Router, path: &str, body: Value) -> (StatusCode, Value) {
-        let mut request = Request::post(path)
-            .header("content-type", "application/json")
-            .body(Body::from(body.to_string()))
-            .expect("request");
-        request.extensions_mut().insert(AccessBasis::Localhost);
-        let response = app.oneshot(request).await.expect("response");
+        let response = app
+            .oneshot(
+                Request::post(path)
+                    .header("content-type", "application/json")
+                    .body(Body::from(body.to_string()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
         let status = response.status();
         let parsed = serde_json::from_slice(
             &to_bytes(response.into_body(), usize::MAX)
@@ -1630,30 +1584,6 @@ mod tests {
                 .expect("body"),
         )
         .unwrap_or(Value::Null);
-        (status, parsed)
-    }
-
-    async fn post_unpair_raw(
-        app: Router,
-        path: &str,
-        content_type: Option<&str>,
-        body: impl Into<Body>,
-        basis: Option<AccessBasis>,
-    ) -> (StatusCode, Value) {
-        let mut builder = Request::post(path);
-        if let Some(ct) = content_type {
-            builder = builder.header("content-type", ct);
-        }
-        let mut request = builder.body(body.into()).expect("request");
-        if let Some(basis) = basis {
-            request.extensions_mut().insert(basis);
-        }
-        let response = app.oneshot(request).await.expect("response");
-        let status = response.status();
-        let bytes = to_bytes(response.into_body(), usize::MAX)
-            .await
-            .expect("body");
-        let parsed = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         (status, parsed)
     }
 
@@ -2032,521 +1962,5 @@ mod tests {
             assert_ne!(response.status(), StatusCode::FOUND, "{path}");
             assert_ne!(response.status(), StatusCode::NOT_FOUND, "{path}");
         }
-    }
-
-    #[tokio::test]
-    async fn linked_device_unpair_of_another_device_is_forbidden_on_both_prefixes() {
-        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let client_b = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let temporary = TempDir::new();
-        established_journal(temporary.path());
-        write_authorized_clients(
-            temporary.path(),
-            json!([
-                {
-                    "fingerprint": client_a,
-                    "device_label": "phone",
-                    "paired_at": "2026-08-13T00:00:00Z",
-                    "instance_id": "a",
-                    "kind": "cert",
-                },
-                {
-                    "fingerprint": client_b,
-                    "device_label": "laptop",
-                    "paired_at": "2026-08-13T00:00:01Z",
-                    "instance_id": "b",
-                    "kind": "cert",
-                }
-            ]),
-        );
-        let before_bytes = fs::read(ledger_path(temporary.path())).expect("ledger before");
-        let app = crate::router(temporary.path().to_path_buf());
-        let basis = AccessBasis::LinkedDevice {
-            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
-            carrier: Carrier::Direct,
-        };
-
-        let (status, body) = post_unpair_raw(
-            app.clone(),
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": client_b}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body["reason_code"], "device_removal_forbidden");
-        assert_eq!(
-            fs::read(ledger_path(temporary.path())).expect("ledger after 1"),
-            before_bytes
-        );
-
-        let (status, body) = post_unpair_raw(
-            app,
-            "/app/link/unpair",
-            Some("application/json"),
-            json!({"device_label": "laptop"}).to_string(),
-            Some(basis),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body["reason_code"], "device_removal_forbidden");
-        assert_eq!(
-            fs::read(ledger_path(temporary.path())).expect("ledger after 2"),
-            before_bytes
-        );
-        assert_eq!(
-            ledger_fingerprints(temporary.path()),
-            vec![client_a.to_owned(), client_b.to_owned()]
-        );
-    }
-
-    #[tokio::test]
-    async fn unpair_text_plain_is_unsupported_media_type_on_both_prefixes() {
-        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let temporary = TempDir::new();
-        established_journal(temporary.path());
-        write_authorized_clients(
-            temporary.path(),
-            json!([{
-                "fingerprint": client_a,
-                "device_label": "phone",
-                "paired_at": "2026-08-13T00:00:00Z",
-                "instance_id": "a",
-                "kind": "cert",
-            }]),
-        );
-        let before_bytes = fs::read(ledger_path(temporary.path())).expect("ledger before");
-        let app = crate::router(temporary.path().to_path_buf());
-
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            let (status, body) = post_unpair_raw(
-                app.clone(),
-                &format!("{prefix}/unpair"),
-                Some("text/plain"),
-                "not json at all",
-                Some(AccessBasis::Localhost),
-            )
-            .await;
-            assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{prefix}");
-            assert_eq!(body["reason_code"], "unsupported_media_type", "{prefix}");
-            assert_eq!(
-                fs::read(ledger_path(temporary.path())).expect("ledger unchanged"),
-                before_bytes,
-                "{prefix}"
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn unpair_content_type_matrix_and_unsupported_variations() {
-        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let temporary = TempDir::new();
-        established_journal(temporary.path());
-        write_authorized_clients(
-            temporary.path(),
-            json!([{
-                "fingerprint": client_a,
-                "device_label": "phone",
-                "paired_at": "2026-08-13T00:00:00Z",
-                "instance_id": "a",
-                "kind": "cert",
-            }]),
-        );
-        let before_bytes = fs::read(ledger_path(temporary.path())).expect("ledger before");
-        let app = crate::router(temporary.path().to_path_buf());
-
-        // Absent content-type with malformed bytes -> 415 on both prefixes
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            let (status, body) = post_unpair_raw(
-                app.clone(),
-                &format!("{prefix}/unpair"),
-                None,
-                "malformed json",
-                Some(AccessBasis::Localhost),
-            )
-            .await;
-            assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{prefix}");
-            assert_eq!(body["reason_code"], "unsupported_media_type", "{prefix}");
-            assert_eq!(
-                fs::read(ledger_path(temporary.path())).expect("ledger unchanged"),
-                before_bytes,
-                "{prefix}"
-            );
-        }
-
-        // application/problem+json -> 415 on both prefixes
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            let (status, body) = post_unpair_raw(
-                app.clone(),
-                &format!("{prefix}/unpair"),
-                Some("application/problem+json"),
-                json!({"fingerprint": client_a}).to_string(),
-                Some(AccessBasis::Localhost),
-            )
-            .await;
-            assert_eq!(status, StatusCode::UNSUPPORTED_MEDIA_TYPE, "{prefix}");
-            assert_eq!(body["reason_code"], "unsupported_media_type", "{prefix}");
-            assert_eq!(
-                fs::read(ledger_path(temporary.path())).expect("ledger unchanged"),
-                before_bytes,
-                "{prefix}"
-            );
-        }
-
-        // application/json with parameters and case-insensitivity -> 200 on both prefixes
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            for ct in [
-                "application/json; charset=utf-8",
-                "application/json; charset=utf-8; profile=solstone",
-                "Application/JSON",
-            ] {
-                let temp = TempDir::new();
-                established_journal(temp.path());
-                write_authorized_clients(
-                    temp.path(),
-                    json!([{
-                        "fingerprint": client_a,
-                        "device_label": "phone",
-                        "paired_at": "2026-08-13T00:00:00Z",
-                        "instance_id": "a",
-                        "kind": "cert",
-                    }]),
-                );
-                let app = crate::router(temp.path().to_path_buf());
-                let (status, body) = post_unpair_raw(
-                    app,
-                    &format!("{prefix}/unpair"),
-                    Some(ct),
-                    json!({"fingerprint": client_a}).to_string(),
-                    Some(AccessBasis::Localhost),
-                )
-                .await;
-                assert_eq!(status, StatusCode::OK, "{prefix} {ct}");
-                assert_eq!(body, json!({"unpaired": client_a}), "{prefix} {ct}");
-                assert!(ledger_fingerprints(temp.path()).is_empty(), "{prefix} {ct}");
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn unpair_exists_vs_missing_equality_and_precedence_before_ledger_read() {
-        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let client_b = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let client_z = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-        let temporary = TempDir::new();
-        established_journal(temporary.path());
-        write_authorized_clients(
-            temporary.path(),
-            json!([
-                {
-                    "fingerprint": client_a,
-                    "device_label": "phone",
-                    "paired_at": "2026-08-13T00:00:00Z",
-                    "instance_id": "a",
-                    "kind": "cert",
-                },
-                {
-                    "fingerprint": client_b,
-                    "device_label": "laptop",
-                    "paired_at": "2026-08-13T00:00:01Z",
-                    "instance_id": "b",
-                    "kind": "cert",
-                }
-            ]),
-        );
-        let app = crate::router(temporary.path().to_path_buf());
-        let basis = AccessBasis::LinkedDevice {
-            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
-            carrier: Carrier::Direct,
-        };
-
-        let (status_existing, body_existing) = post_unpair_raw(
-            app.clone(),
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": client_b}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-
-        let (status_missing, body_missing) = post_unpair_raw(
-            app.clone(),
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": client_z}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-
-        assert_eq!(status_existing, StatusCode::FORBIDDEN);
-        assert_eq!(status_missing, StatusCode::FORBIDDEN);
-        assert_eq!(body_existing, body_missing);
-        assert_eq!(
-            body_existing,
-            json!({
-                "reason_code": "device_removal_forbidden",
-                "reason": "device_removal_forbidden",
-                "error": "device removal is not allowed for this connection",
-                "detail": "device removal is not allowed for this connection",
-            })
-        );
-
-        // Precedence: directory ledger and {} ledger
-        let dir_temp = TempDir::new();
-        established_journal(dir_temp.path());
-        fs::create_dir_all(dir_temp.path().join("link/authorized_clients.json")).unwrap();
-        let dir_app = crate::router(dir_temp.path().to_path_buf());
-
-        for b in [
-            Some(basis.clone()),
-            Some(AccessBasis::PairingPeer {
-                carrier: Carrier::Direct,
-            }),
-            None,
-        ] {
-            let (status, body) = post_unpair_raw(
-                dir_app.clone(),
-                "/app/network/unpair",
-                Some("application/json"),
-                json!({"fingerprint": client_b}).to_string(),
-                b,
-            )
-            .await;
-            assert_eq!(status, StatusCode::FORBIDDEN);
-            assert_eq!(body["reason_code"], "device_removal_forbidden");
-        }
-        assert!(
-            dir_temp
-                .path()
-                .join("link/authorized_clients.json")
-                .is_dir()
-        );
-
-        // Neither field with directory ledger -> 400 missing_required_field
-        let (status, body) = post_unpair_raw(
-            dir_app,
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(body["reason_code"], "missing_required_field");
-
-        // {} bytes ledger
-        let empty_temp = TempDir::new();
-        established_journal(empty_temp.path());
-        fs::create_dir_all(empty_temp.path().join("link")).unwrap();
-        fs::write(empty_temp.path().join("link/authorized_clients.json"), "{}").unwrap();
-        let empty_app = crate::router(empty_temp.path().to_path_buf());
-        let (status, body) = post_unpair_raw(
-            empty_app,
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": client_b}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body["reason_code"], "device_removal_forbidden");
-        assert_eq!(
-            fs::read_to_string(empty_temp.path().join("link/authorized_clients.json")).unwrap(),
-            "{}"
-        );
-    }
-
-    #[tokio::test]
-    async fn unpair_self_success_and_casing_and_whitespace_differences() {
-        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let temporary = TempDir::new();
-        established_journal(temporary.path());
-        write_authorized_clients(
-            temporary.path(),
-            json!([{
-                "fingerprint": client_a,
-                "device_label": "phone",
-                "paired_at": "2026-08-13T00:00:00Z",
-                "instance_id": "a",
-                "kind": "cert",
-            }]),
-        );
-        let app = crate::router(temporary.path().to_path_buf());
-        let basis = AccessBasis::LinkedDevice {
-            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
-            carrier: Carrier::Direct,
-        };
-
-        // Linked caller attempting label unpair of own label -> 403 on both prefixes
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            let (status, body) = post_unpair_raw(
-                app.clone(),
-                &format!("{prefix}/unpair"),
-                Some("application/json"),
-                json!({"device_label": "phone"}).to_string(),
-                Some(basis.clone()),
-            )
-            .await;
-            assert_eq!(status, StatusCode::FORBIDDEN, "{prefix}");
-            assert_eq!(body["reason_code"], "device_removal_forbidden", "{prefix}");
-        }
-
-        // Case difference on raw target -> 403
-        let upper_target = format!(
-            "SHA256:{}",
-            &client_a["sha256:".len()..].to_ascii_uppercase()
-        );
-        let (status, body) = post_unpair_raw(
-            app.clone(),
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": upper_target}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body["reason_code"], "device_removal_forbidden");
-
-        // Whitespace difference on linked target -> 403
-        let ws_target = format!("  {client_a}  ");
-        let (status, body) = post_unpair_raw(
-            app.clone(),
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": ws_target}).to_string(),
-            Some(basis.clone()),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN);
-        assert_eq!(body["reason_code"], "device_removal_forbidden");
-
-        // Linked self unpair success on both prefixes
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            let temp = TempDir::new();
-            established_journal(temp.path());
-            write_authorized_clients(
-                temp.path(),
-                json!([{
-                    "fingerprint": client_a,
-                    "device_label": "phone",
-                    "paired_at": "2026-08-13T00:00:00Z",
-                    "instance_id": "a",
-                    "kind": "cert",
-                }]),
-            );
-            let app = crate::router(temp.path().to_path_buf());
-            let (status, body) = post_unpair_raw(
-                app.clone(),
-                &format!("{prefix}/unpair"),
-                Some("application/json"),
-                json!({"fingerprint": client_a}).to_string(),
-                Some(basis.clone()),
-            )
-            .await;
-            assert_eq!(status, StatusCode::OK, "{prefix}");
-            assert_eq!(body, json!({"unpaired": client_a}), "{prefix}");
-            assert!(ledger_fingerprints(temp.path()).is_empty(), "{prefix}");
-
-            // Second unpair is 400 paired_device_not_found
-            let (status, body) = post_unpair_raw(
-                app,
-                &format!("{prefix}/unpair"),
-                Some("application/json"),
-                json!({"fingerprint": client_a}).to_string(),
-                Some(basis.clone()),
-            )
-            .await;
-            assert_eq!(status, StatusCode::BAD_REQUEST, "{prefix}");
-            assert_eq!(body["reason_code"], "paired_device_not_found", "{prefix}");
-        }
-
-        // Localhost with whitespace trims and removes
-        let temp2 = TempDir::new();
-        established_journal(temp2.path());
-        write_authorized_clients(
-            temp2.path(),
-            json!([{
-                "fingerprint": client_a,
-                "device_label": "phone",
-                "paired_at": "2026-08-13T00:00:00Z",
-                "instance_id": "a",
-                "kind": "cert",
-            }]),
-        );
-        let app2 = crate::router(temp2.path().to_path_buf());
-        let (status, body) = post_unpair_raw(
-            app2,
-            "/app/network/unpair",
-            Some("application/json"),
-            json!({"fingerprint": format!("  {client_a}  ")}).to_string(),
-            Some(AccessBasis::Localhost),
-        )
-        .await;
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(body, json!({"unpaired": client_a}));
-        assert!(ledger_fingerprints(temp2.path()).is_empty());
-    }
-
-    #[tokio::test]
-    async fn unpair_ambiguous_device_label_refuses_linked_caller_before_resolution() {
-        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let client_b = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let client_c = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
-        let temporary = TempDir::new();
-        established_journal(temporary.path());
-        write_authorized_clients(
-            temporary.path(),
-            json!([
-                {
-                    "fingerprint": client_a,
-                    "device_label": "phone",
-                    "paired_at": "2026-08-13T00:00:00Z",
-                    "instance_id": "a",
-                    "kind": "cert",
-                },
-                {
-                    "fingerprint": client_b,
-                    "device_label": "phone",
-                    "paired_at": "2026-08-13T00:00:01Z",
-                    "instance_id": "b",
-                    "kind": "cert",
-                }
-            ]),
-        );
-        let before_bytes = fs::read(temporary.path().join("link/authorized_clients.json")).unwrap();
-        let app = crate::router(temporary.path().to_path_buf());
-        let basis = AccessBasis::LinkedDevice {
-            cid: LinkedDeviceCid::try_from(client_c).unwrap(),
-            carrier: Carrier::Direct,
-        };
-
-        for prefix in NETWORK_ROUTE_PREFIXES {
-            let (status, body) = post_unpair_raw(
-                app.clone(),
-                &format!("{prefix}/unpair"),
-                Some("application/json"),
-                json!({"device_label": "phone"}).to_string(),
-                Some(basis.clone()),
-            )
-            .await;
-            assert_eq!(status, StatusCode::FORBIDDEN, "{prefix}");
-            assert_eq!(body["reason_code"], "device_removal_forbidden", "{prefix}");
-            assert_eq!(
-                fs::read(temporary.path().join("link/authorized_clients.json")).unwrap(),
-                before_bytes,
-                "{prefix}"
-            );
-        }
-
-        // Localhost on the same fixture still gets 400 invalid_operation_for_state
-        let (status, body) =
-            post_json(app, "/app/network/unpair", json!({"device_label": "phone"})).await;
-        assert_eq!(status, StatusCode::BAD_REQUEST);
-        assert_eq!(body["reason_code"], "invalid_operation_for_state");
-        assert_eq!(
-            fs::read(temporary.path().join("link/authorized_clients.json")).unwrap(),
-            before_bytes
-        );
     }
 }

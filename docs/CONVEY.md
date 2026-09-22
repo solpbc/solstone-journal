@@ -65,13 +65,9 @@ plain text.
 client-supplied field. Paired-device ingest derives `AccessBasis::LinkedDevice`
 from the paired-device TLS client certificate and takes its CID from that basis,
 rather than from a bearer key, header, URL, or request body. Linked-device
-self-description (`GET`/`PUT`/`DELETE` `/app/network/api/clients/self` and its `/app/link` twin)
+self-description (`GET`/`PUT` `/app/network/api/clients/self` and its `/app/link` twin)
 admits only `AccessBasis::LinkedDevice` and derives the target CID from the connection.
-Removing a paired device (`DELETE .../api/clients/{cid}`, `POST .../unpair`,
-`POST .../api/devices/{fingerprint}/forget`, and `DELETE .../api/clients/self`, on
-`/app/network` and `/app/link`) uses that same connection basis: the localhost owner may
-remove an eligible device, and a linked device may remove only its own CID. Owner label
-overrides (`PATCH` `/app/network/api/clients/{cid}/label`) require
+Owner label overrides (`PATCH` `/app/network/api/clients/{cid}/label`) require
 localhost owner authority (`AccessBasis::Localhost`). Source deletion requires that
 same linked-device identity; its source path selects an allowed source but does not
 alter authorization or the journal-wide deletion scope.
