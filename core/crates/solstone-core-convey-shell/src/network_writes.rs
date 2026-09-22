@@ -3,12 +3,14 @@
 
 //! Native private-link, home-address and device-forget write routes.
 //!
-//! These POST routes have no local-owner check. That is intentional:
-//! pairing is itself an owner act, so a paired device may rewrite the home
-//! address, enable or disable the private link, and forget a device that never
-//! delivered anything. `pair-start` and `nonce-status` in `network.rs` do
-//! require a local owner, because those mint and inspect enrollment windows.
-//! Do not add a local-owner gate here.
+//! Home-address and private-link enable/disable have no local-owner check.
+//! That is intentional: pairing is itself an owner act, so a paired device
+//! may rewrite the home address and enable or disable the private link.
+//! Forgetting a device is narrower: a paired device may forget only itself,
+//! and only when the existing host and delivery checks also pass. The
+//! localhost owner may still forget any eligible device.
+//! `pair-start` and `nonce-status` in `network.rs` require a local owner,
+//! because those mint and inspect enrollment windows.
 
 use std::net::Ipv4Addr;
 use std::sync::Arc;
@@ -20,6 +22,7 @@ use axum::extract::{Extension, Path};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
+use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
@@ -700,8 +703,12 @@ async fn forget_device(
     Extension(journal): Extension<Arc<JournalRoot>>,
     Extension(host_label): Extension<HostLabel>,
     host_override: Option<Extension<HostLabelOverride>>,
+    basis: Option<Extension<AccessBasis>>,
     Path(fingerprint): Path<String>,
 ) -> Response {
+    if !crate::network::removal_target_allowed(basis.as_ref().map(|Extension(b)| b), &fingerprint) {
+        return crate::network::removal_forbidden();
+    }
     let fingerprint = fingerprint.trim().to_owned();
     if fingerprint.is_empty() {
         return refusal(
