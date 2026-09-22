@@ -6,6 +6,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- agents can now read from your journal, once you turn it on. Claude, Codex, or any agent that speaks MCP can search and read your journal, within what you let it see: your whole journal, or only the facets you choose. it reads only, and can't add, change or delete anything. this is off by default; nothing is reachable until you turn it on, and you can turn it off any time.
+- turning it on gives your journal an address on the internet through solstone.me, a paid agent-connector service operated by sol pbc. the solstone.me relay passes the traffic along and can't read it: sol pbc can see that an agent connected to your journal, when, and how much passed, nothing inside. the address is public once it's issued, and stays public for good, even after you turn this off or ask sol pbc to delete everything it holds for you. it's an identifier, not your data: eight random characters with nothing of yours in it. every request an agent makes is recorded in your journal: what it asked and what it got or was refused.
+
 ## [2.0.12] - 2026-09-21
 
 ### Fixed
