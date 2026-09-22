@@ -9,10 +9,14 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - your journal now keeps at least one facet unmuted. when your journal starts with every facet muted, or with none, it unmutes Personal, or adds it if you don't have one. you can't mute or delete the last unmuted facet.
+- when you use your own provider key, you now type the model id yourself, exactly as your provider lists it, instead of picking from a short built-in list. that list went out of date every time a provider released new models. your journal still checks the model with your provider before saving it.
 
 ### Fixed
 
 - a recent update left most of what went into your journal under none of your facets, so it was missing from your activity lists, including today's. new additions again go under the unmuted facet that fits best. this release doesn't refile what already went in under no facet.
+- with your own Anthropic key, newer Claude models like Claude Sonnet 5 could turn away much of your journal's work, such as understanding screens and importing documents. your journal no longer sends the settings those models refuse, so they work again.
+- when you add a key for a different provider, your journal now checks it with that provider, not the one you were already using.
+- a mistyped model id now tells you your provider doesn't offer it to your key, instead of showing a general error.
 
 ## [2.0.14] - 2026-09-22
 

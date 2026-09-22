@@ -78,7 +78,6 @@ pub fn payload(
         "providers":[{"name":"google","label":"Google (Gemini)","env_key":"GOOGLE_API_KEY"},{"name":"openai","label":"OpenAI (GPT)","env_key":"OPENAI_API_KEY"},{"name":"anthropic","label":"Anthropic (Claude)","env_key":"ANTHROPIC_API_KEY"},{"name":"local","label":"Local (on-device)","env_key":""}],
         "api_keys":key_payload["api_keys"], "key_validation":key_payload["key_validation"], "active":active,
         "byo_models":config.get("providers").and_then(Value::as_object).and_then(|value|value.get("byo_models")).cloned().unwrap_or_else(||json!({})),
-        "model_tiers":{"google":[{"tier":"mid","label":"Gemini 3.5 Flash","model":"gemini-3.5-flash"},{"tier":"lite","label":"Gemini 3.1 Flash Lite","model":"gemini-3.1-flash-lite"}],"anthropic":[{"tier":"top","label":"Claude Opus","model":"claude-opus-4-8"},{"tier":"mid","label":"Claude Sonnet","model":"claude-sonnet-5"},{"tier":"lite","label":"Claude Haiku","model":"claude-haiku-4-5"}],"openai":[{"tier":"top","label":"GPT","model":"gpt-5.5"},{"tier":"mid","label":"GPT mini","model":"gpt-5.4-mini"},{"tier":"lite","label":"GPT nano","model":"gpt-5.4-nano"}]},
         "active_lane":{"lane":ui_lane(config),"confidential_enabled":spp_configured,"confidential_provenance_configured":spp_configured,"confidential_audio":confidential_audio(config),"confidential_operation":confidential_operation,"confidential_attestation":brain_view["confidential_attestation"]},
         "brain":brain_view["brain"],"provider_status":status,"local":local::bootstrap_status(journal, local_model),"local_runtime":local::runtime(journal),"local_override":endpoint_view,"local_backend":if cfg!(target_os="macos") {"metal"} else {"local"},"configuration_guidance":google_exact_model_advisory(config)
     })
@@ -130,22 +129,21 @@ impl OneShotKeyValidator {
     }
 
     pub fn validate_model(&self, provider: &str, model: &str, key: &str) -> Result<Value, String> {
-        Ok(classify_model_probe(self.probe(provider, Some(model), key)))
+        Ok(classify_model_probe(self.probe(provider, model, key)))
     }
 
     fn probe(
         &self,
         provider: &str,
-        model: Option<&str>,
+        model: &str,
         key: &str,
     ) -> Result<GenerateResponse, ClientError> {
-        let mut client = self.client.clone().with_env(API_KEY_OVERRIDE_ENV, key);
-        if let Some(model) = model {
-            client = client
-                .with_env(PROVIDER_OVERRIDE_ENV, provider)
-                .with_env(MODEL_OVERRIDE_ENV, model);
-        }
-        client.execute(&validation_request())
+        self.client
+            .clone()
+            .with_env(API_KEY_OVERRIDE_ENV, key)
+            .with_env(PROVIDER_OVERRIDE_ENV, provider)
+            .with_env(MODEL_OVERRIDE_ENV, model)
+            .execute(&validation_request())
     }
 }
 
@@ -233,9 +231,19 @@ fn client_failure(error: ClientError) -> Value {
     }
 }
 
+/// A model id no provider serves. Every cloud provider authenticates the key
+/// before it resolves the model, so a key check against this id answers
+/// `model_not_found` for a good key and an authentication failure for a bad one,
+/// without depending on any real model that a provider may later retire.
+const KEY_PROBE_MODEL: &str = "solstone-key-check";
+
 impl ManagedKeyValidator for OneShotKeyValidator {
     fn validate(&self, provider: &str, key: &str) -> Result<Value, String> {
-        Ok(classify_key_probe(self.probe(provider, None, key)))
+        Ok(classify_key_probe(self.probe(
+            provider,
+            KEY_PROBE_MODEL,
+            key,
+        )))
     }
 }
 
@@ -560,6 +568,22 @@ pub fn resolve_provider_update(
             "google_model_resolution_targets is only valid with Google BYO model saves.".to_owned(),
         ));
     }
+    let model = match model {
+        None if lane == "byo" && provider != "local" => {
+            Some(owner_model_for(&config, &provider).ok_or_else(|| {
+                let name = match provider.as_str() {
+                    "anthropic" => "Anthropic",
+                    "google" => "Google",
+                    "openai" => "OpenAI",
+                    other => other,
+                };
+                ProviderRequestError::InvalidInput(format!(
+                    "No model chosen for {name}. Set one with --model, using a model id exactly as {name} lists it."
+                ))
+            })?)
+        }
+        model => model,
+    };
     Ok(ProviderUpdate {
         lane: lane.to_owned(),
         provider,
@@ -795,11 +819,46 @@ fn active(config: &Map<String, Value>) -> Value {
     json!({"provider":provider,"model":model})
 }
 
+/// The model the owner already chose for a cloud provider: the active model when
+/// that provider is active, the one confidential processing is holding for it,
+/// or the one remembered for it. Cloud providers
+/// have no built-in default: their catalogs change faster than releases, so the
+/// owner supplies the model id alongside their own key.
+fn owner_model_for(config: &Map<String, Value>, provider: &str) -> Option<String> {
+    let providers = config.get("providers").and_then(Value::as_object);
+    fn chosen_for<'a>(profile: Option<&'a Value>, provider: &str) -> Option<&'a Value> {
+        profile
+            .and_then(Value::as_object)
+            .filter(|profile| profile.get("provider").and_then(Value::as_str) == Some(provider))
+            .and_then(|profile| profile.get("model"))
+    }
+    let active = chosen_for(
+        providers.and_then(|providers| providers.get("active")),
+        provider,
+    );
+    let prior = chosen_for(
+        config
+            .get("services")
+            .and_then(|services| services.get("confidential"))
+            .and_then(|confidential| confidential.get("prior_active")),
+        provider,
+    );
+    let remembered = providers
+        .and_then(|providers| providers.get("byo_models"))
+        .and_then(Value::as_object)
+        .and_then(|models| models.get(provider));
+    [active, prior, remembered]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .find(|model| !model.is_empty())
+        .map(str::to_owned)
+}
+
+/// Only the bundled local model has a built-in default; see `owner_model_for`.
 fn default_model_for(provider: &str) -> &'static str {
     match provider {
-        "google" => "gemini-3.5-flash",
-        "openai" => "gpt-5.4-mini",
-        "anthropic" => "claude-sonnet-5",
         "local" => local::default_model(),
         _ => "",
     }
@@ -1077,40 +1136,43 @@ mod tests {
     }
 
     #[test]
-    fn provider_switch_without_a_model_falls_back_to_the_current_anthropic_mid_tier() {
+    fn provider_switch_without_a_model_uses_the_owners_remembered_model() {
         let journal = temporary_journal(
-            "switch-anthropic-fallback",
-            json!({"providers":{"active":{"provider":"google","model":"gemini-3.5-flash"}}}),
+            "switch-anthropic-remembered",
+            json!({"providers":{"active":{"provider":"google","model":"gemini-3.5-flash"},"byo_models":{"anthropic":"owner-claude-model"}}}),
         );
-        let result = update_providers(
+        let update = resolve_provider_update(
             &journal,
-            ProviderUpdate {
-                lane: "byo".to_owned(),
-                provider: "anthropic".to_owned(),
-                model: None,
-                resolution_targets: vec![],
-            },
-            Value::Null,
-        );
-        assert!(result.is_ok(), "provider switch is allowed: {result:?}");
-        let config = read_config(&journal).expect("config reads");
-        assert_eq!(config["providers"]["active"]["model"], "claude-sonnet-5");
+            "byo",
+            &request_map(&[("provider", json!("anthropic"))]),
+        )
+        .expect("a remembered model resolves");
+        assert_eq!(update.model.as_deref(), Some("owner-claude-model"));
         let _ = fs::remove_dir_all(journal);
     }
 
     #[test]
-    fn default_model_for_agrees_with_payload_mid_tier_for_every_cloud_provider() {
-        let journal = temporary_journal("default-model-mid-tier", json!({}));
+    fn provider_switch_without_any_owner_model_is_refused_not_defaulted() {
+        let journal = temporary_journal(
+            "switch-anthropic-no-model",
+            json!({"providers":{"active":{"provider":"google","model":"gemini-3.5-flash"}}}),
+        );
+        assert_invalid_input(
+            resolve_provider_update(
+                &journal,
+                "byo",
+                &request_map(&[("provider", json!("anthropic"))]),
+            ),
+            "No model chosen for Anthropic. Set one with --model, using a model id exactly as Anthropic lists it.",
+        );
+        let _ = fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn payload_carries_no_built_in_cloud_model_catalog() {
+        let journal = temporary_journal("no-model-catalog", json!({}));
         let payload = super::payload(&journal, &Map::new(), "", Value::Null);
-        for provider in ["google", "openai", "anthropic"] {
-            let mid = payload["model_tiers"][provider]
-                .as_array()
-                .expect("model_tiers is an array")
-                .iter()
-                .find(|entry| entry["tier"] == "mid")
-                .and_then(|entry| entry["model"].as_str());
-            assert_eq!(mid, Some(super::default_model_for(provider)), "{provider}");
-        }
+        assert!(payload.get("model_tiers").is_none());
         let _ = fs::remove_dir_all(journal);
     }
 

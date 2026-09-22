@@ -189,8 +189,8 @@ fn model_override_without_config_wins() {
         return;
     }
     assert_eq!(
-        configured_model(&config(None, None, None), "default"),
-        "candidate"
+        configured_model(&config(None, None, None)).as_deref(),
+        Some("candidate")
     );
     emit_receipt(&expected);
 }
@@ -203,8 +203,8 @@ fn model_override_beats_config() {
         return;
     }
     assert_eq!(
-        configured_model(&config(None, Some("stored"), None), "default"),
-        "candidate"
+        configured_model(&config(None, Some("stored"), None)).as_deref(),
+        Some("candidate")
     );
     emit_receipt(&expected);
 }
@@ -217,8 +217,8 @@ fn model_config_is_used_without_override() {
         return;
     }
     assert_eq!(
-        configured_model(&config(None, Some("stored"), None), "default"),
-        "stored"
+        configured_model(&config(None, Some("stored"), None)).as_deref(),
+        Some("stored")
     );
     emit_receipt(&expected);
 }

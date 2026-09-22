@@ -20,7 +20,6 @@ const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 const ANTHROPIC_MESSAGES_PATH: &str = "/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "prompt is too long",
@@ -137,7 +136,9 @@ fn anthropic_converse_with<T: AnthropicTransport>(
     let Some(api_key) = configured_api_key(config) else {
         return converse_failure("provider_key_missing");
     };
-    let model = configured_model(config);
+    let Some(model) = crate::overrides::configured_model(config) else {
+        return converse_failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
     let body = converse_request_body(request, messages, tools, &model);
     let response = match transport.post_json(
@@ -193,7 +194,9 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
     else {
         return failure("provider_key_missing");
     };
-    let model = crate::overrides::configured_model_with(config, DEFAULT_MODEL, env);
+    let Some(model) = crate::overrides::configured_model_with(config, env) else {
+        return failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url_with(config, ANTHROPIC_BASE_URL, env);
     let body = request_body(request, &model);
     let response = match transport.post_json(
@@ -224,10 +227,13 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
     crate::overrides::configured_api_key(config, ANTHROPIC_API_KEY_ENV)
 }
 
-fn configured_model(config: &Map<String, Value>) -> String {
-    crate::overrides::configured_model(config, DEFAULT_MODEL)
-}
-
+/// Build the smallest request every Messages API model accepts: model,
+/// `max_tokens`, messages and an optional system prompt. Sampling and thinking
+/// controls are deliberately never sent. Their accepted shapes change from one
+/// model generation to the next (a `temperature` or a fixed thinking budget is a
+/// hard 400 on current models), so each model runs at its provider's own
+/// defaults. The request's thinking budget still widens `max_tokens` so a model
+/// that thinks by default has room to answer.
 fn request_body(request: &GenerateRequest, model: &str) -> Value {
     let content = request
         .contents
@@ -246,11 +252,6 @@ fn request_body(request: &GenerateRequest, model: &str) -> Value {
     });
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
-    }
-    if let Some(budget) = request.thinking_budget.filter(|budget| *budget > 0) {
-        body["thinking"] = json!({"type": "enabled", "budget_tokens": budget});
-    } else if model_supports_temperature(model) {
-        body["temperature"] = json!(request.temperature);
     }
     body
 }
@@ -312,24 +313,7 @@ fn converse_request_body(
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
     }
-    if let Some(budget) = request.thinking_budget.filter(|budget| *budget > 0) {
-        body["thinking"] = json!({"type": "enabled", "budget_tokens": budget});
-    } else if model_supports_temperature(model) {
-        body["temperature"] = json!(request.temperature);
-    }
     body
-}
-
-// Models that reject the `temperature` parameter (Anthropic API error:
-// "temperature is deprecated for this model"). This list is manually
-// reconciled against the `model_tiers` catalog in
-// solstone-core-thinking/src/providers.rs and must be revisited whenever
-// that catalog changes.
-fn model_supports_temperature(model: &str) -> bool {
-    !matches!(
-        model,
-        "claude-opus-4-7" | "claude-sonnet-5" | "claude-opus-4-8"
-    )
 }
 
 fn request_timeout(timeout_s: Option<f64>) -> Duration {
@@ -523,6 +507,7 @@ fn usage_from_provider(provider_usage: &Map<String, Value>) -> Value {
 fn classify_http_failure(status: u16, body: &str) -> &'static str {
     match status {
         401 => "provider_key_invalid",
+        404 => "model_not_found",
         429 => "provider_quota_exceeded",
         400 if is_context_window_error(body) => "context_window_exceeded",
         400 => "provider_response_invalid",
@@ -662,9 +647,10 @@ mod tests {
             env.insert(ANTHROPIC_API_KEY_ENV.into(), Value::String(key.into()));
         }
         let mut active = Map::new();
-        if let Some(model) = model {
-            active.insert("model".into(), Value::String(model.into()));
-        }
+        active.insert(
+            "model".into(),
+            Value::String(model.unwrap_or("claude-test-model").into()),
+        );
         let mut providers = Map::new();
         providers.insert("active".into(), Value::Object(active));
         let mut config = Map::new();
@@ -919,79 +905,43 @@ mod tests {
     }
 
     #[test]
-    fn thinking_enabled_omits_temperature_and_sends_thinking_body() {
-        let mut request = request();
-        request.thinking_budget = Some(500);
-        let mut transport = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request,
-            &config(Some("configured-secret"), None),
-            &mut transport,
-        );
-        let body = &transport.posts[0];
-        assert_eq!(
-            body["thinking"],
-            json!({"type": "enabled", "budget_tokens": 500})
-        );
-        assert!(body.get("temperature").is_none());
+    fn request_never_sends_sampling_or_thinking_controls() {
+        for budget in [None, Some(0), Some(500)] {
+            let mut request = request();
+            request.thinking_budget = budget;
+            let mut transport = StubTransport {
+                responses: vec![Ok(success_response())],
+                ..Default::default()
+            };
+            let _ = anthropic_generate_with(
+                &request,
+                &config(Some("configured-secret"), Some("any-owner-model")),
+                &mut transport,
+            );
+            let body = &transport.posts[0];
+            assert_eq!(body["model"], "any-owner-model");
+            assert!(body.get("thinking").is_none(), "budget {budget:?}");
+            assert!(body.get("temperature").is_none(), "budget {budget:?}");
+        }
     }
 
     #[test]
-    fn thinking_disabled_respects_model_temperature_capability() {
-        let mut no_temperature = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-opus-4-7")),
-            &mut no_temperature,
+    fn missing_model_is_refused_before_any_request() {
+        let mut config = config(Some("configured-secret"), None);
+        config["providers"]["active"]
+            .as_object_mut()
+            .expect("active is an object")
+            .remove("model");
+        let mut transport = StubTransport::default();
+        let result = anthropic_generate_with(&request(), &config, &mut transport);
+        assert_eq!(
+            result,
+            AnthropicResult::Failed(AnthropicFailure {
+                reason_code: Some("model_missing".into()),
+                detail: None,
+            })
         );
-        assert!(no_temperature.posts[0].get("temperature").is_none());
-
-        let mut no_temperature_sonnet_5 = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-sonnet-5")),
-            &mut no_temperature_sonnet_5,
-        );
-        assert!(
-            no_temperature_sonnet_5.posts[0]
-                .get("temperature")
-                .is_none()
-        );
-
-        let mut no_temperature_opus_4_8 = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-opus-4-8")),
-            &mut no_temperature_opus_4_8,
-        );
-        assert!(
-            no_temperature_opus_4_8.posts[0]
-                .get("temperature")
-                .is_none()
-        );
-
-        let mut temperature = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-sonnet-4-6")),
-            &mut temperature,
-        );
-        assert_eq!(temperature.posts[0]["temperature"], json!(0.3));
+        assert!(transport.posts.is_empty());
     }
 
     #[test]
@@ -1113,7 +1063,7 @@ mod tests {
         assert_eq!(
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&json!({
-                "model": "model", "max_tokens": 4000, "temperature": 0.3,
+                "model": "model", "max_tokens": 4000,
                 "system": "system", "tools": [{"name": "weather", "description": "weather", "input_schema": {"type":"object"}}],
                 "messages": [
                     {"role":"user","content":[{"type":"text","text":"ask"}]},
@@ -1444,5 +1394,24 @@ mod tests {
         };
         assert_eq!(failure.reason_code, "provider_quota_exceeded");
         assert!(failure.blocking);
+    }
+
+    #[test]
+    fn unknown_model_and_auth_failures_classify_distinctly() {
+        // Shapes captured from the live Messages API.
+        assert_eq!(
+            classify_http_failure(
+                404,
+                r#"{"type":"error","error":{"type":"not_found_error","message":"model: solstone-key-check"}}"#
+            ),
+            "model_not_found"
+        );
+        assert_eq!(
+            classify_http_failure(
+                401,
+                r#"{"type":"error","error":{"type":"authentication_error","message":"API key is invalid."}}"#
+            ),
+            "provider_key_invalid"
+        );
     }
 }
