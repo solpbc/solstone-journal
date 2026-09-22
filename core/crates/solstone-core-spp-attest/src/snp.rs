@@ -1458,6 +1458,46 @@ mod tests {
         assert!(check_pcr_fingerprint(b"PCR bytes", &policy).is_ok());
     }
 
+    /// Under G19, a pin set can hold the current fingerprint and the next one together.
+    #[test]
+    fn pinned_pcr_policy_supports_dual_pin_sets() {
+        let mut blob_320 = vec![0x11_u8; 320];
+        blob_320[0] = 0xaa;
+        let mut blob_448 = vec![0x22_u8; 448];
+        blob_448[0] = 0xbb;
+
+        let pin_320 = super::pcr_fingerprint_hex(&blob_320);
+        let pin_448 = super::pcr_fingerprint_hex(&blob_448);
+        assert_ne!(pin_320, pin_448);
+
+        let policy = Policy {
+            pcr_mode: PcrMode::Pin,
+            pcr_pins: [pin_320.clone(), pin_448.clone()].into_iter().collect(),
+            ..Policy::default()
+        };
+
+        assert!(check_pcr_fingerprint(&blob_320, &policy).is_ok());
+        assert!(check_pcr_fingerprint(&blob_448, &policy).is_ok());
+
+        let unpinned_blob = b"unpinned blob data";
+        assert!(matches!(
+            check_pcr_fingerprint(unpinned_blob, &policy),
+            Err(crate::error::PcrFingerprintError::PinMismatch(_))
+        ));
+    }
+
+    #[test]
+    fn production_policy_matches_exact_single_pin_invariant() {
+        let policy = crate::pins::production_policy();
+        assert_eq!(policy.pcr_mode, PcrMode::Pin);
+        assert_eq!(policy.pcr_pins.len(), 1);
+        assert!(
+            policy
+                .pcr_pins
+                .contains("b162f46105c80d3e45028e37cc649404c9d65297ad1cda8f953208582060b0e3")
+        );
+    }
+
     #[test]
     fn pinned_pcr_policy_reports_a_distinct_mismatch() {
         let policy = Policy {

@@ -416,6 +416,32 @@ fn parse_pcrs(quote_pcrs: &[u8]) -> Result<PcrFile, TpmQuoteError> {
     })
 }
 
+pub(crate) struct QuotePcrSelection {
+    pub hash_alg: u16,
+    pub pcr_select: Vec<u8>,
+}
+
+pub(crate) struct QuotePcrFile {
+    pub selections: Vec<QuotePcrSelection>,
+    pub digest_buffers: Vec<[u8; 32]>,
+}
+
+pub(crate) fn parse_quote_pcr_file(quote_pcrs: &[u8]) -> Result<QuotePcrFile, TpmQuoteError> {
+    let pcr_file = parse_pcrs(quote_pcrs)?;
+    let selections = pcr_file
+        .selections
+        .into_iter()
+        .map(|sel| QuotePcrSelection {
+            hash_alg: sel.hash_alg,
+            pcr_select: sel.pcr_select,
+        })
+        .collect();
+    Ok(QuotePcrFile {
+        selections,
+        digest_buffers: pcr_file.digest_buffers,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

@@ -210,6 +210,24 @@ pub enum PcrFingerprintError {
     PinMismatch(#[from] PcrPinMismatchError),
 }
 
+/// Fail-closed errors raised while parsing and checking quote.pcrs files.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum QuotePcrsError {
+    #[error("quote.pcrs structure is invalid")]
+    Structure,
+    #[error("quote.pcrs is not a single SHA-256 bank")]
+    NotSingleSha256Bank,
+    #[error("quote.pcrs selection does not match")]
+    SelectionMismatch,
+}
+
+/// Fail-closed errors raised while constructing application PCR expectations.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum ApplicationExpectationsError {
+    #[error("application PCR set must be exactly 4, 7, 9, 11, 12, 13, 14, 15")]
+    KeySet,
+}
+
 /// The CPU-evidence check at which a typed error occurred.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CpuAppraisalStage {

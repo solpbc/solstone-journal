@@ -6,15 +6,22 @@
 pub mod binding;
 pub mod error;
 pub mod nvgpu;
+pub mod pcr_appraisal;
 pub mod pins;
 pub mod snp;
 pub mod tlv;
 pub mod tpm_quote;
 
-pub use error::{PcrFingerprintError, PcrPinMismatchError};
+pub use error::{
+    ApplicationExpectationsError, PcrFingerprintError, PcrPinMismatchError, QuotePcrsError,
+};
 pub use nvgpu::{
     GpuAppraiser, NVATTEST_TIMEOUT, NvattestCommand, NvattestGpuAppraiser, NvattestInstallation,
     appraise_gpu_leg, build_nvattest_attest_command, locate_nvattest,
+};
+pub use pcr_appraisal::{
+    ApplicationExpectations, PcrAppraisalFailure, PcrAppraisalReason, appraise_application_pcrs,
+    parse_quote_pcrs,
 };
 pub use pins::{PRODUCTION_PCR_SHA256_PINS, production_policy};
 pub use snp::{
