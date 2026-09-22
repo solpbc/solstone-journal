@@ -1994,6 +1994,7 @@ mod tests {
             ready: false,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         let (local, parakeet) = super::super::test_support::stopped_providers(journal);
         SupervisorState {
@@ -2185,6 +2186,7 @@ mod tests {
             ready: false,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         })
     }
 

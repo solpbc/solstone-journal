@@ -1531,6 +1531,7 @@ pub(crate) async fn boot_and_tick(
         ready: false,
         before_deadline_commit: None,
         child_environment: sense_child_environment.environment.clone(),
+        task_binary: journal_binary.clone(),
     });
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
