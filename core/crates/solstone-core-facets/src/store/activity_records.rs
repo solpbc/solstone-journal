@@ -754,6 +754,8 @@ mod tests {
 
         // Muted facets preserve owner edits while automated enrichment pauses.
         crate::create_facet(root.path(), "muted_facet", "Muted", "", "", "", None).unwrap();
+        // A journal keeps one enabled facet; the sibling lets "muted_facet" mute.
+        crate::create_facet(root.path(), "personal", "Personal", "", "", "", None).unwrap();
         crate::set_facet_muted(root.path(), "muted_facet", true).unwrap();
         let outcome =
             append_activity_record(root.path(), "muted_facet", "20260510", record.clone()).unwrap();

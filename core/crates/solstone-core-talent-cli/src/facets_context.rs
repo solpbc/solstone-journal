@@ -542,10 +542,11 @@ mod tests {
     /// 626 of 741 after).
     #[test]
     fn shipped_sense_schema_requires_a_facet_from_the_owners_list() {
-        let mut schema: Value = serde_json::from_str(include_str!(
-            "../../../payload/solstone/talent/sense.schema.json"
-        ))
-        .expect("shipped sense schema");
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../payload/solstone/talent/sense.schema.json");
+        let mut schema: Value =
+            serde_json::from_str(&fs::read_to_string(path).expect("shipped sense schema"))
+                .expect("shipped sense schema");
         super::substitute_runtime_facets_with(&mut schema, &["personal".to_owned()]);
         let facets = &schema["properties"]["facets"];
         let validator = jsonschema::options()
