@@ -1161,13 +1161,12 @@ mod tests {
             metadata.level() <= log::Level::Warn
         }
         fn log(&self, record: &log::Record) {
-            if self.enabled(record.metadata()) {
-                if let Ok(mut logs) = LOGS
+            if self.enabled(record.metadata())
+                && let Ok(mut logs) = LOGS
                     .get_or_init(|| std::sync::Mutex::new(Vec::new()))
                     .lock()
-                {
-                    logs.push(record.args().to_string());
-                }
+            {
+                logs.push(record.args().to_string());
             }
         }
         fn flush(&self) {}
