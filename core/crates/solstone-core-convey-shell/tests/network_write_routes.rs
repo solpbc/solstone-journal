@@ -11,6 +11,7 @@ use axum::Extension;
 use axum::body::{Body, to_bytes};
 use axum::http::{Method, Request, StatusCode, header};
 use serde_json::{Value, json};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
 use solstone_core_convey_shell::{
     NetworkOperationsOverride, SplDisableFailureOverride, SplEnrollment, SplPoll, SplPollOutcome,
     SplRuntimeOverride, router,
@@ -337,7 +338,7 @@ async fn host_address_rejects_malformed_input_and_substitutes_port_copy() {
     // addresses (loopback, link-local) are refused. There is no
     // private/public range restriction: a direct pair link's trust anchor
     // is the embedded CA-fingerprint pin, not the address's network
-    // locality (removed 2026-09-18, founder + CSO ruling, `req_xhwmvxvn`).
+    // locality.
     for refused_ip in ["127.0.0.1", "169.254.1.1"] {
         let (status, rej) = post(
             &root,
@@ -720,7 +721,7 @@ async fn link_prefix_write_routes_are_registered() {
     let _ = fs::remove_dir_all(root);
 }
 
-// ── forget a never-delivered device (G3-208) ─────────────────────────────────
+// ── forget a never-delivered device ──────────────────────────────────────────
 
 fn write_forget_fixture(root: &Path) {
     fs::create_dir_all(root.join("link")).expect("link directory creates");
@@ -800,13 +801,40 @@ fn forget_app(root: &Path) -> axum::Router {
 }
 
 async fn forget(root: &Path, fingerprint: &str) -> (StatusCode, Value) {
-    request(
-        forget_app(root),
-        Method::POST,
+    forget_with_basis(
+        root,
         &format!("/app/network/api/devices/{}/forget", urlencode(fingerprint)),
-        Body::empty(),
+        Some(AccessBasis::Localhost),
     )
     .await
+}
+
+async fn forget_with_basis(
+    root: &Path,
+    path: &str,
+    basis: Option<AccessBasis>,
+) -> (StatusCode, Value) {
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri(path)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::empty())
+        .expect("request builds");
+    if let Some(basis) = basis {
+        req.extensions_mut().insert(basis);
+    }
+    let response = forget_app(root).oneshot(req).await.expect("response");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body reads");
+    let parsed = serde_json::from_slice(&body).unwrap_or_else(|error| {
+        panic!(
+            "JSON body status={status} body={:?}: {error}",
+            String::from_utf8_lossy(&body)
+        )
+    });
+    (status, parsed)
 }
 
 fn urlencode(value: &str) -> String {
@@ -913,4 +941,437 @@ async fn forget_refuses_when_the_delivery_record_cannot_be_read() {
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert_eq!(body["reason_code"], "device_activity_unavailable");
     assert_eq!(ledger_fingerprints(&root).len(), 4);
+}
+
+#[tokio::test]
+async fn linked_device_forget_of_another_device_is_forbidden_on_both_prefixes() {
+    let root = journal();
+    write_forget_fixture(&root);
+    let before_bytes = fs::read(root.join("link/authorized_clients.json")).unwrap();
+    let basis = AccessBasis::LinkedDevice {
+        cid: LinkedDeviceCid::try_from(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap(),
+        carrier: Carrier::Direct,
+    };
+
+    for prefix in ["/app/network", "/app/link"] {
+        let (status, body) = forget_with_basis(
+            &root,
+            &format!("{prefix}/api/devices/{}/forget", urlencode("sha256:never")),
+            Some(basis.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{prefix}");
+        assert_eq!(body["reason_code"], "device_removal_forbidden", "{prefix}");
+        assert_eq!(
+            fs::read(root.join("link/authorized_clients.json")).unwrap(),
+            before_bytes,
+            "{prefix}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn linked_device_forget_self_succeeds_when_never_delivered_and_refuses_when_delivered_or_host()
+ {
+    let root = journal();
+    write_forget_fixture(&root);
+
+    let never_cid = "sha256:0000000000000000000000000000000000000000000000000000000000000001";
+    let delivered_cid = "sha256:0000000000000000000000000000000000000000000000000000000000000002";
+    let host_cid = "sha256:0000000000000000000000000000000000000000000000000000000000000003";
+
+    // Rewrite fixture so never matches never_basis
+    fs::write(
+        root.join("link/authorized_clients.json"),
+        json!([
+            {
+                "fingerprint": never_cid,
+                "device_label": "",
+                "paired_at": "2026-06-28T23:17:06Z",
+                "instance_id": "instance-never",
+                "role": "",
+                "network": "anywhere",
+                "client_label": "SOL-WINBUILD",
+                "kind": "cert",
+            },
+            {
+                "fingerprint": delivered_cid,
+                "device_label": "",
+                "paired_at": "2026-06-28T23:17:06Z",
+                "instance_id": "instance-delivered",
+                "role": "",
+                "network": "anywhere",
+                "client_label": "Delivered",
+                "kind": "cert",
+            },
+            {
+                "fingerprint": host_cid,
+                "device_label": "",
+                "paired_at": "2026-06-15T00:33:19Z",
+                "instance_id": "instance-host",
+                "role": "",
+                "network": "network",
+                "client_label": "suze",
+                "kind": "cert",
+            }
+        ])
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        root.join("link/devices.json"),
+        json!({
+            never_cid: {"last_seen_at": "2026-09-05T20:35:27Z"},
+            delivered_cid: {
+                "last_seen_at": "2026-09-06T15:17:10Z",
+                "last_accepted_ingest_at": "2026-09-06T15:16:00Z",
+                "last_accepted_segment": {"day": "20260906", "name": "151600_1"}
+            },
+            host_cid: {"last_seen_at": "2026-09-06T21:35:12Z"},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let delivered_basis = AccessBasis::LinkedDevice {
+        cid: LinkedDeviceCid::try_from(delivered_cid).unwrap(),
+        carrier: Carrier::Direct,
+    };
+    let host_basis = AccessBasis::LinkedDevice {
+        cid: LinkedDeviceCid::try_from(host_cid).unwrap(),
+        carrier: Carrier::Direct,
+    };
+
+    // Linked self delivered -> 409 device_has_delivered
+    let (status, body) = forget_with_basis(
+        &root,
+        &format!("/app/network/api/devices/{delivered_cid}/forget"),
+        Some(delivered_basis),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["reason_code"], "device_has_delivered");
+
+    // Linked self is_this_host -> 409 device_is_this_host
+    let (status, body) = forget_with_basis(
+        &root,
+        &format!("/app/network/api/devices/{host_cid}/forget"),
+        Some(host_basis),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(body["reason_code"], "device_is_this_host");
+
+    // Linked self never delivered on both prefixes -> 200 OK, row absent, second call 404
+    for prefix in ["/app/network", "/app/link"] {
+        let test_root = journal();
+        write_forget_fixture(&test_root);
+        fs::write(
+            test_root.join("link/authorized_clients.json"),
+            json!([
+                {
+                    "fingerprint": never_cid,
+                    "device_label": "",
+                    "paired_at": "2026-06-28T23:17:06Z",
+                    "instance_id": "instance-never",
+                    "role": "",
+                    "network": "anywhere",
+                    "client_label": "SOL-WINBUILD",
+                    "kind": "cert",
+                }
+            ])
+            .to_string(),
+        )
+        .unwrap();
+        fs::write(
+            test_root.join("link/devices.json"),
+            json!({
+                never_cid: {"last_seen_at": "2026-09-05T20:35:27Z"},
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let never_basis = AccessBasis::LinkedDevice {
+            cid: LinkedDeviceCid::try_from(never_cid).unwrap(),
+            carrier: Carrier::Direct,
+        };
+
+        let (status, body) = forget_with_basis(
+            &test_root,
+            &format!("{prefix}/api/devices/{never_cid}/forget"),
+            Some(never_basis.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{prefix}");
+        assert_eq!(body["forgotten"]["fingerprint"], never_cid, "{prefix}");
+
+        let ledger: Value = serde_json::from_slice(
+            &fs::read(test_root.join("link/authorized_clients.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(ledger.as_array().unwrap().is_empty(), "{prefix}");
+
+        // Second POST is 404 paired_device_not_found
+        let (status2, body2) = forget_with_basis(
+            &test_root,
+            &format!("{prefix}/api/devices/{never_cid}/forget"),
+            Some(never_basis),
+        )
+        .await;
+        assert_eq!(status2, StatusCode::NOT_FOUND, "{prefix}");
+        assert_eq!(body2["reason_code"], "paired_device_not_found", "{prefix}");
+    }
+}
+
+#[tokio::test]
+async fn linked_device_forget_case_only_difference_is_forbidden_on_both_prefixes() {
+    let root = journal();
+    write_forget_fixture(&root);
+    let lower_cid = "sha256:000000000000000000000000000000000000000000000000000000000000000a";
+    let mixed_cid = "sha256:000000000000000000000000000000000000000000000000000000000000000A";
+
+    fs::write(
+        root.join("link/authorized_clients.json"),
+        json!([
+            {
+                "fingerprint": lower_cid,
+                "device_label": "",
+                "paired_at": "2026-06-28T23:17:06Z",
+                "instance_id": "instance-never",
+                "role": "",
+                "network": "anywhere",
+                "client_label": "SOL-WINBUILD",
+                "kind": "cert",
+            }
+        ])
+        .to_string(),
+    )
+    .unwrap();
+    fs::write(
+        root.join("link/devices.json"),
+        json!({
+            lower_cid: {"last_seen_at": "2026-09-05T20:35:27Z"},
+        })
+        .to_string(),
+    )
+    .unwrap();
+
+    let before_bytes = fs::read(root.join("link/authorized_clients.json")).unwrap();
+    let basis = AccessBasis::LinkedDevice {
+        cid: LinkedDeviceCid::try_from(lower_cid).unwrap(),
+        carrier: Carrier::Direct,
+    };
+
+    for prefix in ["/app/network", "/app/link"] {
+        let (status, body) = forget_with_basis(
+            &root,
+            &format!("{prefix}/api/devices/{mixed_cid}/forget"),
+            Some(basis.clone()),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{prefix}");
+        assert_eq!(body["reason_code"], "device_removal_forbidden", "{prefix}");
+        assert_eq!(
+            fs::read(root.join("link/authorized_clients.json")).unwrap(),
+            before_bytes,
+            "{prefix}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn forget_refusal_precedes_ledger_read_and_exists_vs_missing_equality() {
+    let root = journal();
+    write_forget_fixture(&root);
+    let basis = AccessBasis::LinkedDevice {
+        cid: LinkedDeviceCid::try_from(
+            "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap(),
+        carrier: Carrier::Direct,
+    };
+
+    let (status_existing, body_existing) = forget_with_basis(
+        &root,
+        &format!(
+            "{}/api/devices/{}/forget",
+            "/app/network",
+            urlencode("sha256:never")
+        ),
+        Some(basis.clone()),
+    )
+    .await;
+
+    let (status_missing, body_missing) = forget_with_basis(
+        &root,
+        &format!(
+            "{}/api/devices/{}/forget",
+            "/app/network",
+            urlencode("sha256:absent")
+        ),
+        Some(basis.clone()),
+    )
+    .await;
+
+    assert_eq!(status_existing, StatusCode::FORBIDDEN);
+    assert_eq!(status_missing, StatusCode::FORBIDDEN);
+    assert_eq!(body_existing, body_missing);
+    assert_eq!(
+        body_existing,
+        json!({
+            "reason_code": "device_removal_forbidden",
+            "reason": "device_removal_forbidden",
+            "error": "device removal is not allowed for this connection",
+            "detail": "device removal is not allowed for this connection",
+        })
+    );
+
+    // Precedence: directory ledger
+    let dir_root = journal();
+    fs::create_dir_all(dir_root.join("link/authorized_clients.json")).unwrap();
+    for b in [
+        Some(basis.clone()),
+        Some(AccessBasis::PairingPeer {
+            carrier: Carrier::Direct,
+        }),
+        None,
+    ] {
+        let (status, body) = forget_with_basis(
+            &dir_root,
+            &format!(
+                "/app/network/api/devices/{}/forget",
+                urlencode("sha256:never")
+            ),
+            b,
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "device_removal_forbidden");
+    }
+    assert!(dir_root.join("link/authorized_clients.json").is_dir());
+
+    // Precedence: {} bytes ledger
+    let empty_root = journal();
+    fs::create_dir_all(empty_root.join("link")).unwrap();
+    fs::write(empty_root.join("link/authorized_clients.json"), "{}").unwrap();
+    let (status, body) = forget_with_basis(
+        &empty_root,
+        &format!(
+            "/app/network/api/devices/{}/forget",
+            urlencode("sha256:never")
+        ),
+        Some(basis.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["reason_code"], "device_removal_forbidden");
+    assert_eq!(
+        fs::read_to_string(empty_root.join("link/authorized_clients.json")).unwrap(),
+        "{}"
+    );
+}
+
+#[tokio::test]
+async fn forget_whitespace_and_empty_target_variations() {
+    let root = journal();
+    write_forget_fixture(&root);
+    let basis = AccessBasis::LinkedDevice {
+        cid: LinkedDeviceCid::try_from(
+            "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+        )
+        .unwrap(),
+        carrier: Carrier::Direct,
+    };
+
+    // Linked with whitespace -> 403
+    let (status, body) = forget_with_basis(
+        &root,
+        &format!(
+            "/app/network/api/devices/{}/forget",
+            urlencode(
+                "  sha256:0000000000000000000000000000000000000000000000000000000000000001  "
+            )
+        ),
+        Some(basis.clone()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["reason_code"], "device_removal_forbidden");
+
+    // Localhost with whitespace -> trims and removes
+    let (status, body) = forget_with_basis(
+        &root,
+        &format!(
+            "/app/network/api/devices/{}/forget",
+            urlencode("  sha256:never  ")
+        ),
+        Some(AccessBasis::Localhost),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["forgotten"]["fingerprint"], "sha256:never");
+
+    // Empty target on directory ledger:
+    // Localhost -> 400 without reading ledger
+    let dir_root = journal();
+    fs::create_dir_all(dir_root.join("link/authorized_clients.json")).unwrap();
+    let (status, body) = forget_with_basis(
+        &dir_root,
+        &format!("/app/network/api/devices/{}/forget", urlencode("   ")),
+        Some(AccessBasis::Localhost),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["reason_code"], "missing_required_field");
+
+    // Linked -> 403 without reading ledger
+    let (status, body) = forget_with_basis(
+        &dir_root,
+        &format!("/app/network/api/devices/{}/forget", urlencode("   ")),
+        Some(basis),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(body["reason_code"], "device_removal_forbidden");
+}
+
+#[tokio::test]
+async fn forget_no_content_type_required() {
+    let root = journal();
+    write_forget_fixture(&root);
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri("/app/network/api/devices/sha256:never/forget")
+        .body(Body::empty())
+        .unwrap();
+    req.extensions_mut().insert(AccessBasis::Localhost);
+    let response = forget_app(&root).oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // Also on /app/link with no content-type required
+    let root_link = journal();
+    write_forget_fixture(&root_link);
+    let mut req_link = Request::builder()
+        .method(Method::POST)
+        .uri("/app/link/api/devices/sha256:never/forget")
+        .body(Body::empty())
+        .unwrap();
+    req_link.extensions_mut().insert(AccessBasis::Localhost);
+    let response_link = forget_app(&root_link).oneshot(req_link).await.unwrap();
+    assert_eq!(response_link.status(), StatusCode::OK);
+
+    let ledger: Value =
+        serde_json::from_slice(&fs::read(root_link.join("link/authorized_clients.json")).unwrap())
+            .unwrap();
+    let fingerprints: Vec<_> = ledger
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["fingerprint"].as_str().unwrap())
+        .collect();
+    assert!(!fingerprints.contains(&"sha256:never"));
 }

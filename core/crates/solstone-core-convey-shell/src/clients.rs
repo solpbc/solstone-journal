@@ -70,6 +70,7 @@ pub(crate) fn router(prefix: &str) -> Router {
             &format!("{prefix}/api/clients/self"),
             get(get_self)
                 .put(put_self)
+                .delete(delete_self)
                 .layer(DefaultBodyLimit::max(16 * 1024)),
         )
         .route(
@@ -329,10 +330,34 @@ async fn list(
 
 async fn delete_client(
     Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
     Path(cid): Path<String>,
 ) -> Response {
+    if !crate::network::removal_target_allowed(basis.as_ref().map(|Extension(b)| b), &cid) {
+        return crate::network::removal_forbidden();
+    }
     match AuthorizationLedger::new(&root.0).remove(&cid) {
         Ok(outcome) if outcome.authorized_removed => Json(json!({"unpaired": cid})).into_response(),
+        Ok(_) => crate::network::refusal(
+            "paired_device_not_found",
+            "paired device not found",
+            StatusCode::NOT_FOUND,
+        ),
+        Err(error) => crate::network::unpair_mutation_refusal(error),
+    }
+}
+
+async fn delete_self(
+    Extension(root): Extension<Arc<JournalRoot>>,
+    basis: Option<Extension<AccessBasis>>,
+) -> Response {
+    let Some(Extension(AccessBasis::LinkedDevice { cid, .. })) = basis else {
+        return crate::network::removal_forbidden();
+    };
+    match AuthorizationLedger::new(&root.0).remove(cid.as_str()) {
+        Ok(outcome) if outcome.authorized_removed => {
+            Json(json!({"unpaired": cid.as_str()})).into_response()
+        }
         Ok(_) => crate::network::refusal(
             "paired_device_not_found",
             "paired device not found",
@@ -916,33 +941,27 @@ mod tests {
             }
         }
 
-        let (status, body) = request(
-            app.clone(),
-            Request::delete(format!("/app/network/api/clients/{network_cid}"))
-                .body(Body::empty())
-                .expect("delete request"),
-        )
-        .await;
+        let mut del_net = Request::delete(format!("/app/network/api/clients/{network_cid}"))
+            .body(Body::empty())
+            .expect("delete request");
+        del_net.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app.clone(), del_net).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({"unpaired": network_cid}));
 
-        let (status, body) = request(
-            app.clone(),
-            Request::delete(format!("/app/link/api/clients/{link_cid}"))
-                .body(Body::empty())
-                .expect("link delete request"),
-        )
-        .await;
+        let mut del_link = Request::delete(format!("/app/link/api/clients/{link_cid}"))
+            .body(Body::empty())
+            .expect("link delete request");
+        del_link.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app.clone(), del_link).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body, json!({"unpaired": link_cid}));
 
-        let (status, body) = request(
-            app,
-            Request::delete(format!("/app/link/api/clients/{link_cid}"))
-                .body(Body::empty())
-                .expect("unknown delete request"),
-        )
-        .await;
+        let mut del_link2 = Request::delete(format!("/app/link/api/clients/{link_cid}"))
+            .body(Body::empty())
+            .expect("unknown delete request");
+        del_link2.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app, del_link2).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(body["reason_code"], "paired_device_not_found");
     }
@@ -1440,5 +1459,328 @@ mod tests {
             )
             .expect("test store");
         }
+    }
+
+    #[tokio::test]
+    async fn linked_device_delete_of_another_cid_is_forbidden_on_both_prefixes() {
+        let client_a = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let client_b = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([
+            client(client_a, "phone"),
+            client(client_b, "laptop"),
+        ]));
+        let before_bytes =
+            std::fs::read(journal.0.path().join("link/authorized_clients.json")).unwrap();
+        let app = crate::router(journal.0.path().to_path_buf());
+        let basis = AccessBasis::LinkedDevice {
+            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
+            carrier: Carrier::Direct,
+        };
+
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let mut req = Request::delete(format!("{prefix}/api/clients/{client_b}"))
+                .body(Body::empty())
+                .unwrap();
+            req.extensions_mut().insert(basis.clone());
+            let (status, body) = request(app.clone(), req).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{prefix}");
+            assert_eq!(body["reason_code"], "device_removal_forbidden", "{prefix}");
+            let after_bytes =
+                std::fs::read(journal.0.path().join("link/authorized_clients.json")).unwrap();
+            assert_eq!(after_bytes, before_bytes, "{prefix}");
+        }
+    }
+
+    #[tokio::test]
+    async fn linked_device_delete_self_removes_own_registration_and_second_call_is_not_found() {
+        let client_a = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let client_b = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([
+            client(client_a, "phone"),
+            client(client_b, "laptop"),
+        ]));
+        let app = crate::router(journal.0.path().to_path_buf());
+        let basis = AccessBasis::LinkedDevice {
+            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
+            carrier: Carrier::Direct,
+        };
+
+        // DELETE .../self with distracting parameters/headers/body on /app/network
+        let mut req = Request::delete(format!("/app/network/api/clients/self?cid={client_b}"))
+            .header("X-Client-Cid", client_b)
+            .header("Content-Type", "application/json")
+            .body(Body::from(json!({"cid": client_b}).to_string()))
+            .unwrap();
+        req.extensions_mut().insert(basis.clone());
+
+        let (status, body) = request(app.clone(), req).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": client_a}));
+
+        // Second call on unconfined router is 404
+        let mut req2 = Request::delete("/app/network/api/clients/self")
+            .body(Body::empty())
+            .unwrap();
+        req2.extensions_mut().insert(basis.clone());
+        let (status, body) = request(app.clone(), req2).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+
+        // Verify other client remained
+        let ledger: Value = serde_json::from_slice(
+            &std::fs::read(journal.0.path().join("link/authorized_clients.json")).unwrap(),
+        )
+        .unwrap();
+        let arr = ledger.as_array().unwrap();
+        assert_eq!(arr.len(), 1);
+        assert_eq!(arr[0]["fingerprint"], client_b);
+
+        // DELETE .../self on /app/link with the other device still present
+        let journal_link = EstablishedJournal::new();
+        journal_link.write_ledger(json!([
+            client(client_a, "phone"),
+            client(client_b, "laptop"),
+        ]));
+        let app_link = crate::router(journal_link.0.path().to_path_buf());
+        let mut req_link = Request::delete("/app/link/api/clients/self")
+            .body(Body::empty())
+            .unwrap();
+        req_link.extensions_mut().insert(basis.clone());
+        let (status, body) = request(app_link.clone(), req_link).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": client_a}));
+
+        // Second call on /app/link is 404
+        let mut req_link2 = Request::delete("/app/link/api/clients/self")
+            .body(Body::empty())
+            .unwrap();
+        req_link2.extensions_mut().insert(basis.clone());
+        let (status, body) = request(app_link.clone(), req_link2).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+
+        let ledger_link: Value = serde_json::from_slice(
+            &std::fs::read(journal_link.0.path().join("link/authorized_clients.json")).unwrap(),
+        )
+        .unwrap();
+        let arr_link = ledger_link.as_array().unwrap();
+        assert_eq!(arr_link.len(), 1);
+        assert_eq!(arr_link[0]["fingerprint"], client_b);
+    }
+
+    #[tokio::test]
+    async fn delete_self_refuses_localhost_pairing_peer_and_missing_basis_with_device_removal_forbidden()
+     {
+        let journal = EstablishedJournal::new();
+        // Replace ledger with a directory to prove no read occurs
+        std::fs::create_dir_all(journal.0.path().join("link/authorized_clients.json")).unwrap();
+        let app = crate::router(journal.0.path().to_path_buf());
+
+        for b in [
+            Some(AccessBasis::Localhost),
+            Some(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            }),
+            None,
+        ] {
+            let mut req = Request::delete("/app/network/api/clients/self")
+                .body(Body::empty())
+                .unwrap();
+            if let Some(basis) = b {
+                req.extensions_mut().insert(basis);
+            }
+            let (status, body) = request(app.clone(), req).await;
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert_eq!(body["reason_code"], "device_removal_forbidden");
+        }
+        assert!(
+            journal
+                .0
+                .path()
+                .join("link/authorized_clients.json")
+                .is_dir()
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_client_refusal_precedes_ledger_read_and_exists_vs_missing_equality() {
+        let client_a = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let client_b = "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let client_z = "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([
+            client(client_a, "phone"),
+            client(client_b, "laptop"),
+        ]));
+        let app = crate::router(journal.0.path().to_path_buf());
+        let basis = AccessBasis::LinkedDevice {
+            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
+            carrier: Carrier::Direct,
+        };
+
+        let mut req_b = Request::delete(format!("/app/network/api/clients/{client_b}"))
+            .body(Body::empty())
+            .unwrap();
+        req_b.extensions_mut().insert(basis.clone());
+        let (status_b, body_b) = request(app.clone(), req_b).await;
+
+        let mut req_z = Request::delete(format!("/app/network/api/clients/{client_z}"))
+            .body(Body::empty())
+            .unwrap();
+        req_z.extensions_mut().insert(basis.clone());
+        let (status_z, body_z) = request(app.clone(), req_z).await;
+
+        assert_eq!(status_b, StatusCode::FORBIDDEN);
+        assert_eq!(status_z, StatusCode::FORBIDDEN);
+        assert_eq!(body_b, body_z);
+        assert_eq!(
+            body_b,
+            json!({
+                "reason_code": "device_removal_forbidden",
+                "reason": "device_removal_forbidden",
+                "error": "device removal is not allowed for this connection",
+                "detail": "device removal is not allowed for this connection",
+            })
+        );
+
+        // Precedence with directory ledger
+        let dir_journal = EstablishedJournal::new();
+        std::fs::create_dir_all(dir_journal.0.path().join("link/authorized_clients.json")).unwrap();
+        let dir_app = crate::router(dir_journal.0.path().to_path_buf());
+
+        for b in [
+            Some(basis.clone()),
+            Some(AccessBasis::PairingPeer {
+                carrier: Carrier::Direct,
+            }),
+            None,
+        ] {
+            let mut req = Request::delete(format!("/app/network/api/clients/{client_b}"))
+                .body(Body::empty())
+                .unwrap();
+            if let Some(basis) = b {
+                req.extensions_mut().insert(basis);
+            }
+            let (status, body) = request(dir_app.clone(), req).await;
+            assert_eq!(status, StatusCode::FORBIDDEN);
+            assert_eq!(body["reason_code"], "device_removal_forbidden");
+        }
+        assert!(
+            dir_journal
+                .0
+                .path()
+                .join("link/authorized_clients.json")
+                .is_dir()
+        );
+
+        // Precedence with {} bytes ledger
+        let empty_journal = EstablishedJournal::new();
+        std::fs::create_dir_all(empty_journal.0.path().join("link")).unwrap();
+        std::fs::write(
+            empty_journal.0.path().join("link/authorized_clients.json"),
+            "{}",
+        )
+        .unwrap();
+        let empty_app = crate::router(empty_journal.0.path().to_path_buf());
+        let mut req = Request::delete(format!("/app/network/api/clients/{client_b}"))
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(basis.clone());
+        let (status, body) = request(empty_app, req).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "device_removal_forbidden");
+        assert_eq!(
+            std::fs::read_to_string(empty_journal.0.path().join("link/authorized_clients.json"))
+                .unwrap(),
+            "{}"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_client_self_success_and_case_and_whitespace_differences() {
+        let client_a = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(client_a, "phone")]));
+        let before_bytes =
+            std::fs::read(journal.0.path().join("link/authorized_clients.json")).unwrap();
+        let app = crate::router(journal.0.path().to_path_buf());
+        let basis = AccessBasis::LinkedDevice {
+            cid: LinkedDeviceCid::try_from(client_a).unwrap(),
+            carrier: Carrier::Direct,
+        };
+
+        // Case difference on raw path -> 403
+        let upper_target = format!(
+            "SHA256:{}",
+            client_a["sha256:".len()..].to_ascii_uppercase()
+        );
+        let mut req_case = Request::delete(format!("/app/network/api/clients/{upper_target}"))
+            .body(Body::empty())
+            .unwrap();
+        req_case.extensions_mut().insert(basis.clone());
+        let (status, body) = request(app.clone(), req_case).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "device_removal_forbidden");
+        assert_eq!(
+            std::fs::read(journal.0.path().join("link/authorized_clients.json")).unwrap(),
+            before_bytes
+        );
+
+        // Whitespace difference on raw path -> 403
+        let ws_target = format!("%20{client_a}%20");
+        let mut req_ws = Request::delete(format!("/app/network/api/clients/{ws_target}"))
+            .body(Body::empty())
+            .unwrap();
+        req_ws.extensions_mut().insert(basis.clone());
+        let (status, body) = request(app.clone(), req_ws).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert_eq!(body["reason_code"], "device_removal_forbidden");
+        assert_eq!(
+            std::fs::read(journal.0.path().join("link/authorized_clients.json")).unwrap(),
+            before_bytes
+        );
+
+        // Linked self delete on both prefixes -> 200, row absent, second call 404
+        for prefix in NETWORK_ROUTE_PREFIXES {
+            let j = EstablishedJournal::new();
+            j.write_ledger(json!([client(client_a, "phone")]));
+            let app_prefix = crate::router(j.0.path().to_path_buf());
+            let mut req_self = Request::delete(format!("{prefix}/api/clients/{client_a}"))
+                .body(Body::empty())
+                .unwrap();
+            req_self.extensions_mut().insert(basis.clone());
+            let (status, body) = request(app_prefix.clone(), req_self).await;
+            assert_eq!(status, StatusCode::OK, "{prefix}");
+            assert_eq!(body, json!({"unpaired": client_a}), "{prefix}");
+
+            let ledger: Value = serde_json::from_slice(
+                &std::fs::read(j.0.path().join("link/authorized_clients.json")).unwrap(),
+            )
+            .unwrap();
+            assert!(ledger.as_array().unwrap().is_empty(), "{prefix}");
+
+            // Second delete is 404
+            let mut req_self2 = Request::delete(format!("{prefix}/api/clients/{client_a}"))
+                .body(Body::empty())
+                .unwrap();
+            req_self2.extensions_mut().insert(basis.clone());
+            let (status, body) = request(app_prefix, req_self2).await;
+            assert_eq!(status, StatusCode::NOT_FOUND, "{prefix}");
+            assert_eq!(body["reason_code"], "paired_device_not_found", "{prefix}");
+        }
+
+        // Localhost delete without Content-Type header -> 200
+        let j2 = EstablishedJournal::new();
+        j2.write_ledger(json!([client(client_a, "phone")]));
+        let app2 = crate::router(j2.0.path().to_path_buf());
+        let mut req_no_ct = Request::delete(format!("/app/network/api/clients/{client_a}"))
+            .body(Body::empty())
+            .unwrap();
+        req_no_ct.extensions_mut().insert(AccessBasis::Localhost);
+        let (status, body) = request(app2, req_no_ct).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": client_a}));
     }
 }

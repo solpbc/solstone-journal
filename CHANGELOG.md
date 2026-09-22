@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- this is a security fix. a paired device could unpair a different device from your journal. paired devices can now unpair only themselves, while you can still unpair any device from the network page or command line.
+
 ## [2.0.13] - 2026-09-22
 
 ### Added
