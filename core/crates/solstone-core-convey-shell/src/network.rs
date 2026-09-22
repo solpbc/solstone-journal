@@ -2395,7 +2395,7 @@ mod tests {
         // Case difference on raw target -> 403
         let upper_target = format!(
             "SHA256:{}",
-            client_a["sha256:".len()..].to_ascii_uppercase()
+            &client_a["sha256:".len()..].to_ascii_uppercase()
         );
         let (status, body) = post_unpair_raw(
             app.clone(),
