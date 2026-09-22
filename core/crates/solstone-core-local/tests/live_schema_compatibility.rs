@@ -43,6 +43,7 @@ fn every_shipped_prepared_schema_is_admitted_by_the_configured_engine() {
         "{backend:?} did not reject the deliberately invalid pattern with HTTP 400; a green schema probe would be vacuous"
     );
     eprintln!("local schema probe: negative control PASS HTTP {control_status}");
+    let mut rejected = Vec::new();
     for path in schemas {
         let contents = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
@@ -52,13 +53,23 @@ fn every_shipped_prepared_schema_is_admitted_by_the_configured_engine() {
         let body = schema_request_body(&model, prepared);
         let status = post_status(&base_url, credential.as_deref(), &body)
             .unwrap_or_else(|error| panic!("probe {} via {backend:?}: {error}", path.display()));
-        assert!(
-            (200..300).contains(&status),
-            "prepared schema {} was rejected by {backend:?} with HTTP {status}; response body is intentionally not captured",
-            path.display()
-        );
-        eprintln!("local schema probe: PASS {} HTTP {status}", path.display());
+        if (200..300).contains(&status) {
+            eprintln!("local schema probe: PASS {} HTTP {status}", path.display());
+        } else {
+            eprintln!("local schema probe: FAIL {} HTTP {status}", path.display());
+            rejected.push((path, status));
+        }
     }
+    assert!(
+        rejected.is_empty(),
+        "{} prepared schema(s) were rejected by {backend:?}: {}; response bodies are intentionally not captured",
+        rejected.len(),
+        rejected
+            .iter()
+            .map(|(path, status)| format!("{} (HTTP {status})", path.display()))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 }
 
 fn schema_request_body(model: &str, schema: Value) -> Value {

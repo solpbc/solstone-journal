@@ -829,6 +829,13 @@ pub fn prepare_local_schema(schema: &Value) -> Value {
     prepared
 }
 
+// The pinned llama-server grammar builder accepts a repetition bound of 1,999
+// and rejects 2,000 with its sane-repetitions guard. Large canonical bounds
+// remain enforced after generation; omitting only the unsupported wire hint is
+// safer than either rejecting the entire request or silently lowering the
+// product contract.
+const LOCAL_SCHEMA_MAX_REPETITION_EXCLUSIVE: u64 = 2_000;
+
 fn prepare_schema_node(node: &mut Value) {
     match node {
         Value::Object(object) => {
@@ -837,21 +844,29 @@ fn prepare_schema_node(node: &mut Value) {
             // keyword any provider's structured-output feature could act on; it
             // is never safe to forward. `pattern`/`minLength`/`maxLength` used to
             // be stripped here too, on the assumption the local llama-server
-            // couldn't honor them via grammar. Measured 2026-09-21 against the
-            // pinned build (b10068, 571d0d540) directly: it DOES build a working
-            // grammar for `pattern`/`minLength`/`maxLength` and reliably
-            // constrains generation with them (8/8 clean on an adversarial
-            // prompt) -- so they now pass through unmodified, and canonical
-            // response validation (which already enforces every field
-            // regardless) is no longer the only thing keeping this shape
-            // honest. The measured portable subset shared by bundled and
-            // endpoint grammar engines excludes bare `\d`/`\w`/`\s` regex
+            // couldn't honor them via grammar. Direct measurements against the
+            // pinned build (b10068, 571d0d540) show that it does enforce these
+            // constraints, except that either length bound is rejected at 2,000
+            // or above. Supported bounds therefore pass through, while larger
+            // canonical bounds remain enforced by response validation after the
+            // unsupported wire hint is omitted. The measured portable subset
+            // shared by bundled and endpoint grammar engines excludes bare
+            // `\d`/`\w`/`\s` regex
             // shorthand, independently anchored alternatives, and empty
             // alternation branches (write optional content as `^(X)?$`) -- see
             // `shipped_talent_schemas_stay_in_the_portable_local_regex_subset`
             // below for the cheap recurrence guard. Live grammar compilation
             // remains a separate integration proof.
             object.remove("x-truncate");
+            for key in ["minLength", "maxLength"] {
+                if object
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .is_some_and(|bound| bound >= LOCAL_SCHEMA_MAX_REPETITION_EXCLUSIVE)
+                {
+                    object.remove(key);
+                }
+            }
             let array = matches!(object.get("type"), Some(Value::String(kind)) if kind == "array")
                 || matches!(object.get("type"), Some(Value::Array(kinds)) if kinds.iter().any(|kind| kind == "array"));
             if array && !object.contains_key("maxItems") {
@@ -1846,18 +1861,20 @@ mod tests {
         );
     }
 
-    // AC: 2026-09-21, measured directly against the pinned llama-server (b10068,
-    // 571d0d540) on fedora. pattern/minLength/maxLength now pass through --
-    // this asserts that explicitly, separate from the x-truncate/maxItems test
-    // above, so a future change to the stripped-key list has a test that names
-    // exactly what must keep flowing.
+    // AC: measured directly against the pinned llama-server (b10068,
+    // 571d0d540) on fedora. Pattern and supported length bounds pass through;
+    // the server accepts 1,999 and rejects 2,000 for both minLength and
+    // maxLength, so larger canonical bounds stay exclusively in post-generation
+    // validation.
     #[test]
-    fn prepare_local_schema_preserves_pattern_and_length_bounds() {
+    fn prepare_local_schema_preserves_supported_bounds_and_omits_rejected_repetitions() {
         let schema = json!({
             "type": "object",
             "properties": {
                 "time": {"type": "string", "pattern": "^(|([0-1][0-9]|2[0-3]):[0-5][0-9])$", "maxLength": 5},
-                "note": {"type": "string", "minLength": 1, "maxLength": 700}
+                "note": {"type": "string", "minLength": 1, "maxLength": 1999},
+                "large_minimum": {"type": "string", "minLength": 2000},
+                "large_maximum": {"type": "string", "maxLength": 3000}
             }
         });
         let prepared = prepare_local_schema(&schema);
@@ -1867,7 +1884,15 @@ mod tests {
         );
         assert_eq!(prepared["properties"]["time"]["maxLength"], 5);
         assert_eq!(prepared["properties"]["note"]["minLength"], 1);
-        assert_eq!(prepared["properties"]["note"]["maxLength"], 700);
+        assert_eq!(prepared["properties"]["note"]["maxLength"], 1999);
+        assert_eq!(
+            prepared["properties"]["large_minimum"].get("minLength"),
+            None
+        );
+        assert_eq!(
+            prepared["properties"]["large_maximum"].get("maxLength"),
+            None
+        );
     }
 
     /// The two llama.cpp grammar limits measured 2026-09-21 against the pinned
