@@ -4,16 +4,22 @@
 use crate::backlog_reasons;
 use serde_json::{Map, Value, json};
 
-const CANT_TELL: &str = "still checking where your journal stands.";
-const CAUGHT_UP: &str = "your journal's all caught up.";
-
-pub fn load(root: &std::path::Path) -> Option<Map<String, Value>> {
-    serde_json::from_slice::<Value>(&std::fs::read(root.join("stats.json")).ok()?)
-        .ok()?
-        .as_object()?
-        .get("backlog")?
-        .as_object()
-        .cloned()
+pub fn load(root: &std::path::Path) -> (Option<String>, Option<Map<String, Value>>) {
+    let Ok(bytes) = std::fs::read(root.join("stats.json")) else {
+        return (None, None);
+    };
+    let Some(obj) = serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .and_then(|v| v.as_object().cloned())
+    else {
+        return (None, None);
+    };
+    let generated_at = obj
+        .get("generated_at")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned);
+    let backlog = obj.get("backlog").and_then(Value::as_object).cloned();
+    (generated_at, backlog)
 }
 
 pub fn count(value: Option<&Value>) -> f64 {
@@ -29,81 +35,6 @@ pub fn count(value: Option<&Value>) -> f64 {
     value
         .filter(|n: &f64| n.is_finite() && *n > 0.0)
         .unwrap_or(0.0)
-}
-
-fn number(value: f64) -> String {
-    if value.fract() == 0.0 {
-        format!("{}", value as i64)
-    } else {
-        value.to_string()
-    }
-}
-
-pub fn verdict(backlog: Option<&Map<String, Value>>) -> String {
-    let Some(backlog) = backlog else {
-        return CANT_TELL.to_owned();
-    };
-    if backlog.get("degraded") == Some(&Value::Bool(true)) {
-        return CANT_TELL.to_owned();
-    }
-    let pending = count(backlog.get("pending_days"));
-    let stuck = count(backlog.get("stuck_days"));
-    if pending == 0.0 && stuck == 0.0 {
-        return CAUGHT_UP.to_owned();
-    }
-    if stuck > 0.0 && pending == 0.0 {
-        return if stuck == 1.0 {
-            "caught up except 1 day that needs a hand.".to_owned()
-        } else {
-            format!("caught up except {} days that need a hand.", number(stuck))
-        };
-    }
-    if stuck == 0.0 {
-        return if pending == 1.0 {
-            "1 day is still catching up.".to_owned()
-        } else {
-            format!("{} days are still catching up.", number(pending))
-        };
-    }
-    let stuck = if stuck == 1.0 {
-        "1 day needs a hand".to_owned()
-    } else {
-        format!("{} days need a hand", number(stuck))
-    };
-    let pending = if pending == 1.0 {
-        "1 more day is still catching up".to_owned()
-    } else {
-        format!("{} more days are still catching up", number(pending))
-    };
-    format!("{stuck}. {pending}.")
-}
-
-/// How many days are still catching up, so the surface can name the one day
-/// rather than saying "1 day".
-pub fn pending_days(backlog: Option<&Map<String, Value>>) -> f64 {
-    let Some(backlog) = backlog else {
-        return 0.0;
-    };
-    if backlog.get("degraded") == Some(&Value::Bool(true)) {
-        return 0.0;
-    }
-    count(backlog.get("pending_days"))
-}
-
-/// The oldest day still catching up, as its `YYYYMMDD` key. The surface formats
-/// it through the shared date helper; this never returns a rendered label.
-pub fn oldest_pending_day(backlog: Option<&Map<String, Value>>) -> Value {
-    let Some(backlog) = backlog else {
-        return Value::Null;
-    };
-    if backlog.get("degraded") == Some(&Value::Bool(true)) {
-        return Value::Null;
-    }
-    backlog
-        .get("oldest_pending_day")
-        .filter(|value| value.as_str().is_some_and(|day| !day.is_empty()))
-        .cloned()
-        .unwrap_or(Value::Null)
 }
 
 fn reason(day: &Map<String, Value>) -> &'static str {
@@ -201,31 +132,28 @@ pub fn stuck_rows(backlog: Option<&Map<String, Value>>) -> Vec<Value> {
 }
 
 pub fn copy() -> Value {
-    json!({"bucket_heading":"days that need a hand","bucket_description":"some days retry automatically; others need your help. each day shows its current status.","day_badge":"stuck","action_process_now":"process now","action_redo_scratch":"redo from scratch","confirm_redo_scratch":"redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.","queued_feedback":"queued, working on it now"})
+    json!({
+        "bucket_heading": "days that need a hand",
+        "bucket_description": "some days retry automatically; others need your help. each day shows its current status.",
+        "day_badge": "stuck",
+        "action_process_now": "process now",
+        "action_redo_scratch": "redo from scratch",
+        "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
+        "queued_feedback": "queued, working on it now",
+        "unfinished_template_one": solstone_core_system_health::UNFINISHED_TEMPLATE_ONE,
+        "unfinished_template_many_one_day": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY,
+        "unfinished_template_many_days": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS,
+        "search_current": crate::search_freshness::SEARCH_TEXT_CURRENT,
+        "search_behind_7_days": crate::search_freshness::SEARCH_TEXT_BEHIND_7_DAYS,
+        "search_behind_attempt_failed": crate::search_freshness::SEARCH_TEXT_BEHIND_ATTEMPT_FAILED,
+        "search_unclear": crate::search_freshness::SEARCH_TEXT_UNCLEAR,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{count, oldest_pending_day, pending_days, stuck_rows, verdict};
-    use serde_json::{Value, json};
-
-    #[test]
-    fn the_pending_day_is_carried_as_a_key_and_withheld_when_undecided() {
-        let backlog = json!({"pending_days":1,"stuck_days":0,"oldest_pending_day":"20260904"});
-        assert_eq!(pending_days(backlog.as_object()), 1.0);
-        assert_eq!(oldest_pending_day(backlog.as_object()), json!("20260904"));
-
-        // A degraded read knows nothing, so it names no day and counts no days.
-        let degraded = json!({"pending_days":3,"oldest_pending_day":"20260904","degraded":true});
-        assert_eq!(pending_days(degraded.as_object()), 0.0);
-        assert_eq!(oldest_pending_day(degraded.as_object()), Value::Null);
-
-        for absent in [json!({"pending_days":2}), json!({"oldest_pending_day":""})] {
-            assert_eq!(oldest_pending_day(absent.as_object()), Value::Null);
-        }
-        assert_eq!(oldest_pending_day(None), Value::Null);
-        assert_eq!(pending_days(None), 0.0);
-    }
+    use super::{count, stuck_rows};
+    use serde_json::json;
 
     #[test]
     fn retry_and_repair_states_keep_their_distinct_recovery_guidance() {
@@ -265,27 +193,6 @@ mod tests {
         assert_eq!(count(Some(&json!(false))), 0.0);
         assert_eq!(count(Some(&json!(2.5))), 2.5);
         assert_eq!(count(Some(&json!("3"))), 3.0);
-    }
-
-    #[test]
-    fn verdict_covers_each_numeric_arm_and_degraded() {
-        assert_eq!(verdict(None), "still checking where your journal stands.");
-        assert_eq!(
-            verdict(json!({"pending_days":1,"stuck_days":0}).as_object()),
-            "1 day is still catching up."
-        );
-        assert_eq!(
-            verdict(json!({"pending_days":0,"stuck_days":2}).as_object()),
-            "caught up except 2 days that need a hand."
-        );
-        assert_eq!(
-            verdict(json!({"pending_days":2,"stuck_days":1}).as_object()),
-            "1 day needs a hand. 2 more days are still catching up."
-        );
-        assert_eq!(
-            verdict(json!({"pending_days":2,"stuck_days":3,"degraded":true}).as_object()),
-            "still checking where your journal stands."
-        );
     }
 
     #[test]

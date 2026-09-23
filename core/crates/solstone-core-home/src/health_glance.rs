@@ -10,8 +10,6 @@ use crate::formatting::relative_time;
 use crate::model::{BacklogSource, BacklogValidity};
 use crate::needs_you::format_degraded_capture_line;
 
-pub const BACKLOG_FRESHNESS_MAX_AGE_HOURS: i64 = 36;
-
 const UNAVAILABLE_HEADLINE: &str = "your devices' status is unclear right now.";
 const EMPTY_REGISTRY_HEADLINE: &str =
     "no devices are running the solstone app yet. set one up to start your journal.";
@@ -224,7 +222,30 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     if backlog.get("degraded").and_then(Value::as_bool) == Some(true) {
         issues.push(unknown_backlog());
     }
-    match source.generated_at.as_deref().and_then(parse_time) { Some(generated) if now - generated <= Duration::hours(BACKLOG_FRESHNESS_MAX_AGE_HOURS) => {}, Some(generated) => issues.push(json!({"text":format!("it's unclear whether your journal is caught up; the last update was {} ago.", age(now - generated)),"severity":"amber","href":"/app/health"})), None => issues.push(json!({"text":"it's unclear whether your journal is caught up; the last update age is unknown.","severity":"amber","href":"/app/health"})), };
+    match solstone_core_system_health::summary_freshness(source.generated_at.as_deref(), now) {
+        solstone_core_system_health::SummaryFreshness::Fresh => {}
+        solstone_core_system_health::SummaryFreshness::Stale => {
+            let generated = solstone_core_system_health::parse_summary_time(
+                source.generated_at.as_deref().unwrap(),
+            )
+            .unwrap();
+            issues.push(json!({
+                "text": format!(
+                    "it's unclear whether your journal is caught up; the last update was {} ago.",
+                    age(now - generated)
+                ),
+                "severity": "amber",
+                "href": "/app/health"
+            }));
+        }
+        solstone_core_system_health::SummaryFreshness::Unknown => {
+            issues.push(json!({
+                "text": "it's unclear whether your journal is caught up; the last update age is unknown.",
+                "severity": "amber",
+                "href": "/app/health"
+            }));
+        }
+    }
     if backlog
         .get("stuck_days")
         .and_then(Value::as_i64)
@@ -402,6 +423,50 @@ mod tests {
 
     use super::*;
     use crate::model::{BacklogSource, BacklogValidity};
+
+    #[test]
+    fn future_generated_at_skew_handling() {
+        let n = now();
+        // 10 minutes in the future -> unknown age issue
+        let ten_min_future = n + Duration::minutes(10);
+        let backlog_future = BacklogSource {
+            backlog: Some(json!({"stuck_days": 0}).as_object().unwrap().clone()),
+            validity: BacklogValidity::Valid,
+            generated_at: Some(ten_min_future.to_rfc3339()),
+        };
+        let glance_ten = build_health_glance(
+            &json!({"status": "active"}),
+            &json!({}),
+            Some("29 seconds ago"),
+            &backlog_future,
+            &Value::Null,
+            n,
+        );
+        let issues = glance_ten["issues"].as_array().unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(
+            issues[0]["text"],
+            "it's unclear whether your journal is caught up; the last update age is unknown."
+        );
+
+        // 2 minutes in the future -> tolerated within 5 min skew, no age issue
+        let two_min_future = n + Duration::minutes(2);
+        let backlog_two = BacklogSource {
+            backlog: Some(json!({"stuck_days": 0}).as_object().unwrap().clone()),
+            validity: BacklogValidity::Valid,
+            generated_at: Some(two_min_future.to_rfc3339()),
+        };
+        let glance_two = build_health_glance(
+            &json!({"status": "active"}),
+            &json!({}),
+            Some("29 seconds ago"),
+            &backlog_two,
+            &Value::Null,
+            n,
+        );
+        let issues_two = glance_two["issues"].as_array().unwrap();
+        assert_eq!(issues_two.len(), 0);
+    }
 
     fn fresh_backlog() -> BacklogSource {
         BacklogSource {

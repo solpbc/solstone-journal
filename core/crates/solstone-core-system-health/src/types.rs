@@ -153,6 +153,7 @@ pub struct BacklogUnit {
     pub facet: Option<String>,
     pub stream: Option<String>,
     pub segment: Option<String>,
+    pub activity: Option<String>,
     pub why: String,
     pub reason_code: Option<String>,
     pub provider: Option<String>,
@@ -210,6 +211,39 @@ pub struct CappedDailySummary {
     pub unit: CappedDailyUnit,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnfinishedActivities {
+    pub activities: usize,
+    pub units: Vec<BacklogUnit>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IndexerPhase {
+    pub success: bool,
+    pub reason_code: Option<String>,
+    pub run_started_at_ms: i64,
+}
+
+impl IndexerPhase {
+    pub fn from_json_value(value: &serde_json::Value) -> Option<Self> {
+        let obj = value.as_object()?;
+        let success = obj.get("success")?.as_bool()?;
+        let run_started_at_ms = obj
+            .get("run_started_at_ms")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let reason_code = obj
+            .get("reason_code")
+            .and_then(|v| v.as_str())
+            .map(ToOwned::to_owned);
+        Some(Self {
+            success,
+            reason_code,
+            run_started_at_ms,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BacklogDay {
     pub daily_coverage: Option<solstone_core_system::daily_coverage::DailyCoverage>,
@@ -228,6 +262,7 @@ pub struct BacklogDay {
     pub backoff: Option<BackoffSummary>,
     pub segment_repair: Option<SegmentRepairSummary>,
     pub capped_daily: Option<CappedDailySummary>,
+    pub unfinished_activities: Option<UnfinishedActivities>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -240,6 +275,7 @@ pub struct BacklogView {
     pub errors: Vec<BacklogError>,
     pub degraded: bool,
     pub malformed_line_count: usize,
+    pub indexer_phase: Option<IndexerPhase>,
 }
 
 fn nonempty(value: &Option<String>) -> Option<&String> {
@@ -254,6 +290,9 @@ impl Serialize for BacklogUnit {
         map.serialize_entry("facet", &self.facet)?;
         map.serialize_entry("stream", &self.stream)?;
         map.serialize_entry("segment", &self.segment)?;
+        if let Some(activity) = nonempty(&self.activity) {
+            map.serialize_entry("activity", activity)?;
+        }
         map.serialize_entry("why", &self.why)?;
         if let Some(reason_code) = nonempty(&self.reason_code) {
             map.serialize_entry("reason_code", reason_code)?;
@@ -294,6 +333,27 @@ impl Serialize for CappedDailyUnit {
         map.serialize_entry("facet", &self.facet)?;
         map.serialize_entry("reason_code", &self.reason_code)?;
         map.serialize_entry("count", &self.count)?;
+        map.end()
+    }
+}
+
+impl Serialize for UnfinishedActivities {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("activities", &self.activities)?;
+        map.serialize_entry("units", &self.units)?;
+        map.end()
+    }
+}
+
+impl Serialize for IndexerPhase {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(None)?;
+        map.serialize_entry("success", &self.success)?;
+        if let Some(reason_code) = nonempty(&self.reason_code) {
+            map.serialize_entry("reason_code", reason_code)?;
+        }
+        map.serialize_entry("run_started_at_ms", &self.run_started_at_ms)?;
         map.end()
     }
 }
@@ -358,13 +418,16 @@ impl Serialize for BacklogDay {
             map.serialize_entry("capped_daily_unit_count", &capped.count)?;
             map.serialize_entry("capped_daily_unit", &capped.unit)?;
         }
+        if let Some(unfinished) = &self.unfinished_activities {
+            map.serialize_entry("unfinished_activities", unfinished)?;
+        }
         map.end()
     }
 }
 
 impl Serialize for BacklogView {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut map = serializer.serialize_map(Some(8))?;
+        let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("window", &self.window)?;
         map.serialize_entry("days", &self.days)?;
         map.serialize_entry("pending_days", &self.pending_days)?;
@@ -373,6 +436,9 @@ impl Serialize for BacklogView {
         map.serialize_entry("errors", &self.errors)?;
         map.serialize_entry("degraded", &self.degraded)?;
         map.serialize_entry("malformed_line_count", &self.malformed_line_count)?;
+        if let Some(indexer_phase) = &self.indexer_phase {
+            map.serialize_entry("indexer_phase", indexer_phase)?;
+        }
         map.end()
     }
 }

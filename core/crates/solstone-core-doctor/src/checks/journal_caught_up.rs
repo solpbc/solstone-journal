@@ -5,6 +5,26 @@ use crate::{
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 const CANT_TELL: &str = "re-run journal doctor; check the health logs if it persists";
+
+fn unfinished_suffix(days: &[solstone_core_system_health::BacklogDay]) -> String {
+    let unfinished = solstone_core_system_health::aggregate_unfinished_from_days(days);
+    if unfinished.activities > 0 {
+        let act_str = if unfinished.activities == 1 {
+            "1 unfinished activity".to_owned()
+        } else {
+            format!("{} unfinished activities", unfinished.activities)
+        };
+        let day_str = if unfinished.day_count == 1 {
+            "1 completed day".to_owned()
+        } else {
+            format!("{} completed days", unfinished.day_count)
+        };
+        format!("; {act_str} on {day_str}")
+    } else {
+        String::new()
+    }
+}
+
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let source = solstone_core_system_health::FilesystemHealthLogSource::new(&context.journal_path);
     let segments = solstone_core_system_health::FilesystemSegmentSource;
@@ -33,10 +53,11 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 .iter()
                 .filter(|day| day.state == solstone_core_system_health::BACKLOG_STATE_UNKNOWN)
                 .count();
+            let suffix = unfinished_suffix(&view.days);
             Ok(make_result(
                 check,
                 Status::Warn,
-                format!("couldn't fully determine — {unknown} day(s) unknown"),
+                format!("couldn't fully determine — {unknown} day(s) unknown{suffix}"),
                 Some(CANT_TELL),
             ))
         }
@@ -46,23 +67,28 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
                 .iter()
                 .filter(|day| day.capped_daily.is_some())
                 .count();
+            let suffix = unfinished_suffix(&view.days);
+
             if capped == 0 {
                 Ok(make_result(
                     check,
                     Status::Ok,
-                    "caught up".to_owned(),
+                    format!("caught up{suffix}"),
                     None::<String>,
                 ))
             } else {
                 Ok(make_result(
                     check,
                     Status::Warn,
-                    format!("caught up; {capped} day(s) completed with capped daily unit(s)"),
+                    format!(
+                        "caught up; {capped} day(s) completed with capped daily unit(s){suffix}"
+                    ),
                     None::<String>,
                 ))
             }
         }
         Ok(view) => {
+            let suffix = unfinished_suffix(&view.days);
             let mut detail = format!(
                 "{} day(s) pending, {} day(s) stuck",
                 view.pending_days, view.stuck_days
@@ -70,6 +96,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             if let Some(day) = view.oldest_pending_day {
                 detail.push_str(&format!("; oldest outstanding {day}"));
             }
+            detail.push_str(&suffix);
             let review_unit = view
                 .days
                 .iter()

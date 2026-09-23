@@ -155,6 +155,21 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         }
     }
 
+    if let Some(stats) = actual.get_mut("stats").and_then(Value::as_object_mut) {
+        if wanted.get("stats").and_then(|s| s.get("journal_status")).is_none() {
+            stats.remove("journal_status");
+        } else if let Some(js) = stats.get_mut("journal_status").and_then(Value::as_object_mut) {
+            if wanted
+                .get("stats")
+                .and_then(|s| s.get("journal_status"))
+                .and_then(|js_w| js_w.get("copy"))
+                .is_none()
+            {
+                js.remove("copy");
+            }
+        }
+    }
+
     if phase == "corrupt" {
         replace_text(
             &mut wanted,

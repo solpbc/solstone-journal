@@ -11,6 +11,9 @@ use axum::{
 use serde_json::json;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
 
 mod actions;
 mod assets;
@@ -21,10 +24,34 @@ mod brain_action;
 mod host;
 mod journal_data;
 mod logs;
+pub mod search_freshness;
 mod talent_failures;
 
+#[derive(Clone)]
+pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
+
+impl Clock {
+    pub fn real() -> Self {
+        Self(Arc::new(Utc::now))
+    }
+    pub fn fixed(dt: DateTime<Utc>) -> Self {
+        Self(Arc::new(move || dt))
+    }
+    pub fn new(now: impl Fn() -> DateTime<Utc> + Send + Sync + 'static) -> Self {
+        Self(Arc::new(now))
+    }
+    pub fn now(&self) -> DateTime<Utc> {
+        (self.0)()
+    }
+}
+
 pub fn routes(journal_root: PathBuf) -> Router {
+    routes_with_clock(journal_root, Clock::real())
+}
+
+pub fn routes_with_clock(journal_root: PathBuf, clock: Clock) -> Router {
     let state_root = journal_root.clone();
+    let state_clock = clock.clone();
     let log_root = journal_root.clone();
     let info_root = journal_root.clone();
     let brain_root = journal_root.clone();
@@ -35,7 +62,7 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/health/static/{*name}", get(assets::static_asset))
         .route(
             "/app/health/api/state",
-            get(move || state(state_root.clone())),
+            get(move || state(state_root.clone(), state_clock.clone())),
         )
         .route(
             "/app/health/api/log",
@@ -59,14 +86,57 @@ pub fn api_router(journal_root: PathBuf) -> Router {
     journal_data::api_router(journal_root)
 }
 
-async fn state(root: PathBuf) -> Response {
+async fn state(root: PathBuf, clock: Clock) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthState, move || {
-        let backlog = backlog::load(&root);
+        let now = clock.now();
+        let (generated_at, backlog) = backlog::load(&root);
+        let eval = solstone_core_system_health::evaluate_backlog_status(
+            backlog.as_ref(),
+            generated_at.as_deref(),
+            now,
+        );
+        let indexer_phase = backlog
+            .as_ref()
+            .and_then(|b| b.get("indexer_phase"))
+            .and_then(solstone_core_system_health::IndexerPhase::from_json_value);
+        let search_summary_freshness = if backlog
+            .as_ref()
+            .is_none_or(|b| b.get("degraded") == Some(&serde_json::Value::Bool(true)))
+        {
+            solstone_core_system_health::SummaryFreshness::Unknown
+        } else {
+            eval.freshness
+        };
+        let search_index = search_freshness::evaluate_search_freshness(
+            &root,
+            &search_freshness::FsIndexMetadata,
+            indexer_phase.as_ref(),
+            search_summary_freshness,
+            now,
+        );
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
-        Json(
-            json!({"backlog":{"verdict":backlog::verdict(backlog.as_ref()),"pending_days":backlog::pending_days(backlog.as_ref()),"oldest_pending_day":backlog::oldest_pending_day(backlog.as_ref()),"stuck_rows":backlog::stuck_rows(backlog.as_ref()),"copy":backlog::copy()},"agent_errors":{"items":items,"ok":ok,"count":count,"label":errors_today_label(count,ok)}}),
-        )
+        Json(json!({
+            "backlog": {
+                "verdict": eval.verdict,
+                "pending_days": eval.pending_days,
+                "oldest_pending_day": eval.oldest_pending_day,
+                "freshness": {
+                    "state": eval.freshness.as_str(),
+                    "generated_at": generated_at,
+                },
+                "unfinished_activities": eval.unfinished_activities,
+                "stuck_rows": backlog::stuck_rows(backlog.as_ref()),
+                "copy": backlog::copy(),
+            },
+            "search_index": search_index,
+            "agent_errors": {
+                "items": items,
+                "ok": ok,
+                "count": count,
+                "label": errors_today_label(count, ok),
+            },
+        }))
         .into_response()
     })
     .await
@@ -86,6 +156,8 @@ async fn info(root: PathBuf) -> Response {
     .await
 }
 
+#[cfg(test)]
+mod acceptance_tests;
 #[cfg(test)]
 mod corpus;
 #[cfg(test)]

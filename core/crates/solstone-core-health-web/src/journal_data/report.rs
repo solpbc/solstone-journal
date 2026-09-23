@@ -25,7 +25,6 @@ const HOUR_MS: i64 = 3_600_000;
 const FACET_SILENT_INFO_HOURS: i64 = 24;
 const FACET_SILENT_WARN_HOURS: i64 = 72;
 const FACET_SILENT_CRITICAL_HOURS: i64 = 168;
-const INDEXER_STALE_WARN_DAYS: i64 = 7;
 const SPEC_POINTER: &str = "core/crates/solstone-core-health-web/src/journal_data/report.rs";
 /// Days newer than this are always scanned for outstanding work. Older days are
 /// reached only when their marker pair still reads dirty, which bounds a
@@ -112,7 +111,7 @@ pub(crate) struct HealthNote {
 }
 
 #[derive(Debug, Default)]
-struct ScanAggregate {
+pub(crate) struct ScanAggregate {
     capture_hour_slots: BTreeSet<(String, u32)>,
     last_segment_at: Option<i64>,
     activities_count: u64,
@@ -423,7 +422,7 @@ fn last_segment_per_facet(
     Ok(values_by_facet)
 }
 
-fn build_synthesis_health(
+pub(crate) fn build_synthesis_health(
     journal_root: &Path,
     aggregate: &ScanAggregate,
     now: DateTime<impl TimeZone>,
@@ -502,32 +501,61 @@ fn build_synthesis_health(
     } else {
         (None, None)
     };
-    let indexer = journal_root.join("indexer/journal.sqlite");
-    let indexer_last_rebuild_at = match fs::metadata(&indexer) {
-        Ok(metadata) => {
-            let value = metadata
-                .modified()
-                .map_err(|error| HealthError::internal(error.to_string()))?
-                .duration_since(UNIX_EPOCH)
-                .map_err(|error| HealthError::internal(error.to_string()))?
-                .as_millis() as i64;
-            if generated_at - value > INDEXER_STALE_WARN_DAYS * DAY_MS {
+    let indexer_sqlite = journal_root.join("indexer/journal.sqlite");
+    let (gen_at_opt, backlog_opt) = crate::backlog::load(journal_root);
+    let indexer_phase = backlog_opt
+        .as_ref()
+        .and_then(|b| b.get("indexer_phase"))
+        .and_then(solstone_core_system_health::IndexerPhase::from_json_value);
+    let utc_now = now.with_timezone(&Utc);
+    let summary_freshness =
+        solstone_core_system_health::summary_freshness(gen_at_opt.as_deref(), utc_now);
+    let search_eval = crate::search_freshness::evaluate_search_freshness(
+        journal_root,
+        &crate::search_freshness::FsIndexMetadata,
+        indexer_phase.as_ref(),
+        summary_freshness,
+        utc_now,
+    );
+
+    let indexer_last_rebuild_at = search_eval.updated_at_ms;
+
+    match fs::metadata(&indexer_sqlite) {
+        Ok(_) => {
+            if search_eval.state == "stale" && !search_eval.last_attempt_failed {
+                if let Some(mtime_ms) = search_eval.updated_at_ms {
+                    notes.push(note(
+                        "warn",
+                        "synthesis",
+                        &format!(
+                            "indexer database last rebuilt {}d ago; search-backed consumers may be stale.",
+                            (generated_at - mtime_ms) / DAY_MS
+                        ),
+                        generated_at,
+                        None,
+                    ));
+                }
+            } else if search_eval.last_attempt_failed {
                 notes.push(note(
                     "warn",
                     "synthesis",
-                    &format!("indexer database last rebuilt {}d ago; search-backed consumers may be stale.", (generated_at - value) / DAY_MS),
+                    crate::search_freshness::SEARCH_NOTE_ATTEMPT_FAILED,
                     generated_at,
                     None,
                 ));
             }
-            Some(value)
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            notes.push(note("warn", "synthesis", "indexer database missing at journal/indexer/journal.sqlite; search-backed consumers may be stale.", generated_at, None));
-            None
+            notes.push(note(
+                "warn",
+                "synthesis",
+                "indexer database missing at journal/indexer/journal.sqlite; search-backed consumers may be stale.",
+                generated_at,
+                None,
+            ));
         }
-        Err(error) => return Err(HealthError::internal(error.to_string())),
-    };
+        Err(_) => {}
+    }
     Ok((
         SynthesisHealth {
             activities_count: aggregate.activities_count,

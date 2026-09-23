@@ -11,24 +11,58 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
+use crate::read::read_day_records;
+use crate::terminal::fold_terminal_records;
 use crate::{
     BACKLOG_STATE_COMPLETE, BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK, BACKLOG_STATE_UNKNOWN,
     BacklogDay, BacklogError, BacklogUnit, BacklogView, CappedDailySummary, CappedDailyUnit,
-    HealthError, HealthLogSource, MODALITY_INPUT_AGED_MS, NO_SENSE_COMPLETE_AGED_MS,
-    REASON_CATCHUP_BACKOFF, REASON_CORRUPT_RAW, REASON_FAILING_STEP,
+    HealthError, HealthEvent, HealthLogSource, IndexerPhase, MODALITY_INPUT_AGED_MS,
+    NO_SENSE_COMPLETE_AGED_MS, REASON_CATCHUP_BACKOFF, REASON_CORRUPT_RAW, REASON_FAILING_STEP,
     REASON_SEGMENT_REPAIR_DEGRADED, REASON_SEGMENT_REPAIR_PROGRESSING, REASON_SEGMENT_REPAIR_STUCK,
-    REASON_SEGMENT_REPAIR_UNKNOWN, SEGMENT_REPAIR_STATUS_DEGRADED,
+    REASON_SEGMENT_REPAIR_UNKNOWN, RunLogRecord, SEGMENT_REPAIR_STATUS_DEGRADED,
     SEGMENT_REPAIR_STATUS_PROGRESSING, SEGMENT_REPAIR_STATUS_STUCK, SEGMENT_REPAIR_STATUS_UNKNOWN,
     SENSED_TERMINAL_STATES, STUCK_FAIL_THRESHOLD, SegmentInput, SegmentProgress,
     SegmentRepairSummary, SegmentSource, TerminalEvent, TerminalState, TerminalUnit,
-    WHY_CORRUPT_RAW, WHY_FAILED, WHY_NEVER_ATTEMPTED, WHY_NO_SENSE_COMPLETE_AGED,
-    WHY_SENSED_NOT_THOUGHT, classify_segment_completion, day_is_complete_with,
-    lookup_segment_progress, read_backoff_summary, read_segment_progress,
-    read_segment_repair_attempted, read_segment_repair_summary, read_terminal_states, scan_day,
-    segment_fully_sensed, segment_fully_thought, segment_requires_processing,
+    UnfinishedActivities, WHY_CORRUPT_RAW, WHY_FAILED, WHY_NEVER_ATTEMPTED,
+    WHY_NO_SENSE_COMPLETE_AGED, WHY_SENSED_NOT_THOUGHT, classify_segment_completion,
+    day_is_complete_with, lookup_segment_progress, read_backoff_summary, read_segment_progress,
+    read_segment_repair_attempted, read_segment_repair_summary, scan_day, segment_fully_sensed,
+    segment_fully_thought, segment_requires_processing,
 };
 
+/// Known limit: Indexer phase completion rows outside the inspected backlog window are invisible to this fold.
+fn record_indexer_candidate(
+    indexer_winner: &mut Option<((i64, String, usize), IndexerPhase)>,
+    day: &str,
+    index: usize,
+    record: &RunLogRecord,
+) {
+    if let HealthEvent::PhaseComplete(payload) = &record.event
+        && payload.phase.as_deref() == Some("indexer")
+    {
+        if payload.extensions.get("skipped") == Some(&Value::Bool(true)) {
+            return;
+        }
+        if let Some(Value::Bool(success)) = payload.extensions.get("success") {
+            let reason_code = payload.reason_code.clone().filter(|s| !s.is_empty());
+            let candidate = IndexerPhase {
+                success: *success,
+                reason_code,
+                run_started_at_ms: record.ts,
+            };
+            let key = (record.ts, day.to_owned(), index);
+            match indexer_winner {
+                Some((best_key, _)) if *best_key >= key => {}
+                _ => *indexer_winner = Some((key, candidate)),
+            }
+        }
+    }
+}
+
 /// Return a bounded, read-only cross-day processing backlog report.
+///
+/// Known limit: Indexer phase completion rows outside the inspected backlog window are invisible to this fold.
+/// Known limit: An unfinished activity unit is cleared only by a later talent.complete for that same unit, even if the activity is later hidden or removed.
 pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     health_source: &H,
     segment_source: &S,
@@ -45,6 +79,9 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
     let mut backlog_days = Vec::new();
     let mut errors = Vec::new();
     let mut malformed_line_count = 0;
+    // Known limit: Indexer phase completion rows outside the inspected backlog window are invisible to this fold.
+    let mut indexer_winner: Option<((i64, String, usize), IndexerPhase)> = None;
+
     // Each day's coverage is computed once and reused by the classification
     // pass below.  Reading it twice per day was the whole of this view's cost.
     let mut coverage_by_day: BTreeMap<
@@ -58,15 +95,89 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
         let completeness = day_is_complete_with(journal, &day, coverage.as_ref());
         coverage_by_day.insert(day.clone(), coverage);
         match completeness {
-            Ok(true) => match complete_backlog_day(health_source, &day, repair.as_ref()) {
-                Ok((day_value, malformed)) => {
-                    malformed_line_count += malformed;
-                    backlog_days.push(day_value);
+            Ok(true) => {
+                let (mut day_value, _) =
+                    match complete_backlog_day(health_source, &day, repair.as_ref()) {
+                        Ok(v) => v,
+                        Err(error) => {
+                            let failed = unknown_day(&day, "capped_daily", error);
+                            errors.push(failed.error.clone().expect("unknown day has error"));
+                            backlog_days.push(failed);
+                            continue;
+                        }
+                    };
+                match read_day_records(health_source, &day) {
+                    Ok(scanned) => {
+                        malformed_line_count += scanned.malformed_line_count;
+                        for (index, record) in scanned.value.iter().enumerate() {
+                            record_indexer_candidate(&mut indexer_winner, &day, index, record);
+                        }
+                        // Known limit: An unfinished activity unit is cleared only by a later talent.complete for that same unit, even if the activity is later hidden or removed.
+                        let terminals = fold_terminal_records(
+                            scanned
+                                .value
+                                .into_iter()
+                                .map(|record| (day.clone(), record)),
+                            Some(&day),
+                        );
+                        let stream_updated_ms = stream_updated_ms(journal, &day);
+                        let mut activity_units = terminals
+                            .into_iter()
+                            .filter(|(unit, state)| {
+                                unit.segment.is_none()
+                                    && unit.mode == "activity"
+                                    && state.latest_event == TerminalEvent::Fail
+                            })
+                            .map(|(unit, state)| {
+                                let mut backlog_u =
+                                    failed_backlog_unit(&unit, &state, stream_updated_ms);
+                                backlog_u.stuck = false;
+                                backlog_u
+                            })
+                            .collect::<Vec<_>>();
+                        activity_units.sort_by(|left, right| {
+                            (
+                                &left.mode,
+                                &left.name,
+                                left.facet.as_deref().unwrap_or(""),
+                                left.activity.as_deref().unwrap_or(""),
+                            )
+                                .cmp(&(
+                                    &right.mode,
+                                    &right.name,
+                                    right.facet.as_deref().unwrap_or(""),
+                                    right.activity.as_deref().unwrap_or(""),
+                                ))
+                        });
+                        let distinct_activities = activity_units
+                            .iter()
+                            .map(|u| {
+                                (
+                                    u.facet.as_deref().unwrap_or(""),
+                                    u.activity.as_deref().unwrap_or(""),
+                                )
+                            })
+                            .collect::<std::collections::BTreeSet<_>>()
+                            .len();
+                        if distinct_activities > 0 {
+                            day_value.unfinished_activities = Some(UnfinishedActivities {
+                                activities: distinct_activities,
+                                units: activity_units,
+                            });
+                        }
+                    }
+                    Err(error) => {
+                        errors.push(BacklogError {
+                            day: day.clone(),
+                            stage: "completed_day_terminals".to_owned(),
+                            message: error.to_string(),
+                        });
+                    }
                 }
-                Err(error) => backlog_days.push(unknown_day(&day, "capped_daily", error)),
-            },
+                backlog_days.push(day_value);
+            }
             Ok(false) => {
-                let terminals = match read_terminal_states(health_source, &day, false) {
+                let scanned_records = match read_day_records(health_source, &day) {
                     Ok(value) => value,
                     Err(error) => {
                         let failed = unknown_day(&day, "terminal_states", error);
@@ -75,7 +186,17 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                         continue;
                     }
                 };
-                malformed_line_count += terminals.malformed_line_count;
+                malformed_line_count += scanned_records.malformed_line_count;
+                for (index, record) in scanned_records.value.iter().enumerate() {
+                    record_indexer_candidate(&mut indexer_winner, &day, index, record);
+                }
+                let terminals = fold_terminal_records(
+                    scanned_records
+                        .value
+                        .into_iter()
+                        .map(|record| (day.clone(), record)),
+                    None,
+                );
 
                 let progress = match read_segment_progress(health_source, &day) {
                     Ok(value) => value,
@@ -114,15 +235,12 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     &day,
                     &scanned,
                     &progress.value,
-                    &terminals.value,
+                    &terminals,
                     stream_updated_ms,
                     repair_attempted,
                     now.timestamp_millis(),
                 );
-                why.extend(non_segment_failed_units(
-                    &terminals.value,
-                    stream_updated_ms,
-                ));
+                why.extend(non_segment_failed_units(&terminals, stream_updated_ms));
                 let backoff = read_backoff_summary(journal, &day);
                 let segment_depth = not_sensed + completion.not_thought;
                 let mut reason = if why
@@ -174,6 +292,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                     backoff,
                     segment_repair: repair,
                     capped_daily: None,
+                    unfinished_activities: None,
                 });
             }
             Err(error) => backlog_days.push(unknown_day(&day, "day_is_complete", error)),
@@ -263,6 +382,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
                         facet: unit.identity.facet.clone(),
                         stream: None,
                         segment: None,
+                        activity: None,
                         why: WHY_FAILED.to_owned(),
                         reason_code: unit.reason_code.clone(),
                         provider: None,
@@ -334,6 +454,7 @@ pub fn read_backlog_view<H: HealthLogSource, S: SegmentSource>(
         errors,
         degraded,
         malformed_line_count,
+        indexer_phase: indexer_winner.map(|(_, phase)| phase),
     })
 }
 
@@ -368,6 +489,7 @@ fn complete_backlog_day<H: HealthLogSource>(
             backoff: None,
             segment_repair: repair.cloned(),
             capped_daily,
+            unfinished_activities: None,
         },
         0,
     ))
@@ -394,6 +516,7 @@ fn unknown_day(day: &str, stage: &str, error: HealthError) -> BacklogDay {
         backoff: None,
         segment_repair: None,
         capped_daily: None,
+        unfinished_activities: None,
     }
 }
 
@@ -494,6 +617,7 @@ fn segment_backlog_units(
                     facet: None,
                     stream: Some(segment.stream.clone()),
                     segment: Some(segment.key.clone()),
+                    activity: None,
                     why: WHY_CORRUPT_RAW.to_owned(),
                     reason_code: None,
                     provider: None,
@@ -623,6 +747,7 @@ fn pending_unit(
         facet: None,
         stream: Some(stream.to_owned()),
         segment: Some(segment.to_owned()),
+        activity: None,
         why: why.to_owned(),
         reason_code: None,
         provider: None,
@@ -646,6 +771,7 @@ fn failed_backlog_unit(
         facet: unit.facet.clone(),
         stream: unit.stream.clone(),
         segment: unit.segment.clone(),
+        activity: unit.activity.clone(),
         why: WHY_FAILED.to_owned(),
         reason_code: state.reason_code.clone(),
         provider: state.provider.clone(),

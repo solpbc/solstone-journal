@@ -3345,3 +3345,48 @@ fn facet_routing_warns_when_active_segments_reach_no_facet() {
         warn.detail
     );
 }
+
+#[test]
+fn journal_caught_up_appends_single_unfinished_activity_on_completed_day() {
+    let c = fixture();
+    configure_daily_work(&c.journal_path, None);
+    health(
+        &c,
+        "20251230",
+        &[
+            r#"{"event":"talent.fail","ts":100,"mode":"activity","name":"talent_a","facet":"work","activity":"meeting_1","reason_code":"failed"}"#,
+        ],
+    );
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(
+        row.detail,
+        "caught up; 1 unfinished activity on 1 completed day"
+    );
+}
+
+#[test]
+fn journal_caught_up_appends_multiple_unfinished_activities_across_completed_days() {
+    let c = fixture();
+    configure_daily_work(&c.journal_path, None);
+    health(
+        &c,
+        "20251229",
+        &[
+            r#"{"event":"talent.fail","ts":100,"mode":"activity","name":"talent_a","facet":"work","activity":"meeting_1","reason_code":"failed"}"#,
+        ],
+    );
+    health(
+        &c,
+        "20251230",
+        &[
+            r#"{"event":"talent.fail","ts":200,"mode":"activity","name":"talent_b","facet":"personal","activity":"meeting_2","reason_code":"failed"}"#,
+        ],
+    );
+    let row = result("journal_caught_up", &c);
+    assert_eq!(row.status, Status::Ok);
+    assert_eq!(
+        row.detail,
+        "caught up; 2 unfinished activities on 2 completed days"
+    );
+}

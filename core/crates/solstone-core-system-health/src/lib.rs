@@ -3,6 +3,8 @@
 
 //! Read-only schema and folds for per-day thinking health logs.
 
+#[cfg(test)]
+mod acceptance_tests;
 mod backlog;
 mod catchup_state;
 mod change_detection;
@@ -10,6 +12,7 @@ mod completion;
 mod data_state;
 mod error;
 mod event;
+mod freshness;
 mod grep_compile;
 mod loader;
 mod progress;
@@ -35,6 +38,17 @@ pub use completion::{
 pub use data_state::derive_modality_state;
 pub use error::HealthError;
 pub use event::{EventPayload, HealthEvent, RunLogRecord};
+pub use freshness::{
+    BACKLOG_FRESHNESS_MAX_AGE_HOURS, BacklogStatusEvaluation, FUTURE_SKEW_TOLERANCE_MS,
+    SummaryFreshness, UNFINISHED_TEMPLATE_MANY_DAYS, UNFINISHED_TEMPLATE_MANY_ONE_DAY,
+    UNFINISHED_TEMPLATE_ONE, UnfinishedActivitiesAggregate, VERDICT_AGE_STALE_TEMPLATE,
+    VERDICT_AGE_UNKNOWN, VERDICT_ALL_CAUGHT_UP, VERDICT_CAUGHT_UP, VERDICT_MIXED_PENDING_PLURAL,
+    VERDICT_MIXED_PENDING_SINGULAR, VERDICT_MIXED_STUCK_PLURAL, VERDICT_MIXED_STUCK_SINGULAR,
+    VERDICT_PENDING_ONLY_PLURAL, VERDICT_PENDING_ONLY_SINGULAR, VERDICT_STILL_CHECKING,
+    VERDICT_STUCK_ONLY_PLURAL, VERDICT_STUCK_ONLY_SINGULAR, aggregate_unfinished_activities,
+    aggregate_unfinished_from_days, evaluate_backlog_status, format_summary_age,
+    parse_summary_time, select_unfinished_template, summary_freshness,
+};
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, decimal_digit_value};
 pub use loader::{
     BoundedStderr, STDERR_LIMIT, classify_loader_failure, read_bounded_stderr, unresolved_library,
@@ -61,9 +75,10 @@ pub use terminal::{
 pub use types::{
     BacklogDay, BacklogError, BacklogUnit, BacklogView, BackoffSummary, CappedDailySummary,
     CappedDailyUnit, CompletedUnit, CompletionActivity, CompletionSegment, CompletionsSince,
-    DailyUnit, DataStateMap, DeterministicFailure, FoldRead, SegmentBlocker,
+    DailyUnit, DataStateMap, DeterministicFailure, FoldRead, IndexerPhase, SegmentBlocker,
     SegmentBlockerDimension, SegmentCompletion, SegmentIdentity, SegmentInput, SegmentProgress,
     SegmentRepairSummary, TerminalEvent, TerminalState, TerminalUnit, ThoughtVerdict,
+    UnfinishedActivities,
 };
 pub use vocabulary::{
     BACKLOG_DEFAULT_WINDOW, BACKLOG_STATE_COMPLETE, BACKLOG_STATE_PENDING, BACKLOG_STATE_STUCK,

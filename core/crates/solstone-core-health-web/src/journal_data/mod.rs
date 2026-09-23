@@ -18,7 +18,7 @@ use solstone_core_convey_http::envelope::error_envelope;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
 
 mod pipeline;
-mod report;
+pub(crate) mod report;
 
 pub(crate) use report::{HealthError, build_health_report, resolve_day, resolve_range};
 

@@ -17,6 +17,7 @@ pub use clock::Clock;
 
 pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
     let stats_root = journal_root.clone();
+    let stats_clock = clock.clone();
     let usage_root = journal_root.clone();
     let usage_clock = clock.clone();
     let index_root = journal_root.clone();
@@ -28,7 +29,7 @@ pub fn routes(journal_root: PathBuf, clock: Clock) -> Router {
         .route("/app/stats/background", get(assets::background))
         .route(
             "/app/stats/api/stats",
-            get(move || stats_data(stats_root.clone())),
+            get(move || stats_data(stats_root.clone(), stats_clock.clone())),
         )
         .route(
             "/app/stats/api/usage",
@@ -139,8 +140,30 @@ async fn month_stats(root: PathBuf, month: String) -> axum::response::Response {
     )
     .await
 }
-async fn stats_data(root: PathBuf) -> axum::response::Response {
+
+fn local_naive_to_utc(naive: chrono::NaiveDateTime) -> chrono::DateTime<chrono::Utc> {
+    use chrono::{Duration, Local, LocalResult, TimeZone, Utc};
+    match Local.from_local_datetime(&naive) {
+        LocalResult::Single(dt) => dt.with_timezone(&Utc),
+        LocalResult::Ambiguous(earliest, _) => earliest.with_timezone(&Utc),
+        LocalResult::None => {
+            let mut offset_mins = 1;
+            loop {
+                if let Some(dt) = Local
+                    .from_local_datetime(&(naive + Duration::minutes(offset_mins)))
+                    .earliest()
+                {
+                    break dt.with_timezone(&Utc);
+                }
+                offset_mins += 1;
+            }
+        }
+    }
+}
+
+async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
     spawn_blocking_response(OwnerReadRole::StatsData, move || {
+        let utc_now = local_naive_to_utc(clock.now());
         let mut response = json!({"stats":{}});
         let path = match solstone_core_journal_io::resolve_journal_path(&root, "stats.json") {
             Ok(path) => path,
@@ -188,6 +211,30 @@ async fn stats_data(root: PathBuf) -> axum::response::Response {
             }
             response["stats"] = stats;
         }
+
+        let gen_at = response["stats"]
+            .get("generated_at")
+            .and_then(Value::as_str);
+        let bl_obj = response["stats"].get("backlog").and_then(Value::as_object);
+        let eval = solstone_core_system_health::evaluate_backlog_status(bl_obj, gen_at, utc_now);
+        if let Some(stats_map) = response.get_mut("stats").and_then(Value::as_object_mut) {
+            stats_map.insert(
+                "journal_status".to_owned(),
+                json!({
+                    "verdict": eval.verdict,
+                    "freshness": eval.freshness.as_str(),
+                    "pending_days": eval.pending_days,
+                    "oldest_pending_day": eval.oldest_pending_day,
+                    "unfinished_activities": eval.unfinished_activities,
+                    "copy": {
+                        "unfinished_template_one": solstone_core_system_health::UNFINISHED_TEMPLATE_ONE,
+                        "unfinished_template_many_one_day": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY,
+                        "unfinished_template_many_days": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS,
+                    },
+                }),
+            );
+        }
+
         // The owner named these facets; the raw storage slug is not their name.
         // Same source the thinking app's talent-runs facet filter already reads
         // from, so the two surfaces agree on one facet's display name (G2-35).
@@ -269,5 +316,7 @@ fn api_error(
         .into_response()
 }
 
+#[cfg(test)]
+mod acceptance_tests;
 #[cfg(test)]
 mod corpus;

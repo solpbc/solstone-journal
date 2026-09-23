@@ -45,7 +45,7 @@ pub fn read_terminal_states<S: HealthLogSource>(
     })
 }
 
-fn fold_terminal_records(
+pub(crate) fn fold_terminal_records(
     input: impl IntoIterator<Item = (String, RunLogRecord)>,
     scoped_day: Option<&str>,
 ) -> BTreeMap<TerminalUnit, TerminalState> {

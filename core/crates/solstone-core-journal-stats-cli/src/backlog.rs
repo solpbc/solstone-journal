@@ -49,5 +49,6 @@ pub(crate) fn degraded_backlog_view() -> BacklogView {
         errors: Vec::new(),
         degraded: true,
         malformed_line_count: 0,
+        indexer_phase: None,
     }
 }

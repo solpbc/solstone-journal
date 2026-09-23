@@ -269,7 +269,7 @@
     line.appendChild(link);
   }
 
-  function renderBacklogState(backlogState) {
+  function renderBacklogState(backlogState, searchIndex) {
     const data = backlogState || {};
     backlogCopy = data.copy || {};
     const host = document.querySelector('[data-backlog-stuck-rows]');
@@ -277,6 +277,56 @@
     const rows = Array.isArray(data.stuck_rows) ? data.stuck_rows : [];
     const verdictLine = document.querySelector('#backlogVerdict .backlog-verdict-line');
     if (verdictLine) renderBacklogVerdict(verdictLine, data, rows.length);
+
+    const unfinishedLine = document.querySelector('#backlogVerdict .backlog-unfinished-line');
+    if (unfinishedLine) {
+      const unfinished = data.unfinished_activities || {};
+      const activities = Number(unfinished.activities) || 0;
+      const dayCount = Number(unfinished.day_count) || 0;
+      const oldestDay = typeof unfinished.oldest_day === 'string' ? unfinished.oldest_day : '';
+      if (activities > 0 && oldestDay) {
+        const label = window.JournalFormat ? window.JournalFormat.day(oldestDay) : oldestDay;
+        const formattedDay = label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase());
+        let tmpl = '';
+        if (activities === 1 && dayCount === 1) {
+          tmpl = backlogCopy.unfinished_template_one || '';
+        } else if (activities > 1 && dayCount === 1) {
+          tmpl = backlogCopy.unfinished_template_many_one_day || '';
+        } else if (activities > 0 && dayCount > 1) {
+          tmpl = backlogCopy.unfinished_template_many_days || '';
+        }
+        if (tmpl) {
+          const text = tmpl
+            .replace('{day}', formattedDay)
+            .replace('{n}', String(activities))
+            .replace('{days}', String(dayCount));
+          const link = document.createElement('a');
+          link.className = 'backlog-verdict-day';
+          link.href = `/app/transcripts/${encodeURIComponent(oldestDay)}`;
+          link.textContent = `${text} →`;
+          unfinishedLine.replaceChildren(link);
+          unfinishedLine.hidden = false;
+        } else {
+          unfinishedLine.hidden = true;
+          unfinishedLine.replaceChildren();
+        }
+      } else {
+        unfinishedLine.hidden = true;
+        unfinishedLine.replaceChildren();
+      }
+    }
+
+    const searchLine = document.querySelector('#backlogVerdict .backlog-search-line');
+    if (searchLine) {
+      if (searchIndex && typeof searchIndex.text === 'string' && searchIndex.text.length > 0) {
+        searchLine.textContent = searchIndex.text;
+        searchLine.hidden = false;
+      } else {
+        searchLine.hidden = true;
+        searchLine.textContent = '';
+      }
+    }
+
     clearHealthStateError();
 
     if (!host) return;
@@ -428,7 +478,7 @@
     loadMediaBacklog();
     try {
       const payload = await getJson('/app/health/api/state');
-      renderBacklogState(payload.backlog);
+      renderBacklogState(payload.backlog, payload.search_index);
       renderAgentErrorsState(payload.agent_errors);
     } catch (error) {
       renderHealthStateError(error);

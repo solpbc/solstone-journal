@@ -50,6 +50,7 @@ fn empty_backlog() -> BacklogView {
         errors: Vec::new(),
         degraded: false,
         malformed_line_count: 0,
+        indexer_phase: None,
     }
 }
 

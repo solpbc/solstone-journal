@@ -165,6 +165,7 @@ fn complete_pending_and_stuck_days_keep_python_state_and_counts() {
                 facet: None,
                 stream: Some("_default".to_owned()),
                 segment: Some("120000_60".to_owned()),
+                activity: None,
                 why: "failed".to_owned(),
                 reason_code: Some("no_output".to_owned()),
                 provider: None,
@@ -183,6 +184,7 @@ fn complete_pending_and_stuck_days_keep_python_state_and_counts() {
             backoff: None,
             segment_repair: None,
             capped_daily: None,
+            unfinished_activities: None,
         }
     );
 }
@@ -695,6 +697,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
         facet: None,
         stream: None,
         segment: None,
+        activity: None,
         why: "failed".to_owned(),
         reason_code: Some("no_output".to_owned()),
         provider: Some("provider".to_owned()),
@@ -750,6 +753,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
                 count: 2,
             },
         }),
+        unfinished_activities: None,
     };
     let maximal = serde_json::to_value(BacklogView {
         window: 1,
@@ -764,6 +768,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
         }],
         degraded: true,
         malformed_line_count: 7,
+        indexer_phase: None,
     })
     .unwrap();
     assert_eq!(
@@ -819,6 +824,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
             backoff: None,
             segment_repair: None,
             capped_daily: None,
+            unfinished_activities: None,
         }],
         pending_days: 0,
         stuck_days: 0,
@@ -826,6 +832,7 @@ fn custom_serialization_matches_maximal_and_minimal_documents() {
         errors: vec![],
         degraded: false,
         malformed_line_count: 0,
+        indexer_phase: None,
     })
     .unwrap();
     assert_eq!(
@@ -857,6 +864,7 @@ fn empty_strings_are_omitted_at_day_and_unit_levels() {
             facet: None,
             stream: None,
             segment: None,
+            activity: None,
             why: "failed".to_owned(),
             reason_code: Some(String::new()),
             provider: Some(String::new()),
@@ -875,6 +883,7 @@ fn empty_strings_are_omitted_at_day_and_unit_levels() {
         backoff: None,
         segment_repair: None,
         capped_daily: None,
+        unfinished_activities: None,
     })
     .unwrap();
     let day = value.as_object().unwrap();

@@ -927,13 +927,45 @@ const Dashboard = (function() {
     const C = backlogCopy();
     const bl = stats.backlog;
     const counts = backlogCounts(stats);
+    const journalStatus = stats.journal_status || {};
+    const verdict = journalStatus.verdict || C.VERDICT_CANT_TELL;
+
     const heroChildren = [
       // The verdict below is scoped to the 30-day backlog window; label it
       // so it doesn't read as contradicting the all-time totals in the
       // tiles further down the page (G2-09).
       el('p', {className: 'backlog-hero-scope'}, ['last 30 days']),
-      el('p', {className: 'backlog-hero-line'}, [backlogVerdict(stats)])
+      el('p', {className: 'backlog-hero-line'}, [verdict])
     ];
+
+    const unfinished = journalStatus.unfinished_activities || {};
+    const activities = count(unfinished.activities);
+    const dayCount = count(unfinished.day_count);
+    const oldestDay = unfinished.oldest_day;
+    if (activities > 0 && oldestDay) {
+      const copy = journalStatus.copy || {};
+      const label = window.JournalFormat ? window.JournalFormat.day(oldestDay) : oldestDay;
+      const formattedDay = label.replace(/^(Today|Yesterday|Tomorrow)$/, (word) => word.toLowerCase());
+      let tmpl = '';
+      if (activities === 1 && dayCount === 1) {
+        tmpl = copy.unfinished_template_one || '';
+      } else if (activities > 1 && dayCount === 1) {
+        tmpl = copy.unfinished_template_many_one_day || '';
+      } else if (activities > 0 && dayCount > 1) {
+        tmpl = copy.unfinished_template_many_days || '';
+      }
+      if (tmpl) {
+        const text = tmpl
+          .replace('{day}', formattedDay)
+          .replace('{n}', String(activities))
+          .replace('{days}', String(dayCount));
+        const link = el('a', {
+          className: 'backlog-verdict-day',
+          href: `/app/transcripts/${encodeURIComponent(oldestDay)}`
+        }, [`${text} →`]);
+        heroChildren.push(el('p', {className: 'backlog-hero-line backlog-unfinished-line'}, [link]));
+      }
+    }
     // The 30-day verdict can say "caught up" while a much larger all-time
     // backlog sits several screens down (X-11/G2-36) — name it here, right
     // under the verdict, instead of leaving the owner to reconcile the two

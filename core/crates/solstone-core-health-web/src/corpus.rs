@@ -74,7 +74,6 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                             serde_json::from_slice(&bytes).expect("JSON body")
                         };
                         let mut wanted = expected["body"].clone();
-    replace_text(&mut wanted, "these days stopped on their own and can't pick back up without you — here's why, and what to try.", "some days retry automatically; others need your help. each day shows its current status.");
                         // Served presentation follows current assets after the navigation redesign.
                         if expected["status"] == 200 {
                             match case["name"].as_str() {
