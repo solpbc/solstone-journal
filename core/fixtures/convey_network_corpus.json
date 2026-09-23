@@ -219,7 +219,7 @@
             "REACH_SELECTOR_TITLE": "how your devices reach your journal",
             "REACH_SPL_ACTIVE_BODY": "your devices reach home over the internet, wherever you are.",
             "REACH_SPL_CONNECTING_NOTE": "your home is connecting. this is usually quick.",
-            "REACH_SPL_MANAGE_LABEL": "manage your private network at services.solstone.app \u2192",
+            "REACH_SPL_MANAGE_LABEL": "manage your private network in the services portal \u2192",
             "REACH_SPL_TRUST_LINE": "the connection is end-to-end encrypted. sol pbc and Cloudflare can see that your device and home met, and nothing inside.",
             "REACH_VPN_CANDIDATE_LABEL": "VPN address",
             "REACH_VPN_USE_THIS": "use this",
