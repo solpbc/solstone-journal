@@ -4135,6 +4135,7 @@ dependencies = [
  "nix",
  "serde",
  "serde_json",
+ "solstone-core-system",
 ]
 
 [[package]]

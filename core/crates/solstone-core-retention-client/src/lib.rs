@@ -237,8 +237,21 @@ fn resolve_binary(
         }
         return Ok(path);
     }
+    // The tool ships beside the running executable; on Windows PATH is not
+    // known to include that directory, so look there first.
+    #[cfg(windows)]
+    if let Some(path) = env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.parent()
+                .map(|dir| dir.join(format!("{BINARY}{}", env::consts::EXE_SUFFIX)))
+        })
+        .filter(|path| executable(path))
+    {
+        return Ok(path);
+    }
     for directory in env::split_paths(&path.unwrap_or_default()) {
-        let path = directory.join(BINARY);
+        let path = directory.join(format!("{BINARY}{}", env::consts::EXE_SUFFIX));
         if executable(&path) {
             return Ok(path);
         }

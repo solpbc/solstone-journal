@@ -673,7 +673,14 @@ impl OneShotClient {
 
     pub fn execute(&self, request: &GenerateRequest) -> Result<GenerateResponse, ClientError> {
         let input = encode_one_shot_request(request).map_err(ClientError::Decode)?;
-        let child = Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        // A plain spawn inherits the admitted parent's consumed launch descriptor,
+        // and the child refuses it as expired. Only the product launcher filters it.
+        #[cfg(windows)]
+        for name in solstone_core_system::process::launch_only_environment_names() {
+            command.env_remove(name);
+        }
+        let child = command
             .args(&self.prefix_arguments)
             .arg("--one-shot")
             .envs(&self.environment)

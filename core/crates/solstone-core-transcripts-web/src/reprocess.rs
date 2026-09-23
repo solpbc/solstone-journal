@@ -52,7 +52,14 @@ pub(crate) struct ProcessSenseSpawner;
 impl SenseSpawner for ProcessSenseSpawner {
     fn spawn(&self, request: &SenseRequest) -> Result<Box<dyn SenseChild>, String> {
         let helper = sibling_sense_binary()?;
-        let child = Command::new(helper)
+        let mut command = Command::new(helper);
+        // A plain spawn inherits the admitted parent's consumed launch descriptor,
+        // and the child refuses it as expired. Only the product launcher filters it.
+        #[cfg(windows)]
+        for name in solstone_core_system::process::launch_only_environment_names() {
+            command.env_remove(name);
+        }
+        let child = command
             .args([
                 "sense",
                 "--day",
@@ -242,7 +249,7 @@ fn sibling_sense_binary_beside(current: &Path) -> Result<PathBuf, String> {
     let path = current
         .parent()
         .ok_or_else(|| "current executable has no parent".to_owned())?
-        .join(SENSE_BINARY);
+        .join(format!("{SENSE_BINARY}{}", std::env::consts::EXE_SUFFIX));
     let metadata = fs::metadata(&path).map_err(|_| format!("helper-missing:{}", path.display()))?;
     #[cfg(unix)]
     {

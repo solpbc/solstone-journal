@@ -286,7 +286,14 @@ impl SessionClient {
         }
 
         let arguments = self.session_arguments(max_in_flight)?;
-        let mut child = Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        // A plain spawn inherits the admitted parent's consumed launch descriptor,
+        // and the child refuses it as expired. Only the product launcher filters it.
+        #[cfg(windows)]
+        for name in solstone_core_system::process::launch_only_environment_names() {
+            command.env_remove(name);
+        }
+        let mut child = command
             .args(arguments)
             .envs(&self.environment)
             .stdin(Stdio::piped())
