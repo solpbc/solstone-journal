@@ -4463,6 +4463,32 @@ required_features = []
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-health-web::health_web_dom"
+package = "solstone-core-health-web"
+target = "health_web_dom"
+set = "component"
+areas = ["health"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
+id = "solstone-core-stats-web::stats_web_dom"
+package = "solstone-core-stats-web"
+target = "stats_web_dom"
+set = "component"
+areas = ["stats"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+required_features = []
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-transcripts-web::transcript_deadline_component"
 package = "solstone-core-transcripts-web"
 target = "transcript_deadline_component"
