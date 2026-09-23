@@ -956,6 +956,7 @@ fn qualification_record_mode_persists_distinct_evidence_and_computes_fingerprint
         policy: policy.clone(),
         output_dir: temp_dir.path().to_path_buf(),
         model: None,
+        credential: None,
         content: false,
         owner_nonce: nonce,
         now: SystemTime::UNIX_EPOCH,
@@ -1030,6 +1031,7 @@ fn qualification_pin_mode_mismatch_rejects_before_application_and_leaves_output_
         policy,
         output_dir: temp_dir.path().to_path_buf(),
         model: Some("probe-model".into()),
+        credential: Some("probe-credential".into()),
         content: true,
         owner_nonce: nonce,
         now: SystemTime::UNIX_EPOCH,
@@ -1082,6 +1084,7 @@ fn qualification_unreachable_gateway_returns_error_and_leaves_output_clean() {
         policy,
         output_dir: temp_dir.path().to_path_buf(),
         model: None,
+        credential: None,
         content: false,
         owner_nonce: [7u8; 32],
         now: SystemTime::UNIX_EPOCH,
@@ -1124,6 +1127,7 @@ fn qualification_success_with_no_content_sends_no_application_requests() {
         policy,
         output_dir: temp_dir.path().to_path_buf(),
         model: None,
+        credential: None,
         content: false,
         owner_nonce: nonce,
         now: SystemTime::UNIX_EPOCH,
@@ -1161,6 +1165,7 @@ fn qualification_success_with_content_sends_chat_and_multipart_transcription_req
         policy,
         output_dir: temp_dir.path().to_path_buf(),
         model: Some("probe-model".into()),
+        credential: Some("probe-credential".into()),
         content: true,
         owner_nonce: nonce,
         now: SystemTime::UNIX_EPOCH,
@@ -1180,7 +1185,7 @@ fn qualification_success_with_content_sends_chat_and_multipart_transcription_req
     assert!(chat_request.starts_with("POST /v1/chat/completions HTTP/1.1\r\n"));
     assert!(chat_request.contains("Content-Type: application/json\r\n"));
     assert!(chat_request.contains(&format!("Host: 127.0.0.1:{port}\r\n")));
-    assert!(!chat_request.contains("Authorization:"));
+    assert!(chat_request.contains("Authorization: Bearer probe-credential\r\n"));
     assert!(
         chat_request.contains("\"model\":\"probe-model\"")
             || chat_request.contains("\"model\": \"probe-model\"")
@@ -1196,7 +1201,7 @@ fn qualification_success_with_content_sends_chat_and_multipart_transcription_req
         stt_str.contains("Content-Type: multipart/form-data; boundary=solstone-confidential-stt-")
     );
     assert!(stt_str.contains(&format!("Host: 127.0.0.1:{port}\r\n")));
-    assert!(!stt_str.contains("Authorization:"));
+    assert!(stt_str.contains("Authorization: Bearer probe-credential\r\n"));
     assert!(stt_str.contains("filename=\"audio.wav\""));
     assert!(stt_str.contains("name=\"response_format\"\r\n\r\nverbose_json\r\n"));
     assert!(stt_str.contains("name=\"timestamp_granularities[]=word\"\r\n\r\nword\r\n"));

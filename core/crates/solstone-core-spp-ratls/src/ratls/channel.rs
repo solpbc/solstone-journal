@@ -354,6 +354,7 @@ pub fn send_json_request(
 pub(crate) fn send_transcription_request(
     stream: &mut dyn AttestedIo,
     host: &str,
+    bearer: Option<&str>,
     wav: &[u8],
 ) -> Result<AttestedHttpResponse, AttestedHttpError> {
     use ring::rand::SecureRandom;
@@ -391,10 +392,16 @@ pub(crate) fn send_transcription_request(
     );
     body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
 
-    let request = format!(
-        "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: {host}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\n\r\n",
+    let mut request = format!(
+        "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: {host}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\n",
         body.len()
     );
+    if let Some(bearer) = bearer {
+        request.push_str("Authorization: Bearer ");
+        request.push_str(bearer);
+        request.push_str("\r\n");
+    }
+    request.push_str("\r\n");
     stream
         .write_all(request.as_bytes())
         .and_then(|_| stream.write_all(&body))

@@ -32,6 +32,8 @@ pub struct QualificationRequest {
     pub policy: Policy,
     pub output_dir: PathBuf,
     pub model: Option<String>,
+    /// The owner credential the gateway authorizes content requests with.
+    pub credential: Option<String>,
     pub content: bool,
     pub owner_nonce: [u8; 32],
     pub now: SystemTime,
@@ -77,6 +79,11 @@ pub fn run_qualification(
     if request.content && request.model.is_none() {
         return Err(QualificationError {
             reason_code: "model_missing",
+        });
+    }
+    if request.content && request.credential.is_none() {
+        return Err(QualificationError {
+            reason_code: "credential_missing",
         });
     }
 
@@ -141,7 +148,7 @@ pub fn run_qualification(
         &mut channel,
         &host_header,
         "/v1/chat/completions",
-        None,
+        request.credential.as_deref(),
         &chat_body,
     )
     .map_err(|_| QualificationError {
@@ -160,12 +167,15 @@ pub fn run_qualification(
             reason_code: "transcription_failed",
         })?;
 
-    let transcribe_response =
-        send_transcription_request(&mut channel, &host_header, QUALIFICATION_WAV).map_err(
-            |_| QualificationError {
-                reason_code: "transcription_failed",
-            },
-        )?;
+    let transcribe_response = send_transcription_request(
+        &mut channel,
+        &host_header,
+        request.credential.as_deref(),
+        QUALIFICATION_WAV,
+    )
+    .map_err(|_| QualificationError {
+        reason_code: "transcription_failed",
+    })?;
 
     if !(200..=299).contains(&transcribe_response.status) {
         return Err(QualificationError {

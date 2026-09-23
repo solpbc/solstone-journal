@@ -17,7 +17,7 @@ use solstone_core_spp_ratls::{
 };
 
 const USAGE: &str = "\
-Usage: qualification_probe --host <HOST> [--port <PORT>] --pcr-mode <record|pin> [--pin <HEX>] --output-dir <DIR> [--model <MODEL>] [--nvattest-dir <DIR>] [--no-content]
+Usage: qualification_probe --host <HOST> [--port <PORT>] --pcr-mode <record|pin> [--pin <HEX>] --output-dir <DIR> [--model <MODEL>] [--credential-file <PATH>] [--nvattest-dir <DIR>] [--no-content]
 
 Manual qualification tool for SPP RA-TLS endpoints.
 
@@ -28,6 +28,7 @@ Options:
   --pin <HEX>             Expected PCR SHA-256 fingerprint (64 hex characters; required with pin, forbidden with record)
   --output-dir <DIR>      Output directory for evidence files (required)
   --model <MODEL>         Model name for qualification chat probe (required unless --no-content)
+  --credential-file <PATH> File holding the owner credential sent as the bearer (required unless --no-content)
   --nvattest-dir <DIR>    Path to nvattest directory (defaults to SPP_NVATTEST_DIR env var)
   --no-content            Captures evidence and does not send chat or transcription
   --help                  Show this help message and exit
@@ -47,6 +48,7 @@ fn main() {
     let mut pin: Option<String> = None;
     let mut output_dir: Option<PathBuf> = None;
     let mut model: Option<String> = None;
+    let mut credential_file: Option<PathBuf> = None;
     let mut nvattest_dir: Option<PathBuf> = None;
     let mut no_content = false;
 
@@ -130,6 +132,14 @@ fn main() {
                 }
                 model = Some(args[i].clone());
             }
+            "--credential-file" => {
+                i += 1;
+                if i >= args.len() {
+                    eprintln!("error: missing value for --credential-file");
+                    std::process::exit(1);
+                }
+                credential_file = Some(PathBuf::from(&args[i]));
+            }
             "--nvattest-dir" => {
                 i += 1;
                 if i >= args.len() {
@@ -200,6 +210,20 @@ fn main() {
         eprintln!("error: --model is required unless --no-content is specified");
         std::process::exit(1);
     }
+    let credential = match (content, credential_file) {
+        (false, _) => None,
+        (true, None) => {
+            eprintln!("error: --credential-file is required unless --no-content is specified");
+            std::process::exit(1);
+        }
+        (true, Some(path)) => match std::fs::read_to_string(&path) {
+            Ok(text) if !text.trim().is_empty() => Some(text.trim().to_owned()),
+            _ => {
+                eprintln!("error: --credential-file is unreadable or empty");
+                std::process::exit(1);
+            }
+        },
+    };
 
     let resolved_nvattest_dir = match nvattest_dir {
         Some(dir) if !dir.as_os_str().is_empty() => dir,
@@ -240,6 +264,7 @@ fn main() {
         policy,
         output_dir,
         model,
+        credential,
         content,
         owner_nonce,
         now: SystemTime::now(),
