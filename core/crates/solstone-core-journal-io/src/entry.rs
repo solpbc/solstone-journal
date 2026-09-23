@@ -139,15 +139,31 @@ pub fn rename_within(root: &Path, from_rel: &str, to_rel: &str) -> Result<(), Pa
 /// ⚠ Takes the **directory's** own rel, not a file's. A parameter meaning
 /// "the parent of this file" invites a caller to sync the wrong directory and be
 /// told `Ok`.
+///
+/// On Windows there is no documented directory-entry flush, so this is the
+/// documented no-op of the filesystem contract: it confirms `dir_rel` is still a
+/// contained directory and flushes nothing. A Windows success therefore makes no
+/// claim about the durability of the directory entry.
 pub fn sync_dir(root: &Path, dir_rel: &str) -> Result<(), PathError> {
     let path = contained_path(root, dir_rel)?;
-    let directory = fs::File::open(&path).map_err(|source| PathError::Io {
-        path: path.clone(),
-        source,
-    })?;
-    directory
-        .sync_all()
-        .map_err(|source| PathError::Io { path, source })
+    sync_contained_directory(&path).map_err(|source| PathError::Io { path, source })
+}
+
+#[cfg(not(windows))]
+fn sync_contained_directory(path: &Path) -> io::Result<()> {
+    fs::File::open(path)?.sync_all()
+}
+
+// `File::open` on a directory is always refused on Windows ("Access is denied"),
+// which made every owner-approved removal report itself as not removed after it
+// had removed the file.
+#[cfg(windows)]
+fn sync_contained_directory(path: &Path) -> io::Result<()> {
+    if fs::symlink_metadata(path)?.is_dir() {
+        Ok(())
+    } else {
+        Err(io::Error::other("not a directory"))
+    }
 }
 
 /// Flush the journal root's entries, including newly created domain directories.
@@ -167,6 +183,49 @@ pub fn sync_root(root: &Path) -> Result<(), PathError> {
 #[cfg(unix)]
 pub(crate) fn sync_dir_bound(directory: &impl AsFd) -> Result<(), io::Error> {
     nix::unistd::fsync(directory).map_err(|error| io::Error::from_raw_os_error(error as i32))
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use std::fs;
+
+    use super::*;
+    use crate::test_support::TempDir;
+
+    #[test]
+    fn a_contained_directory_syncs_on_windows() {
+        let temporary = TempDir::new();
+        fs::create_dir_all(
+            temporary
+                .path()
+                .join("chronicle/20260922/import.audio/120010_3"),
+        )
+        .unwrap();
+        fs::write(
+            temporary
+                .path()
+                .join("chronicle/20260922/import.audio/120010_3/imported_audio.wav"),
+            b"bytes",
+        )
+        .unwrap();
+        assert_eq!(
+            remove_file(
+                temporary.path(),
+                "chronicle/20260922/import.audio/120010_3/imported_audio.wav"
+            )
+            .unwrap(),
+            Removed::Unlinked
+        );
+        sync_dir(temporary.path(), "chronicle/20260922/import.audio/120010_3").unwrap();
+    }
+
+    #[test]
+    fn a_file_or_absent_directory_does_not_sync_on_windows() {
+        let temporary = TempDir::new();
+        fs::write(temporary.path().join("file"), b"bytes").unwrap();
+        assert!(sync_dir(temporary.path(), "file").is_err());
+        assert!(sync_dir(temporary.path(), "absent").is_err());
+    }
 }
 
 #[cfg(all(test, unix))]

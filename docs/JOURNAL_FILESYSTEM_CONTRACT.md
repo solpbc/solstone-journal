@@ -324,6 +324,10 @@ parent-directory sync. windows has no equivalent directory-handle sync in this
 surface, so a windows success means the record file flush completed; it does
 not claim durable parent-directory entry creation.
 
+`sync_dir` follows the same rule. On Unix it opens and flushes the directory;
+on windows it confirms the contained directory exists and flushes nothing, so a
+windows success does not claim a durable directory entry.
+
 ## No-replace platform support
 
 Linux uses `renameat2` with `RENAME_NOREPLACE` through the Linux syscall ABI;
