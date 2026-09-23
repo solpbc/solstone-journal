@@ -5,7 +5,7 @@
 const Dashboard = (function() {
   'use strict';
 
-  const EXPECTED_SCHEMA_VERSION = 8;
+  const EXPECTED_SCHEMA_VERSION = 9;
   const DISPLAY_LABELS = { transcript: 'audio', percept: 'screen' };
 
   // Activity slugs are lowercase storage words, but 'ai' is an initialism the

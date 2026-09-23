@@ -457,3 +457,18 @@ fn dashboard_js_includes_already_complete_and_current_degraded_status_tokens() {
     assert!(script.contains("result.status === 'already_complete'"));
     assert!(script.contains("result.status === 'current_degraded'"));
 }
+
+#[test]
+fn dashboard_expects_the_schema_version_the_stats_document_is_written_with() {
+    // A mismatch shows every owner a warning that regenerating cannot clear.
+    let script = include_str!("../assets/static/dashboard.js");
+    let expected = format!(
+        "const EXPECTED_SCHEMA_VERSION = {};",
+        solstone_core_journal_stats_cli::SCHEMA_VERSION
+    );
+    assert!(
+        script.contains(&expected),
+        "dashboard.js must expect schema version {}",
+        solstone_core_journal_stats_cli::SCHEMA_VERSION
+    );
+}
