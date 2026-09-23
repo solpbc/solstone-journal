@@ -338,111 +338,204 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
-              "stats": {
-                "journal_status": {
-                  "verdict": "still checking where your journal stands.",
-                  "freshness": "unknown",
-                  "pending_days": 0,
-                  "oldest_pending_day": null,
-                  "unfinished_activities": {
-                    "activities": 0,
-                    "day_count": 0,
-                    "oldest_day": null
-                  },
-                  "copy": {
-                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
-                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
-                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
-                  }
-                }
-              },
               "facet_titles": {},
               "generators": {
                 "conversation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/conversation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Conversation Story",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#00796b",
-                  "schedule": "activity",
                   "activities": [
                     "meeting",
                     "call",
                     "messaging",
                     "email"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 2048,
-                  "schema": "story.schema.json",
+                  "color": "#00796b",
+                  "degradation_check": true,
+                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 2048,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Conversation Story",
+                  "type": "generate"
                 },
                 "daily_schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/daily_schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "maintenance window",
-                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "daily_schedule.schema.json",
-                  "hook": {
-                    "pre": "daily_schedule",
-                    "post": "daily_schedule"
-                  },
                   "color": "#455a64",
-                  "thinking_budget": 4096,
-                  "max_output_tokens": 512,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "hook": {
+                    "post": "daily_schedule",
+                    "pre": "daily_schedule"
                   },
-                  "source": "system"
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 512,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "daily_schedule.schema.json",
+                  "source": "system",
+                  "thinking_budget": 4096,
+                  "title": "maintenance window",
+                  "type": "generate"
                 },
                 "documents": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/documents.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "document analysis",
-                  "description": "extracts structured details from imported documents",
                   "color": "#5c6bc0",
-                  "schedule": "segment",
-                  "priority": 10,
+                  "degradation_check": true,
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
-                  "thinking_budget": 8192,
-                  "max_output_tokens": 8192,
-                  "output": "json",
-                  "schema": "documents.schema.json",
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "documents.schema.json",
+                  "source": "system",
+                  "thinking_budget": 8192,
+                  "title": "document analysis",
+                  "type": "generate"
+                },
+                "entities:detection": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "hook": {
+                    "post": "entities:detection",
+                    "pre": "entities:detection"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 1024,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "schema": "detection.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity detection",
+                  "type": "generate"
+                },
+                "entities:entities_review": {
+                  "app": "entities",
+                  "color": "#00796b",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entities_review",
+                    "pre": "entities:entities_review"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 56,
+                  "schedule": "daily",
+                  "schema": "entities_review.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity reviewer",
+                  "type": "generate"
+                },
+                "entities:entity_describe": {
+                  "app": "entities",
+                  "color": "#26a69a",
+                  "description": "Research and generate single-sentence descriptions for attached entities",
+                  "group": "Entities",
+                  "hook": {
+                    "pre": "entities:entity_describe"
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "source": "app",
+                  "title": "Entity Description",
+                  "type": "generate"
+                },
+                "entities:entity_observer": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "reconciles proposed entity observations against existing observations",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_observer",
+                    "pre": "entities:entity_observer"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 58,
+                  "schedule": "daily",
+                  "schema": "entity_observer.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
+                  "type": "generate"
                 },
                 "event": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/event.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Event Story",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#ff7043",
-                  "schedule": "activity",
                   "activities": [
                     "appointment",
                     "event",
@@ -452,367 +545,274 @@
                     "deadline",
                     "reminder"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#ff7043",
+                  "degradation_check": true,
+                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Event Story",
+                  "type": "generate"
                 },
                 "facet_newsletter": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/facet_newsletter.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "facet newsletter generator",
-                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
-                  "color": "#0d47a1",
-                  "schedule": "daily",
-                  "priority": 40,
-                  "output": "md",
                   "accumulate": true,
+                  "color": "#0d47a1",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
-                    "pre": "facet_newsletter",
-                    "post": "facet_newsletter"
+                    "post": "facet_newsletter",
+                    "pre": "facet_newsletter"
                   },
+                  "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
-                  "source": "system"
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "daily",
+                  "source": "system",
+                  "title": "facet newsletter generator",
+                  "type": "generate"
                 },
                 "morning_briefing": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/morning_briefing.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "morning briefing",
-                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "color": "#1565c0",
-                  "schedule": "daily",
-                  "priority": 50,
-                  "output": "json",
-                  "schema": "morning_briefing.schema.json",
-                  "max_output_tokens": 8192,
                   "degradation_check": true,
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "daily",
+                  "schema": "morning_briefing.schema.json",
+                  "source": "system",
+                  "title": "morning briefing",
+                  "type": "generate"
                 },
                 "participation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/participation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Participation",
+                  "activities": [
+                    "*"
+                  ],
+                  "color": "#6c757d",
                   "description": "Consolidates per-segment Sense entity drafts into a structured per-activity participation list.",
                   "hook": {
                     "post": "participation"
                   },
-                  "schedule": "activity",
-                  "activities": [
-                    "*"
-                  ],
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "participation.schema.json",
-                  "max_output_tokens": 12288,
-                  "timeout_s": 480,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
                     "talents": {
                       "sense": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "color": "#6c757d",
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "activity",
+                  "schema": "participation.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "Participation",
+                  "type": "generate"
                 },
                 "pulse": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/pulse.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Pulse",
-                  "description": "a short summary of recently processed activity and any supported next steps.",
-                  "schedule": "cadence",
-                  "cadence_minutes": 5,
-                  "priority": 50,
-                  "hook": {
-                    "pre": "pulse",
-                    "post": "pulse"
-                  },
-                  "output": "json",
-                  "schema": "pulse.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 700,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "a short summary of recently processed activity and any supported next steps.",
+                  "hook": {
+                    "post": "pulse",
+                    "pre": "pulse"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 700,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "cadence",
+                  "schema": "pulse.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Pulse",
+                  "type": "generate"
                 },
                 "schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "upcoming schedule",
+                  "color": "#5e35b1",
                   "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
-                  "color": "#5e35b1",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "schedule.schema.json",
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "schedule.schema.json",
+                  "source": "system",
+                  "title": "upcoming schedule",
+                  "type": "generate"
                 },
                 "screen": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/screen.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "screen record",
-                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "color": "#9c27b0",
-                  "schedule": "segment",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "screen.schema.json",
-                  "max_output_tokens": 8192,
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
-                    "transcripts": true,
                     "percepts": "required",
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "screen.schema.json",
+                  "source": "system",
+                  "title": "screen record",
+                  "type": "generate"
                 },
                 "sense": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/sense.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "segment sense",
-                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "color": "#ff6f00",
-                  "schedule": "segment",
-                  "priority": 5,
-                  "output": "json",
-                  "schema": "sense.schema.json",
-                  "max_output_tokens": 6144,
-                  "timeout_s": 480,
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 6144,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 5,
+                  "schedule": "segment",
+                  "schema": "sense.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "segment sense",
+                  "type": "generate"
                 },
                 "speaker_attribution": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/speaker_attribution.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "speaker attribution",
-                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
-                  "schedule": "segment",
-                  "priority": 40,
-                  "output": "json",
-                  "schema": "speaker_attribution.schema.json",
                   "color": "#d84315",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
-                    "pre": "speaker_attribution",
-                    "post": "speaker_attribution"
+                    "post": "speaker_attribution",
+                    "pre": "speaker_attribution"
                   },
                   "load": {
-                    "transcripts": true,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "segment",
+                  "schema": "speaker_attribution.schema.json",
+                  "source": "system",
+                  "title": "speaker attribution",
+                  "type": "generate"
                 },
                 "steward": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/steward.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Steward",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "schedule": "cadence",
-                  "cadence_minutes": 30,
-                  "priority": 45,
-                  "hook": {
-                    "pre": "steward",
-                    "post": "steward"
-                  },
-                  "output": "json",
-                  "schema": "steward.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 400,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
+                  "hook": {
+                    "post": "steward",
+                    "pre": "steward"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 400,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 45,
+                  "schedule": "cadence",
+                  "schema": "steward.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Steward",
+                  "type": "generate"
                 },
                 "work": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/work.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Work Story",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#6d4c41",
-                  "schedule": "activity",
                   "activities": [
                     "coding",
                     "browsing",
                     "reading"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#6d4c41",
+                  "degradation_check": true,
+                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
-                },
-                "entities:detection": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/detection.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity detection",
-                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
-                  "color": "#00695c",
-                  "schedule": "segment",
-                  "priority": 15,
-                  "thinking_budget": 2048,
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
                   "output": "json",
-                  "schema": "detection.schema.json",
-                  "hook": {
-                    "pre": "entities:detection",
-                    "post": "entities:detection"
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Work Story",
+                  "type": "generate"
+                }
+              },
+              "stats": {
+                "journal_status": {
+                  "copy": {
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "freshness": "unknown",
+                  "oldest_pending_day": null,
+                  "pending_days": 0,
+                  "unfinished_activities": {
+                    "activities": 0,
+                    "day_count": 0,
+                    "oldest_day": null
                   },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entities_review": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entities_review.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity reviewer",
-                  "description": "reviews detected entities and promotes recurring ones to attached status",
-                  "color": "#00796b",
-                  "schedule": "daily",
-                  "priority": 56,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entities_review.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entities_review",
-                    "post": "entities:entities_review"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_describe": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_describe.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Entity Description",
-                  "description": "Research and generate single-sentence descriptions for attached entities",
-                  "color": "#26a69a",
-                  "group": "Entities",
-                  "output": "md",
-                  "hook": {
-                    "pre": "entities:entity_describe"
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_observer": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_observer.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity observer",
-                  "description": "reconciles proposed entity observations against existing observations",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 58,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_observer.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_observer",
-                    "post": "entities:entity_observer"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_suggest": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_suggest.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity suggest",
-                  "description": "proposes candidate durable factoids about attached entities from journal content",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 57,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_suggest.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_suggest",
-                    "post": "entities:entity_suggest"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
+                  "verdict": "still checking where your journal stands."
                 }
               }
             },
@@ -1111,121 +1111,205 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
-              "stats": {
-                "backlog": {
-                  "generated_at": "2026-04-03T12:00:00Z",
-                  "items": [],
-                  "status": "clear"
-                },
-                "summary": {
-                  "completed": 2,
-                  "pending": 1
-                },
-                "journal_status": {
-                  "verdict": "it's unclear whether your journal is caught up; the last update age is unknown.",
-                  "freshness": "unknown",
-                  "pending_days": 0,
-                  "oldest_pending_day": null,
-                  "unfinished_activities": {
-                    "activities": 0,
-                    "day_count": 0,
-                    "oldest_day": null
-                  },
-                  "copy": {
-                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
-                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
-                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
-                  }
-                }
-              },
-              "file_mtime": 1700000000.0,
               "facet_titles": {},
+              "file_mtime": 1700000000.0,
               "generators": {
                 "conversation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/conversation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Conversation Story",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#00796b",
-                  "schedule": "activity",
                   "activities": [
                     "meeting",
                     "call",
                     "messaging",
                     "email"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 2048,
-                  "schema": "story.schema.json",
+                  "color": "#00796b",
+                  "degradation_check": true,
+                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 2048,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Conversation Story",
+                  "type": "generate"
                 },
                 "daily_schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/daily_schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "maintenance window",
-                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "daily_schedule.schema.json",
-                  "hook": {
-                    "pre": "daily_schedule",
-                    "post": "daily_schedule"
-                  },
                   "color": "#455a64",
-                  "thinking_budget": 4096,
-                  "max_output_tokens": 512,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "hook": {
+                    "post": "daily_schedule",
+                    "pre": "daily_schedule"
                   },
-                  "source": "system"
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 512,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "daily_schedule.schema.json",
+                  "source": "system",
+                  "thinking_budget": 4096,
+                  "title": "maintenance window",
+                  "type": "generate"
                 },
                 "documents": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/documents.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "document analysis",
-                  "description": "extracts structured details from imported documents",
                   "color": "#5c6bc0",
-                  "schedule": "segment",
-                  "priority": 10,
+                  "degradation_check": true,
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
-                  "thinking_budget": 8192,
-                  "max_output_tokens": 8192,
-                  "output": "json",
-                  "schema": "documents.schema.json",
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "documents.schema.json",
+                  "source": "system",
+                  "thinking_budget": 8192,
+                  "title": "document analysis",
+                  "type": "generate"
+                },
+                "entities:detection": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "hook": {
+                    "post": "entities:detection",
+                    "pre": "entities:detection"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 1024,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "schema": "detection.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity detection",
+                  "type": "generate"
+                },
+                "entities:entities_review": {
+                  "app": "entities",
+                  "color": "#00796b",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entities_review",
+                    "pre": "entities:entities_review"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 56,
+                  "schedule": "daily",
+                  "schema": "entities_review.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity reviewer",
+                  "type": "generate"
+                },
+                "entities:entity_describe": {
+                  "app": "entities",
+                  "color": "#26a69a",
+                  "description": "Research and generate single-sentence descriptions for attached entities",
+                  "group": "Entities",
+                  "hook": {
+                    "pre": "entities:entity_describe"
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "source": "app",
+                  "title": "Entity Description",
+                  "type": "generate"
+                },
+                "entities:entity_observer": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "reconciles proposed entity observations against existing observations",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_observer",
+                    "pre": "entities:entity_observer"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 58,
+                  "schedule": "daily",
+                  "schema": "entity_observer.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
+                  "type": "generate"
                 },
                 "event": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/event.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Event Story",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#ff7043",
-                  "schedule": "activity",
                   "activities": [
                     "appointment",
                     "event",
@@ -1235,367 +1319,283 @@
                     "deadline",
                     "reminder"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#ff7043",
+                  "degradation_check": true,
+                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Event Story",
+                  "type": "generate"
                 },
                 "facet_newsletter": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/facet_newsletter.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "facet newsletter generator",
-                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
-                  "color": "#0d47a1",
-                  "schedule": "daily",
-                  "priority": 40,
-                  "output": "md",
                   "accumulate": true,
+                  "color": "#0d47a1",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
-                    "pre": "facet_newsletter",
-                    "post": "facet_newsletter"
+                    "post": "facet_newsletter",
+                    "pre": "facet_newsletter"
                   },
+                  "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
-                  "source": "system"
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "daily",
+                  "source": "system",
+                  "title": "facet newsletter generator",
+                  "type": "generate"
                 },
                 "morning_briefing": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/morning_briefing.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "morning briefing",
-                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "color": "#1565c0",
-                  "schedule": "daily",
-                  "priority": 50,
-                  "output": "json",
-                  "schema": "morning_briefing.schema.json",
-                  "max_output_tokens": 8192,
                   "degradation_check": true,
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "daily",
+                  "schema": "morning_briefing.schema.json",
+                  "source": "system",
+                  "title": "morning briefing",
+                  "type": "generate"
                 },
                 "participation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/participation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Participation",
+                  "activities": [
+                    "*"
+                  ],
+                  "color": "#6c757d",
                   "description": "Consolidates per-segment Sense entity drafts into a structured per-activity participation list.",
                   "hook": {
                     "post": "participation"
                   },
-                  "schedule": "activity",
-                  "activities": [
-                    "*"
-                  ],
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "participation.schema.json",
-                  "max_output_tokens": 12288,
-                  "timeout_s": 480,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
                     "talents": {
                       "sense": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "color": "#6c757d",
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "activity",
+                  "schema": "participation.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "Participation",
+                  "type": "generate"
                 },
                 "pulse": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/pulse.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Pulse",
-                  "description": "a short summary of recently processed activity and any supported next steps.",
-                  "schedule": "cadence",
-                  "cadence_minutes": 5,
-                  "priority": 50,
-                  "hook": {
-                    "pre": "pulse",
-                    "post": "pulse"
-                  },
-                  "output": "json",
-                  "schema": "pulse.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 700,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "a short summary of recently processed activity and any supported next steps.",
+                  "hook": {
+                    "post": "pulse",
+                    "pre": "pulse"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 700,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "cadence",
+                  "schema": "pulse.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Pulse",
+                  "type": "generate"
                 },
                 "schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "upcoming schedule",
+                  "color": "#5e35b1",
                   "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
-                  "color": "#5e35b1",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "schedule.schema.json",
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "schedule.schema.json",
+                  "source": "system",
+                  "title": "upcoming schedule",
+                  "type": "generate"
                 },
                 "screen": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/screen.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "screen record",
-                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "color": "#9c27b0",
-                  "schedule": "segment",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "screen.schema.json",
-                  "max_output_tokens": 8192,
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
-                    "transcripts": true,
                     "percepts": "required",
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "screen.schema.json",
+                  "source": "system",
+                  "title": "screen record",
+                  "type": "generate"
                 },
                 "sense": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/sense.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "segment sense",
-                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "color": "#ff6f00",
-                  "schedule": "segment",
-                  "priority": 5,
-                  "output": "json",
-                  "schema": "sense.schema.json",
-                  "max_output_tokens": 6144,
-                  "timeout_s": 480,
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 6144,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 5,
+                  "schedule": "segment",
+                  "schema": "sense.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "segment sense",
+                  "type": "generate"
                 },
                 "speaker_attribution": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/speaker_attribution.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "speaker attribution",
-                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
-                  "schedule": "segment",
-                  "priority": 40,
-                  "output": "json",
-                  "schema": "speaker_attribution.schema.json",
                   "color": "#d84315",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
-                    "pre": "speaker_attribution",
-                    "post": "speaker_attribution"
+                    "post": "speaker_attribution",
+                    "pre": "speaker_attribution"
                   },
                   "load": {
-                    "transcripts": true,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "segment",
+                  "schema": "speaker_attribution.schema.json",
+                  "source": "system",
+                  "title": "speaker attribution",
+                  "type": "generate"
                 },
                 "steward": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/steward.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Steward",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "schedule": "cadence",
-                  "cadence_minutes": 30,
-                  "priority": 45,
-                  "hook": {
-                    "pre": "steward",
-                    "post": "steward"
-                  },
-                  "output": "json",
-                  "schema": "steward.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 400,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
+                  "hook": {
+                    "post": "steward",
+                    "pre": "steward"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 400,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 45,
+                  "schedule": "cadence",
+                  "schema": "steward.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Steward",
+                  "type": "generate"
                 },
                 "work": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/work.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Work Story",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#6d4c41",
-                  "schedule": "activity",
                   "activities": [
                     "coding",
                     "browsing",
                     "reading"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#6d4c41",
+                  "degradation_check": true,
+                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
-                },
-                "entities:detection": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/detection.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity detection",
-                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
-                  "color": "#00695c",
-                  "schedule": "segment",
-                  "priority": 15,
-                  "thinking_budget": 2048,
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
                   "output": "json",
-                  "schema": "detection.schema.json",
-                  "hook": {
-                    "pre": "entities:detection",
-                    "post": "entities:detection"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Work Story",
+                  "type": "generate"
+                }
+              },
+              "stats": {
+                "backlog": {
+                  "generated_at": "2026-04-03T12:00:00Z",
+                  "items": [],
+                  "status": "clear"
                 },
-                "entities:entities_review": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entities_review.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity reviewer",
-                  "description": "reviews detected entities and promotes recurring ones to attached status",
-                  "color": "#00796b",
-                  "schedule": "daily",
-                  "priority": 56,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entities_review.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entities_review",
-                    "post": "entities:entities_review"
+                "journal_status": {
+                  "copy": {
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "freshness": "unknown",
+                  "oldest_pending_day": null,
+                  "pending_days": 0,
+                  "unfinished_activities": {
+                    "activities": 0,
+                    "day_count": 0,
+                    "oldest_day": null
                   },
-                  "source": "app",
-                  "app": "entities"
+                  "verdict": "it's unclear whether your journal is caught up; the last update age is unknown."
                 },
-                "entities:entity_describe": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_describe.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Entity Description",
-                  "description": "Research and generate single-sentence descriptions for attached entities",
-                  "color": "#26a69a",
-                  "group": "Entities",
-                  "output": "md",
-                  "hook": {
-                    "pre": "entities:entity_describe"
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_observer": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_observer.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity observer",
-                  "description": "reconciles proposed entity observations against existing observations",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 58,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_observer.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_observer",
-                    "post": "entities:entity_observer"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_suggest": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_suggest.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity suggest",
-                  "description": "proposes candidate durable factoids about attached entities from journal content",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 57,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_suggest.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_suggest",
-                    "post": "entities:entity_suggest"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
+                "summary": {
+                  "completed": 2,
+                  "pending": 1
                 }
               }
             },
@@ -2002,121 +2002,205 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
-              "stats": {
-                "backlog": {
-                  "generated_at": "2026-04-03T12:00:00Z",
-                  "items": [],
-                  "status": "clear"
-                },
-                "summary": {
-                  "completed": 2,
-                  "pending": 1
-                },
-                "journal_status": {
-                  "verdict": "it's unclear whether your journal is caught up; the last update age is unknown.",
-                  "freshness": "unknown",
-                  "pending_days": 0,
-                  "oldest_pending_day": null,
-                  "unfinished_activities": {
-                    "activities": 0,
-                    "day_count": 0,
-                    "oldest_day": null
-                  },
-                  "copy": {
-                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
-                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
-                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
-                  }
-                }
-              },
-              "file_mtime": 1700000000.0,
               "facet_titles": {},
+              "file_mtime": 1700000000.0,
               "generators": {
                 "conversation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/conversation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Conversation Story",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#00796b",
-                  "schedule": "activity",
                   "activities": [
                     "meeting",
                     "call",
                     "messaging",
                     "email"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 2048,
-                  "schema": "story.schema.json",
+                  "color": "#00796b",
+                  "degradation_check": true,
+                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 2048,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Conversation Story",
+                  "type": "generate"
                 },
                 "daily_schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/daily_schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "maintenance window",
-                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "daily_schedule.schema.json",
-                  "hook": {
-                    "pre": "daily_schedule",
-                    "post": "daily_schedule"
-                  },
                   "color": "#455a64",
-                  "thinking_budget": 4096,
-                  "max_output_tokens": 512,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "hook": {
+                    "post": "daily_schedule",
+                    "pre": "daily_schedule"
                   },
-                  "source": "system"
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 512,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "daily_schedule.schema.json",
+                  "source": "system",
+                  "thinking_budget": 4096,
+                  "title": "maintenance window",
+                  "type": "generate"
                 },
                 "documents": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/documents.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "document analysis",
-                  "description": "extracts structured details from imported documents",
                   "color": "#5c6bc0",
-                  "schedule": "segment",
-                  "priority": 10,
+                  "degradation_check": true,
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
-                  "thinking_budget": 8192,
-                  "max_output_tokens": 8192,
-                  "output": "json",
-                  "schema": "documents.schema.json",
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "documents.schema.json",
+                  "source": "system",
+                  "thinking_budget": 8192,
+                  "title": "document analysis",
+                  "type": "generate"
+                },
+                "entities:detection": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "hook": {
+                    "post": "entities:detection",
+                    "pre": "entities:detection"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 1024,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "schema": "detection.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity detection",
+                  "type": "generate"
+                },
+                "entities:entities_review": {
+                  "app": "entities",
+                  "color": "#00796b",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entities_review",
+                    "pre": "entities:entities_review"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 56,
+                  "schedule": "daily",
+                  "schema": "entities_review.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity reviewer",
+                  "type": "generate"
+                },
+                "entities:entity_describe": {
+                  "app": "entities",
+                  "color": "#26a69a",
+                  "description": "Research and generate single-sentence descriptions for attached entities",
+                  "group": "Entities",
+                  "hook": {
+                    "pre": "entities:entity_describe"
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "source": "app",
+                  "title": "Entity Description",
+                  "type": "generate"
+                },
+                "entities:entity_observer": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "reconciles proposed entity observations against existing observations",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_observer",
+                    "pre": "entities:entity_observer"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 58,
+                  "schedule": "daily",
+                  "schema": "entity_observer.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
+                  "type": "generate"
                 },
                 "event": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/event.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Event Story",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#ff7043",
-                  "schedule": "activity",
                   "activities": [
                     "appointment",
                     "event",
@@ -2126,367 +2210,283 @@
                     "deadline",
                     "reminder"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#ff7043",
+                  "degradation_check": true,
+                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Event Story",
+                  "type": "generate"
                 },
                 "facet_newsletter": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/facet_newsletter.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "facet newsletter generator",
-                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
-                  "color": "#0d47a1",
-                  "schedule": "daily",
-                  "priority": 40,
-                  "output": "md",
                   "accumulate": true,
+                  "color": "#0d47a1",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
-                    "pre": "facet_newsletter",
-                    "post": "facet_newsletter"
+                    "post": "facet_newsletter",
+                    "pre": "facet_newsletter"
                   },
+                  "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
-                  "source": "system"
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "daily",
+                  "source": "system",
+                  "title": "facet newsletter generator",
+                  "type": "generate"
                 },
                 "morning_briefing": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/morning_briefing.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "morning briefing",
-                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "color": "#1565c0",
-                  "schedule": "daily",
-                  "priority": 50,
-                  "output": "json",
-                  "schema": "morning_briefing.schema.json",
-                  "max_output_tokens": 8192,
                   "degradation_check": true,
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "daily",
+                  "schema": "morning_briefing.schema.json",
+                  "source": "system",
+                  "title": "morning briefing",
+                  "type": "generate"
                 },
                 "participation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/participation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Participation",
+                  "activities": [
+                    "*"
+                  ],
+                  "color": "#6c757d",
                   "description": "Consolidates per-segment Sense entity drafts into a structured per-activity participation list.",
                   "hook": {
                     "post": "participation"
                   },
-                  "schedule": "activity",
-                  "activities": [
-                    "*"
-                  ],
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "participation.schema.json",
-                  "max_output_tokens": 12288,
-                  "timeout_s": 480,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
                     "talents": {
                       "sense": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "color": "#6c757d",
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "activity",
+                  "schema": "participation.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "Participation",
+                  "type": "generate"
                 },
                 "pulse": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/pulse.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Pulse",
-                  "description": "a short summary of recently processed activity and any supported next steps.",
-                  "schedule": "cadence",
-                  "cadence_minutes": 5,
-                  "priority": 50,
-                  "hook": {
-                    "pre": "pulse",
-                    "post": "pulse"
-                  },
-                  "output": "json",
-                  "schema": "pulse.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 700,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "a short summary of recently processed activity and any supported next steps.",
+                  "hook": {
+                    "post": "pulse",
+                    "pre": "pulse"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 700,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "cadence",
+                  "schema": "pulse.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Pulse",
+                  "type": "generate"
                 },
                 "schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "upcoming schedule",
+                  "color": "#5e35b1",
                   "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
-                  "color": "#5e35b1",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "schedule.schema.json",
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "schedule.schema.json",
+                  "source": "system",
+                  "title": "upcoming schedule",
+                  "type": "generate"
                 },
                 "screen": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/screen.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "screen record",
-                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "color": "#9c27b0",
-                  "schedule": "segment",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "screen.schema.json",
-                  "max_output_tokens": 8192,
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
-                    "transcripts": true,
                     "percepts": "required",
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "screen.schema.json",
+                  "source": "system",
+                  "title": "screen record",
+                  "type": "generate"
                 },
                 "sense": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/sense.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "segment sense",
-                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "color": "#ff6f00",
-                  "schedule": "segment",
-                  "priority": 5,
-                  "output": "json",
-                  "schema": "sense.schema.json",
-                  "max_output_tokens": 6144,
-                  "timeout_s": 480,
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 6144,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 5,
+                  "schedule": "segment",
+                  "schema": "sense.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "segment sense",
+                  "type": "generate"
                 },
                 "speaker_attribution": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/speaker_attribution.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "speaker attribution",
-                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
-                  "schedule": "segment",
-                  "priority": 40,
-                  "output": "json",
-                  "schema": "speaker_attribution.schema.json",
                   "color": "#d84315",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
-                    "pre": "speaker_attribution",
-                    "post": "speaker_attribution"
+                    "post": "speaker_attribution",
+                    "pre": "speaker_attribution"
                   },
                   "load": {
-                    "transcripts": true,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "segment",
+                  "schema": "speaker_attribution.schema.json",
+                  "source": "system",
+                  "title": "speaker attribution",
+                  "type": "generate"
                 },
                 "steward": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/steward.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Steward",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "schedule": "cadence",
-                  "cadence_minutes": 30,
-                  "priority": 45,
-                  "hook": {
-                    "pre": "steward",
-                    "post": "steward"
-                  },
-                  "output": "json",
-                  "schema": "steward.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 400,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
+                  "hook": {
+                    "post": "steward",
+                    "pre": "steward"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 400,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 45,
+                  "schedule": "cadence",
+                  "schema": "steward.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Steward",
+                  "type": "generate"
                 },
                 "work": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/work.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Work Story",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#6d4c41",
-                  "schedule": "activity",
                   "activities": [
                     "coding",
                     "browsing",
                     "reading"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#6d4c41",
+                  "degradation_check": true,
+                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
-                },
-                "entities:detection": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/detection.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity detection",
-                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
-                  "color": "#00695c",
-                  "schedule": "segment",
-                  "priority": 15,
-                  "thinking_budget": 2048,
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
                   "output": "json",
-                  "schema": "detection.schema.json",
-                  "hook": {
-                    "pre": "entities:detection",
-                    "post": "entities:detection"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Work Story",
+                  "type": "generate"
+                }
+              },
+              "stats": {
+                "backlog": {
+                  "generated_at": "2026-04-03T12:00:00Z",
+                  "items": [],
+                  "status": "clear"
                 },
-                "entities:entities_review": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entities_review.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity reviewer",
-                  "description": "reviews detected entities and promotes recurring ones to attached status",
-                  "color": "#00796b",
-                  "schedule": "daily",
-                  "priority": 56,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entities_review.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entities_review",
-                    "post": "entities:entities_review"
+                "journal_status": {
+                  "copy": {
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "freshness": "unknown",
+                  "oldest_pending_day": null,
+                  "pending_days": 0,
+                  "unfinished_activities": {
+                    "activities": 0,
+                    "day_count": 0,
+                    "oldest_day": null
                   },
-                  "source": "app",
-                  "app": "entities"
+                  "verdict": "it's unclear whether your journal is caught up; the last update age is unknown."
                 },
-                "entities:entity_describe": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_describe.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Entity Description",
-                  "description": "Research and generate single-sentence descriptions for attached entities",
-                  "color": "#26a69a",
-                  "group": "Entities",
-                  "output": "md",
-                  "hook": {
-                    "pre": "entities:entity_describe"
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_observer": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_observer.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity observer",
-                  "description": "reconciles proposed entity observations against existing observations",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 58,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_observer.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_observer",
-                    "post": "entities:entity_observer"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_suggest": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_suggest.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity suggest",
-                  "description": "proposes candidate durable factoids about attached entities from journal content",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 57,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_suggest.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_suggest",
-                    "post": "entities:entity_suggest"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
+                "summary": {
+                  "completed": 2,
+                  "pending": 1
                 }
               }
             },
@@ -2894,111 +2894,204 @@
           "path": "/app/stats/api/stats",
           "response": {
             "body": {
-              "stats": {
-                "journal_status": {
-                  "verdict": "still checking where your journal stands.",
-                  "freshness": "unknown",
-                  "pending_days": 0,
-                  "oldest_pending_day": null,
-                  "unfinished_activities": {
-                    "activities": 0,
-                    "day_count": 0,
-                    "oldest_day": null
-                  },
-                  "copy": {
-                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
-                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
-                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
-                  }
-                }
-              },
               "facet_titles": {},
               "generators": {
                 "conversation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/conversation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Conversation Story",
-                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#00796b",
-                  "schedule": "activity",
                   "activities": [
                     "meeting",
                     "call",
                     "messaging",
                     "email"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 2048,
-                  "schema": "story.schema.json",
+                  "color": "#00796b",
+                  "degradation_check": true,
+                  "description": "Generates a conversation story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 2048,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Conversation Story",
+                  "type": "generate"
                 },
                 "daily_schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/daily_schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "maintenance window",
-                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "daily_schedule.schema.json",
-                  "hook": {
-                    "pre": "daily_schedule",
-                    "post": "daily_schedule"
-                  },
                   "color": "#455a64",
-                  "thinking_budget": 4096,
-                  "max_output_tokens": 512,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "description": "analyzes activity patterns to identify optimal times for scheduled maintenance tasks.",
+                  "hook": {
+                    "post": "daily_schedule",
+                    "pre": "daily_schedule"
                   },
-                  "source": "system"
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 512,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "daily_schedule.schema.json",
+                  "source": "system",
+                  "thinking_budget": 4096,
+                  "title": "maintenance window",
+                  "type": "generate"
                 },
                 "documents": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/documents.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "document analysis",
-                  "description": "extracts structured details from imported documents",
                   "color": "#5c6bc0",
-                  "schedule": "segment",
-                  "priority": 10,
+                  "degradation_check": true,
+                  "description": "extracts structured details from imported documents",
                   "hook": {
                     "pre": "documents"
                   },
-                  "thinking_budget": 8192,
-                  "max_output_tokens": 8192,
-                  "output": "json",
-                  "schema": "documents.schema.json",
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "documents.schema.json",
+                  "source": "system",
+                  "thinking_budget": 8192,
+                  "title": "document analysis",
+                  "type": "generate"
+                },
+                "entities:detection": {
+                  "app": "entities",
+                  "color": "#00695c",
+                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
+                  "hook": {
+                    "post": "entities:detection",
+                    "pre": "entities:detection"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 1024,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 15,
+                  "schedule": "segment",
+                  "schema": "detection.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity detection",
+                  "type": "generate"
+                },
+                "entities:entities_review": {
+                  "app": "entities",
+                  "color": "#00796b",
+                  "description": "reviews detected entities and promotes recurring ones to attached status",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entities_review",
+                    "pre": "entities:entities_review"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 56,
+                  "schedule": "daily",
+                  "schema": "entities_review.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity reviewer",
+                  "type": "generate"
+                },
+                "entities:entity_describe": {
+                  "app": "entities",
+                  "color": "#26a69a",
+                  "description": "Research and generate single-sentence descriptions for attached entities",
+                  "group": "Entities",
+                  "hook": {
+                    "pre": "entities:entity_describe"
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "source": "app",
+                  "title": "Entity Description",
+                  "type": "generate"
+                },
+                "entities:entity_observer": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "reconciles proposed entity observations against existing observations",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_observer",
+                    "pre": "entities:entity_observer"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 58,
+                  "schedule": "daily",
+                  "schema": "entity_observer.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity observer",
+                  "type": "generate"
+                },
+                "entities:entity_suggest": {
+                  "app": "entities",
+                  "color": "#004d40",
+                  "description": "proposes candidate durable factoids about attached entities from journal content",
+                  "group": "Entities",
+                  "hook": {
+                    "post": "entities:entity_suggest",
+                    "pre": "entities:entity_suggest"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "mtime": "<TALENT_MTIME>",
+                  "multi_facet": true,
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 57,
+                  "schedule": "daily",
+                  "schema": "entity_suggest.schema.json",
+                  "source": "app",
+                  "thinking_budget": 2048,
+                  "title": "entity suggest",
+                  "type": "generate"
                 },
                 "event": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/event.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Event Story",
-                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#ff7043",
-                  "schedule": "activity",
                   "activities": [
                     "appointment",
                     "event",
@@ -3008,367 +3101,274 @@
                     "deadline",
                     "reminder"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#ff7043",
+                  "degradation_check": true,
+                  "description": "Generates an event story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Event Story",
+                  "type": "generate"
                 },
                 "facet_newsletter": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/facet_newsletter.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "facet newsletter generator",
-                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
-                  "color": "#0d47a1",
-                  "schedule": "daily",
-                  "priority": 40,
-                  "output": "md",
                   "accumulate": true,
+                  "color": "#0d47a1",
+                  "description": "creates comprehensive daily newsletters for each facet, covering activities, progress, and insights",
                   "hook": {
-                    "pre": "facet_newsletter",
-                    "post": "facet_newsletter"
+                    "post": "facet_newsletter",
+                    "pre": "facet_newsletter"
                   },
+                  "mtime": "<TALENT_MTIME>",
                   "multi_facet": true,
-                  "source": "system"
+                  "output": "md",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "daily",
+                  "source": "system",
+                  "title": "facet newsletter generator",
+                  "type": "generate"
                 },
                 "morning_briefing": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/morning_briefing.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "morning briefing",
-                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "color": "#1565c0",
-                  "schedule": "daily",
-                  "priority": 50,
-                  "output": "json",
-                  "schema": "morning_briefing.schema.json",
-                  "max_output_tokens": 8192,
                   "degradation_check": true,
+                  "description": "synthesizes all daily agent outputs into a structured five-section morning briefing",
                   "hook": {
                     "pre": "morning_briefing"
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "daily",
+                  "schema": "morning_briefing.schema.json",
+                  "source": "system",
+                  "title": "morning briefing",
+                  "type": "generate"
                 },
                 "participation": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/participation.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Participation",
+                  "activities": [
+                    "*"
+                  ],
+                  "color": "#6c757d",
                   "description": "Consolidates per-segment Sense entity drafts into a structured per-activity participation list.",
                   "hook": {
                     "post": "participation"
                   },
-                  "schedule": "activity",
-                  "activities": [
-                    "*"
-                  ],
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "participation.schema.json",
-                  "max_output_tokens": 12288,
-                  "timeout_s": 480,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
                     "talents": {
                       "sense": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "color": "#6c757d",
-                  "source": "system"
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "activity",
+                  "schema": "participation.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "Participation",
+                  "type": "generate"
                 },
                 "pulse": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/pulse.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Pulse",
-                  "description": "a short summary of recently processed activity and any supported next steps.",
-                  "schedule": "cadence",
-                  "cadence_minutes": 5,
-                  "priority": 50,
-                  "hook": {
-                    "pre": "pulse",
-                    "post": "pulse"
-                  },
-                  "output": "json",
-                  "schema": "pulse.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 700,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 5,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "a short summary of recently processed activity and any supported next steps.",
+                  "hook": {
+                    "post": "pulse",
+                    "pre": "pulse"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 700,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 50,
+                  "schedule": "cadence",
+                  "schema": "pulse.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Pulse",
+                  "type": "generate"
                 },
                 "schedule": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/schedule.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "upcoming schedule",
+                  "color": "#5e35b1",
                   "description": "extracts future scheduled items from screen and transcript content into anticipated activity records. notes dates, times, participants, and cancellation state.",
                   "hook": {
                     "post": "schedule"
                   },
-                  "color": "#5e35b1",
-                  "schedule": "daily",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "schedule.schema.json",
                   "load": {
-                    "transcripts": true,
                     "percepts": false,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "daily",
+                  "schema": "schedule.schema.json",
+                  "source": "system",
+                  "title": "upcoming schedule",
+                  "type": "generate"
                 },
                 "screen": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/screen.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "screen record",
-                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "color": "#9c27b0",
-                  "schedule": "segment",
-                  "priority": 10,
-                  "output": "json",
-                  "schema": "screen.schema.json",
-                  "max_output_tokens": 8192,
+                  "description": "creates a detailed documentary record of screen activity. focuses on the 'what', a chronological account with preserved details, excerpts, and entities.",
                   "load": {
-                    "transcripts": true,
                     "percepts": "required",
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 8192,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 10,
+                  "schedule": "segment",
+                  "schema": "screen.schema.json",
+                  "source": "system",
+                  "title": "screen record",
+                  "type": "generate"
                 },
                 "sense": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/sense.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "segment sense",
-                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "color": "#ff6f00",
-                  "schedule": "segment",
-                  "priority": 5,
-                  "output": "json",
-                  "schema": "sense.schema.json",
-                  "max_output_tokens": 6144,
-                  "timeout_s": 480,
+                  "description": "unified segment understanding, covering density, content type, entities, facets, speakers, and routing recommendations in a single pass",
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "max_output_tokens": 6144,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 5,
+                  "schedule": "segment",
+                  "schema": "sense.schema.json",
+                  "source": "system",
+                  "timeout_s": 480,
+                  "title": "segment sense",
+                  "type": "generate"
                 },
                 "speaker_attribution": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/speaker_attribution.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "speaker attribution",
-                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
-                  "schedule": "segment",
-                  "priority": 40,
-                  "output": "json",
-                  "schema": "speaker_attribution.schema.json",
                   "color": "#d84315",
+                  "description": "identifies who said what in each transcript segment. layers 1-3 (owner, structural, acoustic) run computationally via hook; layer 4 uses contextual LLM analysis for remaining unmatched sentences.",
                   "hook": {
-                    "pre": "speaker_attribution",
-                    "post": "speaker_attribution"
+                    "post": "speaker_attribution",
+                    "pre": "speaker_attribution"
                   },
                   "load": {
-                    "transcripts": true,
                     "talents": {
                       "screen": true
-                    }
+                    },
+                    "transcripts": true
                   },
-                  "source": "system"
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 40,
+                  "schedule": "segment",
+                  "schema": "speaker_attribution.schema.json",
+                  "source": "system",
+                  "title": "speaker attribution",
+                  "type": "generate"
                 },
                 "steward": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/steward.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Steward",
-                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
-                  "schedule": "cadence",
-                  "cadence_minutes": 30,
-                  "priority": 45,
-                  "hook": {
-                    "pre": "steward",
-                    "post": "steward"
-                  },
-                  "output": "json",
-                  "schema": "steward.schema.json",
                   "accumulate": true,
-                  "thinking_budget": 1024,
-                  "max_output_tokens": 400,
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
+                  "cadence_minutes": 30,
                   "color": "#6c757d",
-                  "source": "system"
+                  "description": "Writes the health summary on your home screen (headline, sentence, suggested action).",
+                  "hook": {
+                    "post": "steward",
+                    "pre": "steward"
+                  },
+                  "load": {
+                    "percepts": false,
+                    "talents": false,
+                    "transcripts": false
+                  },
+                  "max_output_tokens": 400,
+                  "mtime": "<TALENT_MTIME>",
+                  "output": "json",
+                  "path": "<TALENT_PATH>",
+                  "priority": 45,
+                  "schedule": "cadence",
+                  "schema": "steward.schema.json",
+                  "source": "system",
+                  "thinking_budget": 1024,
+                  "title": "Steward",
+                  "type": "generate"
                 },
                 "work": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/talent/work.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Work Story",
-                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
-                  "color": "#6d4c41",
-                  "schedule": "activity",
                   "activities": [
                     "coding",
                     "browsing",
                     "reading"
                   ],
-                  "priority": 20,
-                  "output": "json",
-                  "max_output_tokens": 12288,
-                  "schema": "story.schema.json",
+                  "color": "#6d4c41",
+                  "degradation_check": true,
+                  "description": "Generates a work story, topics, and structured commitments, closures, decisions, and relations to merge onto the activity record.",
                   "hook": {
                     "post": "story"
                   },
-                  "degradation_check": true,
                   "load": {
-                    "transcripts": true,
                     "percepts": true,
-                    "talents": false
+                    "talents": false,
+                    "transcripts": true
                   },
-                  "source": "system"
-                },
-                "entities:detection": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/detection.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity detection",
-                  "description": "per-segment, per-entity facet-relevance judgment feeding the living detection substrate",
-                  "color": "#00695c",
-                  "schedule": "segment",
-                  "priority": 15,
-                  "thinking_budget": 2048,
-                  "max_output_tokens": 1024,
+                  "max_output_tokens": 12288,
+                  "mtime": "<TALENT_MTIME>",
                   "output": "json",
-                  "schema": "detection.schema.json",
-                  "hook": {
-                    "pre": "entities:detection",
-                    "post": "entities:detection"
+                  "path": "<TALENT_PATH>",
+                  "priority": 20,
+                  "schedule": "activity",
+                  "schema": "story.schema.json",
+                  "source": "system",
+                  "title": "Work Story",
+                  "type": "generate"
+                }
+              },
+              "stats": {
+                "journal_status": {
+                  "copy": {
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
+                  "freshness": "unknown",
+                  "oldest_pending_day": null,
+                  "pending_days": 0,
+                  "unfinished_activities": {
+                    "activities": 0,
+                    "day_count": 0,
+                    "oldest_day": null
                   },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entities_review": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entities_review.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity reviewer",
-                  "description": "reviews detected entities and promotes recurring ones to attached status",
-                  "color": "#00796b",
-                  "schedule": "daily",
-                  "priority": 56,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entities_review.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entities_review",
-                    "post": "entities:entities_review"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_describe": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_describe.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "Entity Description",
-                  "description": "Research and generate single-sentence descriptions for attached entities",
-                  "color": "#26a69a",
-                  "group": "Entities",
-                  "output": "md",
-                  "hook": {
-                    "pre": "entities:entity_describe"
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_observer": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_observer.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity observer",
-                  "description": "reconciles proposed entity observations against existing observations",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 58,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_observer.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_observer",
-                    "post": "entities:entity_observer"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
-                },
-                "entities:entity_suggest": {
-                  "path": "/home/jer/.hopper/worktrees/tbaxvrvv/core/payload/solstone/apps/entities/talent/entity_suggest.md",
-                  "mtime": 1790130182,
-                  "type": "generate",
-                  "title": "entity suggest",
-                  "description": "proposes candidate durable factoids about attached entities from journal content",
-                  "color": "#004d40",
-                  "schedule": "daily",
-                  "priority": 57,
-                  "multi_facet": true,
-                  "group": "Entities",
-                  "output": "json",
-                  "schema": "entity_suggest.schema.json",
-                  "thinking_budget": 2048,
-                  "hook": {
-                    "pre": "entities:entity_suggest",
-                    "post": "entities:entity_suggest"
-                  },
-                  "load": {
-                    "transcripts": false,
-                    "percepts": false,
-                    "talents": false
-                  },
-                  "source": "app",
-                  "app": "entities"
+                  "verdict": "still checking where your journal stands."
                 }
               }
             },
