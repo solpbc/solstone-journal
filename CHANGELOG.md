@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - with your own Gemini key, some models, such as Gemini 3.1 Pro Preview and Gemini 3.5 Flash Lite, failed your journal's model check and couldn't be chosen. they can now.
 - when you add a key for a different provider, your journal now checks it with that provider, not the one you were already using.
 - a mistyped model id now tells you your provider doesn't offer it to your key, instead of showing a general error.
+- in rare cases, audio from right after your journal started could go untranscribed, with no warning shown. it's now transcribed once the app catches up on what it missed.
 
 ## [2.0.14] - 2026-09-22
 
