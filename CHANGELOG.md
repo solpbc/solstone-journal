@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- your journal's health page now shows when search last caught up. if search couldn't update, or it's been more than a week, it tells you recent moments may not turn up in search yet.
+
 ### Changed
 
 - your journal now keeps at least one facet unmuted. when your journal starts with every facet muted, or with none, it unmutes Personal, or adds it if you don't have one. you can't mute or delete the last unmuted facet.
@@ -20,6 +24,9 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - when you add a key for a different provider, your journal now checks it with that provider, not the one you were already using.
 - a mistyped model id now tells you your provider doesn't offer it to your key, instead of showing a general error.
 - in rare cases, audio from right after your journal started could go untranscribed, with no warning shown. it's now transcribed once the app catches up on what it missed.
+- the health page could say your journal was all caught up based on an update from days earlier. it now tells you when it can't tell, and how long ago it was last updated.
+- if your journal couldn't finish processing an activity on a day that was otherwise done, the problem disappeared from the health page. it now says how many couldn't finish, with a link to the oldest day affected, and `journal doctor` mentions them too.
+- the stats page warned that your stats were in an older format and asked you to regenerate them. the warning was mistaken, so regenerating couldn't clear it, and it no longer appears.
 
 ## [2.0.14] - 2026-09-22
 
