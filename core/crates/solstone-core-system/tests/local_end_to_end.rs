@@ -8,35 +8,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use serde_json::json;
-use solstone_core_local::install::{archive, manifest, pins};
-use solstone_core_local::nvidia::NvidiaProbe;
-use solstone_core_local::{ArtifactTrust, Platform};
+use solstone_core_local::Platform;
 use solstone_core_system::provider_runtime::{
-    FileRuntimeStore, LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam,
-    LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderName,
-    ProviderRuntimeCoordinator, ProviderRuntimeNow, ProviderRuntimeState,
-    ProviderStopCleanupRequest, ReasonCode, ReconcileContext, RuntimeClock, RuntimePhase,
-    VecEventSink,
+    FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
+    LocalTruthSeam, ManagedProcess, ProviderName, ProviderRuntimeCoordinator, ProviderRuntimeNow,
+    ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode, ReconcileContext, RuntimeClock,
+    RuntimePhase, VecEventSink,
 };
-
-/// A synthetic probe, never the real one: this test drives a CUDA launch to
-/// `Ready`, so calling `probe_nvidia_gpu()` would make the assertion a
-/// statement about the host's graphics card rather than about the coordinator.
-fn nvidia() -> NvidiaProbe {
-    NvidiaProbe {
-        schema: "solstone-local-nvidia-probe-v1".into(),
-        detected: true,
-        gpu_index: Some(0),
-        gpu_name: Some("test GPU".into()),
-        compute_cap: Some("8.9".into()),
-        arch: Some("sm_89".into()),
-        driver_cuda_major: Some(13),
-        vram_mib: Some(16_000),
-        unified_memory_mib: None,
-        probe_error: None,
-    }
-}
 
 struct TestClock {
     millis: AtomicU64,
@@ -59,41 +37,7 @@ impl RuntimeClock for TestClock {
 fn journal() -> std::path::PathBuf {
     let root = std::env::temp_dir().join(format!("solstone-local-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
-    let cache = pins::cache_root(&root);
-    let runtime = cache.join("bin/aarch64-apple-darwin/b10068");
-    let model = cache.join("models/local__qwen3.5-4b");
-    std::fs::create_dir_all(&runtime).unwrap();
-    std::fs::create_dir_all(&model).unwrap();
-    std::fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").unwrap();
-    archive::make_executable(&runtime.join("llama-server")).unwrap();
-    std::fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").unwrap();
-    std::fs::write(model.join("mmproj-F16.gguf"), b"projector").unwrap();
-    let runtime_manifest = manifest::build_manifest(
-        "local",
-        "llama-server-vulkan",
-        "test",
-        json!({"pin_identity":pins::vulkan_identity("aarch64-apple-darwin").unwrap()}),
-        manifest::runtime_inventory(&runtime, &[]).unwrap(),
-        None,
-        None,
-    )
-    .unwrap();
-    manifest::write_manifest(
-        &manifest::artifact_manifest_path(&runtime),
-        &runtime_manifest,
-    )
-    .unwrap();
-    let model_manifest = manifest::build_manifest(
-        "local",
-        "local-model",
-        "test",
-        json!({"pin_identity":pins::model_identity("local/qwen3.5-4b").unwrap()}),
-        manifest::inventory_for_tree(&model, "model").unwrap(),
-        None,
-        None,
-    )
-    .unwrap();
-    manifest::write_manifest(&manifest::artifact_manifest_path(&model), &model_manifest).unwrap();
+    crate::local_installed_fixture::install(&root, "test-ready");
     root
 }
 fn pump(
@@ -184,24 +128,9 @@ fn ac18_real_coordinator_seams_and_store() {
         .desired_fingerprint
         .clone()
         .unwrap();
-    shared.record_launch_request(
-        Some(fp.clone()),
-        LocalLaunchConfig::Cuda {
-            common: LocalLaunchCommon {
-                desired_fingerprint_json: json!({"provider":"local","stub":true}),
-                desired_fingerprint_sha256: fp,
-                model_id: "local/test".into(),
-                model_path: "test-ready".into(),
-                mmproj_path: None,
-            },
-            binary_path: Some(crate::fixture_binary::string()),
-            lib_dir: None,
-            nvidia_probe: nvidia(),
-            cuda_embedded_arch_set: vec!["sm_89".into()],
-            cuda_min_driver_version: 1,
-            cuda_artifact_trust: ArtifactTrust::Trusted,
-            cuda_persisted_installed_cuda_target: false,
-        },
+    assert!(
+        shared.launch_request_for(&Some(fp)).is_some(),
+        "truth recorded the pinned launch request"
     );
     for _ in 0..6 {
         let mut x = ReconcileContext {

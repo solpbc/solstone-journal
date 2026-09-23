@@ -9,7 +9,6 @@ use serde_json::{Map, Value, json};
 use solstone_core_callosum::{CallosumEnvelope, DurableEvent, append_durable_event};
 use solstone_core_journal_config::read_journal_config;
 use solstone_core_journal_io::day_path;
-use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::{LocalEndpointResolution, resolve_local_endpoint};
 use solstone_core_system::lifecycle::{
     DEFAULT_INTERVAL_SECONDS, ParentLossReason, ParentWatch, ParentWatchStatus,
@@ -22,11 +21,10 @@ use solstone_core_system::process::{
     classify_process_observation,
 };
 use solstone_core_system::provider_runtime::{
-    CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig,
-    LocalReadySideEffect, ProbeStatus, ProviderName, ProviderRetryState, ProviderRuntimeEvent,
-    ProviderRuntimeEventSink, ProviderRuntimeNow, ProviderRuntimeState, ReasonCode,
-    ReconcileContext, RuntimePhase, RuntimeStore, RuntimeStoreError, cancel_start,
-    store_error_phase,
+    CortexEventKind, CortexOutcomeEvent, LocalReadySideEffect, ProbeStatus, ProviderName,
+    ProviderRetryState, ProviderRuntimeEvent, ProviderRuntimeEventSink, ProviderRuntimeNow,
+    ProviderRuntimeState, ReasonCode, ReconcileContext, RuntimePhase, RuntimeStore,
+    RuntimeStoreError, cancel_start, store_error_phase,
 };
 use solstone_core_system::request::{
     BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, TaskArgv,
@@ -1103,7 +1101,6 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
     {
         in_flight.result = Some(result);
     }
-    record_fixture_local_launch(state);
     if let Some(in_flight) = state.local.state.start.as_mut()
         && in_flight.result.is_none()
         && let Some(result) = state.local.shared.take_launch_result(&in_flight.fence)
@@ -1281,60 +1278,6 @@ fn synchronize_parakeet_sense_credentials(state: &mut SupervisorState) -> bool {
     }
     state.parakeet_sense_credentials_revision = revision;
     false
-}
-
-fn record_fixture_local_launch(state: &mut SupervisorState) {
-    let Some(fixture) = state.local.fixture_launch.as_ref() else {
-        return;
-    };
-    let Some(fingerprint) = state
-        .local
-        .state
-        .truth
-        .as_ref()
-        .and_then(|truth| truth.result.as_ref())
-        .and_then(|result| result.desired_fingerprint.clone())
-    else {
-        return;
-    };
-    if state.local.launch_recorded_for.as_deref() == Some(fingerprint.as_str()) {
-        return;
-    }
-    state.local.shared.record_launch_request(
-        Some(fingerprint.clone()),
-        LocalLaunchConfig::Cuda {
-            common: LocalLaunchCommon {
-                desired_fingerprint_json: json!({"provider":"local","stub":true}),
-                desired_fingerprint_sha256: fingerprint.clone(),
-                model_id: fixture.model_id.clone(),
-                model_path: fixture.model_path.clone(),
-                mmproj_path: None,
-            },
-            binary_path: Some(fixture.binary_path.clone()),
-            lib_dir: None,
-            nvidia_probe: synthetic_nvidia_probe(),
-            cuda_embedded_arch_set: vec!["sm_89".to_owned()],
-            cuda_min_driver_version: 1,
-            cuda_artifact_trust: ArtifactTrust::Trusted,
-            cuda_persisted_installed_cuda_target: false,
-        },
-    );
-    state.local.launch_recorded_for = Some(fingerprint);
-}
-
-fn synthetic_nvidia_probe() -> NvidiaProbe {
-    NvidiaProbe {
-        schema: "solstone-local-nvidia-probe-v1".to_owned(),
-        detected: true,
-        gpu_index: Some(0),
-        gpu_name: Some("supervisor fixture GPU".to_owned()),
-        compute_cap: Some("8.9".to_owned()),
-        arch: Some("sm_89".to_owned()),
-        driver_cuda_major: Some(13),
-        vram_mib: Some(16_000),
-        unified_memory_mib: None,
-        probe_error: None,
-    }
 }
 
 async fn drain_inbound(state: &mut SupervisorState) -> Option<SupervisorStopReason> {
@@ -1801,10 +1744,9 @@ fn read_local_port(journal: &Path) -> Option<u16> {
 }
 
 fn local_probe_is_ready(state: &SupervisorState) -> bool {
-    // The supervisor fixture has no HTTP model server. Its synthetic launch is
-    // already the established test-only local-runtime seam, so it stands in for
-    // a healthy endpoint while production always uses the real ConnectOutcome.
-    state.local.fixture_launch.is_some()
+    // The supervisor fixture uses a pinned test binary; its probe is a test-only
+    // stand-in for a healthy endpoint. Production uses the real ConnectOutcome.
+    state.local.fixture_probe_ready
         || state.local.probe.probe_now(&state.local.state).status == ProbeStatus::Ready
 }
 

@@ -139,7 +139,7 @@ fn bundled_runtime_readiness(
     #[cfg(target_os = "macos")]
     {
         let _ = nvidia_probe;
-        solstone_core_local::install::metal_candidate::inspect(&Map::from_iter([
+        solstone_core_local::install::metal_candidate::inspect_present(&Map::from_iter([
             ("journal".into(), Value::String(journal)),
             ("model_id".into(), Value::String(model_id.to_owned())),
             ("backend".into(), Value::String("metal".into())),
@@ -155,9 +155,7 @@ fn bundled_runtime_readiness(
         if let Some(probe) = nvidia_probe {
             input.insert("nvidia_probe".into(), serde_json::to_value(probe).ok()?);
         }
-        Some(solstone_core_local::install::readiness::inspect_local(
-            input,
-        ))
+        Some(solstone_core_local::install::readiness::inspect_local_present(input))
     }
 }
 

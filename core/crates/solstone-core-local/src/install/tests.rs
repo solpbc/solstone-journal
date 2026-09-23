@@ -363,6 +363,26 @@ fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
         archive::snapshot_tree(&pins::cache_root(&root)).unwrap(),
         before
     );
+    let present =
+        metal_candidate::inspect_present_with(&candidate_request(&root), "aarch64-apple-darwin")
+            .unwrap();
+    assert_eq!(present["status"], "ready");
+    assert_eq!(
+        present["proof"]["binary_probe"]["verification"],
+        "deferred_until_launch"
+    );
+    let marker = root.join("probe-ran");
+    fs::write(
+        runtime.join("llama-server"),
+        format!("#!/bin/sh\ntouch {}\n", marker.display()),
+    )
+    .unwrap();
+    assert_eq!(
+        metal_candidate::inspect_with(&candidate_request(&root), "aarch64-apple-darwin").unwrap()["reason_code"],
+        "sha256_mismatch"
+    );
+    assert!(!marker.exists(), "failed proof must not execute the binary");
+    fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").unwrap();
 
     status::begin(
         &root,
@@ -1757,7 +1777,7 @@ fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
     let trusted = local_backend_choice(&root, Some(probe.clone()));
     assert_eq!(trusted.backend, crate::Backend::Cuda);
     fs::write(&artifact, b"sm_90 only").unwrap();
-    let uncovered = local_backend_choice(&root, Some(probe));
+    let uncovered = local_backend_choice(&root, Some(probe.clone()));
     assert_eq!(uncovered.backend, crate::Backend::Vulkan);
     assert!(
         uncovered
@@ -1765,6 +1785,12 @@ fn backend_choice_selects_cuda_when_hardware_qualifies_and_a_pin_exists() {
             .contains("CUDA runtime artifact does not cover this GPU"),
         "{}",
         uncovered.reason
+    );
+    // Presence is a candidate; the launch path still scans the binary and
+    // rejects this uncovered architecture.
+    assert_eq!(
+        super::local_backend_choice_present(&root, Some(probe)).backend,
+        crate::Backend::Cuda
     );
     let _ = fs::remove_dir_all(root);
 }
@@ -1812,6 +1838,68 @@ fn manifest_proof_rejects_malformed_json_and_escaping_inventory_paths() {
     assert_eq!(
         manifest::prove_manifest(&path, &json!({}))["reason_code"],
         "inventory_malformed"
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn inventory_presence_is_cheap_but_launch_proof_catches_same_size_tampering() {
+    let root = temp("manifest-presence-vs-proof");
+    let artifact = root.join("model.gguf");
+    let manifest_path = manifest::artifact_manifest_path(&root);
+    let identity = json!({"unit":"local-model","model_id":"test"});
+    fs::write(&artifact, b"original").unwrap();
+    let inventory = manifest::inventory_for_tree(&root, "model").unwrap();
+    let record = manifest::build_manifest(
+        "local",
+        "model",
+        "target",
+        identity.clone(),
+        inventory,
+        None,
+        None,
+    )
+    .unwrap();
+    manifest::write_manifest(&manifest_path, &record).unwrap();
+
+    assert_eq!(
+        manifest::inspect_manifest(&manifest_path, &identity)["status"],
+        "ready"
+    );
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &identity)["status"],
+        "ready"
+    );
+
+    fs::write(&artifact, b"tampered").unwrap();
+    assert_eq!(
+        manifest::inspect_manifest(&manifest_path, &identity)["status"],
+        "ready"
+    );
+    assert_eq!(
+        manifest::prove_manifest(&manifest_path, &identity)["reason_code"],
+        "sha256_mismatch"
+    );
+
+    fs::write(&artifact, b"short").unwrap();
+    assert_eq!(
+        manifest::inspect_manifest(&manifest_path, &identity)["reason_code"],
+        "inventory_size_mismatch"
+    );
+    assert_eq!(
+        manifest::inspect_manifest(&manifest_path, &json!({"wrong":"pin"}))["reason_code"],
+        "manifest_pin_mismatch"
+    );
+    let mut omitted = record;
+    omitted["inventory"] = json!([]);
+    manifest::write_manifest(&manifest_path, &omitted).unwrap();
+    assert_eq!(
+        manifest::prove_manifest_required(&manifest_path, &identity, &["model.gguf"])["reason_code"],
+        "inventory_member_missing"
+    );
+    assert_eq!(
+        manifest::inspect_manifest_required(&manifest_path, &identity, &["model.gguf"])["reason_code"],
+        "inventory_member_missing"
     );
     let _ = fs::remove_dir_all(root);
 }

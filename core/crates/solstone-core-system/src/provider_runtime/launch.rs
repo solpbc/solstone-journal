@@ -18,7 +18,10 @@ use std::time::{Duration, Instant};
 use serde_json::{Map, Value, json};
 use solstone_core_brain::bundled_runtime_desired_fingerprint;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
-use solstone_core_local::install::{metal_candidate, pins, readiness::inspect_local};
+use solstone_core_local::install::{
+    metal_candidate, pins,
+    readiness::{inspect_local, inspect_local_present},
+};
 use solstone_core_local::nvidia::{
     ArtifactTrust, CUDA_EMBEDDED_ARCH_SET, CUDA_MIN_DRIVER_VERSION, NvidiaProbe, probe_nvidia_gpu,
 };
@@ -504,7 +507,7 @@ fn observe_truth(
     };
     let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
     let readiness = match config.platform {
-        Platform::Linux => inspect_local(Map::from_iter([
+        Platform::Linux => inspect_local_present(Map::from_iter([
             (
                 "journal".into(),
                 Value::String(config.journal_path.display().to_string()),
@@ -524,14 +527,16 @@ fn observe_truth(
                 ("model_id".into(), Value::String(model_id.clone())),
                 ("backend".into(), Value::String("metal".into())),
             ]);
-            metal_candidate::inspect_with(&input, "aarch64-apple-darwin").unwrap_or_else(|_| {
-                json!({
-                    "provider":"local",
-                    "ready":false,
-                    "status":"proof-unavailable",
-                    "reason_code":"readiness_unavailable",
-                })
-            })
+            metal_candidate::inspect_present_with(&input, "aarch64-apple-darwin").unwrap_or_else(
+                |_| {
+                    json!({
+                        "provider":"local",
+                        "ready":false,
+                        "status":"proof-unavailable",
+                        "reason_code":"readiness_unavailable",
+                    })
+                },
+            )
         }
     };
     let Some(object) = readiness.as_object() else {
@@ -571,7 +576,10 @@ fn observe_truth(
                 super::model::RuntimePhase::HostBlocked,
                 "package-unavailable",
             ),
-            "manifest_pin_mismatch" | "sha256_mismatch" | "inventory_member_missing" => (
+            "manifest_pin_mismatch"
+            | "sha256_mismatch"
+            | "inventory_member_missing"
+            | "inventory_size_mismatch" => (
                 super::model::RuntimePhase::ArtifactNotReady,
                 "artifact-stale",
             ),
@@ -744,12 +752,19 @@ fn start_local(
         PlanOutcome::Launch(plan) => plan,
         PlanOutcome::Rejected { .. } => return launch_failed(),
     };
+    let Some(journal_path) = journal_path else {
+        return launch_failed();
+    };
+    if !verify_launch_artifacts(journal_path, &plan, launch) {
+        return ProviderLaunchOutcome {
+            status: LaunchOutcomeStatus::LaunchFailed,
+            reason_code: ReasonCode::known("artifact-stale"),
+            managed: None,
+        };
+    }
     let port = reservation.release_for_spawn();
     #[cfg(unix)]
     let authority_res = {
-        let Some(journal_path) = journal_path else {
-            return launch_failed();
-        };
         let launch_id = crate::lifecycle::generate_helper_launch_id("local-provider");
         crate::process::launch_generation_child(
             Disposition::IndependentLongLived,
@@ -831,6 +846,58 @@ fn start_local(
         }
         clock.sleep(warmup_poll_interval);
     }
+}
+
+/// Truth observation only checks installed inventory. Recheck the exact planned
+/// artifacts with SHA-256 before a new provider process can be spawned.
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn verify_launch_artifacts(
+    journal: &std::path::Path,
+    plan: &solstone_core_local::plan::LaunchPlan,
+    launch: &LocalLaunchConfig,
+) -> bool {
+    let mut input = Map::from_iter([
+        (
+            "journal".into(),
+            Value::String(journal.display().to_string()),
+        ),
+        ("model_id".into(), Value::String(plan.model_id.clone())),
+    ]);
+    let readiness = match plan.backend {
+        PlanBackend::Metal => {
+            input.insert("backend".into(), Value::String("metal".into()));
+            match metal_candidate::inspect_with(&input, "aarch64-apple-darwin") {
+                Ok(readiness) => readiness,
+                Err(_) => return false,
+            }
+        }
+        PlanBackend::Cuda | PlanBackend::Vulkan => {
+            if let LocalLaunchConfig::Cuda { nvidia_probe, .. } = launch {
+                let Ok(probe) = serde_json::to_value(nvidia_probe) else {
+                    return false;
+                };
+                input.insert("nvidia_probe".into(), probe);
+            }
+            inspect_local(input)
+        }
+    };
+    let backend = match plan.backend {
+        PlanBackend::Cuda => "cuda",
+        PlanBackend::Vulkan => "vulkan",
+        PlanBackend::Metal => "metal",
+    };
+    readiness["ready"] == true
+        && readiness["host"]["backend"] == backend
+        && readiness["target"]["target_fingerprint_sha256"]
+            .as_str()
+            .unwrap_or("")
+            == plan.desired_fingerprint_json["artifact_target_fingerprint_sha256"]
+                .as_str()
+                .unwrap_or("")
+        && readiness["artifacts"]["model_id"] == plan.model_id
+        && readiness["artifacts"]["binary_path"].as_str() == plan.binary_path.as_deref()
+        && readiness["artifacts"]["model_path"].as_str() == Some(plan.model_path.as_str())
+        && readiness["artifacts"]["projector_path"].as_str() == plan.mmproj_path.as_deref()
 }
 
 #[cfg(not(any(target_os = "linux", target_os = "macos")))]

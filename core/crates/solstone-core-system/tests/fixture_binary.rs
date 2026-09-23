@@ -14,6 +14,7 @@ pub fn path() -> PathBuf {
     COPY.get_or_init(copy_fixture).clone()
 }
 
+#[allow(dead_code)]
 pub fn string() -> String {
     path().to_string_lossy().into_owned()
 }

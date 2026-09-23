@@ -59,8 +59,7 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
         ),
         state: ProviderRuntimeState::new(ProviderName::Local),
         processes: Vec::new(),
-        launch_recorded_for: None,
-        fixture_launch: None,
+        fixture_probe_ready: false,
     };
     let parakeet_shared = Arc::new(ParakeetRuntimeShared::default());
     let parakeet = ParakeetProvider {

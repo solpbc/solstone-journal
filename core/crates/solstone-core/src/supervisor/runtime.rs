@@ -1014,14 +1014,7 @@ pub(crate) struct LocalProvider {
     pub store: FileRuntimeStore,
     pub state: ProviderRuntimeState,
     pub processes: Vec<solstone_core_system::provider_runtime::ManagedProcess>,
-    pub launch_recorded_for: Option<String>,
-    pub fixture_launch: Option<LocalFixtureLaunch>,
-}
-
-pub(crate) struct LocalFixtureLaunch {
-    pub binary_path: String,
-    pub model_id: String,
-    pub model_path: String,
+    pub fixture_probe_ready: bool,
 }
 
 pub(crate) struct ParakeetProvider {
@@ -1538,27 +1531,14 @@ pub(crate) async fn boot_and_tick(
     let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     let local_shared = Arc::new(LocalRuntimeShared::default());
     let fixture_truth = std::env::var("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE").as_deref() == Ok("1");
-    // This pair is a test-only seam. Production must use LocalTruthSeam's
-    // artifact-derived launch request rather than synthetic model or GPU data.
-    let fixture_launch = if fixture_truth {
-        std::env::var_os("SOLSTONE_LOCAL_BINARY").map(|binary_path| LocalFixtureLaunch {
-            binary_path: PathBuf::from(binary_path).display().to_string(),
-            model_id: std::env::var("SOLSTONE_LOCAL_MODEL_ID")
-                .unwrap_or_else(|_| "local/test".to_owned()),
-            model_path: std::env::var("SOLSTONE_LOCAL_MODEL_PATH")
-                .unwrap_or_else(|_| "test-ready".to_owned()),
-        })
-    } else {
-        None
-    };
-    let truth = if fixture_launch.is_some() && fixture_truth {
+    // The test fixture selects native Metal without inspecting host GPU hardware.
+    // Truth still records the pinned artifact-derived launch request.
+    let truth = if fixture_truth {
         LocalTruthSeam::with_config(
             local_shared.clone(),
             LocalTruthConfig {
                 journal_path: journal.clone(),
-                // The fixture path deliberately uses a lightweight native Metal
-                // artifact proof instead of inspecting host NVIDIA hardware. Its launch
-                // request is replaced below with the synthetic CUDA fixture plan.
+                // The fixture path uses native Metal instead of host NVIDIA hardware.
                 platform: Platform::Darwin,
                 nvidia_probe: None,
                 vulkan_devices: Vec::new(),
@@ -1582,8 +1562,7 @@ pub(crate) async fn boot_and_tick(
         ),
         state: ProviderRuntimeState::new(ProviderName::Local),
         processes: Vec::new(),
-        launch_recorded_for: None,
-        fixture_launch,
+        fixture_probe_ready: fixture_truth,
     };
     // The four blockers that once made this a seeded stub are CLOSED. Keeping
     // the contract here, satisfied rather than deleted, because it is what a

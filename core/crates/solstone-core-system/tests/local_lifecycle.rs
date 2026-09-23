@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(target_os = "linux")]
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -9,13 +8,14 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
+use solstone_core_local::Platform;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::plan::VulkanDevice;
 use solstone_core_system::provider_runtime::{
     LaunchOutcomeStatus, LifecycleSeam, LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam,
-    LocalRuntimeShared, ManagedProcess, ProviderFence, ProviderRuntimeState,
-    ProviderStopCleanupRequest, ReasonCode, ReservedPort, RuntimeClock, RuntimePhase,
-    StopCleanupStatus,
+    LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderFence,
+    ProviderName, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode, ReservedPort,
+    RuntimeClock, RuntimePhase, StopCleanupStatus, TruthObservationSeam,
 };
 
 struct TestClock {
@@ -71,19 +71,6 @@ fn nvidia() -> NvidiaProbe {
     }
 }
 
-fn cuda(model_path: &str) -> LocalLaunchConfig {
-    LocalLaunchConfig::Cuda {
-        common: common(model_path),
-        binary_path: Some(crate::fixture_binary::string()),
-        lib_dir: None,
-        nvidia_probe: nvidia(),
-        cuda_embedded_arch_set: vec!["sm_89".into()],
-        cuda_min_driver_version: 13,
-        cuda_artifact_trust: ArtifactTrust::Trusted,
-        cuda_persisted_installed_cuda_target: false,
-    }
-}
-
 fn fence(attempt: u32) -> ProviderFence {
     ProviderFence {
         incarnation: "test".into(),
@@ -119,6 +106,30 @@ fn lifecycle(
     )
     .with_journal(journal.path());
     (lifecycle, journal, generation)
+}
+
+fn installed_metal(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
+    crate::local_installed_fixture::install(journal, model_marker);
+    let shared = Arc::new(LocalRuntimeShared::default());
+    let mut truth = LocalTruthSeam::with_config(
+        shared.clone(),
+        LocalTruthConfig {
+            journal_path: journal.to_path_buf(),
+            platform: Platform::Darwin,
+            nvidia_probe: None,
+            vulkan_devices: vec![],
+        },
+    );
+    let truth_fence = fence(0);
+    truth.dispatch_truth(
+        &ProviderRuntimeState::new(ProviderName::Local),
+        &truth_fence,
+    );
+    let observed = shared.wait_for_truth_result(&truth_fence);
+    assert_eq!(observed.phase, RuntimePhase::Starting);
+    shared
+        .launch_request_for(&observed.desired_fingerprint)
+        .expect("pinned launch request")
 }
 
 fn start(
@@ -278,10 +289,11 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
     ];
     for (attempt, (model_path, status, reason)) in cases.into_iter().enumerate() {
         let shared = Arc::new(LocalRuntimeShared::default());
-        let (mut lifecycle, _journal, _generation) =
+        let (mut lifecycle, journal, _generation) =
             lifecycle(shared.clone(), Duration::from_secs(1));
         let start_fence = fence(u32::try_from(attempt).unwrap());
-        let outcome = start(&mut lifecycle, &shared, cuda(model_path), &start_fence);
+        let launch = installed_metal(journal.path(), model_path);
+        let outcome = start(&mut lifecycle, &shared, launch, &start_fence);
         assert_eq!(outcome.status, status);
         assert_eq!(outcome.reason_code, ReasonCode::known(reason));
         if let Some(managed) = outcome.managed {
@@ -300,9 +312,10 @@ fn warmup_reports_ready_exited_and_timeout_without_wall_clock_waits() {
 #[test]
 fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
     let shared = Arc::new(LocalRuntimeShared::default());
-    let (mut seam, _journal, _generation) = lifecycle(shared.clone(), Duration::from_secs(1));
+    let (mut seam, journal, _generation) = lifecycle(shared.clone(), Duration::from_secs(1));
     let start_fence = fence(1);
-    let started = start(&mut seam, &shared, cuda("test-ready"), &start_fence)
+    let launch = installed_metal(journal.path(), "test-ready");
+    let started = start(&mut seam, &shared, launch, &start_fence)
         .managed
         .expect("ready child");
     let stop_fence = fence(2);
@@ -312,17 +325,13 @@ fn dispatch_stop_reports_stopped_cleanup_failed_cancelled_and_already_gone() {
         StopCleanupStatus::Stopped
     );
 
-    let (mut failing, _failing_journal, _failing_generation) =
+    let (mut failing, failing_journal, _failing_generation) =
         lifecycle(shared.clone(), Duration::ZERO);
     let failing_start_fence = fence(3);
-    let managed = start(
-        &mut failing,
-        &shared,
-        cuda("test-ready-block-term"),
-        &failing_start_fence,
-    )
-    .managed
-    .expect("ready resistant child");
+    let launch = installed_metal(failing_journal.path(), "test-ready-block-term");
+    let managed = start(&mut failing, &shared, launch, &failing_start_fence)
+        .managed
+        .expect("ready resistant child");
     let failed_stop_fence = fence(4);
     failing.dispatch_stop(&stop_state(managed), &failed_stop_fence);
     let failed = wait_stop(&shared, &failed_stop_fence);

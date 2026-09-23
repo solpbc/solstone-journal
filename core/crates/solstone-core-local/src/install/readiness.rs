@@ -4,9 +4,31 @@
 use serde_json::{Map, Value, json};
 use std::path::{Path, PathBuf};
 
-use super::{lease, local_backend_choice, manifest, pins, status};
+use super::{lease, local_backend_choice, local_backend_choice_present, manifest, pins, status};
 
 pub fn inspect_local(input: Map<String, Value>) -> Value {
+    inspect_local_with(
+        input,
+        manifest::prove_manifest_required,
+        local_backend_choice,
+    )
+}
+
+/// Cheap installation candidate for read paths. Launch and installation use
+/// `inspect_local`, which verifies the artifact bytes.
+pub fn inspect_local_present(input: Map<String, Value>) -> Value {
+    inspect_local_with(
+        input,
+        manifest::inspect_manifest_required,
+        local_backend_choice_present,
+    )
+}
+
+fn inspect_local_with(
+    input: Map<String, Value>,
+    check_manifest: fn(&Path, &Value, &[&str]) -> Value,
+    choose_backend: fn(&Path, Option<crate::NvidiaProbe>) -> crate::BackendChoice,
+) -> Value {
     let journal = input
         .get("journal")
         .and_then(Value::as_str)
@@ -31,7 +53,7 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
         .transpose()
         .ok()
         .flatten();
-    let choice = local_backend_choice(&journal, nvidia_probe);
+    let choice = choose_backend(&journal, nvidia_probe);
     let backend = match choice.backend {
         crate::Backend::Cuda => "cuda",
         crate::Backend::Vulkan => "vulkan",
@@ -62,11 +84,15 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
         .get("mmproj_filename")
         .and_then(Value::as_str)
         .unwrap_or("");
-    let binary_proof =
-        manifest::prove_manifest(&manifest::artifact_manifest_path(&binary_root), &identity);
-    let model_proof = manifest::prove_manifest(
+    let binary_proof = check_manifest(
+        &manifest::artifact_manifest_path(&binary_root),
+        &identity,
+        &["llama-server"],
+    );
+    let model_proof = check_manifest(
         &manifest::artifact_manifest_path(&model_root),
         &model_identity,
+        &[model_file, projector_file],
     );
     let proofs = [binary_proof.clone(), model_proof.clone()];
     let proof_unavailable = proofs
@@ -99,47 +125,58 @@ pub fn inspect_local(input: Map<String, Value>) -> Value {
 pub fn inspect_local_installed(journal: &Path, model_id: &str) -> Value {
     let root = pins::cache_root(journal);
     let key = pins::platform_key();
-    let binary_installed =
-        status::read_status(journal, "local")
-            .ok()
-            .and_then(|install| install.target_fingerprint_json)
-            .and_then(|fingerprint| serde_json::from_str::<Value>(&fingerprint).ok())
-            .and_then(
-                |target| match target.get("backend").and_then(Value::as_str) {
-                    Some("cuda") => {
-                        let (_, digest, _) = pins::cuda_pin(&key)?;
-                        Some((
-                            root.join("cuda").join(&key).join(digest),
-                            pins::cuda_identity(&key)?,
-                        ))
-                    }
-                    Some("vulkan") => {
-                        let (release, _, _, _) = pins::vulkan_pin(&key)?;
-                        Some((
-                            root.join("bin").join(&key).join(release),
-                            pins::vulkan_identity(&key)?,
-                        ))
-                    }
-                    Some("metal") => {
-                        let (release, _, _, _) = pins::vulkan_pin(&key)?;
-                        Some((
-                            root.join("bin").join(&key).join(release),
-                            pins::vulkan_identity(&key)?,
-                        ))
-                    }
-                    _ => None,
-                },
-            )
-            .is_some_and(|(binary_root, identity)| {
-                manifest::prove_manifest(&manifest::artifact_manifest_path(&binary_root), &identity)
-                    ["status"]
-                    == "ready"
-            });
+    let binary_installed = status::read_status(journal, "local")
+        .ok()
+        .and_then(|install| install.target_fingerprint_json)
+        .and_then(|fingerprint| serde_json::from_str::<Value>(&fingerprint).ok())
+        .and_then(
+            |target| match target.get("backend").and_then(Value::as_str) {
+                Some("cuda") => {
+                    let (_, digest, _) = pins::cuda_pin(&key)?;
+                    Some((
+                        root.join("cuda").join(&key).join(digest),
+                        pins::cuda_identity(&key)?,
+                    ))
+                }
+                Some("vulkan") => {
+                    let (release, _, _, _) = pins::vulkan_pin(&key)?;
+                    Some((
+                        root.join("bin").join(&key).join(release),
+                        pins::vulkan_identity(&key)?,
+                    ))
+                }
+                Some("metal") => {
+                    let (release, _, _, _) = pins::vulkan_pin(&key)?;
+                    Some((
+                        root.join("bin").join(&key).join(release),
+                        pins::vulkan_identity(&key)?,
+                    ))
+                }
+                _ => None,
+            },
+        )
+        .is_some_and(|(binary_root, identity)| {
+            manifest::inspect_manifest_required(
+                &manifest::artifact_manifest_path(&binary_root),
+                &identity,
+                &["llama-server"],
+            )["status"]
+                == "ready"
+        });
     let model_root = root.join("models").join(model_id.replace('/', "__"));
     let model_identity = pins::model_identity(model_id).unwrap_or(Value::Null);
-    let model_installed = manifest::prove_manifest(
+    let model_file = model_identity
+        .get("filename")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let projector_file = model_identity
+        .get("mmproj_filename")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let model_installed = manifest::inspect_manifest_required(
         &manifest::artifact_manifest_path(&model_root),
         &model_identity,
+        &[model_file, projector_file],
     )["status"]
         == "ready";
 

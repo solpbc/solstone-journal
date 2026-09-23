@@ -806,6 +806,23 @@ pub fn local_backend_choice(
     journal: &Path,
     nvidia_probe: Option<crate::NvidiaProbe>,
 ) -> crate::BackendChoice {
+    local_backend_choice_with(journal, nvidia_probe, true)
+}
+
+/// Backend candidate for read paths. The runtime binary's CUDA architectures
+/// are checked by `local_backend_choice` when execution is admitted.
+pub fn local_backend_choice_present(
+    journal: &Path,
+    nvidia_probe: Option<crate::NvidiaProbe>,
+) -> crate::BackendChoice {
+    local_backend_choice_with(journal, nvidia_probe, false)
+}
+
+fn local_backend_choice_with(
+    journal: &Path,
+    nvidia_probe: Option<crate::NvidiaProbe>,
+    inspect_cuda_binary: bool,
+) -> crate::BackendChoice {
     let probe = nvidia_probe.unwrap_or_else(|| {
         let first = crate::probe_nvidia_gpu();
         if live_nvidia_probe_is_transient_undetected(&first) {
@@ -816,25 +833,6 @@ pub fn local_backend_choice(
     });
     let key = pins::platform_key();
     let pin = pins::cuda_pin(&key);
-    let trust = pin
-        .as_ref()
-        .map(|(_, digest, _)| {
-            let artifact = pins::cache_root(journal)
-                .join("cuda")
-                .join(&key)
-                .join(digest)
-                .join("llama-server");
-            let declared = crate::CUDA_EMBEDDED_ARCH_SET
-                .iter()
-                .map(|arch| (*arch).to_owned())
-                .collect::<Vec<_>>();
-            match manifest::cuda_trust(&artifact, &declared)["trust"].as_str() {
-                Some("trusted") => crate::ArtifactTrust::Trusted,
-                Some("absent") => crate::ArtifactTrust::Absent,
-                _ => crate::ArtifactTrust::Unavailable,
-            }
-        })
-        .unwrap_or(crate::ArtifactTrust::Unavailable);
     if let Some(rejection) = crate::hardware_backend_rejection(
         &probe,
         &crate::CUDA_EMBEDDED_ARCH_SET,
@@ -848,6 +846,28 @@ pub fn local_backend_choice(
             reason: "CUDA runtime is not published for this platform".to_owned(),
         };
     }
+    let trust = if inspect_cuda_binary {
+        pin.as_ref()
+            .map(|(_, digest, _)| {
+                let artifact = pins::cache_root(journal)
+                    .join("cuda")
+                    .join(&key)
+                    .join(digest)
+                    .join("llama-server");
+                let declared = crate::CUDA_EMBEDDED_ARCH_SET
+                    .iter()
+                    .map(|arch| (*arch).to_owned())
+                    .collect::<Vec<_>>();
+                match manifest::cuda_trust(&artifact, &declared)["trust"].as_str() {
+                    Some("trusted") => crate::ArtifactTrust::Trusted,
+                    Some("absent") => crate::ArtifactTrust::Absent,
+                    _ => crate::ArtifactTrust::Unavailable,
+                }
+            })
+            .unwrap_or(crate::ArtifactTrust::Unavailable)
+    } else {
+        crate::ArtifactTrust::Unavailable
+    };
     if trust == crate::ArtifactTrust::Absent {
         let arch = probe
             .arch

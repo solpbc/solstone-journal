@@ -15,7 +15,7 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use solstone_core_local::install::{archive, manifest, pins};
+use solstone_core_local::install::{manifest, pins};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 
@@ -90,9 +90,12 @@ impl TempJournal {
         let model = cache.join("models/local__qwen3.5-4b");
         fs::create_dir_all(&runtime).expect("runtime directory");
         fs::create_dir_all(&model).expect("model directory");
-        fs::write(runtime.join("llama-server"), b"#!/bin/sh\nexit 0\n").expect("runtime");
-        archive::make_executable(&runtime.join("llama-server")).expect("executable runtime");
-        fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+        fs::copy(
+            env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
+            runtime.join("llama-server"),
+        )
+        .expect("fixture runtime");
+        fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"test-ready").expect("model");
         fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
         let runtime_manifest = manifest::build_manifest(
             "local",
@@ -189,10 +192,6 @@ fn start(journal: &TempJournal, cap_seconds: Option<u64>, extra_args: &[&str]) -
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .env("HOME", home);
-    command.env(
-        "SOLSTONE_LOCAL_BINARY",
-        env!("CARGO_BIN_EXE_solstone-core-system-test-child"),
-    );
     command.env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1");
     command.env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1");
     command.env(

@@ -7,6 +7,9 @@ mod fixture_binary;
 #[path = "local_end_to_end.rs"]
 mod local_end_to_end;
 #[cfg(unix)]
+#[path = "local_installed_fixture.rs"]
+mod local_installed_fixture;
+#[cfg(unix)]
 #[path = "local_lifecycle.rs"]
 mod local_lifecycle;
 #[cfg(unix)]

@@ -12,7 +12,7 @@ use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use solstone_core_local::install::{archive, manifest, pins};
+use solstone_core_local::install::{manifest, pins};
 
 use super::{
     speakers_analyze_stub, supervisor_guard::SupervisorGuard, temporary_root::temporary_root,
@@ -32,7 +32,7 @@ impl TempJournal {
             br#"{"setup":{"completed_at":1},"transcribe":{"backend":"parakeet-cpp","parakeet-cpp":{"device":"cpu"}}}"#,
         )
         .expect("journal config");
-        install_native_local_readiness(&root);
+        install_native_local_readiness(&root, fixture);
         let parakeet_artifact_key =
             pins::parakeet_artifact_key("linux", "x86_64").expect("fixture parakeet artifact key");
         let parakeet_paths = pins::parakeet_paths(&root, &parakeet_artifact_key);
@@ -50,7 +50,7 @@ impl TempJournal {
     }
 }
 
-fn install_native_local_readiness(root: &std::path::Path) {
+fn install_native_local_readiness(root: &std::path::Path, fixture: &str) {
     let cache = pins::cache_root(root);
     let (platform_key, release_tag, _, _, binary_name) = pins::LLAMA_SERVER_PINS
         .iter()
@@ -60,9 +60,8 @@ fn install_native_local_readiness(root: &std::path::Path) {
     let model = cache.join("models/local__qwen3.5-4b");
     fs::create_dir_all(&runtime).expect("runtime directory");
     fs::create_dir_all(&model).expect("model directory");
-    fs::write(runtime.join(binary_name), b"#!/bin/sh\nexit 0\n").expect("runtime");
-    archive::make_executable(&runtime.join(binary_name)).expect("executable runtime");
-    fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"model").expect("model");
+    fs::copy(fixture, runtime.join(binary_name)).expect("fixture runtime");
+    fs::write(model.join("Qwen3.5-4B-Q4_K_M.gguf"), b"test-ready").expect("model");
     fs::write(model.join("mmproj-F16.gguf"), b"projector").expect("projector");
     let runtime_manifest = manifest::build_manifest(
         "local",
@@ -103,7 +102,6 @@ fn start(journal: &TempJournal, fixture: &str) -> SupervisorGuard {
     command
         .args(["supervisor", "--journal"])
         .arg(&journal.0)
-        .env("SOLSTONE_LOCAL_BINARY", fixture)
         .env("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_FIXTURE", "1")
         .env("SOLSTONE_SUPERVISOR_APP_BINARY", fixture)

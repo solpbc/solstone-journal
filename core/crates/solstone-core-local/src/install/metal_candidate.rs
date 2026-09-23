@@ -20,9 +20,29 @@ pub fn inspect(object: &Map<String, Value>) -> Result<Value, DispatchError> {
     inspect_with(object, &pins::platform_key())
 }
 
+/// Read-side installation candidate; byte integrity is checked at launch.
+pub fn inspect_present(object: &Map<String, Value>) -> Result<Value, DispatchError> {
+    inspect_present_with(object, &pins::platform_key())
+}
+
 pub fn inspect_with(
     object: &Map<String, Value>,
     platform_key: &str,
+) -> Result<Value, DispatchError> {
+    inspect_with_checks(object, platform_key, true)
+}
+
+pub fn inspect_present_with(
+    object: &Map<String, Value>,
+    platform_key: &str,
+) -> Result<Value, DispatchError> {
+    inspect_with_checks(object, platform_key, false)
+}
+
+fn inspect_with_checks(
+    object: &Map<String, Value>,
+    platform_key: &str,
+    verify_bytes: bool,
 ) -> Result<Value, DispatchError> {
     require_platform(platform_key)?;
     let journal = journal(object)?;
@@ -33,17 +53,35 @@ pub fn inspect_with(
     let model_dir = root.join("models").join(MODEL_ID.replace('/', "__"));
     let runtime_identity = pins::vulkan_identity(PLATFORM_KEY).expect("Darwin runtime pin");
     let model_identity = pins::model_identity(MODEL_ID).expect("Qwen 3.5 4B model pin");
-    let runtime_proof = manifest::prove_manifest(
+    let check_manifest: fn(&Path, &Value, &[&str]) -> Value = if verify_bytes {
+        manifest::prove_manifest_required
+    } else {
+        manifest::inspect_manifest_required
+    };
+    let check_member: fn(&Path, &Value, &str) -> Value = if verify_bytes {
+        manifest::prove_manifest_member
+    } else {
+        manifest::inspect_manifest_member
+    };
+    let runtime_proof = check_manifest(
         &manifest::artifact_manifest_path(&runtime_dir),
         &runtime_identity,
+        &["llama-server"],
     );
     let model_manifest = manifest::artifact_manifest_path(&model_dir);
-    let model_proof =
-        manifest::prove_manifest_member(&model_manifest, &model_identity, MODEL_FILENAME);
-    let projector_proof =
-        manifest::prove_manifest_member(&model_manifest, &model_identity, PROJECTOR_FILENAME);
+    let model_proof = check_member(&model_manifest, &model_identity, MODEL_FILENAME);
+    let projector_proof = check_member(&model_manifest, &model_identity, PROJECTOR_FILENAME);
     let binary_path = runtime_dir.join("llama-server");
-    let probe = readiness_probe(&binary_path);
+    let all_proved = [&runtime_proof, &model_proof, &projector_proof]
+        .iter()
+        .all(|proof| proof["status"] == "ready");
+    let probe = if verify_bytes && all_proved {
+        readiness_probe(&binary_path)
+    } else if verify_bytes {
+        json!({"runnable":false,"verification":"skipped_failed_artifact_proof"})
+    } else {
+        json!({"runnable":true,"verification":"deferred_until_launch"})
+    };
     let (tier, tier_metadata) = metal_tier(unified_memory_mib(object)?);
     let (readiness, reason_code, failed_component) =
         readiness_status(&runtime_proof, &model_proof, &projector_proof, &probe);

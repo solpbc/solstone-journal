@@ -18,7 +18,7 @@ use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpo
 use solstone_core_local::install::{
     lease::is_held,
     metal_candidate,
-    readiness::{inspect_local, inspect_local_installed},
+    readiness::{inspect_local, inspect_local_installed, inspect_local_present},
     status::{is_in_flight, read_status},
 };
 use solstone_core_sense::memory::{MemoryProbe, SystemMemoryProbe};
@@ -56,7 +56,7 @@ pub fn availability(journal: &Path, model: &str) -> Value {
     ]);
     let readiness = if cfg!(target_os = "macos") {
         input.insert("backend".to_owned(), Value::String("metal".to_owned()));
-        metal_candidate::inspect(&input).unwrap_or_else(|_| {
+        metal_candidate::inspect_present(&input).unwrap_or_else(|_| {
             json!({
                 "status": "proof-unavailable",
                 "reason_code": "local_probe_failed",
@@ -65,7 +65,7 @@ pub fn availability(journal: &Path, model: &str) -> Value {
             })
         })
     } else {
-        inspect_local(input)
+        inspect_local_present(input)
     };
     availability_payload(model, readiness)
 }

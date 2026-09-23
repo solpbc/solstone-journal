@@ -21,6 +21,10 @@ fn writer_id() -> WriterId {
 }
 
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("solstone system test child");
+        return;
+    }
     #[cfg(unix)]
     {
         if let Some(journal) = std::env::var_os("SOLSTONE_JOURNAL")

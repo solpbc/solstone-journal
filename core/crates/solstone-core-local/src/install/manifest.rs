@@ -124,16 +124,43 @@ pub fn write_manifest(path: &Path, manifest: &Value) -> Result<Value, String> {
 }
 
 pub fn prove_manifest(path: &Path, pin_identity: &Value) -> Value {
-    prove_manifest_inner(path, pin_identity, None)
+    prove_manifest_required(path, pin_identity, &[])
+}
+
+/// Hash the inventory once and require the named launch artifacts within it.
+pub fn prove_manifest_required(path: &Path, pin_identity: &Value, required: &[&str]) -> Value {
+    check_manifest(path, pin_identity, None, required, true)
 }
 
 /// Prove one named inventory member while preserving the manifest proof's
 /// status and reason-code vocabulary.
 pub fn prove_manifest_member(path: &Path, pin_identity: &Value, member: &str) -> Value {
-    prove_manifest_inner(path, pin_identity, Some(member))
+    check_manifest(path, pin_identity, Some(member), &[], true)
 }
 
-fn prove_manifest_inner(path: &Path, pin_identity: &Value, wanted_member: Option<&str>) -> Value {
+/// Check the pinned inventory and member sizes without reading artifact bytes.
+/// This is an installation-presence check, not an integrity proof.
+pub fn inspect_manifest(path: &Path, pin_identity: &Value) -> Value {
+    inspect_manifest_required(path, pin_identity, &[])
+}
+
+/// Presence check that also requires the named launch artifacts in inventory.
+pub fn inspect_manifest_required(path: &Path, pin_identity: &Value, required: &[&str]) -> Value {
+    check_manifest(path, pin_identity, None, required, false)
+}
+
+/// Presence check for one named member of a pinned manifest.
+pub fn inspect_manifest_member(path: &Path, pin_identity: &Value, member: &str) -> Value {
+    check_manifest(path, pin_identity, Some(member), &[], false)
+}
+
+fn check_manifest(
+    path: &Path,
+    pin_identity: &Value,
+    wanted_member: Option<&str>,
+    required: &[&str],
+    verify_bytes: bool,
+) -> Value {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -158,15 +185,16 @@ fn prove_manifest_inner(path: &Path, pin_identity: &Value, wanted_member: Option
         return proof("missing-or-mismatched", "manifest_malformed");
     };
     let mut found_member = wanted_member.is_none();
+    let mut missing_required = required.to_vec();
     for entry in inventory {
-        let Some(relative) = entry.get("relative_path").and_then(Value::as_str) else {
+        let Some(relative_path) = entry.get("relative_path").and_then(Value::as_str) else {
             return proof("missing-or-mismatched", "inventory_malformed");
         };
-        if wanted_member.is_some_and(|member| member != relative) {
+        if wanted_member.is_some_and(|member| member != relative_path) {
             continue;
         }
         found_member = true;
-        let relative = Path::new(relative);
+        let relative = Path::new(relative_path);
         if relative.is_absolute()
             || relative.components().any(|component| {
                 matches!(
@@ -187,11 +215,21 @@ fn prove_manifest_inner(path: &Path, pin_identity: &Value, wanted_member: Option
         if expected_hash.is_empty() {
             return proof("missing-or-mismatched", "expected_hash_unavailable");
         }
-        if sha256_file(&member).ok().as_deref() != Some(expected_hash) {
-            return proof("missing-or-mismatched", "sha256_mismatch");
+        if verify_bytes {
+            if sha256_file(&member).ok().as_deref() != Some(expected_hash) {
+                return proof("missing-or-mismatched", "sha256_mismatch");
+            }
+        } else {
+            let Some(expected_size) = entry.get("size").and_then(Value::as_u64) else {
+                return proof("missing-or-mismatched", "inventory_malformed");
+            };
+            if fs::metadata(&member).map_or(true, |metadata| metadata.len() != expected_size) {
+                return proof("missing-or-mismatched", "inventory_size_mismatch");
+            }
         }
+        missing_required.retain(|required| *required != relative_path);
     }
-    if !found_member {
+    if !found_member || !missing_required.is_empty() {
         return proof("missing-or-mismatched", "inventory_member_missing");
     }
     proof("ready", "ready")
