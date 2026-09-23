@@ -121,7 +121,10 @@ pub(crate) fn installed_task_request(
             journal: PathBuf::from(action.journal),
             guard: action.guard,
             arguments,
-            acknowledgement_timeout: std::time::Duration::from_secs(3),
+            // The deadline starts before the forwarder prepares and creates its
+            // child. A cold first logon after boot measured 57 s to child
+            // creation; 3 s could never cover it. The protocol allows 60 s.
+            acknowledgement_timeout: std::time::Duration::from_secs(30),
         },
     ))
 }

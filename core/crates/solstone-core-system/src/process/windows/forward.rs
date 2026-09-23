@@ -326,24 +326,56 @@ pub fn forward_windows_installed_task(
         .iter()
         .map(OsString::from)
         .collect::<Vec<_>>();
+    run_with_restarts(
+        || {
+            let mut environment = BTreeMap::new();
+            let control = LaunchControl::prepare_installed(request, &mut environment)?;
+            let started = Instant::now();
+            let code = forward(program, &arguments, None, Some(control), environment)?;
+            Ok((code, started.elapsed()))
+        },
+        session_end::requested,
+        std::thread::sleep,
+    )
+}
+
+/// The installed task's restart policy, apart from the process work so it can be
+/// tested: a clean exit or a session end returns; anything else is retried up to
+/// [`INSTALLED_TASK_RESTART_LIMIT`] times, [`INSTALLED_TASK_RESTART_DELAY`] apart,
+/// with a long-lived run resetting the count.
+///
+/// 🔴 A failed launch is an attempt too, not a terminal error. On the first logon
+/// after a boot the forwarder took 57 s to create its child (cold image, scanner
+/// still warming), the launch deadline had passed before the child existed, and
+/// the error left this loop at once: the task ended 70 and the owner had no
+/// journal until they started it by hand. Measured on the Windows checkpoint guest
+/// 2026-09-23 with process-creation auditing; the same task started cleanly on
+/// demand seconds later.
+fn run_with_restarts(
+    mut attempt: impl FnMut() -> io::Result<(i32, Duration)>,
+    session_ending: impl Fn() -> bool,
+    sleep: impl Fn(Duration),
+) -> io::Result<i32> {
     let mut attempts = 0;
     loop {
-        let mut environment = BTreeMap::new();
-        let control = LaunchControl::prepare_installed(request, &mut environment)?;
-        let started = Instant::now();
-        let code = forward(program, &arguments, None, Some(control), environment)?;
-        if started.elapsed() >= RESTART_CREDIT_UPTIME {
+        let outcome = attempt();
+        if let Ok((_, uptime)) = &outcome
+            && *uptime >= RESTART_CREDIT_UPTIME
+        {
             attempts = 0;
         }
         // A clean exit is the resident being asked to stop, and a session end
         // is the OS taking the whole tree; neither is a crash to recover from.
-        if code == 0 || session_end::requested() || attempts >= INSTALLED_TASK_RESTART_LIMIT {
-            return Ok(code);
+        let finished = matches!(outcome, Ok((0, _)))
+            || session_ending()
+            || attempts >= INSTALLED_TASK_RESTART_LIMIT;
+        if finished {
+            return outcome.map(|(code, _)| code);
         }
         attempts += 1;
-        std::thread::sleep(INSTALLED_TASK_RESTART_DELAY);
-        if session_end::requested() {
-            return Ok(code);
+        sleep(INSTALLED_TASK_RESTART_DELAY);
+        if session_ending() {
+            return outcome.map(|(code, _)| code);
         }
     }
 }
@@ -432,5 +464,82 @@ fn forward(
             error.to_string(),
             resources,
         ))),
+    }
+}
+
+#[cfg(test)]
+mod restart_policy_tests {
+    use super::*;
+    use std::cell::{Cell, RefCell};
+
+    fn run(
+        results: Vec<io::Result<(i32, Duration)>>,
+        ending: bool,
+    ) -> (io::Result<i32>, usize, usize) {
+        let results = RefCell::new(results.into_iter());
+        let calls = Cell::new(0);
+        let sleeps = Cell::new(0);
+        let outcome = run_with_restarts(
+            || {
+                calls.set(calls.get() + 1);
+                results
+                    .borrow_mut()
+                    .next()
+                    .expect("policy asked for one attempt too many")
+            },
+            || ending,
+            |_| sleeps.set(sleeps.get() + 1),
+        );
+        (outcome, calls.get(), sleeps.get())
+    }
+
+    fn failed() -> io::Result<(i32, Duration)> {
+        Err(io::Error::other(
+            "launch deadline expired before the child existed",
+        ))
+    }
+
+    #[test]
+    fn a_failed_launch_is_retried_until_one_succeeds() {
+        let (outcome, calls, sleeps) = run(
+            vec![failed(), failed(), Ok((0, Duration::from_secs(1)))],
+            false,
+        );
+        assert_eq!(outcome.unwrap(), 0);
+        assert_eq!((calls, sleeps), (3, 2));
+    }
+
+    #[test]
+    fn a_launch_that_keeps_failing_stops_at_the_limit_with_its_error() {
+        let limit = INSTALLED_TASK_RESTART_LIMIT as usize;
+        let (outcome, calls, sleeps) = run((0..=limit).map(|_| failed()).collect(), false);
+        assert!(outcome.is_err());
+        assert_eq!((calls, sleeps), (limit + 1, limit));
+    }
+
+    #[test]
+    fn a_clean_exit_is_not_restarted() {
+        let (outcome, calls, sleeps) = run(vec![Ok((0, Duration::from_secs(1)))], false);
+        assert_eq!(outcome.unwrap(), 0);
+        assert_eq!((calls, sleeps), (1, 0));
+    }
+
+    #[test]
+    fn a_session_end_stops_retrying_a_failed_launch() {
+        let (outcome, calls, sleeps) = run(vec![failed()], true);
+        assert!(outcome.is_err());
+        assert_eq!((calls, sleeps), (1, 0));
+    }
+
+    #[test]
+    fn a_long_run_earns_back_the_restart_budget() {
+        let limit = INSTALLED_TASK_RESTART_LIMIT as usize;
+        let mut results: Vec<_> = (0..limit * 2)
+            .map(|_| Ok((1, RESTART_CREDIT_UPTIME)))
+            .collect();
+        results.push(Ok((0, Duration::from_secs(1))));
+        let (outcome, calls, _) = run(results, false);
+        assert_eq!(outcome.unwrap(), 0);
+        assert_eq!(calls, limit * 2 + 1);
     }
 }
