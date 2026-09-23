@@ -105,11 +105,12 @@ pub fn discover_segment_talent_markdown_files(
             if !path.is_file() {
                 continue;
             }
+            let segment_root = glob_root_path(&segment_dir);
             let suffix =
-                path.strip_prefix(&segment_dir)
+                path.strip_prefix(&segment_root)
                     .map_err(|_error| DiscoveryError::StripPrefix {
                         path: path.clone(),
-                        root: segment_dir.clone(),
+                        root: segment_root.clone(),
                     })?;
             let suffix = path_to_posix(suffix)
                 .ok_or_else(|| DiscoveryError::NonUtf8Relative(path.clone()))?;
@@ -133,11 +134,12 @@ pub(crate) fn discover_from_root(
         if !path.is_file() {
             continue;
         }
+        let rel_root = glob_root_path(rel_root);
         let rel_path =
-            path.strip_prefix(rel_root)
+            path.strip_prefix(&rel_root)
                 .map_err(|_error| DiscoveryError::StripPrefix {
                     path: path.clone(),
-                    root: rel_root.to_path_buf(),
+                    root: rel_root.clone(),
                 })?;
         let rel =
             path_to_posix(rel_path).ok_or_else(|| DiscoveryError::NonUtf8Relative(path.clone()))?;
@@ -146,11 +148,41 @@ pub(crate) fn discover_from_root(
     Ok(())
 }
 
+/// The spelling of a journal root that `glob` can match through.
+///
+/// 🔴 On Windows the journal root arrives canonicalized in the verbatim form
+/// `\\?\C:\...`. `Pattern::escape` spells that prefix `\\[?]\`, which matches
+/// nothing on disk (measured on the Windows builder 2026-09-23), so discovery
+/// found no files at all and a full rescan emptied the index ("Indexed 0 file(s),
+/// removed 4", measured on the Windows checkpoint guest 2026-09-23). A verbatim
+/// LOCAL DRIVE path is the same path without the prefix; `\\?\UNC\` and every
+/// other form are left alone.
+pub(crate) fn glob_root(root: &str) -> &str {
+    match root.strip_prefix(r"\\?\") {
+        Some(rest)
+            if rest.len() >= 3
+                && rest.as_bytes()[0].is_ascii_alphabetic()
+                && rest.as_bytes()[1] == b':'
+                && rest.as_bytes()[2] == b'\\' =>
+        {
+            rest
+        }
+        _ => root,
+    }
+}
+
+fn glob_root_path(root: &Path) -> PathBuf {
+    match root.to_str() {
+        Some(text) => PathBuf::from(glob_root(text)),
+        None => root.to_path_buf(),
+    }
+}
+
 pub(crate) fn rooted_pattern(root: &Path, pattern: &str) -> Result<String, DiscoveryError> {
     let root = root
         .to_str()
         .ok_or_else(|| DiscoveryError::NonUtf8Root(root.to_path_buf()))?;
-    let escaped = Pattern::escape(root);
+    let escaped = Pattern::escape(glob_root(root));
     let separator = if escaped.ends_with('/') { "" } else { "/" };
     Ok(format!("{escaped}{separator}{pattern}"))
 }
@@ -178,6 +210,43 @@ mod tests {
         fs::create_dir_all(path.parent().expect("test path should have parent"))
             .expect("create parent");
         fs::write(path, "# Title\n\nbody\n").expect("write test file");
+    }
+
+    #[test]
+    fn a_verbatim_local_drive_root_is_globbed_without_its_prefix() {
+        assert_eq!(
+            glob_root(r"\\?\C:\Users\Owner\journal-Zoë-日誌"),
+            r"C:\Users\Owner\journal-Zoë-日誌"
+        );
+        assert_eq!(glob_root(r"\\?\d:\j"), r"d:\j");
+        assert_eq!(
+            glob_root(r"C:\Users\Owner\journal"),
+            r"C:\Users\Owner\journal"
+        );
+        assert_eq!(glob_root("/home/owner/journal"), "/home/owner/journal");
+        assert_eq!(
+            glob_root(r"\\?\UNC\server\share\journal"),
+            r"\\?\UNC\server\share\journal"
+        );
+        assert_eq!(
+            glob_root(r"\\?\Volume{0}\journal"),
+            r"\\?\Volume{0}\journal"
+        );
+        assert_eq!(glob_root(r"\\?\C:"), r"\\?\C:");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_canonicalized_windows_journal_root_still_discovers_its_files() {
+        let root = temp_root("verbatim-root");
+        write(&root, "chronicle/20260101/import.ics/imported.jsonl");
+        let canonical = root.canonicalize().expect("canonical root");
+        assert!(canonical.to_str().unwrap().starts_with(r"\\?\"));
+        let found = discover_indexable_files(&canonical).expect("discovery");
+        assert!(
+            found.contains_key("20260101/import.ics/imported.jsonl"),
+            "a verbatim root discovered {found:?}"
+        );
     }
 
     #[test]
