@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsStr;
-use std::fs;
+use std::fs::{self, File, OpenOptions, TryLockError};
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -95,6 +95,48 @@ pub struct ProduceReport {
     pub onnx_source: String,
     pub onnx_wheel_sha256: String,
     pub artifacts: Vec<PathBuf>,
+}
+
+/// Keep the release cache across runs, but place it on the output filesystem.
+/// The usual /var/tmp output retains its existing warm cache path.
+fn default_work_dir(dest: &Path, target_id: &str) -> Result<PathBuf, ProduceError> {
+    let parent = dest
+        .parent()
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if fs::metadata(parent)?.dev() == fs::metadata("/var/tmp")?.dev() {
+            return Ok(PathBuf::from("/var/tmp/solstone-distribution-work").join(target_id));
+        }
+    }
+    Ok(parent.join("solstone-distribution-work").join(target_id))
+}
+
+/// The lock file is deliberately never removed: unlinking a held lock lets a
+/// third producer lock a new inode while the first producer still owns the old.
+fn lock_work_dir(work: &Path) -> Result<File, ProduceError> {
+    fs::create_dir_all(work)?;
+    let path = work.join("produce.lock");
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&path)?;
+    match file.try_lock() {
+        Ok(()) => Ok(file),
+        Err(TryLockError::WouldBlock) => Err(ProduceError::new(format!(
+            "distribution work directory is in use by another producer: {}. Wait for it to finish or set SOLSTONE_DISTRIBUTION_WORK to a separate directory on the output filesystem.",
+            work.display()
+        ))),
+        Err(TryLockError::Error(error)) => Err(ProduceError::new(format!(
+            "could not lock distribution work directory {}: {error}",
+            work.display()
+        ))),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -391,12 +433,28 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
         Some((zig_lib, zig_dir))
     };
 
-    let work = env::var_os("SOLSTONE_DISTRIBUTION_WORK")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            PathBuf::from("/var/tmp/solstone-distribution-work").join(&args.target_id)
-        });
-    fs::create_dir_all(&work)?;
+    let work = match env::var_os("SOLSTONE_DISTRIBUTION_WORK") {
+        Some(path) => PathBuf::from(path),
+        None => default_work_dir(&args.dest, &args.target_id)?,
+    };
+    let _work_lock = lock_work_dir(&work)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let output_parent = args
+            .dest
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        fs::create_dir_all(output_parent)?;
+        if fs::metadata(&work)?.dev() != fs::metadata(output_parent)?.dev() {
+            return Err(ProduceError::new(format!(
+                "distribution work directory {} must be on the same filesystem as output {}",
+                work.display(),
+                args.dest.display()
+            )));
+        }
+    }
     let checkout = work.join("checkout");
     let wrappers = work.join("wrappers");
     let onnx_dir = work.join("onnx");
@@ -1627,6 +1685,33 @@ mod tests {
 
     use crate::archive_taxonomy::ContainerKind;
     use crate::inventory::{ArchiveExecutable, ArchiveSlot};
+
+    #[test]
+    fn work_lock_refuses_a_second_producer_without_erasing_the_warm_cache() {
+        let root = tempfile::tempdir().unwrap();
+        let work = root.path().join("linux-x86_64");
+        let first = lock_work_dir(&work).unwrap();
+        let cache = work.join("distribution-target");
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(cache.join("warm-marker"), b"warm").unwrap();
+
+        let refused = lock_work_dir(&work).err().unwrap().to_string();
+        assert!(refused.contains("in use by another producer"));
+        assert_eq!(fs::read(cache.join("warm-marker")).unwrap(), b"warm");
+
+        drop(first);
+        let _next = lock_work_dir(&work).unwrap();
+        assert_eq!(fs::read(cache.join("warm-marker")).unwrap(), b"warm");
+    }
+
+    #[test]
+    fn default_var_tmp_output_reuses_the_existing_target_cache() {
+        let work = default_work_dir(Path::new("/var/tmp/release-output"), "linux-x86_64").unwrap();
+        assert_eq!(
+            work,
+            Path::new("/var/tmp/solstone-distribution-work/linux-x86_64")
+        );
+    }
 
     fn write_ffmpeg_pin(repo: &Path, sha256: &str) {
         let inputs = repo.join("core/distribution/builder-inputs.toml");
