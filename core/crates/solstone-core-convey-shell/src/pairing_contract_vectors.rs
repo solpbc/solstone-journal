@@ -39,7 +39,7 @@ const WIRE_BEHAVIOR_JSON: &str = include_str!(concat!(
     "/../../../docs/openapi/pairing-contract/fixtures/wire-behavior.json"
 ));
 
-const REQUIRED_VECTOR_IDS: [&str; 16] = [
+const REQUIRED_VECTOR_IDS: [&str; 15] = [
     "pairing.identity.omission",
     "pairing.identity.presence.label_only",
     "pairing.identity.presence.platform_only",
@@ -55,7 +55,6 @@ const REQUIRED_VECTOR_IDS: [&str; 16] = [
     "pairing.identity.role.empty",
     "pairing.identity.role.phone",
     "pairing.identity.role.observer",
-    "pairing.identity.role.peer",
 ];
 
 struct TempDir(tempfile::TempDir);

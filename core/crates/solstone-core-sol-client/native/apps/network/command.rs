@@ -11,9 +11,8 @@ use crate::decode::decode_response;
 use crate::error::{ClientError, SERVICE_DOWN_MESSAGE};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
-const VALID_ROLES: &[&str] = &["", "phone", "observer", "peer"];
+const VALID_ROLES: &[&str] = &["", "phone", "observer"];
 const LINKED_SYSTEMS_HEADING: &str = "Linked systems:";
-const PEERS_HEADING: &str = "Peers:";
 const PRIVATE_LINK_TERMINAL_PHASES: &[&str] =
     &["enabled", "revoked", "error", "needs_subscription"];
 const PRIVATE_LINK_SETTING_UP: &str = "setting up your private network...";
@@ -68,18 +67,8 @@ pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
     if devices.is_empty() {
         return stdout_line("No devices linked yet.");
     }
-    let mut linked = Vec::new();
-    let mut peers = Vec::new();
-    for device in devices {
-        if string_field(&device, "role") == "peer" {
-            peers.push(device);
-        } else {
-            linked.push(device);
-        }
-    }
     let mut lines = Vec::new();
-    append_device_section(ctx, &mut lines, LINKED_SYSTEMS_HEADING, &linked);
-    append_device_section(ctx, &mut lines, PEERS_HEADING, &peers);
+    append_device_section(ctx, &mut lines, LINKED_SYSTEMS_HEADING, &devices);
     stdout(lines)
 }
 
@@ -103,7 +92,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
     if let Some(role) = role
         && !VALID_ROLES.contains(&role)
     {
-        return stderr("invalid role; expected one of: phone, observer, peer", 2);
+        return stderr("invalid role; expected one of: phone, observer", 2);
     }
     let timeout_seconds = match parsed.value("--timeout") {
         Some(value) => match value.parse::<i64>() {
@@ -158,8 +147,7 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
         format!("{CLI_PAIR_CA_FINGERPRINT_LABEL}: sha256:{ca_fp}"),
     );
     if !device_label.is_empty() {
-        let suffix = if role == Some("peer") { " (peer)" } else { "" };
-        push_line(&mut out, format!("Device: {device_label}{suffix}"));
+        push_line(&mut out, format!("Device: {device_label}"));
     }
     if parsed.has_flag("--no-wait") {
         return CommandOutput::success(out);
@@ -200,13 +188,8 @@ pub fn pair(ctx: CommandContext<'_>) -> CommandOutput {
             .filter(|device| !before.contains(&string_field(device, "fingerprint")))
             .collect::<Vec<_>>();
         if let Some(entry) = new_entries.last() {
-            let suffix = if string_field(entry, "role") == "peer" {
-                " (peer)"
-            } else {
-                ""
-            };
             let label = display_label(entry);
-            push_line(&mut out, format!("Paired: {label}{suffix}"));
+            push_line(&mut out, format!("Paired: {label}"));
             push_line(
                 &mut out,
                 format!("  fingerprint: {}", string_field(entry, "fingerprint")),

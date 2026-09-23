@@ -105,7 +105,7 @@ async fn devices_emit_exactly_the_protocol_fields_and_role() {
             "phone",
             "2026-08-04T00:00:00Z",
             "journal-id",
-            ClientRole::Peer,
+            ClientRole::from_wire(Some("observer")),
         ))
         .unwrap();
 
@@ -125,7 +125,7 @@ async fn devices_emit_exactly_the_protocol_fields_and_role() {
             "device_label":"phone",
             "paired_at":"2026-08-04T00:00:00Z",
             "instance_id":"journal-id",
-            "role":"peer"
+            "role":"observer"
         }]})
     );
 }

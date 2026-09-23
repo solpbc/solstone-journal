@@ -674,7 +674,6 @@ impl std::fmt::Debug for RelayAccessSnapshot {
 pub struct CeremonyRequest<'a> {
     pub request: &'a spl_core::PairRequest,
     pub nonce: &'a str,
-    pub sender_instance_id: Option<&'a str>,
     pub local_endpoints: Option<Value>,
     pub relay_access: Option<RelayAccessSnapshot>,
 }
@@ -685,14 +684,6 @@ pub fn complete_pairing(
     ceremony: CeremonyRequest<'_>,
     now: i64,
 ) -> Result<spl_core::PairResponse, PairingError> {
-    if ceremony
-        .sender_instance_id
-        .is_some_and(|value| !valid_sender_instance_id(value))
-    {
-        return Err(PairingError::PairingRequestInvalid(
-            "sender_instance_id is invalid",
-        ));
-    }
     let pairing_identity = validate_ceremony_pairing_identity(&ceremony.request.additional_fields);
     // Read only, and deliberately before consume: unavailable identity cannot burn a nonce.
     let identity = load_committed_identity(journal_root)
@@ -701,11 +692,10 @@ pub fn complete_pairing(
         .consume(ceremony.nonce, now)
         .map_err(PairingError::NonceStore)?
         .ok_or(PairingError::OperationNoLongerAvailable)?;
-    if entry.role == "peer" {
-        // Deliberate divergence from the Python peer branch: native direct peer pairing is unsupported.
-        return Err(PairingError::PairingRequestInvalid(
-            "peer pairing is not available on this build",
-        ));
+    // A nonce minted by an earlier build can carry a role this build no longer
+    // pairs. The nonce is spent; no certificate or ledger entry is issued.
+    if !is_pairing_role(&entry.role) {
+        return Err(PairingError::PairingRequestInvalid("role is invalid"));
     }
     let issued = sign_csr(
         identity.ca(),
@@ -776,7 +766,7 @@ pub fn pair_response_json(
 }
 
 fn validate_mint_request(request: &MintRequest) -> Result<(), PairingError> {
-    if !matches!(request.role.as_str(), "" | "phone" | "observer" | "peer") {
+    if !is_pairing_role(&request.role) {
         return Err(PairingError::PairingRequestInvalid("role is invalid"));
     }
     if request.same_machine.is_none() {
@@ -785,6 +775,10 @@ fn validate_mint_request(request: &MintRequest) -> Result<(), PairingError> {
         ));
     }
     Ok(())
+}
+
+fn is_pairing_role(role: &str) -> bool {
+    matches!(role, "" | "phone" | "observer")
 }
 
 fn random_nonce() -> Result<String, PairingError> {
@@ -831,14 +825,6 @@ fn nonce_bytes(nonce: &str) -> Result<[u8; 16], PairingError> {
 fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
     use sha2::Digest as _;
     sha2::Sha256::digest(bytes).into()
-}
-
-fn valid_sender_instance_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 #[cfg(all(test, feature = "full-tests"))]
@@ -1470,56 +1456,20 @@ mod tests {
     }
 
     #[test]
-    fn ceremony_sender_instance_id_is_optional_and_malformed_sender_preserves_nonce() {
+    fn ceremony_consumes_once_and_refuses_a_role_it_no_longer_pairs() {
         let temporary = TempDir::new();
         identity(temporary.path());
         let store = NonceStore::new(temporary.path());
         store
-            .add("absent".into(), "phone".into(), "phone".into(), false, 1)
-            .expect("absent nonce");
-        store
             .add("valid".into(), "phone".into(), "phone".into(), false, 1)
             .expect("valid nonce");
         let request = pair_request();
-        assert!(
-            complete_pairing(
-                temporary.path(),
-                CeremonyRequest {
-                    request: &request,
-                    nonce: "absent",
-                    sender_instance_id: None,
-                    local_endpoints: None,
-                    relay_access: None,
-                },
-                2,
-            )
-            .is_ok()
-        );
-        let invalid = complete_pairing(
-            temporary.path(),
-            CeremonyRequest {
-                request: &request,
-                nonce: "valid",
-                sender_instance_id: Some("!bad"),
-                local_endpoints: None,
-                relay_access: None,
-            },
-            2,
-        );
-        let malformed_detail = invalid
-            .expect_err("malformed sender refuses")
-            .detail()
-            .expect("malformed sender detail")
-            .to_owned();
-        assert_eq!(malformed_detail, "sender_instance_id is invalid");
-        assert!(!store.peek("valid").expect("preserved nonce").used);
         let ca_bytes = fs::read(temporary.path().join("link/ca/cert.pem")).expect("CA bytes");
         let response = complete_pairing(
             temporary.path(),
             CeremonyRequest {
                 request: &request,
                 nonce: "valid",
-                sender_instance_id: Some("sender-1"),
                 local_endpoints: None,
                 relay_access: None,
             },
@@ -1538,7 +1488,6 @@ mod tests {
                 CeremonyRequest {
                     request: &request,
                     nonce: "valid",
-                    sender_instance_id: Some("sender-1"),
                     local_endpoints: None,
                     relay_access: None,
                 },
@@ -1548,31 +1497,40 @@ mod tests {
             .status(),
             410
         );
-        store
-            .add("peer".into(), "phone".into(), "peer".into(), false, 1)
-            .expect("peer nonce");
-        let peer = complete_pairing(
-            temporary.path(),
-            CeremonyRequest {
-                request: &request,
-                nonce: "peer",
-                sender_instance_id: Some("sender-2"),
-                local_endpoints: None,
-                relay_access: None,
-            },
-            2,
-        );
-        let peer_detail = peer
-            .expect_err("peer refuses")
-            .detail()
-            .expect("peer detail")
-            .to_owned();
-        assert_ne!(peer_detail, malformed_detail);
-        assert!(store.peek("peer").expect("burned peer nonce").used);
+
+        // A nonce minted before the peer role was retired may still be live.
+        for relay in [false, true] {
+            let nonce = if relay {
+                "retired-relay"
+            } else {
+                "retired-direct"
+            };
+            mint_nonce(&store, nonce, "peer", relay);
+            let before = AuthorizationLedger::new(temporary.path()).snapshot().len();
+            let error = complete_pairing(
+                temporary.path(),
+                CeremonyRequest {
+                    request: &request,
+                    nonce,
+                    local_endpoints: None,
+                    relay_access: None,
+                },
+                2,
+            )
+            .expect_err("retired role refuses");
+            assert_eq!(error.status(), 400, "{nonce}");
+            assert_eq!(error.detail(), Some("role is invalid"), "{nonce}");
+            assert!(store.peek(nonce).expect("nonce").used, "{nonce}");
+            assert_eq!(
+                AuthorizationLedger::new(temporary.path()).snapshot().len(),
+                before,
+                "{nonce} wrote a ledger entry"
+            );
+        }
     }
 
     #[test]
-    fn ceremony_ledger_entry_uses_the_home_instance_not_sender_instance_id() {
+    fn ceremony_ledger_entry_uses_the_home_instance() {
         let temporary = TempDir::new();
         let expected_instance_id = identity(temporary.path());
         let store = NonceStore::new(temporary.path());
@@ -1585,7 +1543,6 @@ mod tests {
             CeremonyRequest {
                 request: &request,
                 nonce: "ledger",
-                sender_instance_id: Some("a-different-valid-sender"),
                 local_endpoints: None,
                 relay_access: None,
             },
@@ -1596,7 +1553,6 @@ mod tests {
             .get(&response.fingerprint)
             .expect("ledger entry");
         assert_eq!(entry.instance_id, expected_instance_id);
-        assert_ne!(entry.instance_id, "a-different-valid-sender");
     }
 
     fn pair_request_with(fields: serde_json::Map<String, Value>) -> spl_core::PairRequest {
@@ -1621,7 +1577,7 @@ mod tests {
     fn ceremony_pairing_identity_presence_is_accepted_for_every_role_and_carrier() {
         use crate::pairing_identity::Platform;
 
-        let roles = ["", "phone", "observer", "peer"];
+        let roles = ["", "phone", "observer"];
         let presence = [
             ("neither", json!({}), "", None),
             (
@@ -1657,22 +1613,11 @@ mod tests {
                         CeremonyRequest {
                             request: &request,
                             nonce: &nonce,
-                            sender_instance_id: None,
                             local_endpoints: None,
                             relay_access: None,
                         },
                         2,
                     );
-                    if role == "peer" {
-                        let error = result.expect_err("peer refuses after consume");
-                        assert_eq!(error.status(), 400);
-                        assert_eq!(
-                            error.detail(),
-                            Some("peer pairing is not available on this build")
-                        );
-                        assert!(store.peek(&nonce).expect("nonce").used);
-                        continue;
-                    }
                     let response = result.expect("ceremony succeeds");
                     assert!(store.peek(&nonce).expect("nonce").used);
                     let entry = AuthorizationLedger::new(temporary.path())
@@ -1713,7 +1658,6 @@ mod tests {
                         CeremonyRequest {
                             request: &request,
                             nonce: &nonce,
-                            sender_instance_id: None,
                             local_endpoints: None,
                             relay_access: None,
                         },
@@ -1740,7 +1684,6 @@ mod tests {
             CeremonyRequest {
                 request: &accepted_request,
                 nonce: "len-253",
-                sender_instance_id: None,
                 local_endpoints: None,
                 relay_access: None,
             },
@@ -1785,7 +1728,6 @@ mod tests {
             CeremonyRequest {
                 request: &request,
                 nonce: "write-fail",
-                sender_instance_id: None,
                 local_endpoints: None,
                 relay_access: None,
             },
@@ -1834,7 +1776,6 @@ mod tests {
             CeremonyRequest {
                 request,
                 nonce,
-                sender_instance_id: None,
                 local_endpoints: None,
                 relay_access: None,
             },

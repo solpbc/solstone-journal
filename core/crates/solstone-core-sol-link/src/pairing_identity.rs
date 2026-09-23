@@ -23,9 +23,9 @@
 //!   nonce-matches-carrier check; it does not change ledger identity.
 //! - `solstone-core-sol-link::pairing::complete_pairing` — carrier-blind
 //!   ceremony. Applies validated identity onto `ClientEntry` (`client_label`
-//!   only when `Some`; `platform` as `Option`). Peer role is refused after
-//!   consume with `peer pairing is not available on this build` and never
-//!   writes a row.
+//!   only when `Some`; `platform` as `Option`). A nonce whose role is not
+//!   `""`, `phone` or `observer` is refused after consume with
+//!   `role is invalid` and never writes a row.
 //! - Client joiners (`pairing_entry::{direct,relay}`, native `solstone link`)
 //!   — send `PairRequest.additional_fields` as supplied. The shipped joiner
 //!   currently sends an empty map; they are not owner-side writers.
@@ -74,8 +74,7 @@
 //! `validate_ceremony_pairing_identity` on `additional_fields`:
 //! absent → accept (`None`); valid `client_label` 1..=253 bytes → accept;
 //! valid `platform` vocab → accept; empty / wrong-type / oversize /
-//! unknown-vocab → refuse, nonce preserved. Runs for every nonce role,
-//! including peer.
+//! unknown-vocab → refuse, nonce preserved. Runs for every nonce role.
 
 use serde_json::{Map, Value};
 

@@ -101,7 +101,7 @@
   "info": {
     "description": "Generated from pairing_contract_authority.json. Covers only the pairing ceremony POST. Pairer-supplied identity fields are non-attestation and non-authorization.",
     "title": "Linked-device pairing identity contract",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "x-disclaimer": "pairer-supplied / non-attestation / non-authorization",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
@@ -164,15 +164,14 @@
     "nonce_roles": [
       "",
       "phone",
-      "observer",
-      "peer"
+      "observer"
     ],
     "platform_read_back": [
       "absent",
       "valid",
       "malformed"
     ],
-    "validation": "before nonce consume, every role including peer"
+    "validation": "before nonce consume, every role"
   },
   "x-vocabularies": {
     "PairRequest.platform": {

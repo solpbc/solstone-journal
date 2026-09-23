@@ -3,7 +3,7 @@
   "info": {
     "title": "Linked-device pairing identity contract",
     "version": "1.0.0",
-    "description": "Pairer-supplied pairing identity on the ceremony POST. client_label and platform are pairer-supplied, non-attestation, and non-authorization: they do not grant device-door access. A certificate is authorized only by a unique fingerprint in link/authorized_clients.json. Direct and relay carriers are equivalent for these fields. Validation runs for every nonce role, including peer, before nonce consumption.",
+    "description": "Pairer-supplied pairing identity on the ceremony POST. client_label and platform are pairer-supplied, non-attestation, and non-authorization: they do not grant device-door access. A certificate is authorized only by a unique fingerprint in link/authorized_clients.json. Direct and relay carriers are equivalent for these fields. Validation runs for every nonce role before nonce consumption.",
     "x-disclaimer": "pairer-supplied / non-attestation / non-authorization"
   },
   "paths": {
@@ -108,8 +108,8 @@
   "x-pairing-identity": {
     "disclaimer": "pairer-supplied / non-attestation / non-authorization",
     "carrier_equivalence": "direct == relay",
-    "nonce_roles": ["", "phone", "observer", "peer"],
-    "validation": "before nonce consume, every role including peer",
+    "nonce_roles": ["", "phone", "observer"],
+    "validation": "before nonce consume, every role",
     "client_label_read_back": ["absent", "present-empty", "valid", "present-but-unprojectable", "malformed"],
     "platform_read_back": ["absent", "valid", "malformed"],
     "combined": "either field malformed => Unavailable, no companion fallback"

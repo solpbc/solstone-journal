@@ -556,10 +556,6 @@ pub(crate) async fn pair(
             StatusCode::FORBIDDEN,
         );
     }
-    let sender_instance_id = request
-        .additional_fields
-        .get("sender_instance_id")
-        .map(|value| value.as_str().unwrap_or_default());
     let Some(nonce) = query.token.as_deref().or_else(|| {
         request
             .additional_fields
@@ -644,7 +640,6 @@ pub(crate) async fn pair(
                             CeremonyRequest {
                                 request: &request,
                                 nonce,
-                                sender_instance_id,
                                 relay_access: Some(relay_entry.snapshot.clone()),
                                 local_endpoints: response_local_endpoints(&snapshot, direct_port),
                             },
@@ -678,7 +673,6 @@ pub(crate) async fn pair(
             CeremonyRequest {
                 request: &request,
                 nonce,
-                sender_instance_id,
                 relay_access: None,
                 local_endpoints: response_local_endpoints(&snapshot, direct_port),
             },
@@ -1599,7 +1593,7 @@ mod tests {
             "device_label": "phone",
             "paired_at": "2026-08-13T00:00:00Z",
             "instance_id": "device-instance",
-            "role": "peer",
+            "role": "observer",
             "kind": "cert",
         }])
     }

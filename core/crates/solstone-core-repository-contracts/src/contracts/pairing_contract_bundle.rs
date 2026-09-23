@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "1.0.0";
+const BUNDLE_SEMVER: &str = "2.0.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/pairing-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/pairing_contract_authority.json";
@@ -210,24 +210,6 @@ fn accepted(id: &str, role: &str, additional_fields: Value, expected: Value) -> 
     })
 }
 
-fn refused(id: &str, role: &str, additional_fields: Value, detail: &str) -> Value {
-    json!({
-        "id": id,
-        "kind": "declared",
-        "fixture_id": format!("declared.{id}"),
-        "role": role,
-        "additional_fields": additional_fields,
-        "decision": {
-            "accepted": false,
-            "http_status": 400,
-            "kind": "pairing_identity",
-            "reason_code": "pairing_request_invalid",
-            "detail": detail,
-        },
-        "pointers": ["/reason_code", "/detail"],
-    })
-}
-
 fn behavior_vectors() -> Value {
     let vectors = vec![
         accepted(
@@ -374,12 +356,6 @@ fn behavior_vectors() -> Value {
                 "platform_value": "linux",
             }),
         ),
-        refused(
-            "pairing.identity.role.peer",
-            "peer",
-            json!({"client_label": "role-peer", "platform": "macos"}),
-            "peer pairing is not available on this build",
-        ),
     ];
     json!({"schema": "solstone.pairing-contract-vectors.v1", "vectors": vectors})
 }
@@ -519,7 +495,7 @@ fn generated_bundle_matches_committed_files() {
 fn under_bumped_manifest_semver_is_rejected() {
     let expected = expected_bundle();
     let expected_manifest = &expected["manifest.json"];
-    for wrong_semver in ["0.9.0", "1.0.1"] {
+    for wrong_semver in ["1.0.0", "1.9.9"] {
         let mut manifest: Value =
             serde_json::from_slice(expected_manifest).expect("parse manifest");
         manifest["bundle_semver"] = Value::String(wrong_semver.to_owned());

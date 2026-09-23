@@ -3960,21 +3960,7 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     );
 
     let second_nonce = second_mint["nonce"].as_str().expect("second nonce");
-    let malformed = post_pair_over_certless_carrier(
-        door_port(handle.door_outcome()),
-        Some(second_nonce),
-        serde_json::json!({
-            "csr": csr_pem("collision"),
-            "device_label": "collision",
-            "sender_instance_id": "invalid id",
-        }),
-    )
-    .await;
-    assert_eq!(malformed.status, 400);
-    let malformed: serde_json::Value =
-        serde_json::from_slice(&malformed.body).expect("malformed refusal");
-    assert_eq!(malformed["reason_code"], "pairing_request_invalid");
-    assert_eq!(malformed["detail"], "sender_instance_id is invalid");
+    // The peer role is retired: minting one is refused before any nonce exists.
     let peer_request = serde_json::json!({"device_label":"peer", "role":"peer"});
     let (peer_status, peer_mint_body) = loopback_json_request(
         handle.loopback_ipv4_addr(),
@@ -3983,57 +3969,21 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
         &peer_request,
     )
     .await;
-    assert_eq!(peer_status, 200);
+    assert_eq!(peer_status, 400);
     let peer_mint: serde_json::Value =
-        serde_json::from_slice(&peer_mint_body).expect("peer mint JSON");
-    let peer_nonce = peer_mint["nonce"].as_str().expect("peer nonce");
+        serde_json::from_slice(&peer_mint_body).expect("peer mint refusal JSON");
+    assert_eq!(peer_mint["reason_code"], "pairing_request_invalid");
+    assert_eq!(peer_mint["detail"], "role is invalid");
     let second = post_pair_over_certless_carrier(
         door_port(handle.door_outcome()),
         Some(second_nonce),
         serde_json::json!({
             "csr": csr_pem("collision"),
             "device_label": "collision",
-            "sender_instance_id": "valid-sender_1",
         }),
     )
     .await;
-    assert_eq!(second.status, 200, "malformed sender did not consume nonce");
-    // Keep a final phone nonce live while the peer refusal is retried; this
-    // reaches the ceremony's 410 instead of confinement's closed-window 403.
-    let (reserve_status, reserve_body) = loopback_json_request(
-        handle.loopback_ipv4_addr(),
-        "POST",
-        "/app/network/pair-start",
-        &serde_json::json!({"device_label":"reserve"}),
-    )
-    .await;
-    assert_eq!(reserve_status, 200);
-    assert!(
-        serde_json::from_slice::<serde_json::Value>(&reserve_body)
-            .expect("reserve mint JSON")["nonce"]
-            .is_string()
-    );
-    let peer = post_pair_over_certless_carrier(
-        door_port(handle.door_outcome()),
-        Some(peer_nonce),
-        serde_json::json!({"csr": csr_pem("peer"), "device_label": "peer"}),
-    )
-    .await;
-    assert_eq!(peer.status, 400);
-    let peer: serde_json::Value = serde_json::from_slice(&peer.body).expect("peer refusal");
-    assert_eq!(peer["reason_code"], "pairing_request_invalid");
-    assert_eq!(
-        peer["detail"],
-        "peer pairing is not available on this build"
-    );
-    assert_ne!(peer["detail"], malformed["detail"]);
-    let peer_retry = post_pair_over_certless_carrier(
-        door_port(handle.door_outcome()),
-        Some(peer_nonce),
-        serde_json::json!({"csr": csr_pem("peer retry"), "device_label": "peer"}),
-    )
-    .await;
-    assert_eq!(peer_retry.status, 410, "peer refusal also burns its nonce");
+    assert_eq!(second.status, 200);
 
     let ca_after = tree_paths(&fixture.root.join("link/ca"))
         .into_iter()
@@ -4068,7 +4018,7 @@ async fn ceremony_preserves_ca_burns_nonces_and_emits_distinct_label_notices() {
     );
     let mut ledger = AuthorizationLedger::new(&fixture.root);
     let entries = ledger.snapshot();
-    assert_eq!(entries.len(), 2, "peer refusal adds no ledger entry");
+    assert_eq!(entries.len(), 2, "a refused role adds no ledger entry");
     assert_eq!(entries[0].display_label(), "collision");
     assert_eq!(entries[0].label_ordinal, 1);
     assert_eq!(entries[1].display_label(), "collision (2)");

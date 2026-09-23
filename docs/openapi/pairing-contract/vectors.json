@@ -352,27 +352,6 @@
         "/platform"
       ],
       "role": "observer"
-    },
-    {
-      "additional_fields": {
-        "client_label": "role-peer",
-        "platform": "macos"
-      },
-      "decision": {
-        "accepted": false,
-        "detail": "peer pairing is not available on this build",
-        "http_status": 400,
-        "kind": "pairing_identity",
-        "reason_code": "pairing_request_invalid"
-      },
-      "fixture_id": "declared.pairing.identity.role.peer",
-      "id": "pairing.identity.role.peer",
-      "kind": "declared",
-      "pointers": [
-        "/reason_code",
-        "/detail"
-      ],
-      "role": "peer"
     }
   ]
 }

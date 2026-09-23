@@ -209,23 +209,6 @@
       "schema_validation": {
         "valid": true
       }
-    },
-    {
-      "id": "declared.pairing.identity.role.peer",
-      "kind": "declared",
-      "payload": {
-        "detail": "peer pairing is not available on this build",
-        "error": "peer pairing is not available on this build",
-        "reason": "pairing_request_invalid",
-        "reason_code": "pairing_request_invalid"
-      },
-      "provenance": {
-        "http_status": 400,
-        "vocabulary": "pairing_identity"
-      },
-      "schema_validation": {
-        "valid": true
-      }
     }
   ],
   "schema": "solstone.pairing-contract-fixtures.v1"

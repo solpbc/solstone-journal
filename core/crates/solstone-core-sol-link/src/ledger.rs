@@ -33,7 +33,6 @@ const CERT_KIND: &str = "cert";
 pub enum ClientRole {
     #[default]
     Roleless,
-    Peer,
     Unknown(String),
 }
 
@@ -41,7 +40,6 @@ impl ClientRole {
     pub fn from_wire(value: Option<&str>) -> Self {
         match value.unwrap_or_default() {
             "" => Self::Roleless,
-            "peer" => Self::Peer,
             value => Self::Unknown(value.to_owned()),
         }
     }
@@ -49,13 +47,8 @@ impl ClientRole {
     pub fn as_wire(&self) -> &str {
         match self {
             Self::Roleless => "",
-            Self::Peer => "peer",
             Self::Unknown(value) => value,
         }
-    }
-
-    pub fn is_peer(&self) -> bool {
-        matches!(self, Self::Peer)
     }
 }
 
@@ -1488,13 +1481,14 @@ mod tests {
         let mut ledger = AuthorizationLedger::new(temporary.path());
         for (fingerprint, role) in [
             ("a", ClientRole::Roleless),
-            ("b", ClientRole::Peer),
+            // A retired role written by an earlier build keeps its exact bytes.
+            ("b", ClientRole::from_wire(Some("peer"))),
             ("c", ClientRole::Unknown("Observer".to_owned())),
         ] {
             ledger.add(entry(fingerprint, "phone", role)).unwrap();
         }
         let values = ledger.snapshot();
-        assert!(values[1].role.is_peer());
+        assert_eq!(values[1].role.as_wire(), "peer");
         assert_eq!(values[2].role, ClientRole::Unknown("Observer".to_owned()));
         let bytes = fs::read(ledger.authorized_clients_path()).unwrap();
         assert!(String::from_utf8(bytes).unwrap().contains("\"Observer\""));
@@ -1875,7 +1869,7 @@ mod tests {
         ledger
             .add(entry("a", "phone", ClientRole::Roleless))
             .unwrap();
-        let original = br#"{"a":{"last_seen_at":"2026-04-19T18:03:12Z","role":"peer"}}"#;
+        let original = br#"{"a":{"last_seen_at":"2026-04-19T18:03:12Z","role":"observer"}}"#;
         fs::write(ledger.devices_path(), original).unwrap();
         assert!(ledger.touch_last_seen_at("a", NOW).is_err());
         assert_eq!(fs::read(ledger.devices_path()).unwrap(), original);

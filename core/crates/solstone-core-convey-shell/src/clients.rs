@@ -593,7 +593,7 @@ mod tests {
             "device_label": label,
             "paired_at": "2026-08-13T00:00:00Z",
             "instance_id": "device-instance",
-            "role": "peer",
+            "role": "observer",
             "network": "home",
             "client_label": "Phone",
             "label_ordinal": 2,

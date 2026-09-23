@@ -36,8 +36,6 @@ const DEFAULT_SERVE_PORT: u16 = 5015;
 const PAIR_LINK_PREFIX: &str = "https://go.solstone.app/p#";
 const LOCAL_ENDPOINTS_MAX_BYTES: usize = 16 * 1024;
 static BUNDLE_STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-const PEER_JOIN_MOVED: &str =
-    "Peer joins require journal-device authority and are not available through this command.\n";
 const BUNDLE_FILES: &[&str] = &[
     "private.pem",
     "cert.pem",
@@ -63,9 +61,6 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     }
 
     let as_role = parsed.as_role.unwrap_or_default();
-    if as_role == "peer" {
-        return CommandOutput::failure(PEER_JOIN_MOVED, 2);
-    }
     if !matches!(as_role.as_str(), "" | "phone" | "observer") {
         return CommandOutput::failure("invalid role; expected one of: phone, observer\n", 2);
     }
@@ -149,13 +144,7 @@ pub fn link_join(ctx: CommandContext<'_>) -> CommandOutput {
     }
 
     let chain_pem = join_chain(&credential.ca_chain_pem);
-    let peer_json = peer_json(
-        &label,
-        now_utc(ctx.clock),
-        &credential,
-        local_endpoints,
-        false,
-    );
+    let peer_json = peer_json(&label, now_utc(ctx.clock), &credential, local_endpoints);
     let mut files = BTreeMap::new();
     files.insert(
         "private.pem".to_string(),
@@ -1144,7 +1133,6 @@ fn peer_json(
     paired_at: String,
     credential: &LinkJoinCredential,
     local_endpoints: Value,
-    is_peer: bool,
 ) -> String {
     let mut peer = Map::new();
     peer.insert("label".to_string(), Value::String(label.to_string()));
@@ -1162,10 +1150,7 @@ fn peer_json(
         Value::String(credential.ca_fingerprint.clone()),
     );
     peer.insert("local_endpoints".to_string(), local_endpoints);
-    peer.insert(
-        "role".to_string(),
-        Value::String(if is_peer { "peer" } else { "" }.to_string()),
-    );
+    peer.insert("role".to_string(), Value::String(String::new()));
     format!("{}\n", json_pretty_ascii(&Value::Object(peer)))
 }
 
@@ -2485,7 +2470,6 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(entries.len(), 1);
         assert_bundle_files_exist(&bundle);
-        assert!(!path_lexists(&root.join("peers")));
         seam.assert_done();
     }
 
@@ -2582,7 +2566,7 @@ mod tests {
     }
 
     #[test]
-    fn peer_missing_state_fails_without_pairing() {
+    fn retired_peer_role_is_rejected_without_pairing() {
         let temp = temp_dir("peer-state");
         let config = temp.join("config");
         let env = base_env(&config, &temp.join("home"));
@@ -2598,7 +2582,10 @@ mod tests {
             &clock,
         );
 
-        assert_eq!(output.stderr, PEER_JOIN_MOVED);
+        assert_eq!(
+            output.stderr,
+            "invalid role; expected one of: phone, observer\n"
+        );
         assert_eq!(output.exit, 2);
         seam.assert_done();
     }
@@ -2744,7 +2731,6 @@ mod tests {
                 "1970-01-01T00:00:00Z".to_string(),
                 &non_ascii,
                 non_ascii.local_endpoints.clone(),
-                true
             ),
             PEER_NON_ASCII_JSON
         );
@@ -2763,7 +2749,6 @@ mod tests {
                 "1970-01-01T00:00:00Z".to_string(),
                 &nested,
                 nested.local_endpoints.clone(),
-                false
             ),
             NESTED_ENDPOINTS_JSON
         );
