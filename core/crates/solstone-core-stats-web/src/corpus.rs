@@ -159,15 +159,19 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
     // phase chooses a way to think, so with no summary file the stats page reads
     // the awaiting-engine verdict.
     if expected["status"] == 200
-        && !root.path().join("stats.json").exists()
         && let Some(status) = wanted
             .pointer_mut("/stats/journal_status")
             .and_then(Value::as_object_mut)
     {
-        status.insert(
-            "verdict".into(),
-            Value::String(solstone_core_system_health::NOT_YET_ENGINE.into()),
-        );
+        if root.path().join("stats.json").exists() {
+            status.insert("not_yet".into(), Value::Null);
+        } else {
+            status.insert("not_yet".into(), Value::String("awaiting_engine".into()));
+            status.insert(
+                "verdict".into(),
+                Value::String(solstone_core_system_health::NOT_YET_ENGINE.into()),
+            );
+        }
     }
 
     if phase == "corrupt" {

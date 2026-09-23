@@ -217,7 +217,8 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
             .and_then(Value::as_str);
         let bl_obj = response["stats"].get("backlog").and_then(Value::as_object);
         // One rule with home and /app/health (req_nqxybwmk). This clock is already local.
-        let eval = match solstone_core_system_health::summary_not_yet(&root, clock.now()) {
+        let not_yet = solstone_core_system_health::summary_not_yet(&root, clock.now());
+        let eval = match not_yet {
             Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
             None => solstone_core_system_health::evaluate_backlog_status(bl_obj, gen_at, utc_now),
         };
@@ -226,6 +227,7 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
                 "journal_status".to_owned(),
                 json!({
                     "verdict": eval.verdict,
+                    "not_yet": not_yet.map(solstone_core_system_health::NotYet::as_str),
                     "freshness": eval.freshness.as_str(),
                     "pending_days": eval.pending_days,
                     "oldest_pending_day": eval.oldest_pending_day,
