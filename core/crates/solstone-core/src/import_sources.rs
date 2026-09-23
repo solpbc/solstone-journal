@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 #[cfg(windows)]
 use std::ffi::OsString;
 
+use serde_json::{Map, json};
+use solstone_core_callosum::{CallosumEnvelope, CallosumOneShotSender};
 use solstone_core_generate::OneShotClient;
 use solstone_core_import::cli_render::CliRun;
 use solstone_core_import::publish::NativePublicationOperations;
@@ -34,7 +36,6 @@ use solstone_core_system::process::{
     BoundedHelperBudget, BoundedHelperError, BoundedHelperRequest, BoundedHelperResourceLimits,
     run_bounded_helper,
 };
-use solstone_core_transfer::{RescanOutcome, send_indexer_rescan};
 
 struct SupervisorRescan {
     journal: PathBuf,
@@ -42,11 +43,32 @@ struct SupervisorRescan {
 
 impl FullReindexRequester for SupervisorRescan {
     fn request_full_reindex(&self) -> Result<bool, String> {
-        match send_indexer_rescan(&self.journal) {
-            RescanOutcome::Queued | RescanOutcome::Unavailable | RescanOutcome::NotNeeded => {
-                Ok(true)
-            }
-        }
+        send_indexer_rescan(&self.journal);
+        Ok(true)
+    }
+}
+
+/// Best-effort: ask the supervisor to rescan newly landed content. An
+/// unavailable Callosum socket is logged and leaves the import successful.
+fn send_indexer_rescan(journal: &Path) {
+    let mut extra = Map::new();
+    extra.insert("cmd".to_owned(), json!(["journal", "indexer", "--rescan"]));
+    let envelope = CallosumEnvelope {
+        tract: "supervisor".to_owned(),
+        event: "request".to_owned(),
+        ts: None,
+        extra,
+    };
+    let Ok(mut line) = serde_json::to_string(&envelope) else {
+        return;
+    };
+    line.push('\n');
+    let sender = CallosumOneShotSender::new(
+        journal.join("health").join("callosum.sock"),
+        Duration::from_secs(1),
+    );
+    if sender.send_line(&line).is_err() {
+        log::warn!("indexer rescan was not queued: Callosum socket unavailable");
     }
 }
 

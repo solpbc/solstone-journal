@@ -1669,28 +1669,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-transfer"
-package = "solstone-core-transfer"
-set = "component"
-areas = ["transfer"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
-id = "package::solstone-core-transfer-manifest"
-package = "solstone-core-transfer-manifest"
-set = "component"
-areas = ["transfer"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-vad-analyze"
 package = "solstone-core-vad-analyze"
 set = "native"
@@ -3148,20 +3126,6 @@ required_features = []
 runtime = "none"
 
 [[suites]]
-id = "solstone-core-journal-bin::journal_export_native_cutover"
-package = "solstone-core-journal-bin"
-target = "journal_export_native_cutover"
-set = "component"
-areas = ["journal"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
 id = "solstone-core-journal-bin::journal_facet_navigate_native_cutover"
 package = "solstone-core-journal-bin"
 target = "journal_facet_navigate_native_cutover"
@@ -4432,19 +4396,6 @@ timeout = "standard"
 serial_group = "local-services"
 default_full = true
 required_features = ["test-hooks"]
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-transfer::peer_export_transport"
-package = "solstone-core-transfer"
-target = "peer_export_transport"
-set = "component"
-areas = ["transfer"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-required_features = []
 runtime = "none"
 
 [[suites]]

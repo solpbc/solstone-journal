@@ -3,9 +3,9 @@
 
 //! Safe, journal-root-explicit merge of a portable journal archive.
 
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::fs::{self, File};
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use std::path::{Component, Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -32,11 +32,6 @@ use solstone_core_journal_io::{
     iter_segments, publish_staged_dir, write_bytes_exclusive,
 };
 use solstone_core_segment::touch_stream_health_marker;
-use solstone_core_transfer_manifest::{
-    ExpectedMember, MANIFEST_NAME, TransferManifest, expected_members, parse_manifest,
-    validate_expected_members,
-};
-use tar::{Archive, EntryType};
 use zip::ZipArchive;
 
 use crate::{ArchiveSafetyPhase, ImportSourcesError, MergeMutationState};
@@ -61,6 +56,7 @@ const ZIP_LOCAL: [u8; 4] = [b'P', b'K', 3, 4];
 const ZIP_EOCD: [u8; 4] = [b'P', b'K', 5, 6];
 const ZIP_SPAN: [u8; 4] = [b'P', b'K', 7, 8];
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
+const LEGACY_TRANSFER_ARCHIVE: &str = "this is an old transfer archive (.tar.gz), which is no longer supported; export the journal again as a .zip and merge that";
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const DEFAULT_ARCHIVE_CAP: u64 = 50 * GIB;
@@ -255,10 +251,8 @@ impl From<ArchivePlan> for ImportPreview {
 
 /// Plan a journal-archive merge from its archive metadata. Creates nothing.
 pub fn plan_journal_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesError> {
-    match classify_archive(archive_path)? {
-        ArchiveKind::Zip => plan_zip_archive(archive_path),
-        ArchiveKind::V1GzipTar => plan_v1_gzip_tar(archive_path),
-    }
+    require_zip_archive(archive_path)?;
+    plan_zip_archive(archive_path)
 }
 
 fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesError> {
@@ -365,13 +359,10 @@ fn plan_zip_archive(archive_path: &Path) -> Result<ArchivePlan, ImportSourcesErr
     })
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ArchiveKind {
-    Zip,
-    V1GzipTar,
-}
-
-fn classify_archive(path: &Path) -> Result<ArchiveKind, ImportSourcesError> {
+/// Journal archives are zip files, recognized by magic rather than extension.
+/// A gzip stream is the retired transfer archive format and is refused with
+/// its own wording so an owner holding one knows what to do instead.
+fn require_zip_archive(path: &Path) -> Result<(), ImportSourcesError> {
     let mut file = File::open(path).map_err(|error| match error.kind() {
         io::ErrorKind::NotFound => ImportSourcesError::ArchiveNotFound {
             path: path.to_path_buf(),
@@ -389,20 +380,18 @@ fn classify_archive(path: &Path) -> Result<ArchiveKind, ImportSourcesError> {
             detail: error.to_string(),
         })?;
     if read >= 2 && magic[..2] == GZIP_MAGIC {
-        return Ok(ArchiveKind::V1GzipTar);
+        return Err(ImportSourcesError::ArchiveInvalid {
+            path: path.to_path_buf(),
+            detail: LEGACY_TRANSFER_ARCHIVE.to_owned(),
+        });
     }
     if read >= 4 && (magic == ZIP_LOCAL || magic == ZIP_EOCD || magic == ZIP_SPAN) {
-        return Ok(ArchiveKind::Zip);
+        return Ok(());
     }
     Err(ImportSourcesError::ArchiveInvalid {
         path: path.to_path_buf(),
         detail: "unrecognized archive magic".to_owned(),
     })
-}
-
-fn plan_v1_gzip_tar(path: &Path) -> Result<ArchivePlan, ImportSourcesError> {
-    let validated = validate_v1_gzip_tar(path, u64::MAX)?;
-    Ok(v1_plan(&validated.manifest, validated.expected.len()))
 }
 
 fn member_components(name: &str) -> Vec<&str> {
@@ -432,8 +421,8 @@ pub fn validate_archive_preflight(
     archive_path: &Path,
     options: &ArchiveMergeOptions,
 ) -> Result<(), ImportSourcesError> {
-    let kind = classify_archive(archive_path)?;
-    validate_archive(archive_path, kind, options)?;
+    require_zip_archive(archive_path)?;
+    validate_archive(archive_path, options)?;
     Ok(())
 }
 
@@ -444,8 +433,8 @@ pub fn merge_journal_archive(
     options: &ArchiveMergeOptions,
     reindexer: Option<&dyn FullReindexRequester>,
 ) -> Result<ArchiveMergeResult, ImportSourcesError> {
-    let kind = classify_archive(archive_path)?;
-    let validated = validate_archive(archive_path, kind, options)?;
+    require_zip_archive(archive_path)?;
+    let validated = validate_archive(archive_path, options)?;
     let protected = target_journal_root.join("health/locks/archive-merge");
     let owner_path = protected
         .parent()
@@ -517,25 +506,12 @@ pub fn merge_journal_archive(
 
 #[derive(Debug)]
 struct ValidatedArchive {
-    kind: ValidatedArchiveKind,
+    root: PathBuf,
     expanded_size: u64,
-}
-
-#[derive(Debug)]
-enum ValidatedArchiveKind {
-    Zip { root: PathBuf },
-    V1GzipTar(ValidatedV1Archive),
-}
-
-#[derive(Debug)]
-struct ValidatedV1Archive {
-    manifest: TransferManifest,
-    expected: BTreeMap<String, ExpectedMember>,
 }
 
 fn validate_archive(
     path: &Path,
-    kind: ArchiveKind,
     options: &ArchiveMergeOptions,
 ) -> Result<ValidatedArchive, ImportSourcesError> {
     let metadata = fs::metadata(path).map_err(|error| match error.kind() {
@@ -554,17 +530,7 @@ fn validate_archive(
             maximum: options.max_archive_bytes,
         });
     }
-    match kind {
-        ArchiveKind::Zip => validate_zip_archive(path, options),
-        ArchiveKind::V1GzipTar => {
-            let validated = validate_v1_gzip_tar(path, options.max_uncompressed_bytes)?;
-            let expanded_size = declared_v1_size(&validated.manifest, path)?;
-            Ok(ValidatedArchive {
-                kind: ValidatedArchiveKind::V1GzipTar(validated),
-                expanded_size,
-            })
-        }
-    }
+    validate_zip_archive(path, options)
 }
 
 fn validate_zip_archive(
@@ -620,7 +586,7 @@ fn validate_zip_archive(
     }
     let root = archive_root(&root_candidates)?;
     Ok(ValidatedArchive {
-        kind: ValidatedArchiveKind::Zip { root },
+        root,
         expanded_size,
     })
 }
@@ -690,14 +656,13 @@ fn extract_archive(
     run_dir: &Path,
     options: &ArchiveMergeOptions,
 ) -> Result<PathBuf, ImportSourcesError> {
-    match &validated.kind {
-        ValidatedArchiveKind::Zip { root } => {
-            extract_zip_archive(path, root, validated.expanded_size, run_dir, options)
-        }
-        ValidatedArchiveKind::V1GzipTar(validated) => {
-            materialize_v1_gzip_tar(path, validated, run_dir, options)
-        }
-    }
+    extract_zip_archive(
+        path,
+        &validated.root,
+        validated.expanded_size,
+        run_dir,
+        options,
+    )
 }
 
 fn extract_zip_archive(
@@ -859,326 +824,6 @@ fn extract_zip_archive(
         }
     }
     Ok(run_dir.join(root))
-}
-
-fn validate_v1_gzip_tar(
-    path: &Path,
-    max_uncompressed_bytes: u64,
-) -> Result<ValidatedV1Archive, ImportSourcesError> {
-    let file = File::open(path).map_err(|error| ImportSourcesError::ArchiveInvalid {
-        path: path.to_path_buf(),
-        detail: error.to_string(),
-    })?;
-    let mut archive = Archive::new(flate2::read::GzDecoder::new(file));
-    let mut entries = archive.entries().map_err(|_| invalid_v1_gzip(path))?;
-    let first = entries
-        .next()
-        .ok_or_else(|| invalid_v1_gzip(path))?
-        .map_err(|_| invalid_v1_gzip(path))?;
-    let manifest = read_v1_manifest(first, path)?;
-    let expected = expected_members(&manifest).map_err(|error| invalid_v1_manifest(path, error))?;
-    validate_expected_members(&expected).map_err(|error| invalid_v1_manifest(path, error))?;
-    let declared = declared_v1_size(&manifest, path)?;
-    if declared > max_uncompressed_bytes {
-        return Err(ImportSourcesError::ArchiveUncompressedTooLarge {
-            bytes: declared,
-            maximum: max_uncompressed_bytes,
-        });
-    }
-    Ok(ValidatedV1Archive { manifest, expected })
-}
-
-fn read_v1_manifest<R: Read>(
-    mut entry: tar::Entry<'_, R>,
-    path: &Path,
-) -> Result<TransferManifest, ImportSourcesError> {
-    if entry.header().entry_type() != EntryType::Regular {
-        return Err(invalid_v1_manifest(
-            path,
-            "first archive member must be regular manifest.json",
-        ));
-    }
-    let member = tar_member_name(&mut entry, ArchiveSafetyPhase::Validation, path)?;
-    if member != MANIFEST_NAME {
-        return Err(invalid_v1_manifest(
-            path,
-            "first archive member must be manifest.json",
-        ));
-    }
-    let mut bytes = Vec::new();
-    entry
-        .read_to_end(&mut bytes)
-        .map_err(|_| invalid_v1_gzip(path))?;
-    parse_manifest(&bytes).map_err(|error| invalid_v1_manifest(path, error))
-}
-
-fn declared_v1_size(manifest: &TransferManifest, path: &Path) -> Result<u64, ImportSourcesError> {
-    manifest
-        .segments
-        .values()
-        .flat_map(|segment| segment.files.iter())
-        .try_fold(0_u64, |total, file| total.checked_add(file.size))
-        .ok_or_else(|| ImportSourcesError::ArchiveInvalid {
-            path: path.to_path_buf(),
-            detail: "invalid v1 transfer manifest: declared size overflow".to_owned(),
-        })
-}
-
-fn v1_plan(manifest: &TransferManifest, payload_files: usize) -> ArchivePlan {
-    let days = vec![manifest.day.clone()];
-    let day_count = days.len() as u64;
-    ArchivePlan {
-        days,
-        entity_count: 0,
-        facet_count: 0,
-        warning_count: 0,
-        warnings: Vec::new(),
-        payload_files,
-        summary: format!("Journal archive: {day_count} days, 0 entities, 0 facets (0 warnings)"),
-    }
-}
-
-fn materialize_v1_gzip_tar(
-    path: &Path,
-    validated: &ValidatedV1Archive,
-    run_dir: &Path,
-    options: &ArchiveMergeOptions,
-) -> Result<PathBuf, ImportSourcesError> {
-    fs::create_dir_all(run_dir).map_err(|error| ImportSourcesError::ExtractionFailed {
-        archive: path.to_path_buf(),
-        extraction_dir: run_dir.to_path_buf(),
-        detail: error.to_string(),
-    })?;
-    let declared = declared_v1_size(&validated.manifest, path)?;
-    let required = declared.saturating_add(options.free_space_reserve_bytes);
-    let available =
-        available_bytes(run_dir).map_err(|detail| ImportSourcesError::ExtractionFailed {
-            archive: path.to_path_buf(),
-            extraction_dir: run_dir.to_path_buf(),
-            detail,
-        })?;
-    if available < required {
-        return cleanup_extraction(
-            path,
-            run_dir,
-            ImportSourcesError::ArchiveInsufficientSpace {
-                available,
-                required,
-                path: run_dir.to_path_buf(),
-            },
-        );
-    }
-
-    let result = (|| {
-        let file = File::open(path).map_err(|error| ImportSourcesError::ExtractionFailed {
-            archive: path.to_path_buf(),
-            extraction_dir: run_dir.to_path_buf(),
-            detail: error.to_string(),
-        })?;
-        let mut archive = Archive::new(flate2::read::GzDecoder::new(file));
-        let mut entries = archive.entries().map_err(|_| invalid_v1_gzip(path))?;
-        let first = entries
-            .next()
-            .ok_or_else(|| invalid_v1_gzip(path))?
-            .map_err(|_| invalid_v1_gzip(path))?;
-        let manifest = read_v1_manifest(first, path)?;
-        if manifest.day != validated.manifest.day {
-            return Err(invalid_v1_manifest(
-                path,
-                "manifest changed during extraction",
-            ));
-        }
-        let mut seen = BTreeSet::new();
-        let mut copied = 0_u64;
-        let day_root = run_dir.join("chronicle").join(&manifest.day);
-        for entry in entries {
-            let mut entry = entry.map_err(|_| invalid_v1_gzip(path))?;
-            let name = tar_member_name(&mut entry, ArchiveSafetyPhase::Extraction, path)?;
-            if entry.header().entry_type() != EntryType::Regular {
-                return Err(ImportSourcesError::ArchiveUnsafeEntry {
-                    phase: ArchiveSafetyPhase::Extraction,
-                    entry: name,
-                    reason: "non-regular tar member".to_owned(),
-                });
-            }
-            let Some(expected) = validated.expected.get(&name) else {
-                return Err(ImportSourcesError::ArchiveUnsafeEntry {
-                    phase: ArchiveSafetyPhase::Extraction,
-                    entry: name,
-                    reason: "member is not listed in manifest".to_owned(),
-                });
-            };
-            if !seen.insert(name.clone()) {
-                return Err(ImportSourcesError::ArchiveUnsafeEntry {
-                    phase: ArchiveSafetyPhase::Extraction,
-                    entry: name,
-                    reason: "duplicate archive member".to_owned(),
-                });
-            }
-            let segment = contained_path(&day_root, &expected.route.archive_key())
-                .map_err(|error| invalid_v1_manifest(path, error.to_string()))?;
-            let output = contained_path(&segment, &expected.file.name)
-                .map_err(|error| invalid_v1_manifest(path, error.to_string()))?;
-            let parent = output.parent().expect("contained child has parent");
-            fs::create_dir_all(parent).map_err(|error| ImportSourcesError::ExtractionFailed {
-                archive: path.to_path_buf(),
-                extraction_dir: run_dir.to_path_buf(),
-                detail: error.to_string(),
-            })?;
-            let mut output_file =
-                File::create(&output).map_err(|error| ImportSourcesError::ExtractionFailed {
-                    archive: path.to_path_buf(),
-                    extraction_dir: run_dir.to_path_buf(),
-                    detail: error.to_string(),
-                })?;
-            let (sha256, size) = copy_v1_member(
-                &mut entry,
-                &mut output_file,
-                &mut copied,
-                options.max_uncompressed_bytes,
-                path,
-                run_dir,
-            )?;
-            output_file
-                .sync_all()
-                .map_err(|error| ImportSourcesError::ExtractionFailed {
-                    archive: path.to_path_buf(),
-                    extraction_dir: run_dir.to_path_buf(),
-                    detail: error.to_string(),
-                })?;
-            if size != expected.file.size {
-                return Err(ImportSourcesError::ArchiveInvalid {
-                    path: path.to_path_buf(),
-                    detail: format!("v1 member size mismatch: {name}"),
-                });
-            }
-            if sha256 != expected.file.sha256 {
-                return Err(ImportSourcesError::ArchiveInvalid {
-                    path: path.to_path_buf(),
-                    detail: format!("v1 member sha256 mismatch: {name}"),
-                });
-            }
-        }
-        let missing = validated
-            .expected
-            .keys()
-            .filter(|name| !seen.contains(*name))
-            .cloned()
-            .collect::<Vec<_>>();
-        if !missing.is_empty() {
-            return Err(ImportSourcesError::ArchiveInvalid {
-                path: path.to_path_buf(),
-                detail: format!(
-                    "v1 manifest members missing from archive: {}",
-                    missing.join(", ")
-                ),
-            });
-        }
-        Ok(run_dir.to_path_buf())
-    })();
-    match result {
-        Ok(root) => Ok(root),
-        Err(error) => cleanup_extraction(path, run_dir, error),
-    }
-}
-
-fn copy_v1_member(
-    reader: &mut impl Read,
-    output: &mut File,
-    copied: &mut u64,
-    maximum: u64,
-    archive_path: &Path,
-    extraction_dir: &Path,
-) -> Result<(String, u64), ImportSourcesError> {
-    let mut digest = Sha256::new();
-    let mut size = 0_u64;
-    let mut buffer = [0_u8; 32 * 1024];
-    loop {
-        let read =
-            reader
-                .read(&mut buffer)
-                .map_err(|error| ImportSourcesError::ArchiveInvalid {
-                    path: archive_path.to_path_buf(),
-                    detail: format!("read v1 archive member: {error}"),
-                })?;
-        if read == 0 {
-            break;
-        }
-        *copied = copied.checked_add(read as u64).ok_or(
-            ImportSourcesError::ArchiveUncompressedTooLarge {
-                bytes: u64::MAX,
-                maximum,
-            },
-        )?;
-        if *copied > maximum {
-            return Err(ImportSourcesError::ArchiveUncompressedTooLarge {
-                bytes: *copied,
-                maximum,
-            });
-        }
-        output.write_all(&buffer[..read]).map_err(|error| {
-            ImportSourcesError::ExtractionFailed {
-                archive: archive_path.to_path_buf(),
-                extraction_dir: extraction_dir.to_path_buf(),
-                detail: format!("write extracted v1 archive member: {error}"),
-            }
-        })?;
-        digest.update(&buffer[..read]);
-        size += read as u64;
-    }
-    Ok((format!("{:x}", digest.finalize()), size))
-}
-
-fn tar_member_name<R: Read>(
-    entry: &mut tar::Entry<'_, R>,
-    phase: ArchiveSafetyPhase,
-    archive_path: &Path,
-) -> Result<String, ImportSourcesError> {
-    let path = entry
-        .path()
-        .map_err(|error| ImportSourcesError::ArchiveInvalid {
-            path: archive_path.to_path_buf(),
-            detail: format!("read v1 archive member path: {error}"),
-        })?;
-    let name = path
-        .to_str()
-        .ok_or_else(|| ImportSourcesError::ArchiveUnsafeEntry {
-            phase,
-            entry: path.display().to_string(),
-            reason: "non-UTF-8 path".to_owned(),
-        })?;
-    if name.starts_with('/')
-        || name.starts_with('\\')
-        || name.contains('\\')
-        || path.is_absolute()
-        || path.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(ImportSourcesError::ArchiveUnsafeEntry {
-            phase,
-            entry: name.to_owned(),
-            reason: "absolute or traversal path".to_owned(),
-        });
-    }
-    Ok(name.to_owned())
-}
-
-fn invalid_v1_gzip(path: &Path) -> ImportSourcesError {
-    ImportSourcesError::ArchiveInvalid {
-        path: path.to_path_buf(),
-        detail: "invalid v1 gzip tar archive".to_owned(),
-    }
-}
-
-fn invalid_v1_manifest(path: &Path, detail: impl std::fmt::Display) -> ImportSourcesError {
-    ImportSourcesError::ArchiveInvalid {
-        path: path.to_path_buf(),
-        detail: format!("invalid v1 transfer manifest: {detail}"),
-    }
 }
 
 fn cleanup_extraction(
@@ -2830,7 +2475,7 @@ fn tree_digest(path: &Path) -> Result<Vec<u8>, ImportSourcesError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
     use std::ffi::OsString;
     use std::io::Write;
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -2991,7 +2636,7 @@ mod tests {
         let error = plan_journal_archive(&gzip).unwrap_err();
         match error {
             ImportSourcesError::ArchiveInvalid { detail, .. } => {
-                assert_eq!(detail, "invalid v1 gzip tar archive");
+                assert_eq!(detail, LEGACY_TRANSFER_ARCHIVE);
             }
             other => panic!("unexpected error: {other:?}"),
         }
@@ -3022,7 +2667,7 @@ mod tests {
                     ..
                 },
             ) => {
-                assert_eq!(plan_detail, "invalid v1 gzip tar archive");
+                assert_eq!(plan_detail, LEGACY_TRANSFER_ARCHIVE);
                 assert_eq!(apply_detail, plan_detail);
             }
             other => panic!("unexpected errors: {other:?}"),
@@ -3081,162 +2726,6 @@ mod tests {
                 .join("chronicle/20260101/_default/080000_300/value")
                 .exists()
         );
-    }
-
-    #[test]
-    fn v1_gzip_tar_merges_under_manifest_day_and_is_magic_not_extension() {
-        let tree = PlanTree::new();
-        let archive = fixture_v1(&tree.path, "v1-minimal.tar.gz");
-        let target = tree.path.join("target");
-        fs::create_dir(&target).unwrap();
-        let options = merge_options(&tree);
-
-        let result = merge_journal_archive(&archive, &target, &options, None).unwrap();
-        let segment = target.join("chronicle/20260203/audio/120000_30");
-        assert!(result.merge_summary.segments_copied > 0);
-        assert_eq!(fs::read(segment.join("stream.json")).unwrap(), b"stream");
-        assert_eq!(fs::read(segment.join("device.json")).unwrap(), b"device");
-        assert!(!target.join("audio").exists());
-
-        let renamed = tree.path.join("fixture-named.zip");
-        fs::copy(&archive, &renamed).unwrap();
-        let renamed_target = tree.path.join("renamed-target");
-        fs::create_dir(&renamed_target).unwrap();
-        let renamed_result =
-            merge_journal_archive(&renamed, &renamed_target, &options, None).unwrap();
-        assert!(renamed_result.merge_summary.segments_copied > 0);
-        assert_eq!(
-            fs::read(renamed_target.join("chronicle/20260203/audio/120000_30/stream.json"))
-                .unwrap(),
-            b"stream"
-        );
-    }
-
-    #[test]
-    fn v1_gzip_tar_collision_and_identical_retry_preserve_destination() {
-        let tree = PlanTree::new();
-        let archive = fixture_v1(&tree.path, "v1-minimal.tar.gz");
-        let target = tree.path.join("target");
-        let segment = target.join("chronicle/20260203/audio/120000_30");
-        fs::create_dir_all(&segment).unwrap();
-        fs::write(segment.join("stream.json"), b"destination wins").unwrap();
-        let options = merge_options(&tree);
-
-        let collision = merge_journal_archive(&archive, &target, &options, None).unwrap();
-        assert_eq!(collision.merge_summary.segments_skipped, 1);
-        assert_eq!(
-            fs::read(segment.join("stream.json")).unwrap(),
-            b"destination wins"
-        );
-        assert_eq!(
-            sorted_dirs(&target.join("chronicle/20260203/audio"))
-                .unwrap()
-                .into_iter()
-                .map(|path| file_name(&path).unwrap())
-                .collect::<Vec<_>>(),
-            ["120000_30"]
-        );
-
-        let clean = tree.path.join("clean");
-        fs::create_dir(&clean).unwrap();
-        let first = merge_journal_archive(&archive, &clean, &options, None).unwrap();
-        assert!(first.merge_summary.segments_copied > 0);
-        let second = merge_journal_archive(&archive, &clean, &options, None).unwrap();
-        assert_eq!(second.merge_summary.segments_copied, 0);
-        assert_eq!(second.merge_summary.segments_skipped, 1);
-    }
-
-    #[test]
-    fn v1_gzip_tar_failures_leave_journal_families_byte_identical() {
-        let tree = PlanTree::new();
-        let target = tree.path.join("target");
-        fs::create_dir_all(target.join("chronicle/existing/120000_30")).unwrap();
-        fs::write(target.join("chronicle/existing/120000_30/value"), b"kept").unwrap();
-        for family in ["entities", "facets", "imports"] {
-            fs::create_dir_all(target.join(family)).unwrap();
-        }
-        let before = journal_family_snapshot(&target);
-        let good_sha = format!("{:x}", Sha256::digest(b"stream"));
-        let manifests = [
-            (
-                "sha.tar.gz",
-                v1_manifest("20260203", &"0".repeat(64), 6),
-                vec![("audio/120000_30/stream.json", b"stream" as &[u8])],
-            ),
-            (
-                "size.tar.gz",
-                v1_manifest("20260203", &good_sha, 7),
-                vec![("audio/120000_30/stream.json", b"stream" as &[u8])],
-            ),
-        ];
-        let options = merge_options(&tree);
-        for (name, manifest, members) in manifests {
-            let archive = write_v1_archive(&tree.path, name, &manifest, &members);
-            assert!(merge_journal_archive(&archive, &target, &options, None).is_err());
-            assert_eq!(journal_family_snapshot(&target), before, "{name}");
-            assert_no_extraction_residue(&options.working_root);
-        }
-        let traversal = write_v1_archive_with_traversal(
-            &tree.path,
-            "traversal.tar.gz",
-            &v1_manifest("20260203", &good_sha, 6),
-        );
-        assert!(merge_journal_archive(&traversal, &target, &options, None).is_err());
-        assert_eq!(journal_family_snapshot(&target), before, "traversal.tar.gz");
-        assert_no_extraction_residue(&options.working_root);
-    }
-
-    #[test]
-    fn v1_gzip_tar_enforces_declared_and_streamed_caps() {
-        let tree = PlanTree::new();
-        let archive = fixture_v1(&tree.path, "v1-minimal.tar.gz");
-        let target = tree.path.join("target");
-        fs::create_dir(&target).unwrap();
-        let metadata_cap = ArchiveMergeOptions {
-            working_root: tree.path.join("metadata-work"),
-            max_archive_bytes: 0,
-            ..ArchiveMergeOptions::default()
-        };
-        assert!(matches!(
-            merge_journal_archive(&archive, &target, &metadata_cap, None),
-            Err(ImportSourcesError::ArchiveTooLarge { .. })
-        ));
-
-        let sha = format!("{:x}", Sha256::digest(b"stream"));
-        let underdeclared = write_v1_archive(
-            &tree.path,
-            "underdeclared.tar.gz",
-            &v1_manifest("20260203", &sha, 1),
-            &[("audio/120000_30/stream.json", b"stream")],
-        );
-        let streamed_cap = ArchiveMergeOptions {
-            working_root: tree.path.join("stream-work"),
-            max_uncompressed_bytes: 5,
-            ..ArchiveMergeOptions::default()
-        };
-        assert!(matches!(
-            merge_journal_archive(&underdeclared, &target, &streamed_cap, None),
-            Err(ImportSourcesError::ArchiveUncompressedTooLarge { .. })
-        ));
-    }
-
-    #[test]
-    fn plan_v1_gzip_tar_reports_day_without_writing() {
-        let tree = PlanTree::new();
-        let archive = fixture_v1(&tree.path, "v1-minimal.tar.gz");
-        let target = tree.path.join("target");
-        fs::create_dir(&target).unwrap();
-        let work = tree.path.join("work");
-        let before_target = collect_tree(&target);
-        let isolated_tmpdir = tree.path.join("isolated-tmpdir");
-        fs::create_dir(&isolated_tmpdir).unwrap();
-        let before_tmp = list_names(&isolated_tmpdir);
-        let plan = plan_journal_archive(&archive).unwrap();
-        assert_eq!(plan.days, vec!["20260203".to_owned()]);
-        assert_eq!(collect_tree(&target), before_target);
-        assert!(!work.exists());
-        assert!(!target.join("health/locks").exists());
-        assert_eq!(list_names(&isolated_tmpdir), before_tmp);
     }
 
     #[test]
@@ -3396,99 +2885,11 @@ mod tests {
         archive
     }
 
-    fn fixture_v1(tree: &Path, name: &str) -> PathBuf {
-        let archive = tree.join(name);
-        fs::write(
-            &archive,
-            include_bytes!("../../solstone-core-transfer/tests/fixtures/v1-minimal-20260203.tgz"),
-        )
-        .unwrap();
-        archive
-    }
-
     fn merge_options(tree: &PlanTree) -> ArchiveMergeOptions {
         ArchiveMergeOptions {
             working_root: tree.path.join("work"),
             ..ArchiveMergeOptions::default()
         }
-    }
-
-    fn v1_manifest(day: &str, sha256: &str, size: u64) -> Vec<u8> {
-        serde_json::to_vec(&json!({
-            "version": 1,
-            "day": day,
-            "segments": {
-                "audio/120000_30": {
-                    "files": [{"name": "stream.json", "sha256": sha256, "size": size}]
-                }
-            }
-        }))
-        .unwrap()
-    }
-
-    fn write_v1_archive(
-        tree: &Path,
-        name: &str,
-        manifest: &[u8],
-        members: &[(&str, &[u8])],
-    ) -> PathBuf {
-        let archive_path = tree.join(name);
-        let output = File::create(&archive_path).unwrap();
-        let encoder = flate2::write::GzEncoder::new(output, flate2::Compression::default());
-        let mut archive = tar::Builder::new(encoder);
-        append_tar_member(&mut archive, MANIFEST_NAME, manifest);
-        for (member, bytes) in members {
-            append_tar_member(&mut archive, member, bytes);
-        }
-        archive.into_inner().unwrap().finish().unwrap();
-        archive_path
-    }
-
-    fn write_v1_archive_with_traversal(tree: &Path, name: &str, manifest: &[u8]) -> PathBuf {
-        let archive_path = tree.join(name);
-        let output = File::create(&archive_path).unwrap();
-        let mut encoder = flate2::write::GzEncoder::new(output, flate2::Compression::default());
-        for (member, bytes) in [
-            (MANIFEST_NAME, manifest),
-            ("audio/120000_30/stream.json", b"stream" as &[u8]),
-            ("../escape", b"escape" as &[u8]),
-        ] {
-            let mut header = [0_u8; 512];
-            header[..member.len()].copy_from_slice(member.as_bytes());
-            header[100..108].copy_from_slice(b"0000644\0");
-            header[108..116].copy_from_slice(b"0000000\0");
-            header[116..124].copy_from_slice(b"0000000\0");
-            let size = format!("{:011o}\0", bytes.len());
-            header[124..136].copy_from_slice(size.as_bytes());
-            header[136..148].copy_from_slice(b"00000000000\0");
-            header[148..156].fill(b' ');
-            header[156] = b'0';
-            header[257..263].copy_from_slice(b"ustar\0");
-            header[263..265].copy_from_slice(b"00");
-            let checksum = header.iter().map(|byte| u32::from(*byte)).sum::<u32>();
-            let checksum = format!("{:06o}\0 ", checksum);
-            header[148..156].copy_from_slice(checksum.as_bytes());
-            encoder.write_all(&header).unwrap();
-            encoder.write_all(bytes).unwrap();
-            let padding = (512 - bytes.len() % 512) % 512;
-            encoder.write_all(&vec![0_u8; padding]).unwrap();
-        }
-        encoder.write_all(&[0_u8; 1024]).unwrap();
-        encoder.finish().unwrap();
-        archive_path
-    }
-
-    fn append_tar_member(
-        archive: &mut tar::Builder<flate2::write::GzEncoder<File>>,
-        name: &str,
-        bytes: &[u8],
-    ) {
-        let mut header = tar::Header::new_gnu();
-        header.set_entry_type(EntryType::Regular);
-        header.set_mode(0o644);
-        header.set_size(bytes.len() as u64);
-        header.set_cksum();
-        archive.append_data(&mut header, name, bytes).unwrap();
     }
 
     fn journal_family_snapshot(root: &Path) -> BTreeMap<String, Vec<u8>> {
@@ -3522,18 +2923,6 @@ mod tests {
         }
         files.sort();
         files
-    }
-
-    fn assert_no_extraction_residue(working_root: &Path) {
-        let remaining = if working_root.exists() {
-            collect_tree(working_root)
-        } else {
-            BTreeSet::new()
-        };
-        assert!(
-            remaining.iter().all(|path| !path.starts_with("extract-")),
-            "v1 failure left extraction residue: {remaining:?}"
-        );
     }
 
     fn list_names(path: &Path) -> BTreeSet<OsString> {

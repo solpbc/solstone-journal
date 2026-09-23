@@ -21,8 +21,6 @@ members = [
     "crates/solstone-core-journal-io",
     "crates/solstone-core-win-owner-rail",
     "crates/solstone-core-win-dll-load",
-    "crates/solstone-core-transfer",
-    "crates/solstone-core-transfer-manifest",
     "crates/solstone-core-system-health",
     "crates/solstone-core-top",
     "crates/solstone-core-operational-logs",
@@ -176,8 +174,6 @@ solstone-core-journal-io = { path = "crates/solstone-core-journal-io" }
 solstone-core-mcp-audit = { path = "crates/solstone-core-mcp-audit" }
 solstone-core-win-dll-load = { path = "crates/solstone-core-win-dll-load" }
 solstone-core-win-owner-rail = { path = "crates/solstone-core-win-owner-rail" }
-solstone-core-transfer = { path = "crates/solstone-core-transfer" }
-solstone-core-transfer-manifest = { path = "crates/solstone-core-transfer-manifest" }
 solstone-core-body-rebuild = { path = "crates/solstone-core-body-rebuild" }
 solstone-core-body-ingest = { path = "crates/solstone-core-body-ingest" }
 solstone-core-convey-body = { path = "crates/solstone-core-convey-body" }

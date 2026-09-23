@@ -183,7 +183,6 @@ solstone-core-thinking.workspace = true
 solstone-core-top.workspace = true
 solstone-core-operational-logs.workspace = true
 solstone-core-service-unit.workspace = true
-solstone-core-transfer.workspace = true
 solstone-core-transcribe.workspace = true
 solstone-core-streams-cli.workspace = true
 # Owns the supervisor-availability contract every native journal-host verb

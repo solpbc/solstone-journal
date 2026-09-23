@@ -45,9 +45,8 @@ use solstone_core_cli::{
     SUPERVISOR_USAGE, ScheduleOptions, SenseOptions, SenseReprocessKind, ServiceAction,
     ServiceOptions, ServiceParseOutcome, SettingsParseError, SpeakerResolveCommand, SplCommand,
     THINKING_HELP, THINKING_SET_LANE_HELP, THINKING_SET_LANE_USAGE, THINKING_USAGE, TOP_HELP,
-    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, TRANSFER_USAGE, ThinkingCommand,
-    TranscribeOptions, TransferCommand, TransferSendOptions, USAGE, evaluate_args,
-    render_service_diagnostic, version_line,
+    TOP_USAGE, TRANSCRIBE_HELP, TRANSCRIBE_USAGE, ThinkingCommand, TranscribeOptions, USAGE,
+    evaluate_args, render_service_diagnostic, version_line,
 };
 use solstone_core_transcribe::{CliError, CliRunError};
 #[cfg(unix)]
@@ -624,8 +623,6 @@ fn main() -> ExitCode {
             command => run_brain_owner(command),
         },
         Ok(Command::Body(command)) => run_body(command),
-        Ok(Command::Transfer(command)) => run_transfer(command),
-        Ok(Command::RetiredMover(message)) => run_retired_mover(message),
         Ok(Command::Transcribe(options)) => run_transcribe(
             options,
             #[cfg(windows)]
@@ -949,10 +946,6 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Ok(Command::SettingsParseError(error)) => settings_parse_error(error),
-        Ok(Command::TransferHelp(text)) => {
-            print!("{text}");
-            ExitCode::SUCCESS
-        }
         Ok(Command::TranscribeHelp) => {
             print!("{TRANSCRIBE_HELP}");
             ExitCode::SUCCESS
@@ -960,11 +953,6 @@ fn main() -> ExitCode {
         Ok(Command::FacetCandidatesHelp) => {
             print!("{FACET_CANDIDATES_HELP}");
             ExitCode::SUCCESS
-        }
-        Ok(Command::TransferUsage) => {
-            eprint!("{TRANSFER_USAGE}");
-            eprintln!("journal transfer: error: invalid arguments");
-            ExitCode::from(2)
         }
         Ok(Command::FacetCandidatesUsage) => {
             eprint!("{FACET_CANDIDATES_USAGE}");
@@ -1531,89 +1519,6 @@ fn run_facet_candidates() -> ExitCode {
         }
     };
     facet_candidates::run(&journal.path)
-}
-
-fn run_retired_mover(message: &str) -> ExitCode {
-    eprintln!("{message}");
-    ExitCode::from(2)
-}
-
-fn run_transfer(command: TransferCommand) -> ExitCode {
-    match command {
-        TransferCommand::RetiredMover(message) => run_retired_mover(message),
-        TransferCommand::Send(options) => run_transfer_send(options),
-    }
-}
-
-fn run_transfer_send(options: TransferSendOptions) -> ExitCode {
-    let journal = match resolve_indexer_journal_path(options.journal_override) {
-        Ok(line) => line.path,
-        Err(error) => return print_journal_error(error),
-    };
-    match solstone_core_transfer::peer_export(
-        &journal,
-        solstone_core_transfer::PeerExportRequest {
-            to: options.to,
-            only: options.only,
-            day: options.day,
-            dry_run: options.dry_run,
-        },
-    ) {
-        Ok(report) => {
-            print_peer_export_summary(&report);
-            if report.any_failed {
-                ExitCode::from(1)
-            } else {
-                ExitCode::SUCCESS
-            }
-        }
-        Err(error) => {
-            let exit = match &error {
-                solstone_core_transfer::TransferError::Bridge(_)
-                | solstone_core_transfer::TransferError::Transport(_) => 1,
-                _ => 2,
-            };
-            let message = match error {
-                solstone_core_transfer::TransferError::InvalidExportAreas => {
-                    "--only must contain one or more of: config, entities, facets, imports, segments"
-                        .to_string()
-                }
-                _ => error.to_string(),
-            };
-            eprintln!("journal transfer send: error: {message}");
-            ExitCode::from(exit)
-        }
-    }
-}
-
-fn print_peer_export_summary(report: &solstone_core_transfer::PeerExportReport) {
-    println!("\n--- Export Summary ---");
-    for result in &report.results {
-        if let Some(error) = &result.error {
-            println!("  {}: FAILED ({error})", result.area);
-            continue;
-        }
-        let mut parts = Vec::new();
-        if result.sent != 0 {
-            parts.push(format!("{} sent", result.sent));
-        }
-        if result.skipped != 0 {
-            parts.push(format!("{} skipped", result.skipped));
-        }
-        if result.staged != 0 {
-            parts.push(format!("{} staged", result.staged));
-        }
-        if result.failed != 0 {
-            parts.push(format!("{} failed", result.failed));
-        }
-        if !result.errors.is_empty() {
-            parts.push(format!("{} error(s)", result.errors.len()));
-        }
-        if parts.is_empty() {
-            parts.push("nothing to send".to_string());
-        }
-        println!("  {}: {}", result.area, parts.join(", "));
-    }
 }
 
 #[cfg(any(unix, windows))]

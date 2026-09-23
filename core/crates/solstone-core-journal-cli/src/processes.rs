@@ -200,11 +200,6 @@ pub(crate) const NATIVE_PROCESS_SPECS: &[NativeProcessSpec] = &[
         preset_argv: &["setup"],
     },
     NativeProcessSpec {
-        token: "transfer",
-        binary: "solstone-core",
-        preset_argv: &["transfer"],
-    },
-    NativeProcessSpec {
         token: "transcribe",
         binary: "solstone-core",
         preset_argv: &["transcribe"],
@@ -436,12 +431,6 @@ pub(crate) const PROCESS_SPECS: &[ProcessSpec] = &[
     ProcessSpec {
         token: "sense",
         module: "solstone.observe.sense",
-        preset_argv: EMPTY,
-        kind: ProcessKind::Service,
-    },
-    ProcessSpec {
-        token: "transfer",
-        module: "solstone.observe.transfer",
         preset_argv: EMPTY,
         kind: ProcessKind::Service,
     },

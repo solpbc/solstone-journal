@@ -37,8 +37,6 @@ mod service_cli;
 mod service_logs_cli;
 #[path = "storage_ops_verb_fidelity.rs"]
 mod storage_ops_verb_fidelity;
-#[path = "transfer_cli.rs"]
-mod transfer_cli;
 #[path = "verb_usage_fidelity.rs"]
 mod verb_usage_fidelity;
 #[path = "version.rs"]

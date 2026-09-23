@@ -4,9 +4,6 @@
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
-use solstone_core_cli_boundary::{
-    JOURNAL_EXPORT_TOMBSTONE, TRANSFER_EXPORT_TOMBSTONE, TRANSFER_IMPORT_TOMBSTONE,
-};
 use solstone_core_format::segment::segment_key;
 
 pub use solstone_core_cli_boundary::DESCRIBE_USAGE;
@@ -24,7 +21,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  solstone-core transfer send --to LABEL [--day YYYYMMDD|YYYYMMDD-YYYYMMDD] [--dry-run] [--journal PATH]\n  journal convey --port PORT [--journal PATH]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  journal convey --port PORT [--journal PATH]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] PATH\n",
@@ -293,29 +290,6 @@ pub const GRAB_HELP: &str = concat!(
     "  -v, --verbose  Enable verbose output\n",
     "  -d, --debug    Enable debug logging\n",
 );
-
-/// `journal transfer --help`, verbatim from the Python reference. The cut
-/// left the native verb answering 64 with `solstone-core`'s top-level usage
-/// for every invocation including --help, so the verb had no help at all.
-pub const TRANSFER_HELP: &str = concat!(
-    "usage: journal transfer [-h] [-v] [-d] {send} ...\n",
-    "\n",
-    "Transfer observed segments between solstone instances\n",
-    "\n",
-    "positional arguments:\n",
-    "  {send}\n",
-    "    send                Send segments to paired peer\n",
-    "\n",
-    "options:\n",
-    "  -h, --help            show this help message and exit\n",
-    "  -v, --verbose         Enable verbose output\n",
-    "  -d, --debug           Enable debug logging\n",
-);
-
-/// The single usage line argparse prints on a `journal transfer` error. The
-/// full help body belongs to `--help` only; argparse never prints it on an
-/// error.
-pub const TRANSFER_USAGE: &str = "usage: journal transfer [-h] [-v] [-d] {send} ...\n";
 
 /// `journal transcribe --help`, verbatim from the Python reference.
 pub const TRANSCRIBE_HELP: &str = concat!(
@@ -710,19 +684,6 @@ pub const BACKFILL_FACET_IDS_HELP: &str = concat!(
 pub const TALENT_USAGE: &str =
     "usage: journal talent [-h] [-v] [-d] {list,inventory,show,logs,log} ...\n";
 
-/// `journal transfer send --help`, extended with native peer-export selection.
-pub const TRANSFER_SEND_HELP: &str = concat!(
-    "usage: journal transfer send [-h] --to TO [--day DAY] [--only AREAS] [--dry-run]\n",
-    "\n",
-    "options:\n",
-    "  -h, --help  show this help message and exit\n",
-    "  --to TO     Paired peer label\n",
-    "  --day DAY   Day or range (YYYYMMDD or YYYYMMDD-YYYYMMDD, default: all days)\n",
-    "  --only AREAS Comma-separated areas: segments, imports, entities, facets, config\n",
-    "                (default: all five areas)\n",
-    "  --dry-run   Show what would be sent without uploading\n",
-);
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Config(ConfigCommand),
@@ -751,8 +712,6 @@ pub enum Command {
     Brain(BrainCommand),
     JournalBrainOwner(JournalBrainOwnerCommand),
     Body(BodyCommand),
-    Transfer(TransferCommand),
-    RetiredMover(&'static str),
     Transcribe(TranscribeOptions),
     Think(Vec<OsString>),
     Thinking(ThinkingCommand),
@@ -850,11 +809,9 @@ pub enum Command {
     ContractBuildHelp,
     ContractCheckUsage,
     ContractCheckHelp,
-    TransferUsage,
     TranscribeHelp,
     FacetCandidatesHelp,
     FacetCandidatesUsage,
-    TransferHelp(&'static str),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -997,21 +954,6 @@ pub enum SettingsParseError {
     InvalidSection(String),
     InvalidConveyCommand(String),
     UnrecognizedArgument(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransferCommand {
-    RetiredMover(&'static str),
-    Send(TransferSendOptions),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TransferSendOptions {
-    pub to: String,
-    pub day: Option<String>,
-    pub only: Option<String>,
-    pub dry_run: bool,
-    pub journal_override: Option<OsString>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1589,44 +1531,6 @@ pub fn evaluate_args(args: &[OsString]) -> Result<Command, UsageError> {
         }
         [command, rest @ ..] if command == OsStr::new("body") => {
             parse_body(rest).map(Command::Body)
-        }
-        [command, rest @ ..] if command == OsStr::new("transfer") => {
-            // Help is not a token of the transfer parser either, so without this
-            // interception `journal transfer --help` degrades into a usage error
-            // that exits 64 and names solstone-core rather than the verb.
-            let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
-            if let Some(first) = rest.first().and_then(|argument| argument.to_str()) {
-                match first {
-                    "export" => {
-                        return Ok(Command::Transfer(TransferCommand::RetiredMover(
-                            TRANSFER_EXPORT_TOMBSTONE,
-                        )));
-                    }
-                    "import" => {
-                        return Ok(Command::Transfer(TransferCommand::RetiredMover(
-                            TRANSFER_IMPORT_TOMBSTONE,
-                        )));
-                    }
-                    _ => {}
-                }
-            }
-            if let [first, others @ ..] = rest
-                && others.iter().any(help)
-                && let Some(text) = match first.to_str() {
-                    Some("send") => Some(TRANSFER_SEND_HELP),
-                    _ => None,
-                }
-            {
-                return Ok(Command::TransferHelp(text));
-            }
-            if rest.iter().any(help) {
-                return Ok(Command::TransferHelp(TRANSFER_HELP));
-            }
-            // argparse exits 2 here, not 64.
-            Ok(parse_transfer(rest).map_or(Command::TransferUsage, Command::Transfer))
-        }
-        [command, ..] if command == OsStr::new("export") => {
-            Ok(Command::RetiredMover(JOURNAL_EXPORT_TOMBSTONE))
         }
         [command, rest @ ..] if command == OsStr::new("navigate") => {
             let help = |a: &OsString| a == OsStr::new("--help") || a == OsStr::new("-h");
@@ -2758,72 +2662,6 @@ fn parse_supervisor(
         remote,
         direct_port,
         hosted_parent,
-    })
-}
-
-fn parse_transfer(args: &[OsString]) -> Result<TransferCommand, UsageError> {
-    let [verb, rest @ ..] = args else {
-        return Err(UsageError);
-    };
-    match verb.to_str() {
-        Some("export") => Ok(TransferCommand::RetiredMover(TRANSFER_EXPORT_TOMBSTONE)),
-        Some("import") => Ok(TransferCommand::RetiredMover(TRANSFER_IMPORT_TOMBSTONE)),
-        Some("send") => parse_transfer_send(rest).map(TransferCommand::Send),
-        _ => Err(UsageError),
-    }
-}
-
-fn parse_transfer_send(args: &[OsString]) -> Result<TransferSendOptions, UsageError> {
-    let mut to = None;
-    let mut day = None;
-    let mut only = None;
-    let mut dry_run = false;
-    let mut journal_override = None;
-    let mut index = 0;
-    while index < args.len() {
-        let argument = args[index].as_os_str();
-        if argument == OsStr::new("--dry-run") {
-            if dry_run {
-                return Err(UsageError);
-            }
-            dry_run = true;
-            index += 1;
-            continue;
-        }
-        let destination = if argument == OsStr::new("--to") {
-            &mut to
-        } else if argument == OsStr::new("--day") {
-            &mut day
-        } else if argument == OsStr::new("--only") {
-            &mut only
-        } else if argument == OsStr::new("--journal") {
-            &mut journal_override
-        } else {
-            return Err(UsageError);
-        };
-        if destination.is_some() {
-            return Err(UsageError);
-        }
-        let value = args.get(index + 1).ok_or(UsageError)?;
-        if value.to_string_lossy().starts_with("--") {
-            return Err(UsageError);
-        }
-        *destination = Some(value.clone());
-        index += 2;
-    }
-    Ok(TransferSendOptions {
-        to: to
-            .ok_or(UsageError)?
-            .into_string()
-            .map_err(|_| UsageError)?,
-        day: day
-            .map(|value| value.into_string().map_err(|_| UsageError))
-            .transpose()?,
-        only: only
-            .map(|value| value.into_string().map_err(|_| UsageError))
-            .transpose()?,
-        dry_run,
-        journal_override,
     })
 }
 
@@ -7919,7 +7757,6 @@ mod tests {
             "cogitate",
             "brain",
             "body",
-            "transfer",
             "grab",
             "spl",
             "supervisor",
@@ -8259,59 +8096,6 @@ mod tests {
                 }
             )))
         );
-    }
-
-    #[test]
-    fn parses_transfer_send_options_and_rejects_ambiguous_forms() {
-        assert_eq!(
-            evaluate_args(&args(&[
-                "transfer",
-                "send",
-                "--to",
-                "office",
-                "--day",
-                "20260203-20260204",
-                "--only",
-                "segments,config",
-                "--dry-run",
-                "--journal",
-                "/tmp/journal",
-            ])),
-            Ok(Command::Transfer(TransferCommand::Send(
-                TransferSendOptions {
-                    to: "office".to_string(),
-                    day: Some("20260203-20260204".to_string()),
-                    only: Some("segments,config".to_string()),
-                    dry_run: true,
-                    journal_override: Some("/tmp/journal".into()),
-                }
-            )))
-        );
-        for values in [
-            &["transfer", "send"][..],
-            &["transfer", "send", "--to"][..],
-            &["transfer", "send", "--to", "office", "--to", "home"][..],
-            &["transfer", "send", "--to", "office", "--day", "--dry-run"][..],
-            &[
-                "transfer",
-                "send",
-                "--to",
-                "office",
-                "--dry-run",
-                "--dry-run",
-            ][..],
-            &["transfer", "send", "--to", "office", "--unknown"][..],
-        ] {
-            // A transfer parse failure is deliberately NOT `Err(UsageError)`:
-            // that path exits 64 with solstone-core's usage, where the reference
-            // exits 2 with `journal transfer`'s. Rejection is still rejection --
-            // it is carried as a command so main can render it faithfully.
-            assert_eq!(
-                evaluate_args(&args(values)),
-                Ok(Command::TransferUsage),
-                "{values:?}"
-            );
-        }
     }
 
     #[test]

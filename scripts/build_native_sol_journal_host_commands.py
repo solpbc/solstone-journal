@@ -29,7 +29,9 @@ NATIVE_ROOT_COMMANDS = frozenset({"indexer"})
 NATIVE_ADDITIONAL_HOST_COMMANDS = frozenset({"backfill-facet-ids", "mcp", "thinking"})
 # Commands that remain in the pinned Python oracle but have been retired from
 # the live journal host grammar.
-RETIRED_HOST_COMMANDS = frozenset({"export", "warm", "maint", "observer", "restart-convey"})
+RETIRED_HOST_COMMANDS = frozenset(
+    {"export", "warm", "maint", "observer", "restart-convey", "transfer"}
+)
 # Declaration order is the duplicate-diagnostic section order.
 REGISTRY_SURFACE_POSITIONS = {"COMMANDS": 1, "ALIASES": 2}
 UNAVAILABLE_SURFACE = "<unavailable>"

@@ -33,7 +33,6 @@
     { "token": "describe", "module": "solstone.observe.describe", "preset_argv": [], "surface": "service" },
     { "token": "depict", "module": "solstone.observe.depict", "preset_argv": [], "surface": "service" },
     { "token": "sense", "module": "solstone.observe.sense", "preset_argv": [], "surface": "service" },
-    { "token": "transfer", "module": "solstone.observe.transfer", "preset_argv": [], "surface": "service" },
     { "token": "grab", "module": "solstone.observe.grab", "preset_argv": [], "surface": "service" },
     { "token": "brain", "module": "solstone.think.brain_cli", "preset_argv": [], "surface": "service" },
     { "token": "facet-candidates", "module": "solstone.think.facet_candidates_cli", "preset_argv": [], "surface": "service" },

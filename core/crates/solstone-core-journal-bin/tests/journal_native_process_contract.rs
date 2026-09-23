@@ -531,12 +531,6 @@ const PROBES: &[Probe] = &[
         stderr_anchor: None,
     },
     Probe {
-        token: "transfer",
-        argv: &["--nonsense"],
-        expected_exit: 2,
-        stderr_anchor: None,
-    },
-    Probe {
         token: "transcribe",
         argv: &["--nonsense"],
         expected_exit: 2,
@@ -3197,7 +3191,7 @@ fn process_tokens_are_native_cutovers() {
         .iter()
         .map(|spec| spec.token)
         .collect::<BTreeSet<_>>();
-    for token in ["grab", "transfer", "transcribe"] {
+    for token in ["grab", "transcribe"] {
         assert!(
             native_tokens.contains(token),
             "{token}: native process dispatch is required"

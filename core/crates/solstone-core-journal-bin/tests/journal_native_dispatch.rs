@@ -132,21 +132,6 @@ fn native_process_verbs_exec_their_sibling_without_python() {
         "solstone-core\ngrab\n--opaque\nhas space\n"
     );
     assert_eq!(
-        harness.run_args(
-            "transfer",
-            &["export", "--day", "20260203", "--output", "out.tgz"]
-        ),
-        "solstone-core\ntransfer\nexport\n--day\n20260203\n--output\nout.tgz\n"
-    );
-    assert_eq!(
-        harness.run_args("transfer", &["import", "--archive", "in.tgz"]),
-        "solstone-core\ntransfer\nimport\n--archive\nin.tgz\n"
-    );
-    assert_eq!(
-        harness.run_args("transfer", &["send", "--to", "office", "--dry-run"]),
-        "solstone-core\ntransfer\nsend\n--to\noffice\n--dry-run\n"
-    );
-    assert_eq!(
         harness.run("depict"),
         "solstone-core-depict\n--opaque\nhas space\n"
     );
