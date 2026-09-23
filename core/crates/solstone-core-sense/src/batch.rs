@@ -429,10 +429,18 @@ pub fn delete_outputs(
             }
             deleted.push(path.clone());
             if !dry_run {
+                // A journal rel is `/`-separated on every platform; the native
+                // spelling carries backslashes on Windows, which `sync_dir` refuses.
                 let parent = path
                     .parent()
                     .and_then(|parent| parent.strip_prefix(journal).ok())
-                    .and_then(Path::to_str)
+                    .and_then(|parent| {
+                        parent
+                            .components()
+                            .map(|component| component.as_os_str().to_str())
+                            .collect::<Option<Vec<_>>>()
+                    })
+                    .map(|components| components.join("/"))
                     .ok_or_else(|| BatchError::Unrepresentable {
                         reason: format!(
                             "reprocess output parent is not journal-relative UTF-8: {}",
@@ -458,7 +466,7 @@ pub fn delete_outputs(
                 // fallible scan/deadline/dispatcher step. A failed marker is
                 // terminal, but cannot pretend the already-removed output was
                 // restored.
-                let sync = sync_dir(journal, parent).map_err(|error| error.to_string());
+                let sync = sync_dir(journal, &parent).map_err(|error| error.to_string());
                 let marker = bump_stream_marker(journal, &day).map_err(|error| error.to_string());
                 if sync.is_err() || marker.is_err() {
                     let mut details = Vec::new();
