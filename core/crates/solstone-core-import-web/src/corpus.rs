@@ -1136,7 +1136,7 @@ pub(crate) mod tests {
         // These expectations are the generator's _build_journal and
         // _seed_journal_sources contract (scripts/convey_import_corpus.py:377-508),
         // deliberately independent of test_support's writers.
-        let source_record = json!({"key":"corpusSourceKey0000000000000000000000000000","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}});
+        let source_record = json!({"prefix":"corpusSo","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}});
         for phase in ["unestablished", "corrupt", "empty", "populated"] {
             let root = phase_root(phase);
             let source = root

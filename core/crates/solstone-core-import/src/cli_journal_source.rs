@@ -13,7 +13,8 @@ use base64::Engine;
 use chrono::{Local, TimeZone};
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{
-    AtomicWriteError, AtomicWriteOptions, atomic_replace, write_bytes_exclusive,
+    AtomicWriteError, AtomicWriteOptions, LockOptions, atomic_replace, contained_path, hold_lock,
+    write_bytes_exclusive,
 };
 
 use crate::cli_render::CliRun;
@@ -48,6 +49,9 @@ impl Mode {
 
 /// Run the journal-source grammar against a local journal root.
 pub fn run_cli(args: &[String], journal_path: &Path) -> CliRun {
+    if retire_stored_source_keys(journal_path).is_err() {
+        return failure("", "Error: failed to update journal sources\n", 1);
+    }
     match parse_arguments(args) {
         Ok(Command::Help) => success(format!("{USAGE}\n")),
         Ok(Command::Create { name, json }) => cmd_create(journal_path, &name, json),
@@ -169,6 +173,67 @@ fn parse_mode(value: &str) -> Result<Mode, String> {
     }
 }
 
+/// Remove the ingest key an owner-created journal source used to carry.
+///
+/// The journal-source door no longer accepts a key: a source is selected by its
+/// eight-character prefix, which already names its routes and state directory.
+/// Each record keeps that prefix and loses the key. Idempotent, and paired-device
+/// records gain nothing. Returns how many records changed.
+pub fn retire_stored_source_keys(journal: &Path) -> Result<usize, String> {
+    let entries = match fs::read_dir(sources_dir(journal)) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(format!("read journal sources: {error}")),
+    };
+    let mut retired = 0;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read journal sources: {error}"))?;
+        let Some(file_name) = entry.file_name().to_str().map(str::to_owned) else {
+            continue;
+        };
+        if !file_name.ends_with(".json")
+            || read_record(&entry.path()).is_none_or(|record| !record.contains_key("key"))
+        {
+            continue;
+        }
+        let path = contained_path(journal, &format!("apps/import/journal_sources/{file_name}"))
+            .map_err(|error| format!("journal source {file_name}: {error}"))?;
+        let _lock = hold_lock(
+            &path,
+            LockOptions {
+                mode: Some(0o600),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(|error| format!("lock journal source {file_name}: {error}"))?;
+        let Some(mut record) = read_record(&path) else {
+            continue;
+        };
+        let Some(key) = record.remove("key") else {
+            continue;
+        };
+        if string_field(&record, "pair_mode") != Some("pl")
+            && !record.contains_key("prefix")
+            && let Some(prefix) = key.as_str().and_then(key_prefix)
+        {
+            record.insert("prefix".to_owned(), json!(prefix));
+        }
+        let bytes = serde_json::to_vec_pretty(&Value::Object(record))
+            .map_err(|error| format!("encode journal source {file_name}: {error}"))?;
+        atomic_replace(&path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
+            .map_err(|error| format!("write journal source {file_name}: {error}"))?;
+        retired += 1;
+    }
+    Ok(retired)
+}
+
+fn read_record(path: &Path) -> Option<Record> {
+    serde_json::from_slice::<Value>(&fs::read(path).ok()?)
+        .ok()?
+        .as_object()
+        .cloned()
+}
+
 fn cmd_create(journal: &Path, name: &str, json_output: bool) -> CliRun {
     if !is_valid_name(name) {
         return failure(
@@ -182,13 +247,13 @@ fn cmd_create(journal: &Path, name: &str, json_output: bool) -> CliRun {
         return duplicate_error(name);
     }
 
-    let key = match generate_key() {
-        Ok(key) => key,
+    let prefix = match generate_prefix() {
+        Ok(prefix) => prefix,
         Err(()) => return failure("", "Error: failed to save journal source\n", 1),
     };
-    let prefix = &key[..8];
+    let prefix = prefix.as_str();
     let record = json!({
-        "key": key,
+        "prefix": prefix,
         "name": name,
         "created_at": now_ms(),
         "enabled": true,
@@ -222,13 +287,13 @@ fn cmd_create(journal: &Path, name: &str, json_output: bool) -> CliRun {
     }
 
     if json_output {
-        match serde_json::to_string(&json!({"name": name, "key": key, "prefix": prefix})) {
+        match serde_json::to_string(&json!({"name": name, "prefix": prefix})) {
             Ok(output) => success(format!("{output}\n")),
             Err(_) => failure("", "Error: failed to save journal source\n", 1),
         }
     } else {
         success(format!(
-            "Journal source created:\n  Name:       {name}\n  Prefix:     {prefix}\n  api key:     {key}\n"
+            "Journal source created:\n  Name:       {name}\n  Prefix:     {prefix}\n"
         ))
     }
 }
@@ -467,9 +532,9 @@ fn load_valid_record(path: &Path) -> Option<Record> {
 }
 
 fn validate_record(record: &Record, filename: &str) -> Option<()> {
-    let key = string_field(record, "key").filter(|value| !value.is_empty());
+    let prefix = string_field(record, "prefix").filter(|value| !value.is_empty());
     let fingerprint = string_field(record, "fingerprint").filter(|value| !value.is_empty());
-    if key.is_some() == fingerprint.is_some() {
+    if prefix.is_some() == fingerprint.is_some() {
         return None;
     }
     let pair_mode = string_field(record, "pair_mode");
@@ -491,8 +556,7 @@ fn validate_record(record: &Record, filename: &str) -> Option<()> {
         {
             return None;
         }
-        let key = key?;
-        key_prefix(key)?;
+        valid_prefix(prefix?).then_some(())?;
         let name = string_field(record, "name")?;
         if !is_valid_name(name) {
             return None;
@@ -536,11 +600,18 @@ fn fingerprint_prefix(fingerprint: &str) -> Option<&str> {
 }
 
 fn dl_prefix(record: &Record) -> Option<&str> {
-    key_prefix(string_field(record, "key")?)
+    string_field(record, "prefix").filter(|prefix| valid_prefix(prefix))
 }
 
 fn key_prefix(key: &str) -> Option<&str> {
-    key.get(..8)
+    key.get(..8).filter(|prefix| valid_prefix(prefix))
+}
+
+fn valid_prefix(prefix: &str) -> bool {
+    prefix.len() == 8
+        && prefix
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
 }
 
 fn row_mode(record: &Record) -> Mode {
@@ -551,8 +622,8 @@ fn row_mode(record: &Record) -> Mode {
     }
 }
 
-fn generate_key() -> Result<String, ()> {
-    let mut bytes = [0_u8; 32];
+fn generate_prefix() -> Result<String, ()> {
+    let mut bytes = [0_u8; 6];
     getrandom::fill(&mut bytes).map_err(|_| ())?;
     Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
 }

@@ -38,8 +38,9 @@ fn source_state(root: &Path, name: &str) -> Option<std::path::PathBuf> {
             .ok()?,
     )
     .ok()?;
-    let key = source.get("key")?.as_str()?.get(..8)?;
-    contained(root, &format!("imports/{}", &key[..8])).ok()
+    let prefix = source.get("prefix")?.as_str()?;
+    safe_component(prefix).then_some(())?;
+    contained(root, &format!("imports/{prefix}")).ok()
 }
 
 fn safe_component(value: &str) -> bool {
@@ -1044,7 +1045,7 @@ mod tests {
     fn state(root: &TempDir) -> std::path::PathBuf {
         write_json(
             &root.path().join("apps/import/journal_sources/peer.json"),
-            json!({"key":"prefix01-key-material"}),
+            json!({"prefix":"prefix01"}),
         );
         root.path().join("imports/prefix01")
     }

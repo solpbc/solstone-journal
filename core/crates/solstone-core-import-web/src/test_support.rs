@@ -127,7 +127,7 @@ pub(crate) fn seed_import(
 pub(crate) fn seed_source(root: &Path) {
     let sources = root.join("apps/import/journal_sources");
     fs::create_dir_all(&sources).expect("sources");
-    fs::write(sources.join("corpus_peer.json"), serde_json::to_vec(&json!({"key":"corpusSourceKey0000000000000000000000000000","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}})).expect("source serializes")).expect("source");
+    fs::write(sources.join("corpus_peer.json"), serde_json::to_vec(&json!({"prefix":"corpusSo","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}})).expect("source serializes")).expect("source");
     let state = root.join("imports/corpusSo");
     fs::create_dir_all(&state).expect("state");
     fs::write(state.join("source.json"), "{}").expect("source marker");

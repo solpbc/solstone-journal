@@ -2512,7 +2512,6 @@
       "success": "20260801_120000"
     },
     "source_created_at_ms": 1767225600000,
-    "source_key": "corpusSourceKey0000000000000000000000000000",
     "source_name": "corpus_peer",
     "source_prefix": "corpusSo"
   },

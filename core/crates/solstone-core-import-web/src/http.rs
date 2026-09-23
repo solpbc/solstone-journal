@@ -38,7 +38,8 @@ pub(crate) fn html_auth_failure(status: StatusCode, description: &str) -> Respon
         StatusCode::FORBIDDEN => format!(
             "<!doctype html>\n<html lang=en>\n<title>403 Forbidden</title>\n<h1>Forbidden</h1>\n<p>{description}</p>\n"
         ),
-        _ => unreachable!("journal-source authentication is 401 or 403"),
+        StatusCode::NOT_FOUND => WERKZEUG_NOT_FOUND.to_owned(),
+        _ => unreachable!("journal-source authentication is 401, 403 or 404"),
     };
     Response::builder()
         .status(status)
