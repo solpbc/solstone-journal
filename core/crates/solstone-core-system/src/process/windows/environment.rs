@@ -92,6 +92,13 @@ pub(super) const OBSOLETE: [&str; 8] = [
     "SOL_PARENT_LOSS_PARENT_LAUNCH_ID",
 ];
 
+/// Every launch-protocol variable a child may only receive fresh from its own
+/// launcher. A spawn that does not go through [`prepare_environment`] (a plain
+/// `std::process::Command`) must remove these itself; see [`is_launch_only`].
+pub fn launch_only_environment_names() -> impl Iterator<Item = &'static str> {
+    std::iter::once(LAUNCH_ENV).chain(OBSOLETE)
+}
+
 /// Whether `key` is a launch-protocol variable a child may only receive fresh
 /// from its own launcher, never inherited.
 ///
@@ -491,6 +498,17 @@ mod tests {
             ]
         );
         assert_eq!(plan.block.last(), Some(&NUL));
+    }
+
+    #[test]
+    fn the_exported_launch_only_names_are_exactly_the_ones_prepare_environment_drops() {
+        let names: Vec<_> = launch_only_environment_names().collect();
+        assert_eq!(names.len(), OBSOLETE.len() + 1);
+        assert!(names.contains(&LAUNCH_ENV));
+        for name in &names {
+            assert!(is_launch_only(std::ffi::OsStr::new(name)), "{name}");
+        }
+        assert!(!is_launch_only(std::ffi::OsStr::new("PATH")));
     }
 
     #[test]

@@ -57,7 +57,7 @@ impl CogitateOneShotClient {
         let parent = current
             .parent()
             .ok_or_else(|| ClientError::Resolve("current executable has no parent".to_owned()))?;
-        let path = parent.join("solstone-core");
+        let path = parent.join(format!("solstone-core{}", std::env::consts::EXE_SUFFIX));
         if Path::new(&path).is_file() {
             Ok(Self::at_path(path))
         } else {
@@ -118,7 +118,15 @@ impl CogitateOneShotClient {
         #[cfg(unix)]
         let mut child = self.spawn_hosted()?;
         #[cfg(not(unix))]
-        let mut child = Command::new(&self.executable)
+        let mut command = Command::new(&self.executable);
+        // A plain spawn inherits the admitted parent's consumed launch descriptor,
+        // and the child refuses it as expired. Only the product launcher filters it.
+        #[cfg(windows)]
+        for name in solstone_core_system::process::launch_only_environment_names() {
+            command.env_remove(name);
+        }
+        #[cfg(not(unix))]
+        let mut child = command
             .args(&self.prefix_arguments)
             .arg("--one-shot")
             .envs(&self.environment)

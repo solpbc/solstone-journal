@@ -18,7 +18,7 @@ solstone-core-generate-wire.workspace = true
 solstone-core-local.workspace = true
 thiserror.workspace = true
 
-[target.'cfg(unix)'.dependencies]
+[target.'cfg(any(unix, windows))'.dependencies]
 solstone-core-system.workspace = true
 
 [dev-dependencies]

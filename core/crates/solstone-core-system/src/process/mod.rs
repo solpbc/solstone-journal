@@ -60,7 +60,7 @@ pub(crate) use platform::signal_pid;
 #[cfg(windows)]
 pub use platform::{
     AdmittedInstalledTaskLaunch, AdmittedWindowsLaunch, InstalledTaskLaunchRequest,
-    forward_windows_installed_task, forward_windows_native_command,
+    forward_windows_installed_task, forward_windows_native_command, launch_only_environment_names,
     receive_windows_installed_task_launch, receive_windows_launch, watch_windows_session_end,
     windows_session_end_requested,
 };

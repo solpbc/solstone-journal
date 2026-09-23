@@ -227,7 +227,7 @@ impl SessionClient {
                 "current executable has no parent".to_owned(),
             ))
         })?;
-        let path = parent.join("solstone-core");
+        let path = parent.join(format!("solstone-core{}", std::env::consts::EXE_SUFFIX));
         if Path::new(&path).is_file() {
             Ok(path)
         } else {

@@ -1184,7 +1184,7 @@ fn pdf_worker_sibling() -> Result<PathBuf, String> {
     let parent = current
         .parent()
         .ok_or_else(|| "current executable has no parent".to_owned())?;
-    let path = parent.join("solstone-core-pdf");
+    let path = parent.join(format!("solstone-core-pdf{}", std::env::consts::EXE_SUFFIX));
     if path.is_file() {
         Ok(path)
     } else {
