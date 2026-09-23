@@ -10,7 +10,9 @@ use serde_json::{Map, Value};
 pub const BACKLOG_FRESHNESS_MAX_AGE_HOURS: i64 = 36;
 pub const FUTURE_SKEW_TOLERANCE_MS: i64 = 300_000;
 
-pub const VERDICT_STILL_CHECKING: &str = "still checking where your journal stands.";
+/// No usable backlog summary (none written yet, unreadable, or degraded). Nothing is
+/// checking in this state, so the verdict says what is known: it is unclear.
+pub const VERDICT_UNCLEAR_NOW: &str = "it's unclear whether your journal is caught up right now.";
 pub const VERDICT_ALL_CAUGHT_UP: &str = "your journal's all caught up.";
 pub const VERDICT_CAUGHT_UP: &str = "your journal's caught up.";
 pub const VERDICT_STUCK_ONLY_SINGULAR: &str = "caught up except 1 day that needs a hand.";
@@ -217,7 +219,7 @@ pub fn evaluate_backlog_status(
 ) -> BacklogStatusEvaluation {
     let Some(backlog) = backlog else {
         return BacklogStatusEvaluation {
-            verdict: VERDICT_STILL_CHECKING.to_owned(),
+            verdict: VERDICT_UNCLEAR_NOW.to_owned(),
             freshness: SummaryFreshness::Unknown,
             pending_days: 0,
             oldest_pending_day: None,
@@ -233,7 +235,7 @@ pub fn evaluate_backlog_status(
 
     if backlog.get("degraded") == Some(&Value::Bool(true)) {
         return BacklogStatusEvaluation {
-            verdict: VERDICT_STILL_CHECKING.to_owned(),
+            verdict: VERDICT_UNCLEAR_NOW.to_owned(),
             freshness,
             pending_days: 0,
             oldest_pending_day: None,

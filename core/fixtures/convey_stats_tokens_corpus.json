@@ -812,7 +812,7 @@
                     "day_count": 0,
                     "oldest_day": null
                   },
-                  "verdict": "still checking where your journal stands."
+                  "verdict": "it's unclear whether your journal is caught up right now."
                 }
               }
             },
@@ -3368,7 +3368,7 @@
                     "day_count": 0,
                     "oldest_day": null
                   },
-                  "verdict": "still checking where your journal stands."
+                  "verdict": "it's unclear whether your journal is caught up right now."
                 }
               }
             },

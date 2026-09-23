@@ -259,7 +259,7 @@
           "response": {
             "body": {
               "backlog": {
-                "verdict": "still checking where your journal stands.",
+                "verdict": "it's unclear whether your journal is caught up right now.",
                 "pending_days": 0,
                 "oldest_pending_day": null,
                 "freshness": {
@@ -1024,7 +1024,7 @@
           "response": {
             "body": {
               "backlog": {
-                "verdict": "still checking where your journal stands.",
+                "verdict": "it's unclear whether your journal is caught up right now.",
                 "pending_days": 0,
                 "oldest_pending_day": null,
                 "freshness": {
@@ -1263,7 +1263,7 @@
           "response": {
             "body": {
               "backlog": {
-                "verdict": "still checking where your journal stands.",
+                "verdict": "it's unclear whether your journal is caught up right now.",
                 "pending_days": 0,
                 "oldest_pending_day": null,
                 "freshness": {
