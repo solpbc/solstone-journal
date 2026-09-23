@@ -34,6 +34,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - on the thinking page, the local card said "checking whether this computer can run a local model." when nothing was checking. once your local model is installed, it now says "installed. waiting for processing to confirm it's ready." and the card updates on its own once processing does.
 - the health and stats pages said "still checking where your journal stands." when nothing was checking, such as on a new journal before its first full day. they now say "it's unclear whether your journal is caught up right now.", the same as the home page.
 - after you set up your local model, the home page and the thinking page could keep saying "processing needs a setup" while the model was already running, for up to a day. your journal now checks again as soon as the local model is ready.
+- when `journal backup run` saves a partial backup, it now says how many files it couldn't read and gives the first reason. until now it only said "some files couldn't be read".
 
 ## [2.0.14] - 2026-09-22
 

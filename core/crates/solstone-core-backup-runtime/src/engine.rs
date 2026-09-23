@@ -932,19 +932,28 @@ fn snapshot_id(value: Option<&Value>) -> Option<String> {
 }
 /// Count restic's own per-file read failures and keep the first reason verbatim.
 ///
-/// restic emits one `{"message_type":"error", …}` record per unreadable source
-/// on the same JSON stream the summary arrives on, and the runner already
-/// captures it. ⛔ The reason is NOT interpreted here: a vanished file, an I/O
-/// error and a mode problem all arrive through this record and only the tool
-/// knows which one it hit.
-fn unreadable_sources(value: Option<&Value>) -> Option<UnreadableSources> {
-    let records: &[Value] = match value? {
-        Value::Array(records) => records,
-        single => std::slice::from_ref(single),
+/// restic emits one `{"message_type":"error", …}` record per unreadable source.
+/// 🔴 It writes them to **stderr**, not to the stdout stream the summary
+/// arrives on (measured on Windows, restic `backup --json`: every error record
+/// on stderr, none on stdout), so both streams are read; stdout first, for any
+/// build that puts them there. A stderr line that is not JSON is skipped, never
+/// a reason to drop the others. ⛔ The reason is NOT interpreted here: a
+/// vanished file, an I/O error and a mode problem all arrive through this
+/// record and only the tool knows which one it hit.
+fn unreadable_sources(output: &crate::runner::ResticResult) -> Option<UnreadableSources> {
+    let stdout: &[Value] = match output.json.as_ref() {
+        Some(Value::Array(records)) => records,
+        Some(single) => std::slice::from_ref(single),
+        None => &[],
     };
+    let stderr: Vec<Value> = output
+        .stderr
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line.trim()).ok())
+        .collect();
     let mut count = 0;
     let mut first_reason = None;
-    for record in records {
+    for record in stdout.iter().chain(&stderr) {
         if record.get("message_type").and_then(Value::as_str) != Some("error") {
             continue;
         }
@@ -1144,7 +1153,7 @@ impl AdmittedCapability {
                                 status: "ok".into(),
                                 snapshot_id: Some(id),
                                 error_reason: Some("incomplete".into()),
-                                unreadable: unreadable_sources(output.json.as_ref()),
+                                unreadable: unreadable_sources(&output),
                             },
                             // ⛔ No snapshot means no backup, whatever the code.
                             // ⛔ Reaching here on code 3 means the summary did
@@ -1162,7 +1171,7 @@ impl AdmittedCapability {
                                     reason_for_returncode(code).into()
                                 }),
                                 unreadable: (code == 3)
-                                    .then(|| unreadable_sources(output.json.as_ref()))
+                                    .then(|| unreadable_sources(&output))
                                     .flatten(),
                             },
                         }
@@ -1801,6 +1810,56 @@ mod tests {
         assert_eq!(
             unreadable.first_reason.as_deref(),
             Some("open /journal/b.txt: permission denied")
+        );
+    }
+
+    /// 🔴 restic writes its per-file error records to stderr and only the
+    /// summary to stdout. Reading stdout alone told the owner "some files
+    /// couldn't be read" with no count and no reason, on every partial run.
+    #[test]
+    fn a_partial_backup_counts_the_read_failures_restic_writes_to_stderr() {
+        let journal = configured_journal();
+        let runner = ObservedScript {
+            outputs: RefCell::new(VecDeque::from([
+                output(0, ""),
+                ToolOutput {
+                    returncode: 3,
+                    stdout: concat!(
+                        r#"{"message_type":"status","percent_done":1}"#,
+                        "\n",
+                        r#"{"message_type":"summary","snapshot_id":"partial"}"#,
+                        "\n"
+                    )
+                    .as_bytes()
+                    .to_vec(),
+                    stderr: concat!(
+                        r#"{"message_type":"error","error":{"message":"open C:\\j\\b.log: "#,
+                        r#"The file is in use by another process."},"#,
+                        r#""during":"archival","item":"C:\\j\\b.log"}"#,
+                        "\n",
+                        "a plain warning line that is not JSON\n",
+                        r#"{"message_type":"error","error":{"message":"open C:\\j\\c.log: denied"},"#,
+                        r#""during":"archival","item":"C:\\j\\c.log"}"#,
+                        "\n"
+                    )
+                    .as_bytes()
+                    .to_vec(),
+                },
+            ])),
+            requests: RefCell::new(Vec::new()),
+            after_unlock: RefCell::new(None),
+        };
+        let services = services(&runner, &Http, &FixedClock, &Maintenance);
+        let result = prepare(journal.path(), &FixedClock)
+            .unwrap()
+            .execute(&services);
+        assert_eq!(result.status, "ok");
+        assert_eq!(result.snapshot_id.as_deref(), Some("partial"));
+        let unreadable = result.unreadable.expect("restic's read failures on stderr");
+        assert_eq!(unreadable.count, 2);
+        assert_eq!(
+            unreadable.first_reason.as_deref(),
+            Some("open C:\\j\\b.log: The file is in use by another process.")
         );
     }
 
