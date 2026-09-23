@@ -603,6 +603,42 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             );
         }
     };
+    // A segment the owner removed holds only its tombstone. A device still
+    // holding its own copy is told so, distinctly, before anything touches the
+    // segment directory. The answer keeps the shape this case always had (a 500
+    // `failed` outcome), so devices already in the field handle it exactly as
+    // before; only the reason code is new, and a device that knows it can stop
+    // re-sending.
+    match segment_removed(
+        &state.journal_root,
+        &envelope.day,
+        &bound.stream,
+        &requested,
+    ) {
+        Ok(false) => {}
+        Ok(true) => {
+            return IngestCompletion::rejected(
+                ReasonCode::SegmentRemoved,
+                outcome_error(
+                    "failed",
+                    ReasonCode::SegmentRemoved,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "the owner removed this segment",
+                ),
+            );
+        }
+        Err(()) => {
+            return IngestCompletion::rejected(
+                ReasonCode::JournalReadFailed,
+                outcome_error(
+                    "failed",
+                    ReasonCode::JournalReadFailed,
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cannot read segment",
+                ),
+            );
+        }
+    }
     let applied = match resolve_and_apply(
         state,
         &envelope.day,
@@ -1084,6 +1120,20 @@ impl CarriedBeforeApplyHook {
 impl Drop for CarriedBeforeApplyHook {
     fn drop(&mut self) {
         BEFORE_APPLY_HOOK.with(|slot| *slot.borrow_mut() = None);
+    }
+}
+
+fn segment_removed(
+    journal_root: &Path,
+    day: &str,
+    stream: &str,
+    segment: &str,
+) -> Result<bool, ()> {
+    let segment = SegmentDir::resolve(journal_root, day, segment, stream).map_err(|_| ())?;
+    match std::fs::symlink_metadata(segment.path().join("tombstone.json")) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(_) => Err(()),
     }
 }
 
@@ -2110,6 +2160,55 @@ mod tests {
             segments["items"][0]["files"][0]["sha256"],
             format!("{:x}", sha2::Sha256::digest(b"sound"))
         );
+    }
+
+    #[tokio::test]
+    async fn a_resend_into_a_removed_segment_is_refused_as_removed() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+        let removed =
+            json!({"day":"20260804","segment":"120000_1","files":[{"submitted":"audio.flac"}]});
+        let kept =
+            json!({"day":"20260804","segment":"130000_1","files":[{"submitted":"audio.flac"}]});
+        assert_eq!(
+            call_upload(&app, removed.clone(), "audio.flac", b"sound")
+                .await
+                .1["status"],
+            "ok"
+        );
+        // What the owner's removal leaves behind: the segment holds only its tombstone.
+        let segment = root.join("chronicle/20260804/device/120000_1");
+        for entry in fs::read_dir(&segment).unwrap() {
+            let entry = entry.unwrap();
+            if entry.path().is_dir() {
+                fs::remove_dir_all(entry.path()).unwrap();
+            } else {
+                fs::remove_file(entry.path()).unwrap();
+            }
+        }
+        fs::write(segment.join("tombstone.json"), b"{}").unwrap();
+
+        let (status, body) = call_upload(&app, removed, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(
+            body["status"], "failed",
+            "the shape devices in the field already handle"
+        );
+        assert_eq!(body["reason_code"], "segment_removed");
+        let names = fs::read_dir(&segment)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec!["tombstone.json"],
+            "a refused re-send leaves nothing behind"
+        );
+
+        let (status, body) = call_upload(&app, kept, "audio.flac", b"other").await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "ok");
     }
 
     #[tokio::test]

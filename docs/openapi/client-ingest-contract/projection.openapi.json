@@ -270,7 +270,7 @@
   "info": {
     "description": "Generated from client_ingest_authority.json. Covers only the four Rust-served linked-device devices/ingest operations.",
     "title": "Linked-device v3 ingest client contract",
-    "version": "12.1.0",
+    "version": "12.2.0",
     "x-generated": true,
     "x-generated-by": "solstone-core-repository-contracts"
   },
@@ -460,9 +460,12 @@
                 }
               }
             },
-            "description": "Held sidecar bytes conflict.",
+            "description": "Held sidecar bytes conflict, or the device's stream binding is refused.",
             "x-reason-codes": [
-              "content_conflict"
+              "content_conflict",
+              "pairing_identity_unavailable",
+              "foreign_stream_binding",
+              "malformed_evidence_row"
             ]
           },
           "413": {
@@ -497,7 +500,10 @@
                 }
               }
             },
-            "description": "Journal write or notification failed."
+            "description": "Journal write or notification failed, or the owner removed the requested segment (`reason_code: segment_removed`, body `status: failed`). A device that knows `segment_removed` stops re-sending that segment.",
+            "x-reason-codes": [
+              "segment_removed"
+            ]
           }
         },
         "summary": "Upload one capture segment from a linked device",

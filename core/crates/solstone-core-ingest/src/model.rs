@@ -48,11 +48,12 @@ pub enum ReasonCode {
     ForeignStreamBinding,
     PairingIdentityUnavailable,
     StreamBindingIncomplete,
+    SegmentRemoved,
 }
 
 impl ReasonCode {
     #[cfg(test)]
-    const ALL: [Self; 42] = [
+    const ALL: [Self; 43] = [
         Self::ProtocolVersionRequired,
         Self::ProtocolVersionMalformed,
         Self::ProtocolVersionLegacy,
@@ -95,6 +96,7 @@ impl ReasonCode {
         Self::ForeignStreamBinding,
         Self::PairingIdentityUnavailable,
         Self::StreamBindingIncomplete,
+        Self::SegmentRemoved,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -141,6 +143,7 @@ impl ReasonCode {
             Self::ForeignStreamBinding => "foreign_stream_binding",
             Self::PairingIdentityUnavailable => "pairing_identity_unavailable",
             Self::StreamBindingIncomplete => "stream_binding_incomplete",
+            Self::SegmentRemoved => "segment_removed",
         }
     }
 }
