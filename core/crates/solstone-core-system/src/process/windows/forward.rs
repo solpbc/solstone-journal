@@ -334,9 +334,39 @@ pub fn forward_windows_installed_task(
             let code = forward(program, &arguments, None, Some(control), environment)?;
             Ok((code, started.elapsed()))
         },
+        is_created_after_deadline,
         session_end::requested,
         std::thread::sleep,
     )
+}
+
+/// A launch whose child process only came into existence after its admission
+/// deadline had already passed. Nothing about the child or its binding was
+/// refused; the machine was too slow to create it (measured: 57 s and 65 s on the
+/// first logon after a boot). The one launch failure the restart loop retries.
+#[derive(Debug)]
+struct CreatedAfterDeadline(io::Error);
+
+impl std::fmt::Display for CreatedAfterDeadline {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "the child was created after its launch deadline: {}",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for CreatedAfterDeadline {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.0)
+    }
+}
+
+fn is_created_after_deadline(error: &io::Error) -> bool {
+    error
+        .get_ref()
+        .is_some_and(|inner| inner.is::<CreatedAfterDeadline>())
 }
 
 /// The installed task's restart policy, apart from the process work so it can be
@@ -344,21 +374,28 @@ pub fn forward_windows_installed_task(
 /// [`INSTALLED_TASK_RESTART_LIMIT`] times, [`INSTALLED_TASK_RESTART_DELAY`] apart,
 /// with a long-lived run resetting the count.
 ///
-/// 🔴 A failed launch is an attempt too, not a terminal error. On the first logon
-/// after a boot the forwarder took 57 s to create its child (cold image, scanner
-/// still warming), the launch deadline had passed before the child existed, and
-/// the error left this loop at once: the task ended 70 and the owner had no
-/// journal until they started it by hand. Measured on the Windows checkpoint guest
-/// 2026-09-23 with process-creation auditing; the same task started cleanly on
-/// demand seconds later.
+/// 🔴 A launch whose child was created only after its deadline had passed is an
+/// attempt too, not a terminal error. On the first logon after a boot the
+/// forwarder took 57 s to create its child (cold image, scanner still warming),
+/// and the error used to leave this loop at once: the task ended 70 and the owner
+/// had no journal until they started it by hand. Measured on the Windows
+/// checkpoint guest 2026-09-23 with process-creation auditing.
+/// ⛔ Every other launch error (an entry refusal, a binding mismatch) still
+/// returns at once: retrying a refusal only delays the same answer.
 fn run_with_restarts(
     mut attempt: impl FnMut() -> io::Result<(i32, Duration)>,
+    transient: impl Fn(&io::Error) -> bool,
     session_ending: impl Fn() -> bool,
     sleep: impl Fn(Duration),
 ) -> io::Result<i32> {
     let mut attempts = 0;
     loop {
         let outcome = attempt();
+        if let Err(error) = &outcome
+            && !transient(error)
+        {
+            return outcome.map(|(code, _)| code);
+        }
         if let Ok((_, uptime)) = &outcome
             && *uptime >= RESTART_CREDIT_UPTIME
         {
@@ -399,6 +436,7 @@ fn forward(
     // Best effort: a forwarder that cannot register still forwards; it merely
     // keeps the pre-existing immediate-exit behavior at session end.
     let _ = session_end::install();
+    let deadline = control.as_ref().map(LaunchControl::deadline);
     let mut owner = match launch_windows_forwarder(&command, &environment) {
         Ok(owner) => owner,
         Err(failure) => {
@@ -407,6 +445,7 @@ fn forward(
             ));
         }
     };
+    let created_after_deadline = deadline.is_some_and(|deadline| Instant::now() >= deadline);
     let outcome = (|| {
         let stop = match (control, admitted) {
             (Some(control), Some(incoming)) => {
@@ -459,11 +498,21 @@ fn forward(
     session_end::drained();
     match outcome {
         Ok(code) => Ok(code),
-        Err(error) => Err(io::Error::other(reservation.independent_failure(
-            owner,
-            error.to_string(),
-            resources,
-        ))),
+        Err(error) => {
+            let failure = io::Error::other(reservation.independent_failure(
+                owner,
+                error.to_string(),
+                resources,
+            ));
+            if created_after_deadline {
+                Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    CreatedAfterDeadline(failure),
+                ))
+            } else {
+                Err(failure)
+            }
+        }
     }
 }
 
@@ -487,22 +536,35 @@ mod restart_policy_tests {
                     .next()
                     .expect("policy asked for one attempt too many")
             },
+            is_created_after_deadline,
             || ending,
             |_| sleeps.set(sleeps.get() + 1),
         );
         (outcome, calls.get(), sleeps.get())
     }
 
-    fn failed() -> io::Result<(i32, Duration)> {
-        Err(io::Error::other(
-            "launch deadline expired before the child existed",
+    fn created_late() -> io::Result<(i32, Duration)> {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            CreatedAfterDeadline(io::Error::other("launch connection deadline elapsed")),
+        ))
+    }
+
+    fn refused() -> io::Result<(i32, Duration)> {
+        Err(io::Error::new(
+            io::ErrorKind::TimedOut,
+            "launch connection deadline elapsed",
         ))
     }
 
     #[test]
-    fn a_failed_launch_is_retried_until_one_succeeds() {
+    fn a_child_created_after_its_deadline_is_retried_until_one_starts() {
         let (outcome, calls, sleeps) = run(
-            vec![failed(), failed(), Ok((0, Duration::from_secs(1)))],
+            vec![
+                created_late(),
+                created_late(),
+                Ok((0, Duration::from_secs(1))),
+            ],
             false,
         );
         assert_eq!(outcome.unwrap(), 0);
@@ -510,10 +572,17 @@ mod restart_policy_tests {
     }
 
     #[test]
-    fn a_launch_that_keeps_failing_stops_at_the_limit_with_its_error() {
-        let limit = INSTALLED_TASK_RESTART_LIMIT as usize;
-        let (outcome, calls, sleeps) = run((0..=limit).map(|_| failed()).collect(), false);
+    fn any_other_launch_error_returns_at_once() {
+        let (outcome, calls, sleeps) = run(vec![refused()], false);
         assert!(outcome.is_err());
+        assert_eq!((calls, sleeps), (1, 0));
+    }
+
+    #[test]
+    fn a_launch_that_keeps_starting_late_stops_at_the_limit_with_its_error() {
+        let limit = INSTALLED_TASK_RESTART_LIMIT as usize;
+        let (outcome, calls, sleeps) = run((0..=limit).map(|_| created_late()).collect(), false);
+        assert!(is_created_after_deadline(&outcome.unwrap_err()));
         assert_eq!((calls, sleeps), (limit + 1, limit));
     }
 
@@ -525,8 +594,8 @@ mod restart_policy_tests {
     }
 
     #[test]
-    fn a_session_end_stops_retrying_a_failed_launch() {
-        let (outcome, calls, sleeps) = run(vec![failed()], true);
+    fn a_session_end_stops_retrying_a_late_launch() {
+        let (outcome, calls, sleeps) = run(vec![created_late()], true);
         assert!(outcome.is_err());
         assert_eq!((calls, sleeps), (1, 0));
     }

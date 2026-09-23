@@ -324,6 +324,11 @@ pub(super) struct LaunchControl {
 }
 
 impl LaunchControl {
+    /// When this launch's acknowledgement window closes.
+    pub(crate) fn deadline(&self) -> Instant {
+        self.deadline
+    }
+
     pub(super) fn prepare(
         provenance: &HostedLaunchProvenance,
         environment: &mut BTreeMap<OsString, OsString>,
