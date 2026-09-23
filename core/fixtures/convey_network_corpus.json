@@ -186,7 +186,7 @@
             "PAIR_NETWORK_LINE": "this device needs to be on your network (or your VPN) to pair. expires in {time}.",
             "PAIR_PUBLIC_ADDRESS_LINE": "this pairing link uses your public address. expires in {time}.",
             "PAIR_START_FAIL_BODY": "couldn't start pairing. try again.",
-            "PAIR_START_PAIRED_DEVICE_BODY": "pairing didn't start. this request isn't allowed to open a pairing window.",
+            "PAIR_START_PAIRED_DEVICE_BODY": "pairing didn't start. finish pairing this device first.",
             "PRESENTATION_COMPUTER_LABEL": "computer",
             "PRESENTATION_GLASSES_LABEL": "glasses",
             "PRESENTATION_PHONE_LABEL": "phone",

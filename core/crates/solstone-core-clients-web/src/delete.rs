@@ -68,7 +68,7 @@ fn owner_access_required() -> Response {
     error_envelope(
         "owner_access_required",
         "Owner access required",
-        "the owner on this computer or a paired device is required",
+        "use the computer your journal runs on, or a paired device",
         StatusCode::FORBIDDEN,
     )
     .into_response()

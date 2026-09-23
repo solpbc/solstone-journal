@@ -291,7 +291,7 @@
     },
     "/app/network/api/clients/{cid}/label": {
       "patch": {
-        "description": "Set or clear the owner override label for a paired device. The computer the journal runs on and a device already paired to it may both set it.",
+        "description": "Set or clear the owner override label for a paired device. Callable from the computer the journal runs on or from any device paired with the journal.",
         "operationId": "client.patchClientLabel",
         "parameters": [
           {

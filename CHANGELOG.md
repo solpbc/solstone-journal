@@ -13,7 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- you can manage your journal from any device you've paired, like your phone: agents, adding, renaming and unpairing devices, local addresses, and erasing location work from any of them the same way they do on the computer your journal runs on.
+- adding and renaming devices, using the journal's agents app and erasing location data worked only on the computer your journal runs on. they now work from any device you've paired, like your phone.
 - a recent update left most of what went into your journal under none of your facets, so it was missing from your activity lists, including today's. new additions again go under the unmuted facet that fits best. this release doesn't refile what already went in under no facet.
 - with your own Anthropic key, newer Claude models like Claude Sonnet 5 could turn away much of your journal's work, such as understanding screens and importing documents. your journal no longer sends the settings those models refuse, so they work again.
 - with your own Gemini key, some models, such as Gemini 3.1 Pro Preview and Gemini 3.5 Flash Lite, failed your journal's model check and couldn't be chosen. they can now.

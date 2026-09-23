@@ -23,8 +23,8 @@
       "sha256": "a5c332431aec20f3d4abc89f1b8d9c7d34f000b7696fe1e2b94836d787b1810d"
     },
     "projection.openapi.json": {
-      "byte_count": 10685,
-      "sha256": "b4f2d463c2d604b36a5a66d5794349519141fdd7d2006103d4db0460d43e0ea6"
+      "byte_count": 10692,
+      "sha256": "22395481ee3008de9cadc457ad408845431fd3a4af751d3af033c4cc990b669e"
     },
     "vectors.json": {
       "byte_count": 1967,
@@ -37,7 +37,7 @@
       "id": "openapi.client_description_contract_authority",
       "path": "core/crates/solstone-core-repository-contracts/src/contracts/client_description_contract_authority.json",
       "role": "openapi_source",
-      "sha256": "d19848a87eb590ce6a42e04a477ac7566fc31dcaa316e48fed504a7fe12f6477"
+      "sha256": "ca0ad5a4b4d9e20afe918d4645de02e7c071c9a143b721024b3211d34364fc2d"
     }
   ],
   "openapi_document_version": "1.0.0",
