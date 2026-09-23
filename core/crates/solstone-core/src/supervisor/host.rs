@@ -297,7 +297,7 @@ pub async fn run_hosted(
         Ok(binding) => binding,
         Err(reason) => return SupervisorHostOutcome::Refused { reason },
     };
-    let journal_binary = match runtime::preflight_journal_binary(&options) {
+    let journal_binary = match runtime::preflight_journal_binary() {
         Ok(binary) => binary,
         Err(error) => {
             return SupervisorHostOutcome::Refused {

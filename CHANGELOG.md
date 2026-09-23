@@ -6,6 +6,15 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- `journal transfer send` is gone. it couldn't deliver into another journal, so nothing that worked was lost. to bring one journal into another, download it from the journal card in that journal's import app, or run `journal archive export`. then merge the zip with the journal card in the receiving journal's import app, or run `journal archive merge`.
+- journal sources, which let another journal push content into yours, are gone too: `journal importer journal-source`, and `solstone call import list-staged`, `resolve-entity`, `resolve-staged-facet`, `resolve-config` and `resolve-config-all`. anything a source already merged stays in your journal. items a source left waiting for your review can no longer be resolved.
+- pairing a device as a peer is no longer offered. a device you paired that way before stays paired until you unpair it.
+- `journal export`, `journal transfer export`, `journal transfer import` and `journal config journal PATH --merge` are gone. they only printed a message. use `journal archive export` and `journal archive merge`.
+- the `--remote` option on `journal supervisor` and `journal start` is gone. it did nothing except stop parts of your journal from running. if a script passes it, remove it, or your journal won't start.
+- your journal no longer reads the `.tgz` day archives `journal transfer export` made before 2.0. if you have one, merge it before you install this update. if you've already updated, export that day again as a zip from the journal it came from (`journal archive export --day`) and merge that zip, or merge the `.tgz` into a new, empty journal on an earlier 2.x release, export that journal as a zip, and merge that zip into your journal.
+
 ### Changed
 
 - the background of your journal's web app no longer turns dark brown at sunset, so the search hints and the settings sidebar are easy to read at night. after sunset a warm glow stays in the corner where the sun went down, fading out around the middle of the night.

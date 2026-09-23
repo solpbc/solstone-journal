@@ -6,8 +6,8 @@ target = "x86_64-pc-windows-msvc"
 # after removing two retired support crates. Count workspace members, then those
 # with any
 # target whose kind includes `lib`; one package is counted once.
-workspace_packages = 134
-library_packages = 128
+workspace_packages = 132
+library_packages = 126
 
 [[exclusions]]
 package = "ring"

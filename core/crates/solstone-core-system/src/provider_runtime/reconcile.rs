@@ -1998,7 +1998,7 @@ mod tests {
                 desired_fingerprint: None,
                 has_plan: false,
                 boot_required: false,
-                detail: Some(serde_json::json!({"remote_mode": true})),
+                detail: Some(serde_json::json!({"platform": "plan9"})),
             }),
         });
         let mut store = InMemoryRuntimeStore::default();
@@ -2006,7 +2006,7 @@ mod tests {
         coordinator.handle_truth_result(now(1.0), &mut state, &mut store, &mut sink, None);
         assert_eq!(
             state.latest_detail,
-            Some(serde_json::json!({"remote_mode": true}))
+            Some(serde_json::json!({"platform": "plan9"}))
         );
 
         // A later observation carrying no detail replaces the old one with

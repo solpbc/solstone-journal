@@ -187,7 +187,6 @@ pub(crate) struct SupervisorState {
     pub journal: PathBuf,
     #[cfg(windows)]
     pub service_guard: solstone_core_installation_identity::GuardFields,
-    pub is_remote_mode: bool,
     pub no_daily: bool,
     pub server: Arc<CallosumSocketServer>,
     pub connection: CallosumSocketConnection,
@@ -916,12 +915,8 @@ pub(crate) enum JournalBinaryPreflightError {
     InvalidLayout,
 }
 
-pub(crate) fn preflight_journal_binary(
-    options: &SupervisorOptions,
-) -> Result<Option<PathBuf>, JournalBinaryPreflightError> {
-    if app_fixture_binary().is_some()
-        || options.remote.as_deref().is_some_and(|url| !url.is_empty())
-    {
+pub(crate) fn preflight_journal_binary() -> Result<Option<PathBuf>, JournalBinaryPreflightError> {
+    if app_fixture_binary().is_some() {
         return Ok(None);
     }
     let path =
@@ -1188,19 +1183,16 @@ fn app_processes(
 }
 
 fn app_service_enablement(options: &SupervisorOptions) -> Vec<(AppService, bool)> {
-    let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     let services = vec![
-        (AppService::Convey, !remote && !options.no_convey),
-        (AppService::Sense, !remote),
-        (AppService::Cortex, !remote && !options.no_cortex),
-        (AppService::Spl, !remote && !options.no_spl),
+        (AppService::Convey, !options.no_convey),
+        (AppService::Sense, true),
+        (AppService::Cortex, !options.no_cortex),
+        (AppService::Spl, !options.no_spl),
     ];
     #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
     let services = {
         let mut services = services;
-        if !remote {
-            services.push((AppService::Mcp, true));
-        }
+        services.push((AppService::Mcp, true));
         services
     };
     services
@@ -1528,7 +1520,6 @@ pub(crate) async fn boot_and_tick(
     });
     let clock: Arc<dyn solstone_core_system::provider_runtime::RuntimeClock> =
         Arc::new(SystemRuntimeClock::default());
-    let remote = options.remote.as_deref().is_some_and(|url| !url.is_empty());
     let local_shared = Arc::new(LocalRuntimeShared::default());
     let fixture_truth = std::env::var("SOLSTONE_SUPERVISOR_LOCAL_FIXTURE").as_deref() == Ok("1");
     // The test fixture selects native Metal without inspecting host GPU hardware.
@@ -1593,14 +1584,13 @@ pub(crate) async fn boot_and_tick(
             parakeet_shared.clone(),
             ParakeetTruthConfig {
                 journal_path: journal.clone(),
-                remote_mode: false,
                 platform: "linux".to_owned(),
                 machine: "x86_64".to_owned(),
                 vulkan_devices: Vec::new(),
             },
         )
     } else {
-        ParakeetTruthSeam::new(parakeet_shared.clone(), journal.clone(), remote)
+        ParakeetTruthSeam::new(parakeet_shared.clone(), journal.clone())
     };
     let parakeet = ParakeetProvider {
         coordinator: ProviderRuntimeCoordinator::new(),
@@ -1712,7 +1702,6 @@ pub(crate) async fn boot_and_tick(
         journal,
         #[cfg(windows)]
         service_guard,
-        is_remote_mode: remote,
         no_daily: options.no_daily,
         server,
         connection,
@@ -1781,19 +1770,10 @@ pub(crate) async fn boot_and_tick(
         return Err(abort_pre_ready_state(&mut state, &lifecycle, startup).await);
     }
     #[cfg(not(windows))]
-    let ready_extra = {
-        let mut extra = serde_json::Map::new();
-        if remote {
-            extra.insert("remote".into(), serde_json::Value::Bool(true));
-        }
-        extra
-    };
+    let ready_extra = serde_json::Map::new();
     #[cfg(windows)]
     let ready_extra = {
         let mut extra = serde_json::Map::new();
-        if remote {
-            extra.insert("remote".into(), serde_json::Value::Bool(true));
-        }
         if let Some(root) = installed_task {
             if root.journal() != state.journal.as_path() {
                 let startup = RuntimeBootError::Startup("installed root journal mismatch".into());
@@ -1822,7 +1802,6 @@ pub(crate) async fn boot_and_tick(
     if let Err(error) = tick::initialize_catchup(
         &state.journal,
         &state.queue,
-        state.is_remote_mode,
         state.no_daily,
         chrono::Local::now().date_naive(),
         SystemTime::now(),

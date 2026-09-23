@@ -407,8 +407,7 @@
         "type": "object",
         "x-journal-contract": {
           "allowed_producers": [
-            "native observers",
-            "solstone observe transfer"
+            "native observers"
           ],
           "file_kind": "ingest_envelope",
           "format_id": "observer-ingest-envelope",

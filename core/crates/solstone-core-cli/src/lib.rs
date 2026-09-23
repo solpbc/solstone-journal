@@ -21,7 +21,7 @@ macro_rules! speaker_resolve_usage {
 pub const USAGE: &str = concat!(
     "Usage:\n  solstone-core --version\n  solstone-core warm [--json]\n  solstone-core check [--json]\n  solstone-core assets\n  solstone-core doctor [--verbose] [--json | --jsonl] [--port PORT] [--feature NAME] [--readiness]\n  solstone-core journal-path [--journal PATH] [--create]\n  solstone-core indexer [--journal PATH] [--reset] [--rebuild-edges] [--rescan | --rescan-full | --rescan-file PATH]\n  solstone-core indexer search [QUERY] [--journal PATH] [--json] [--limit N] [--offset N] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax] [--counts] [--order relevance|recency]\n  solstone-core indexer counts [QUERY] [--journal PATH] [--json] [--day DAY] [--day-from DAY] [--day-to DAY] [--facet FACET] [--agent AGENT] [--stream STREAM] [--time-bucket BUCKET] [--relax]\n  solstone-core indexer agents [--journal PATH] [--json]\n  solstone-core indexer coverage [--journal PATH] [--json]\n  solstone-core journal-config read [--journal PATH]\n  solstone-core journal-config commit [--journal PATH] [--lock-timeout-ms N] --expect <fingerprint|absent>\n  solstone-core speaker-transcript-write\n",
     speaker_resolve_usage!(),
-    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  journal convey --port PORT [--journal PATH]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule] [--remote URL]\n",
+    "  solstone-core local probe-nvidia\n  solstone-core local plan\n  solstone-core local connect\n  solstone-core local install <pins|paths|fingerprint|verify|cuda|manifest|inspect|probe-binary|run> ...\n  solstone-core local generate\n  solstone-core generate --contract\n  solstone-core generate --one-shot\n  solstone-core generate --session --max-in-flight N\n  solstone-core cogitate --contract\n  solstone-core cogitate --talent-contract\n  solstone-core cogitate --one-shot\n  solstone-core brain refresh --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256 | --expect-absent] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain prerequisite-renewal --session [--journal PATH] [--run-id ID] [--expect-fingerprint SHA256] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain record-runtime-failure [--journal PATH]\n  solstone-core brain inspect [--journal PATH] [--bundled-runtime-fingerprint SHA256]\n  solstone-core brain fingerprint\n  solstone-core body rebuild [--journal PATH] [--json]\n  solstone-core body apple --source PATH [--detect | [--journal PATH] [--date-from DAY] [--date-to DAY] [--force] [--save [--confirm-body-save]] [--json]\n  solstone-core body oura connect [--journal PATH] [--json]\n  solstone-core body oura sync [--journal PATH] [--window-days N] [--save [--confirm-body-save | --scheduled]] [--json]\n  journal convey --port PORT [--journal PATH]\n  journal schedule [-v | --verbose] [-d | --debug]\n  solstone-core grab [DAY [STREAM [SEGMENT [SCREEN [FRAME_ID[,FRAME_ID...]]]]]] [--out PATH] [--force] [--json] [-v | --verbose] [-d | --debug] [-h | --help]\n  solstone-core spl service [-v | --verbose] [-d | --debug]\n  solstone-core supervisor [PORT] [--direct-port DIRECT_PORT] [--no-daily] [--journal PATH] [--no-convey] [--no-cortex] [--no-spl] [--no-schedule]\n",
     "  journal top [-h] [-v | --verbose] [-d | --debug]\n  journal health [-h] [-v | --verbose] [-d | --debug]\n  journal health logs [-h] [-c N] [-f] [--since TIME] [--service NAME] [--grep PATTERN] [-v | --verbose] [-d | --debug]\n",
     "  solstone-core sense [-v | --verbose] [-d | --debug]\n",
     "  solstone-core navigate [-h | --help] PATH\n",
@@ -326,7 +326,7 @@ pub const TRANSCRIBE_USAGE: &str = concat!(
 
 pub const SUPERVISOR_USAGE: &str = concat!(
     "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
-    "                          [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                          [--no-convey] [--no-schedule]\n",
     "                          [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
     "                          [-v] [-d]\n",
     "                          [port]\n",
@@ -334,7 +334,7 @@ pub const SUPERVISOR_USAGE: &str = concat!(
 
 pub const START_USAGE: &str = concat!(
     "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
-    "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                     [--no-convey] [--no-schedule]\n",
     "                     [--hosted-parent] [--journal JOURNAL]\n",
     "                     [--direct-port DIRECT_PORT] [-v] [-d]\n",
     "                     [port]\n",
@@ -342,7 +342,7 @@ pub const START_USAGE: &str = concat!(
 
 pub const SUPERVISOR_HELP: &str = concat!(
     "usage: journal supervisor [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
-    "                          [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                          [--no-convey] [--no-schedule]\n",
     "                          [--journal JOURNAL] [--direct-port DIRECT_PORT]\n",
     "                          [-v] [-d]\n",
     "                          [port]\n",
@@ -360,8 +360,6 @@ pub const SUPERVISOR_HELP: &str = concat!(
     "  --no-spl           Do not start the private network relay\n",
     "  --no-convey        Do not start the Convey web application\n",
     "  --no-schedule      Do not initialize or run the schedule engine\n",
-    "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
-    "                     implemented)\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
     "                     journal resolution.\n",
     "  --direct-port DIRECT_PORT\n",
@@ -372,7 +370,7 @@ pub const SUPERVISOR_HELP: &str = concat!(
 
 pub const START_HELP: &str = concat!(
     "usage: journal start [-h] [--no-daily] [--no-cortex] [--no-spl]\n",
-    "                     [--no-convey] [--no-schedule] [--remote REMOTE]\n",
+    "                     [--no-convey] [--no-schedule]\n",
     "                     [--hosted-parent] [--journal JOURNAL]\n",
     "                     [--direct-port DIRECT_PORT] [-v] [-d]\n",
     "                     [port]\n",
@@ -390,8 +388,6 @@ pub const START_HELP: &str = concat!(
     "  --no-spl           Do not start the private network relay\n",
     "  --no-convey        Do not start the Convey web application\n",
     "  --no-schedule      Do not initialize or run the schedule engine\n",
-    "  --remote REMOTE    Remote mode: URL for segment transfer (not yet\n",
-    "                     implemented)\n",
     "  --hosted-parent    Require the direct parent process to remain live\n",
     "  --journal JOURNAL  Use this path as the journal root instead of normal\n",
     "                     journal resolution.\n",
@@ -1045,7 +1041,6 @@ pub struct SupervisorOptions {
     pub no_convey: bool,
     pub no_cortex: bool,
     pub no_spl: bool,
-    pub remote: Option<OsString>,
     pub direct_port: Option<u16>,
     pub hosted_parent: bool,
 }
@@ -1188,7 +1183,6 @@ pub enum ConfigCommand {
 pub enum ConfigAction {
     Move,
     Switch,
-    Merge,
     Force,
 }
 
@@ -1202,11 +1196,11 @@ pub struct ConfigJournalOptions {
 
 pub const CONFIG_USAGE: &str = concat!(
     "usage: journal config [-h] {show,journal} ...\n",
-    "       journal config journal PATH [--move | --switch | --merge | --force] [--yes | --dry-run]\n"
+    "       journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]\n"
 );
 pub const CONFIG_HELP: &str = concat!(
     "usage: journal config [-h] {show,journal} ...\n",
-    "       journal config journal PATH [--move | --switch | --merge | --force] [--yes | --dry-run]\n\n",
+    "       journal config journal PATH [--move | --switch | --force] [--yes | --dry-run]\n\n",
     "positional arguments:\n  {show,journal}\n",
     "    show          show the configured journal path and source\n",
     "    journal PATH  change the journal path used by this installation\n"
@@ -2539,7 +2533,6 @@ fn parse_supervisor(
     let mut no_convey = false;
     let mut no_cortex = false;
     let mut no_spl = false;
-    let mut remote = None;
     let mut direct_port = None;
     let mut hosted_parent = false;
     let mut index = 0;
@@ -2623,20 +2616,15 @@ fn parse_supervisor(
                 direct_port = Some(parse_direct_port_value(value)?);
                 index += 1;
             }
-            value if value == OsStr::new("--journal") || value == OsStr::new("--remote") => {
-                let destination = if value == OsStr::new("--journal") {
-                    &mut journal_override
-                } else {
-                    &mut remote
-                };
-                if destination.is_some() {
+            value if value == OsStr::new("--journal") => {
+                if journal_override.is_some() {
                     return Err(SupervisorParseError::Usage);
                 }
                 let value = args.get(index + 1).ok_or(SupervisorParseError::Usage)?;
                 if value.to_string_lossy().starts_with("--") {
                     return Err(SupervisorParseError::Usage);
                 }
-                *destination = Some(value.clone());
+                journal_override = Some(value.clone());
                 index += 2;
             }
             value if !port_consumed => {
@@ -2659,7 +2647,6 @@ fn parse_supervisor(
         no_convey,
         no_cortex,
         no_spl,
-        remote,
         direct_port,
         hosted_parent,
     })
@@ -3402,7 +3389,6 @@ fn parse_config(args: &[OsString]) -> Result<ConfigCommand, UsageError> {
                 match arg.to_str() {
                     Some("--move") if action.is_none() => action = Some(ConfigAction::Move),
                     Some("--switch") if action.is_none() => action = Some(ConfigAction::Switch),
-                    Some("--merge") if action.is_none() => action = Some(ConfigAction::Merge),
                     Some("--force") if action.is_none() => action = Some(ConfigAction::Force),
                     Some("--yes") if !dry_run => yes = true,
                     Some("--dry-run") if !yes => dry_run = true,
@@ -8256,7 +8242,6 @@ mod tests {
                 no_convey: false,
                 no_cortex: false,
                 no_spl: false,
-                remote: None,
                 direct_port: None,
                 hosted_parent: false,
             }))
@@ -8279,7 +8264,6 @@ mod tests {
                 no_convey: false,
                 no_cortex: false,
                 no_spl: false,
-                remote: None,
                 direct_port: None,
                 hosted_parent: false,
             }))
@@ -8738,8 +8722,6 @@ mod tests {
                 "supervisor",
                 "5015",
                 "--no-spl",
-                "--remote",
-                "https://example.test",
                 "--journal",
                 "/tmp/journal",
                 "--no-convey",
@@ -8755,7 +8737,6 @@ mod tests {
                 no_convey: true,
                 no_cortex: true,
                 no_spl: true,
-                remote: Some(OsString::from("https://example.test")),
                 direct_port: None,
                 hosted_parent: false,
             }))
@@ -8774,7 +8755,6 @@ mod tests {
                 no_convey: false,
                 no_cortex: false,
                 no_spl: false,
-                remote: None,
                 direct_port: None,
                 hosted_parent: false,
             }))
@@ -8789,7 +8769,6 @@ mod tests {
                 no_convey: false,
                 no_cortex: false,
                 no_spl: false,
-                remote: None,
                 direct_port: Some(9000),
                 hosted_parent: false,
             }))
@@ -8804,7 +8783,6 @@ mod tests {
                 no_convey: false,
                 no_cortex: false,
                 no_spl: false,
-                remote: None,
                 direct_port: Some(9000),
                 hosted_parent: false,
             }))
@@ -8856,58 +8834,47 @@ mod tests {
 
         for no_flag_mask in 0..32 {
             for journal_override in [false, true] {
-                for remote in [false, true] {
-                    for direct_port in [false, true] {
-                        for convey_port in [None, Some("5015")] {
-                            let mut plain = vec![OsString::from("start")];
-                            for (mask, flag) in no_flags {
-                                if no_flag_mask & mask != 0 {
-                                    plain.push(OsString::from(flag));
-                                }
+                for direct_port in [false, true] {
+                    for convey_port in [None, Some("5015")] {
+                        let mut plain = vec![OsString::from("start")];
+                        for (mask, flag) in no_flags {
+                            if no_flag_mask & mask != 0 {
+                                plain.push(OsString::from(flag));
                             }
-                            if journal_override {
-                                plain.extend([
-                                    OsString::from("--journal"),
-                                    OsString::from("/tmp/journal"),
-                                ]);
-                            }
-                            if remote {
-                                plain.extend([
-                                    OsString::from("--remote"),
-                                    OsString::from("https://example.test"),
-                                ]);
-                            }
-                            if direct_port {
-                                plain.extend([
-                                    OsString::from("--direct-port"),
-                                    OsString::from("9000"),
-                                ]);
-                            }
-                            if let Some(port) = convey_port {
-                                plain.push(OsString::from(port));
-                            }
-
-                            let plain_options = match evaluate_args(&plain) {
-                                Ok(Command::Supervisor(options)) => options,
-                                other => panic!("{plain:?}: {other:?}"),
-                            };
-                            let mut hosted = plain.clone();
-                            hosted.insert(1, OsString::from("--hosted-parent"));
-                            let hosted_options = match evaluate_args(&hosted) {
-                                Ok(Command::Supervisor(options)) => options,
-                                other => panic!("{hosted:?}: {other:?}"),
-                            };
-
-                            assert!(!plain_options.hosted_parent, "{plain:?}");
-                            assert_eq!(
-                                hosted_options,
-                                SupervisorOptions {
-                                    hosted_parent: true,
-                                    ..plain_options
-                                },
-                                "{plain:?}"
-                            );
                         }
+                        if journal_override {
+                            plain.extend([
+                                OsString::from("--journal"),
+                                OsString::from("/tmp/journal"),
+                            ]);
+                        }
+                        if direct_port {
+                            plain.extend([OsString::from("--direct-port"), OsString::from("9000")]);
+                        }
+                        if let Some(port) = convey_port {
+                            plain.push(OsString::from(port));
+                        }
+
+                        let plain_options = match evaluate_args(&plain) {
+                            Ok(Command::Supervisor(options)) => options,
+                            other => panic!("{plain:?}: {other:?}"),
+                        };
+                        let mut hosted = plain.clone();
+                        hosted.insert(1, OsString::from("--hosted-parent"));
+                        let hosted_options = match evaluate_args(&hosted) {
+                            Ok(Command::Supervisor(options)) => options,
+                            other => panic!("{hosted:?}: {other:?}"),
+                        };
+
+                        assert!(!plain_options.hosted_parent, "{plain:?}");
+                        assert_eq!(
+                            hosted_options,
+                            SupervisorOptions {
+                                hosted_parent: true,
+                                ..plain_options
+                            },
+                            "{plain:?}"
+                        );
                     }
                 }
             }
@@ -8967,9 +8934,6 @@ mod tests {
             &["supervisor", "--no-spl", "--no-spl"][..],
             &["supervisor", "--no-daily", "--no-daily"][..],
             &["supervisor", "--no-schedule", "--no-schedule"][..],
-            &["supervisor", "--remote"][..],
-            &["supervisor", "--remote", "--no-spl"][..],
-            &["supervisor", "--remote", "a", "--remote", "b"][..],
             &["supervisor", "--journal", "/a", "--journal", "/b"][..],
             &["supervisor", "5015", "6015"][..],
             &["supervisor", "nope-a-port"][..],

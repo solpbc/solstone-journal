@@ -69,7 +69,6 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
             parakeet_shared.clone(),
             ParakeetTruthConfig {
                 journal_path: journal.to_path_buf(),
-                remote_mode: false,
                 platform: std::env::consts::OS.to_owned(),
                 machine: std::env::consts::ARCH.to_owned(),
                 vulkan_devices: Vec::new(),

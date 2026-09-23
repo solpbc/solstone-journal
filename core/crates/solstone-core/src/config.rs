@@ -26,13 +26,10 @@ use solstone_core_setup::{
     },
 };
 
-const MERGE_INSTRUCTIONS: &str = "journal config: --merge is temporarily unavailable.\nKeep both journal copies until archive merge support is migrated.";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RequestedAction {
     Move,
     Switch,
-    Merge,
     Force,
 }
 impl From<ConfigAction> for RequestedAction {
@@ -40,7 +37,6 @@ impl From<ConfigAction> for RequestedAction {
         match v {
             ConfigAction::Move => Self::Move,
             ConfigAction::Switch => Self::Switch,
-            ConfigAction::Merge => Self::Merge,
             ConfigAction::Force => Self::Force,
         }
     }
@@ -50,7 +46,6 @@ pub(crate) enum Action {
     Proceed,
     Move,
     Switch,
-    Merge,
     Noop,
     Refuse,
 }
@@ -100,7 +95,7 @@ fn valid_flags(c: &JournalChange) -> &'static str {
     if c.current_active && !c.target_active {
         "--move, --switch"
     } else {
-        "--switch, --merge, --force"
+        "--switch, --force"
     }
 }
 fn refusal(c: &JournalChange) -> String {
@@ -131,7 +126,7 @@ fn existing_target(c: &JournalChange) -> String {
 }
 fn cross_filesystem(c: &JournalChange) -> String {
     format!(
-        "journal config: refused: cannot move across filesystems (current device={}, target parent device={}); archive merge is temporarily unavailable, so keep both journal copies",
+        "journal config: refused: cannot move across filesystems (filesystem ids {} and {}); stop your journal with 'journal down', copy the journal folder to the new path, use --switch, then start it again with 'journal up'",
         c.current_device
             .map_or_else(|| "None".to_owned(), |v| v.to_string()),
         c.target_parent_device
@@ -139,14 +134,6 @@ fn cross_filesystem(c: &JournalChange) -> String {
     )
 }
 pub(crate) fn decide(c: &JournalChange) -> Decision {
-    if c.action == Some(RequestedAction::Merge) {
-        return Decision {
-            action: Action::Merge,
-            exit_code: 1,
-            message: Some(MERGE_INSTRUCTIONS.into()),
-            plan_only: false,
-        };
-    }
     if c.paths_equal {
         return decision(Action::Noop, 0);
     }
@@ -174,7 +161,7 @@ pub(crate) fn decide(c: &JournalChange) -> Decision {
             Some(existing_target(c))
         } else if c.target_active {
             Some(format!(
-                "journal config: refused: --move requires a not active target; current is {} and target is {}; valid flags: --switch, --merge, --force",
+                "journal config: refused: --move requires a not active target; current is {} and target is {}; valid flags: --switch, --force",
                 state(c.current_active),
                 state(c.target_active)
             ))
@@ -639,10 +626,6 @@ fn execute(c: &JournalChange, d: &Decision, service: &dyn ServiceCommandRunner) 
         );
     }
     match d.action {
-        Action::Merge => {
-            println!("{}", d.message.as_ref().unwrap());
-            1
-        }
         Action::Refuse => {
             eprintln!("{}", d.message.as_ref().unwrap());
             1
@@ -1154,11 +1137,8 @@ mod tests {
 
     #[test]
     fn decide_preserves_reference_order_and_dry_run_landmines() {
-        let mut c = change(Some(RequestedAction::Merge));
-        assert_eq!(decide(&c).action, Action::Merge);
+        let mut c = change(None);
         c.paths_equal = true;
-        assert_eq!(decide(&c).action, Action::Merge);
-        c.action = None;
         assert_eq!(decide(&c).action, Action::Noop);
         c.paths_equal = false;
         c.dry_run = true;
@@ -1194,7 +1174,7 @@ mod tests {
         c.target_parent_device = Some(2);
         assert_eq!(
             decide(&c).message,
-            Some("journal config: refused: cannot move across filesystems (current device=1, target parent device=2); archive merge is temporarily unavailable, so keep both journal copies".to_owned())
+            Some("journal config: refused: cannot move across filesystems (filesystem ids 1 and 2); stop your journal with 'journal down', copy the journal folder to the new path, use --switch, then start it again with 'journal up'".to_owned())
         );
         c.same_filesystem = Some(true);
         c.dry_run = true;

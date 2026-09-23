@@ -37,7 +37,7 @@ pub use parakeet::{
 };
 pub use parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
-    platform_cannot_host_not_desired, remote_mode_not_desired,
+    platform_cannot_host_not_desired,
 };
 pub use parakeet_truth_seam::{
     ParakeetTruthConfig, ParakeetTruthSeam, parakeet_physical_thread_count,

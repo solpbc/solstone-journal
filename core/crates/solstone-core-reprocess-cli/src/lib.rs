@@ -65,7 +65,6 @@ pub enum DayOutcome {
     AlreadyComplete,
     CurrentDegraded,
     NoThinkingEngine,
-    Remote,
     Unreachable,
     Failed(String),
 }
@@ -254,9 +253,6 @@ where
     if solstone_core_system::no_thinking_engine_chosen(journal) {
         return DayOutcome::NoThinkingEngine;
     }
-    if flavor != Flavor::FromScratch && is_remote_supervisor(journal) {
-        return DayOutcome::Remote;
-    }
     if flavor == Flavor::FromScratch {
         return if transport(&request_envelope(day)) {
             DayOutcome::Submitted(flavor)
@@ -298,20 +294,6 @@ where
     }
 }
 
-fn is_remote_supervisor(journal: &Path) -> bool {
-    let ready_path = journal.join("health/supervisor.ready");
-    let Ok(bytes) = std::fs::read(ready_path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
-        return false;
-    };
-    value
-        .get("remote")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-}
-
 fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
     match outcome {
         DayOutcome::Malformed => failure("expected day in YYYYMMDD format"),
@@ -336,9 +318,6 @@ fn render_day_outcome(day: &str, outcome: DayOutcome) -> CliRun {
         )),
         DayOutcome::NoThinkingEngine => {
             failure("no model is chosen yet. choose one in thinking, then retry")
-        }
-        DayOutcome::Remote => {
-            failure("this journal is following another machine. reprocess it there.")
         }
         DayOutcome::Unreachable => failure(UNREACHABLE_MESSAGE),
         DayOutcome::Failed(error) => failure(&format!("reprocess failed: {error}")),
@@ -1304,140 +1283,6 @@ mod tests {
             assert!(matches!(outcome, DayOutcome::NoThinkingEngine));
             assert_eq!(calls, 0);
         }
-    }
-
-    #[test]
-    fn remote_supervisor_refuses_drain_flavors_but_allows_from_scratch() {
-        let root = TempDir::new().unwrap();
-        write_test_provider(root.path());
-        fs::write(
-            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
-            "raw\n",
-        )
-        .unwrap();
-        let health_dir = root.path().join("health");
-        fs::create_dir_all(&health_dir).unwrap();
-        fs::write(
-            health_dir.join("supervisor.ready"),
-            serde_json::to_vec(&json!({"remote": true})).unwrap(),
-        )
-        .unwrap();
-
-        let mut calls = 0;
-        let process_now = reprocess_day_with(
-            root.path(),
-            DAY,
-            Flavor::ProcessNow,
-            now(),
-            chrono_tz::UTC,
-            |_| {
-                calls += 1;
-                true
-            },
-        );
-        assert!(matches!(process_now, DayOutcome::Remote));
-        assert_eq!(calls, 0);
-
-        let mark_updated = reprocess_day_with(
-            root.path(),
-            DAY,
-            Flavor::MarkUpdated,
-            now(),
-            chrono_tz::UTC,
-            |_| {
-                calls += 1;
-                true
-            },
-        );
-        assert!(matches!(mark_updated, DayOutcome::Remote));
-        assert_eq!(calls, 0);
-
-        let from_scratch = reprocess_day_with(
-            root.path(),
-            DAY,
-            Flavor::FromScratch,
-            now(),
-            chrono_tz::UTC,
-            |_| {
-                calls += 1;
-                true
-            },
-        );
-        assert!(matches!(
-            from_scratch,
-            DayOutcome::Submitted(Flavor::FromScratch)
-        ));
-        assert_eq!(calls, 1);
-    }
-
-    #[test]
-    fn remote_supervisor_absent_or_false_marker_falls_through_to_send() {
-        let root = TempDir::new().unwrap();
-        write_test_provider(root.path());
-        fs::write(
-            segment(root.path(), DAY, "090000_60").join("audio.jsonl"),
-            "raw\n",
-        )
-        .unwrap();
-        let health = root.path().join("chronicle").join(DAY).join("health");
-        fs::create_dir_all(&health).unwrap();
-        fs::write(health.join("stream.updated"), "").unwrap();
-
-        // 1. Absent supervisor.ready
-        let mut calls = 0;
-        let outcome = reprocess_day_with(
-            root.path(),
-            DAY,
-            Flavor::ProcessNow,
-            now(),
-            chrono_tz::UTC,
-            |_| {
-                calls += 1;
-                true
-            },
-        );
-        assert!(matches!(outcome, DayOutcome::Submitted(Flavor::ProcessNow)));
-        assert_eq!(calls, 1);
-
-        // 2. "remote": false
-        let health_dir = root.path().join("health");
-        fs::create_dir_all(&health_dir).unwrap();
-        fs::write(
-            health_dir.join("supervisor.ready"),
-            serde_json::to_vec(&json!({"remote": false})).unwrap(),
-        )
-        .unwrap();
-        let mut calls = 0;
-        let outcome = reprocess_day_with(
-            root.path(),
-            DAY,
-            Flavor::ProcessNow,
-            now(),
-            chrono_tz::UTC,
-            |_| {
-                calls += 1;
-                true
-            },
-        );
-        assert!(matches!(outcome, DayOutcome::Submitted(Flavor::ProcessNow)));
-        assert_eq!(calls, 1);
-
-        // 3. Corrupted json
-        fs::write(health_dir.join("supervisor.ready"), b"not valid json").unwrap();
-        let mut calls = 0;
-        let outcome = reprocess_day_with(
-            root.path(),
-            DAY,
-            Flavor::ProcessNow,
-            now(),
-            chrono_tz::UTC,
-            |_| {
-                calls += 1;
-                true
-            },
-        );
-        assert!(matches!(outcome, DayOutcome::Submitted(Flavor::ProcessNow)));
-        assert_eq!(calls, 1);
     }
 
     #[test]

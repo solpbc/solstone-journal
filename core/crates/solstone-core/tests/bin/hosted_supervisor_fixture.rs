@@ -60,7 +60,6 @@ fn options() -> SupervisorOptions {
         no_convey: false,
         no_cortex: false,
         no_spl: false,
-        remote: None,
         direct_port: None,
         hosted_parent: false,
     }

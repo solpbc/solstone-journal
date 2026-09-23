@@ -39,7 +39,7 @@ use super::model::{
 use super::parakeet::{ParakeetLaunchConfig, ParakeetPlacement, ParakeetRuntimeShared};
 use super::parakeet_truth::{
     admission_blocked_observation, admission_not_desired_observation, parakeet_platform_can_host,
-    platform_cannot_host_not_desired, remote_mode_not_desired,
+    platform_cannot_host_not_desired,
 };
 use super::seams::{RuntimeStoreError, TruthObservationSeam};
 
@@ -53,7 +53,6 @@ const PARAKEET_ATT_CONTEXT: &str = "128";
 #[derive(Clone)]
 pub struct ParakeetTruthConfig {
     pub journal_path: PathBuf,
-    pub remote_mode: bool,
     pub platform: String,
     pub machine: String,
     pub vulkan_devices: Vec<VulkanDevice>,
@@ -78,16 +77,11 @@ struct ParakeetLaunchMetadata {
 }
 
 impl ParakeetTruthSeam {
-    pub fn new(
-        shared: Arc<ParakeetRuntimeShared>,
-        journal_path: impl Into<PathBuf>,
-        remote_mode: bool,
-    ) -> Self {
+    pub fn new(shared: Arc<ParakeetRuntimeShared>, journal_path: impl Into<PathBuf>) -> Self {
         Self::with_config(
             shared,
             ParakeetTruthConfig {
                 journal_path: journal_path.into(),
-                remote_mode,
                 platform: std::env::consts::OS.to_owned(),
                 machine: std::env::consts::ARCH.to_owned(),
                 vulkan_devices: detect_gpus(),
@@ -176,9 +170,6 @@ fn observe_parakeet_truth(
     shared: &ParakeetRuntimeShared,
     config: &ParakeetTruthConfig,
 ) -> ProviderTruthObservation {
-    if config.remote_mode {
-        return remote_mode_not_desired();
-    }
     if !parakeet_platform_can_host(&config.platform, &config.machine) {
         return platform_cannot_host_not_desired(&config.platform);
     }
@@ -811,9 +802,8 @@ mod tests {
         let mut seam = ParakeetTruthSeam::with_config(
             shared.clone(),
             ParakeetTruthConfig {
-                journal_path: PathBuf::from("/nonexistent-journal-for-remote-mode-test"),
-                remote_mode: true,
-                platform: "linux".to_owned(),
+                journal_path: PathBuf::from("/nonexistent-journal-for-unhosted-platform-test"),
+                platform: "plan9".to_owned(),
                 machine: "x86_64".to_owned(),
                 vulkan_devices: Vec::new(),
             },
@@ -828,7 +818,7 @@ mod tests {
 
         // Two independent dispatch cycles on the same real (non-fixture) seam,
         // matching how the reconciler re-fires truth observation on its
-        // cadence. remote_mode short-circuits to a fast, host-independent
+        // cadence. An unhosted platform short-circuits to a fast, host-independent
         // result so this test does not depend on real host state.
         let first_fence = fence_of(0);
         seam.dispatch_truth(&state, &first_fence);

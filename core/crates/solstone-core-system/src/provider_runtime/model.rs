@@ -300,8 +300,8 @@ pub struct ProviderTruthObservation {
     pub has_plan: bool,
     pub boot_required: bool,
     /// Provider-specific payload the durable health record carries alongside
-    /// phase/reason_code -- e.g. Parakeet's `{"remote_mode": true}` /
-    /// `{"platform": ...}` / `{"stt_admission_latch": ...}`. Local has none
+    /// phase/reason_code -- e.g. Parakeet's `{"platform": ...}` /
+    /// `{"stt_admission_latch": ...}`. Local has none
     /// today, hence `None` at every existing call site; this is the
     /// provider-specific-payload-inside-one-type the durable record needs
     /// rather than a second store.

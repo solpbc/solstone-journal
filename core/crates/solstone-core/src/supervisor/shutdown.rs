@@ -439,7 +439,6 @@ mod tests {
         }
         let state = SupervisorState {
             journal: journal.path().to_path_buf(),
-            is_remote_mode: false,
             no_daily: true,
             server,
             connection,

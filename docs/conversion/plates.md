@@ -48,6 +48,8 @@ The ingest **API**. Deliberately separate from `P-segment-media`. ⚠ 9 publishe
 
 ## `P-peer-exchange`
 
+⛔ **Retired.** `transfer`, the archive manifest v1 format and the peer-ingest surface were removed; `journal archive export` and `journal archive merge` are the journal-to-journal path.
+
 🆕 **Added 2026-08-19 by operator ruling.** Journal↔journal exchange between two instances the same owner holds — covers `transfer` and `export`. ⛔ **Not egress** — the far end is a journal the same owner holds, not a third party; see § *Egress — where the covenant applies*.
 
 Two cross-instance contracts that had no owner get one here — see [`strands.md`](strands.md) § `S:journal-segment:peer-exchange` · § `S:device-link:peer-exchange`:

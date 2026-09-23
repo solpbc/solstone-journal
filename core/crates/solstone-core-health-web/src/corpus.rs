@@ -350,11 +350,6 @@ async fn ac14_reprocess_response_shapes() {
             "reprocess_no_thinking_engine",
         ),
         (
-            solstone_core_reprocess_cli::DayOutcome::Remote,
-            StatusCode::BAD_REQUEST,
-            "reprocess_remote",
-        ),
-        (
             solstone_core_reprocess_cli::DayOutcome::Unreachable,
             StatusCode::SERVICE_UNAVAILABLE,
             "reprocess_unreachable",

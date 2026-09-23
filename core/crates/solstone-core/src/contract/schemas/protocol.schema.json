@@ -43,7 +43,7 @@
     "format_id": "observer-ingest-envelope",
     "schema_owner": "solstone-core-ingest",
     "reference_writer": "solstone-core-ingest",
-    "allowed_producers": ["native observers", "solstone observe transfer"],
+    "allowed_producers": ["native observers"],
     "write_discipline": "multipart envelope validated before segment write",
     "file_kind": "ingest_envelope",
     "key_fields": ["day", "segment", "source", "files[].submitted"],

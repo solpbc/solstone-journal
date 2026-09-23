@@ -16,8 +16,8 @@
 //!
 //! Unknown options, missing option values, and attached boolean spellings use
 //! this binary's shared `error: invalid arguments` diagnostic rather than
-//! Click's token-specific error. This follows the navigate, export, transfer,
-//! and observer parser precedent.
+//! Click's token-specific error. This follows the navigate and observer parser
+//! precedent.
 //!
 //! Click accepts bundled short boolean repeats such as `-ww`; native partner
 //! parsing accepts only exact `-w` and rejects bundled repeats.

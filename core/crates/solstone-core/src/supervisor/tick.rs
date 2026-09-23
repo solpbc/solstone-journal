@@ -346,18 +346,10 @@ pub(crate) async fn run(
         }
         let wall = chrono::Local::now();
         let wall_now = SystemTime::now();
-        check_segment_flush(
-            &state.journal,
-            &state.queue,
-            state.is_remote_mode,
-            &mut state.flush,
-            false,
-            tick,
-        );
+        check_segment_flush(&state.journal, &state.queue, &mut state.flush, false, tick);
         let today = wall.format("%Y%m%d").to_string();
         let (seed_outcome, drain_outcome) = activity_retry_drain_with(
             state.no_daily,
-            state.is_remote_mode,
             processing_is_deferred(&state.journal),
             no_thinking_engine_chosen(&state.journal),
             &mut state.activity_retry_seed_day,
@@ -392,7 +384,6 @@ pub(crate) async fn run(
                     handle_daily_tasks(
                         &state.journal,
                         &state.queue,
-                        state.is_remote_mode,
                         &mut state.daily,
                         &mut state.flush,
                         wall.date_naive(),
@@ -401,7 +392,6 @@ pub(crate) async fn run(
                 },
                 |last_drain| {
                     handle_retry_expiry_drain(
-                        state.is_remote_mode,
                         processing_is_deferred(&state.journal),
                         &state.journal,
                         &state.queue,
@@ -538,13 +528,11 @@ pub(crate) async fn run(
 pub(crate) fn check_segment_flush(
     journal: &Path,
     queue: &TaskQueue,
-    is_remote: bool,
     flush: &mut FlushState,
     force: bool,
     now: Instant,
 ) {
-    if is_remote
-        || flush.last_segment_ts.is_none()
+    if flush.last_segment_ts.is_none()
         || flush.flushed
         || processing_is_deferred(journal)
         || no_thinking_engine_chosen(journal)
@@ -572,13 +560,12 @@ pub(crate) fn check_segment_flush(
 pub(crate) fn handle_daily_tasks(
     journal: &Path,
     queue: &TaskQueue,
-    is_remote: bool,
     daily: &mut DailyState,
     flush: &mut FlushState,
     today: chrono::NaiveDate,
     now: SystemTime,
 ) -> Result<bool, CatchupError> {
-    if is_remote || daily.last_day == Some(today) {
+    if daily.last_day == Some(today) {
         return Ok(false);
     }
     let Some(previous_day) = daily.last_day else {
@@ -591,7 +578,7 @@ pub(crate) fn handle_daily_tasks(
     let previous_day = previous_day.format("%Y%m%d").to_string();
     if !flush.flushed && flush.day.as_deref() == Some(previous_day.as_str()) {
         let tick = flush.last_segment_ts.unwrap_or_else(Instant::now);
-        check_segment_flush(journal, queue, is_remote, flush, true, tick);
+        check_segment_flush(journal, queue, flush, true, tick);
     }
     run_catchup_drain(
         journal,
@@ -605,7 +592,6 @@ pub(crate) fn handle_daily_tasks(
 
 #[allow(clippy::too_many_arguments)] // The tick's clock/watermark seams remain explicitly injectable.
 fn handle_retry_expiry_drain(
-    is_remote: bool,
     is_deferred: bool,
     journal: &Path,
     queue: &TaskQueue,
@@ -614,7 +600,7 @@ fn handle_retry_expiry_drain(
     tick: Instant,
     now: SystemTime,
 ) -> Result<(), CatchupError> {
-    retry_expiry_drain_with(is_remote, is_deferred, last_drain, today, tick, |exclude| {
+    retry_expiry_drain_with(is_deferred, last_drain, today, tick, |exclude| {
         // A bounded persisted reconciliation also discovers derived-only edits and lost
         // notifications. The ordinary selector still applies pacing, current-day exclusion,
         // and the four-day cap.
@@ -627,7 +613,6 @@ type ActivityRetryDrainOutcome = (Option<Result<(), String>>, Option<Result<(), 
 #[allow(clippy::too_many_arguments)] // The tick's clock/watermark seams remain explicitly injectable.
 fn activity_retry_drain_with(
     no_daily: bool,
-    is_remote_mode: bool,
     is_deferred: bool,
     no_engine: bool,
     seed_day: &mut Option<String>,
@@ -638,7 +623,6 @@ fn activity_retry_drain_with(
     drain: impl FnOnce() -> Result<(), String>,
 ) -> ActivityRetryDrainOutcome {
     if no_daily
-        || is_remote_mode
         || is_deferred
         || no_engine
         || tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL
@@ -690,14 +674,13 @@ fn compose_daily_and_retry_expiry_with(
 /// the scan finished, on success or failure: a scan as long as the interval must not be
 /// followed at once by another that re-reads the same days.
 fn retry_expiry_drain_with(
-    is_remote: bool,
     is_deferred: bool,
     last_drain: &mut Instant,
     today: chrono::NaiveDate,
     tick: Instant,
     scan: impl FnOnce(&BTreeSet<String>) -> Result<(), CatchupError>,
 ) -> Result<(), CatchupError> {
-    if is_remote || is_deferred {
+    if is_deferred {
         return Ok(());
     }
     if tick.saturating_duration_since(*last_drain) < RETRY_EXPIRY_INTERVAL {
@@ -730,7 +713,6 @@ fn scan_finished(tick: Instant) -> Instant {
 pub(crate) fn initialize_catchup(
     journal: &Path,
     queue: &TaskQueue,
-    is_remote: bool,
     no_daily: bool,
     today: chrono::NaiveDate,
     now: SystemTime,
@@ -738,7 +720,6 @@ pub(crate) fn initialize_catchup(
     initialize_catchup_with_reconcile(
         journal,
         queue,
-        is_remote,
         no_daily,
         today,
         now,
@@ -749,7 +730,6 @@ pub(crate) fn initialize_catchup(
 pub(crate) fn initialize_catchup_with_reconcile<Reconcile>(
     journal: &Path,
     queue: &TaskQueue,
-    is_remote: bool,
     no_daily: bool,
     today: chrono::NaiveDate,
     now: SystemTime,
@@ -760,10 +740,10 @@ where
 {
     let reconcile_res = reconcile(journal, now);
     let today_str = today.format("%Y%m%d").to_string();
-    run_today_sense_repair(journal, queue, is_remote, no_daily, &today_str, now);
+    run_today_sense_repair(journal, queue, no_daily, &today_str, now);
 
     reconcile_res?;
-    if is_remote || no_daily || processing_is_deferred(journal) {
+    if no_daily || processing_is_deferred(journal) {
         return Ok(());
     }
     run_catchup_drain(journal, queue, &BTreeSet::from([today_str]), &[], now)
@@ -784,16 +764,11 @@ pub(crate) fn today_sense_repair_argv(day: &str) -> Vec<String> {
 pub(crate) fn run_today_sense_repair(
     journal: &Path,
     queue: &TaskQueue,
-    is_remote: bool,
     no_daily: bool,
     today_str: &str,
     now: SystemTime,
 ) -> Option<(Vec<String>, SubmitOutcome)> {
-    if is_remote
-        || no_daily
-        || processing_is_deferred(journal)
-        || no_thinking_engine_chosen(journal)
-    {
+    if no_daily || processing_is_deferred(journal) || no_thinking_engine_chosen(journal) {
         return None;
     }
     if !solstone_core_system::catchup::eligible_or_fail_open(journal, today_str, false, now) {
@@ -1464,7 +1439,7 @@ fn handle_supervisor_request(state: &mut SupervisorState, message: &CallosumEnve
 }
 
 fn handle_supervisor_drain(state: &mut SupervisorState, message: &CallosumEnvelope) {
-    if message.tract != "supervisor" || message.event != "drain" || state.is_remote_mode {
+    if message.tract != "supervisor" || message.event != "drain" {
         return;
     }
     let now = SystemTime::now();
@@ -1668,9 +1643,7 @@ fn handle_segment_event_log(journal: &Path, message: &CallosumEnvelope) {
 }
 
 fn handle_cortex_outcome(state: &mut SupervisorState, message: &CallosumEnvelope) {
-    if message.tract != "cortex"
-        || !matches!(message.event.as_str(), "start" | "finish" | "error")
-        || state.is_remote_mode
+    if message.tract != "cortex" || !matches!(message.event.as_str(), "start" | "finish" | "error")
     {
         return;
     }
@@ -1992,7 +1965,6 @@ mod tests {
         let (local, parakeet) = super::super::test_support::stopped_providers(journal);
         SupervisorState {
             journal: journal.to_path_buf(),
-            is_remote_mode: false,
             no_daily: true,
             server,
             connection,
@@ -2703,7 +2675,6 @@ mod tests {
 
         handle_retry_expiry_drain(
             false,
-            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -2716,7 +2687,6 @@ mod tests {
 
         handle_retry_expiry_drain(
             false,
-            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -2728,7 +2698,6 @@ mod tests {
         assert_eq!(pending(&queue), 1, "only the non-today retry is drained");
 
         handle_retry_expiry_drain(
-            false,
             false,
             &bed.root,
             &queue,
@@ -2788,7 +2757,6 @@ mod tests {
         let before = Instant::now();
         handle_retry_expiry_drain(
             false,
-            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -2822,7 +2790,6 @@ mod tests {
         let before = Instant::now();
         let outcome = handle_retry_expiry_drain(
             false,
-            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -2849,17 +2816,16 @@ mod tests {
                 .expect("host uptime exceeds the interval");
             let mut scan_ended = None;
             let mut scans = 0;
-            let outcome =
-                retry_expiry_drain_with(false, false, &mut last_drain, date(3), tick, |_| {
-                    scans += 1;
-                    std::thread::sleep(Duration::from_millis(20));
-                    scan_ended = Some(Instant::now());
-                    if succeeds {
-                        Ok(())
-                    } else {
-                        Err(CatchupError::State("scripted".to_owned()))
-                    }
-                });
+            let outcome = retry_expiry_drain_with(false, &mut last_drain, date(3), tick, |_| {
+                scans += 1;
+                std::thread::sleep(Duration::from_millis(20));
+                scan_ended = Some(Instant::now());
+                if succeeds {
+                    Ok(())
+                } else {
+                    Err(CatchupError::State("scripted".to_owned()))
+                }
+            });
             let after = Instant::now();
             assert_eq!(scans, 1);
             assert_eq!(outcome.is_ok(), succeeds);
@@ -2872,7 +2838,7 @@ mod tests {
             // a stamp taken when the scan started it would already scan, so this pins the end.
             let next_tick = scan_ended + RETRY_EXPIRY_INTERVAL - Duration::from_millis(5);
             let mut again = 0;
-            retry_expiry_drain_with(false, false, &mut last_drain, date(3), next_tick, |_| {
+            retry_expiry_drain_with(false, &mut last_drain, date(3), next_tick, |_| {
                 again += 1;
                 Ok(())
             })
@@ -2912,7 +2878,6 @@ mod tests {
         let mut last_drain = origin;
 
         handle_retry_expiry_drain(
-            false,
             false,
             &bed.root,
             &queue,
@@ -2988,7 +2953,6 @@ mod tests {
 
         handle_retry_expiry_drain(
             false,
-            false,
             &bed.root,
             &queue,
             &mut last_drain,
@@ -3002,8 +2966,8 @@ mod tests {
     }
 
     #[test]
-    fn retry_expiry_drain_is_a_remote_or_deferred_mode_noop() {
-        let bed = Bed::new("retry-expiry-remote");
+    fn retry_expiry_drain_is_a_deferred_mode_noop() {
+        let bed = Bed::new("retry-expiry-deferred");
         bed.enable_thinking();
         fs::create_dir_all(bed.root.join("chronicle/20260101")).expect("chronicle day");
         fs::create_dir_all(bed.root.join("health")).expect("health directory");
@@ -3028,22 +2992,6 @@ mod tests {
         let origin = Instant::now();
         let mut last_drain = origin;
         handle_retry_expiry_drain(
-            true,
-            false,
-            &bed.root,
-            &queue,
-            &mut last_drain,
-            date(2),
-            origin + RETRY_EXPIRY_INTERVAL,
-            UNIX_EPOCH + Duration::from_secs(10),
-        )
-        .expect("remote retry tick");
-
-        assert_eq!(pending(&queue), 0);
-        assert_eq!(last_drain, origin);
-
-        handle_retry_expiry_drain(
-            false,
             true,
             &bed.root,
             &queue,
@@ -3074,7 +3022,6 @@ mod tests {
                 let mut drain_ended = None;
 
                 let (seed_outcome, drain_outcome) = activity_retry_drain_with(
-                    false,
                     false,
                     false,
                     false,
@@ -3137,7 +3084,6 @@ mod tests {
                     false,
                     false,
                     false,
-                    false,
                     &mut seed_day,
                     &mut last_drain,
                     "20260102",
@@ -3160,7 +3106,6 @@ mod tests {
                 // Tick at M + INTERVAL runs
                 let at_interval_tick = marker + RETRY_EXPIRY_INTERVAL;
                 let (s3, d3) = activity_retry_drain_with(
-                    false,
                     false,
                     false,
                     false,
@@ -3211,7 +3156,6 @@ mod tests {
             false,
             false,
             false,
-            false,
             &mut seed_day,
             &mut last_drain,
             "20260102",
@@ -3236,23 +3180,21 @@ mod tests {
         let drain_ended = drain_ended.expect("drain ran");
         assert!(drain_ended <= last_drain && last_drain <= after);
 
-        // 2. Skip twins: no_daily, remote, deferred, no_engine, not-yet-due
+        // 2. Skip twins: no_daily, deferred, no_engine, not-yet-due
         let skip_cases = [
-            (true, false, false, false, initial_drain), // no_daily
-            (false, true, false, false, initial_drain), // remote
-            (false, false, true, false, initial_drain), // deferred
-            (false, false, false, true, initial_drain), // no_engine
-            (false, false, false, false, tick),         // not-yet-due (last_drain = tick)
+            (true, false, false, initial_drain), // no_daily
+            (false, true, false, initial_drain), // deferred
+            (false, false, true, initial_drain), // no_engine
+            (false, false, false, tick),         // not-yet-due (last_drain = tick)
         ];
 
-        for (no_daily, remote, deferred, no_engine, drain_ts) in skip_cases {
+        for (no_daily, deferred, no_engine, drain_ts) in skip_cases {
             let mut s_day = None;
             let mut l_drain = drain_ts;
             let mut s_count = 0;
             let mut d_count = 0;
             let (s_res, d_res) = activity_retry_drain_with(
                 no_daily,
-                remote,
                 deferred,
                 no_engine,
                 &mut s_day,
@@ -3418,7 +3360,7 @@ mod tests {
             tick_before,
             || Ok(false),
             |drain| {
-                retry_expiry_drain_with(false, false, drain, date(3), tick_before, |_| {
+                retry_expiry_drain_with(false, drain, date(3), tick_before, |_| {
                     scan_calls += 1;
                     Ok(())
                 })
@@ -3439,7 +3381,7 @@ mod tests {
             tick_at,
             || Ok(false),
             |drain| {
-                retry_expiry_drain_with(false, false, drain, date(3), tick_at, |_| {
+                retry_expiry_drain_with(false, drain, date(3), tick_at, |_| {
                     scan_calls += 1;
                     Ok(())
                 })
@@ -3491,7 +3433,7 @@ mod tests {
         .expect("write catchup state");
         let queue = queue(&bed.root);
 
-        initialize_catchup(&bed.root, &queue, false, false, date(3), wall_time(3, 20))
+        initialize_catchup(&bed.root, &queue, false, date(3), wall_time(3, 20))
             .expect("startup catchup");
 
         assert_eq!(pending(&queue), 1, "only fresh past-day dirtiness drains");
@@ -3536,7 +3478,6 @@ mod tests {
             &bed.root,
             &queue,
             false,
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(20),
             |_, _| Err(CatchupError::CapabilityUnavailable),
@@ -3561,7 +3502,7 @@ mod tests {
             flushed: false,
         };
 
-        check_segment_flush(&bed.root, &queue, false, &mut flush, true, origin);
+        check_segment_flush(&bed.root, &queue, &mut flush, true, origin);
 
         assert!(flush.flushed);
         assert_eq!(pending(&queue), 1);
@@ -3592,7 +3533,6 @@ mod tests {
         check_segment_flush(
             &bed.root,
             &queue,
-            false,
             &mut flush,
             false,
             origin + FLUSH_TIMEOUT - Duration::from_secs(1),
@@ -3600,14 +3540,7 @@ mod tests {
         assert!(!flush.flushed);
         assert_eq!(pending(&queue), 1);
 
-        check_segment_flush(
-            &bed.root,
-            &queue,
-            false,
-            &mut flush,
-            false,
-            origin + FLUSH_TIMEOUT,
-        );
+        check_segment_flush(&bed.root, &queue, &mut flush, false, origin + FLUSH_TIMEOUT);
         assert!(flush.flushed);
         assert_eq!(pending(&queue), 2);
 
@@ -3621,39 +3554,12 @@ mod tests {
         check_segment_flush(
             &bed.root,
             &queue,
-            false,
             &mut flush,
             false,
             origin + FLUSH_TIMEOUT + Duration::from_secs(1),
         );
         assert!(flush.flushed);
         assert_eq!(pending(&queue), 3);
-    }
-
-    #[test]
-    fn check_segment_flush_is_a_remote_mode_noop() {
-        let bed = Bed::new("flush-remote");
-        let queue = queue(&bed.root);
-        let origin = Instant::now();
-        let mut flush = FlushState {
-            last_segment_ts: Some(origin),
-            day: Some("20260101".to_owned()),
-            segment: Some("120000_1".to_owned()),
-            stream: None,
-            flushed: false,
-        };
-
-        check_segment_flush(
-            &bed.root,
-            &queue,
-            true,
-            &mut flush,
-            true,
-            origin + FLUSH_TIMEOUT + Duration::from_secs(1),
-        );
-
-        assert!(!flush.flushed);
-        assert_eq!(pending(&queue), 0);
     }
 
     fn assert_daily_rollover(name: &str) {
@@ -3679,7 +3585,6 @@ mod tests {
         handle_daily_tasks(
             &bed.root,
             &queue,
-            false,
             &mut daily,
             &mut flush,
             date(7),
@@ -3721,7 +3626,6 @@ mod tests {
         handle_daily_tasks(
             &bed.root,
             &queue,
-            false,
             &mut daily,
             &mut flush,
             date(2),
@@ -3730,30 +3634,6 @@ mod tests {
         .expect("missing previous day");
 
         assert_eq!(daily.last_day, Some(date(2)));
-        assert_eq!(pending(&queue), 0);
-    }
-
-    #[test]
-    fn handle_daily_tasks_is_a_remote_mode_noop() {
-        let bed = Bed::new("daily-remote");
-        let queue = queue(&bed.root);
-        let mut daily = DailyState {
-            last_day: Some(date(1)),
-        };
-        let mut flush = FlushState::default();
-
-        handle_daily_tasks(
-            &bed.root,
-            &queue,
-            true,
-            &mut daily,
-            &mut flush,
-            date(2),
-            UNIX_EPOCH,
-        )
-        .expect("remote daily no-op");
-
-        assert_eq!(daily.last_day, Some(date(1)));
         assert_eq!(pending(&queue), 0);
     }
 
@@ -3823,30 +3703,6 @@ mod tests {
             &bed.root,
             &queue,
             false,
-            false,
-            date(2),
-            UNIX_EPOCH + Duration::from_secs(10),
-            |_, _| Ok(()),
-        )
-        .expect("initialize catchup");
-
-        assert_eq!(pending(&queue), 0);
-    }
-
-    #[test]
-    fn today_repair_gated_by_remote_mode() {
-        let bed = Bed::new("today-remote");
-        bed.enable_thinking();
-        let seg_dir = bed.root.join("chronicle/20260102/120000_1");
-        fs::create_dir_all(&seg_dir).expect("segment dir");
-        fs::write(seg_dir.join("audio.m4a"), b"audio-data").expect("write audio");
-
-        let queue = queue(&bed.root);
-        initialize_catchup_with_reconcile(
-            &bed.root,
-            &queue,
-            true, // is_remote = true
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
             |_, _| Ok(()),
@@ -3874,7 +3730,6 @@ mod tests {
             &bed.root,
             &queue,
             false,
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
             |_, _| Ok(()),
@@ -3896,7 +3751,6 @@ mod tests {
         initialize_catchup_with_reconcile(
             &bed.root,
             &queue,
-            false,
             true, // no_daily = true
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
@@ -3919,7 +3773,6 @@ mod tests {
         initialize_catchup_with_reconcile(
             &bed.root,
             &queue,
-            false,
             false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
@@ -3966,7 +3819,6 @@ mod tests {
             &bed.root,
             &queue,
             false,
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
             |_, _| Ok(()),
@@ -3996,7 +3848,6 @@ mod tests {
             &bed.root,
             &queue,
             false,
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
             |_, _| Ok(()),
@@ -4018,7 +3869,6 @@ mod tests {
         let result = initialize_catchup_with_reconcile(
             &bed.root,
             &queue,
-            false,
             false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
@@ -4045,7 +3895,6 @@ mod tests {
         let outcome = run_today_sense_repair(
             &bed.root,
             &queue,
-            false,
             false,
             "20260102",
             UNIX_EPOCH + Duration::from_secs(10),
@@ -4089,7 +3938,6 @@ mod tests {
             &bed.root,
             &queue1,
             false,
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
             |_, _| Ok(()),
@@ -4103,7 +3951,6 @@ mod tests {
         let _ = run_today_sense_repair(
             &bed.root,
             &queue2,
-            false,
             false,
             "20260102",
             UNIX_EPOCH + Duration::from_secs(10),
@@ -4123,7 +3970,6 @@ mod tests {
             &bed_absent.root,
             &queue_absent1,
             false,
-            false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
             |_, _| Ok(()),
@@ -4137,7 +3983,6 @@ mod tests {
         let _ = run_today_sense_repair(
             &bed_absent.root,
             &queue_absent2,
-            false,
             false,
             "20260102",
             UNIX_EPOCH + Duration::from_secs(10),
@@ -4167,7 +4012,6 @@ mod tests {
         initialize_catchup_with_reconcile(
             &bed.root,
             &queue,
-            false,
             false,
             date(2),
             UNIX_EPOCH + Duration::from_secs(10),
@@ -4199,7 +4043,7 @@ mod tests {
             let q = queue(&bed.root);
             q.set_ready();
             q.shutdown();
-            let _ = run_today_sense_repair(&bed.root, &q, false, false, "20260102", now);
+            let _ = run_today_sense_repair(&bed.root, &q, false, "20260102", now);
         }
 
         let drain_queue = queue(&bed.root);
@@ -4230,7 +4074,7 @@ mod tests {
 
         let now = wall_time(3, 10);
         let q = queue(&bed.root);
-        let outcome = run_today_sense_repair(&bed.root, &q, false, false, "20260102", now);
+        let outcome = run_today_sense_repair(&bed.root, &q, false, "20260102", now);
         assert!(outcome.is_some());
 
         let drain_queue = queue(&bed.root);
@@ -4311,7 +4155,6 @@ mod tests {
             &bed.root,
             &queue,
             false,
-            false,
             "20260102",
             UNIX_EPOCH + Duration::from_secs(10),
         );
@@ -4329,7 +4172,6 @@ mod tests {
         let outcome = run_today_sense_repair(
             &bed.root,
             &queue,
-            false,
             false,
             "20260102",
             UNIX_EPOCH + Duration::from_secs(10),
@@ -4354,11 +4196,11 @@ mod tests {
 
         let queue = queue(&bed.root);
         let now = UNIX_EPOCH + Duration::from_secs(10);
-        let first = run_today_sense_repair(&bed.root, &queue, false, false, "20260102", now);
+        let first = run_today_sense_repair(&bed.root, &queue, false, "20260102", now);
         assert!(first.is_some());
         assert_eq!(pending(&queue), 1);
 
-        let second = run_today_sense_repair(&bed.root, &queue, false, false, "20260102", now);
+        let second = run_today_sense_repair(&bed.root, &queue, false, "20260102", now);
         let (_, second_outcome) = second.expect("second repair result");
         assert_eq!(second_outcome, SubmitOutcome::DuplicateQueuedReference);
         assert_eq!(pending(&queue), 1);
@@ -4379,7 +4221,6 @@ mod tests {
         let outcome = run_today_sense_repair(
             &bed.root,
             &queue,
-            false,
             false,
             "20260102",
             UNIX_EPOCH + Duration::from_secs(10),

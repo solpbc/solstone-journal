@@ -56,7 +56,7 @@ const ZIP_LOCAL: [u8; 4] = [b'P', b'K', 3, 4];
 const ZIP_EOCD: [u8; 4] = [b'P', b'K', 5, 6];
 const ZIP_SPAN: [u8; 4] = [b'P', b'K', 7, 8];
 const GZIP_MAGIC: [u8; 2] = [0x1f, 0x8b];
-const LEGACY_TRANSFER_ARCHIVE: &str = "this is an old transfer archive (.tar.gz), which is no longer supported; export the journal again as a .zip and merge that";
+const LEGACY_TRANSFER_ARCHIVE: &str = "a .tgz or .tar.gz archive isn't supported. if it's an old transfer archive, export that day again as a .zip from the journal it came from and merge that, or merge this file into a new, empty journal on an earlier 2.x release, export that journal as a .zip, and merge that .zip into your journal";
 
 const GIB: u64 = 1024 * 1024 * 1024;
 const DEFAULT_ARCHIVE_CAP: u64 = 50 * GIB;

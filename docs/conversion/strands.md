@@ -381,12 +381,16 @@ First-run journal establishment. **Creates the identity root** that `S:device-li
 ### `S:journal-segment:peer-exchange`
 **Connects** `P-journal` → `P-peer-exchange` · **Owner** `P-peer-exchange` · **Tier** fixture
 
+⛔ **Retired.** `transfer`, the archive manifest v1 format and the peer-ingest surface were removed; `journal archive export` and `journal archive merge` are the journal-to-journal path.
+
 ⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate covering `transfer` and `export`.** The **archive manifest v1** — the durable format `transfer export` writes and `transfer import` reads: segments, sha256 + size per file. Cross-instance — the far end may be running a different journal version — which is the one-to-many shape rule 1 puts the contract at the receiving end for.
 
 ✅ **Published 2026-08-19** — `schema/archive-manifest.v1.schema.json` in `solstone-core-transfer`, JSON Schema draft 2020-12 with an `x-journal-contract` block and hand-verified examples validated by a committed test. Publishes the contract only; no runtime validation is wired into `transfer export`/`transfer import`.
 
 ### `S:device-link:peer-exchange`
 **Connects** `P-device-link` → `P-peer-exchange` · **Owner** `P-peer-exchange` · **Tier** schema
+
+⛔ **Retired.** `transfer`, the archive manifest v1 format and the peer-ingest surface were removed; `journal archive export` and `journal archive merge` are the journal-to-journal path.
 
 ⚠ **Owner assigned 2026-08-19, alongside adopting `P-peer-exchange` as a plate.** The **peer-ingest HTTP surface**, `/app/import/journal/{prefix}/…` — six operations across five areas (`config` · `entities` · `facets` · `imports` · `segments`, each a POST, plus one GET `manifest/{area}`). Rides the paired-peer transport `S:device-link:journal` already authenticates.
 

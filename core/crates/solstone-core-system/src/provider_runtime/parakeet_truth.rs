@@ -6,7 +6,7 @@
 //!
 //! Mirrors the early-exit shapes in `supervisor.py`'s
 //! `_observe_parakeet_provider_truth`, in the same order it checks them:
-//! remote mode, platform-can-host, then the admission latch's `blocked`/
+//! platform-can-host, then the admission latch's `blocked`/
 //! `desired` verdict. The remaining branch -- resolving a GPU backend and
 //! building a launch plan when the latch says Parakeet is desired and not
 //! blocked -- is composed behind [`super::seams::TruthObservationSeam`] in
@@ -38,11 +38,6 @@ fn not_desired(reason_code: &'static str, detail: Value) -> ProviderTruthObserva
         boot_required: false,
         detail: Some(detail),
     }
-}
-
-/// Mirrors `_not_desired_observation("parakeet", "provider-not-needed", detail={"remote_mode": True})`.
-pub fn remote_mode_not_desired() -> ProviderTruthObservation {
-    not_desired("provider-not-needed", json!({"remote_mode": true}))
 }
 
 /// Mirrors `_not_desired_observation("parakeet", "provider-not-needed", detail={"platform": sys.platform})`.
@@ -109,20 +104,6 @@ mod tests {
     fn windows_x86_64_can_host_when_the_signed_package_is_present() {
         assert!(parakeet_platform_can_host("windows", "x86_64"));
         assert!(!parakeet_platform_can_host("windows", "aarch64"));
-    }
-
-    #[test]
-    fn remote_mode_shape_matches_python() {
-        let observation = remote_mode_not_desired();
-        assert_eq!(observation.provider, ProviderName::Parakeet);
-        assert_eq!(observation.phase, RuntimePhase::NotDesired);
-        assert_eq!(
-            observation.reason_code.as_ref().map(ReasonCode::as_str),
-            Some("provider-not-needed")
-        );
-        assert!(!observation.boot_required);
-        assert!(!observation.has_plan);
-        assert_eq!(observation.detail, Some(json!({"remote_mode": true})));
     }
 
     #[test]

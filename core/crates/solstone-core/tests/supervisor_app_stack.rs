@@ -386,16 +386,6 @@ fn app_stack_opt_out_flags_suppress_only_their_service() {
 }
 
 #[test]
-fn remote_mode_spawns_no_app_fixture_markers() {
-    let journal = TempJournal::new();
-    let mut child = start(&journal, &["--remote", "https://example.test"], None);
-    for service in SERVICES {
-        assert_marker_absent(&journal, service);
-    }
-    assert!(child.running());
-}
-
-#[test]
 fn app_fixture_receives_supervisor_spawned_environment() {
     let journal = TempJournal::new();
     let _child = start(&journal, &[], None);
