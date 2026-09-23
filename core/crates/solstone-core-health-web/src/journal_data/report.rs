@@ -508,8 +508,14 @@ pub(crate) fn build_synthesis_health(
         .and_then(|b| b.get("indexer_phase"))
         .and_then(solstone_core_system_health::IndexerPhase::from_json_value);
     let utc_now = now.with_timezone(&Utc);
-    let summary_freshness =
-        solstone_core_system_health::summary_freshness(gen_at_opt.as_deref(), utc_now);
+    let summary_freshness = if backlog_opt
+        .as_ref()
+        .is_none_or(|b| b.get("degraded") == Some(&serde_json::Value::Bool(true)))
+    {
+        solstone_core_system_health::SummaryFreshness::Unknown
+    } else {
+        solstone_core_system_health::summary_freshness(gen_at_opt.as_deref(), utc_now)
+    };
     let search_eval = crate::search_freshness::evaluate_search_freshness(
         journal_root,
         &crate::search_freshness::FsIndexMetadata,

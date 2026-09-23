@@ -835,4 +835,106 @@ mod tests {
         let eval_30d = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Unknown, now);
         assert_eq!(eval_30d.state, "stale");
     }
+
+    #[tokio::test]
+    async fn test_synthesis_and_summary_route_degraded_backlog_search_freshness() {
+        use filetime::{FileTime, set_file_mtime};
+
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+
+        let now = Utc::now();
+        let fixed_now = chrono::DateTime::<chrono::FixedOffset>::from(now);
+
+        fs::create_dir_all(root.join("indexer")).unwrap();
+        let sqlite = root.join("indexer/journal.sqlite");
+        let wal = root.join("indexer/journal.sqlite-wal");
+        fs::write(&sqlite, b"sqlite").unwrap();
+        fs::write(&wal, b"wal").unwrap();
+
+        let one_hour_ago = now.timestamp() - 3600;
+        set_file_mtime(&sqlite, FileTime::from_unix_time(one_hour_ago, 0)).unwrap();
+        set_file_mtime(&wal, FileTime::from_unix_time(one_hour_ago, 0)).unwrap();
+
+        let stats = json!({
+            "generated_at": now.to_rfc3339(),
+            "backlog": {
+                "degraded": true,
+                "indexer_phase": {
+                    "success": false,
+                    "reason_code": "lock_failed",
+                    "run_started_at_ms": 1_000
+                }
+            }
+        });
+        fs::write(root.join("stats.json"), stats.to_string()).unwrap();
+
+        let (synth, notes) = crate::journal_data::report::build_synthesis_health(
+            root,
+            &crate::journal_data::report::ScanAggregate::default(),
+            fixed_now,
+        )
+        .unwrap();
+
+        assert!(
+            !notes
+                .iter()
+                .any(|n| n.message == SEARCH_NOTE_ATTEMPT_FAILED),
+            "degraded backlog must not emit attempt failed note"
+        );
+        assert_eq!(synth.indexer_last_rebuild_at, Some(one_hour_ago * 1000));
+
+        let (gen_at_opt, backlog_opt) = crate::backlog::load(root);
+        let indexer_phase = backlog_opt
+            .as_ref()
+            .and_then(|b| b.get("indexer_phase"))
+            .and_then(solstone_core_system_health::IndexerPhase::from_json_value);
+        let summary_freshness = if backlog_opt
+            .as_ref()
+            .is_none_or(|b| b.get("degraded") == Some(&serde_json::Value::Bool(true)))
+        {
+            solstone_core_system_health::SummaryFreshness::Unknown
+        } else {
+            solstone_core_system_health::summary_freshness(gen_at_opt.as_deref(), now)
+        };
+        let eval = evaluate_search_freshness(
+            root,
+            &crate::search_freshness::FsIndexMetadata,
+            indexer_phase.as_ref(),
+            summary_freshness,
+            now,
+        );
+        assert_eq!(eval.state, "unknown");
+        assert_eq!(eval.last_attempt_failed, false);
+
+        let router = crate::routes_with_clock(root.to_path_buf(), Clock::new(move || now));
+        let resp = router
+            .oneshot(
+                axum::http::Request::get("/api/health/summary")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+
+        let router2 = crate::routes_with_clock(root.to_path_buf(), Clock::new(move || now));
+        let resp2 = router2
+            .oneshot(
+                axum::http::Request::get("/app/health/api/state")
+                    .body(axum::body::Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp2.status(), 200);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(resp2.into_body(), 1024 * 1024)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["search_index"]["state"], "unknown");
+        assert_eq!(body["search_index"]["last_attempt_failed"], false);
+    }
 }
