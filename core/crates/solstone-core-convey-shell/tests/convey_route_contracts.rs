@@ -15,8 +15,6 @@ mod corpus;
 mod devices_ingest_mount;
 #[path = "discovery_routes.rs"]
 mod discovery_routes;
-#[path = "import_journal_door_mount.rs"]
-mod import_journal_door_mount;
 #[path = "media_routes.rs"]
 mod media_routes;
 #[path = "network_corpus.rs"]

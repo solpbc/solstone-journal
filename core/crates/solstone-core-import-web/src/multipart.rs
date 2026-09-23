@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use axum::extract::{Multipart, multipart::Field};
+use axum::extract::multipart::Field;
 
 pub(crate) const MAX_BODY_BYTES: usize = 128 * 1024 * 1024;
 pub(crate) const MAX_SAVE_FILE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -9,42 +9,6 @@ pub(crate) const MAX_PART_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const MAX_PARTS: usize = 12;
 pub(crate) const MAX_HEADERS: usize = 16;
 pub(crate) const MAX_FILENAME_BYTES: usize = 128;
-
-pub(crate) struct Part {
-    pub(crate) name: String,
-    pub(crate) filename: Option<String>,
-    pub(crate) bytes: Vec<u8>,
-}
-
-pub(crate) async fn collect(mut multipart: Multipart) -> Result<Vec<Part>, &'static str> {
-    let mut parts = Vec::new();
-    while let Some(field) = multipart
-        .next_field()
-        .await
-        .map_err(|_| "invalid multipart body")?
-    {
-        if parts.len() == MAX_PARTS {
-            return Err("too many multipart parts");
-        }
-        if field.headers().len() > MAX_HEADERS {
-            return Err("too many multipart headers");
-        }
-        let filename = field.file_name().map(ToOwned::to_owned);
-        if filename
-            .as_ref()
-            .is_some_and(|value| value.len() > MAX_FILENAME_BYTES)
-        {
-            return Err("multipart filename is too long");
-        }
-        let name = field.name().unwrap_or_default().to_owned();
-        parts.push(Part {
-            name,
-            filename,
-            bytes: bounded(field).await?,
-        });
-    }
-    Ok(parts)
-}
 
 pub(crate) async fn bounded(mut field: Field<'_>) -> Result<Vec<u8>, &'static str> {
     let mut bytes = Vec::new();

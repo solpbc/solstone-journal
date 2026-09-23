@@ -4269,9 +4269,7 @@ dependencies = [
 name = "solstone-core-import"
 version = "2.0.15"
 dependencies = [
- "base64 0.22.1",
  "chrono",
- "getrandom 0.3.4",
  "regex",
  "serde",
  "serde_json",
@@ -4346,25 +4344,17 @@ name = "solstone-core-import-web"
 version = "2.0.15"
 dependencies = [
  "axum",
- "base64 0.22.1",
  "chrono",
- "getrandom 0.3.4",
- "jsonschema",
  "nix",
- "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-callosum",
  "solstone-core-convey-http",
  "solstone-core-convey-shell",
- "solstone-core-entity-matching",
- "solstone-core-facets",
  "solstone-core-generate",
  "solstone-core-import",
  "solstone-core-import-sources",
  "solstone-core-journal-archive",
- "solstone-core-journal-config",
- "solstone-core-journal-config-write",
  "solstone-core-journal-io",
  "tempfile",
  "tokio",

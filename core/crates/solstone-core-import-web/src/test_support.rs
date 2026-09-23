@@ -15,7 +15,7 @@ pub(crate) fn phase_root(phase: &str) -> TempDir {
     let temporary_parent = fs::canonicalize(std::env::temp_dir()).expect("temporary directory");
     let root = TempDir::new_in(temporary_parent).expect("temporary journal");
     match phase {
-        "unestablished" => seed_source(root.path()),
+        "unestablished" => seed_legacy_source_state(root.path()),
         "corrupt" => {
             fs::create_dir_all(root.path().join("config")).expect("config");
             fs::write(
@@ -42,7 +42,7 @@ fn seed_established(root: &Path) {
         b"{\n  \"setup\": {\n    \"completed_at\": 1767225600\n  }\n}\n",
     )
     .expect("config writes");
-    seed_source(root);
+    seed_legacy_source_state(root);
 }
 
 fn seed_populated(root: &Path) {
@@ -124,7 +124,10 @@ pub(crate) fn seed_import(
     }
 }
 
-pub(crate) fn seed_source(root: &Path) {
+/// Journals that once received a peer push still carry its registry record
+/// and per-source state directory. Nothing reads them now; the seeded roots
+/// keep them so the import routes are exercised against that leftover state.
+fn seed_legacy_source_state(root: &Path) {
     let sources = root.join("apps/import/journal_sources");
     fs::create_dir_all(&sources).expect("sources");
     fs::write(sources.join("corpus_peer.json"), serde_json::to_vec(&json!({"prefix":"corpusSo","name":"corpus_peer","created_at":1767225600000_i64,"enabled":true,"revoked":false,"revoked_at":null,"stats":{"segments_received":0,"entities_received":0,"facets_received":0,"imports_received":0,"config_received":0}})).expect("source serializes")).expect("source");

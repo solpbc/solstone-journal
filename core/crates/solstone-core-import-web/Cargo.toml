@@ -18,10 +18,7 @@ test = false
 
 [dependencies]
 axum = { workspace = true, features = ["tokio", "multipart"] }
-base64 = "0.22.1"
 chrono.workspace = true
-getrandom.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 solstone-core-convey-http.workspace = true
@@ -31,16 +28,11 @@ solstone-core-import.workspace = true
 solstone-core-import-sources.workspace = true
 solstone-core-journal-archive.workspace = true
 solstone-core-journal-io.workspace = true
-solstone-core-journal-config.workspace = true
-solstone-core-journal-config-write.workspace = true
-solstone-core-facets.workspace = true
-solstone-core-entity-matching.workspace = true
 tempfile = "3.24.0"
 tokio = { workspace = true, features = ["fs", "io-util", "rt"] }
 tokio-util = { version = "0.7.16", features = ["io"] }
 
 [dev-dependencies]
-jsonschema.workspace = true
 solstone-core-convey-shell.workspace = true
 tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt"] }
 tower.workspace = true

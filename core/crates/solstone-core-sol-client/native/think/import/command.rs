@@ -157,11 +157,6 @@ fn push_positional(parsed: &mut ParsedArgs, value: String) {
 }
 
 fn reject_unsupported_modes(parsed: &ParsedArgs) -> Option<CommandOutput> {
-    if parsed.media.as_deref() == Some("journal-source") {
-        return Some(rejected(
-            "journal-source management moved to `solstone call import <verb>`.",
-        ));
-    }
     if parsed.dry_run {
         return Some(rejected(format!(
             "`--dry-run` requires the journal host. {JOURNAL_HOST_HINT}"
@@ -859,10 +854,6 @@ mod tests {
             (
                 vec!["media.txt", "--auto", "timestamps are Pacific"],
                 "solstone import: `--auto <guidance>` requires the journal host. Use `--timestamp` here or run `journal importer`.\n",
-            ),
-            (
-                vec!["journal-source", "list"],
-                "solstone import: journal-source management moved to `solstone call import <verb>`.\n",
             ),
         ];
 

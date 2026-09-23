@@ -366,7 +366,7 @@ fn assert_case(harness: &Harness, mode: &str, case: &Case) {
     assert!(!harness.poison.exists(), "{mode}: importer reached Python");
 }
 
-fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 9] {
+fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 8] {
     [
         (
             "generic media",
@@ -594,35 +594,6 @@ fn importer_modes(inputs: &Inputs) -> [(&'static str, Vec<Case>); 9] {
                 contains: "Unknown connect backend: unknown",
             }],
         ),
-        (
-            "journal-source",
-            vec![
-                Case {
-                    args: args(&["journal-source", "create", "sample-source"]),
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Journal source created:",
-                },
-                Case {
-                    args: args(&["journal-source", "list"]),
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "sample-source",
-                },
-                Case {
-                    args: args(&["journal-source", "status", "sample-source"]),
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Journal source: sample-source",
-                },
-                Case {
-                    args: args(&["journal-source", "revoke", "sample-source"]),
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    contains: "Revoked journal source 'sample-source'",
-                },
-            ],
-        ),
     ]
 }
 
@@ -667,9 +638,8 @@ fn run_importer_mode_partition(modes_to_run: &[&str], include_preview_refusals: 
 
 #[test]
 fn importer_modes_run_natively_through_the_journal_dispatcher() {
-    // These shards have no shared journal, process, or fixture paths. Keep the
-    // stateful journal-source workflow inside one shard, while running at most
-    // three independently prepared dispatch matrices at once.
+    // These shards have no shared journal, process, or fixture paths. Run at
+    // most three independently prepared dispatch matrices at once.
     std::thread::scope(|scope| {
         scope.spawn(|| run_importer_mode_partition(&["generic media"], false));
         scope.spawn(|| {
@@ -683,16 +653,7 @@ fn importer_modes_run_natively_through_the_journal_dispatcher() {
             )
         });
         scope.spawn(|| {
-            run_importer_mode_partition(
-                &[
-                    "importer listing",
-                    "backends",
-                    "sync",
-                    "connect",
-                    "journal-source",
-                ],
-                false,
-            )
+            run_importer_mode_partition(&["importer listing", "backends", "sync", "connect"], false)
         });
     });
 }

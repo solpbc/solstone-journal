@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value};
 
-pub mod cli_journal_source;
 pub mod cli_render;
 pub mod connect;
 pub mod consent_gate;

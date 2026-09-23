@@ -25,7 +25,6 @@ pub enum SessionExemption {
     TopLevelStatic,
     InitSetup,
     UnknownAppPrefix,
-    ImportDoor,
     UnmatchedFallback,
 }
 
@@ -34,7 +33,6 @@ pub const SESSION_GATE_EXEMPTIONS: &[SessionExemption] = &[
     SessionExemption::TopLevelStatic,
     SessionExemption::InitSetup,
     SessionExemption::UnknownAppPrefix,
-    SessionExemption::ImportDoor,
     SessionExemption::UnmatchedFallback,
 ];
 
@@ -81,19 +79,6 @@ fn is_exempt_with_agents(path: &str, include_agents: bool) -> bool {
                             && !(include_agents && name == "agents")
                             && known_app(name).is_none()
                     })
-            }
-            SessionExemption::ImportDoor => {
-                let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
-                matches!(
-                    segments.as_slice(),
-                    ["app", "import", "journal", prefix, "manifest", area]
-                        if !prefix.is_empty() && !area.is_empty()
-                ) || matches!(
-                    segments.as_slice(),
-                    ["app", "import", "journal", prefix, "ingest", kind]
-                        if !prefix.is_empty()
-                            && matches!(*kind, "segments" | "entities" | "facets" | "imports" | "config")
-                )
             }
             // The router leaves unmatched paths outside its route layer. This
             // declarative entry records that structural exemption with the others.
@@ -192,7 +177,6 @@ mod tests {
                 SessionExemption::TopLevelStatic,
                 SessionExemption::InitSetup,
                 SessionExemption::UnknownAppPrefix,
-                SessionExemption::ImportDoor,
                 SessionExemption::UnmatchedFallback,
             ]
         );
@@ -213,29 +197,5 @@ mod tests {
         assert!(!is_exempt("/app/devices/ingest/manifest"));
         assert!(!is_exempt("/app/devices/ingest/manifest/20260804"));
         assert!(!is_exempt("/app/devices/ingest/segments/20260804"));
-    }
-
-    #[test]
-    fn import_door_exemption_is_closed_to_six_route_shapes() {
-        for path in [
-            "/app/import/journal/prefix01/manifest/entities",
-            "/app/import/journal/prefix01/ingest/segments",
-            "/app/import/journal/prefix01/ingest/entities",
-            "/app/import/journal/prefix01/ingest/facets",
-            "/app/import/journal/prefix01/ingest/imports",
-            "/app/import/journal/prefix01/ingest/config",
-        ] {
-            assert!(is_exempt(path), "{path}");
-        }
-        for path in [
-            "/app/import/api/save",
-            "/app/import/api/journal-sources/create",
-            "/app/import/api/list",
-            "/app/import/",
-            "/app/import/journal/prefix01/ingest/segments/20260813",
-            "/app/import/journal/prefix01/ingest/unknown",
-        ] {
-            assert!(!is_exempt(path), "{path}");
-        }
     }
 }

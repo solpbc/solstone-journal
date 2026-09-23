@@ -14,7 +14,6 @@ use solstone_core_segment::{
     SUPERVISOR_MESSAGE, SupervisorRefusal, require_solstone, require_solstone_with,
 };
 
-use solstone_core_import::cli_journal_source;
 use solstone_core_import::cli_render::{self, CliRun};
 use solstone_core_import::connect::{OuraConnectRequest, connect_oura};
 use solstone_core_import::contract::{AudioAuto, SyncPreviewRequest};
@@ -179,9 +178,6 @@ fn run_import(options: Options, journal_path: &Path) -> CliOutcome {
             "the following arguments are required: media".to_owned(),
         ));
     };
-    if media == "journal-source" {
-        return rendered(cli_journal_source::run_cli(&options.extra, journal_path));
-    }
     let outcome = match resolve(options_ref(&options, media), journal_path) {
         Ok(outcome) => outcome,
         Err(error) => return rendered(failure("", &format!("{error}\n"), 1)),
@@ -909,7 +905,6 @@ struct Options {
     backends: bool,
     json: bool,
     deterministic_only: bool,
-    extra: Vec<String>,
 }
 
 enum ParsedCommand {
@@ -958,14 +953,6 @@ fn parse_arguments(args: &[String]) -> Result<ParsedCommand, String> {
             positionals.push(argument.clone());
         }
         index += 1;
-    }
-    if positionals
-        .first()
-        .is_some_and(|value| value == "journal-source")
-    {
-        options.media = Some("journal-source".to_owned());
-        options.extra = positionals.into_iter().skip(1).collect();
-        return Ok(ParsedCommand::Import(options));
     }
     match positionals.as_slice() {
         [] => {}

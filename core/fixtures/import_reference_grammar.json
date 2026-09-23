@@ -276,21 +276,5 @@
   "setup_cli_options": [
     "-v/--verbose",
     "-d/--debug"
-  ],
-  "journal_source": {
-    "subcommands": [
-      "create",
-      "list",
-      "status",
-      "revoke"
-    ],
-    "top_level_flag": "--json",
-    "list_mode_choices": [
-      "dl",
-      "pl"
-    ],
-    "parses_with_parse_known": false,
-    "stale_prog_string": "sol import journal-source",
-    "note": "reached by the POSITIONAL 'journal-source', not a flag. Its prog string is a stale spelling that does not match 'journal importer' \u2014 record as an observed oddity, not a target."
-  }
+  ]
 }

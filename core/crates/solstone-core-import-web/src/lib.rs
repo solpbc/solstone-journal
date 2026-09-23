@@ -14,21 +14,15 @@ use axum::{
 mod assets;
 mod callosum;
 mod content;
-mod facet_ingest;
 mod http;
 mod imports;
-mod ingest;
 mod journal_archive;
-mod journal_sources;
 mod lifecycle;
 mod multipart;
-mod resolve;
 mod save_stream;
 
 #[cfg(test)]
 mod corpus;
-#[cfg(test)]
-mod peer_ingest_schema;
 #[cfg(test)]
 mod test_support;
 
@@ -40,9 +34,6 @@ pub(crate) struct AppState {
 pub use lifecycle::{MetadataCommandOutcome, MetadataCommandPlan, run_metadata_command};
 
 pub fn routes(journal_root: PathBuf) -> Router {
-    // A source record that still carries its retired ingest key keeps no prefix
-    // until this pass rewrites it, so a failure here leaves that source closed.
-    let _ = solstone_core_import::cli_journal_source::retire_stored_source_keys(&journal_root);
     Router::new()
         .route("/app/import/", get(assets::shell))
         .route("/app/import/workspace", get(assets::workspace))
@@ -68,66 +59,6 @@ pub fn routes(journal_root: PathBuf) -> Router {
         .route("/app/import/api/save-path", post(lifecycle::save_path))
         .route("/app/import/api/meta", post(lifecycle::meta))
         .route("/app/import/api/start", post(lifecycle::start))
-        .route(
-            "/app/import/journal/{prefix}/ingest/facets",
-            post(ingest::facets),
-        )
-        .route(
-            "/app/import/journal/{prefix}/ingest/segments",
-            post(ingest::segments),
-        )
-        .route(
-            "/app/import/journal/{prefix}/ingest/entities",
-            post(ingest::entities),
-        )
-        .route(
-            "/app/import/journal/{prefix}/ingest/imports",
-            post(ingest::imports),
-        )
-        .route(
-            "/app/import/journal/{prefix}/ingest/config",
-            post(ingest::config),
-        )
-        .route(
-            "/app/import/api/journal-sources/list",
-            get(journal_sources::list),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/status",
-            get(journal_sources::status),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/staged",
-            get(journal_sources::staged),
-        )
-        .route(
-            "/app/import/api/journal-sources/create",
-            post(journal_sources::create),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/revoke",
-            post(journal_sources::revoke),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/resolve-entity",
-            post(resolve::entity),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/resolve-facet",
-            post(resolve::facet),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/resolve-config",
-            post(resolve::config),
-        )
-        .route(
-            "/app/import/api/journal-sources/{name}/resolve-config-all",
-            post(resolve::config_all),
-        )
-        .route(
-            "/app/import/journal/{key_prefix}/manifest/{area}",
-            get(journal_sources::manifest),
-        )
         .route(
             "/app/import/api/{timestamp}/content/{item_id}",
             get(content::detail),

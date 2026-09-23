@@ -55,10 +55,6 @@ enum Invocation {
     SyncObsidian,
     SyncPlaudSave,
     ConnectUnknown,
-    JournalSourceCreate,
-    JournalSourceList,
-    JournalSourceStatus,
-    JournalSourceRevoke,
 }
 
 impl Invocation {
@@ -340,43 +336,6 @@ const MODE_CASES: &[ModeCase] = &[
             },
         )],
     },
-    ModeCase {
-        name: "journal-source",
-        invocations: &[
-            (
-                Invocation::JournalSourceCreate,
-                Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Journal source created:",
-                },
-            ),
-            (
-                Invocation::JournalSourceList,
-                Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "sample-source",
-                },
-            ),
-            (
-                Invocation::JournalSourceStatus,
-                Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Journal source: sample-source",
-                },
-            ),
-            (
-                Invocation::JournalSourceRevoke,
-                Expected {
-                    exit: 0,
-                    stream: Stream::Stdout,
-                    identifies: "Revoked journal source 'sample-source'",
-                },
-            ),
-        ],
-    },
 ];
 
 struct Inputs {
@@ -550,22 +509,6 @@ impl Invocation {
                 vec!["--sync".to_owned(), "plaud".to_owned(), "--save".to_owned()]
             }
             Self::ConnectUnknown => vec!["--connect".to_owned(), "unknown".to_owned()],
-            Self::JournalSourceCreate => vec![
-                "journal-source".to_owned(),
-                "create".to_owned(),
-                "sample-source".to_owned(),
-            ],
-            Self::JournalSourceList => vec!["journal-source".to_owned(), "list".to_owned()],
-            Self::JournalSourceStatus => vec![
-                "journal-source".to_owned(),
-                "status".to_owned(),
-                "sample-source".to_owned(),
-            ],
-            Self::JournalSourceRevoke => vec![
-                "journal-source".to_owned(),
-                "revoke".to_owned(),
-                "sample-source".to_owned(),
-            ],
         }
     }
 }
@@ -982,11 +925,11 @@ fn list_and_backend_human_forms_match_the_usable_oracle_cases() {
 }
 
 #[test]
-#[ignore = "help_long, help_short, and journal_source_help await a corrected help-oracle capture; see docs/design/importer-command-reachability.md"]
+#[ignore = "help_long and help_short await a corrected help-oracle capture"]
 fn help_fidelity_is_fixture_exact_when_the_capture_is_corrected() {
     let oracle: Value = serde_json::from_str(ORACLE).expect("help oracle");
     for column in [SupervisorColumn::GatePassed, SupervisorColumn::SolstoneDown] {
-        for case in ["help_long", "help_short", "journal_source_help"] {
+        for case in ["help_long", "help_short"] {
             let fixture_case = format!("{}/{case}", column.fixture_name());
             let expected = &oracle["cases"][&fixture_case];
             let args = expected["argv"]

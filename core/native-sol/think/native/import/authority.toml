@@ -30,5 +30,4 @@ params = [
   { name = "save", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--save"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "path", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--path"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "list_importers", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--list-importers"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
-  { name = "journal_source", kind = "argument", type = "text", required = false, nargs = 1, multiple = false, options = ["journal-source"], secondary = [], hidden = false, is_flag = false, count = false },
 ]

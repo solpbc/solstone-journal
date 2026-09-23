@@ -66,20 +66,6 @@ fn registry_and_auxiliary_grammar_match_the_frozen_fixture_contract() {
     assert_eq!(native_sync_backends, ["oura"]);
 
     assert_key_set(
-        &grammar["journal_source"],
-        [
-            "subcommands",
-            "top_level_flag",
-            "list_mode_choices",
-            "parses_with_parse_known",
-            "stale_prog_string",
-            "note",
-        ],
-    );
-    let journal_subcommands = strings(grammar["journal_source"]["subcommands"].as_array().unwrap());
-    assert_eq!(journal_subcommands, ["create", "list", "status", "revoke"]);
-
-    assert_key_set(
         &detection["routing_contract"],
         [
             "rule",

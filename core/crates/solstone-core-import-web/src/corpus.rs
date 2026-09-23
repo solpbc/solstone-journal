@@ -23,8 +23,6 @@ pub(crate) const CTIME_PATHS: &[JsonPath] = &[
         Segment::Key("imported_at"),
     ],
 ];
-/// Corpus-declared over-fire: a source-status root `created_at` is milliseconds, not ctime.
-pub(crate) const DECLARED_STATUS_ROOT_CREATED_AT_OVERFIRE: JsonPath = &[Segment::Key("created_at")];
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -38,7 +36,7 @@ pub(crate) mod tests {
     use sha2::{Digest, Sha256};
     use tower::ServiceExt;
 
-    use super::{CTIME_PATHS, DECLARED_STATUS_ROOT_CREATED_AT_OVERFIRE, JsonPath, Segment};
+    use super::{CTIME_PATHS, JsonPath, Segment};
     use crate::test_support::{
         CONTENT, FAILED, OK, PENDING, phase_root, populated_root, seed_import,
     };
@@ -47,27 +45,12 @@ pub(crate) mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../fixtures/convey_import_corpus.json"
     ));
-    const DOOR_PATHS: &[&str] = &[
-        "/app/import/journal/corpusSo/manifest/entities",
-        "/app/import/journal/00000000/manifest/entities",
-        "/app/import/journal/corpusSo/ingest/segments",
-        "/app/import/journal/corpusSo/ingest/entities",
-        "/app/import/journal/corpusSo/ingest/imports",
-        "/app/import/journal/corpusSo/ingest/config",
-        "/app/import/journal/corpusSo/ingest/facets",
-    ];
     const BROWSER_WRITE_PATHS: &[&str] = &[
         "/app/import/api/save",
         "/app/import/api/save-path",
         "/app/import/api/meta",
         "/app/import/api/start",
         "/app/import/api/journal-archive/preview",
-        "/app/import/api/journal-sources/create",
-        "/app/import/api/journal-sources/corpus_peer/revoke",
-        "/app/import/api/journal-sources/corpus_peer/resolve-entity",
-        "/app/import/api/journal-sources/corpus_peer/resolve-facet",
-        "/app/import/api/journal-sources/corpus_peer/resolve-config",
-        "/app/import/api/journal-sources/corpus_peer/resolve-config-all",
     ];
 
     pub(crate) async fn request(
@@ -214,12 +197,8 @@ pub(crate) mod tests {
                         .into_bytes();
                 }
                 let body_matches = if let Some(expected) = case.get("json") {
-                    let mut paths = CTIME_PATHS.to_vec();
-                    if path.ends_with("/status") {
-                        paths.push(DECLARED_STATUS_ROOT_CREATED_AT_OVERFIRE);
-                    }
                     serde_json::from_slice::<Value>(&actual_body)
-                        .map(|value| normalize(value, &paths))
+                        .map(|value| normalize(value, CTIME_PATHS))
                         .ok()
                         .as_ref()
                         == Some(expected)
@@ -243,7 +222,7 @@ pub(crate) mod tests {
                 }
             }
         }
-        assert_eq!(passed, 136, "unexpected replay cases: {unexpected:?}");
+        assert_eq!(passed, 88, "unexpected replay cases: {unexpected:?}");
         assert!(
             unexpected.is_empty(),
             "unexpected replay cases: {unexpected:?}"
@@ -662,135 +641,6 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn ac12_populated_journal_source_reads_match_key_sets() {
-        let root = populated_root();
-        let (_, list) =
-            json_request(root.path(), "GET", "/app/import/api/journal-sources/list").await;
-        assert_eq!(list.as_object().unwrap().len(), 2);
-        assert_eq!(list["items"][0].as_object().unwrap().len(), 4);
-        let (_, status) = json_request(
-            root.path(),
-            "GET",
-            "/app/import/api/journal-sources/corpus_peer/status",
-        )
-        .await;
-        assert_eq!(status.as_object().unwrap().len(), 7);
-        let (_, staged) = json_request(
-            root.path(),
-            "GET",
-            "/app/import/api/journal-sources/corpus_peer/staged",
-        )
-        .await;
-        assert_eq!(staged, json!({"items":[],"total":0}));
-        for path in [
-            "/app/import/api/journal-sources/missing/status",
-            "/app/import/api/journal-sources/missing/staged",
-        ] {
-            let (code, body) = json_request(root.path(), "GET", path).await;
-            assert_eq!(
-                (code, body["reason_code"].clone()),
-                (StatusCode::NOT_FOUND, json!("journal_source_problem"))
-            );
-        }
-    }
-
-    #[tokio::test]
-    async fn ac12a_journal_source_created_at_is_never_name_normalized() {
-        let root = populated_root();
-        let (_, status) = json_request(
-            root.path(),
-            "GET",
-            "/app/import/api/journal-sources/corpus_peer/status",
-        )
-        .await;
-        let (_, list) =
-            json_request(root.path(), "GET", "/app/import/api/journal-sources/list").await;
-        assert_eq!(status["created_at"], 1_767_225_600_000_i64);
-        assert_eq!(list["items"][0]["created_at"], 1_767_225_600_000_i64);
-    }
-
-    #[tokio::test]
-    async fn ac12b_staged_area_reads_cover_entities_facets_and_config() {
-        let root = populated_root();
-        let state = root.path().join("imports/corpusSo");
-        fs::create_dir_all(state.join("entities/staged")).unwrap();
-        fs::write(state.join("entities/staged/e-1.json"), json!({"reason":"candidate","source_entity":{"name":"Ada"},"match_candidates":[],"staged_at":1}).to_string()).unwrap();
-        fs::create_dir_all(state.join("facets/staged/work/activities")).unwrap();
-        fs::write(
-            state.join("facets/staged/work/activities/a.staged.json"),
-            json!({"custom":"payload"}).to_string(),
-        )
-        .unwrap();
-        fs::write(
-            state.join("config/diff.json"),
-            json!({"changed":true}).to_string(),
-        )
-        .unwrap();
-        let (_, body) = json_request(
-            root.path(),
-            "GET",
-            "/app/import/api/journal-sources/corpus_peer/staged",
-        )
-        .await;
-        assert_eq!(body["total"], 3);
-        let items = body["items"].as_array().unwrap();
-        let entity = items
-            .iter()
-            .find(|item| item["area"] == "entities")
-            .unwrap();
-        assert_eq!(
-            entity
-                .as_object()
-                .unwrap()
-                .keys()
-                .map(String::as_str)
-                .collect::<BTreeSet<_>>(),
-            [
-                "area",
-                "source_id",
-                "reason",
-                "source_entity",
-                "match_candidates",
-                "staged_at"
-            ]
-            .into_iter()
-            .collect()
-        );
-        let facet = items.iter().find(|item| item["area"] == "facets").unwrap();
-        assert_eq!(
-            facet
-                .as_object()
-                .unwrap()
-                .keys()
-                .map(String::as_str)
-                .collect::<BTreeSet<_>>(),
-            ["area", "staged_file", "facet", "file_type", "custom"]
-                .into_iter()
-                .collect()
-        );
-        let config = items.iter().find(|item| item["area"] == "config").unwrap();
-        assert_eq!(
-            config
-                .as_object()
-                .unwrap()
-                .keys()
-                .map(String::as_str)
-                .collect::<BTreeSet<_>>(),
-            ["area", "diff"].into_iter().collect()
-        );
-        let (code, body) = json_request(
-            root.path(),
-            "GET",
-            "/app/import/api/journal-sources/corpus_peer/staged?area=nope",
-        )
-        .await;
-        assert_eq!(
-            (code, body["reason_code"].clone()),
-            (StatusCode::BAD_REQUEST, json!("invalid_request_value"))
-        );
-    }
-
-    #[tokio::test]
     async fn ac13_guides_reject_decoded_traversal_and_case_variants() {
         let root = populated_root();
         let (code, content_type, _, bytes) =
@@ -842,26 +692,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn ac15_registered_write_routes_preserve_phase_and_door_auth_guards() {
-        for phase in ["empty", "populated", "unestablished", "corrupt"] {
-            let root = phase_root(phase);
-            for path in DOOR_PATHS {
-                let method = if path.contains("/manifest/") {
-                    "GET"
-                } else {
-                    "POST"
-                };
-                let (status, content_type, _, _) = request(root.path(), method, path, None).await;
-                assert_eq!(
-                    (status, content_type),
-                    (
-                        StatusCode::UNAUTHORIZED,
-                        "text/html; charset=utf-8".to_owned()
-                    ),
-                    "{phase} {path}"
-                );
-            }
-        }
+    async fn ac15_registered_write_routes_preserve_phase_guards() {
         for phase in ["unestablished", "corrupt"] {
             let root = phase_root(phase);
             for path in BROWSER_WRITE_PATHS {
