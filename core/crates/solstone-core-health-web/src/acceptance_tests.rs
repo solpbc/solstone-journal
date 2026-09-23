@@ -425,7 +425,8 @@ mod tests {
 
         let t_secs = 1_800_000_000i64;
         let t = Utc.timestamp_opt(t_secs, 0).unwrap();
-        let (talent_root, apps_root) = solstone_core_system::daily_coverage::package_roots().unwrap();
+        let (talent_root, apps_root) =
+            solstone_core_system::daily_coverage::package_roots().unwrap();
 
         // Run control journal CLI at T
         let run_res_control = run_cli(
@@ -437,7 +438,11 @@ mod tests {
             &FilesystemBacklogViewReader,
             &FilesystemDocumentWriter,
         );
-        assert_eq!(run_res_control.exit_code, 0, "control run_cli failed: {}", run_res_control.stderr);
+        assert_eq!(
+            run_res_control.exit_code, 0,
+            "control run_cli failed: {}",
+            run_res_control.stderr
+        );
 
         // Add activity failure to test journal
         let record = json!({
@@ -473,21 +478,36 @@ mod tests {
 
         rt.block_on(async {
             // Control check
-            let ctrl_router = routes_with_clock(root_control.to_path_buf(), Clock::fixed(now_shortly));
+            let ctrl_router =
+                routes_with_clock(root_control.to_path_buf(), Clock::fixed(now_shortly));
             let resp = ctrl_router
-                .oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap())
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.status(), 200);
             let bytes = to_bytes(resp.into_body(), 1024 * 1024).await.unwrap();
             let ctrl_body: Value = serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(ctrl_body["backlog"]["verdict"], "your journal's all caught up.");
-            assert_eq!(ctrl_body["backlog"]["unfinished_activities"]["activities"], 0);
+            assert_eq!(
+                ctrl_body["backlog"]["verdict"],
+                "your journal's all caught up."
+            );
+            assert_eq!(
+                ctrl_body["backlog"]["unfinished_activities"]["activities"],
+                0
+            );
 
             // Test journal check
             let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
             let resp = router
-                .oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap())
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.status(), 200);
@@ -506,14 +526,32 @@ mod tests {
             // Aging tests:
             // +2h -> fresh
             let r2 = routes_with_clock(root.to_path_buf(), Clock::fixed(t + Duration::hours(2)));
-            let resp = r2.oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap()).await.unwrap();
-            let b2: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+            let resp = r2
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let b2: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
             assert_eq!(b2["backlog"]["freshness"]["state"], "fresh");
 
             // +40h -> stale, pending_days == 0, unfinished activities 0 (omitted or 0), verdict contains "40 hours" and does not contain "1 day is still catching up."
             let r40 = routes_with_clock(root.to_path_buf(), Clock::fixed(t + Duration::hours(40)));
-            let resp = r40.oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap()).await.unwrap();
-            let b40: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+            let resp = r40
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let b40: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
             assert_eq!(b40["backlog"]["freshness"]["state"], "stale");
             assert_eq!(b40["backlog"]["pending_days"], 0);
             let v40 = b40["backlog"]["verdict"].as_str().unwrap();
@@ -522,32 +560,69 @@ mod tests {
 
             // Delete top-level generated_at and rewrite stats.json -> unknown age sentence
             let stats_path = root.join("stats.json");
-            let mut stats_val: Value = serde_json::from_str(&fs::read_to_string(&stats_path).unwrap()).unwrap();
+            let mut stats_val: Value =
+                serde_json::from_str(&fs::read_to_string(&stats_path).unwrap()).unwrap();
             stats_val.as_object_mut().unwrap().remove("generated_at");
             fs::write(&stats_path, stats_val.to_string()).unwrap();
 
             let r_nogen = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
-            let resp = r_nogen.oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap()).await.unwrap();
-            let bnogen: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+            let resp = r_nogen
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bnogen: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
             assert_eq!(bnogen["backlog"]["freshness"]["state"], "unknown");
-            assert_eq!(bnogen["backlog"]["verdict"], "it's unclear whether your journal is caught up; the last update age is unknown.");
+            assert_eq!(
+                bnogen["backlog"]["verdict"],
+                "it's unclear whether your journal is caught up; the last update age is unknown."
+            );
 
             // Set generated_at one hour after now -> unknown future sentence
             stats_val["generated_at"] = json!((now_shortly + Duration::hours(1)).to_rfc3339());
             fs::write(&stats_path, stats_val.to_string()).unwrap();
 
             let r_fut = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
-            let resp = r_fut.oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap()).await.unwrap();
-            let bfut: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+            let resp = r_fut
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bfut: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
             assert_eq!(bfut["backlog"]["freshness"]["state"], "unknown");
-            assert_eq!(bfut["backlog"]["verdict"], "it's unclear whether your journal is caught up; the last update age is unknown.");
+            assert_eq!(
+                bfut["backlog"]["verdict"],
+                "it's unclear whether your journal is caught up; the last update age is unknown."
+            );
 
             // Delete stats.json -> still checking where your journal stands.
             fs::remove_file(&stats_path).unwrap();
             let r_del = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
-            let resp = r_del.oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap()).await.unwrap();
-            let bdel: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
-            assert_eq!(bdel["backlog"]["verdict"], "still checking where your journal stands.");
+            let resp = r_del
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            let bdel: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
+            assert_eq!(
+                bdel["backlog"]["verdict"],
+                "still checking where your journal stands."
+            );
         });
     }
 
@@ -567,7 +642,8 @@ mod tests {
 
         let t_secs = 1_800_000_000i64;
         let t = Utc.timestamp_opt(t_secs, 0).unwrap();
-        let (talent_root, apps_root) = solstone_core_system::daily_coverage::package_roots().unwrap();
+        let (talent_root, apps_root) =
+            solstone_core_system::daily_coverage::package_roots().unwrap();
 
         // 1. Create indexer db
         let _conn = solstone_core_indexer_store::db::open_index(root).expect("open index");
@@ -613,11 +689,17 @@ mod tests {
         rt.block_on(async {
             let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
             let resp = router
-                .oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap())
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.status(), 200);
-            let body: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+            let body: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
 
             assert_eq!(body["search_index"]["state"], "stale");
             assert_eq!(body["search_index"]["last_attempt_failed"], true);
@@ -647,11 +729,17 @@ mod tests {
         rt.block_on(async {
             let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
             let resp = router
-                .oneshot(Request::get("/app/health/api/state").body(Body::empty()).unwrap())
+                .oneshot(
+                    Request::get("/app/health/api/state")
+                        .body(Body::empty())
+                        .unwrap(),
+                )
                 .await
                 .unwrap();
             assert_eq!(resp.status(), 200);
-            let body: Value = serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap()).unwrap();
+            let body: Value =
+                serde_json::from_slice(&to_bytes(resp.into_body(), 1024 * 1024).await.unwrap())
+                    .unwrap();
 
             assert_eq!(body["search_index"]["state"], "fresh");
             assert_eq!(body["search_index"]["last_attempt_failed"], false);
@@ -693,8 +781,14 @@ mod tests {
 
         let m1 = fs::metadata(&sqlite).unwrap().modified().unwrap();
         let m2 = fs::metadata(&wal).unwrap().modified().unwrap();
-        assert_eq!(m1.duration_since(UNIX_EPOCH).unwrap().as_secs(), eight_days_ago_secs as u64);
-        assert_eq!(m2.duration_since(UNIX_EPOCH).unwrap().as_secs(), eight_days_ago_secs as u64);
+        assert_eq!(
+            m1.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            eight_days_ago_secs as u64
+        );
+        assert_eq!(
+            m2.duration_since(UNIX_EPOCH).unwrap().as_secs(),
+            eight_days_ago_secs as u64
+        );
 
         // db now-1h is fresh
         set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
@@ -705,13 +799,15 @@ mod tests {
         // db now-8d with WAL now-1h is fresh
         set_file_mtime(&sqlite, FileTime::from_unix_time(eight_days_ago_secs, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        let eval_wal_fresh = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
+        let eval_wal_fresh =
+            evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
         assert_eq!(eval_wal_fresh.state, "fresh");
 
         // db now+1d is unknown
         set_file_mtime(&sqlite, FileTime::from_unix_time(1_800_000_000 + 86400, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(1_800_000_000 - 3600, 0)).unwrap();
-        let eval_future = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
+        let eval_future =
+            evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
         assert_eq!(eval_future.state, "unknown");
 
         // summary 40h old with a failed attempt and mtime now-1h is unknown with last_attempt_failed == false
@@ -736,13 +832,7 @@ mod tests {
         let thirty_days_ago = 1_800_000_000 - 30 * 86400;
         set_file_mtime(&sqlite, FileTime::from_unix_time(thirty_days_ago, 0)).unwrap();
         set_file_mtime(&wal, FileTime::from_unix_time(thirty_days_ago, 0)).unwrap();
-        let eval_30d = evaluate_search_freshness(
-            root,
-            &meta,
-            None,
-            SummaryFreshness::Unknown,
-            now,
-        );
+        let eval_30d = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Unknown, now);
         assert_eq!(eval_30d.state, "stale");
     }
 }
