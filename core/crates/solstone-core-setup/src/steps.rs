@@ -2119,8 +2119,17 @@ fn mode_name(mode: SetupMode) -> &'static str {
         SetupMode::Explain => "explain",
     }
 }
+/// The owner's configured journal and the journal this run resolved are the same
+/// directory when they resolve to the same place, however each is spelled.
+///
+/// 🔴 The configured side goes through `canonicalize`, which on Windows returns the
+/// verbatim `\\?\C:\...` form once the directory exists, while the effective journal
+/// is the spelled `C:\...` path. Comparing one resolved side against one spelled side
+/// never matched on Windows, so `journal setup` refused the owner's own journal as
+/// "already contains journal data" whenever its prior-run skip did not apply.
 fn paths_match(configured: &str, journal: &Path, home: &Path, current_dir: &Path) -> bool {
-    resolve_expanded_path(configured, home, current_dir) == journal
+    resolve_expanded_path(configured, home, current_dir)
+        == crate::args::canonicalize_or_normalize(journal)
 }
 
 fn existing_journal_message(path: &Path) -> String {
@@ -2199,6 +2208,29 @@ fn plan_brain(_context: &SetupContext<'_>) -> String {
 
 #[cfg(test)]
 mod tests {
+
+    /// Two spellings of one directory: the configured one resolves through the
+    /// filesystem, the effective one is as typed. On Windows the spellings are the
+    /// verbatim and drive-letter forms; a symlink gives the same shape here.
+    #[cfg(unix)]
+    #[test]
+    fn a_configured_journal_matches_its_own_directory_however_it_is_spelled() {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-core-setup-steps-spelled-journal-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let real = root.join("real-journal");
+        fs::create_dir(&real).unwrap();
+        let link = root.join("linked-journal");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        assert!(paths_match(link.to_str().unwrap(), &link, &root, &root));
+        assert!(paths_match(real.to_str().unwrap(), &link, &root, &root));
+        let other = root.join("other-journal");
+        fs::create_dir(&other).unwrap();
+        assert!(!paths_match(other.to_str().unwrap(), &link, &root, &root));
+    }
     use super::*;
     use crate::args::{ResolutionContext, parse_args_at, resolve_mode, resolve_setup};
     use crate::events::{EventSink, EventType};
