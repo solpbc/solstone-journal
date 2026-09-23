@@ -124,29 +124,43 @@
   /* ── touch ───────────────────────────────────────────────────────────── */
   --touch-min: 44px; /* 46px on primary buttons/inputs */
 
-  /* ── sunarc (decorative background) — locked 2026-09-19, values verbatim
-   * from cmo/brand/sbis/patterns/sun-arc/index.md. --sunarc-night-ground is
-   * the two-step OKLab mix of this shell's own --cream-bright day ground
-   * (the spec's own "surface cream" worked example), so it matches the
-   * spec's published #2E241C exactly. ───────────────────────────────────── */
+  /* ── sunarc (decorative background) — locked 2026-09-19, amended 2026-09-23
+   * (the day in both appearances), values verbatim from
+   * cmo/brand/sbis/patterns/sun-arc/index.md and vpx/design-system/tokens.md.
+   * The owner's appearance picks the ground row; the clock picks which of its
+   * three grounds shows. Retired 09-23: glow-night-alpha, glow-night-floor,
+   * appearance-flip-l. ─────────────────────────────────────────────────── */
   --sunarc-angle: 36deg;
   --sunarc-bow-ratio: 0.07919;
   --sunarc-diameter-ratio: 1.6180339887;
   --sunarc-corner-overshoot: 1;
   --sunarc-envelope-edge: 0.22;
-  --sunarc-mix-ink: 0.90;
-  --sunarc-mix-warm: 0.45;
-  --sunarc-glow-night-floor: 0.12;
-  --sunarc-peak-opacity: 0.55;
+  --sunarc-peak-opacity: 0.55;       /* the sun at the plateau on a light ground */
+  --sunarc-peak-opacity-dark: 0.20;  /* the same OKLab lightness step on a dark ground (§ 8a) */
   --sunarc-twilight-minutes: 30;
-  --sunarc-glow-radius-ratio: 1.6180339887;
+  --sunarc-glow-radius-ratio: 1.6180339887; /* the day halo, φ × R */
   --sunarc-glow-day-alpha: 0.22;
-  --sunarc-glow-night-alpha: 0.40;
   --sunarc-glow-mid-stop: 38%;
   --sunarc-glow-mid-ratio: 0.45;
-  --sunarc-appearance-flip-l: 0.5;
-  --sunarc-warm-dark: #2E1906;
   --sunarc-glow-color: #FFCC33;
+  --sunarc-ground-light-day: #FEFCF8;
+  --sunarc-ground-light-night: #E9DECC;
+  --sunarc-ground-light-deep: #D7C9B0;
+  --sunarc-ground-dark-day: #392E26;
+  --sunarc-ground-dark-night: #2E241C;
+  --sunarc-ground-dark-deep: #281E17;
+  --sunarc-twilight-radius-ratio: 2.6180339887; /* φ² × R */
+  --sunarc-twilight-alpha-dark: 0.62;
+  --sunarc-twilight-alpha-light: 0.95;
+  --sunarc-twilight-dark-to: #E8913A;    /* dark: mix(gold, this, 0.30 + 0.50x) */
+  --sunarc-twilight-light-from: #FFF3CF; /* light: mix(this, gold, 0.45 + 0.25x) */
+  --sunarc-twilight-sink: 0.10;
+  --sunarc-true-dark-minutes: 180;
+  /* the 09-19 derivation of the dark night ground; the engine reads the ground
+   * rows above, and the smoke page checks this mix still lands on them. */
+  --sunarc-mix-ink: 0.90;
+  --sunarc-mix-warm: 0.45;
+  --sunarc-warm-dark: #2E1906;
   --sunarc-night-ground: #2E241C;
 }
 

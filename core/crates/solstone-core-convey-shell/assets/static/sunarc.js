@@ -117,19 +117,32 @@
       diameterRatio: parseNumeric(getProp('--sunarc-diameter-ratio')),
       cornerOvershoot: parseNumeric(getProp('--sunarc-corner-overshoot')),
       envelopeEdge: parseNumeric(getProp('--sunarc-envelope-edge')),
-      mixInk: parseNumeric(getProp('--sunarc-mix-ink')),
-      mixWarm: parseNumeric(getProp('--sunarc-mix-warm')),
-      glowNightFloor: parseNumeric(getProp('--sunarc-glow-night-floor')),
       peakOpacity: parseNumeric(getProp('--sunarc-peak-opacity')),
+      peakOpacityDark: parseNumeric(getProp('--sunarc-peak-opacity-dark')),
       twilightMinutes: parseNumeric(getProp('--sunarc-twilight-minutes')),
       glowRadiusRatio: parseNumeric(getProp('--sunarc-glow-radius-ratio')),
       glowDayAlpha: parseNumeric(getProp('--sunarc-glow-day-alpha')),
-      glowNightAlpha: parseNumeric(getProp('--sunarc-glow-night-alpha')),
       glowMidStop: parseNumeric(getProp('--sunarc-glow-mid-stop')),
       glowMidRatio: parseNumeric(getProp('--sunarc-glow-mid-ratio')),
-      appearanceFlipL: parseNumeric(getProp('--sunarc-appearance-flip-l')),
-      warmDark: validateColor(getProp('--sunarc-warm-dark')),
+      twilightRadiusRatio: parseNumeric(getProp('--sunarc-twilight-radius-ratio')),
+      twilightAlphaDark: parseNumeric(getProp('--sunarc-twilight-alpha-dark')),
+      twilightAlphaLight: parseNumeric(getProp('--sunarc-twilight-alpha-light')),
+      twilightSink: parseNumeric(getProp('--sunarc-twilight-sink')),
+      trueDarkMinutes: parseNumeric(getProp('--sunarc-true-dark-minutes')),
       glowColor: validateColor(getProp('--sunarc-glow-color')),
+      twilightDarkTo: validateColor(getProp('--sunarc-twilight-dark-to')),
+      twilightLightFrom: validateColor(getProp('--sunarc-twilight-light-from')),
+      groundLightDay: validateColor(getProp('--sunarc-ground-light-day')),
+      groundLightNight: validateColor(getProp('--sunarc-ground-light-night')),
+      groundLightDeep: validateColor(getProp('--sunarc-ground-light-deep')),
+      groundDarkDay: validateColor(getProp('--sunarc-ground-dark-day')),
+      groundDarkNight: validateColor(getProp('--sunarc-ground-dark-night')),
+      groundDarkDeep: validateColor(getProp('--sunarc-ground-dark-deep')),
+      // The 09-19 derivation inputs. The engine no longer reads them; the smoke page keeps
+      // them as the oracle that the dark night ground is still the spec's own mix.
+      mixInk: parseNumeric(getProp('--sunarc-mix-ink')),
+      mixWarm: parseNumeric(getProp('--sunarc-mix-warm')),
+      warmDark: validateColor(getProp('--sunarc-warm-dark')),
       nightGround: validateColor(getProp('--sunarc-night-ground')),
       creamBright: validateColor(getProp('--cream-bright')),
       ink: validateColor(getProp('--ink')),
@@ -142,16 +155,20 @@
     if (!tokens || typeof tokens !== 'object') return false;
     const requiredNumbers = [
       'angle', 'bowRatio', 'diameterRatio', 'cornerOvershoot', 'envelopeEdge',
-      'mixInk', 'mixWarm', 'glowNightFloor', 'peakOpacity', 'twilightMinutes',
-      'glowRadiusRatio', 'glowDayAlpha', 'glowNightAlpha', 'glowMidStop',
-      'glowMidRatio', 'appearanceFlipL'
+      'peakOpacity', 'peakOpacityDark', 'twilightMinutes', 'glowRadiusRatio',
+      'glowDayAlpha', 'glowMidStop', 'glowMidRatio', 'twilightRadiusRatio',
+      'twilightAlphaDark', 'twilightAlphaLight', 'twilightSink', 'trueDarkMinutes'
     ];
     for (const key of requiredNumbers) {
       if (typeof tokens[key] !== 'number' || !Number.isFinite(tokens[key])) {
         return false;
       }
     }
-    const requiredColors = ['warmDark', 'glowColor', 'nightGround', 'creamBright', 'ink'];
+    const requiredColors = [
+      'glowColor', 'twilightDarkTo', 'twilightLightFrom',
+      'groundLightDay', 'groundLightNight', 'groundLightDeep',
+      'groundDarkDay', 'groundDarkNight', 'groundDarkDeep'
+    ];
     for (const key of requiredColors) {
       if (!validateColor(tokens[key])) {
         return false;
@@ -254,37 +271,123 @@
     return (m - dawn) / (dusk - dawn);
   }
 
-  function nightProgress(m, rise, set, tw) {
-    const dawn = rise - tw;
-    const dusk = set + tw;
-    const nightSpan = (dawn + 1440) - dusk;
-    if (nightSpan <= 0) return 0;
-    if (m >= dusk) {
-      return (m - dusk) / nightSpan;
-    }
-    if (m <= dawn) {
-      return ((m + 1440) - dusk) / nightSpan;
-    }
-    return 0;
-  }
-
+  // The sun's opacity: the plateau peak for the ground it sits on (0.55 on a light ground,
+  // 0.20 on a dark one, spec § 8a), eased by the envelope and faded through twilight.
   function sunOpacity(params) {
     const { t, env: envVal, nightAmount: nightAmt, peakOpacity } = params;
     if (t < -0.02 || t > 1.02) return 0;
     return peakOpacity * envVal * (1 - nightAmt);
   }
 
-  function glowAlpha(isDay, envVal, nightAmt, q, tokens) {
-    if (isDay && nightAmt < 1) {
-      return tokens.glowDayAlpha * envVal * (1 - nightAmt);
-    }
-    const k = q < 0.5 ? (1 - 2 * q) : (2 * q - 1);
-    return tokens.glowNightFloor + (tokens.glowNightAlpha - tokens.glowNightFloor) * Math.pow(k, 1.6);
+  // Holds near 1, then eases to 0 at x = 1.
+  function twilightEase(x) {
+    const c = Math.max(0, Math.min(1, x));
+    return Math.pow(1 - c * c, 1.5);
   }
 
-  function glowPosition(isDay, sunPos, ptA, ptB, q) {
-    if (isDay) return sunPos;
-    return q < 0.5 ? ptB : ptA;
+  // § 4a — half the true-dark window for a night of `span` minutes (dusk to the next dawn): up
+  // to half of trueDarkMinutes, but the glow always keeps at least an hour to ease out and an
+  // hour to ease in, so a short night gets a shorter true dark and a white night (span <= 120)
+  // none. A port of SUNARC.deepHalf.
+  function trueDarkHalf(span, trueDarkMinutes) {
+    return Math.max(0, Math.min(trueDarkMinutes, span - 120)) / 2;
+  }
+
+  // § 4a — the twilight weight w and the hidden sun's extended parameter te. By day w = 1 − env;
+  // after dusk it eases out to the true-dark window, before dawn it eases back in. x is how far
+  // into the evening (or how close to the dawn) we are, 0 → 1. A port of SUNARC.twilight; m, rise
+  // and set are on frame()'s one extended minute axis.
+  function twilightWeight(m, rise, set, envVal, t, tw, trueDarkMinutes, sink) {
+    const dawn = rise - tw;
+    const dusk = set + tw;
+    if (m >= dawn && m <= dusk) return { w: 1 - envVal, te: t, x: 0, phase: 'day' };
+    const span = wrap(dawn - dusk, 1440);
+    const ms = wrap(m - dusk, 1440);
+    const mid = span / 2;
+    const half = trueDarkHalf(span, trueDarkMinutes);
+    const darkStart = mid - half;
+    const darkEnd = mid + half;
+    if (ms <= darkStart && darkStart > 0) {
+      const x = ms / darkStart;
+      return { w: twilightEase(x), te: 1 + sink * x, x, phase: 'evening' };
+    }
+    if (ms >= darkEnd && span > darkEnd) {
+      const x = (span - ms) / (span - darkEnd);
+      return { w: twilightEase(x), te: -sink * x, x, phase: 'before dawn' };
+    }
+    return { w: 0, te: ms < mid ? 1 + sink : -sink, x: 1, phase: 'true dark' };
+  }
+
+  // § 4a — the true-dark window, centred on the midpoint of dusk and the next dawn. A port of
+  // SUNARC.deepWindow.
+  function trueDarkWindow(rise, set, tw, trueDarkMinutes) {
+    const setX = set < rise ? set + 1440 : set;
+    const dusk = setX + tw;
+    const dawn = rise - tw;
+    const span = wrap(dawn - dusk, 1440);
+    const mid = dusk + span / 2;
+    const half = trueDarkHalf(span, trueDarkMinutes);
+    return { mid: wrap(mid, 1440), from: wrap(mid - half, 1440), to: wrap(mid + half, 1440) };
+  }
+
+  // One frame of the day, as a pure function of (W, H, minutes, sunrise, sunset, appearance),
+  // spec § 10. A port of SUNARC.both() in cmo/brand/sbis/patterns/sun-arc/sunarc.js at its
+  // lock. `appearance` is the owner's ('light' | 'dark'); nothing here derives it from the time.
+  function frame(W, H, clockMinutes, rise, setMinutes, appearance, tokens) {
+    const tw = tokens.twilightMinutes;
+    // One extended minute axis (spec § 4a): a sunset after local midnight, wrapped below
+    // sunrise, is carried past 1440, and a clock minute before the carried dusk is read on the
+    // same axis, so the small hours belong to the day that is still ending. Done here so the
+    // function is total on its inputs.
+    const set = setMinutes < rise ? setMinutes + 1440 : setMinutes;
+    const m = set + tw > 1440 && clockMinutes < set + tw - 1440 ? clockMinutes + 1440 : clockMinutes;
+    const t = dayProgress(m, rise, set, tw);
+    const envVal = env(t, tokens.envelopeEdge);
+    const night = nightAmount(m, rise, set, tw);
+    const twilight = twilightWeight(m, rise, set, envVal, t, tw, tokens.trueDarkMinutes, tokens.twilightSink);
+    const dark = appearance === 'dark';
+    const on = t >= -0.02 && t <= 1.02;
+
+    // § 6 — day → night across each twilight window, then night → true dark by 1 − w.
+    const g = dark
+      ? { day: tokens.groundDarkDay, night: tokens.groundDarkNight, deep: tokens.groundDarkDeep }
+      : { day: tokens.groundLightDay, night: tokens.groundLightNight, deep: tokens.groundLightDeep };
+    const ground = mixOkLab(mixOkLab(g.day, g.night, night), g.deep, night * (1 - twilight.w));
+
+    const geom = geometry(W, H, Math.min(1, Math.max(0, t)), tokens);
+    let opacity = sunOpacity({ t, env: envVal, nightAmount: night, peakOpacity: dark ? tokens.peakOpacityDark : tokens.peakOpacity });
+    if (t <= 0 || t >= 1) opacity *= (1 - night);
+
+    // § 7 — the day halo on the sun (unchanged from 09-19).
+    const halo = on && night < 1
+      ? { x: geom.pos.x, y: geom.pos.y, r: tokens.glowRadiusRatio * geom.R, a: tokens.glowDayAlpha * envVal * (1 - night), color: tokens.glowColor }
+      : null;
+
+    // § 7 — the twilight glow: φ² × R, centred on the sun's own circle carried past each end.
+    let glow = null;
+    if (twilight.w > 0.001) {
+      const p = geometry(W, H, twilight.te, tokens).pos;
+      const color = dark
+        ? mixOkLab(tokens.glowColor, tokens.twilightDarkTo, 0.30 + 0.50 * twilight.x)
+        : mixOkLab(tokens.twilightLightFrom, tokens.glowColor, 0.45 + 0.25 * twilight.x);
+      glow = {
+        x: p.x, y: p.y, r: tokens.twilightRadiusRatio * geom.R,
+        a: (dark ? tokens.twilightAlphaDark : tokens.twilightAlphaLight) * twilight.w,
+        color,
+      };
+    }
+
+    return { t, env: envVal, night, twilight, on, geom, appearance: dark ? 'dark' : 'light', ground, opacity, halo, glow };
+  }
+
+  // A glow's alpha at a pixel: a → mid · a → 0 across 0 → mid-stop → 100 % of its radius.
+  function glowAt(glow, x, y, tokens) {
+    if (!glow) return 0;
+    const f = Math.hypot(x - glow.x, y - glow.y) / glow.r;
+    if (f >= 1) return 0;
+    const stop = tokens.glowMidStop;
+    const mid = tokens.glowMidRatio;
+    return f <= stop ? glow.a * (1 - (1 - mid) * f / stop) : glow.a * mid * (1 - (f - stop) / (1 - stop));
   }
 
   function degToRad(deg) { return (deg * Math.PI) / 180; }
@@ -428,7 +531,9 @@
     return '#' + [clamp(r), clamp(g), clamp(b)].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
   }
 
-  function mixOkLab(color1, color2, t) {
+  function mixOkLab(color1, color2, tRaw) {
+    // Clamped like the reference's A.mix, so no caller can extrapolate past either colour.
+    const t = Math.max(0, Math.min(1, tRaw));
     const [r1, g1, b1] = parseColorToRgb(color1);
     const [r2, g2, b2] = parseColorToRgb(color2);
     const [L1, a1, b_1] = rgbToOklab(r1, g1, b1);
@@ -456,8 +561,36 @@
     return L;
   }
 
-  function appearanceFromLightness(L, threshold) {
-    return L >= threshold ? 'light' : 'dark';
+  // The media query for the owner's dark setting, or null where matchMedia is unavailable
+  // (then the light row, the page's own default).
+  function systemAppearanceQuery(matchMediaImpl) {
+    const mm = matchMediaImpl || (typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia.bind(window) : null);
+    if (!mm) return null;
+    try {
+      return mm('(prefers-color-scheme: dark)') || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Whether the page declares a dark appearance of its own (CSS `color-scheme` containing
+  // `dark`, inherited down to the sun arc's container).
+  function pageSupportsDark(el) {
+    if (!el || typeof window === 'undefined' || typeof window.getComputedStyle !== 'function') return false;
+    const scheme = window.getComputedStyle(el).colorScheme || '';
+    return /\bdark\b/.test(scheme);
+  }
+
+  function listenQuery(query, handler, on) {
+    if (!query) return;
+    if (typeof query.addEventListener === 'function') {
+      if (on) query.addEventListener('change', handler);
+      else query.removeEventListener('change', handler);
+    } else if (typeof query.addListener === 'function') {
+      if (on) query.addListener(handler);
+      else query.removeListener(handler);
+    }
   }
 
   // Runtime state
@@ -482,6 +615,26 @@
     // attributable to this pattern, and a granted permission is still a request.
     const heldCoords = opts.heldCoords || null;
     const getZoneId = opts.getZoneId || systemZoneId;
+    // Spec §§ 2, 6, 10 (09-23): the appearance is the owner's system setting, read live from
+    // `prefers-color-scheme` and followed through its change events. Never the clock. The
+    // dark row is drawn only where the page itself declares dark support in CSS
+    // `color-scheme`, so the ground and the page's own text always follow one source: a
+    // light-only page keeps the light row at every hour instead of putting its ink on a dark
+    // ground. The CSS property is what counts, not the <meta name="color-scheme"> tag. Convey
+    // declares `color-scheme: light` (app.css) until it has dark styling.
+    const appearanceQuery = systemAppearanceQuery(opts.matchMedia);
+    const getAppearance = () => (
+      pageSupportsDark(root) && appearanceQuery && appearanceQuery.matches ? 'dark' : 'light'
+    );
+
+    // The twilight glow sits under the day halo, and both sit under the sun (spec § 7).
+    let twilightEl = root.querySelector('.sunarc-twilight');
+    if (!twilightEl) {
+      twilightEl = document.createElement('div');
+      twilightEl.className = 'sunarc-twilight';
+      twilightEl.setAttribute('aria-hidden', 'true');
+      root.insertBefore(twilightEl, root.firstChild);
+    }
 
     let glowEl = root.querySelector('.sunarc-glow');
     if (!glowEl) {
@@ -507,6 +660,7 @@
     let currentSunTimes = null;
     let currentZoneId = null;
     let currentDateKey = null;
+    let currentFrame = null;
     let intervalId = null;
     let resizeTimer = null;
 
@@ -514,21 +668,41 @@
       return d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
     }
 
+    function paintGlow(el, glow, tokens) {
+      if (!glow || glow.a <= 0.002) {
+        el.style.background = 'none';
+        return;
+      }
+      el.style.width = (2 * glow.r) + 'px';
+      el.style.height = (2 * glow.r) + 'px';
+      el.style.left = (glow.x - glow.r) + 'px';
+      el.style.top = (glow.y - glow.r) + 'px';
+      const [gr, gg, gb] = parseColorToRgb(glow.color);
+      const a0 = glow.a;
+      const aMid = glow.a * tokens.glowMidRatio;
+      const stopPct = (tokens.glowMidStop * 100).toFixed(1) + '%';
+      // closest-side: the gradient's 100 % stop is the element's own edge. The bare `circle`
+      // default is farthest-corner, which left alpha at the border-radius clip, a hard edge.
+      el.style.background = `radial-gradient(circle closest-side, rgba(${gr},${gg},${gb},${a0}) 0%, rgba(${gr},${gg},${gb},${aMid}) ${stopPct}, rgba(${gr},${gg},${gb},0) 100%)`;
+    }
+
     function recompute() {
       const tokens = parseTokens(root);
       if (!tokensValid(tokens)) {
         root.style.backgroundColor = 'transparent';
-        if (glowEl) glowEl.style.display = 'none';
-        if (sunEl) sunEl.style.display = 'none';
+        twilightEl.style.display = 'none';
+        glowEl.style.display = 'none';
+        sunEl.style.display = 'none';
+        currentFrame = null;
         return;
       }
 
-      if (glowEl) glowEl.style.display = '';
-      if (sunEl) sunEl.style.display = '';
+      twilightEl.style.display = '';
+      glowEl.style.display = '';
+      sunEl.style.display = '';
 
       const now = getNow();
       const clock = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
-      const tw = tokens.twilightMinutes;
 
       // § 5: "Recompute once a day and on a timezone or location change."
       const zoneId = getZoneId();
@@ -542,61 +716,24 @@
 
       const rise = currentSunTimes.rise;
       const set = currentSunTimes.set;
-      // When dusk lands after local midnight, the small hours belong to the day that is still
-      // ending, not to the one about to start.
-      const dusk = set + tw;
-      const m = dusk > 1440 && clock < dusk - 1440 ? clock + 1440 : clock;
-      const t = dayProgress(m, rise, set, tw);
-      const q = nightProgress(m, rise, set, tw);
-      const nightAmt = nightAmount(m, rise, set, tw);
-      const envVal = env(t, tokens.envelopeEdge);
 
       const W = window.innerWidth || (document.documentElement ? document.documentElement.clientWidth : 1280);
       const H = window.innerHeight || (document.documentElement ? document.documentElement.clientHeight : 820);
-      const geom = geometry(W, H, t, tokens);
 
-      const isDrawn = t >= -0.02 && t <= 1.02;
-      const sunOp = sunOpacity({ t, env: envVal, nightAmount: nightAmt, peakOpacity: tokens.peakOpacity });
+      // The owner's appearance, read from the system on every paint. The pattern only reads it;
+      // it never writes an appearance, a theme or a data attribute anywhere (spec §§ 6, 10).
+      const f = frame(W, H, clock, rise, set, getAppearance(), tokens);
+      currentFrame = f;
+      root.style.backgroundColor = f.ground;
 
-      const isDay = isDrawn && nightAmt < 1;
-      const glowAlphaVal = glowAlpha(isDay, envVal, nightAmt, q, tokens);
-      const glowPosVal = glowPosition(isDay, geom.pos, geom.A, geom.B, q);
+      sunEl.style.width = f.geom.diameter + 'px';
+      sunEl.style.height = f.geom.diameter + 'px';
+      sunEl.style.left = (f.geom.pos.x - f.geom.R) + 'px';
+      sunEl.style.top = (f.geom.pos.y - f.geom.R) + 'px';
+      sunEl.style.opacity = f.on ? String(f.opacity) : '0';
 
-      // Night ground computed via 2-step OKLab mix
-      const nightGroundHex = nightGroundColor(tokens.creamBright, tokens.ink, tokens.warmDark, tokens.mixInk, tokens.mixWarm);
-      const currentGroundHex = mixedGround(tokens.creamBright, nightGroundHex, nightAmt);
-      root.style.backgroundColor = currentGroundHex;
-
-      const currentL = oklabLightness(currentGroundHex);
-      const appearance = appearanceFromLightness(currentL, tokens.appearanceFlipL);
-      if (typeof document !== 'undefined' && document.documentElement) {
-        document.documentElement.dataset.sunarcAppearance = appearance;
-      }
-
-      // Position sun
-      if (sunEl) {
-        sunEl.style.width = geom.diameter + 'px';
-        sunEl.style.height = geom.diameter + 'px';
-        sunEl.style.left = (geom.pos.x - geom.R) + 'px';
-        sunEl.style.top = (geom.pos.y - geom.R) + 'px';
-        sunEl.style.opacity = isDrawn ? String(sunOp) : '0';
-      }
-
-      // Position glow
-      if (glowEl) {
-        const glowRadius = tokens.glowRadiusRatio * geom.R;
-        const glowDiameter = 2 * glowRadius;
-        glowEl.style.width = glowDiameter + 'px';
-        glowEl.style.height = glowDiameter + 'px';
-        glowEl.style.left = (glowPosVal.x - glowRadius) + 'px';
-        glowEl.style.top = (glowPosVal.y - glowRadius) + 'px';
-
-        const [gr, gg, gb] = parseColorToRgb(tokens.glowColor);
-        const a0 = glowAlphaVal;
-        const aMid = glowAlphaVal * tokens.glowMidRatio;
-        const stopPct = (tokens.glowMidStop * 100).toFixed(1) + '%';
-        glowEl.style.background = `radial-gradient(circle, rgba(${gr},${gg},${gb},${a0}) 0%, rgba(${gr},${gg},${gb},${aMid}) ${stopPct}, rgba(${gr},${gg},${gb},0) 100%)`;
-      }
+      paintGlow(twilightEl, f.glow, tokens);
+      paintGlow(glowEl, f.halo, tokens);
     }
 
     function onResize() {
@@ -626,6 +763,8 @@
     if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
       document.addEventListener('visibilitychange', onVisibilityChange);
     }
+    // The owner flips their setting: repaint now rather than at the next minute.
+    listenQuery(appearanceQuery, recompute, true);
 
     function teardown() {
       if (intervalId) {
@@ -642,6 +781,7 @@
       if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
         document.removeEventListener('visibilitychange', onVisibilityChange);
       }
+      listenQuery(appearanceQuery, recompute, false);
       if (currentInstance === instance) {
         currentInstance = null;
       }
@@ -653,6 +793,8 @@
       getHeldCoords: () => heldCoords,
       getZoneId: () => currentZoneId,
       getSunTimes: () => currentSunTimes,
+      getAppearance,
+      getFrame: () => currentFrame,
     };
     currentInstance = instance;
     return instance;
@@ -679,10 +821,13 @@
     env,
     nightAmount,
     dayProgress,
-    nightProgress,
     sunOpacity,
-    glowAlpha,
-    glowPosition,
+    twilightWeight,
+    trueDarkHalf,
+    trueDarkWindow,
+    frame,
+    glowAt,
+    pageSupportsDark,
     noaaSunriseSunset,
     solarPair,
     parseZoneTable,
@@ -698,7 +843,6 @@
     nightGroundColor,
     mixedGround,
     oklabLightness,
-    appearanceFromLightness,
     mount,
     recompute,
     teardown,

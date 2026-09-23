@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- the background of your journal's web app no longer turns dark brown at sunset, so the search hints and the settings sidebar are easy to read at night. after sunset a warm glow stays in the corner where the sun went down, fading out around the middle of the night.
+
 ### Fixed
 
 - on a new journal, home said something needed your attention before the journal had had a single night to catch up, or while processing wasn't set up yet, and the morning briefing card said a briefing wasn't prepared when none was due yet. home, the health page and the stats page now say when you'll see whether your journal is caught up, and the briefing card says when your first briefing is due. if it's still unclear after the first night, they say so, as before.

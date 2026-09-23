@@ -57,6 +57,13 @@ html {
 
 /* Shared shell tokens. */
 :root {
+  /* Convey's styling is light only. The sun arc reads this CSS property (not a
+   * <meta name="color-scheme"> tag) and draws its dark row only when the page
+   * says it has a dark appearance of its own. Add `dark` here only in the same
+   * change that gives convey dark styling: on its own it would put convey's ink
+   * on a dark ground for every dark-mode owner. */
+  color-scheme: light;
+
   /* Semantic status palette — client is the first consumer. */
   --status-active: var(--success);
   --status-stale: var(--warn);
@@ -98,12 +105,14 @@ body {
   overflow: hidden;
   contain: strict;
 }
+#sunarc .sunarc-twilight,
 #sunarc .sunarc-glow,
 #sunarc .sunarc-sun {
   position: absolute;
   pointer-events: none;
   user-select: none;
 }
+#sunarc .sunarc-twilight,
 #sunarc .sunarc-glow { border-radius: 50%; }
 
 #main-content {
