@@ -28,17 +28,7 @@ use crate::process::{
     HostedLaunchProvenance, LaunchError, ProcessInstance, ReadFileGrant, ReadFileGrantKind,
 };
 
-const LAUNCH_ENV: &str = "SOL_WINDOWS_LAUNCH";
-const OBSOLETE: [&str; 8] = [
-    "SOL_SUPERVISOR_SPAWNED",
-    "SOL_HOSTED_LAUNCH_ID",
-    "SOL_HOSTED_PARENT_INSTANCE",
-    "SOL_HOSTED_ACK_HANDLE",
-    "SOL_HOSTED_STOP_HANDLE",
-    "SOL_PARENT_LOSS_GENERATION",
-    "SOL_PARENT_LOSS_LAUNCH_ID",
-    "SOL_PARENT_LOSS_PARENT_LAUNCH_ID",
-];
+use super::environment::{LAUNCH_ENV, OBSOLETE};
 const GUARDS: [&str; 4] = [
     "SOLSTONE_INSTALLATION_NAMESPACE",
     "SOLSTONE_INSTALLATION_ID",
