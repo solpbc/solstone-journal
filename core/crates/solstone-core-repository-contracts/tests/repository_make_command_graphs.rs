@@ -704,7 +704,7 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
     let calls = calls.lines().collect::<Vec<_>>();
     assert_eq!(
         calls.len(),
-        7,
+        8,
         "full Clippy stopped before all scopes: {calls:?}"
     );
     assert!(calls[0].contains("--workspace"));
@@ -714,6 +714,7 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
         "solstone-core-facets",
         "solstone-core-describe",
         "solstone-core-mcp-endpoint",
+        "solstone-core-setup",
     ]) {
         assert!(
             call.contains(&format!("-p {package}")),
@@ -721,7 +722,7 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
         );
         assert!(call.contains("--all-targets") && call.contains("-D warnings"));
     }
-    let native = calls[6];
+    let native = calls[7];
     for package in [
         "solstone-core-speakers-analyze",
         "solstone-core-speakers-onnx",
