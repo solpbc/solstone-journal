@@ -378,7 +378,7 @@ async fn native_ingest_ignores_combined_legacy_observer_artifacts() {
 }
 
 #[tokio::test]
-async fn unparseable_durable_row_refuses_every_read_route() {
+async fn unparseable_durable_row_refuses_both_day_reads() {
     let journal = journal();
     let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
         .await
@@ -397,7 +397,10 @@ async fn unparseable_durable_row_refuses_every_read_route() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(manifest["days"][DAY]["error"], "journal_read_failed");
+    assert_eq!(
+        manifest["days"][DAY]["segments"], 1,
+        "the root manifest reads no receipts"
+    );
     for path in [
         "/app/devices/ingest/manifest/20260804",
         "/app/devices/ingest/segments/20260804",
@@ -408,8 +411,11 @@ async fn unparseable_durable_row_refuses_every_read_route() {
     }
 }
 
+#[cfg(unix)]
 #[tokio::test]
-async fn all_days_manifest_degrades_an_unparseable_durable_day() {
+async fn all_days_manifest_degrades_an_unreadable_stream_day() {
+    use std::os::unix::fs::PermissionsExt;
+
     let journal = journal();
     let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
         .await
@@ -426,7 +432,57 @@ async fn all_days_manifest_degrades_an_unparseable_durable_day() {
     )
     .await;
     upload(&app, CID_A, DAY, "120000_1", "", "bad.flac", b"bad").await;
-    overwrite_with_unparseable_row(journal.path(), DAY, "120000_1");
+    let stream_dir = journal.path().join("chronicle").join(DAY).join("device");
+    fs::set_permissions(&stream_dir, fs::Permissions::from_mode(0o000)).expect("lock stream");
+    let readable = fs::read_dir(&stream_dir).is_ok();
+
+    let (status, manifest) = request(
+        &app,
+        "GET",
+        "/app/devices/ingest/manifest",
+        CID_A,
+        Vec::new(),
+        None,
+    )
+    .await;
+    fs::set_permissions(&stream_dir, fs::Permissions::from_mode(0o755)).expect("unlock stream");
+    if readable {
+        // Running with privileges that ignore directory modes; nothing to observe.
+        return;
+    }
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(manifest["days"]["20260803"]["segments"], 1);
+    assert_eq!(manifest["days"][DAY]["error"], "journal_read_failed");
+}
+
+#[tokio::test]
+async fn all_days_manifest_counts_only_the_devices_own_stream() {
+    let journal = journal();
+    let _callosum = CallosumSocketServer::bind(journal.path().join("health/callosum.sock"))
+        .await
+        .expect("Callosum server");
+    let app = api_router(journal.path());
+    upload(&app, CID_A, DAY, "120000_1", "", "one.flac", b"one").await;
+    upload(&app, CID_A, DAY, "120500_1", "", "two.flac", b"two").await;
+    // Another stream's segments and a stray non-segment directory on the same day.
+    fs::create_dir_all(
+        journal
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("other/130000_1"),
+    )
+    .expect("sibling stream");
+    fs::create_dir_all(journal.path().join("chronicle/20260805/other/130000_1"))
+        .expect("sibling-only day");
+    fs::create_dir_all(
+        journal
+            .path()
+            .join("chronicle")
+            .join(DAY)
+            .join("device/not-a-segment"),
+    )
+    .expect("stray directory");
 
     let (status, manifest) = request(
         &app,
@@ -438,8 +494,7 @@ async fn all_days_manifest_degrades_an_unparseable_durable_day() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(manifest["days"]["20260803"]["segments"], 1);
-    assert_eq!(manifest["days"][DAY]["error"], "journal_read_failed");
+    assert_eq!(manifest["days"], json!({DAY: {"segments": 2}}));
 }
 
 #[tokio::test]

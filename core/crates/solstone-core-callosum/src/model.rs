@@ -16,7 +16,7 @@ pub struct CallosumEnvelope {
 }
 
 /// A file attributed to a device-ingest record.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct FileDescriptor {
     pub submitted: String,
     pub written: String,
@@ -27,7 +27,7 @@ pub struct FileDescriptor {
 }
 
 /// Durable attribution for a linked-device ingest.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct DeviceIngestEvent {
     pub record_type: String,
     pub record_version: u8,

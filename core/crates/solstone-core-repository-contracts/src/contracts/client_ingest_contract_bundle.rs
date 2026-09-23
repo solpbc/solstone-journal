@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-const BUNDLE_SEMVER: &str = "12.0.0";
+const BUNDLE_SEMVER: &str = "12.1.0";
 const BUNDLE_DIRECTORY: &str = "docs/openapi/client-ingest-contract";
 const AUTHORITY_PATH: &str =
     "core/crates/solstone-core-repository-contracts/src/contracts/client_ingest_authority.json";
@@ -48,9 +48,16 @@ const OPERATION_SPECS: [(&str, &str, &str); 4] = [
         "client.ingestSegments",
     ),
 ];
-const COMPONENT_CLOSURE: [&str; 4] = ["Error", "SegmentFile", "SegmentItem", "SegmentsEnvelope"];
+const COMPONENT_CLOSURE: [&str; 5] = [
+    "Error",
+    "FileDescriptor",
+    "SegmentFile",
+    "SegmentItem",
+    "SegmentsEnvelope",
+];
 const INGEST_STATUSES: [&str; 5] = ["ok", "duplicate", "collision", "conflict", "failed"];
 const SEGMENT_FILE_STATUSES: [&str; 3] = ["present", "missing", "processed"];
+const FILE_DISPOSITIONS: [&str; 3] = ["written", "already_held", "received_not_written"];
 
 type ArtifactMap = BTreeMap<&'static str, Vec<u8>>;
 
@@ -159,6 +166,7 @@ fn selected_projection(authority: &Value) -> Value {
         "paths": Value::Object(paths),
         "components": {"schemas": Value::Object(schemas)},
         "x-vocabularies": {
+            "FileDescriptor.disposition": file_disposition_vocabulary(),
             "SegmentFile.status": segment_file_vocabulary(),
             "client.ingestUpload.status": ingest_status_vocabulary()
         }
@@ -172,6 +180,16 @@ fn segment_file_vocabulary() -> Value {
         "source_pointer": "/components/schemas/SegmentFile/properties/status",
         "unknown_value_behavior": "reject",
         "values": SEGMENT_FILE_STATUSES,
+    })
+}
+
+fn file_disposition_vocabulary() -> Value {
+    json!({
+        "classification": "closed",
+        "id": "FileDescriptor.disposition",
+        "source_pointer": "/components/schemas/FileDescriptor/properties/disposition",
+        "unknown_value_behavior": "reject",
+        "values": FILE_DISPOSITIONS,
     })
 }
 

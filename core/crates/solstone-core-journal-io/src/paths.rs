@@ -615,6 +615,56 @@ pub fn iter_segments(journal: &Path, day: PathOrDay<'_>) -> Result<Vec<Segment>,
     Ok(segments)
 }
 
+/// Segment directories of one stream on one day, in name order.
+///
+/// Reads the day directory for the default stream, or the one named stream
+/// directory under it, and never a sibling stream's directory. A caller that
+/// needs one device's segments pays for that device, not for the whole day.
+pub fn iter_stream_segments(
+    journal: &Path,
+    day: &str,
+    stream: &str,
+) -> Result<Vec<Segment>, PathError> {
+    let day_dir = day_path(journal, Some(day), false)?;
+    if stream == DEFAULT_STREAM {
+        return Ok(iter_segments(journal, PathOrDay::Directory(&day_dir))?
+            .into_iter()
+            .filter(|segment| segment.stream.is_direct())
+            .collect());
+    }
+    let mut components = Path::new(stream).components();
+    if !matches!(
+        (components.next(), components.next()),
+        (Some(Component::Normal(_)), None)
+    ) {
+        return Err(PathError::Escape(PathEscapeError {
+            path: day_dir.join(stream),
+            rel: stream.to_owned(),
+        }));
+    }
+    let stream_dir = day_dir.join(stream);
+    if !stream_dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut segments = Vec::new();
+    for entry in fs::read_dir(&stream_dir).map_err(|source| path_io(&stream_dir, source))? {
+        let entry = entry.map_err(|source| path_io(&stream_dir, source))?;
+        let name = entry.file_name();
+        if entry.path().is_dir()
+            && let Some(key) = segment_key_os(&name).map(str::to_owned)
+        {
+            segments.push(Segment {
+                stream: StreamLocation::Named(OsString::from(stream)),
+                name,
+                key,
+                path: entry.path(),
+            });
+        }
+    }
+    segments.sort_by(|left, right| left.key.cmp(&right.key));
+    Ok(segments)
+}
+
 /// Resolve a path through its longest existing prefix without creating it.
 ///
 /// Existing components are canonicalized, including symlinks. Nonexistent
@@ -992,6 +1042,47 @@ mod tests {
                 segment.path(),
                 day.join(segment.stream().directory().unwrap())
                     .join(segment.name())
+            );
+        }
+    }
+
+    #[test]
+    fn stream_segments_equal_the_filtered_day_listing() {
+        let temporary = TempDir::new();
+        let journal = temporary.path().join("journal");
+        let day = journal.join("chronicle/20260101");
+        fs::create_dir_all(day.join("080000_300")).unwrap();
+        fs::create_dir_all(day.join("_default/090000_300")).unwrap();
+        fs::create_dir_all(day.join("laptop/100000_300")).unwrap();
+        fs::create_dir_all(day.join("laptop/093000_300")).unwrap();
+        fs::create_dir_all(day.join("laptop/not-a-segment")).unwrap();
+        fs::write(day.join("laptop/110000_300"), b"a file, not a segment").unwrap();
+        fs::create_dir_all(day.join("phone/120000_300")).unwrap();
+
+        let all = iter_segments(&journal, PathOrDay::Day("20260101")).unwrap();
+        for stream in [DEFAULT_STREAM, "_default", "laptop", "phone", "absent"] {
+            let expected = all
+                .iter()
+                .filter(|segment| segment.stream().matches(stream))
+                .map(|segment| segment.path().to_path_buf())
+                .collect::<Vec<_>>();
+            let listed = iter_stream_segments(&journal, "20260101", stream)
+                .unwrap()
+                .into_iter()
+                .map(|segment| segment.path().to_path_buf())
+                .collect::<Vec<_>>();
+            assert_eq!(listed, expected, "{stream}");
+        }
+        assert!(
+            iter_stream_segments(&journal, "20260102", "laptop")
+                .unwrap()
+                .is_empty(),
+            "a missing day lists nothing"
+        );
+        for escape in ["..", "laptop/..", "../20260101", "/etc", ""] {
+            assert!(
+                iter_stream_segments(&journal, "20260101", escape).is_err(),
+                "{escape:?} is refused"
             );
         }
     }

@@ -10,7 +10,7 @@ use axum::response::{IntoResponse, Response};
 use serde_json::{Map, Value, json};
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_convey_http::owner_read::{OwnerReadRole, spawn_blocking_response};
-use solstone_core_segment::{list_days, lookup_stream_state};
+use solstone_core_segment::{list_days, list_stream_segments, lookup_stream_state};
 
 use crate::health::day_read_reason;
 use crate::listing::{DayListing, ListingError, ListingFile, merge_day_listing, native_events};
@@ -24,16 +24,21 @@ pub async fn ingest_manifest(
     headers: HeaderMap,
     Query(query): Query<SourceQuery>,
 ) -> Response {
-    // Every day in the journal, every segment directory under it, every
-    // `events.jsonl` and a stat per written file — and the device runs this at
-    // the head of every sync cycle. Convey's two async workers also carry the
-    // carrier driver that answers this device's keepalive PING, so the fold
-    // belongs on the blocking pool. `listing_context` comes with it: the access
-    // check is pure, but resolving the stream binding reads the registry.
+    // One listing of this device's own stream directory per day, and nothing
+    // inside any segment: no receipts are read and no file is stated. It used
+    // to fold every stream's segments and every receipt in the journal, and a
+    // device called it at the head of every sync cycle. The two day reads still
+    // read receipts and still refuse a day whose receipts are unreadable.
+    // Deprecated: a device proves custody from its upload response and reads
+    // `segments/{day}` only when its own record is missing.
     spawn_blocking_response(OwnerReadRole::DeviceIngestManifest, move || {
         let context = match listing_context(&state, &basis, &headers, &query) {
             Ok(value) => value,
             Err((code, status, detail)) => return refusal(code, status, detail),
+        };
+        let mut result = Map::new();
+        let Some(stream) = context.native_stream else {
+            return Json(json!({"days": result})).into_response();
         };
         let days = match list_days(&state.journal_root) {
             Ok(days) => days
@@ -48,30 +53,22 @@ pub async fn ingest_manifest(
                 );
             }
         };
-        let mut result = Map::new();
         for day in days {
-            let listing = match day_listing(
-                &state,
-                &context.cid,
-                &context.source,
-                context.native_stream.as_deref(),
-                &day,
-            ) {
-                Ok(listing) => listing,
-                Err(error) => {
+            match list_stream_segments(&state.journal_root, &day, &stream) {
+                Ok(segments) if segments.is_empty() => {}
+                Ok(segments) => {
+                    result.insert(day, json!({"segments": segments.len()}));
+                }
+                Err(_) => {
                     // A device told this refuses the whole day and reports itself offline,
                     // so the journal says so too; nothing else on this side records it.
-                    let reason = day_read_reason(error);
+                    let reason = day_read_reason(ListingError::JournalRead);
                     log::warn!(
                         "device_manifest_day_unreadable day={day} reason={}",
                         reason.as_str()
                     );
                     result.insert(day, json!({"error": reason.as_str()}));
-                    continue;
                 }
-            };
-            if !listing.segments.is_empty() {
-                result.insert(day, json!({"segments": listing.segments.len()}));
             }
         }
         Json(json!({"days": result})).into_response()

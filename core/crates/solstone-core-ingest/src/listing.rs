@@ -10,7 +10,7 @@ use std::path::Path;
 use solstone_core_callosum::{DeviceIngestEvent, read_device_ingest_events};
 use solstone_core_ingest_resolve::SegmentTerminalProof;
 use solstone_core_segment::{
-    ContentName, SegmentDir, TerminalProofVerifier, is_safe_stream_component, list_segments,
+    ContentName, SegmentDir, TerminalProofVerifier, is_safe_stream_component, list_stream_segments,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -71,12 +71,10 @@ pub(crate) fn native_events(
     let Some(stream) = stream else {
         return Ok(Vec::new());
     };
-    let segments = list_segments(journal_root, day).map_err(|_| ListingError::JournalRead)?;
+    let segments =
+        list_stream_segments(journal_root, day, stream).map_err(|_| ListingError::JournalRead)?;
     let mut events = Vec::new();
-    for segment in segments
-        .into_iter()
-        .filter(|segment| segment.stream().matches(stream))
-    {
+    for segment in segments {
         let identity = segment
             .record_identity()
             .map_err(|_| ListingError::JournalRead)?;

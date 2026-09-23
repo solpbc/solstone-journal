@@ -685,22 +685,21 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
         solstone_core_ingest_resolve::PlanStatus::Collision => "collision",
         solstone_core_ingest_resolve::PlanStatus::Duplicate => "duplicate",
     };
-    let needs_dirty_marker = if applied
+    let any_written = applied
         .files
         .iter()
-        .any(|file| file.disposition == AppliedDisposition::Written)
-    {
-        true
-    } else if applied
+        .any(|file| file.disposition == AppliedDisposition::Written);
+    let all_unwritten = applied
         .files
         .iter()
-        .all(|file| file.disposition == AppliedDisposition::Unwritten)
-    {
-        false
+        .all(|file| file.disposition == AppliedDisposition::Unwritten);
+    // A receipt is appended only after the dirty marker succeeds, so when this
+    // upload wrote nothing new the receipts already on the segment are the
+    // evidence for both decisions below.
+    let prior_receipts = if any_written || all_unwritten {
+        Vec::new()
     } else {
-        // A receipt is appended only after the dirty marker succeeds. Reuse that
-        // evidence on a held-byte retry instead of invalidating a completed day.
-        let receipts = match crate::listing::segment_events(
+        match crate::listing::segment_events(
             applied.segment.path(),
             &envelope.day,
             &bound.stream,
@@ -720,13 +719,17 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
                     ),
                 );
             }
-        };
-        applied
+        }
+    };
+    // Reuse that evidence on a held-byte retry instead of invalidating a
+    // completed day.
+    let needs_dirty_marker = any_written
+        || applied
             .files
             .iter()
             .filter(|file| file.disposition == AppliedDisposition::AlreadyHeld)
             .any(|file| {
-                !receipts.iter().any(|receipt| {
+                !prior_receipts.iter().any(|receipt| {
                     matches!(receipt.outcome.as_str(), "accepted" | "duplicate")
                         && receipt.files.iter().any(|held| {
                             held.written == file.name.as_str()
@@ -734,8 +737,7 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
                                 && held.sha256 == file.sha256
                         })
                 })
-            })
-    };
+            });
     if needs_dirty_marker {
         // A later custody failure intentionally leaves this day dirty.
         if solstone_core_ingest_resolve::bump_stream_marker(&state.journal_root, &envelope.day)
@@ -752,8 +754,7 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
             );
         }
     }
-    if append_device_ingest(
-        applied.segment.path(),
+    let receipt = device_ingest_event(
         cid,
         &envelope,
         &bound.stream,
@@ -764,8 +765,15 @@ fn write_envelope_inner(state: &IngestState, cid: &str, envelope: Envelope) -> I
         } else {
             "accepted"
         },
-    )
-    .is_err()
+    );
+    // A device that re-sends a segment the journal already holds gets the same
+    // answer each time. Recording every repeat added one identical row per retry
+    // and no custody evidence, so a receipt already on the segment is not
+    // appended again.
+    let already_recorded = prior_receipts.iter().any(|prior| prior == &receipt);
+    if !already_recorded
+        && append_durable_event(applied.segment.path(), &DurableEvent::DeviceIngest(receipt))
+            .is_err()
     {
         return IngestCompletion::rejected(
             ReasonCode::EventAppendFailed,
@@ -913,17 +921,15 @@ fn append_partial_and_fail(
             ),
         );
     }
-    if append_device_ingest(
-        partial.segment.path(),
+    let receipt = device_ingest_event(
         cid,
         envelope,
         stream,
         &partial.landed_segment,
         descriptors,
         "accepted",
-    )
-    .is_err()
-    {
+    );
+    if append_durable_event(partial.segment.path(), &DurableEvent::DeviceIngest(receipt)).is_err() {
         return IngestCompletion::rejected(
             ReasonCode::EventAppendFailed,
             outcome_error(
@@ -968,16 +974,15 @@ fn append_partial_and_fail(
     )
 }
 
-fn append_device_ingest(
-    segment_path: &Path,
+fn device_ingest_event(
     cid: &str,
     envelope: &Envelope,
     stream: &str,
     landed_segment: &str,
     files: Vec<FileDescriptor>,
     outcome: &str,
-) -> Result<(), ()> {
-    let event = DeviceIngestEvent {
+) -> DeviceIngestEvent {
+    DeviceIngestEvent {
         record_type: "device_ingest".to_owned(),
         record_version: 1,
         outcome: outcome.to_owned(),
@@ -990,8 +995,7 @@ fn append_device_ingest(
         files,
         meta: envelope.meta.clone(),
         extra: Map::new(),
-    };
-    append_durable_event(segment_path, &DurableEvent::DeviceIngest(event)).map_err(|_| ())
+    }
 }
 
 fn written_descriptors(applied: &[AppliedFile]) -> Vec<FileDescriptor> {
@@ -2106,6 +2110,54 @@ mod tests {
             segments["items"][0]["files"][0]["sha256"],
             format!("{:x}", sha2::Sha256::digest(b"sound"))
         );
+    }
+
+    #[tokio::test]
+    async fn a_repeated_duplicate_appends_no_further_receipt() {
+        let dir = root();
+        let root = dir.path().to_path_buf();
+        let envelope =
+            json!({"day":"20260804","segment":"120000_1","files":[{"submitted":"audio.flac"}]});
+        let app = router(&root);
+        assert_eq!(
+            call_upload(&app, envelope.clone(), "audio.flac", b"sound")
+                .await
+                .1["status"],
+            "ok"
+        );
+        for _ in 0..3 {
+            let (_, body) = call_upload(&app, envelope.clone(), "audio.flac", b"sound").await;
+            assert_eq!(body["status"], "duplicate");
+            assert_eq!(
+                body["file_descriptors"][0]["sha256"],
+                format!("{:x}", sha2::Sha256::digest(b"sound")),
+                "every repeat still answers with the custody descriptor"
+            );
+            assert_eq!(body["file_descriptors"][0]["disposition"], "already_held");
+        }
+        let events =
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
+        let outcomes = events
+            .lines()
+            .map(|line| serde_json::from_str::<Value>(line).unwrap()["outcome"].clone())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            outcomes,
+            vec![json!("accepted"), json!("duplicate")],
+            "the first duplicate records once; identical repeats record nothing"
+        );
+
+        // A duplicate that differs from every receipt on the segment still records.
+        let changed = json!({"day":"20260804","segment":"120000_1","meta":{"retry":1},"files":[{"submitted":"audio.flac"}]});
+        assert_eq!(
+            call_upload(&app, changed, "audio.flac", b"sound").await.1["status"],
+            "duplicate"
+        );
+        let events =
+            fs::read_to_string(root.join("chronicle/20260804/device/120000_1/events.jsonl"))
+                .unwrap();
+        assert_eq!(events.lines().count(), 3);
     }
 
     #[tokio::test]
@@ -3791,7 +3843,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn manifest_reports_malformed_device_ingest_events() {
+    async fn root_manifest_reads_no_receipts_and_the_day_reads_refuse_malformed_ones() {
         let dir = root();
         let root = dir.path().to_path_buf();
         let app = router(&root);
@@ -3819,10 +3871,20 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            body["days"],
-            json!({"20260804": {"error": "journal_read_failed"}})
-        );
+        assert_eq!(body["days"], json!({"20260804": {"segments": 1}}));
+        let (status, refusal) = call(
+            &app,
+            "GET",
+            "/app/devices/ingest/segments/20260804",
+            None,
+            Vec::new(),
+            basis(CID_A),
+            Some("3"),
+            &[],
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(refusal["reason_code"], "journal_read_failed");
     }
 
     #[tokio::test]

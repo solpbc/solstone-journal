@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{
     DEFAULT_STREAM, PathError, PathEscapeError, PathOrDay, Segment, contained_path, day_dirs,
-    day_path, iter_segments,
+    day_path, iter_segments, iter_stream_segments,
 };
 
 use crate::SegmentError;
@@ -103,6 +103,16 @@ pub fn list_days(journal: &Path) -> Result<Vec<(String, PathBuf)>, SegmentError>
 /// is required.
 pub fn list_segments(journal: &Path, day: &str) -> Result<Vec<Segment>, SegmentError> {
     Ok(iter_segments(journal, PathOrDay::Day(day))?)
+}
+
+/// Discovered segments of one stream under one chronicle day, reading no
+/// other stream's directory.
+pub fn list_stream_segments(
+    journal: &Path,
+    day: &str,
+    stream: &str,
+) -> Result<Vec<Segment>, SegmentError> {
+    Ok(iter_stream_segments(journal, day, stream)?)
 }
 
 /// Discovered segments under an already-resolved day directory.

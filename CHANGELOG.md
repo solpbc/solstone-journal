@@ -4,6 +4,12 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- your journal could keep your computer busy while a paired device had nothing new to send, because each time that device checked in, your journal looked through every day and every source in it. it now looks only at that device's own folders.
+
 ## [2.0.15] - 2026-09-23
 
 ### Added

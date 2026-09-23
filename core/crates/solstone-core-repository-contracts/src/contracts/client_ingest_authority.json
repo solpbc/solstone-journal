@@ -55,7 +55,17 @@
                     "value": {
                       "existing_segment": "143000_1",
                       "message": "All files already received",
-                      "status": "duplicate"
+                      "status": "duplicate",
+                      "file_descriptors": [
+                        {
+                          "disposition": "already_held",
+                          "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                          "size": 524288,
+                          "submitted": "audio.m4a",
+                          "written": "audio.m4a"
+                        }
+                      ],
+                      "meta": {}
                     }
                   },
                   "normal": {
@@ -66,7 +76,17 @@
                         "audio.m4a"
                       ],
                       "segment": "143000_1",
-                      "status": "ok"
+                      "status": "ok",
+                      "file_descriptors": [
+                        {
+                          "disposition": "written",
+                          "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+                          "size": 524288,
+                          "submitted": "audio.m4a",
+                          "written": "audio.m4a"
+                        }
+                      ],
+                      "meta": {}
                     }
                   }
                 },
@@ -80,6 +100,10 @@
                       "type": "string"
                     },
                     "file_descriptors": {
+                      "description": "One custody receipt per submitted file, returned only after the journal durably recorded the upload. A device proves custody of a file when its `sha256` and `size` equal the local file's and its `disposition` is `written` or `already_held`; `received_not_written` is never custody.",
+                      "items": {
+                        "$ref": "#/components/schemas/FileDescriptor"
+                      },
                       "type": "array"
                     },
                     "files": {
@@ -209,7 +233,8 @@
     },
     "/app/devices/ingest/manifest": {
       "get": {
-        "description": "Return days with uploaded linked-device segment history.",
+        "description": "Deprecated. Return days with uploaded linked-device segment history. A device proves custody from the upload response's `file_descriptors` and reads `segments/{day}` only when its own record of an upload is missing; this operation keeps answering until devices in the field no longer call it.",
+        "deprecated": true,
         "operationId": "client.ingestManifest",
         "parameters": [
           {
@@ -318,7 +343,8 @@
     },
     "/app/devices/ingest/manifest/{day}": {
       "get": {
-        "description": "Return file names, sizes, sha256 hashes, and custody status for every segment on one day.",
+        "description": "Deprecated. Return file names, sizes, sha256 hashes, and custody status for every segment on one day, the same listing `segments/{day}` returns. This operation keeps answering until devices in the field no longer call it.",
+        "deprecated": true,
         "operationId": "client.ingestManifestDay",
         "parameters": [
           {
@@ -713,6 +739,41 @@
           "error",
           "reason_code",
           "detail"
+        ],
+        "type": "object"
+      },
+      "FileDescriptor": {
+        "additionalProperties": true,
+        "properties": {
+          "disposition": {
+            "enum": [
+              "written",
+              "already_held",
+              "received_not_written"
+            ],
+            "type": "string"
+          },
+          "sha256": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "size": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "submitted": {
+            "type": "string"
+          },
+          "written": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "submitted",
+          "written",
+          "size",
+          "sha256",
+          "disposition"
         ],
         "type": "object"
       },
