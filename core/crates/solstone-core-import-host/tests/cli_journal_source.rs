@@ -62,7 +62,7 @@ fn stats() -> Value {
 
 fn dl_record(name: &str, created_at: i64) -> Value {
     json!({
-        "key": "abcdefgh0123456789abcdefghijklmnopqrstuvw",
+        "prefix": "abcdefgh",
         "name": name,
         "created_at": created_at,
         "enabled": true,
@@ -108,22 +108,35 @@ fn direct_entry_point_handles_create_list_status_and_revoke() {
 
     assert_eq!(created.exit_code, 0);
     assert!(created.stdout.contains("Journal source created:"));
+    assert!(!created.stdout.contains("key"), "{}", created.stdout);
 
     let record = read_json(&record_path(root.path(), "phone"));
-    let key = record["key"].as_str().unwrap();
-    assert_eq!(key.len(), 43);
     assert!(
-        key.bytes()
+        record.get("key").is_none(),
+        "creating a source mints no key"
+    );
+    let prefix = record["prefix"].as_str().unwrap();
+    assert_eq!(prefix.len(), 8);
+    assert!(
+        prefix
+            .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
     );
     assert!((start..=end).contains(&record["created_at"].as_i64().unwrap()));
     assert_eq!(record["stats"], stats());
     assert_eq!(run(root.path(), &["create", "laptop"]).exit_code, 0);
     assert_ne!(
-        key,
-        read_json(&record_path(root.path(), "laptop"))["key"]
+        prefix,
+        read_json(&record_path(root.path(), "laptop"))["prefix"]
             .as_str()
             .unwrap()
+    );
+    let created_json = run(root.path(), &["--json", "create", "tablet"]);
+    let created_json: Value = serde_json::from_str(created_json.stdout.trim()).unwrap();
+    assert!(created_json.get("key").is_none(), "{created_json}");
+    assert_eq!(
+        created_json["prefix"],
+        read_json(&record_path(root.path(), "tablet"))["prefix"]
     );
 
     let listed = run(root.path(), &["--json", "list"]);
@@ -371,6 +384,26 @@ fn status_and_revoke_never_target_pl_records() {
         read_json(&sources_dir(root.path()).join(pl_filename(&fingerprint)))["revoked"],
         false
     );
+}
+
+#[test]
+fn a_stored_ingest_key_is_retired_and_the_source_keeps_its_prefix() {
+    let root = TempDir::new().unwrap();
+    let mut legacy = dl_record("legacy", 1_000);
+    legacy.as_object_mut().unwrap().remove("prefix");
+    legacy["key"] = json!("legacy01-former-ingest-key-material");
+    write_record(root.path(), "legacy.json", legacy);
+
+    let status = run(root.path(), &["--json", "status", "legacy"]);
+    assert_eq!(status.exit_code, 0, "{}", status.stderr);
+    assert_eq!(
+        serde_json::from_str::<Value>(status.stdout.trim()).unwrap()["prefix"],
+        "legacy01"
+    );
+    let record = read_json(&record_path(root.path(), "legacy"));
+    assert!(record.get("key").is_none(), "{record}");
+    assert_eq!(record["prefix"], "legacy01");
+    assert_eq!(record["stats"], stats());
 }
 
 #[test]

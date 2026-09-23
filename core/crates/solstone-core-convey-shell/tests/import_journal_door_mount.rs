@@ -4,10 +4,12 @@
 use std::{fs, path::Path};
 
 use axum::{
+    Extension,
     body::{Body, to_bytes},
     http::{Request, StatusCode, header},
 };
 use serde_json::{Value, json};
+use solstone_core_convey_http::identity::{AccessBasis, Carrier};
 use solstone_core_convey_shell::router;
 use tempfile::TempDir;
 use tower::ServiceExt;
@@ -18,8 +20,8 @@ const BEARER: &str = "Bearer door-key-123456789";
 const WRONG_PREFIX: &str = "wrong-key";
 const AREAS: [&str; 3] = ["segments", "config", "entities"];
 const MISSING_AUTH_HTML: &str = "<!doctype html>\n<html lang=en>\n<title>401 Unauthorized</title>\n<h1>Unauthorized</h1>\n<p>Missing or invalid authentication</p>\n";
-const REVOKED_HTML: &str = "<!doctype html>\n<html lang=en>\n<title>403 Forbidden</title>\n<h1>Forbidden</h1>\n<p>API key has been revoked</p>\n";
-const PREFIX_MISMATCH_HTML: &str = "<!doctype html>\n<html lang=en>\n<title>403 Forbidden</title>\n<h1>Forbidden</h1>\n<p>Key prefix mismatch</p>\n";
+const REVOKED_HTML: &str = "<!doctype html>\n<html lang=en>\n<title>403 Forbidden</title>\n<h1>Forbidden</h1>\n<p>Journal source has been revoked</p>\n";
+const NOT_FOUND_HTML: &str = "<!doctype html>\n<html lang=en>\n<title>404 Not Found</title>\n<h1>Not Found</h1>\n<p>The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.</p>\n";
 
 fn sentinel(area: &str) -> Value {
     json!({"area": area, "marker": format!("{area}-manifest-state-sentinel")})
@@ -65,6 +67,20 @@ fn seed(root: &Path, established: bool, revoked: bool) {
     }
 }
 
+fn app(root: &Path, basis: Option<AccessBasis>) -> axum::Router {
+    let app = router(root.to_path_buf());
+    match basis {
+        Some(basis) => app.layer(Extension(basis)),
+        None => app,
+    }
+}
+
+fn pairing_peer() -> Option<AccessBasis> {
+    Some(AccessBasis::PairingPeer {
+        carrier: Carrier::Direct,
+    })
+}
+
 async fn request(
     app: &axum::Router,
     method: &str,
@@ -97,17 +113,34 @@ async fn request(
 }
 
 #[tokio::test]
-async fn import_manifest_bearer_door_reaches_owned_state_in_each_session_phase() {
+async fn mounting_the_import_app_retires_a_stored_source_key() {
+    let root = TempDir::new_in("/var/tmp").expect("journal root");
+    seed(root.path(), false, false);
+    let _app = router(root.path().to_path_buf());
+    let record: Value = serde_json::from_slice(
+        &fs::read(
+            root.path()
+                .join("apps/import/journal_sources/legacy-peer.json"),
+        )
+        .expect("source record"),
+    )
+    .expect("source JSON");
+    assert!(record.get("key").is_none(), "{record}");
+    assert_eq!(record["prefix"], PREFIX);
+}
+
+#[tokio::test]
+async fn import_manifest_localhost_door_reaches_owned_state_in_each_session_phase() {
     for (phase, established) in [("established", true), ("unestablished", false)] {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
         seed(root.path(), established, false);
-        let app = router(root.path().to_path_buf());
+        let app = app(root.path(), Some(AccessBasis::Localhost));
         for area in AREAS {
             let (status, content_type, body) = request(
                 &app,
                 "GET",
                 &format!("/app/import/journal/{PREFIX}/manifest/{area}"),
-                Some(BEARER),
+                None,
             )
             .await;
             assert_eq!(status, StatusCode::OK, "{phase} {area}");
@@ -126,10 +159,11 @@ async fn import_manifest_bearer_door_reaches_owned_state_in_each_session_phase()
 }
 
 #[tokio::test]
-async fn import_manifest_bearer_door_refusals_do_not_leak_owned_state() {
-    for (case, revoked, prefix, authorization, expected_status, expected_html) in [
+async fn import_manifest_door_refusals_do_not_leak_owned_state() {
+    for (case, basis, revoked, prefix, authorization, expected_status, expected_html) in [
         (
             "missing identity",
+            None,
             false,
             PREFIX,
             None,
@@ -137,25 +171,45 @@ async fn import_manifest_bearer_door_refusals_do_not_leak_owned_state() {
             MISSING_AUTH_HTML,
         ),
         (
-            "revoked identity",
-            true,
+            "former bearer key without an access basis",
+            None,
+            false,
             PREFIX,
             Some(BEARER),
+            StatusCode::UNAUTHORIZED,
+            MISSING_AUTH_HTML,
+        ),
+        (
+            "former bearer key from a pairing window",
+            pairing_peer(),
+            false,
+            PREFIX,
+            Some(BEARER),
+            StatusCode::UNAUTHORIZED,
+            MISSING_AUTH_HTML,
+        ),
+        (
+            "revoked source",
+            Some(AccessBasis::Localhost),
+            true,
+            PREFIX,
+            None,
             StatusCode::FORBIDDEN,
             REVOKED_HTML,
         ),
         (
-            "prefix mismatch",
+            "unknown source",
+            Some(AccessBasis::Localhost),
             false,
             WRONG_PREFIX,
-            Some(BEARER),
-            StatusCode::FORBIDDEN,
-            PREFIX_MISMATCH_HTML,
+            None,
+            StatusCode::NOT_FOUND,
+            NOT_FOUND_HTML,
         ),
     ] {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
         seed(root.path(), false, revoked);
-        let app = router(root.path().to_path_buf());
+        let app = app(root.path(), basis);
         for area in AREAS {
             let (status, content_type, body) = request(
                 &app,
@@ -181,19 +235,40 @@ async fn import_manifest_bearer_door_refusals_do_not_leak_owned_state() {
 }
 
 #[tokio::test]
-async fn legacy_ingest_doors_refuse_missing_or_revoked_identity_without_mutating_state() {
-    for (case, revoked, authorization, expected_status) in [
-        ("missing identity", false, None, StatusCode::UNAUTHORIZED),
+async fn ingest_doors_refuse_a_bearer_key_or_revoked_source_without_mutating_state() {
+    for (case, basis, revoked, authorization, expected_status) in [
         (
-            "revoked identity",
-            true,
+            "missing identity",
+            None,
+            false,
+            None,
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "former bearer key without an access basis",
+            None,
+            false,
             Some(BEARER),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "former bearer key from a pairing window",
+            pairing_peer(),
+            false,
+            Some(BEARER),
+            StatusCode::UNAUTHORIZED,
+        ),
+        (
+            "revoked source",
+            Some(AccessBasis::Localhost),
+            true,
+            None,
             StatusCode::FORBIDDEN,
         ),
     ] {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
         seed(root.path(), false, revoked);
-        let app = router(root.path().to_path_buf());
+        let app = app(root.path(), basis);
         for area in AREAS {
             let state = state_path(root.path(), area);
             let before = fs::read(&state).expect("seeded state");

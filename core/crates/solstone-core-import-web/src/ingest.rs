@@ -1188,18 +1188,19 @@ mod tests {
     use std::{collections::BTreeMap, fs, path::Path};
 
     use axum::{
+        Extension,
         body::{Body, to_bytes},
         extract::{FromRequest, Multipart},
         http::{Request, StatusCode},
     };
     use serde_json::{Value, json};
+    use solstone_core_convey_http::identity::AccessBasis;
     use tower::ServiceExt;
 
     use crate::test_support::phase_root;
 
     use super::segments_with_attempts;
 
-    const KEY: &str = "corpusSourceKey0000000000000000000000000000";
     const PREFIX: &str = "corpusSo";
 
     async fn request(
@@ -1209,14 +1210,17 @@ mod tests {
         content_type: &str,
         auth: bool,
     ) -> (StatusCode, Value) {
-        let mut builder = Request::post(path).header("content-type", content_type);
-        if auth {
-            builder = builder.header("authorization", format!("Bearer {KEY}"));
-        }
-        let response = crate::routes(root.to_path_buf())
-            .oneshot(builder.body(body).unwrap())
-            .await
+        let request = Request::post(path)
+            .header("content-type", content_type)
+            .body(body)
             .unwrap();
+        let routes = crate::routes(root.to_path_buf());
+        let routes = if auth {
+            routes.layer(Extension(AccessBasis::Localhost))
+        } else {
+            routes
+        };
+        let response = routes.oneshot(request).await.unwrap();
         let status = response.status();
         let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         (
@@ -1678,10 +1682,6 @@ mod tests {
         let source_path = root
             .path()
             .join("apps/import/journal_sources/corpus_peer.json");
-        let mut source: Value = serde_json::from_slice(&fs::read(&source_path).unwrap()).unwrap();
-        source["fingerprint"] = json!("sha256:peer-fingerprint");
-        source["peer_instance_id"] = json!("peer-instance");
-        fs::write(&source_path, serde_json::to_vec(&source).unwrap()).unwrap();
         let entities = format!("/app/import/journal/{PREFIX}/ingest/entities");
         let imports = format!("/app/import/journal/{PREFIX}/ingest/imports");
         let config = format!("/app/import/journal/{PREFIX}/ingest/config");
@@ -1755,14 +1755,15 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            state["20260801"]["default/120000_60"]["link_id"],
-            "sha256:peer-fingerprint"
+            state["20260801"]["default/120000_60"]["actor"],
+            "owner_loopback"
         );
+        assert!(state["20260801"]["default/120000_60"]["imported_via"].is_null());
         let log =
             fs::read_to_string(root.path().join("imports/corpusSo/entities/log.jsonl")).unwrap();
         assert!(
-            log.contains("peer-instance"),
-            "door audit records sender provenance"
+            log.contains("\"actor\":\"owner_loopback\""),
+            "door audit records the owner as the actor"
         );
     }
 

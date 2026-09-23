@@ -63,14 +63,14 @@
     }
   ],
   "x-known-asymmetries": [
-    "Observed, not decided: 401/403 on this surface return Werkzeug-style HTML from html_auth_failure, not this JSON envelope. The seven cases are MissingAuth, InvalidPlIdentity, InvalidApiKey (401) and PlRevoked, PlDisabled, DlRevoked, PrefixMismatch (403).",
+    "Observed, not decided: refusals on this surface return Werkzeug-style HTML from html_auth_failure, not this JSON envelope. The six cases are MissingAuth, InvalidPlIdentity (401), UnknownSource (404) and Revoked, PlDisabled, PrefixMismatch (403). A linked device selects its paired source by fingerprint; Localhost selects an owner-created source by the URL prefix; a pairing-window peer or a request with no access basis is MissingAuth. No header establishes an identity.",
     "Observed, not decided: malformed JSON on the four Json<Value> doors (entities, imports, config, and any future JSON sibling) is an Axum extractor rejection (typically 422), not this envelope. Multipart collect failure on segments/facets is 400 invalid_json_request.",
     "Observed, not decided: unmatched paths get Axum's default 404; this router has no fallback to html_not_found or to this envelope.",
     "Observed, not decided: ingest/config accepts the legacy alias journal_config; the only production producer (peer_export) sends config.",
     "Observed, not decided: valid_segment_key here accepts a zero duration (120000_0) that the archive import path's validate_segment_key rejects via parse::<u64>() > 0.",
     "Observed, not decided: valid_facet_name here allows a leading _ or - that the producer's is_facet_name never emits.",
     "Observed, not decided: import id here is any non-empty [0-9_]+; the producer only emits YYYYMMDD_HHMMSS.",
-    "Observed, not decided: provenance keys (imported_via, link_id, sender_fingerprint, sender_instance_id) are stamped only on segment state records and on log.jsonl via decision; they are not written onto entities, facets, imports, or config state.json."
+    "Observed, not decided: provenance keys (imported_via, link_id, sender_fingerprint, sender_instance_id for a paired-device source; actor: owner_loopback for an owner-created source) are stamped only on segment state records and on log.jsonl via decision; they are not written onto entities, facets, imports, or config state.json."
   ],
   "$defs": {
     "segments_request_metadata": {
@@ -349,7 +349,7 @@
       ]
     },
     "manifest_segments_response": {
-      "description": "GET state.json for the segments area. Example route keys and link_id are asserted by ingest.rs tests (1280, 1516-1518). files[].sha256/size use the committed b\"device\" digest as a well-formed stand-in because those tests do not assert the files array contents.",
+      "description": "GET state.json for the segments area. A paired-device source records peer provenance, as in the example; an owner-created source records actor: owner_loopback instead. files[].sha256/size use the committed b\"device\" digest as a well-formed stand-in because those tests do not assert the files array contents.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
@@ -361,6 +361,7 @@
               "type": "array",
               "description": "SegmentManifest.files as published by format solstone-archive-manifest.v1. Items are unconstrained here; do not copy name/sha256/size properties."
             },
+            "actor": {"const": "owner_loopback"},
             "imported_via": {"const": "peer_link"},
             "link_id": {"type": ["string", "null"]},
             "sender_fingerprint": {"type": ["string", "null"]},

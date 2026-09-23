@@ -10,7 +10,7 @@ use std::{
 
 use axum::{
     extract::{FromRequestParts, Json, Path as AxumPath, Query, State},
-    http::{HeaderMap, StatusCode, request::Parts},
+    http::{StatusCode, request::Parts},
     response::Response,
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -32,10 +32,9 @@ const STATE_AREAS: [&str; 5] = ["segments", "entities", "facets", "imports", "co
 enum IngestIdentityCase {
     MissingAuth,
     InvalidPlIdentity,
-    PlRevoked,
+    UnknownSource,
+    Revoked,
     PlDisabled,
-    InvalidApiKey,
-    DlRevoked,
     PrefixMismatch,
 }
 
@@ -47,10 +46,9 @@ impl IngestIdentityCase {
                 "Missing or invalid authentication",
             ),
             Self::InvalidPlIdentity => (StatusCode::UNAUTHORIZED, "Invalid PL identity"),
-            Self::PlRevoked => (StatusCode::FORBIDDEN, "Journal source has been revoked"),
+            Self::UnknownSource => (StatusCode::NOT_FOUND, "Journal source not found"),
+            Self::Revoked => (StatusCode::FORBIDDEN, "Journal source has been revoked"),
             Self::PlDisabled => (StatusCode::FORBIDDEN, "Journal source is disabled"),
-            Self::InvalidApiKey => (StatusCode::UNAUTHORIZED, "Invalid API key"),
-            Self::DlRevoked => (StatusCode::FORBIDDEN, "API key has been revoked"),
             Self::PrefixMismatch => (StatusCode::FORBIDDEN, "Key prefix mismatch"),
         }
     }
@@ -58,7 +56,8 @@ impl IngestIdentityCase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum DoorIdentity<'a> {
-    Bearer(&'a str),
+    /// The owner on the journal's own machine; the URL prefix selects the source.
+    Localhost,
     PrivateLink(&'a str),
 }
 
@@ -73,25 +72,33 @@ impl JournalSourceIdentity {
     }
 
     pub(crate) fn provenance(&self) -> Value {
-        json!({
-            "imported_via": "peer_link",
-            "link_id": self.source.get("fingerprint").cloned().unwrap_or(Value::Null),
-            "sender_fingerprint": self.source.get("fingerprint").cloned().unwrap_or(Value::Null),
-            "sender_instance_id": self.source.get("peer_instance_id").cloned().unwrap_or(Value::Null),
-        })
+        provenance(&self.source)
     }
 }
 
-pub(crate) fn provenance_for_prefix(root: &Path, key_prefix: &str) -> Option<Value> {
-    let source = records(root)
-        .into_iter()
-        .find(|record| state_prefix(record).as_deref() == Some(key_prefix))?;
-    Some(json!({
+/// A paired device's source records the peer it came from. Every other source is
+/// reachable only from the journal's own machine, so its writes are the owner's.
+fn provenance(source: &Map<String, Value>) -> Value {
+    if !is_paired(source) {
+        return json!({"actor": "owner_loopback"});
+    }
+    json!({
         "imported_via": "peer_link",
         "link_id": source.get("fingerprint").cloned().unwrap_or(Value::Null),
         "sender_fingerprint": source.get("fingerprint").cloned().unwrap_or(Value::Null),
         "sender_instance_id": source.get("peer_instance_id").cloned().unwrap_or(Value::Null),
-    }))
+    })
+}
+
+pub(crate) fn provenance_for_prefix(root: &Path, key_prefix: &str) -> Option<Value> {
+    records(root)
+        .into_iter()
+        .find(|record| state_prefix(record).as_deref() == Some(key_prefix))
+        .map(|source| provenance(&source))
+}
+
+fn is_paired(record: &Map<String, Value>) -> bool {
+    record.get("pair_mode").and_then(Value::as_str) == Some("pl")
 }
 
 impl FromRequestParts<AppState> for JournalSourceIdentity {
@@ -145,10 +152,10 @@ fn source(root: &Path, name: &str) -> Option<Map<String, Value>> {
         .find(|record| record.get("name").and_then(Value::as_str) == Some(name))
 }
 
-fn source_by_key(root: &Path, key: &str) -> Option<Map<String, Value>> {
+fn owner_source_by_prefix(root: &Path, supplied_prefix: &str) -> Option<Map<String, Value>> {
     records(root)
         .into_iter()
-        .find(|record| record.get("key").and_then(Value::as_str) == Some(key))
+        .find(|record| !is_paired(record) && prefix(record).as_deref() == Some(supplied_prefix))
 }
 
 fn source_by_fingerprint(root: &Path, fingerprint: &str) -> Option<Map<String, Value>> {
@@ -159,14 +166,19 @@ fn source_by_fingerprint(root: &Path, fingerprint: &str) -> Option<Map<String, V
 
 fn prefix(record: &Map<String, Value>) -> Option<String> {
     record
-        .get("key")
+        .get("prefix")
         .and_then(Value::as_str)
-        .filter(|key| key.len() >= 8)
-        .map(|key| key[..8].to_owned())
+        .filter(|prefix| {
+            prefix.len() == 8
+                && prefix
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        })
+        .map(str::to_owned)
 }
 
 fn state_prefix(record: &Map<String, Value>) -> Option<String> {
-    if record.get("pair_mode").and_then(Value::as_str) == Some("pl") {
+    if is_paired(record) {
         return record
             .get("fingerprint")
             .and_then(Value::as_str)
@@ -186,10 +198,11 @@ fn authorize(
 ) -> Result<(Map<String, Value>, String), IngestIdentityCase> {
     let is_private_link = matches!(identity, DoorIdentity::PrivateLink(_));
     let source = match identity {
-        DoorIdentity::Bearer(key) => {
-            let source = source_by_key(root, key).ok_or(IngestIdentityCase::InvalidApiKey)?;
+        DoorIdentity::Localhost => {
+            let source = owner_source_by_prefix(root, supplied_prefix)
+                .ok_or(IngestIdentityCase::UnknownSource)?;
             if source.get("revoked") == Some(&Value::Bool(true)) {
-                return Err(IngestIdentityCase::DlRevoked);
+                return Err(IngestIdentityCase::Revoked);
             }
             source
         }
@@ -197,7 +210,7 @@ fn authorize(
             let source = source_by_fingerprint(root, fingerprint)
                 .ok_or(IngestIdentityCase::InvalidPlIdentity)?;
             if source.get("revoked") == Some(&Value::Bool(true)) {
-                return Err(IngestIdentityCase::PlRevoked);
+                return Err(IngestIdentityCase::Revoked);
             }
             if source.get("enabled") == Some(&Value::Bool(false)) {
                 return Err(IngestIdentityCase::PlDisabled);
@@ -208,29 +221,12 @@ fn authorize(
     let derived_prefix = state_prefix(&source).ok_or(if is_private_link {
         IngestIdentityCase::InvalidPlIdentity
     } else {
-        IngestIdentityCase::InvalidApiKey
+        IngestIdentityCase::UnknownSource
     })?;
     if derived_prefix != supplied_prefix {
         return Err(IngestIdentityCase::PrefixMismatch);
     }
     Ok((source, derived_prefix))
-}
-
-fn bearer_identity(headers: &HeaderMap) -> Result<DoorIdentity<'_>, IngestIdentityCase> {
-    let Some(value) = headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
-    else {
-        return Err(IngestIdentityCase::MissingAuth);
-    };
-    let Some(key) = value
-        .strip_prefix("Bearer ")
-        .map(str::trim)
-        .filter(|key| !key.is_empty())
-    else {
-        return Err(IngestIdentityCase::MissingAuth);
-    };
-    Ok(DoorIdentity::Bearer(key))
 }
 
 fn authorize_transport(
@@ -240,11 +236,10 @@ fn authorize_transport(
 ) -> Result<(Map<String, Value>, String), Box<Response>> {
     let identity = match parts.extensions.get::<AccessBasis>() {
         Some(AccessBasis::LinkedDevice { cid, .. }) => Ok(DoorIdentity::PrivateLink(cid.as_str())),
-        // Localhost and pairing-window requests have no accepted device identity and must
-        // authenticate with the journal-source key.
-        Some(AccessBasis::Localhost | AccessBasis::PairingPeer { .. }) | None => {
-            bearer_identity(&parts.headers)
-        }
+        Some(AccessBasis::Localhost) => Ok(DoorIdentity::Localhost),
+        // A pairing window is confined to pairing, and a request with no basis has no
+        // identity. No header can supply one: this door has no key to present.
+        Some(AccessBasis::PairingPeer { .. }) | None => Err(IngestIdentityCase::MissingAuth),
     }
     .map_err(|case| {
         let (status, description) = case.response();
@@ -276,8 +271,8 @@ fn now_ms() -> i64 {
         .as_millis() as i64
 }
 
-fn generated_key() -> Result<String, ()> {
-    let mut bytes = [0_u8; 32];
+fn generated_prefix() -> Result<String, ()> {
+    let mut bytes = [0_u8; 6];
     getrandom::fill(&mut bytes).map_err(|_| ())?;
     Ok(URL_SAFE_NO_PAD.encode(bytes))
 }
@@ -515,7 +510,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
             format!("Journal source '{name}' already exists"),
         );
     }
-    let Ok(key) = generated_key() else {
+    let Ok(key_prefix) = generated_prefix() else {
         return error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "that journal source couldn't be used.",
@@ -523,9 +518,8 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
             "Failed to save journal source".to_owned(),
         );
     };
-    let key_prefix = key[..8].to_owned();
     let record = Map::from_iter([
-        ("key".to_owned(), json!(key)),
+        ("prefix".to_owned(), json!(key_prefix)),
         ("name".to_owned(), json!(name)),
         ("created_at".to_owned(), json!(now_ms())),
         ("enabled".to_owned(), json!(true)),
@@ -572,7 +566,7 @@ pub(crate) async fn create(State(state): State<AppState>, Json(data): Json<Value
     }
     json_response(
         StatusCode::OK,
-        json!({"key": key, "key_prefix": key_prefix, "name": name}),
+        json!({"key_prefix": key_prefix, "name": name}),
     )
 }
 
@@ -648,7 +642,7 @@ pub(crate) async fn manifest(
 }
 
 pub(crate) async fn list(State(state): State<AppState>) -> Response {
-    let items: Vec<Value> = records(&state.root).into_iter().filter(|record| record.get("pair_mode").and_then(Value::as_str) != Some("pl")).filter_map(|record| Some(json!({
+    let items: Vec<Value> = records(&state.root).into_iter().filter(|record| !is_paired(record)).filter_map(|record| Some(json!({
         "name": record.get("name")?, "prefix": prefix(&record)?,
         "status": if record.get("revoked") == Some(&Value::Bool(true)) { "revoked" } else { "active" },
         "created_at": record.get("created_at")?,
@@ -799,13 +793,17 @@ mod tests {
     use tower::ServiceExt;
 
     use super::{
-        DoorIdentity, IngestIdentityCase, JournalSourceIdentity, authorize, bearer_identity,
-        create_state_directory, record_received, revoke_source,
+        DoorIdentity, IngestIdentityCase, JournalSourceIdentity, authorize, create_state_directory,
+        record_received, revoke_source,
     };
 
-    fn source(key: &str, revoked: bool) -> serde_json::Map<String, serde_json::Value> {
+    const PAIRED_FINGERPRINT: &str =
+        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const PAIRED_PREFIX: &str = "aaaaaaaaaaaaaaaa";
+
+    fn source(prefix: &str, revoked: bool) -> serde_json::Map<String, serde_json::Value> {
         serde_json::Map::from_iter([
-            ("key".to_owned(), json!(key)),
+            ("prefix".to_owned(), json!(prefix)),
             ("name".to_owned(), json!("source")),
             ("enabled".to_owned(), json!(true)),
             ("revoked".to_owned(), json!(revoked)),
@@ -822,23 +820,51 @@ mod tests {
         .unwrap();
     }
 
+    fn read_json(path: std::path::PathBuf) -> serde_json::Value {
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap()
+    }
+
+    async fn post_entities(
+        router: &axum::Router,
+        prefix: &str,
+        authorization: Option<&str>,
+    ) -> StatusCode {
+        let mut request = Request::post(format!("/app/import/journal/{prefix}/ingest/entities"))
+            .header("content-type", "application/json");
+        if let Some(authorization) = authorization {
+            request = request.header("authorization", authorization);
+        }
+        router
+            .clone()
+            .oneshot(
+                request
+                    .body(Body::from(
+                        json!({"entities":[{"id":"ada","name":"Ada"}]}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    }
+
     #[test]
     fn criterion_14_identity_cases_keep_their_distinct_status_and_description() {
         let root = TempDir::new().unwrap();
         write_source(
             root.path(),
-            "dl",
-            serde_json::Value::Object(source("valid-key-123456789", false)),
+            "owner",
+            serde_json::Value::Object(source("ownerSrc", false)),
         );
         write_source(
             root.path(),
-            "revoked-dl",
-            serde_json::Value::Object(source("revoked-key-123456", true)),
+            "revoked-owner",
+            serde_json::Value::Object(source("revokedS", true)),
         );
         write_source(
             root.path(),
             "pl-revoked",
-            json!({"pair_mode":"pl","fingerprint":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","revoked":true,"enabled":true}),
+            json!({"pair_mode":"pl","fingerprint":PAIRED_FINGERPRINT,"revoked":true,"enabled":false}),
         );
         write_source(
             root.path(),
@@ -858,7 +884,12 @@ mod tests {
                 "Invalid PL identity",
             ),
             (
-                IngestIdentityCase::PlRevoked,
+                IngestIdentityCase::UnknownSource,
+                StatusCode::NOT_FOUND,
+                "Journal source not found",
+            ),
+            (
+                IngestIdentityCase::Revoked,
                 StatusCode::FORBIDDEN,
                 "Journal source has been revoked",
             ),
@@ -866,16 +897,6 @@ mod tests {
                 IngestIdentityCase::PlDisabled,
                 StatusCode::FORBIDDEN,
                 "Journal source is disabled",
-            ),
-            (
-                IngestIdentityCase::InvalidApiKey,
-                StatusCode::UNAUTHORIZED,
-                "Invalid API key",
-            ),
-            (
-                IngestIdentityCase::DlRevoked,
-                StatusCode::FORBIDDEN,
-                "API key has been revoked",
             ),
             (
                 IngestIdentityCase::PrefixMismatch,
@@ -886,10 +907,6 @@ mod tests {
         for (case, status, description) in cases {
             assert_eq!(case.response(), (status, description));
         }
-        assert_eq!(
-            bearer_identity(&axum::http::HeaderMap::new()),
-            Err(IngestIdentityCase::MissingAuth)
-        );
         assert_eq!(
             authorize(
                 root.path(),
@@ -904,11 +921,10 @@ mod tests {
             authorize(
                 root.path(),
                 "anything",
-                DoorIdentity::PrivateLink(
-                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-                )
+                DoorIdentity::PrivateLink(PAIRED_FINGERPRINT)
             ),
-            Err(IngestIdentityCase::PlRevoked)
+            Err(IngestIdentityCase::Revoked),
+            "a revoked paired source reports revoked before disabled"
         );
         assert_eq!(
             authorize(
@@ -921,24 +937,180 @@ mod tests {
             Err(IngestIdentityCase::PlDisabled)
         );
         assert_eq!(
-            authorize(root.path(), "anything", DoorIdentity::Bearer("missing-key")),
-            Err(IngestIdentityCase::InvalidApiKey)
+            authorize(root.path(), "ownerSrc", DoorIdentity::Localhost),
+            Ok((source("ownerSrc", false), "ownerSrc".to_owned()))
         );
         assert_eq!(
-            authorize(
-                root.path(),
-                "anything",
-                DoorIdentity::Bearer("revoked-key-123456")
-            ),
-            Err(IngestIdentityCase::DlRevoked)
+            authorize(root.path(), "unknown0", DoorIdentity::Localhost),
+            Err(IngestIdentityCase::UnknownSource)
         );
         assert_eq!(
-            authorize(
-                root.path(),
-                "other-prefix",
-                DoorIdentity::Bearer("valid-key-123456789")
+            authorize(root.path(), "revokedS", DoorIdentity::Localhost),
+            Err(IngestIdentityCase::Revoked)
+        );
+        assert_eq!(
+            authorize(root.path(), PAIRED_PREFIX, DoorIdentity::Localhost),
+            Err(IngestIdentityCase::UnknownSource),
+            "the URL prefix selects only owner-created sources"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_bearer_header_authenticates_nothing_at_the_door() {
+        const FORMER_KEY: &str = "legacy01-former-ingest-key-material";
+        let root = TempDir::new().unwrap();
+        write_source(
+            root.path(),
+            "legacy",
+            json!({"key": FORMER_KEY, "name": "legacy", "enabled": true, "revoked": false}),
+        );
+        create_state_directory(root.path(), "legacy01").unwrap();
+        let before = fs::read(root.path().join("imports/legacy01/entities/state.json")).unwrap();
+
+        let routes = crate::routes(root.path().to_path_buf());
+        let record = read_json(root.path().join("apps/import/journal_sources/legacy.json"));
+        assert!(record.get("key").is_none(), "the stored key is retired");
+        assert_eq!(record["prefix"], "legacy01");
+
+        let bearer = format!("Bearer {FORMER_KEY}");
+        for (basis, router) in [
+            ("no basis", routes.clone()),
+            (
+                "pairing peer",
+                routes.clone().layer(Extension(AccessBasis::PairingPeer {
+                    carrier: Carrier::Direct,
+                })),
             ),
-            Err(IngestIdentityCase::PrefixMismatch)
+        ] {
+            assert_eq!(
+                post_entities(&router, "legacy01", Some(&bearer)).await,
+                StatusCode::UNAUTHORIZED,
+                "{basis}"
+            );
+        }
+        assert_eq!(
+            fs::read(root.path().join("imports/legacy01/entities/state.json")).unwrap(),
+            before
+        );
+        assert!(
+            !root
+                .path()
+                .join("imports/legacy01/entities/log.jsonl")
+                .exists()
+        );
+        assert!(!root.path().join("entities/ada").exists());
+    }
+
+    #[tokio::test]
+    async fn localhost_ingest_selects_the_prefixed_source_and_records_the_owner() {
+        let root = TempDir::new().unwrap();
+        write_source(
+            root.path(),
+            "a",
+            json!({"name":"a","prefix":"sourceAa","enabled":true,"revoked":false}),
+        );
+        write_source(
+            root.path(),
+            "b",
+            json!({"name":"b","prefix":"sourceBb","enabled":true,"revoked":false}),
+        );
+        write_source(
+            root.path(),
+            "paired",
+            json!({"name":"paired","pair_mode":"pl","fingerprint":PAIRED_FINGERPRINT,"enabled":true,"revoked":false}),
+        );
+        for prefix in ["sourceAa", "sourceBb", PAIRED_PREFIX] {
+            create_state_directory(root.path(), prefix).unwrap();
+        }
+        let source_a = fs::read(root.path().join("apps/import/journal_sources/a.json")).unwrap();
+        let router =
+            crate::routes(root.path().to_path_buf()).layer(Extension(AccessBasis::Localhost));
+
+        assert_eq!(
+            post_entities(&router, "sourceBb", None).await,
+            StatusCode::OK
+        );
+        let log =
+            fs::read_to_string(root.path().join("imports/sourceBb/entities/log.jsonl")).unwrap();
+        let entry: serde_json::Value = serde_json::from_str(log.lines().next().unwrap()).unwrap();
+        assert_eq!(entry["actor"], "owner_loopback");
+        assert!(entry.get("imported_via").is_none());
+        let source_b = read_json(root.path().join("apps/import/journal_sources/b.json"));
+        assert_eq!(source_b["stats"]["entities_received"], 1);
+        assert_eq!(
+            fs::read(root.path().join("apps/import/journal_sources/a.json")).unwrap(),
+            source_a,
+            "source A is not touched"
+        );
+        assert!(
+            !root
+                .path()
+                .join("imports/sourceAa/entities/log.jsonl")
+                .exists()
+        );
+
+        for prefix in [PAIRED_PREFIX, "unknown0"] {
+            assert_eq!(
+                post_entities(&router, prefix, None).await,
+                StatusCode::NOT_FOUND,
+                "{prefix}"
+            );
+            assert!(
+                !root
+                    .path()
+                    .join(format!("imports/{prefix}/entities/log.jsonl"))
+                    .exists()
+            );
+        }
+        assert!(!root.path().join("imports/unknown0").exists());
+    }
+
+    #[tokio::test]
+    async fn a_paired_device_ingests_only_its_own_source_with_peer_provenance() {
+        let root = TempDir::new().unwrap();
+        write_source(
+            root.path(),
+            "owner",
+            json!({"name":"owner","prefix":"ownerSrc","enabled":true,"revoked":false}),
+        );
+        write_source(
+            root.path(),
+            "paired",
+            json!({"name":"paired","pair_mode":"pl","fingerprint":PAIRED_FINGERPRINT,"peer_instance_id":"peer-instance","enabled":true,"revoked":false}),
+        );
+        for prefix in ["ownerSrc", PAIRED_PREFIX] {
+            create_state_directory(root.path(), prefix).unwrap();
+        }
+        let router =
+            crate::routes(root.path().to_path_buf()).layer(Extension(AccessBasis::LinkedDevice {
+                carrier: Carrier::Direct,
+                cid: LinkedDeviceCid::try_from(PAIRED_FINGERPRINT).unwrap(),
+            }));
+
+        assert_eq!(
+            post_entities(&router, PAIRED_PREFIX, None).await,
+            StatusCode::OK
+        );
+        let log = fs::read_to_string(
+            root.path()
+                .join(format!("imports/{PAIRED_PREFIX}/entities/log.jsonl")),
+        )
+        .unwrap();
+        let entry: serde_json::Value = serde_json::from_str(log.lines().next().unwrap()).unwrap();
+        assert_eq!(entry["imported_via"], "peer_link");
+        assert_eq!(entry["sender_fingerprint"], PAIRED_FINGERPRINT);
+        assert_eq!(entry["sender_instance_id"], "peer-instance");
+        assert!(entry.get("actor").is_none());
+
+        assert_eq!(
+            post_entities(&router, "ownerSrc", None).await,
+            StatusCode::FORBIDDEN
+        );
+        assert!(
+            !root
+                .path()
+                .join("imports/ownerSrc/entities/log.jsonl")
+                .exists()
         );
     }
 
@@ -969,7 +1141,7 @@ mod tests {
     #[test]
     fn concurrent_received_counters_reload_under_one_source_lock() {
         let root = TempDir::new().unwrap();
-        let record = source("prefix01-key-material", false);
+        let record = source("prefix01", false);
         write_source(
             root.path(),
             "source",
@@ -1045,7 +1217,7 @@ mod tests {
             &fs::read(root.join("apps/import/journal_sources/source.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(saved["key"], "prefix01-key-material");
+        assert_eq!(saved["prefix"], "prefix01");
         assert_eq!(saved["name"], "source");
         assert_eq!(saved["enabled"], true);
         assert_eq!(saved["revoked"], false);
@@ -1056,7 +1228,7 @@ mod tests {
     #[test]
     fn concurrent_revoke_and_counter_update_preserve_both_changes() {
         let root = TempDir::new().unwrap();
-        let record = source("prefix01-key-material", false);
+        let record = source("prefix01", false);
         write_source(
             root.path(),
             "source",
@@ -1131,7 +1303,7 @@ mod tests {
             &fs::read(root.join("apps/import/journal_sources/source.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(saved["key"], "prefix01-key-material");
+        assert_eq!(saved["prefix"], "prefix01");
         assert_eq!(saved["name"], "source");
         assert_eq!(saved["enabled"], true);
         assert_eq!(saved["revoked"], true);
@@ -1214,9 +1386,16 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
         let response: serde_json::Value = serde_json::from_slice(&body).unwrap();
         let prefix = response["key_prefix"].as_str().unwrap();
+        assert!(
+            response.get("key").is_none(),
+            "creating a source mints no key"
+        );
         let source = root
             .path()
             .join("apps/import/journal_sources/new_source.json");
+        let record = read_json(source.clone());
+        assert_eq!(record["prefix"], prefix);
+        assert!(record.get("key").is_none());
         assert_eq!(
             fs::metadata(source).unwrap().permissions().mode() & 0o777,
             0o600
@@ -1264,7 +1443,7 @@ mod tests {
         write_source(
             root.path(),
             "source",
-            serde_json::Value::Object(source("source-key-123456789", false)),
+            serde_json::Value::Object(source("sourcePx", false)),
         );
         let response = crate::routes(root.path().to_path_buf())
             .oneshot(

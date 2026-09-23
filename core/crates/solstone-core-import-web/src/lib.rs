@@ -40,6 +40,9 @@ pub(crate) struct AppState {
 pub use lifecycle::{MetadataCommandOutcome, MetadataCommandPlan, run_metadata_command};
 
 pub fn routes(journal_root: PathBuf) -> Router {
+    // A source record that still carries its retired ingest key keeps no prefix
+    // until this pass rewrites it, so a failure here leaves that source closed.
+    let _ = solstone_core_import::cli_journal_source::retire_stored_source_keys(&journal_root);
     Router::new()
         .route("/app/import/", get(assets::shell))
         .route("/app/import/workspace", get(assets::workspace))
