@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- on the first-run setup page, the icon beside "your own model" showed as an empty box on some linux computers. the three thinking options no longer have icons.
 - adding and renaming devices, using the journal's agents app and erasing location data worked only on the computer your journal runs on. they now work from any device you've paired, like your phone.
 - a recent update left most of what went into your journal under none of your facets, so it was missing from your activity lists, including today's. new additions again go under the unmuted facet that fits best. this release doesn't refile what already went in under no facet.
 - with your own Anthropic key, newer Claude models like Claude Sonnet 5 could turn away much of your journal's work, such as understanding screens and importing documents. your journal no longer sends the settings those models refuse, so they work again.

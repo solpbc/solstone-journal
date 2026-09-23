@@ -94,17 +94,6 @@
       background: var(--paper);
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--orange) 14%, transparent);
     }
-    .lane .laneic {
-      width: 30px;
-      height: 30px;
-      flex: none;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 19px;
-      color: var(--ink-soft);
-      margin-top: 1px;
-    }
     .lane .lanebody { flex: 1 1 auto; min-width: 0; }
     .lane .lanetop { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .lane .lanename { font-weight: 700; font-size: 1.02rem; color: var(--ink); }
@@ -112,7 +101,6 @@
     .lane .lanedesc { font-size: .86rem; color: var(--ink-faint); margin-top: 3px; line-height: 1.45; }
     .lane.greyed { background: var(--cream); border-color: var(--hairline); cursor: default; }
     .lane.greyed .lanename { color: var(--ink-faint); }
-    .lane.greyed .laneic { color: var(--ink-faint); }
     .lane .laneverdict { font-size: .82rem; color: var(--ink-faint); margin-top: 7px; line-height: 1.45; }
     .lane .reqlink { color: var(--orange-ink); font-weight: 600; text-decoration: none; }
     .lane .lanetag {
@@ -134,10 +122,10 @@
       font-size: .84rem;
       font-weight: 600;
       color: var(--orange-ink);
-      margin: 7px 0 0 60px;
+      margin: 7px 0 0 17px;
     }
     .lanedetail {
-      margin: 8px 0 0 60px;
+      margin: 8px 0 0 17px;
       border: 1px solid var(--hairline);
       border-radius: 9px;
       background: var(--cream-bright);
@@ -304,7 +292,6 @@
   </main>
 
   <script>
-    const LANE_GLYPHS = { local: '⌂', confidential: '◎', byo: '⚿' };
     const LOCAL_REQUIREMENTS_URL = 'https://github.com/solpbc/solstone-journal/blob/main/INSTALL.md#choosing-how-to-power-sol';
     const SEVERITY_RANK = { ok: 0, unknown: 1, warning: 2, blocked: 3 };
     let selectedLane = null;
@@ -421,9 +408,6 @@
           button.addEventListener('click', () => selectProviderLane(lane.id));
         }
 
-        const icon = document.createElement('div');
-        icon.className = 'laneic';
-        icon.textContent = LANE_GLYPHS[lane.id] || '';
         const body = document.createElement('div');
         body.className = 'lanebody';
         const top = document.createElement('div');
@@ -449,7 +433,7 @@
         if (lane.sub) body.appendChild(sub);
         body.appendChild(desc);
         if (lane.id === 'local') renderLocalVerdict(body);
-        button.append(icon, body);
+        button.append(body);
         if (hasConfidentialDetail) {
           const slot = document.createElement('div');
           slot.className = 'laneslot';
