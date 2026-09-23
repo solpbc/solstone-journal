@@ -22,6 +22,7 @@ pub mod local_bin_solstone_reachable;
 pub(crate) mod managed_wrapper;
 pub mod orphan_segment_pdf;
 pub mod parakeet_cpp_stt_ready;
+pub mod sense_dispatch;
 pub mod service_identity;
 pub mod service_running;
 pub mod service_status;

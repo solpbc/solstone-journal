@@ -191,6 +191,15 @@ with the allowlisted fields `name`, `stream_type`, `version`, `uptime`,
 when healthy-idle, contains no captured content or file paths, and is distinct
 from linked-device uploads and journal-detected ingest rejections.
 
+In journal versions with this check, `journal doctor` reports the
+`sense_dispatch` advisory. It reads Sense's latest status update and counts
+dispatch errors since any Sense handler last completed successfully. The count
+remains during idle periods and stops at 99; the reason is the most recent
+error, not a summary of all errors. If Doctor receives no new Sense status
+within its 10-second wait ([Doctor's default timeout](../core/crates/solstone-core-doctor/src/context.rs)),
+it warns that it could not confirm dispatch health. See [Sense health fields](../core/crates/solstone-core-sense/src/beacon.rs)
+and [Sense status updates](../core/crates/solstone-core-sense/src/dispatch.rs).
+
 `stale_heartbeats` in the supervisor's own status does **not** come from `observe.status` — it comes from the supervisor's own peer-heartbeat sync files (`SyncCheckResult.peer_observations`, staleness derived via `sync::native_mtime_seconds`/`HeartbeatClassification`; see `core/crates/solstone-core-system/src/lifecycle/mod.rs`'s `StaleHeartbeatGc`). `observe.status` freshness is a separate, capture-side signal (see the `hear`/`see` staleness table above).
 
 See [CALLOSUM.md](CALLOSUM.md) Tract Registry for event schemas.

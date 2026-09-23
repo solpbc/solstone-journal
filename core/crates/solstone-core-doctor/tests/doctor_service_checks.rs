@@ -2,13 +2,17 @@
 // Copyright (c) 2026 sol pbc
 
 use chrono::TimeZone;
+use serde_json::{Map, json};
+use solstone_core_callosum::{CallosumEnvelope, CallosumSocketServer};
 use solstone_core_doctor::{
     args::DoctorArgs,
     checks::{journal_sync, service_running, task_pace},
     context::CheckContext,
+    registry::{self, Battery},
     run,
     vocabulary::{Check, CheckResult, Platform, Severity, Status, results_failed},
 };
+use solstone_core_sense::{beacon::Health, memory::ThrottleState};
 use solstone_core_system::lifecycle::{HeartbeatV2, RunId, WriterId, v2_heartbeat_filename};
 use std::{
     collections::BTreeMap,
@@ -354,6 +358,7 @@ fn run_poison_battery_child(root: &Path) {
             ("journal_durability", Status::Ok),
             ("journal_sources_readable", Status::Skip),
             ("task_pace", Status::Skip),
+            ("sense_dispatch", Status::Warn),
             ("brain", Status::Warn),
             ("capture_health", Status::Skip),
             ("client_binding", Status::Ok),
@@ -444,6 +449,60 @@ fn callosum_complete_frame_status_consumed() {
     assert!(started.elapsed() < COMPLETE_STATUS_TIMEOUT + ACCEPT_BOUND);
     assert_eq!(row.status, Status::Ok);
     assert_eq!(row.detail, "tasks on pace");
+}
+
+#[test]
+fn registered_sense_dispatch_reads_the_native_beacon_after_unrelated_status() {
+    let (mut context, _root) = context();
+    context.service_status_timeout = Duration::from_secs(1);
+    let socket_path = context.callosum_socket_path.clone();
+    let (ready_tx, ready_rx) = mpsc::sync_channel(0);
+    let server = thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("server runtime");
+        runtime.block_on(async move {
+            let server = CallosumSocketServer::bind(&socket_path)
+                .await
+                .expect("Callosum server");
+            ready_tx.send(()).expect("server ready");
+            let connected_by = tokio::time::Instant::now() + Duration::from_secs(1);
+            while server.client_count() == 0 && tokio::time::Instant::now() < connected_by {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            assert!(server.client_count() > 0, "doctor connected to Callosum");
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            assert!(server.broadcast(CallosumEnvelope {
+                tract: "supervisor".into(),
+                event: "status".into(),
+                ts: None,
+                extra: Map::from_iter([("tasks".into(), json!([]))]),
+            }));
+            tokio::time::sleep(Duration::from_millis(15)).await;
+            let mut health = Health::default();
+            health.failure("lease_timeout");
+            assert!(server.broadcast(CallosumEnvelope {
+                tract: "observe".into(),
+                event: "status".into(),
+                ts: None,
+                extra: health.beacon(0, ThrottleState::default()),
+            }));
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            server.stop().await;
+        });
+    });
+    ready_rx
+        .recv_timeout(ACCEPT_BOUND)
+        .expect("Callosum server bound");
+    let entry = registry::lookup(Battery::Journal, "sense_dispatch")
+        .expect("registered Sense dispatch check");
+    let result = spawn_result(move || (entry.runner)(&context).expect("Sense dispatch check"));
+    let row = recv_result(result, CHECK_RESULT_BOUND);
+    server.join().expect("Callosum server finished");
+    assert_eq!(row.status, Status::Warn);
+    assert!(row.detail.contains("1 Sense dispatch errors"));
+    assert!(row.detail.contains("latest reason: lease_timeout"));
 }
 
 #[test]

@@ -76,6 +76,9 @@ fn sources_readable(c: &CheckContext) -> RunnerResult {
 fn task_pace(c: &CheckContext) -> RunnerResult {
     checks::task_pace::run(c, CHECK_TASK_PACE)
 }
+fn sense_dispatch(c: &CheckContext) -> RunnerResult {
+    checks::sense_dispatch::run(c, CHECK_SENSE_DISPATCH)
+}
 fn brain(c: &CheckContext) -> RunnerResult {
     checks::brain::run(c, CHECK_BRAIN)
 }
@@ -181,6 +184,11 @@ const CHECK_SOURCES_READABLE: Check = Check {
 };
 const CHECK_TASK_PACE: Check = Check {
     name: "task_pace",
+    severity: Severity::Advisory,
+    platforms: BOTH,
+};
+const CHECK_SENSE_DISPATCH: Check = Check {
+    name: "sense_dispatch",
     severity: Severity::Advisory,
     platforms: BOTH,
 };
@@ -313,6 +321,11 @@ pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {
         check: CHECK_TASK_PACE,
         runner: task_pace,
+        deferred: None,
+    },
+    RegistryEntry {
+        check: CHECK_SENSE_DISPATCH,
+        runner: sense_dispatch,
         deferred: None,
     },
     RegistryEntry {

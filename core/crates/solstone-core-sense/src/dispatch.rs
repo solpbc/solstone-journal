@@ -551,13 +551,19 @@ impl SenseDispatcher {
                 false
             };
             if !queued {
+                let reason = format!("{handler} pool unavailable");
+                self.state
+                    .lock()
+                    .expect("sense state")
+                    .health
+                    .failure(&reason);
                 complete(
                     &self.state,
                     &self.outbound,
                     &self.journal,
                     &context.key,
                     Some(&path),
-                    Some(format!("{handler} pool unavailable")),
+                    Some(reason),
                     None,
                     self.batch.marker_policy,
                 );
@@ -673,6 +679,7 @@ impl SenseDispatcher {
                     SegmentState::new(pending.context.clone()),
                 );
             }
+            state.health.failure("lease_timeout");
         }
         self.tally.failure();
         self.emit_observed(&pending.context.key, Some("lease_timeout"));
@@ -680,10 +687,7 @@ impl SenseDispatcher {
 
     pub fn status(&self) {
         self.retry_lease_deferred();
-        let mut state = self.state.lock().expect("sense state");
-        if state.pending_files.is_empty() {
-            state.health.success();
-        }
+        let state = self.state.lock().expect("sense state");
         let fields = state
             .health
             .beacon(state.pending_files.len(), self.admission.state());
@@ -1459,6 +1463,20 @@ mod tests {
             (1, 1),
             "an abandoned deferral counts as a failure"
         );
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status follows deferred completion");
+        assert_eq!(status.fields["recent_error_count"], 1);
+        assert_eq!(status.fields["last_error_reason"], "lease_timeout");
+        assert_eq!(status.fields["last_successful_sync"], Value::Null);
+        dispatcher.status();
+        let next_status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("next status");
+        assert_eq!(next_status.fields["recent_error_count"], 1);
+        assert_eq!(next_status.fields["last_error_reason"], "lease_timeout");
         assert!(dispatcher.state.lock().unwrap().lease_deferred.is_empty());
         assert!(dispatcher.stop_and_wait());
     }
@@ -1501,7 +1519,7 @@ mod tests {
     }
 
     #[test]
-    fn deferred_and_no_engine_do_not_admit_a_file() {
+    fn no_engine_and_deferred_notes_do_not_count_as_dispatch_failures() {
         let temp = tempfile::tempdir().expect("temp journal");
         let (outbound, receiver) = mpsc::channel();
         let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
@@ -1511,6 +1529,60 @@ mod tests {
             .find(|event| event.event == "observed")
             .expect("observed");
         assert_eq!(event.fields["note"], "no_engine");
+        dispatcher.status();
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status");
+        assert_eq!(status.fields["recent_error_count"], 0);
+
+        std::fs::create_dir_all(temp.path().join("config")).expect("config");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"openai"}},"processing":{"mode":"deferred"}}"#,
+        )
+        .expect("settings");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
+        dispatcher.handle(&observing("one", "120001_1"));
+        let event = receiver
+            .try_iter()
+            .find(|event| event.event == "observed")
+            .expect("observed");
+        assert_eq!(event.fields["note"], "deferred");
+        dispatcher.status();
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status");
+        assert_eq!(status.fields["recent_error_count"], 0);
+    }
+
+    #[test]
+    fn no_handlers_note_does_not_count_as_dispatch_failure() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        std::fs::create_dir_all(temp.path().join("config")).expect("config");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"openai"}}}"#,
+        )
+        .expect("settings");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
+        let mut message = observing("one", "120002_1");
+        message.extra.insert("files".into(), json!(["ignored.txt"]));
+        dispatcher.handle(&message);
+        let event = receiver
+            .try_iter()
+            .find(|event| event.event == "observed")
+            .expect("observed");
+        assert_eq!(event.fields["note"], "no handlers");
+        dispatcher.status();
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status");
+        assert_eq!(status.fields["recent_error_count"], 0);
     }
 
     #[test]
@@ -1541,8 +1613,9 @@ mod tests {
         let mut message = observing("one", "120000_1");
         message.extra.insert("files".into(), json!(["audio.flac"]));
         dispatcher.handle(&message);
-        let observed = receiver
-            .try_iter()
+        let events = receiver.try_iter().collect::<Vec<_>>();
+        let observed = events
+            .iter()
             .find(|event| event.event == "observed")
             .expect("observed");
         assert_eq!(observed.fields["error"], true);
@@ -1552,9 +1625,73 @@ mod tests {
                 .expect("error")
                 .contains("transcribe pool unavailable")
         );
+        assert_eq!(
+            events
+                .iter()
+                .filter(|event| event.event == "observed")
+                .count(),
+            1,
+            "one pool admission failure is reported once"
+        );
         let state = dispatcher.state.lock().expect("state");
         assert!(state.segments.is_empty());
         assert!(state.pending_files.is_empty());
+        drop(state);
+        dispatcher.status();
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status");
+        assert_eq!(status.fields["recent_error_count"], 1);
+        assert_eq!(
+            status.fields["last_error_reason"],
+            "transcribe pool unavailable"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn handler_exit_failure_remains_counted_once_in_the_beacon() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        std::fs::create_dir_all(temp.path().join("config")).expect("config");
+        std::fs::write(
+            temp.path().join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"openai"}}}"#,
+        )
+        .expect("settings");
+        let audio = temp
+            .path()
+            .join("chronicle/20260812/one/120000_1/audio.flac");
+        std::fs::create_dir_all(audio.parent().expect("segment")).expect("segment");
+        std::fs::write(&audio, b"audio").expect("audio");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_with_fixture_program(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            PathBuf::from("/bin/false"),
+        );
+        let mut message = observing("one", "120000_1");
+        message.extra.insert("files".into(), json!(["audio.flac"]));
+        dispatcher.handle(&message);
+        let observed = loop {
+            let event = receiver
+                .recv_timeout(Duration::from_secs(2))
+                .expect("handler error completion");
+            if event.event == "observed" {
+                break event;
+            }
+        };
+        assert_eq!(observed.fields["error"], true);
+        dispatcher.status();
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status");
+        assert_eq!(status.fields["recent_error_count"], 1);
+        assert_eq!(status.fields["last_error_reason"], "transcribe exit 1");
+        assert!(dispatcher.stop_and_wait());
     }
 
     #[cfg(unix)]
@@ -1695,7 +1832,7 @@ mod tests {
     }
 
     #[test]
-    fn idle_status_tick_resets_the_rolling_beacon_error_count() {
+    fn idle_status_tick_preserves_dispatch_errors_and_does_not_claim_a_sync() {
         let temp = tempfile::tempdir().expect("journal");
         let (outbound, receiver) = mpsc::channel();
         let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
@@ -1710,8 +1847,29 @@ mod tests {
             .try_iter()
             .find(|event| event.event == "status")
             .expect("status");
+        assert_eq!(status.fields["recent_error_count"], 1);
+        assert_eq!(status.fields["last_error_reason"], "describe exit 7");
+        assert_eq!(status.fields["last_successful_sync"], Value::Null);
+    }
+
+    #[test]
+    fn idle_status_tick_preserves_an_existing_success_timestamp() {
+        let temp = tempfile::tempdir().expect("journal");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new(temp.path().to_path_buf(), false, false, outbound);
+        dispatcher
+            .state
+            .lock()
+            .expect("state")
+            .health
+            .last_successful_sync = Some(123);
+        dispatcher.status();
+        let status = receiver
+            .try_iter()
+            .find(|event| event.event == "status")
+            .expect("status");
         assert_eq!(status.fields["recent_error_count"], 0);
-        assert!(status.fields["last_successful_sync"].is_i64());
+        assert_eq!(status.fields["last_successful_sync"], 123);
     }
 
     #[test]

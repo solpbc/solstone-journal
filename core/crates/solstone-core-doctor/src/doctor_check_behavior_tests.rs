@@ -67,6 +67,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "journal_caught_up",
     "journal_sources_readable",
     "task_pace",
+    "sense_dispatch",
     "brain",
     "capture_health",
     "client_binding",
@@ -636,6 +637,21 @@ fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
                 task_pace_from_status(None)
             };
         }
+        "sense_dispatch" => {
+            let status = if ok {
+                serde_json::json!({"recent_error_count": 0})
+            } else {
+                serde_json::json!({
+                    "recent_error_count": 1,
+                    "last_error_reason": "lease_timeout"
+                })
+            };
+            return crate::checks::sense_dispatch::from_status(
+                registry::lookup(Battery::Journal, name).unwrap().check,
+                &status,
+            )
+            .unwrap();
+        }
         "brain" => {
             if ok {
                 stage_brain_ready(&context);
@@ -796,6 +812,7 @@ fn registry_replaces_deferred_check_sets_with_runners() {
                 "journal_sync"
                     | "journal_caught_up"
                     | "task_pace"
+                    | "sense_dispatch"
                     | "brain"
                     | "capture_health"
                     | "client_binding"
@@ -823,6 +840,7 @@ fn check_severity_table_matches_reference() {
         ("journal_caught_up", Severity::Advisory),
         ("journal_sources_readable", Severity::Advisory),
         ("task_pace", Severity::Advisory),
+        ("sense_dispatch", Severity::Advisory),
         ("brain", Severity::Advisory),
         ("capture_health", Severity::Advisory),
         ("client_binding", Severity::Advisory),
@@ -856,6 +874,7 @@ fn fixture_covers_ok_and_non_ok_paths() {
         ("journal_caught_up", SecondBranch::DifferentStatus),
         ("journal_sources_readable", SecondBranch::DifferentStatus),
         ("task_pace", SecondBranch::DifferentStatus),
+        ("sense_dispatch", SecondBranch::DifferentStatus),
         ("brain", SecondBranch::DifferentStatus),
         ("capture_health", SecondBranch::DifferentStatus),
         // The Python reference reports both binding branches as OK; changing

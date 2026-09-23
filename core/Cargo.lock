@@ -4002,6 +4002,7 @@ dependencies = [
  "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-processing-record",
+ "solstone-core-sense",
  "solstone-core-setup",
  "solstone-core-skill-state",
  "solstone-core-sol-link",

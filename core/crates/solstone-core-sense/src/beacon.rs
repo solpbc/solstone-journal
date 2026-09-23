@@ -97,5 +97,6 @@ mod tests {
         assert_eq!(health.recent_error_count, 99);
         health.success();
         assert_eq!(health.recent_error_count, 0);
+        assert!(health.last_successful_sync.is_some());
     }
 }
