@@ -98,11 +98,11 @@ pub(crate) fn write_mcp_hold_state(
     let (status, detail) = match (hold, address.is_some()) {
         (RegistrationHold::NeedsSubscription, true) => (
             "needs_subscription",
-            "solstone.me needs an active subscription. your address is kept, and your journal keeps trying on its own.",
+            "solstone.me isn't on yet. your address is kept, and your journal keeps trying on its own. finish turning it on in the services portal.",
         ),
         (RegistrationHold::NeedsSubscription, false) => (
             "needs_subscription",
-            "solstone.me needs an active subscription. your journal keeps trying on its own.",
+            "solstone.me isn't on yet. your journal keeps trying on its own. finish turning it on in the services portal.",
         ),
         (RegistrationHold::NotAccepted, true) => (
             "not_accepted",

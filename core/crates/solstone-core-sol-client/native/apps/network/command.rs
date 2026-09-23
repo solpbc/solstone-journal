@@ -21,8 +21,8 @@ const PRIVATE_LINK_SETUP_SUCCESS: &str =
     "your private network is on. your devices can reach home from anywhere.";
 const PRIVATE_LINK_SETUP_FAILED: &str = "couldn't finish setting up your private network.";
 const PRIVATE_LINK_PORTAL_CTA: &str = "continue to approve →";
-const PRIVATE_LINK_NEEDS_SUBSCRIPTION: &str = "your private network needs an active subscription before it can turn on. \
-your consent is saved; set one up, then enable your private network again:";
+const PRIVATE_LINK_NEEDS_SUBSCRIPTION: &str = "your private network isn't on yet. your consent is saved. \
+finish turning it on in the services portal, then turn it on here again:";
 const PRIVATE_LINK_DISABLE_SUCCESS: &str =
     "your private network is off. devices connect directly again.";
 const PRIVATE_LINK_DISABLE_FAILED: &str =

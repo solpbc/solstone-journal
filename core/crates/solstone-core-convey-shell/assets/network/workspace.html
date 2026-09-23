@@ -1395,7 +1395,7 @@
       privateLinkOperationLink.hidden = !linkUrl;
       privateLinkOperationLink.href = linkUrl;
       privateLinkOperationLink.textContent = subscribeUrl
-        ? window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'set up a subscription'
+        ? window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_CTA || 'open the services portal'
         : window.LinkCopy.PRIVATE_LINK_PORTAL_CTA || 'continue to approve →';
     }
     if (privateLinkOperationRetry) {
@@ -1432,7 +1432,7 @@
     if (phase === 'enabled') {
       headline = window.LinkCopy.PRIVATE_LINK_SETUP_SUCCESS || 'your private network is on.';
     } else if (phase === 'needs_subscription') {
-      headline = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || 'your private network needs a subscription';
+      headline = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_HEADLINE || "private network isn't on yet";
       detail = window.LinkCopy.PRIVATE_LINK_NEEDS_SUBSCRIPTION_DETAIL || detail;
       subscribeUrl = typeof operation.subscribe_url === 'string' ? operation.subscribe_url : '';
     } else if (phase === 'revoked' || phase === 'error') {

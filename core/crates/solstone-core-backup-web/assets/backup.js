@@ -68,10 +68,10 @@
       }
     },
     "hosted": {
-      "setup_hint": "turning this on sets up encrypted backup, operated by sol pbc. turn it on from the services page that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
+      "setup_hint": "this sets up encrypted backup, operated by sol pbc. finish turning it on in the services portal that opens, then come back here. your journal stays on your device; only the encrypted copy goes to storage sol pbc operates, and sol pbc can never read it.",
       "location_label": "storage sol pbc operates",
       "location_detail_summary": "exact storage location",
-      "manage_label": "manage your backup at services.solstone.app →",
+      "manage_label": "manage your backup in the services portal →",
       "manage_url": "https://services.solstone.app/services/backup"
     },
     "management": {
@@ -119,7 +119,7 @@
         "key_label": "your recovery key",
         "key_reassurance": "this journal uses your key and never sends it to sol pbc.",
         "primary": "sign in to restore →",
-        "state_b": "waiting for the services page to approve your restore…",
+        "state_b": "waiting for you to approve the restore in the services portal…",
         "state_b_refused": {
           "no_hosted_backup": "sol pbc isn't holding an encrypted copy for the sign-in you used.",
           "hosted_backup_expired": "sol pbc deleted that copy once 30 days had passed since encrypted backup stopped."
@@ -263,10 +263,10 @@
       "expired": "the approval took too long. try again.",
       "restore_prepare_expired": "the approval took too long. try again.",
       "malformed": "the response couldn't be read. update your journal, then try again.",
-      "network_error": "the services page couldn't be reached. check your connection, then try again.",
+      "network_error": "the services portal couldn't be reached. check your connection, then try again.",
       "broker_unreachable": "encrypted backup couldn't be reached. check your connection, then try again.",
       "broker_error": "encrypted backup didn't return usable settings. try again shortly.",
-      "hosted_entitlement_inactive": "set up backup on the services page that opens, then try again."
+      "hosted_entitlement_inactive": "turn on encrypted backup in the services portal, then try again."
     },
     "action_labels": {
       "finish_cleanup": "finish stopping backup",
