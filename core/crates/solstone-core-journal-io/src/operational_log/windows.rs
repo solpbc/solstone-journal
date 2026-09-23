@@ -8,7 +8,7 @@ use std::fs::File;
 use std::io;
 use std::mem::{align_of, size_of};
 use std::os::windows::ffi::OsStrExt;
-use std::os::windows::io::{AsHandle, AsRawHandle};
+use std::os::windows::io::{AsHandle, AsRawHandle, OwnedHandle};
 
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_CREATE, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT,
@@ -63,7 +63,14 @@ pub(super) fn stage_exclusive(
         // Active until every handle of this open, including inherited child
         // stdio, is closed. GENERIC_READ remains so identity queries on the
         // live writer do not need a second open.
-        GENERIC_READ | FILE_APPEND_DATA | DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        //
+        // ⛔ No DELETE here. This handle lives as long as the writer, and a
+        // reader that does not grant FILE_SHARE_DELETE -- Go's os.Open, so
+        // restic -- is refused with a sharing violation for as long as any
+        // open handle holds DELETE: every backup taken while the journal ran
+        // came out partial. The one rename that needs DELETE takes it on its
+        // own short-lived handle (`rename_stage`).
+        GENERIC_READ | FILE_APPEND_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
         FILE_CREATE,
         FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
     )
@@ -107,7 +114,31 @@ pub(super) fn rename_stage(
     if super::create::force_publish_io() {
         return Err(io::Error::from_raw_os_error(ERROR_INVALID_FUNCTION as i32));
     }
-    rename_open_stage_no_replace(health, &staged.file, dest)
+    let rename = open_stage_for_rename(health, staged)?;
+    rename_open_stage_no_replace(health, rename.as_raw_handle(), dest)
+}
+
+/// Open the staged file a second time, by its stage name, with the DELETE access
+/// a rename needs, and prove by volume and file id that it is the same file. The
+/// long-lived writer handle never holds DELETE (see `stage_exclusive`); this
+/// handle holds it only for the rename and is dropped straight after. ⚠ It is
+/// opened by name, not by id: NTFS refuses a rename through a handle opened by
+/// file id, which carries no name.
+fn open_stage_for_rename(health: &OplogDayHealth, staged: &StagedFile) -> io::Result<OwnedHandle> {
+    let opened = nt_create_relative(
+        health.health().as_handle().as_raw_handle(),
+        staged.stage_name.as_os_str(),
+        DELETE | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+        FILE_OPEN,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+    )?;
+    let observed = crate::windows_identity::file_identity(opened.as_raw_handle())?;
+    if OplogFileIdentity::from_windows(observed.volume_serial(), observed.file_id())
+        != staged.identity
+    {
+        return Err(io::Error::from_raw_os_error(ERROR_INVALID_PARAMETER as i32));
+    }
+    Ok(opened)
 }
 
 pub(super) fn classify_windows_rename_error(error: &io::Error) -> OplogRenameClass {
@@ -227,7 +258,7 @@ pub(super) fn nlink_of(file: &File) -> io::Result<u64> {
 
 fn rename_open_stage_no_replace(
     health: &OplogDayHealth,
-    stage_file: &File,
+    stage_handle: std::os::windows::io::RawHandle,
     dest_name: &OsStr,
 ) -> io::Result<()> {
     let wide: Vec<u16> = dest_name.encode_wide().collect();
@@ -260,7 +291,7 @@ fn rename_open_stage_no_replace(
         std::ptr::copy_nonoverlapping(wide.as_ptr(), (*info).FileName.as_mut_ptr(), wide.len());
         let mut status = IO_STATUS_BLOCK::default();
         let result = NtSetInformationFile(
-            stage_file.as_raw_handle(),
+            stage_handle,
             &mut status,
             pointer.cast(),
             bytes as u32,
@@ -378,6 +409,61 @@ mod windows_tests {
             error.reason(),
             OplogCreateReason::Publish(OplogPublishReason::DestinationExhaustion)
         );
+    }
+
+    #[test]
+    fn a_live_oplog_reads_without_delete_sharing_and_still_refuses_a_second_writer() {
+        use std::io::Read;
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+
+        let temporary = tempfile::TempDir::new().unwrap();
+        let root = temporary.path();
+        let writer = create_oplog_with_test_timing(
+            JournalRoot::open(root).unwrap(),
+            SOURCE,
+            RUN,
+            OplogFormat::Log,
+            instant(),
+            ZERO,
+            ZERO,
+        )
+        .unwrap();
+        let live: Vec<_> = fs::read_dir(health_dir(root))
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("oplog--"))
+            })
+            .collect();
+        assert_eq!(live.len(), 1, "{live:?}");
+
+        // A backup reader shares read and write but not delete, as Go's
+        // os.Open does; it must read the live log.
+        let mut reader = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .open(&live[0])
+            .expect("a read-share-write reader opens a live oplog");
+        let mut bytes = Vec::new();
+        reader.read_to_end(&mut bytes).unwrap();
+        assert!(!bytes.is_empty());
+
+        // The liveness authority is unchanged: a second append-capable open is refused.
+        let second_writer = fs::OpenOptions::new()
+            .append(true)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+            .open(&live[0])
+            .unwrap_err();
+        assert_eq!(
+            second_writer.raw_os_error(),
+            Some(ERROR_SHARING_VIOLATION as i32)
+        );
+        drop(writer);
     }
 
     #[test]

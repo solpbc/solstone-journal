@@ -514,6 +514,9 @@ fn main() -> ExitCode {
         // The actual root admission remains owned until capture and runtime return.
         return service_capture_windows::run_installed(&action.journal, || {
             install_logger();
+            if let Err(error) = solstone_core_system::process::watch_windows_session_end() {
+                log::warn!("supervisor: session-end window unavailable: {error}");
+            }
             match evaluate_args(&action.arguments) {
                 Ok(Command::Supervisor(options)) => run_supervisor(options, Some(&root)),
                 _ => ExitCode::from(EXIT_HOSTED_SERVICE_ADMISSION_REFUSED),

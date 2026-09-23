@@ -564,10 +564,11 @@ where
     let Some(variant) = variant else {
         return InstallModelsOutcome::success(
             None,
-            [provider_stdout, vec![format!(
-                "parakeet install: unsupported platform {}/{}; supported: darwin/arm64, linux/x86_64",
-                host.os_name, host.arch
-            )]].concat(),
+            [
+                provider_stdout,
+                vec![parakeet_without_download(&host.os_name, &host.arch)],
+            ]
+            .concat(),
         );
     };
 
@@ -779,6 +780,22 @@ where
         stderr,
     }
 }
+
+/// The line `install-models` prints when this host has no Parakeet download.
+/// Windows is not unsupported: the speech engine and its model ship inside the
+/// app package, so there is nothing to fetch, and saying "unsupported platform"
+/// there told an owner their speech recognition did not work when it did.
+fn parakeet_without_download(os: &str, arch: &str) -> String {
+    if os == "windows" {
+        PARAKEET_BUNDLED_ON_WINDOWS.to_owned()
+    } else {
+        format!(
+            "parakeet install: unsupported platform {os}/{arch}; supported: darwin/arm64, linux/x86_64"
+        )
+    }
+}
+
+const PARAKEET_BUNDLED_ON_WINDOWS: &str = "parakeet: speech recognition ships inside the journal app on windows, so there is nothing to download";
 
 fn resolve_variant<P>(
     options: &InstallModelsOptions,
@@ -1194,6 +1211,13 @@ mod tests {
             outcome.stderr,
             ["variant 'cuda' not supported on linux/arm64"]
         );
+    }
+
+    #[test]
+    fn windows_is_told_parakeet_ships_with_the_app_not_that_it_is_unsupported() {
+        let line = parakeet_without_download("windows", "x86_64");
+        assert_eq!(line, PARAKEET_BUNDLED_ON_WINDOWS);
+        assert!(!line.contains("unsupported"));
     }
 
     #[test]

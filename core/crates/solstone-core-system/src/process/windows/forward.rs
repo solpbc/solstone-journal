@@ -204,12 +204,7 @@ mod session_end {
                 if unsafe { SetConsoleCtrlHandler(Some(handler), 1) } == 0 {
                     return Err(io::Error::last_os_error());
                 }
-                if let Err(error) = std::thread::Builder::new()
-                    .name("session-end-window".to_owned())
-                    .spawn(pump_session_end_window)
-                {
-                    return Err(io::Error::other(error.to_string()));
-                }
+                install_window()?;
                 // Best effort: hides the console window Task Scheduler
                 // otherwise leaves visible at every logon. Session-end
                 // detection above does not depend on the console at all, so
@@ -228,9 +223,47 @@ mod session_end {
             .map_err(|error| io::Error::new(error.kind(), error.to_string()))
     }
 
+    /// Start the hidden session-end window alone, once per process, with no
+    /// console handler.
+    pub(super) fn install_window() -> io::Result<()> {
+        static WINDOW: OnceLock<io::Result<()>> = OnceLock::new();
+        WINDOW
+            .get_or_init(|| {
+                std::thread::Builder::new()
+                    .name("session-end-window".to_owned())
+                    .spawn(pump_session_end_window)
+                    .map(|_| ())
+                    .map_err(|error| io::Error::other(error.to_string()))
+            })
+            .as_ref()
+            .map(|()| ())
+            .map_err(|error| io::Error::new(error.kind(), error.to_string()))
+    }
+
     pub(super) fn requested() -> bool {
         REQUESTED.load(Ordering::SeqCst)
     }
+}
+
+/// Make this process one Windows asks before a sign-out or shutdown ends it.
+///
+/// 🔴 Windows terminates a console process that owns no window the moment a
+/// sign-out begins, before any end-session message is sent: measured on a
+/// Windows 11 guest, a windowless console child stopped about 40 ms before
+/// its windowed sibling received `WM_QUERYENDSESSION`, and the sibling then
+/// held `WM_ENDSESSION` for three seconds and was not killed. The supervisor
+/// owns the lifecycle markers and has no window, so it was killed with them
+/// still on disk while the forwarder's window -- which is asked -- had nothing
+/// left to drain. A process that must clean up at session end owns this
+/// hidden window; it holds `WM_ENDSESSION` for at most
+/// `SESSION_END_DRAIN_TIMEOUT`, or until the process exits.
+pub fn watch_windows_session_end() -> io::Result<()> {
+    session_end::install_window()
+}
+
+/// Whether Windows has asked this process to end its session.
+pub fn windows_session_end_requested() -> bool {
+    session_end::requested()
 }
 
 /// Run a native sibling with the current standard handles and retain its Job

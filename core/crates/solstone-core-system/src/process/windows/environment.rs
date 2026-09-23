@@ -78,6 +78,35 @@ pub(super) struct WindowsEnvironmentPlan {
     pub(super) parent_path: Option<Vec<u16>>,
 }
 
+/// The launch descriptor a hosted child admits from.
+pub(super) const LAUNCH_ENV: &str = "SOL_WINDOWS_LAUNCH";
+/// Retired launch markers; a child refuses to start while any is present.
+pub(super) const OBSOLETE: [&str; 8] = [
+    "SOL_SUPERVISOR_SPAWNED",
+    "SOL_HOSTED_LAUNCH_ID",
+    "SOL_HOSTED_PARENT_INSTANCE",
+    "SOL_HOSTED_ACK_HANDLE",
+    "SOL_HOSTED_STOP_HANDLE",
+    "SOL_PARENT_LOSS_GENERATION",
+    "SOL_PARENT_LOSS_LAUNCH_ID",
+    "SOL_PARENT_LOSS_PARENT_LAUNCH_ID",
+];
+
+/// Whether `key` is a launch-protocol variable a child may only receive fresh
+/// from its own launcher, never inherited.
+///
+/// Admission reads the descriptor and leaves it in the process environment, so
+/// a plain spawn from an admitted process used to hand its child the parent's
+/// consumed, expired descriptor, and the child refused to start ("expired or
+/// invalid Windows launch deadline") -- which is how the daily indexer and
+/// journal statistics never ran under the resident on Windows.
+fn is_launch_only(key: &OsStr) -> bool {
+    key.to_str().is_some_and(|key| {
+        key.eq_ignore_ascii_case(LAUNCH_ENV)
+            || OBSOLETE.iter().any(|name| key.eq_ignore_ascii_case(name))
+    })
+}
+
 /// Merge inherited Windows environment entries with caller overrides.
 ///
 /// Derived from Rust 1.97.1 `sys/process/windows.rs::{EnvKey, make_envp}`.
@@ -91,6 +120,9 @@ pub(super) fn prepare_environment(
 ) -> Result<WindowsEnvironmentPlan, WindowsEnvironmentError> {
     let mut merged = Vec::new();
     for (key, value) in inherited.snapshot()? {
+        if is_launch_only(&key) {
+            continue;
+        }
         let entry = encode_entry(&key, &value, false, encoder)?;
         upsert_entry(&mut merged, entry, ordinal, false)?;
     }
@@ -459,6 +491,40 @@ mod tests {
             ]
         );
         assert_eq!(plan.block.last(), Some(&NUL));
+    }
+
+    #[test]
+    fn an_inherited_launch_descriptor_never_reaches_a_child() {
+        let (ordinal, mut inherited, encoder) = setup();
+        inherited.entries = vec![
+            (
+                OsString::from("SOL_WINDOWS_LAUNCH"),
+                OsString::from("stale"),
+            ),
+            (OsString::from("sol_hosted_ack_handle"), OsString::from("7")),
+            (OsString::from("Alpha"), OsString::from("one")),
+        ];
+        let plan = prepare_environment(&BTreeMap::new(), &ordinal, &inherited, &encoder).unwrap();
+        assert_eq!(
+            block_entries(&plan.block),
+            vec!["Alpha=one".encode_utf16().collect::<Vec<_>>()]
+        );
+
+        let mut overrides = BTreeMap::new();
+        overrides.insert(
+            OsString::from("SOL_WINDOWS_LAUNCH"),
+            OsString::from("fresh"),
+        );
+        let plan = prepare_environment(&overrides, &ordinal, &inherited, &encoder).unwrap();
+        assert_eq!(
+            block_entries(&plan.block),
+            vec![
+                "Alpha=one".encode_utf16().collect::<Vec<_>>(),
+                "SOL_WINDOWS_LAUNCH=fresh"
+                    .encode_utf16()
+                    .collect::<Vec<_>>(),
+            ]
+        );
     }
 
     #[test]

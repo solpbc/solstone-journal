@@ -58,7 +58,7 @@ impl CallosumOneShotSender {
         }
         #[cfg(windows)]
         {
-            use std::io::{ErrorKind, Read, Write};
+            use std::io::{ErrorKind, Read};
             use std::thread;
             use std::time::Instant;
 
@@ -84,25 +84,6 @@ impl CallosumOneShotSender {
                         Err(error) => return Err(error),
                     }
                 }
-            }
-
-            fn write_all_deadline(
-                stream: &mut interprocess::local_socket::Stream,
-                bytes: &[u8],
-                deadline: Instant,
-            ) -> std::io::Result<()> {
-                let mut offset = 0;
-                while offset < bytes.len() {
-                    let written = retry_io(deadline, || stream.write(&bytes[offset..]))?;
-                    if written == 0 {
-                        return Err(std::io::Error::new(
-                            ErrorKind::WriteZero,
-                            "Callosum pipe closed",
-                        ));
-                    }
-                    offset += written;
-                }
-                Ok(())
             }
 
             fn read_exact_deadline(
@@ -149,9 +130,9 @@ impl CallosumOneShotSender {
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
             let proof =
                 client_proof(&secret, &greeting).map_err(|_| CallosumOneShotError::Unavailable)?;
-            write_all_deadline(&mut stream, &proof, deadline)
+            write_all_before(&mut stream, &proof, deadline)
                 .map_err(|_| CallosumOneShotError::Unavailable)?;
-            write_all_deadline(&mut stream, line.as_bytes(), deadline)
+            write_all_before(&mut stream, line.as_bytes(), deadline)
                 .map_err(|_| CallosumOneShotError::Unavailable)
         }
         #[cfg(not(any(unix, windows)))]
@@ -159,5 +140,104 @@ impl CallosumOneShotSender {
             let _ = line;
             Err(CallosumOneShotError::Unavailable)
         }
+    }
+}
+
+/// Write all of `bytes` before `deadline`.
+///
+/// The Windows client's pipe is nonblocking, and a nonblocking named pipe reports a full inbound
+/// buffer as a zero-length write -- a line longer than the free buffer is refused whole until the
+/// server's read is posted. So zero and `WouldBlock` both mean "not yet" and are retried; a closed
+/// pipe fails the write with an error of its own.
+#[cfg(any(windows, test))]
+fn write_all_before(
+    writer: &mut impl std::io::Write,
+    bytes: &[u8],
+    deadline: std::time::Instant,
+) -> std::io::Result<()> {
+    let mut offset = 0;
+    while offset < bytes.len() {
+        match writer.write(&bytes[offset..]) {
+            Ok(written) if written > 0 => {
+                offset += written;
+                continue;
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(error) => return Err(error),
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "Callosum pipe did not accept the line before the deadline",
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::io::{self, ErrorKind, Write};
+    use std::time::{Duration, Instant};
+
+    use super::write_all_before;
+
+    /// Plays back scripted write results; `Ok(n)` accepts `n` bytes.
+    struct Scripted {
+        results: VecDeque<io::Result<usize>>,
+        accepted: Vec<u8>,
+    }
+
+    impl Write for Scripted {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            let result = self.results.pop_front().unwrap_or(Ok(0));
+            if let Ok(n) = result {
+                self.accepted.extend_from_slice(&buf[..n.min(buf.len())]);
+            }
+            result
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    fn scripted(results: Vec<io::Result<usize>>) -> Scripted {
+        Scripted {
+            results: results.into(),
+            accepted: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_full_pipe_is_retried_until_it_accepts_the_line() {
+        let mut pipe = scripted(vec![
+            Ok(0),
+            Err(ErrorKind::WouldBlock.into()),
+            Ok(0),
+            Ok(3),
+            Ok(2),
+        ]);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        write_all_before(&mut pipe, b"hello", deadline).unwrap();
+        assert_eq!(pipe.accepted, b"hello");
+    }
+
+    #[test]
+    fn a_pipe_that_never_accepts_times_out_at_the_deadline() {
+        let mut pipe = scripted(Vec::new());
+        let error = write_all_before(&mut pipe, b"hello", Instant::now()).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::TimedOut);
+    }
+
+    #[test]
+    fn a_closed_pipe_fails_at_once() {
+        let mut pipe = scripted(vec![Err(ErrorKind::BrokenPipe.into())]);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let error = write_all_before(&mut pipe, b"hello", deadline).unwrap_err();
+        assert_eq!(error.kind(), ErrorKind::BrokenPipe);
     }
 }
