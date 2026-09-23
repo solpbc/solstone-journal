@@ -280,20 +280,16 @@
                   "action_redo_scratch": "redo from scratch",
                   "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
                   "queued_feedback": "queued, working on it now",
-                  "unfinished_template_one": "1 unfinished activity on {day}",
-                  "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                  "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                  "search_current": "search is current.",
-                  "search_behind_7_days": "search is more than 7 days behind.",
-                  "search_behind_attempt_failed": "search is behind; the latest indexer attempt failed.",
-                  "search_unclear": "it's unclear whether search is current."
+                  "unfinished_template_one": "an activity from {day} couldn't finish processing",
+                  "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                  "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}"
                 }
               },
               "search_index": {
                 "state": "unknown",
                 "updated_at_ms": null,
                 "last_attempt_failed": false,
-                "text": "it's unclear whether search is current."
+                "text": "it's unclear when search last caught up."
               },
               "agent_errors": {
                 "items": [],
@@ -524,20 +520,16 @@
                   "action_redo_scratch": "redo from scratch",
                   "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
                   "queued_feedback": "queued, working on it now",
-                  "unfinished_template_one": "1 unfinished activity on {day}",
-                  "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                  "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                  "search_current": "search is current.",
-                  "search_behind_7_days": "search is more than 7 days behind.",
-                  "search_behind_attempt_failed": "search is behind; the latest indexer attempt failed.",
-                  "search_unclear": "it's unclear whether search is current."
+                  "unfinished_template_one": "an activity from {day} couldn't finish processing",
+                  "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                  "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}"
                 }
               },
               "search_index": {
                 "state": "unknown",
                 "updated_at_ms": null,
                 "last_attempt_failed": false,
-                "text": "it's unclear whether search is current."
+                "text": "it's unclear when search last caught up."
               },
               "agent_errors": {
                 "items": [
@@ -802,20 +794,16 @@
                   "action_redo_scratch": "redo from scratch",
                   "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
                   "queued_feedback": "queued, working on it now",
-                  "unfinished_template_one": "1 unfinished activity on {day}",
-                  "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                  "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                  "search_current": "search is current.",
-                  "search_behind_7_days": "search is more than 7 days behind.",
-                  "search_behind_attempt_failed": "search is behind; the latest indexer attempt failed.",
-                  "search_unclear": "it's unclear whether search is current."
+                  "unfinished_template_one": "an activity from {day} couldn't finish processing",
+                  "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                  "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}"
                 }
               },
               "search_index": {
                 "state": "unknown",
                 "updated_at_ms": null,
                 "last_attempt_failed": false,
-                "text": "it's unclear whether search is current."
+                "text": "it's unclear when search last caught up."
               },
               "agent_errors": {
                 "items": [
@@ -1057,20 +1045,16 @@
                   "action_redo_scratch": "redo from scratch",
                   "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
                   "queued_feedback": "queued, working on it now",
-                  "unfinished_template_one": "1 unfinished activity on {day}",
-                  "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                  "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                  "search_current": "search is current.",
-                  "search_behind_7_days": "search is more than 7 days behind.",
-                  "search_behind_attempt_failed": "search is behind; the latest indexer attempt failed.",
-                  "search_unclear": "it's unclear whether search is current."
+                  "unfinished_template_one": "an activity from {day} couldn't finish processing",
+                  "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                  "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}"
                 }
               },
               "search_index": {
                 "state": "unknown",
                 "updated_at_ms": null,
                 "last_attempt_failed": false,
-                "text": "it's unclear whether search is current."
+                "text": "it's unclear when search last caught up."
               },
               "agent_errors": {
                 "items": [],
@@ -1300,20 +1284,16 @@
                   "action_redo_scratch": "redo from scratch",
                   "confirm_redo_scratch": "redo this whole day from scratch? this re-does the parts already finished, so it'll take longer. the day you see now won't change until it's done.",
                   "queued_feedback": "queued, working on it now",
-                  "unfinished_template_one": "1 unfinished activity on {day}",
-                  "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                  "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                  "search_current": "search is current.",
-                  "search_behind_7_days": "search is more than 7 days behind.",
-                  "search_behind_attempt_failed": "search is behind; the latest indexer attempt failed.",
-                  "search_unclear": "it's unclear whether search is current."
+                  "unfinished_template_one": "an activity from {day} couldn't finish processing",
+                  "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                  "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}"
                 }
               },
               "search_index": {
                 "state": "unknown",
                 "updated_at_ms": null,
                 "last_attempt_failed": false,
-                "text": "it's unclear whether search is current."
+                "text": "it's unclear when search last caught up."
               },
               "agent_errors": {
                 "items": [],

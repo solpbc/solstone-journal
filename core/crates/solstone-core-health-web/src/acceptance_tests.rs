@@ -56,6 +56,14 @@ mod tests {
         }
     }
 
+    fn rendered(template: &str, updated_at_ms: Option<i64>, now: chrono::DateTime<Utc>) -> String {
+        let updated = chrono::DateTime::<Utc>::from_timestamp_millis(
+            updated_at_ms.expect("a rendered search line has a known index age"),
+        )
+        .expect("valid timestamp");
+        crate::search_freshness::render_search_text(template, now - updated)
+    }
+
     #[test]
     fn test_6_search_freshness_precedence_and_evaluation_rules() {
         let temp = TempDir::new().unwrap();
@@ -143,7 +151,10 @@ mod tests {
         );
         assert_eq!(eval.state, "stale");
         assert!(!eval.last_attempt_failed);
-        assert_eq!(eval.text, SEARCH_TEXT_BEHIND_7_DAYS);
+        assert_eq!(
+            eval.text,
+            rendered(SEARCH_TEXT_BEHIND_7_DAYS, eval.updated_at_ms, now)
+        );
 
         // 6. Summary missing, unreadable, degraded, or not Fresh -> unknown, flag false
         let one_day_ago = now_sys - StdDuration::from_secs(86400);
@@ -175,7 +186,10 @@ mod tests {
         let eval = evaluate_search_freshness(root, &stub, None, SummaryFreshness::Fresh, now);
         assert_eq!(eval.state, "fresh");
         assert!(!eval.last_attempt_failed);
-        assert_eq!(eval.text, SEARCH_TEXT_CURRENT);
+        assert_eq!(
+            eval.text,
+            rendered(SEARCH_TEXT_CURRENT, eval.updated_at_ms, now)
+        );
     }
 
     #[test]
@@ -292,12 +306,16 @@ mod tests {
                 assert_eq!(backlog["unfinished_activities"]["day_count"], 1);
                 assert_eq!(backlog["unfinished_activities"]["oldest_day"], "20990101");
                 assert!(backlog["copy"]["unfinished_template_one"].is_string());
-                assert!(backlog["copy"]["search_current"].is_string());
 
                 let search = &body["search_index"];
                 assert_eq!(search["state"], "fresh");
                 assert_eq!(search["last_attempt_failed"], false);
-                assert_eq!(search["text"], SEARCH_TEXT_CURRENT);
+                assert!(
+                    search["text"]
+                        .as_str()
+                        .is_some_and(|text| text.starts_with("search last caught up ")
+                            && text.ends_with(" ago."))
+                );
             });
     }
 
@@ -773,11 +791,17 @@ mod tests {
         // Call twice; both stale, mtimes unchanged
         let eval1 = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
         assert_eq!(eval1.state, "stale");
-        assert_eq!(eval1.text, SEARCH_TEXT_BEHIND_7_DAYS);
+        assert_eq!(
+            eval1.text,
+            rendered(SEARCH_TEXT_BEHIND_7_DAYS, eval1.updated_at_ms, now)
+        );
 
         let eval2 = evaluate_search_freshness(root, &meta, None, SummaryFreshness::Fresh, now);
         assert_eq!(eval2.state, "stale");
-        assert_eq!(eval2.text, SEARCH_TEXT_BEHIND_7_DAYS);
+        assert_eq!(
+            eval2.text,
+            rendered(SEARCH_TEXT_BEHIND_7_DAYS, eval2.updated_at_ms, now)
+        );
 
         let m1 = fs::metadata(&sqlite).unwrap().modified().unwrap();
         let m2 = fs::metadata(&wal).unwrap().modified().unwrap();
@@ -826,7 +850,7 @@ mod tests {
             now,
         );
         assert_eq!(eval_summary_old.state, "unknown");
-        assert_eq!(eval_summary_old.last_attempt_failed, false);
+        assert!(!eval_summary_old.last_attempt_failed);
 
         // summary missing, both files now-30d, is stale
         let thirty_days_ago = 1_800_000_000 - 30 * 86400;
@@ -905,7 +929,7 @@ mod tests {
             now,
         );
         assert_eq!(eval.state, "unknown");
-        assert_eq!(eval.last_attempt_failed, false);
+        assert!(!eval.last_attempt_failed);
 
         let router = crate::routes_with_clock(root.to_path_buf(), Clock::new(move || now));
         let resp = router

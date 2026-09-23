@@ -350,9 +350,9 @@
                     "oldest_day": null
                   },
                   "copy": {
-                    "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                    "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                    "unfinished_template_one": "1 unfinished activity on {day}"
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   }
                 }
               },
@@ -1132,9 +1132,9 @@
                     "oldest_day": null
                   },
                   "copy": {
-                    "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                    "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                    "unfinished_template_one": "1 unfinished activity on {day}"
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   }
                 }
               },
@@ -2023,9 +2023,9 @@
                     "oldest_day": null
                   },
                   "copy": {
-                    "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                    "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                    "unfinished_template_one": "1 unfinished activity on {day}"
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   }
                 }
               },
@@ -2906,9 +2906,9 @@
                     "oldest_day": null
                   },
                   "copy": {
-                    "unfinished_template_many_days": "{n} unfinished activities on {days} completed days, oldest {day}",
-                    "unfinished_template_many_one_day": "{n} unfinished activities on {day}",
-                    "unfinished_template_one": "1 unfinished activity on {day}"
+                    "unfinished_template_many_days": "{n} activities couldn't finish processing. oldest: {day}",
+                    "unfinished_template_many_one_day": "{n} activities from {day} couldn't finish processing",
+                    "unfinished_template_one": "an activity from {day} couldn't finish processing"
                   }
                 }
               },

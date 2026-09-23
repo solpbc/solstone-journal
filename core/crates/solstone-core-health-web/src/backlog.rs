@@ -143,10 +143,6 @@ pub fn copy() -> Value {
         "unfinished_template_one": solstone_core_system_health::UNFINISHED_TEMPLATE_ONE,
         "unfinished_template_many_one_day": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_ONE_DAY,
         "unfinished_template_many_days": solstone_core_system_health::UNFINISHED_TEMPLATE_MANY_DAYS,
-        "search_current": crate::search_freshness::SEARCH_TEXT_CURRENT,
-        "search_behind_7_days": crate::search_freshness::SEARCH_TEXT_BEHIND_7_DAYS,
-        "search_behind_attempt_failed": crate::search_freshness::SEARCH_TEXT_BEHIND_ATTEMPT_FAILED,
-        "search_unclear": crate::search_freshness::SEARCH_TEXT_UNCLEAR,
     })
 }
 

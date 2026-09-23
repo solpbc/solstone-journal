@@ -10,16 +10,16 @@ fn unfinished_suffix(days: &[solstone_core_system_health::BacklogDay]) -> String
     let unfinished = solstone_core_system_health::aggregate_unfinished_from_days(days);
     if unfinished.activities > 0 {
         let act_str = if unfinished.activities == 1 {
-            "1 unfinished activity".to_owned()
+            "1 activity".to_owned()
         } else {
-            format!("{} unfinished activities", unfinished.activities)
+            format!("{} activities", unfinished.activities)
         };
         let day_str = if unfinished.day_count == 1 {
             "1 completed day".to_owned()
         } else {
             format!("{} completed days", unfinished.day_count)
         };
-        format!("; {act_str} on {day_str}")
+        format!("; {act_str} on {day_str} couldn't finish processing")
     } else {
         String::new()
     }

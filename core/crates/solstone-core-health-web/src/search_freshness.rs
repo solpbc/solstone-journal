@@ -9,11 +9,20 @@ use chrono::{DateTime, Duration, TimeZone, Utc};
 use serde::Serialize;
 use solstone_core_system_health::{IndexerPhase, SummaryFreshness};
 
-pub const SEARCH_TEXT_CURRENT: &str = "search is current.";
-pub const SEARCH_TEXT_BEHIND_7_DAYS: &str = "search is more than 7 days behind.";
+pub const SEARCH_TEXT_CURRENT: &str = "search last caught up {age} ago.";
+pub const SEARCH_TEXT_BEHIND_7_DAYS: &str =
+    "search last caught up {age} ago, so recent moments may not turn up in search yet.";
 pub const SEARCH_TEXT_BEHIND_ATTEMPT_FAILED: &str =
-    "search is behind; the latest indexer attempt failed.";
-pub const SEARCH_TEXT_UNCLEAR: &str = "it's unclear whether search is current.";
+    "search couldn't update on its last try, so recent moments may not turn up in search yet.";
+pub const SEARCH_TEXT_UNCLEAR: &str = "it's unclear when search last caught up.";
+
+/// Fills a search template's `{age}` with the time since the index's last write.
+pub fn render_search_text(template: &str, age: Duration) -> String {
+    template.replace(
+        "{age}",
+        &solstone_core_system_health::format_summary_age(age),
+    )
+}
 pub const SEARCH_NOTE_ATTEMPT_FAILED: &str =
     "the latest indexer attempt failed; search-backed consumers may be stale.";
 
@@ -114,7 +123,7 @@ pub fn evaluate_search_freshness(
             state: "stale".to_owned(),
             updated_at_ms,
             last_attempt_failed: false,
-            text: SEARCH_TEXT_BEHIND_7_DAYS.to_owned(),
+            text: render_search_text(SEARCH_TEXT_BEHIND_7_DAYS, now - newest_dt),
         };
     }
 
@@ -143,6 +152,6 @@ pub fn evaluate_search_freshness(
         state: "fresh".to_owned(),
         updated_at_ms,
         last_attempt_failed: false,
-        text: SEARCH_TEXT_CURRENT.to_owned(),
+        text: render_search_text(SEARCH_TEXT_CURRENT, now - newest_dt),
     }
 }

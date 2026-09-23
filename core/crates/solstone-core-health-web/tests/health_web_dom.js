@@ -292,9 +292,9 @@ test('unfinished activities renders single day with template_one', async () => {
     verdict: "your journal's caught up.",
     unfinished_activities: { activities: 1, day_count: 1, oldest_day: "20260403" },
     copy: {
-      unfinished_template_one: "1 unfinished activity on {day}",
-      unfinished_template_many_one_day: "{n} unfinished activities on {day}",
-      unfinished_template_many_days: "{n} unfinished activities on {days} completed days, oldest {day}",
+      unfinished_template_one: "an activity from {day} couldn't finish processing",
+      unfinished_template_many_one_day: "{n} activities from {day} couldn't finish processing",
+      unfinished_template_many_days: "{n} activities couldn't finish processing. oldest: {day}",
     },
   };
   context.payload = payload;
@@ -304,7 +304,7 @@ test('unfinished activities renders single day with template_one', async () => {
   assert.strictEqual(unfinishedLine.hidden, false);
   const link = unfinishedLine.querySelector('a');
   assert.ok(link, 'link is rendered');
-  assert.strictEqual(link.textContent, '1 unfinished activity on Apr 3, 2026 →');
+  assert.strictEqual(link.textContent, "an activity from Apr 3, 2026 couldn't finish processing →");
   assert.strictEqual(link.getAttribute('href'), '/app/transcripts/20260403');
 });
 
@@ -329,7 +329,7 @@ test('unfinished activities renders multiple activities across multiple days', a
     verdict: "your journal's caught up.",
     unfinished_activities: { activities: 3, day_count: 2, oldest_day: "20260401" },
     copy: {
-      unfinished_template_many_days: "{n} unfinished activities on {days} completed days, oldest {day}",
+      unfinished_template_many_days: "{n} activities couldn't finish processing. oldest: {day}",
     },
   };
   context.payload = payload;
@@ -339,19 +339,19 @@ test('unfinished activities renders multiple activities across multiple days', a
   assert.strictEqual(unfinishedLine.hidden, false);
   const link = unfinishedLine.querySelector('a');
   assert.ok(link);
-  assert.strictEqual(link.textContent, '3 unfinished activities on 2 completed days, oldest Apr 3, 2026 →');
+  assert.strictEqual(link.textContent, "3 activities couldn't finish processing. oldest: Apr 3, 2026 →");
 });
 
 test('search index line renders when present and hides when absent', async () => {
   const { doc, context } = createEnvironment();
-  const searchIndex = { state: "fresh", text: "search is current." };
+  const searchIndex = { state: "fresh", text: "search last caught up 2 hours ago." };
   context.payload = { verdict: "your journal's caught up." };
   context.searchIndex = searchIndex;
   vm.runInContext('renderBacklogState(payload, searchIndex);', context);
 
   const searchLine = doc.querySelector('#backlogVerdict .backlog-search-line');
   assert.strictEqual(searchLine.hidden, false);
-  assert.strictEqual(searchLine.textContent, 'search is current.');
+  assert.strictEqual(searchLine.textContent, "search last caught up 2 hours ago.");
 
   vm.runInContext('renderBacklogState(payload, null);', context);
   assert.strictEqual(searchLine.hidden, true);

@@ -26,10 +26,11 @@ pub const VERDICT_AGE_UNKNOWN: &str =
 pub const VERDICT_AGE_STALE_TEMPLATE: &str =
     "it's unclear whether your journal is caught up; the last update was {age} ago.";
 
-pub const UNFINISHED_TEMPLATE_ONE: &str = "1 unfinished activity on {day}";
-pub const UNFINISHED_TEMPLATE_MANY_ONE_DAY: &str = "{n} unfinished activities on {day}";
+pub const UNFINISHED_TEMPLATE_ONE: &str = "an activity from {day} couldn't finish processing";
+pub const UNFINISHED_TEMPLATE_MANY_ONE_DAY: &str =
+    "{n} activities from {day} couldn't finish processing";
 pub const UNFINISHED_TEMPLATE_MANY_DAYS: &str =
-    "{n} unfinished activities on {days} completed days, oldest {day}";
+    "{n} activities couldn't finish processing. oldest: {day}";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SummaryFreshness {

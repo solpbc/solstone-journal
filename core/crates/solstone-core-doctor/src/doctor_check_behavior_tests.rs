@@ -3361,7 +3361,7 @@ fn journal_caught_up_appends_single_unfinished_activity_on_completed_day() {
     assert_eq!(row.status, Status::Ok);
     assert_eq!(
         row.detail,
-        "caught up; 1 unfinished activity on 1 completed day"
+        "caught up; 1 activity on 1 completed day couldn't finish processing"
     );
 }
 
@@ -3387,6 +3387,6 @@ fn journal_caught_up_appends_multiple_unfinished_activities_across_completed_day
     assert_eq!(row.status, Status::Ok);
     assert_eq!(
         row.detail,
-        "caught up; 2 unfinished activities on 2 completed days"
+        "caught up; 2 activities on 2 completed days couldn't finish processing"
     );
 }

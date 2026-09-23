@@ -331,7 +331,7 @@ test('stats hero renders verdict directly from journal_status.verdict', async ()
       pending_days: 0,
       unfinished_activities: { activities: 1, day_count: 1, oldest_day: "20260403" },
       copy: {
-        unfinished_template_one: "1 unfinished activity on {day}",
+        unfinished_template_one: "an activity from {day} couldn't finish processing",
       },
     },
   };
@@ -344,7 +344,7 @@ test('stats hero renders verdict directly from journal_status.verdict', async ()
 
   const unfinishedLine = doc.querySelector('.backlog-unfinished-line');
   assert.ok(unfinishedLine, 'unfinished line is rendered');
-  assert.strictEqual(unfinishedLine.textContent, '1 unfinished activity on Apr 3, 2026 →');
+  assert.strictEqual(unfinishedLine.textContent, "an activity from Apr 3, 2026 couldn't finish processing →");
 });
 
 test('stats hero renders verdict without rewrite for single pending day', async () => {
