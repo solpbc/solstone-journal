@@ -37,4 +37,9 @@ tempfile = { version = "3.24.0", optional = true }
 tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
 
 [dev-dependencies]
+axum = { workspace = true, features = ["tokio"] }
+solstone-core-generate.workspace = true
+solstone-core-import-web.workspace = true
 tempfile = "3.24.0"
+tokio = { workspace = true, features = ["macros", "rt", "time", "net"] }
+tower.workspace = true

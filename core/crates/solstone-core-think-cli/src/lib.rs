@@ -41,6 +41,65 @@ pub mod test_support {
         crate::dispatch::runtime()
     }
 
+    pub fn reserve_daily_attempt(
+        journal: &Path,
+        identity: &solstone_core_journal_io::DailyUnitIdentity,
+        evidence_rev: &str,
+        contract_digest: &str,
+        frozen_packet: &Value,
+        today: &str,
+        reserved_use: &str,
+        from_scratch: bool,
+        retry: bool,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        crate::daily::reserve_daily_attempt(
+            journal,
+            identity,
+            evidence_rev,
+            contract_digest,
+            frozen_packet,
+            today,
+            reserved_use,
+            from_scratch,
+            retry,
+            now_ms,
+        )
+        .map_err(|error| error.to_string())
+    }
+
+    pub fn log_daily_terminal(
+        journal: &Path,
+        day: &str,
+        name: &str,
+        use_id: &str,
+        reason_code: &str,
+        now_ms: i64,
+    ) -> Result<(), String> {
+        let context = crate::context::ThinkContext::new_with_event_clock(
+            journal,
+            day.to_owned(),
+            journal.join("chronicle").join(day),
+            now_ms,
+            std::sync::Arc::new(move || now_ms),
+        )?;
+        let mut log = crate::run_log::RunLogWriter::open(journal, day, "daily");
+        let pending = crate::dispatch::PendingUse {
+            name: name.to_owned(),
+            facet: None,
+            use_id: use_id.to_owned(),
+            output_path: None,
+            index_output: false,
+        };
+        crate::daily::log_daily_terminal(
+            &mut log,
+            &context,
+            &pending,
+            crate::dispatch::DrainOutcome::fail("error", reason_code),
+        );
+        log.finish()
+    }
+
     pub fn emit_segment_dispatch(journal: &Path, day: &str, now_ms: i64) -> Result<bool, String> {
         let mut log = crate::run_log::RunLogWriter::open(journal, day, "segment");
         let emitted = crate::segment::write_dispatch_event(
@@ -1384,7 +1443,13 @@ mod tests {
         let second =
             dispatch::dispatch(&context, &runtime, &config, "daily", None, true, Map::new())
                 .unwrap();
-        let result = dispatch::drain(&context, &runtime, vec![first, second]);
+        let result = dispatch::drain_with_deadline_observed(
+            &context,
+            &runtime,
+            vec![first, second],
+            Some(dispatch::DEFAULT_THINK_TIMEOUT),
+            &mut |_, _| {},
+        );
         assert_eq!((result.success, result.failed), (2, 0));
         assert_eq!(recorder.requests.lock().unwrap().len(), 2);
     }
@@ -1424,7 +1489,13 @@ mod tests {
             } else {
                 let _ = fs::remove_file(path);
             }
-            dispatch::drain(&context, &runtime, vec![pending]);
+            dispatch::drain_with_deadline_observed(
+                &context,
+                &runtime,
+                vec![pending],
+                Some(dispatch::DEFAULT_THINK_TIMEOUT),
+                &mut |_, _| {},
+            );
         };
         run(Some(true), true);
         assert_eq!(index.0.lock().unwrap().len(), 1);
@@ -1467,7 +1538,13 @@ mod tests {
             let path = std::path::PathBuf::from(path);
             fs::create_dir_all(path.parent().unwrap()).unwrap();
             fs::write(&path, "output").unwrap();
-            let result = dispatch::drain(&context, &runtime, vec![pending]);
+            let result = dispatch::drain_with_deadline_observed(
+                &context,
+                &runtime,
+                vec![pending],
+                Some(dispatch::DEFAULT_THINK_TIMEOUT),
+                &mut |_, _| {},
+            );
             assert_eq!((result.success, result.failed), (1, 0));
         }
         assert_eq!(index.0.lock().unwrap().len(), 3);
@@ -1496,7 +1573,13 @@ mod tests {
         let path = std::path::PathBuf::from(path);
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(path, "output").unwrap();
-        dispatch::drain(&context, &runtime, vec![pending]);
+        dispatch::drain_with_deadline_observed(
+            &context,
+            &runtime,
+            vec![pending],
+            Some(dispatch::DEFAULT_THINK_TIMEOUT),
+            &mut |_, _| {},
+        );
         assert_eq!(index.0.lock().unwrap().len(), 3);
     }
 

@@ -20,7 +20,6 @@ const ANTHROPIC_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 const ANTHROPIC_MESSAGES_PATH: &str = "/v1/messages";
 const ANTHROPIC_VERSION: &str = "2023-06-01";
-const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
     "prompt is too long",
@@ -137,7 +136,9 @@ fn anthropic_converse_with<T: AnthropicTransport>(
     let Some(api_key) = configured_api_key(config) else {
         return converse_failure("provider_key_missing");
     };
-    let model = configured_model(config);
+    let Some(model) = crate::overrides::configured_model(config) else {
+        return converse_failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url(config, ANTHROPIC_BASE_URL);
     let body = converse_request_body(request, messages, tools, &model);
     let response = match transport.post_json(
@@ -193,7 +194,9 @@ fn anthropic_generate_with_lookup<T: AnthropicTransport>(
     else {
         return failure("provider_key_missing");
     };
-    let model = crate::overrides::configured_model_with(config, DEFAULT_MODEL, env);
+    let Some(model) = crate::overrides::configured_model_with(config, env) else {
+        return failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url_with(config, ANTHROPIC_BASE_URL, env);
     let body = request_body(request, &model);
     let response = match transport.post_json(
@@ -224,10 +227,13 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
     crate::overrides::configured_api_key(config, ANTHROPIC_API_KEY_ENV)
 }
 
-fn configured_model(config: &Map<String, Value>) -> String {
-    crate::overrides::configured_model(config, DEFAULT_MODEL)
-}
-
+/// Build the smallest request every Messages API model accepts: model,
+/// `max_tokens`, messages and an optional system prompt. Sampling and thinking
+/// controls are deliberately never sent. Their accepted shapes change from one
+/// model generation to the next (a `temperature` or a fixed thinking budget is a
+/// hard 400 on current models), so each model runs at its provider's own
+/// defaults. The request's thinking budget still widens `max_tokens` so a model
+/// that thinks by default has room to answer.
 fn request_body(request: &GenerateRequest, model: &str) -> Value {
     let content = request
         .contents
@@ -246,11 +252,6 @@ fn request_body(request: &GenerateRequest, model: &str) -> Value {
     });
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
-    }
-    if let Some(budget) = request.thinking_budget.filter(|budget| *budget > 0) {
-        body["thinking"] = json!({"type": "enabled", "budget_tokens": budget});
-    } else if model_supports_temperature(model) {
-        body["temperature"] = json!(request.temperature);
     }
     body
 }
@@ -282,10 +283,21 @@ fn converse_request_body(
                 tool_call_id,
                 tool_name: _,
                 output,
-            } => json!({
-                "role": "user",
-                "content": [{"type": "tool_result", "tool_use_id": tool_call_id, "content": output}],
-            }),
+                is_error,
+            } => {
+                let mut block = json!({
+                    "type": "tool_result",
+                    "tool_use_id": tool_call_id,
+                    "content": output,
+                });
+                if *is_error {
+                    block["is_error"] = serde_json::Value::Bool(true);
+                }
+                json!({
+                    "role": "user",
+                    "content": [block],
+                })
+            }
         })
         .collect::<Vec<_>>();
     let mut body = json!({
@@ -301,24 +313,7 @@ fn converse_request_body(
     if let Some(system) = &request.system_instruction {
         body["system"] = Value::String(system.clone());
     }
-    if let Some(budget) = request.thinking_budget.filter(|budget| *budget > 0) {
-        body["thinking"] = json!({"type": "enabled", "budget_tokens": budget});
-    } else if model_supports_temperature(model) {
-        body["temperature"] = json!(request.temperature);
-    }
     body
-}
-
-// Models that reject the `temperature` parameter (Anthropic API error:
-// "temperature is deprecated for this model"). This list is manually
-// reconciled against the `model_tiers` catalog in
-// solstone-core-thinking/src/providers.rs and must be revisited whenever
-// that catalog changes.
-fn model_supports_temperature(model: &str) -> bool {
-    !matches!(
-        model,
-        "claude-opus-4-7" | "claude-sonnet-5" | "claude-opus-4-8"
-    )
 }
 
 fn request_timeout(timeout_s: Option<f64>) -> Duration {
@@ -512,6 +507,7 @@ fn usage_from_provider(provider_usage: &Map<String, Value>) -> Value {
 fn classify_http_failure(status: u16, body: &str) -> &'static str {
     match status {
         401 => "provider_key_invalid",
+        404 => "model_not_found",
         429 => "provider_quota_exceeded",
         400 if is_context_window_error(body) => "context_window_exceeded",
         400 => "provider_response_invalid",
@@ -651,9 +647,10 @@ mod tests {
             env.insert(ANTHROPIC_API_KEY_ENV.into(), Value::String(key.into()));
         }
         let mut active = Map::new();
-        if let Some(model) = model {
-            active.insert("model".into(), Value::String(model.into()));
-        }
+        active.insert(
+            "model".into(),
+            Value::String(model.unwrap_or("claude-test-model").into()),
+        );
         let mut providers = Map::new();
         providers.insert("active".into(), Value::Object(active));
         let mut config = Map::new();
@@ -908,79 +905,43 @@ mod tests {
     }
 
     #[test]
-    fn thinking_enabled_omits_temperature_and_sends_thinking_body() {
-        let mut request = request();
-        request.thinking_budget = Some(500);
-        let mut transport = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request,
-            &config(Some("configured-secret"), None),
-            &mut transport,
-        );
-        let body = &transport.posts[0];
-        assert_eq!(
-            body["thinking"],
-            json!({"type": "enabled", "budget_tokens": 500})
-        );
-        assert!(body.get("temperature").is_none());
+    fn request_never_sends_sampling_or_thinking_controls() {
+        for budget in [None, Some(0), Some(500)] {
+            let mut request = request();
+            request.thinking_budget = budget;
+            let mut transport = StubTransport {
+                responses: vec![Ok(success_response())],
+                ..Default::default()
+            };
+            let _ = anthropic_generate_with(
+                &request,
+                &config(Some("configured-secret"), Some("any-owner-model")),
+                &mut transport,
+            );
+            let body = &transport.posts[0];
+            assert_eq!(body["model"], "any-owner-model");
+            assert!(body.get("thinking").is_none(), "budget {budget:?}");
+            assert!(body.get("temperature").is_none(), "budget {budget:?}");
+        }
     }
 
     #[test]
-    fn thinking_disabled_respects_model_temperature_capability() {
-        let mut no_temperature = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-opus-4-7")),
-            &mut no_temperature,
+    fn missing_model_is_refused_before_any_request() {
+        let mut config = config(Some("configured-secret"), None);
+        config["providers"]["active"]
+            .as_object_mut()
+            .expect("active is an object")
+            .remove("model");
+        let mut transport = StubTransport::default();
+        let result = anthropic_generate_with(&request(), &config, &mut transport);
+        assert_eq!(
+            result,
+            AnthropicResult::Failed(AnthropicFailure {
+                reason_code: Some("model_missing".into()),
+                detail: None,
+            })
         );
-        assert!(no_temperature.posts[0].get("temperature").is_none());
-
-        let mut no_temperature_sonnet_5 = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-sonnet-5")),
-            &mut no_temperature_sonnet_5,
-        );
-        assert!(
-            no_temperature_sonnet_5.posts[0]
-                .get("temperature")
-                .is_none()
-        );
-
-        let mut no_temperature_opus_4_8 = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-opus-4-8")),
-            &mut no_temperature_opus_4_8,
-        );
-        assert!(
-            no_temperature_opus_4_8.posts[0]
-                .get("temperature")
-                .is_none()
-        );
-
-        let mut temperature = StubTransport {
-            responses: vec![Ok(success_response())],
-            ..Default::default()
-        };
-        let _ = anthropic_generate_with(
-            &request(),
-            &config(Some("configured-secret"), Some("claude-sonnet-4-6")),
-            &mut temperature,
-        );
-        assert_eq!(temperature.posts[0]["temperature"], json!(0.3));
+        assert!(transport.posts.is_empty());
     }
 
     #[test]
@@ -1090,6 +1051,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: "sunny".into(),
+                is_error: false,
             },
         ];
         let tools = vec![ConverseToolSpec {
@@ -1101,7 +1063,7 @@ mod tests {
         assert_eq!(
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&json!({
-                "model": "model", "max_tokens": 4000, "temperature": 0.3,
+                "model": "model", "max_tokens": 4000,
                 "system": "system", "tools": [{"name": "weather", "description": "weather", "input_schema": {"type":"object"}}],
                 "messages": [
                     {"role":"user","content":[{"type":"text","text":"ask"}]},
@@ -1126,7 +1088,190 @@ mod tests {
             crate::converse::canonical_json(&body),
             crate::converse::canonical_json(&swapped)
         );
+    }
 
+    #[test]
+    fn anthropic_converse_encodes_error_and_success_and_collision_twins() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type": "object"}),
+        }];
+
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_body = converse_request_body(&request(), &err_messages, &tools, "model");
+        assert_eq!(
+            err_body["messages"][2],
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "file not found", "is_error": true}]
+            })
+        );
+
+        // Success twin (omits is_error)
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_body = converse_request_body(&request(), &ok_messages, &tools, "model");
+        assert_eq!(
+            ok_body["messages"][2],
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": "sunny"}]
+            })
+        );
+        assert!(
+            ok_body["messages"][2]["content"][0]
+                .get("is_error")
+                .is_none()
+        );
+
+        // Collision twin (output is envelope JSON string, but is_error is false)
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_body =
+            converse_request_body(&request(), &collision_messages, &tools, "model");
+        assert_eq!(
+            collision_body["messages"][2],
+            json!({
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": "call-1", "content": collision_output}]
+            })
+        );
+        assert!(
+            collision_body["messages"][2]["content"][0]
+                .get("is_error")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type": "object"}),
+        }];
+        let calls = vec![
+            ConverseToolCall {
+                id: "call-1".into(),
+                name: "weather".into(),
+                arguments: json!({"city": "Denver"}),
+                not_offered: false,
+                thought_signature: None,
+            },
+            ConverseToolCall {
+                id: "call-2".into(),
+                name: "weather".into(),
+                arguments: json!({"city": "Boulder"}),
+                not_offered: false,
+                thought_signature: None,
+            },
+        ];
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: calls.clone(),
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let body = converse_request_body(&request(), &ordered, &tools, "model");
+        let messages = body["messages"].as_array().expect("messages");
+        assert_eq!(messages.len(), 6);
+        assert_eq!(messages[2]["content"][0]["type"], "tool_result");
+        assert_eq!(messages[2]["content"][0]["tool_use_id"], "call-1");
+        assert_eq!(messages[3]["content"][0]["type"], "tool_result");
+        assert_eq!(messages[3]["content"][0]["tool_use_id"], "call-2");
+        assert_eq!(
+            messages[4],
+            json!({"role":"user","content":[{"type":"text","text":"Resource budget warning"}]})
+        );
+        assert_eq!(
+            messages[5],
+            json!({"role":"user","content":[{"type":"text","text":"Turn budget warning"}]})
+        );
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_request_body(&request(), &early_nudge, &tools, "model");
+        assert_ne!(body["messages"], mutated["messages"]);
+        assert_eq!(mutated["messages"][3]["content"][0]["type"], "text");
+    }
+
+    #[test]
+    fn converse_responses_parse_turn_and_tool_shapes() {
         let offered = ["weather".to_owned()].into_iter().collect();
         let turn = parse_converse_response(&json!({
             "model":"model", "stop_reason":"tool_use",
@@ -1249,5 +1394,24 @@ mod tests {
         };
         assert_eq!(failure.reason_code, "provider_quota_exceeded");
         assert!(failure.blocking);
+    }
+
+    #[test]
+    fn unknown_model_and_auth_failures_classify_distinctly() {
+        // Shapes captured from the live Messages API.
+        assert_eq!(
+            classify_http_failure(
+                404,
+                r#"{"type":"error","error":{"type":"not_found_error","message":"model: solstone-key-check"}}"#
+            ),
+            "model_not_found"
+        );
+        assert_eq!(
+            classify_http_failure(
+                401,
+                r#"{"type":"error","error":{"type":"authentication_error","message":"API key is invalid."}}"#
+            ),
+            "provider_key_invalid"
+        );
     }
 }

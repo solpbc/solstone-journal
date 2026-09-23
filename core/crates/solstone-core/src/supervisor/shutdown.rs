@@ -414,6 +414,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         let (local, parakeet) = stopped_providers(journal.path());
         let mut app_processes = Vec::new();

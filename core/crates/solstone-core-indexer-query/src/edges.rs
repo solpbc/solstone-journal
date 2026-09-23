@@ -42,6 +42,16 @@ const HALF_LIFE_DAYS: f64 = 90.0;
 /// The complete stable ordering for pair evidence.
 pub(crate) const EVIDENCE_ORDER_SQL: &str = "ORDER BY day IS NULL ASC, day DESC,\n         ts IS NULL ASC, ts DESC,\n         path ASC, anchor IS NULL ASC, anchor ASC, rowid ASC";
 
+/// Maximum neighbors allowed in a network query.
+pub const NETWORK_NEIGHBOR_LIMIT_MAX: i64 = 100;
+/// Maximum evidence rows per neighbor in a network query.
+pub const NETWORK_EVIDENCE_LIMIT_MAX: i64 = 5;
+
+/// Format the out-of-range detail for network limits.
+pub fn network_bound_detail(name: &str, max: i64) -> String {
+    format!("{name} must be between 0 and {max}")
+}
+
 /// A caller-provided canonical entity type lookup. `None` is an ordinary missing type.
 pub type EntityTypeLookup<'a> = dyn Fn(&str) -> Option<String> + 'a;
 
@@ -252,6 +262,33 @@ pub fn open_edges_reader(journal: &Path) -> Result<Connection, EdgeQueryError> {
     Ok(connection)
 }
 
+fn consider_neighbor(retained: &mut Vec<NetworkNeighbor>, neighbor: NetworkNeighbor, limit: usize) {
+    if limit == 0 {
+        return;
+    }
+    if retained.len() < limit {
+        retained.push(neighbor);
+        return;
+    }
+    let (worst_idx, worst) = retained
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            a.score
+                .total_cmp(&b.score)
+                .then_with(|| b.entity_id.cmp(&a.entity_id))
+        })
+        .expect("retained is non-empty when limit > 0");
+    if neighbor
+        .score
+        .total_cmp(&worst.score)
+        .then_with(|| worst.entity_id.cmp(&neighbor.entity_id))
+        .is_gt()
+    {
+        retained[worst_idx] = neighbor;
+    }
+}
+
 /// Load one-hop neighbors. The caller supplies principal identity and attendance policy.
 pub fn load_entity_network(
     journal: &Path,
@@ -260,17 +297,45 @@ pub fn load_entity_network(
     principal_id: Option<&str>,
     attendance_kinds: &[&str],
 ) -> Result<NetworkResponse, EdgeQueryError> {
-    validate_nonnegative("limit", request.limit)?;
-    validate_nonnegative("evidence_limit", request.evidence_limit)?;
+    if !(0..=NETWORK_NEIGHBOR_LIMIT_MAX).contains(&request.limit) {
+        return Err(invalid(network_bound_detail(
+            "limit",
+            NETWORK_NEIGHBOR_LIMIT_MAX,
+        )));
+    }
+    if !(0..=NETWORK_EVIDENCE_LIMIT_MAX).contains(&request.evidence_limit) {
+        return Err(invalid(network_bound_detail(
+            "evidence_limit",
+            NETWORK_EVIDENCE_LIMIT_MAX,
+        )));
+    }
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
-    let rows = ranking_rows(&connection, entity_id, &ranking)?;
-    let names = load_peer_names(&connection, entity_id, &ranking)?;
-    let mut neighbors = BTreeMap::<String, NetworkNeighbor>::new();
-    for row in rows {
+    let neighbor_limit = request.limit as usize;
+    let mut retained = Vec::with_capacity(neighbor_limit);
+    let mut in_flight: Option<NetworkNeighbor> = None;
+    let mut total_neighbors = 0;
+
+    let finish_in_flight = |in_flight: &mut Option<NetworkNeighbor>,
+                            retained: &mut Vec<NetworkNeighbor>,
+                            total_neighbors: &mut usize| {
+        if let Some(mut neighbor) = in_flight.take() {
+            *total_neighbors += 1;
+            neighbor.evidence_class = evidence_class(&neighbor.kinds, attendance_kinds);
+            consider_neighbor(retained, neighbor, neighbor_limit);
+        }
+    };
+
+    for_each_ranking_row(&connection, entity_id, &ranking, |row| {
+        if in_flight
+            .as_ref()
+            .is_some_and(|current| current.entity_id != row.peer)
+        {
+            finish_in_flight(&mut in_flight, &mut retained, &mut total_neighbors);
+        }
         // This carries Python's three-clause rule. The subject cannot be its own
         // peer because ranking SQL already excludes it, but fidelity keeps the clause.
         if !request.include_principal
@@ -278,23 +343,21 @@ pub fn load_entity_network(
                 !principal.is_empty() && principal != entity_id && row.peer == principal
             })
         {
-            continue;
+            return Ok(());
         }
         let weighted = kind_weight(&row.kind, row.weight_sum, row.day.as_deref(), reference)?;
-        let neighbor = neighbors
-            .entry(row.peer.clone())
-            .or_insert_with(|| NetworkNeighbor {
-                entity_id: row.peer.clone(),
-                name: names.get(&row.peer).cloned(),
-                score: 0.0,
-                count: 0,
-                first_seen: None,
-                last_seen: None,
-                directed: DirectedCounts { out: 0, r#in: 0 },
-                kinds: BTreeMap::new(),
-                evidence: Vec::new(),
-                evidence_class: String::new(),
-            });
+        let neighbor = in_flight.get_or_insert_with(|| NetworkNeighbor {
+            entity_id: row.peer.clone(),
+            name: None,
+            score: 0.0,
+            count: 0,
+            first_seen: None,
+            last_seen: None,
+            directed: DirectedCounts { out: 0, r#in: 0 },
+            kinds: BTreeMap::new(),
+            evidence: Vec::new(),
+            evidence_class: String::new(),
+        });
         let kind = neighbor.kinds.entry(row.kind).or_insert(KindSummary {
             count: 0,
             weighted: 0.0,
@@ -306,19 +369,17 @@ pub fn load_entity_network(
         neighbor.directed.out += row.directed_out;
         neighbor.directed.r#in += row.directed_in;
         update_seen(&mut neighbor.first_seen, &mut neighbor.last_seen, row.day);
-    }
-    let mut ordered: Vec<_> = neighbors.into_values().collect();
-    ordered.sort_by(|a, b| {
+        Ok(())
+    })?;
+    finish_in_flight(&mut in_flight, &mut retained, &mut total_neighbors);
+
+    retained.sort_by(|a, b| {
         b.score
             .total_cmp(&a.score)
             .then_with(|| a.entity_id.cmp(&b.entity_id))
     });
-    for neighbor in &mut ordered {
-        neighbor.evidence_class = evidence_class(&neighbor.kinds, attendance_kinds);
-    }
-    let total_neighbors = ordered.len();
-    ordered.truncate(request.limit as usize);
-    for neighbor in &mut ordered {
+    for neighbor in &mut retained {
+        neighbor.name = load_peer_name(&connection, entity_id, &neighbor.entity_id, &ranking)?;
         // Network previews use the ranking cap; pair history below intentionally does not.
         neighbor.evidence = load_evidence_rows(
             &connection,
@@ -336,7 +397,7 @@ pub fn load_entity_network(
         limit: request.limit,
         evidence_limit: request.evidence_limit,
         total_neighbors,
-        neighbors: ordered,
+        neighbors: retained,
     })
 }
 
@@ -724,13 +785,15 @@ struct OverviewRow {
     count: i64,
     weight_sum: i64,
 }
-fn ranking_rows(
+fn for_each_ranking_row(
     connection: &Connection,
     entity_id: &str,
     filter: &FilterSql,
-) -> Result<Vec<RankingRow>, EdgeQueryError> {
+    mut visit: impl FnMut(RankingRow) -> Result<(), EdgeQueryError>,
+) -> Result<(), EdgeQueryError> {
+    // Peer rows must be contiguous because SQLite GROUP BY does not promise order.
     let sql = format!(
-        "SELECT\n  CASE WHEN src = ? THEN dst ELSE src END AS peer,\n  kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum,\n  SUM(CASE WHEN directed = 1 AND src = ? THEN 1 ELSE 0 END) AS directed_out,\n  SUM(CASE WHEN directed = 1 AND dst = ? THEN 1 ELSE 0 END) AS directed_in\nFROM edges\nWHERE (src = ? OR dst = ?)\n  AND (CASE WHEN src = ? THEN dst ELSE src END) != ? {}\nGROUP BY peer, kind, day",
+        "SELECT\n  CASE WHEN src = ? THEN dst ELSE src END AS peer,\n  kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum,\n  SUM(CASE WHEN directed = 1 AND src = ? THEN 1 ELSE 0 END) AS directed_out,\n  SUM(CASE WHEN directed = 1 AND dst = ? THEN 1 ELSE 0 END) AS directed_in\nFROM edges\nWHERE (src = ? OR dst = ?)\n  AND (CASE WHEN src = ? THEN dst ELSE src END) != ? {}\nGROUP BY peer, kind, day\nORDER BY peer",
         filter.sql
     );
     let mut params = vec![
@@ -759,8 +822,11 @@ fn ranking_rows(
             })
         })
         .map_err(|error| unavailable_db(connection, error))?;
-    rows.collect::<Result<_, _>>()
-        .map_err(|error| unavailable_db(connection, error))
+    for row in rows {
+        let ranking_row = row.map_err(|error| unavailable_db(connection, error))?;
+        visit(ranking_row)?;
+    }
+    Ok(())
 }
 fn load_evidence_rows(
     connection: &Connection,
@@ -827,40 +893,6 @@ fn load_peer_name(
         .query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
         .optional()
         .map_err(|error| unavailable_db(connection, error))
-}
-fn load_peer_names(
-    connection: &Connection,
-    entity_id: &str,
-    filter: &FilterSql,
-) -> Result<BTreeMap<String, String>, EdgeQueryError> {
-    let sql = format!(
-        "SELECT CASE WHEN src = ? THEN dst ELSE src END AS peer, CASE WHEN src = ? THEN dst_name ELSE src_name END AS peer_name, day, ts, path, anchor, rowid FROM edges WHERE (src = ? OR dst = ?) AND (CASE WHEN src = ? THEN dst ELSE src END) != ? {}\n  AND (CASE WHEN src = ? THEN dst_name ELSE src_name END) IS NOT NULL\nORDER BY peer ASC, day IS NULL ASC, day DESC, ts IS NULL ASC, ts DESC, path ASC, anchor IS NULL ASC, anchor ASC, rowid ASC",
-        filter.sql
-    );
-    let mut params = vec![
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-    ];
-    params.extend(filter.params.clone());
-    params.push(text(entity_id));
-    let mut statement = connection
-        .prepare(&sql)
-        .map_err(|error| unavailable_db(connection, error))?;
-    let rows = statement
-        .query_map(params_from_iter(params.iter()), |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })
-        .map_err(|error| unavailable_db(connection, error))?;
-    let mut names = BTreeMap::new();
-    for row in rows {
-        let (id, name) = row.map_err(|error| unavailable_db(connection, error))?;
-        names.entry(id).or_insert(name);
-    }
-    Ok(names)
 }
 fn load_endpoint_names(
     connection: &Connection,

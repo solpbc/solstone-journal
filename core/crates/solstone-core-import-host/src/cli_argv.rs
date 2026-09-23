@@ -37,6 +37,9 @@ use solstone_core_import::sync_plaud::{
 
 use crate::audio::{AudioImportRequest, import_audio};
 use crate::audio_publication::finish_audio_attempt;
+use crate::text_publication::{TextTerminalInput, finish_text_attempt};
+use solstone_core_import::metadata::{admit_running_attempt, refuse_if_live_running};
+use solstone_core_import::text::TextImportOutcome;
 
 /// Result of parsing and resolving one importer invocation.
 #[derive(Debug, Eq, PartialEq)]
@@ -311,15 +314,37 @@ fn run_text(
             1,
         );
     }
+    if let Some(error) = refuse_if_live_running(journal_path, timestamp.as_str(), "text") {
+        return failure("", &format!("{error}\n"), 1);
+    }
+    let started_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    // No source hint: `admit_running_attempt` persists one, the web start replays it as
+    // `--source <hint>`, and `resolve` refuses any name `RegistrySource` does not know --
+    // which has no text variant. The projection derives "text" from the publication's
+    // `import.text` stream prefix instead, so the hint buys nothing and would break restart.
+    let generation =
+        match admit_running_attempt(journal_path, timestamp.as_str(), started_at_ms, None) {
+            Ok(facts) => facts.generation,
+            Err(error) => return failure("", &format!("{error}\n"), 1),
+        };
     let day_dir = journal_path.join("chronicle").join(timestamp.day());
     if let Err(error) = fs::create_dir_all(&day_dir) {
+        let _ = finish_text_attempt(
+            journal_path,
+            timestamp.as_str(),
+            generation,
+            TextTerminalInput::Failed(&[]),
+        );
         return failure("", &format!("{error}\n"), 1);
     }
     // process_transcript's start_time is a transcript clock (`HH:MM:SS`), not
     // the stamp half (`HHMMSS`). Convert at this seam; do not teach the
     // transcript parser a second format.
     let clock = timestamp.clock();
-    match solstone_core_import::process_transcript(
+    let outcome = solstone_core_import::process_transcript(
         Path::new(media),
         &day_dir,
         &clock,
@@ -328,9 +353,20 @@ fn run_text(
         options.facet.as_deref(),
         options.setting.as_deref(),
         None,
-    ) {
-        Ok(created) => success(cli_render::generic_text_complete(created.len())),
-        Err(error) => failure("", &format!("{error}\n"), 1),
+    );
+    let input = match &outcome {
+        TextImportOutcome::Success(work) => TextTerminalInput::Success(&work.created),
+        TextImportOutcome::Failed { created, .. } => TextTerminalInput::Failed(&created.created),
+    };
+    let finish = finish_text_attempt(journal_path, timestamp.as_str(), generation, input);
+    if let Err(error) = finish {
+        return failure("", &format!("{error}\n"), 1);
+    }
+    match outcome {
+        TextImportOutcome::Success(work) => {
+            success(cli_render::generic_text_complete(work.created.len()))
+        }
+        TextImportOutcome::Failed { error, .. } => failure("", &format!("{error}\n"), 1),
     }
 }
 

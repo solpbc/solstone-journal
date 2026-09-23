@@ -194,6 +194,31 @@ async fn review_percent_encodes_each_exact_legacy_component_in_audio_urls() {
 }
 
 #[tokio::test]
+async fn review_routes_refuse_unsafe_source_components() {
+    let journal = support::build_populated_journal();
+    for route in ["review", "review-cli"] {
+        for source in [
+            "..",
+            "..%2Foutside",
+            "%2Foutside",
+            "%5Coutside",
+            "C%3Aoutside",
+            "%00",
+        ] {
+            let path = format!(
+                "/app/speakers/api/{route}/20260731/field/090000_300/{source}?stream_layout=named"
+            );
+            let (status, _, body) = request_json(router(journal.root().to_path_buf()), &path).await;
+            assert_eq!(status, 400, "{path}: {body}");
+            assert_eq!(
+                body["reason_code"], "invalid_request_value",
+                "{path}: {body}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn review_malformed_stream_layout_is_not_named() {
     let journal = support::build_populated_journal();
     let (status, _, body) = request_json(

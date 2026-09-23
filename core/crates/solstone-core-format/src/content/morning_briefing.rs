@@ -92,14 +92,34 @@ fn your_day(briefing: &JsonObject) -> String {
         if text.is_empty() {
             continue;
         }
-        let time = clean_value(item.get("time"));
-        if time.is_empty() {
+        let label = time_label(item);
+        if label.is_empty() {
             lines.push(format!("- {text}"));
         } else {
-            lines.push(format!("- **{time}** — {text}"));
+            lines.push(format!("- **{label}** — {text}"));
         }
     }
     lines.join("\n")
+}
+
+/// A `your_day` item's clock label. `start`/`end` replaced the single `time`
+/// field so an item with a real duration (an activity's source record
+/// already carries both) reads as a window rather than forcing the model to
+/// smuggle one into `text` as a range. `start == end` (or either one blank)
+/// collapses to a single point; `end` alone with no `start` is a shape no
+/// known producer emits, but it still reads as a point-in-time at `end`
+/// rather than being silently dropped -- the caller asked for exactly this
+/// reading regardless of which side is the one that's missing.
+fn time_label(item: &JsonObject) -> String {
+    let start = clean_value(item.get("start"));
+    let end = clean_value(item.get("end"));
+    match (start.is_empty(), end.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => start,
+        (true, false) => end,
+        (false, false) if start == end => start,
+        (false, false) => format!("{start}–{end}"),
+    }
 }
 
 fn string_items(value: Option<&Value>) -> String {
@@ -168,7 +188,7 @@ mod tests {
     #[test]
     fn renders_all_five_sections_and_agent_override() {
         let produced = render_one(
-            r#"{"metadata":{"coverage_preamble":"Built from test sources. No gaps."},"your_day":[{"time":"09:00","text":"Meet Sarah."}],"yesterday":["Shipped the formatter."],"needs_attention":[{"text":"Review the report.","source_id":"sol://20260327/default/090000_300"}],"forward_look":["Prepare for Monday."],"reading":[{"facet":"work","summary":"Newsletter summary."}]}"#,
+            r#"{"metadata":{"coverage_preamble":"Built from test sources. No gaps."},"your_day":[{"start":"09:00","end":"09:00","text":"Meet Sarah."}],"yesterday":["Shipped the formatter."],"needs_attention":[{"text":"Review the report.","source_id":"sol://20260327/default/090000_300"}],"forward_look":["Prepare for Monday."],"reading":[{"facet":"work","summary":"Newsletter summary."}]}"#,
         );
         assert_eq!(produced.agent_override.as_deref(), Some("morning_briefing"));
         assert_eq!(produced.chunks.len(), 1);
@@ -191,6 +211,39 @@ mod tests {
         assert!(rendered.contains("- Review the report."));
         assert!(rendered.contains("- Prepare for Monday."));
         assert!(rendered.contains("- **work** — Newsletter summary."));
+    }
+
+    #[test]
+    fn your_day_renders_a_real_window_as_a_range() {
+        let produced =
+            render_one(r#"{"your_day":[{"start":"13:00","end":"13:30","text":"Team sync."}]}"#);
+        let rendered = &produced.chunks[0].content;
+        assert!(rendered.contains("- **13:00–13:30** — Team sync."));
+    }
+
+    #[test]
+    fn your_day_end_only_reads_as_a_point_in_time_at_end() {
+        let produced =
+            render_one(r#"{"your_day":[{"start":"","end":"14:00","text":"Odd shape."}]}"#);
+        let rendered = &produced.chunks[0].content;
+        assert!(rendered.contains("- **14:00** — Odd shape."));
+    }
+
+    #[test]
+    fn your_day_start_only_reads_as_a_point_in_time_at_start() {
+        let produced =
+            render_one(r#"{"your_day":[{"start":"15:00","end":"","text":"Ordinary point."}]}"#);
+        let rendered = &produced.chunks[0].content;
+        assert!(rendered.contains("- **15:00** — Ordinary point."));
+    }
+
+    #[test]
+    fn your_day_no_time_renders_a_bare_line() {
+        let produced =
+            render_one(r#"{"your_day":[{"start":"","end":"","text":"No fixed time."}]}"#);
+        let rendered = &produced.chunks[0].content;
+        assert!(rendered.contains("- No fixed time."));
+        assert!(!rendered.contains("**"));
     }
 
     #[test]

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Map, Value, json};
 use solstone_core_system::lifecycle::HostedServiceParentRuntime;
@@ -33,6 +33,15 @@ use crate::work::{SegmentContext, SegmentKey, SegmentState, WorkItem};
 const PROVIDER_BLOCKED: i32 = 69;
 static HOSTED_CHILD_LAUNCH_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
+/// How long the live path keeps retrying a same-day admission that lost the
+/// sense-day lease to a repair batch, before giving up and reporting it.
+///
+/// Mirrors `solstone-core-think-cli`'s `SENSE_PHASE_TIMEOUT` (1800s): the
+/// system already tolerates a same-day `sense_batch` run holding this lease
+/// for that long, so the live retry window matches rather than inventing a
+/// second, smaller contract the repair batch can still outlast.
+const LIVE_DAY_LEASE_RETRY_BUDGET: Duration = Duration::from_secs(1_800);
+
 #[derive(Debug, Clone)]
 pub struct Outbound {
     pub tract: &'static str,
@@ -51,6 +60,17 @@ struct State {
     health: Health,
     stopping: bool,
     day_leases: HashMap<String, solstone_core_journal_io::FileLease>,
+    lease_deferred: Vec<LeaseDeferredAdmission>,
+}
+
+/// A live segment whose day-lease acquisition lost to a same-day repair
+/// batch. Retried from [`SenseDispatcher::retry_lease_deferred`] on every
+/// status tick until the lease frees up or `LIVE_DAY_LEASE_RETRY_BUDGET`
+/// elapses.
+struct LeaseDeferredAdmission {
+    context: SegmentContext,
+    paths: Vec<PathBuf>,
+    first_deferred_at: Instant,
 }
 
 /// Whether a completed Sense batch owns a stream-dirty transition.
@@ -307,6 +327,7 @@ impl SenseDispatcher {
             health: Health::default(),
             stopping: false,
             day_leases: HashMap::new(),
+            lease_deferred: Vec::new(),
         }));
         let tally = Arc::new(JobTally::new());
         let cleanups = Arc::new(Mutex::new(Vec::new()));
@@ -421,17 +442,6 @@ impl SenseDispatcher {
             batch,
             meta,
         };
-        let config = read_config(&self.journal);
-        let deferred = !batch && (processing_deferred(&config) || no_thinking_engine(&config));
-        let describe_workers = self
-            .batch
-            .describe_workers
-            .unwrap_or_else(|| resolve_concurrency(&config, "describe"));
-        let registry = default_registry(crate::config::describe_per_proc_jobs(
-            &config,
-            describe_workers,
-            &self.journal,
-        ));
         let dir = segment_dir(&self.journal, day, stream.as_deref(), segment);
         let paths: Vec<_> = files
             .iter()
@@ -455,7 +465,16 @@ impl SenseDispatcher {
                         state.day_leases.insert(context.key.day.clone(), lease);
                     }
                     Ok(None) | Err(_) => {
-                        // Contention with repair or unreadable: live skips admit for this day.
+                        // Contention with repair or unreadable: a same-day
+                        // repair batch (or another live instance) holds the
+                        // lease right now. Defer and retry on the next status
+                        // tick instead of dropping this capture — see
+                        // `retry_lease_deferred`.
+                        state.lease_deferred.push(LeaseDeferredAdmission {
+                            context: context.clone(),
+                            paths,
+                            first_deferred_at: Instant::now(),
+                        });
                         return;
                     }
                 }
@@ -464,6 +483,26 @@ impl SenseDispatcher {
                 .segments
                 .insert(context.key.clone(), SegmentState::new(context.clone()));
         }
+        self.admit_after_lease(context, paths);
+    }
+
+    /// Dispatch an admitted segment's files to their handlers. Called
+    /// immediately from [`Self::handle`] once the day lease is held, and
+    /// again from [`Self::retry_lease_deferred`] once a deferred admission
+    /// finally acquires it.
+    fn admit_after_lease(&self, context: SegmentContext, paths: Vec<PathBuf>) {
+        let config = read_config(&self.journal);
+        let deferred =
+            !context.batch && (processing_deferred(&config) || no_thinking_engine(&config));
+        let describe_workers = self
+            .batch
+            .describe_workers
+            .unwrap_or_else(|| resolve_concurrency(&config, "describe"));
+        let registry = default_registry(crate::config::describe_per_proc_jobs(
+            &config,
+            describe_workers,
+            &self.journal,
+        ));
         if deferred {
             self.emit_observed(
                 &context.key,
@@ -550,7 +589,97 @@ impl SenseDispatcher {
             self.tally.failure();
         }
     }
+
+    /// Retry every live segment still waiting on a contended sense-day lease.
+    ///
+    /// Runs on every status tick (every 5s; see `service.rs`). A repair
+    /// batch normally releases the lease within seconds to a couple of
+    /// minutes of finishing its scan, so this typically resolves on the next
+    /// tick or two; entries older than `LIVE_DAY_LEASE_RETRY_BUDGET` are
+    /// abandoned and reported instead of retried forever.
+    fn retry_lease_deferred(&self) {
+        let due = {
+            let mut state = self.state.lock().expect("sense state");
+            if state.lease_deferred.is_empty() {
+                return;
+            }
+            std::mem::take(&mut state.lease_deferred)
+        };
+        let mut still_pending = Vec::new();
+        for pending in due {
+            if pending.first_deferred_at.elapsed() >= LIVE_DAY_LEASE_RETRY_BUDGET {
+                self.abandon_lease_deferred(pending);
+                continue;
+            }
+            let acquired = {
+                let mut state = self.state.lock().expect("sense state");
+                if state.day_leases.contains_key(&pending.context.key.day) {
+                    true
+                } else {
+                    match crate::lease::acquire_sense_day_lease(
+                        &self.journal,
+                        &pending.context.key.day,
+                    ) {
+                        Ok(Some(lease)) => {
+                            state
+                                .day_leases
+                                .insert(pending.context.key.day.clone(), lease);
+                            true
+                        }
+                        Ok(None) | Err(_) => false,
+                    }
+                }
+            };
+            if !acquired {
+                still_pending.push(pending);
+                continue;
+            }
+            let already_admitted = {
+                let mut state = self.state.lock().expect("sense state");
+                if state.segments.contains_key(&pending.context.key) {
+                    true
+                } else {
+                    state.segments.insert(
+                        pending.context.key.clone(),
+                        SegmentState::new(pending.context.clone()),
+                    );
+                    false
+                }
+            };
+            if !already_admitted {
+                self.admit_after_lease(pending.context, pending.paths);
+            }
+        }
+        if !still_pending.is_empty() {
+            self.state
+                .lock()
+                .expect("sense state")
+                .lease_deferred
+                .extend(still_pending);
+        }
+    }
+
+    /// A deferred admission outlived `LIVE_DAY_LEASE_RETRY_BUDGET` without
+    /// ever acquiring the day lease. Report it instead of leaving it silent:
+    /// count it as a failure and emit an `observed` event carrying the
+    /// `lease_timeout` note, the same channel every other completion (and
+    /// the existing `deferred`/`no handlers` notes) already uses.
+    fn abandon_lease_deferred(&self, pending: LeaseDeferredAdmission) {
+        {
+            let mut state = self.state.lock().expect("sense state");
+            if !state.segments.contains_key(&pending.context.key) {
+                state.segments.insert(
+                    pending.context.key.clone(),
+                    SegmentState::new(pending.context.clone()),
+                );
+            }
+        }
+        self.tally.failure();
+        self.emit_observed(&pending.context.key, Some("lease_timeout"));
+    }
+
     pub fn status(&self) {
+        self.retry_lease_deferred();
         let mut state = self.state.lock().expect("sense state");
         if state.pending_files.is_empty() {
             state.health.success();
@@ -1226,6 +1355,115 @@ mod tests {
     }
 
     #[test]
+    fn deferred_live_admission_retries_and_completes_once_the_lease_frees_up() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let held = crate::lease::acquire_sense_day_lease(temp.path(), "20260812")
+            .expect("lease acquire")
+            .expect("lease is free");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/bin/nonexistent"),
+            }),
+            BatchContext::default(),
+            None,
+        );
+        let mut live = observing("stream1", "120000_1");
+        live.extra.insert("files".into(), json!([]));
+
+        // A same-day repair batch (or another live instance) already holds
+        // the lease: this reproduces the ja1r fresh-use gate failure, where
+        // the startup sense repair held today's lease while the gate's one
+        // capture landed.
+        dispatcher.handle(&live);
+        assert!(
+            receiver.try_recv().is_err(),
+            "a contended live segment must not admit synchronously"
+        );
+        assert_eq!(
+            dispatcher.state.lock().unwrap().lease_deferred.len(),
+            1,
+            "a contended live segment is deferred, not dropped"
+        );
+
+        // The repair batch finishes and releases the lease.
+        drop(held);
+
+        // The next status tick (every 5s in production) retries it.
+        dispatcher.status();
+        let event = receiver
+            .try_recv()
+            .expect("the deferred segment completes once the lease frees up");
+        assert_eq!(event.event, "observed");
+        assert_eq!(event.fields.get("segment"), Some(&json!("120000_1")));
+        assert!(
+            dispatcher.state.lock().unwrap().lease_deferred.is_empty(),
+            "a resolved retry must not stay queued"
+        );
+        assert!(dispatcher.stop_and_wait());
+    }
+
+    #[test]
+    fn deferred_live_admission_abandoned_after_the_retry_budget_reports_lease_timeout() {
+        let temp = tempfile::tempdir().expect("temp journal");
+        let (outbound, receiver) = mpsc::channel();
+        let dispatcher = SenseDispatcher::new_inner(
+            temp.path().to_path_buf(),
+            false,
+            false,
+            outbound,
+            Admission::new(Arc::new(SystemMemoryProbe)),
+            Err(DispatcherResolveError::Missing {
+                path: PathBuf::from("/bin/nonexistent"),
+            }),
+            BatchContext::default(),
+            None,
+        );
+        let context = SegmentContext {
+            key: SegmentKey {
+                day: "20260812".into(),
+                stream: Some("stream1".into()),
+                segment: "120000_1".into(),
+            },
+            cid: None,
+            source: None,
+            batch: false,
+            meta: None,
+        };
+        dispatcher
+            .state
+            .lock()
+            .unwrap()
+            .lease_deferred
+            .push(LeaseDeferredAdmission {
+                context,
+                paths: Vec::new(),
+                first_deferred_at: Instant::now()
+                    - (LIVE_DAY_LEASE_RETRY_BUDGET + Duration::from_secs(1)),
+            });
+
+        dispatcher.status();
+
+        let event = receiver
+            .try_recv()
+            .expect("an abandoned deferral is reported, not silently dropped");
+        assert_eq!(event.event, "observed");
+        assert_eq!(event.fields.get("segment"), Some(&json!("120000_1")));
+        assert_eq!(
+            dispatcher.tally.snapshot(),
+            (1, 1),
+            "an abandoned deferral counts as a failure"
+        );
+        assert!(dispatcher.state.lock().unwrap().lease_deferred.is_empty());
+        assert!(dispatcher.stop_and_wait());
+    }
+
+    #[test]
     fn stop_and_wait_reports_a_panicked_worker() {
         let temp = tempfile::tempdir().expect("temp journal");
         let (outbound, _receiver) = mpsc::channel();
@@ -1416,6 +1654,7 @@ mod tests {
             health: Health::default(),
             stopping: false,
             day_leases: HashMap::new(),
+            lease_deferred: Vec::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1485,6 +1724,7 @@ mod tests {
             health: Health::default(),
             stopping: false,
             day_leases: HashMap::new(),
+            lease_deferred: Vec::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1583,6 +1823,7 @@ mod tests {
             health: Health::default(),
             stopping: false,
             day_leases: HashMap::new(),
+            lease_deferred: Vec::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),
@@ -1631,6 +1872,7 @@ mod tests {
             health: Health::default(),
             stopping: false,
             day_leases: HashMap::new(),
+            lease_deferred: Vec::new(),
         }));
         let key = SegmentKey {
             day: "20260812".into(),

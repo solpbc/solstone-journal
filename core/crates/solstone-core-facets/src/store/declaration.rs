@@ -81,20 +81,11 @@ pub struct DeclaredFacetInventory {
 }
 
 impl DeclaredFacetInventory {
-    pub fn is_genuine_empty(&self) -> bool {
-        self.enabled.is_empty()
-            && self.muted.is_empty()
-            && self.malformed.is_empty()
-            && self.unreadable.is_empty()
-            && self.absent.is_empty()
-    }
-
-    pub fn is_all_muted(&self) -> bool {
-        !self.muted.is_empty()
-            && self.enabled.is_empty()
-            && self.malformed.is_empty()
-            && self.unreadable.is_empty()
-            && self.absent.is_empty()
+    /// A journal always keeps at least one enabled facet to route activity to. True when
+    /// it has none and nothing damaged that might be one — an unreadable or malformed
+    /// declaration is the owner's to repair, never a cue to add a facet beside it.
+    pub fn needs_default_facet(&self) -> bool {
+        self.enabled.is_empty() && self.malformed.is_empty() && self.unreadable.is_empty()
     }
 }
 
@@ -473,8 +464,7 @@ mod tests {
 
         // 1. Genuine empty (no facets dir yet)
         let empty_inv = observe_declared_facet_inventory(root.path()).unwrap();
-        assert!(empty_inv.is_genuine_empty());
-        assert!(!empty_inv.is_all_muted());
+        assert!(empty_inv.needs_default_facet());
 
         // Create facets/
         let facets_dir = root.path().join("facets");
@@ -482,7 +472,7 @@ mod tests {
 
         // Still genuine empty
         let empty_inv = observe_declared_facet_inventory(root.path()).unwrap();
-        assert!(empty_inv.is_genuine_empty());
+        assert!(empty_inv.needs_default_facet());
 
         // 2. All muted
         let work_dir = facets_dir.join("work");
@@ -494,8 +484,7 @@ mod tests {
         .unwrap();
 
         let muted_inv = observe_declared_facet_inventory(root.path()).unwrap();
-        assert!(!muted_inv.is_genuine_empty());
-        assert!(muted_inv.is_all_muted());
+        assert!(muted_inv.needs_default_facet());
         assert_eq!(muted_inv.muted, vec!["work"]);
         assert!(muted_inv.enabled.is_empty());
 
@@ -509,8 +498,7 @@ mod tests {
         .unwrap();
 
         let mixed_inv = observe_declared_facet_inventory(root.path()).unwrap();
-        assert!(!mixed_inv.is_genuine_empty());
-        assert!(!mixed_inv.is_all_muted());
+        assert!(!mixed_inv.needs_default_facet());
         assert_eq!(mixed_inv.enabled, vec!["personal"]);
         assert_eq!(mixed_inv.muted, vec!["work"]);
 

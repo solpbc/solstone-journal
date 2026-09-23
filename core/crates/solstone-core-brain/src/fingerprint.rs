@@ -516,16 +516,15 @@ fn active_config(config: &Map<String, Value>) -> (String, Option<String>) {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
-        // Retains the fallback order from the retired Python implementation
-        // (`solstone/think/models.py:148-156,176-180`).
-        .unwrap_or_else(|| match provider {
-            "google" => "gemini-3.5-flash".to_owned(),
-            "openai" => "gpt-5.4-mini".to_owned(),
-            "anthropic" => "claude-sonnet-4-6".to_owned(),
-            "local" => "local/qwen3.5-4b".to_owned(),
-            _ => String::new(),
+        // Only the bundled local model has a built-in default. A cloud provider
+        // with no owner-chosen model has no model: generation refuses it as
+        // `model_missing`, and the fingerprint must describe what is sent.
+        .or_else(|| match provider {
+            "local" => Some("local/qwen3.5-4b".to_owned()),
+            "anthropic" | "google" | "openai" => None,
+            _ => Some(String::new()),
         });
-    (provider.to_owned(), Some(model))
+    (provider.to_owned(), model)
 }
 
 struct LocalEndpoint {

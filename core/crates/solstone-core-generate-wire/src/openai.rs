@@ -22,7 +22,6 @@ use crate::{
 const OPENAI_API_KEY_ENV: &str = "OPENAI_API_KEY";
 const OPENAI_BASE_URL: &str = "https://api.openai.com";
 const OPENAI_RESPONSES_PATH: &str = "/v1/responses";
-const DEFAULT_MODEL: &str = "gpt-5.4-mini";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 const OPENAI_EFFORT_SUFFIXES: &[&str] = &["-none", "-low", "-medium", "-high", "-xhigh"];
 const CONTEXT_WINDOW_PATTERNS: &[&str] = &[
@@ -139,7 +138,9 @@ fn openai_converse_with<T: OpenAiTransport>(
     let Some(api_key) = configured_api_key(config) else {
         return converse_failure("provider_key_missing");
     };
-    let model = configured_model(config);
+    let Some(model) = crate::overrides::configured_model(config) else {
+        return converse_failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url(config, OPENAI_BASE_URL);
     let body = converse_request_body(request, messages, tools, &model);
     let response = match transport.post_json(
@@ -193,7 +194,9 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
     else {
         return failure("provider_key_missing");
     };
-    let model = crate::overrides::configured_model_with(config, DEFAULT_MODEL, env);
+    let Some(model) = crate::overrides::configured_model_with(config, env) else {
+        return failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url_with(config, OPENAI_BASE_URL, env);
     let body = request_body(request, &model);
     let response = match transport.post_json(
@@ -221,10 +224,6 @@ fn openai_generate_with_lookup<T: OpenAiTransport>(
 
 fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
     crate::overrides::configured_api_key(config, OPENAI_API_KEY_ENV)
-}
-
-fn configured_model(config: &Map<String, Value>) -> String {
-    crate::overrides::configured_model(config, DEFAULT_MODEL)
 }
 
 fn request_body(request: &GenerateRequest, model: &str) -> Value {
@@ -309,10 +308,11 @@ fn converse_request_body(
                 tool_call_id,
                 tool_name: _,
                 output,
+                is_error,
             } => input.push(json!({
                 "type": "function_call_output",
                 "call_id": tool_call_id,
-                "output": output,
+                "output": crate::converse::tool_result_envelope_string(*is_error, output),
             })),
         }
     }
@@ -605,12 +605,22 @@ fn normalize_finish_reason(body: &Value) -> String {
 fn classify_http_failure(status: u16, body: &str) -> &'static str {
     match status {
         401 => "provider_key_invalid",
+        _ if is_model_not_found(status, body) => "model_not_found",
         429 => "provider_quota_exceeded",
         400 if is_context_window_error(body) => "context_window_exceeded",
         400 => "provider_request_rejected",
         500..=599 => "provider_unavailable",
         _ => "provider_response_invalid",
     }
+}
+
+// OpenAI names an unknown model with an explicit error code; match that rather
+// than a status alone, since the status for it has differed between endpoints.
+fn is_model_not_found(status: u16, body: &str) -> bool {
+    status == 404
+        || serde_json::from_str::<Value>(body).is_ok_and(|body| {
+            body.pointer("/error/code").and_then(Value::as_str) == Some("model_not_found")
+        })
 }
 
 fn is_context_window_error(body: &str) -> bool {
@@ -739,9 +749,10 @@ mod tests {
             env.insert(OPENAI_API_KEY_ENV.into(), Value::String(key.into()));
         }
         let mut active = Map::new();
-        if let Some(model) = model {
-            active.insert("model".into(), Value::String(model.into()));
-        }
+        active.insert(
+            "model".into(),
+            Value::String(model.unwrap_or("gpt-test-model").into()),
+        );
         let mut providers = Map::new();
         providers.insert("active".into(), Value::Object(active));
         let mut config = Map::new();
@@ -779,6 +790,44 @@ mod tests {
 
     fn temp_journal() -> std::path::PathBuf {
         crate::validation::isolated_journal_dir("openai")
+    }
+
+    #[test]
+    fn unknown_model_and_auth_failures_classify_distinctly() {
+        let unknown_model = r#"{"error":{"message":"The requested model 'solstone-key-check' does not exist.","type":"invalid_request_error","param":"model","code":"model_not_found"}}"#;
+        assert_eq!(classify_http_failure(400, unknown_model), "model_not_found");
+        assert_eq!(classify_http_failure(404, unknown_model), "model_not_found");
+        // Shape captured from the live Responses API.
+        assert_eq!(
+            classify_http_failure(
+                401,
+                r#"{"error":{"message":"Incorrect API key provided: sk-invalid.","type":"invalid_request_error","code":"invalid_api_key","param":null}}"#
+            ),
+            "provider_key_invalid"
+        );
+        assert_eq!(
+            classify_http_failure(400, r#"{"error":{"code":"invalid_value"}}"#),
+            "provider_request_rejected"
+        );
+    }
+
+    #[test]
+    fn missing_model_is_refused_before_any_request() {
+        let mut config = config(Some("configured-secret"), None);
+        config["providers"]["active"]
+            .as_object_mut()
+            .expect("active is an object")
+            .remove("model");
+        let mut transport = StubTransport::default();
+        let result = openai_generate_with(&request(), &config, &mut transport);
+        assert_eq!(
+            result,
+            OpenAiResult::Failed(OpenAiFailure {
+                reason_code: Some("model_missing".into()),
+                detail: None,
+            })
+        );
+        assert!(transport.posts.is_empty());
     }
 
     #[test]
@@ -1289,6 +1338,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: "sunny".into(),
+                is_error: false,
             },
         ];
         let tools = vec![ConverseToolSpec {
@@ -1306,7 +1356,7 @@ mod tests {
                     {"role":"user","content":[{"type":"input_text","text":"ask"}]},
                     {"role":"assistant","content":[{"type":"output_text","text":"working"}]},
                     {"type":"function_call","call_id":"call-1","name":"weather","arguments":"{\"city\":\"Denver\"}"},
-                    {"type":"function_call_output","call_id":"call-1","output":"sunny"}
+                    {"type":"function_call_output","call_id":"call-1","output":"{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"}
                 ],
                 "tools":[{"type":"function","name":"weather","description":"weather","parameters":{"type":"object"}}]
             }))
@@ -1326,7 +1376,180 @@ mod tests {
                 "gpt"
             ))
         );
+    }
 
+    #[test]
+    fn openai_converse_encodes_error_and_success_and_collision_twins() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_body = converse_request_body(&request(), &err_messages, &tools, "gpt");
+        assert_eq!(
+            err_body["input"][4],
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"file not found\"}"
+            })
+        );
+
+        // Success twin
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_body = converse_request_body(&request(), &ok_messages, &tools, "gpt");
+        assert_eq!(
+            ok_body["input"][4],
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+            })
+        );
+
+        // Collision twin (output string equals envelope JSON, but outer is_error is false)
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_body = converse_request_body(&request(), &collision_messages, &tools, "gpt");
+        assert_eq!(
+            collision_body["input"][4],
+            json!({
+                "type": "function_call_output",
+                "call_id": "call-1",
+                "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"{\\\"schema\\\":\\\"solstone-tool-result-v1\\\",\\\"is_error\\\":true,\\\"output\\\":\\\"nested\\\"}\"}"
+            })
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![
+                    ConverseToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city":"Denver"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                    ConverseToolCall {
+                        id: "call-2".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city":"Boulder"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let body = converse_request_body(&request(), &ordered, &tools, "gpt");
+        let input = body["input"].as_array().expect("input");
+        assert_eq!(input[5]["type"], "function_call_output");
+        assert_eq!(input[5]["call_id"], "call-1");
+        assert_eq!(
+            input[5]["output"],
+            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+        );
+        assert_eq!(input[6]["type"], "function_call_output");
+        assert_eq!(input[6]["call_id"], "call-2");
+        assert_eq!(input[7]["role"], "user");
+        assert_eq!(input[7]["content"][0]["text"], "Resource budget warning");
+        assert_eq!(input[8]["role"], "user");
+        assert_eq!(input[8]["content"][0]["text"], "Turn budget warning");
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_request_body(&request(), &early_nudge, &tools, "gpt");
+        assert_ne!(body["input"], mutated["input"]);
+        assert_eq!(mutated["input"][6]["role"], "user");
+    }
+
+    #[test]
+    fn converse_responses_parse_turn_and_tool_shapes_after_envelope() {
         let offered = ["weather".to_owned()].into_iter().collect();
         let OpenAiConverseResult::Turn(turn) = parse_converse_response(&json!({
             "model":"gpt", "status":"completed", "usage":{"input_tokens":2,"output_tokens":3,"total_tokens":5,"output_tokens_details":{"reasoning_tokens":1}},

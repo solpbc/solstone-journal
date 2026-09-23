@@ -9,6 +9,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use solstone_core_convey_http::envelope::error_envelope;
+use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
 use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_journal_io::Removed;
@@ -28,9 +29,12 @@ pub(crate) async fn delete_source(
     RoutePath(source): RoutePath<String>,
     basis: Option<Extension<AccessBasis>>,
 ) -> Response {
-    let Some(Extension(AccessBasis::LinkedDevice { .. })) = basis else {
-        return linked_device_required();
+    let Some(Extension(basis)) = basis else {
+        return owner_access_required();
     };
+    if !require_access(&basis) {
+        return owner_access_required();
+    }
     if source != "location" {
         return error_envelope(
             "invalid_segment_or_stream",
@@ -60,11 +64,11 @@ pub(crate) async fn delete_source(
     Json(erase_location(&journal)).into_response()
 }
 
-fn linked_device_required() -> Response {
+fn owner_access_required() -> Response {
     error_envelope(
-        "linked_device_required",
-        "Linked device required",
-        "a linked device identity is required",
+        "owner_access_required",
+        "Owner access required",
+        "use the computer your journal runs on, or a paired device",
         StatusCode::FORBIDDEN,
     )
     .into_response()

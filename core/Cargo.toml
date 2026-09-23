@@ -139,7 +139,7 @@ exclude = ["crates/solstone-core-service-legacy-evidence"]
 resolver = "3"
 
 [workspace.package]
-version = "2.0.11"
+version = "2.0.14"
 edition = "2024"
 rust-version = "1.95"
 license = "AGPL-3.0-only"
@@ -149,6 +149,7 @@ unsafe_code = "forbid"
 
 [workspace.dependencies]
 # Windows journal installer callbacks; no automatic apply or owner runtime dependency.
+# Before changing this pin, review the RUSTSEC-2024-0388 compatibility exception in deny.toml.
 velopack = { version = "=1.2.0", default-features = false }
 solstone-core-cli = { path = "crates/solstone-core-cli" }
 solstone-core-check = { path = "crates/solstone-core-check" }

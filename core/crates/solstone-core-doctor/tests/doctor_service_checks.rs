@@ -360,6 +360,7 @@ fn run_poison_battery_child(root: &Path) {
             ("client_delivery_stall", Status::Skip),
             ("client_ingest_health", Status::Skip),
             ("device_day_listing", Status::Skip),
+            ("facet_routing", Status::Skip),
             ("client_transport_refusal", Status::Skip),
             ("orphan_segment_pdf", Status::Skip),
             ("launchd_stale_plist", Status::Skip),

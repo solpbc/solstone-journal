@@ -42,7 +42,35 @@ pub enum ConverseMessage {
         tool_call_id: String,
         tool_name: String,
         output: String,
+        is_error: bool,
     },
+}
+
+pub(crate) const TOOL_RESULT_SCHEMA: &str = "solstone-tool-result-v1";
+
+#[derive(serde::Serialize)]
+struct ToolResultEnvelope<'a> {
+    schema: &'static str,
+    is_error: bool,
+    output: &'a str,
+}
+
+pub(crate) fn tool_result_envelope_value(is_error: bool, output: &str) -> Value {
+    let envelope = ToolResultEnvelope {
+        schema: TOOL_RESULT_SCHEMA,
+        is_error,
+        output,
+    };
+    serde_json::to_value(envelope).expect("ToolResultEnvelope serializes to Value")
+}
+
+pub(crate) fn tool_result_envelope_string(is_error: bool, output: &str) -> String {
+    let envelope = ToolResultEnvelope {
+        schema: TOOL_RESULT_SCHEMA,
+        is_error,
+        output,
+    };
+    serde_json::to_string(&envelope).expect("ToolResultEnvelope serializes to String")
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -96,5 +124,19 @@ pub(crate) fn canonical_json(value: &Value) -> Value {
         }
         Value::Array(values) => Value::Array(values.iter().map(canonical_json).collect()),
         value => value.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tool_result_envelope_matches_handwritten_compact_literal() {
+        let serialized = tool_result_envelope_string(false, "sunny");
+        assert_eq!(
+            serialized,
+            r#"{"schema":"solstone-tool-result-v1","is_error":false,"output":"sunny"}"#
+        );
     }
 }

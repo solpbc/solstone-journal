@@ -25,6 +25,7 @@ use solstone_core_speaker_resolve::owner_contamination_screen::{
 use solstone_core_speaker_resolve::owner_provisional::OwnerTierReason;
 
 use crate::JournalRoot;
+use crate::speakers_source::is_safe_source_component;
 use solstone_core_speaker_resolve::segment_catalog::{
     SegmentLookup, catalog_journal, decode_required_stream_layout_value, lookup_segment,
 };
@@ -855,6 +856,9 @@ fn assign_fields(value: &Value) -> Result<Fields, Response> {
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     };
+    if !is_safe_source_component(source) {
+        return Err(invalid_source());
+    }
     if !valid_day(day) {
         return Err(invalid_day(
             "Use a valid day, stream, and segment, then pick a sentence.",
@@ -917,6 +921,9 @@ fn common_fields(value: &Value, correction: bool) -> Result<Fields, Response> {
             StatusCode::INTERNAL_SERVER_ERROR,
         ));
     };
+    if !is_safe_source_component(source) {
+        return Err(invalid_source());
+    }
     if !valid_day(day) {
         return Err(invalid_day("Invalid day format"));
     }
@@ -1174,6 +1181,14 @@ fn invalid_segment_or_stream(detail: &str) -> Response {
         "invalid_segment_or_stream",
         "that segment or stream couldn't be used.",
         detail,
+        StatusCode::BAD_REQUEST,
+    )
+}
+fn invalid_source() -> Response {
+    err(
+        "invalid_request_value",
+        "source name is invalid.",
+        "use one file name, without a path",
         StatusCode::BAD_REQUEST,
     )
 }

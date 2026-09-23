@@ -688,7 +688,7 @@ pub const MCP_HELP: &str = concat!(
     "  service               Run the MCP endpoint\n",
     "  status                Show MCP endpoint status\n",
     "  token                 Manage MCP bearer tokens\n",
-    "  pairing               Manage the local owner pairing code\n",
+    "  pairing               Manage the agent pairing code\n",
     "  oauth                 Manage registered OAuth clients\n",
     "  permission            Manage connection read permissions\n",
     "  activity              Show what connections asked for and how each request ended\n",

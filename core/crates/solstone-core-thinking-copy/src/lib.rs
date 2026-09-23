@@ -467,50 +467,26 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
             ),
             (
                 "model_heading",
-                CopyValue::String("pick the model your key uses"),
+                CopyValue::String("which model should your key use?"),
             ),
             (
                 "model_sub",
                 CopyValue::String(
-                    "three sizes from {provider}, or name one yourself. you can change this anytime.",
+                    "type the model id exactly as {provider} lists it. your journal checks it with {provider} before saving, and you can change it anytime.",
                 ),
             ),
-            (
-                "tier_blurb_top",
-                CopyValue::String("the most capable, for the heaviest thinking."),
-            ),
-            (
-                "tier_blurb_mid",
-                CopyValue::String("capable and quick. the middle of the range."),
-            ),
-            (
-                "tier_blurb_lite",
-                CopyValue::String(
-                    "light and quick. tuned for small models, so this one does the job well.",
-                ),
-            ),
-            ("tier_tag_suggested", CopyValue::String("suggested")),
-            ("tier_tag_current", CopyValue::String("current")),
-            (
-                "custom_toggle",
-                CopyValue::String("or name a specific model"),
-            ),
-            ("custom_label", CopyValue::String("model id")),
-            ("custom_check", CopyValue::String("check it")),
-            (
-                "custom_checking",
-                CopyValue::String("asking {provider} about {model}…"),
-            ),
-            (
-                "custom_ok",
-                CopyValue::String("✓ {model} answered, you can use it"),
-            ),
+            ("model_label", CopyValue::String("model id")),
             (
                 "custom_not_found",
-                CopyValue::String("{provider} doesn't offer \"{model}\" to this key."),
+                CopyValue::String(
+                    "{provider} doesn't offer \"{model}\" to this key. check the spelling, or try another model id.",
+                ),
             ),
-            ("model_save", CopyValue::String("use {label}")),
-            ("model_save_restore", CopyValue::String("remember {label}")),
+            ("model_save", CopyValue::String("use this model")),
+            (
+                "model_save_restore",
+                CopyValue::String("remember this model"),
+            ),
             (
                 "model_saving",
                 CopyValue::String("checking {model} with your key…"),

@@ -350,6 +350,17 @@ pub async fn run_hosted(
             reason: SupervisorBootRefusal::LegacyLogCleanup(error.to_string()),
         };
     }
+    // Segments route only to enabled facets; with none, nothing reaches the owner's
+    // activity lists. Not a boot refusal: talents already fail loudly on an
+    // unreadable inventory, and capture must keep running.
+    match solstone_core_facets::ensure_default_facet(journal) {
+        Ok(true) => log::info!(
+            "supervisor: no enabled facet; ensured '{}'",
+            solstone_core_facets::DEFAULT_FACET
+        ),
+        Ok(false) => {}
+        Err(error) => log::warn!("supervisor: could not ensure a default facet: {error}"),
+    }
     #[cfg(unix)]
     let lifecycle = match admission.activate() {
         Ok(lifecycle) => lifecycle,

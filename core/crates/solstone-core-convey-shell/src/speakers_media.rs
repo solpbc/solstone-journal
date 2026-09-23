@@ -352,3 +352,24 @@ fn real_path_non_strict(path: &Path) -> Option<PathBuf> {
     }
     Some(resolved)
 }
+
+#[cfg(all(test, unix))]
+mod tests {
+    use std::fs;
+    use std::os::unix::fs::symlink;
+
+    use super::safe_day_path;
+
+    #[test]
+    fn safe_day_path_refuses_a_symlink_that_escapes_the_journal() {
+        let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
+        let outside = tempfile::TempDir::new_in("/var/tmp").expect("outside root");
+        fs::write(outside.path().join("secret.flac"), b"secret").expect("outside file");
+        symlink(outside.path(), journal.path().join("speaker-media")).expect("symlink");
+
+        assert_eq!(
+            safe_day_path(journal.path(), "speaker-media/secret.flac"),
+            None
+        );
+    }
+}

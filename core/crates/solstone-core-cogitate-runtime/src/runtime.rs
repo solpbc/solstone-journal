@@ -6,7 +6,7 @@ use std::time::Instant;
 use solstone_core_generate_wire::{ConverseMessage, ConverseToolCall};
 
 use crate::config::RunInput;
-use crate::events::{EventSink, RuntimeEvent};
+use crate::events::{BudgetLadder, BudgetStage, EventSink, RuntimeEvent};
 use crate::ladders::{LadderEvent, ResourceLadder, TurnLadder};
 use crate::outcome::{
     RunOutcome, SOL_SLOT_REACQUIRE_FAILED, TOOL_BINDING_SETUP_FAILED, TailState, compose_tail,
@@ -146,9 +146,84 @@ pub fn run_cogitate(
             // max_turns.
             continue;
         }
-        // Whether the last call of this turn tripped the stuck detector for the first
-        // time in the run. The warning is sent after every result of the turn so
-        // results stay adjacent to the assistant message that requested them.
+        if is_final_tool(&turn.tool_calls[0], config.expects_emit_final) {
+            final_text = Some(final_tool_text(&turn.tool_calls[0]));
+            return terminal(
+                sink,
+                tail(&config, usage, final_text, false, &resources, &turns, false),
+            );
+        }
+        if started.elapsed() >= deadline {
+            return terminal(
+                sink,
+                tail(
+                    &config,
+                    usage,
+                    final_text.or(Some(turn.text.clone())),
+                    true,
+                    &resources,
+                    &turns,
+                    false,
+                ),
+            );
+        }
+        if resources.final_turn_armed
+            && let Some(event) = resources.check(
+                context_fraction(&config, &turn_usage),
+                finish_tool(config.expects_emit_final),
+            )
+        {
+            sink.emit(RuntimeEvent::BudgetEscalation {
+                ladder: event.ladder,
+                stage: event.stage,
+                message: None,
+                correlation_id: config.correlation_id.clone(),
+            });
+        }
+        if turns.final_turn_armed
+            && let Some(event) = turns.check(
+                &response.response_id,
+                config.max_turns,
+                finish_tool(config.expects_emit_final),
+            )
+        {
+            sink.emit(RuntimeEvent::BudgetEscalation {
+                ladder: event.ladder,
+                stage: event.stage,
+                message: None,
+                correlation_id: config.correlation_id.clone(),
+            });
+        }
+        if resources.force_stopped || turns.force_stopped {
+            return terminal(
+                sink,
+                tail(
+                    &config,
+                    usage,
+                    final_text.or(Some(turn.text.clone())),
+                    false,
+                    &resources,
+                    &turns,
+                    false,
+                ),
+            );
+        }
+
+        let mut held_ladder_events = Vec::new();
+        if let Some(event) = resources.check(
+            context_fraction(&config, &turn_usage),
+            finish_tool(config.expects_emit_final),
+        ) {
+            held_ladder_events.push(event);
+        }
+        if let Some(event) = turns.check(
+            &response.response_id,
+            config.max_turns,
+            finish_tool(config.expects_emit_final),
+        ) {
+            held_ladder_events.push(event);
+        }
+
         let mut tripped = false;
         let last_call = turn.tool_calls.len() - 1;
         for (index, call) in turn.tool_calls.iter().enumerate() {
@@ -167,45 +242,6 @@ pub fn run_cogitate(
                         usage,
                         final_text.or(Some(turn.text.clone())),
                         true,
-                        &resources,
-                        &turns,
-                        false,
-                    ),
-                );
-            }
-            if let Some(event) = resources.check(
-                context_fraction(&config, &turn_usage),
-                finish_tool(config.expects_emit_final),
-            ) {
-                send_ladder_event(
-                    &mut messages,
-                    &mut stuck,
-                    sink,
-                    &config.correlation_id,
-                    event,
-                );
-            }
-            if let Some(event) = turns.check(
-                &response.response_id,
-                config.max_turns,
-                finish_tool(config.expects_emit_final),
-            ) {
-                send_ladder_event(
-                    &mut messages,
-                    &mut stuck,
-                    sink,
-                    &config.correlation_id,
-                    event,
-                );
-            }
-            if resources.force_stopped || turns.force_stopped {
-                return terminal(
-                    sink,
-                    tail(
-                        &config,
-                        usage,
-                        final_text.or(Some(turn.text.clone())),
-                        false,
                         &resources,
                         &turns,
                         false,
@@ -242,6 +278,7 @@ pub fn run_cogitate(
                 tool_call_id: call.id.clone(),
                 tool_name: call.name.clone(),
                 output: execution.output.clone(),
+                is_error: execution.is_error,
             });
             stuck.push(HistoryEntry::Observation {
                 tool: call.name.clone(),
@@ -266,10 +303,6 @@ pub fn run_cogitate(
                 );
             }
             if stuck.is_stuck() {
-                // A trip before the last call of a turn cannot be answered without
-                // deciding what to do with the calls after it, so it ends the run
-                // as it always has. Turns of one call, the measured case, always
-                // reach the warning.
                 if stuck_warned || index != last_call {
                     return terminal(
                         sink,
@@ -287,18 +320,13 @@ pub fn run_cogitate(
                 tripped = true;
             }
         }
-        if resources.force_stopped || turns.force_stopped {
-            return terminal(
+        for event in held_ladder_events {
+            publish_ladder_nudge(
+                &mut messages,
+                &mut stuck,
                 sink,
-                tail(
-                    &config,
-                    usage,
-                    final_text.or(Some(turn.text)),
-                    false,
-                    &resources,
-                    &turns,
-                    false,
-                ),
+                &config.correlation_id,
+                event,
             );
         }
         if tripped {
@@ -313,23 +341,47 @@ pub fn run_cogitate(
     }
 }
 
-fn send_ladder_event(
+fn ladder_str(ladder: BudgetLadder) -> &'static str {
+    match ladder {
+        BudgetLadder::Resource => "resource",
+        BudgetLadder::Turn => "turn",
+    }
+}
+
+fn stage_str(stage: BudgetStage) -> &'static str {
+    match stage {
+        BudgetStage::Warning => "warning",
+        BudgetStage::FinalTurn => "final_turn",
+        BudgetStage::ForceStopped => "force_stopped",
+    }
+}
+
+fn publish_ladder_nudge(
     messages: &mut Vec<ConverseMessage>,
     stuck: &mut StuckDetector,
     sink: &mut dyn EventSink,
     correlation_id: &str,
     event: LadderEvent,
 ) {
+    let Some(message) = event.message else {
+        return;
+    };
+    messages.push(ConverseMessage::User {
+        text: message.clone(),
+    });
+    stuck.push(HistoryEntry::User);
     sink.emit(RuntimeEvent::BudgetEscalation {
         ladder: event.ladder,
         stage: event.stage,
-        message: event.message.clone(),
+        message: Some(message),
         correlation_id: correlation_id.to_owned(),
     });
-    if let Some(message) = event.message {
-        messages.push(ConverseMessage::User { text: message });
-        stuck.push(HistoryEntry::User);
-    }
+    log::warn!(
+        "nudged cid={} ladder={} stage={}",
+        correlation_id,
+        ladder_str(event.ladder),
+        stage_str(event.stage),
+    );
 }
 
 fn finish_tool(expects_emit_final: bool) -> &'static str {

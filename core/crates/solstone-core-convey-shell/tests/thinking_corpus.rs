@@ -73,35 +73,70 @@ fn corpus() -> Value {
         "../../../fixtures/convey_thinking_corpus.json"
     ))
     .expect("thinking corpus parses");
-    // Project only the retired pricing copy onto the frozen reference responses.
-    // All other copy, provider state, and refusal contracts remain captured pins.
+    // Project only retired surfaces onto the frozen reference responses: the
+    // pricing copy, and the built-in cloud model catalog with its picker copy
+    // (owners now type the model id). All other copy, provider state, and
+    // refusal contracts remain captured pins.
     for cases in corpus["phases"]
         .as_object_mut()
         .expect("phases")
         .values_mut()
     {
         for case in cases.as_array_mut().expect("phase cases") {
+            let mut projected = false;
+            for pointer in ["/json", "/json/providers"] {
+                if let Some(object) = case.pointer_mut(pointer).and_then(Value::as_object_mut) {
+                    projected |= object.remove("model_tiers").is_some();
+                }
+            }
             if let Some(setup) = case
                 .pointer_mut("/json/copy/byo_setup")
                 .and_then(Value::as_object_mut)
             {
-                setup.remove("custom_cost_note");
-                setup.insert(
-                    "tier_blurb_lite".into(),
-                    json!(
-                        "light and quick. tuned for small models, so this one does the job well."
-                    ),
-                );
-                setup.insert(
-                    "tier_blurb_top".into(),
-                    json!("the most capable, for the heaviest thinking."),
-                );
+                project_byo_setup_copy(setup);
+                projected = true;
+            }
+            if projected {
                 assert_eq!(case["body_sha256_basis"], "normalized-json");
                 case["body_sha256"] = json!(sha256(canonical_json(&case["json"]).as_bytes()));
             }
         }
     }
     corpus
+}
+
+fn project_byo_setup_copy(setup: &mut Map<String, Value>) {
+    for retired in [
+        "custom_cost_note",
+        "tier_blurb_top",
+        "tier_blurb_mid",
+        "tier_blurb_lite",
+        "tier_tag_suggested",
+        "tier_tag_current",
+        "custom_toggle",
+        "custom_label",
+        "custom_check",
+        "custom_checking",
+        "custom_ok",
+    ] {
+        setup.remove(retired);
+    }
+    for (key, value) in [
+        ("model_heading", "which model should your key use?"),
+        (
+            "model_sub",
+            "type the model id exactly as {provider} lists it. your journal checks it with {provider} before saving, and you can change it anytime.",
+        ),
+        ("model_label", "model id"),
+        ("model_save", "use this model"),
+        ("model_save_restore", "remember this model"),
+        (
+            "custom_not_found",
+            "{provider} doesn't offer \"{model}\" to this key. check the spelling, or try another model id.",
+        ),
+    ] {
+        setup.insert(key.into(), json!(value));
+    }
 }
 
 fn confidential() -> Value {
@@ -1336,7 +1371,7 @@ async fn confidential_operations_are_router_scoped_and_report_a_live_busy_operat
         first.clone(),
         "PUT",
         "/app/thinking/api/providers",
-        Some(&json!({"lane":"byo","provider":"openai"})),
+        Some(&json!({"lane":"byo","provider":"openai","model":"gpt-5"})),
     )
     .await;
     assert_eq!(updated.0, StatusCode::OK);

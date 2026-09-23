@@ -13,8 +13,9 @@ use solstone_core_indexer_store::db::{db_path, open_index};
 use crate::edges::EVIDENCE_ORDER_SQL;
 use crate::test_support::reserve_temp_path;
 use crate::{
-    EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NetworkOverviewRequest, NetworkRequest,
-    load_edge_evidence, load_entity_network, load_network_overview, open_edges_reader,
+    EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NETWORK_EVIDENCE_LIMIT_MAX,
+    NETWORK_NEIGHBOR_LIMIT_MAX, NetworkOverviewRequest, NetworkRequest, load_edge_evidence,
+    load_entity_network, load_network_overview, network_bound_detail, open_edges_reader,
 };
 
 const ATTENDANCE: &[&str] = &["attended-with", "co-present", "scheduled-with"];
@@ -28,6 +29,7 @@ struct SeedEdge<'a> {
     day: Option<&'a str>,
     src_name: Option<&'a str>,
     dst_name: Option<&'a str>,
+    facet: &'a str,
     path: &'a str,
     anchor: Option<&'a str>,
     ts: Option<i64>,
@@ -44,6 +46,7 @@ impl<'a> SeedEdge<'a> {
             day,
             src_name: None,
             dst_name: None,
+            facet: "work",
             path,
             anchor: None,
             ts: Some(1),
@@ -67,8 +70,8 @@ fn seed(name: &str, rows: &[SeedEdge<'_>]) -> PathBuf {
 fn insert_all(connection: &Connection, rows: &[SeedEdge<'_>]) {
     for row in rows {
         connection.execute(
-            "INSERT INTO edges(src,dst,kind,directed,src_name,dst_name,day,facet,source,path,anchor,label,ts,weight) VALUES(?,?,?,?,?,?,?,'work','test',?,?,?, ?, ?)",
-            params![row.src, row.dst, row.kind, row.directed, row.src_name, row.dst_name, row.day, row.path, row.anchor, row.path, row.ts, row.weight],
+            "INSERT INTO edges(src,dst,kind,directed,src_name,dst_name,day,facet,source,path,anchor,label,ts,weight) VALUES(?,?,?,?,?,?,?,?, 'test',?,?,?, ?, ?)",
+            params![row.src, row.dst, row.kind, row.directed, row.src_name, row.dst_name, row.day, row.facet, row.path, row.anchor, row.path, row.ts, row.weight],
         ).expect("seed edge");
     }
 }
@@ -486,7 +489,7 @@ fn filters_and_negative_pagination_are_invalid_before_query() {
     };
     match load_entity_network(&root, "a", &invalid_evidence_limit, None, ATTENDANCE) {
         Err(EdgeQueryError::InvalidRequestValue { detail }) => {
-            assert_eq!(detail, "evidence_limit must be >= 0");
+            assert_eq!(detail, "evidence_limit must be between 0 and 5");
         }
         result => panic!("expected invalid evidence limit, got {result:?}"),
     }
@@ -736,4 +739,379 @@ fn reader_opens_real_schema_without_creating_a_second_database() {
         1
     );
     cleanup(root);
+}
+
+#[test]
+fn network_limits_reject_before_the_index_is_opened() {
+    let root = root("network-limits-reject");
+    fs::create_dir(&root).expect("create dir");
+
+    let invalid_limit_neg = NetworkRequest {
+        limit: -1,
+        ..NetworkRequest::default()
+    };
+    match load_entity_network(&root, "a", &invalid_limit_neg, None, ATTENDANCE) {
+        Err(EdgeQueryError::InvalidRequestValue { detail }) => {
+            assert_eq!(
+                detail,
+                network_bound_detail("limit", NETWORK_NEIGHBOR_LIMIT_MAX)
+            );
+            assert_eq!(detail, "limit must be between 0 and 100");
+        }
+        result => panic!("expected invalid limit, got {result:?}"),
+    }
+
+    let invalid_limit_high = NetworkRequest {
+        limit: 101,
+        ..NetworkRequest::default()
+    };
+    match load_entity_network(&root, "a", &invalid_limit_high, None, ATTENDANCE) {
+        Err(EdgeQueryError::InvalidRequestValue { detail }) => {
+            assert_eq!(
+                detail,
+                network_bound_detail("limit", NETWORK_NEIGHBOR_LIMIT_MAX)
+            );
+            assert_eq!(detail, "limit must be between 0 and 100");
+        }
+        result => panic!("expected invalid limit, got {result:?}"),
+    }
+
+    let invalid_ev_neg = NetworkRequest {
+        evidence_limit: -1,
+        ..NetworkRequest::default()
+    };
+    match load_entity_network(&root, "a", &invalid_ev_neg, None, ATTENDANCE) {
+        Err(EdgeQueryError::InvalidRequestValue { detail }) => {
+            assert_eq!(
+                detail,
+                network_bound_detail("evidence_limit", NETWORK_EVIDENCE_LIMIT_MAX)
+            );
+            assert_eq!(detail, "evidence_limit must be between 0 and 5");
+        }
+        result => panic!("expected invalid evidence_limit, got {result:?}"),
+    }
+
+    let invalid_ev_high = NetworkRequest {
+        evidence_limit: 6,
+        ..NetworkRequest::default()
+    };
+    match load_entity_network(&root, "a", &invalid_ev_high, None, ATTENDANCE) {
+        Err(EdgeQueryError::InvalidRequestValue { detail }) => {
+            assert_eq!(
+                detail,
+                network_bound_detail("evidence_limit", NETWORK_EVIDENCE_LIMIT_MAX)
+            );
+            assert_eq!(detail, "evidence_limit must be between 0 and 5");
+        }
+        result => panic!("expected invalid evidence_limit, got {result:?}"),
+    }
+
+    // Inclusive ends pass validation and attempt to open the index, failing with EdgeIndexUnavailable
+    for limit in [0, 100] {
+        let req = NetworkRequest {
+            limit,
+            ..NetworkRequest::default()
+        };
+        assert!(matches!(
+            load_entity_network(&root, "a", &req, None, ATTENDANCE),
+            Err(EdgeQueryError::EdgeIndexUnavailable { .. })
+        ));
+    }
+    for evidence_limit in [0, 5] {
+        let req = NetworkRequest {
+            evidence_limit,
+            ..NetworkRequest::default()
+        };
+        assert!(matches!(
+            load_entity_network(&root, "a", &req, None, ATTENDANCE),
+            Err(EdgeQueryError::EdgeIndexUnavailable { .. })
+        ));
+    }
+
+    assert!(!solstone_core_indexer_store::db::db_path(&root).exists());
+    cleanup(root);
+}
+
+#[test]
+fn network_preview_caps_high_degree_and_zero_limit() {
+    let ids: Vec<String> = (0..=100).map(|n| format!("p{n:03}")).collect();
+    let mut rows: Vec<SeedEdge<'_>> = ids
+        .iter()
+        .map(|id| SeedEdge::new("self", id, "works-with", None, "p"))
+        .collect();
+    let mut prin = SeedEdge::new("self", "prin", "committed-to", None, "prin");
+    prin.weight = 100;
+    rows.push(prin);
+
+    let mut future = SeedEdge::new("self", "future", "works-with", Some("20270101"), "future");
+    future.weight = 100;
+    rows.push(future);
+
+    let root = seed("network-high-degree", &rows);
+
+    let req = NetworkRequest {
+        limit: 100,
+        evidence_limit: 1,
+        include_principal: false,
+        reference_day: Some("20260530".to_string()),
+        ..NetworkRequest::default()
+    };
+    let response = load_entity_network(&root, "self", &req, Some("prin"), ATTENDANCE).unwrap();
+    assert_eq!(response.total_neighbors, 101);
+    assert_eq!(response.neighbors.len(), 100);
+    for n in 0..100 {
+        assert_eq!(response.neighbors[n].entity_id, format!("p{n:03}"));
+    }
+    assert!(!response.neighbors.iter().any(|n| n.entity_id == "prin"));
+    assert!(!response.neighbors.iter().any(|n| n.entity_id == "future"));
+    assert_eq!(response.neighbors[0].score, response.neighbors[99].score);
+
+    let zero_req = NetworkRequest {
+        limit: 0,
+        evidence_limit: 0,
+        include_principal: false,
+        reference_day: Some("20260530".to_string()),
+        ..NetworkRequest::default()
+    };
+    let zero_resp =
+        load_entity_network(&root, "self", &zero_req, Some("prin"), ATTENDANCE).unwrap();
+    assert!(zero_resp.neighbors.is_empty());
+    assert_eq!(zero_resp.total_neighbors, 101);
+
+    cleanup(root);
+}
+
+#[test]
+fn network_preview_rank_filters_and_evidence_follow_the_request() {
+    // 1. Multi-group score beats a heavier single group.
+    {
+        let root = seed(
+            "score-groups",
+            &[
+                SeedEdge::new("self", "summed", "works-with", Some("20260530"), "s1"),
+                SeedEdge::new("self", "summed", "works-with", Some("20260501"), "s2"),
+                SeedEdge::new("self", "heavy", "committed-to", Some("20260530"), "h1"),
+            ],
+        );
+        let req = NetworkRequest {
+            limit: 1,
+            reference_day: Some("20260530".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp = load_entity_network(&root, "self", &req, None, ATTENDANCE).unwrap();
+        assert_eq!(resp.total_neighbors, 2);
+        assert_eq!(resp.neighbors.len(), 1);
+        let n = &resp.neighbors[0];
+        assert_eq!(n.entity_id, "summed");
+        assert_eq!(n.first_seen.as_deref(), Some("20260501"));
+        assert_eq!(n.last_seen.as_deref(), Some("20260530"));
+        let expected_score = 4.0 + 4.0 * (-29.0 * std::f64::consts::LN_2 / 90.0).exp();
+        assert!((n.score - expected_score).abs() < 1e-12);
+        cleanup(root);
+    }
+
+    // 2. Principal toggle.
+    {
+        let mut prin_edge = SeedEdge::new("self", "prin", "committed-to", Some("20260530"), "p");
+        prin_edge.weight = 10;
+        let root = seed(
+            "principal-toggle",
+            &[
+                prin_edge,
+                SeedEdge::new("self", "alpha", "works-with", Some("20260530"), "a"),
+                SeedEdge::new("self", "beta", "mentioned", Some("20260530"), "b"),
+            ],
+        );
+        let req_excl = NetworkRequest {
+            limit: 1,
+            include_principal: false,
+            reference_day: Some("20260530".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp_excl =
+            load_entity_network(&root, "self", &req_excl, Some("prin"), ATTENDANCE).unwrap();
+        assert_eq!(resp_excl.total_neighbors, 2);
+        assert_eq!(resp_excl.neighbors.len(), 1);
+        assert_eq!(resp_excl.neighbors[0].entity_id, "alpha");
+        assert!(!resp_excl.neighbors.iter().any(|n| n.entity_id == "prin"));
+
+        let req_incl = NetworkRequest {
+            limit: 1,
+            include_principal: true,
+            reference_day: Some("20260530".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp_incl =
+            load_entity_network(&root, "self", &req_incl, Some("prin"), ATTENDANCE).unwrap();
+        assert_eq!(resp_incl.total_neighbors, 3);
+        assert_eq!(resp_incl.neighbors.len(), 1);
+        assert_eq!(resp_incl.neighbors[0].entity_id, "prin");
+        cleanup(root);
+    }
+
+    // 3. Evidence window and name outside the cap.
+    {
+        let mut e1 = SeedEdge::new("self", "solo", "works-with", Some("20260501"), "e1");
+        e1.dst_name = Some("Canonical");
+        let root = seed(
+            "evidence-window",
+            &[
+                SeedEdge::new("self", "solo", "works-with", Some("20260506"), "e6"),
+                SeedEdge::new("self", "solo", "works-with", Some("20260505"), "e5"),
+                SeedEdge::new("self", "solo", "works-with", Some("20260504"), "e4"),
+                SeedEdge::new("self", "solo", "works-with", Some("20260503"), "e3"),
+                SeedEdge::new("self", "solo", "works-with", Some("20260502"), "e2"),
+                e1,
+            ],
+        );
+
+        let req5 = NetworkRequest {
+            evidence_limit: 5,
+            reference_day: Some("20260530".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp5 = load_entity_network(&root, "self", &req5, None, ATTENDANCE).unwrap();
+        assert_eq!(resp5.neighbors.len(), 1);
+        assert_eq!(resp5.neighbors[0].name.as_deref(), Some("Canonical"));
+        let paths5: Vec<_> = resp5.neighbors[0]
+            .evidence
+            .iter()
+            .map(|e| e.path.as_str())
+            .collect();
+        assert_eq!(paths5, vec!["e6", "e5", "e4", "e3", "e2"]);
+
+        let req1 = NetworkRequest {
+            evidence_limit: 1,
+            reference_day: Some("20260530".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp1 = load_entity_network(&root, "self", &req1, None, ATTENDANCE).unwrap();
+        assert_eq!(resp1.neighbors[0].name.as_deref(), Some("Canonical"));
+        let paths1: Vec<_> = resp1.neighbors[0]
+            .evidence
+            .iter()
+            .map(|e| e.path.as_str())
+            .collect();
+        assert_eq!(paths1, vec!["e6"]);
+
+        let req0 = NetworkRequest {
+            evidence_limit: 0,
+            reference_day: Some("20260530".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp0 = load_entity_network(&root, "self", &req0, None, ATTENDANCE).unwrap();
+        assert_eq!(resp0.neighbors[0].name.as_deref(), Some("Canonical"));
+        assert!(resp0.neighbors[0].evidence.is_empty());
+        cleanup(root);
+    }
+
+    // 4. Combined filters drop higher peers, and kept peer's name and evidence ignore non-matching rows.
+    {
+        let mut hi_future = SeedEdge::new(
+            "self",
+            "hi-future",
+            "works-with",
+            Some("20270101"),
+            "hi-future",
+        );
+        hi_future.weight = 100;
+        let mut hi_kind = SeedEdge::new(
+            "self",
+            "hi-kind",
+            "committed-to",
+            Some("20260510"),
+            "hi-kind",
+        );
+        hi_kind.weight = 100;
+        let mut hi_facet = SeedEdge::new(
+            "self",
+            "hi-facet",
+            "works-with",
+            Some("20260510"),
+            "hi-facet",
+        );
+        hi_facet.facet = "other";
+        hi_facet.weight = 100;
+        let mut hi_early = SeedEdge::new(
+            "self",
+            "hi-early",
+            "works-with",
+            Some("20260101"),
+            "hi-early",
+        );
+        hi_early.weight = 100;
+        let mut hi_late =
+            SeedEdge::new("self", "hi-late", "works-with", Some("20260615"), "hi-late");
+        hi_late.weight = 100;
+
+        let mut kept_match = SeedEdge::new("self", "kept", "works-with", Some("20260510"), "kept");
+        kept_match.dst_name = Some("Kept");
+        let mut kept_future = SeedEdge::new(
+            "self",
+            "kept",
+            "works-with",
+            Some("20270101"),
+            "kept-future",
+        );
+        kept_future.dst_name = Some("Future");
+        let mut kept_late =
+            SeedEdge::new("self", "kept", "works-with", Some("20260615"), "kept-late");
+        kept_late.dst_name = Some("AfterTo");
+        let mut kept_kind = SeedEdge::new(
+            "self",
+            "kept",
+            "attended-with",
+            Some("20260520"),
+            "kept-kind",
+        );
+        kept_kind.dst_name = Some("WrongKind");
+        let mut kept_facet =
+            SeedEdge::new("self", "kept", "works-with", Some("20260518"), "kept-facet");
+        kept_facet.facet = "other";
+        kept_facet.dst_name = Some("WrongFacet");
+        let mut kept_early =
+            SeedEdge::new("self", "kept", "works-with", Some("20260401"), "kept-early");
+        kept_early.dst_name = Some("BeforeFrom");
+
+        let root = seed(
+            "combined-filters",
+            &[
+                hi_future,
+                hi_kind,
+                hi_facet,
+                hi_early,
+                hi_late,
+                kept_match,
+                kept_future,
+                kept_late,
+                kept_kind,
+                kept_facet,
+                kept_early,
+            ],
+        );
+
+        let req = NetworkRequest {
+            filters: EdgeFilters {
+                kinds: Some(vec!["works-with".to_string()]),
+                facet: Some("work".to_string()),
+                day_from: Some("20260501".to_string()),
+                day_to: Some("20260530".to_string()),
+            },
+            limit: 25,
+            evidence_limit: 5,
+            reference_day: Some("20260620".to_string()),
+            ..NetworkRequest::default()
+        };
+        let resp = load_entity_network(&root, "self", &req, None, ATTENDANCE).unwrap();
+        assert_eq!(resp.total_neighbors, 1);
+        assert_eq!(resp.neighbors.len(), 1);
+        let neighbor = &resp.neighbors[0];
+        assert_eq!(neighbor.entity_id, "kept");
+        assert_eq!(neighbor.name.as_deref(), Some("Kept"));
+        let paths: Vec<_> = neighbor.evidence.iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths, vec!["kept"]);
+        let expected_score = 4.0 * (-41.0 * std::f64::consts::LN_2 / 90.0).exp();
+        assert!((neighbor.score - expected_score).abs() < 1e-12);
+        cleanup(root);
+    }
 }

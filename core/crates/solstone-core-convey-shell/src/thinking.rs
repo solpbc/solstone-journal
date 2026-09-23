@@ -1527,16 +1527,41 @@ mod tests {
             .iter()
             .find(|case| case["path"] == "/app/thinking/api/state")
             .expect("state case");
-        // Dollar estimates were retired after this capture; all other copy stays pinned.
+        // Dollar estimates and the built-in model picker were retired after this
+        // capture (owners now type the model id); all other copy stays pinned.
         let mut expected_copy = expected["json"]["copy"].clone();
-        expected_copy["byo_setup"]
-            .as_object_mut()
-            .unwrap()
-            .remove("custom_cost_note");
-        expected_copy["byo_setup"]["tier_blurb_top"] =
-            json!("the most capable, for the heaviest thinking.");
-        expected_copy["byo_setup"]["tier_blurb_lite"] =
-            json!("light and quick. tuned for small models, so this one does the job well.");
+        let setup = expected_copy["byo_setup"].as_object_mut().unwrap();
+        for retired in [
+            "custom_cost_note",
+            "tier_blurb_top",
+            "tier_blurb_mid",
+            "tier_blurb_lite",
+            "tier_tag_suggested",
+            "tier_tag_current",
+            "custom_toggle",
+            "custom_label",
+            "custom_check",
+            "custom_checking",
+            "custom_ok",
+        ] {
+            setup.remove(retired);
+        }
+        for (key, value) in [
+            ("model_heading", "which model should your key use?"),
+            (
+                "model_sub",
+                "type the model id exactly as {provider} lists it. your journal checks it with {provider} before saving, and you can change it anytime.",
+            ),
+            ("model_label", "model id"),
+            ("model_save", "use this model"),
+            ("model_save_restore", "remember this model"),
+            (
+                "custom_not_found",
+                "{provider} doesn't offer \"{model}\" to this key. check the spelling, or try another model id.",
+            ),
+        ] {
+            setup.insert(key.into(), json!(value));
+        }
         assert_eq!(body["copy"], expected_copy);
         let _ = fs::remove_dir_all(root);
     }

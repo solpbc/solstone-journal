@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Small, non-secret service posture projection for the local owner UI.
+//! Small, non-secret service posture projection for the owner UI.
 
 use std::path::Path;
 

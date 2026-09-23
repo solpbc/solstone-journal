@@ -6,6 +6,51 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- your journal now keeps at least one facet unmuted. when your journal starts with every facet muted, or with none, it unmutes Personal, or adds it if you don't have one. you can't mute or delete the last unmuted facet.
+- when you use your own provider key, you now type the model id yourself, exactly as your provider lists it. the short built-in list of models is gone, because it went out of date every time a provider released new models. your journal still checks the model with your provider before saving it.
+
+### Fixed
+
+- adding and renaming devices, using the journal's agents app and erasing location data worked only on the computer your journal runs on. they now work from any device you've paired, like your phone.
+- a recent update left most of what went into your journal under none of your facets, so it was missing from your activity lists, including today's. new additions again go under the unmuted facet that fits best. this release doesn't refile what already went in under no facet.
+- with your own Anthropic key, newer Claude models like Claude Sonnet 5 could turn away much of your journal's work, such as understanding screens and importing documents. your journal no longer sends the settings those models refuse, so they work again.
+- with your own Gemini key, some models, such as Gemini 3.1 Pro Preview and Gemini 3.5 Flash Lite, failed your journal's model check and couldn't be chosen. they can now.
+- when you add a key for a different provider, your journal now checks it with that provider, not the one you were already using.
+- a mistyped model id now tells you your provider doesn't offer it to your key, instead of showing a general error.
+- in rare cases, audio from right after your journal started could go untranscribed, with no warning shown. it's now transcribed once the app catches up on what it missed.
+
+## [2.0.14] - 2026-09-22
+
+### Fixed
+
+- your morning briefing works again when your journal uses the configured SGLang local-model service. the last update could stop every briefing before the model answered.
+- reading documents, understanding screens and writing stories no longer stop before the local model included with your journal can answer. the last update could send format rules that stopped this work before the model answered.
+- when a local-model service rejects the same daily request, your journal now waits until the next day before trying it again instead of repeatedly retrying it.
+
+## [2.0.13] - 2026-09-22
+
+### Added
+
+- agents can now read from your journal, once you turn it on. Claude, Codex, or any agent that speaks MCP can search and read your journal, within what you let it see: your whole journal, or only the facets you choose. it reads only, and can't add, change or delete anything. this is off by default; nothing is reachable until you turn it on, and you can turn it off any time.
+- turning it on gives your journal an address on the internet through solstone.me, a paid agent-connector service operated by sol pbc. the solstone.me relay passes the traffic along and can't read it: sol pbc can see that an agent connected to your journal, when, and how much passed, nothing inside. the address is public once it's issued, and stays public for good, even after you turn this off or ask sol pbc to delete everything it holds for you. it's an identifier, not your data: eight random characters with nothing of yours in it. every request an agent makes is recorded in your journal: what it asked and what it got or was refused.
+
+### Fixed
+
+- this is a security fix. a paired device could ask for a speaker recording using a path built to reach outside where your journal keeps them. it's now rejected before your journal reads anything, and naming or reviewing a speaker works the same as before.
+- on mac, the journal could silently stall backfilling a missed day, or finishing today's day, with no error shown. both now run reliably.
+- viewing an entity with a lot of connections in its network could stall or time out. it now loads reliably, with the same results as before.
+- your morning briefing could show a broken time for something that spans a range, like a meeting from 9 to 10; it now shows the real start and end. this also holds your own local model to the same format rules as every other provider, for your schedule and morning briefing.
+
+## [2.0.12] - 2026-09-21
+
+### Fixed
+
+- this is a security fix. on the computer your journal runs on, your journal's web app used to accept requests from other websites. it now only works at `localhost`, `127.0.0.1` or `[::1]`, and turns away a change sent to it by another website. `http://localhost:5015` and your paired devices work as before.
+- an import still in progress, unconfirmed, unavailable, or failed no longer says where it landed. completed imports still show where to find what they added, and image and document imports use the same source name in their detail and history views.
+- an audio import used to read as failed about an hour after you started it, even though the audio had already imported successfully. it now shows its real outcome, and the import history now names it "audio" instead of leaving it blank.
+
 ## [2.0.11] - 2026-09-20
 
 ### Added

@@ -460,6 +460,16 @@ mod tests {
                 };
                 match transition {
                     "replaced" => {
+                        // A journal keeps one enabled facet; the sibling lets "work" go.
+                        let _ = solstone_core_facets::create_facet(
+                            root.path(),
+                            "personal",
+                            "Personal",
+                            "",
+                            "",
+                            "",
+                            None,
+                        );
                         solstone_core_facets::delete_facet(root.path(), "work").unwrap();
                         solstone_core_facets::create_facet(
                             root.path(),
@@ -475,9 +485,29 @@ mod tests {
                         fs::write(&row_path, format!("{row}\n")).unwrap();
                     }
                     "deleted" => {
+                        // A journal keeps one enabled facet; the sibling lets "work" go.
+                        let _ = solstone_core_facets::create_facet(
+                            root.path(),
+                            "personal",
+                            "Personal",
+                            "",
+                            "",
+                            "",
+                            None,
+                        );
                         solstone_core_facets::delete_facet(root.path(), "work").unwrap();
                     }
                     "muted" => {
+                        // A journal keeps one enabled facet; the sibling lets "work" go.
+                        let _ = solstone_core_facets::create_facet(
+                            root.path(),
+                            "personal",
+                            "Personal",
+                            "",
+                            "",
+                            "",
+                            None,
+                        );
                         solstone_core_facets::set_facet_muted(root.path(), "work", true).unwrap();
                     }
                     "missing_row" => {
@@ -564,6 +594,9 @@ mod tests {
             write_output_if_configured(&prepared, &context, "stale")
         });
         rx.recv().unwrap();
+        // A journal keeps one enabled facet; the sibling lets "work" go.
+        let _ =
+            solstone_core_facets::create_facet(&journal, "personal", "Personal", "", "", "", None);
         solstone_core_facets::delete_facet(&journal, "work").unwrap();
         drop(guard);
         assert!(worker.join().unwrap().is_err());

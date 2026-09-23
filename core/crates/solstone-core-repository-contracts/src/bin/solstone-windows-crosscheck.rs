@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+use solstone_core_repository_contracts::ci::write_coverage_report;
 use solstone_core_repository_contracts::windows_crosscheck;
 use std::path::PathBuf;
 
@@ -22,5 +23,6 @@ fn run() -> Result<(), String> {
     }
     let repo =
         std::env::current_dir().map_err(|error| format!("read current directory: {error}"))?;
-    windows_crosscheck::run(&repo, &config)
+    let coverage = windows_crosscheck::run(&repo, &config)?;
+    write_coverage_report(&coverage)
 }

@@ -263,7 +263,11 @@ pub(crate) fn endpoint_generate_with<T: EndpointTransport>(
                 OverflowDecision::Budget if served_window.is_some() => {}
                 OverflowDecision::Budget => return failure("context_budget_exceeded"),
                 OverflowDecision::Contract => {
-                    return failure("local_endpoint_contract_failed");
+                    let rejection = terminal_request_rejection(&response.body);
+                    return EndpointResult::Failed(EndpointFailure {
+                        reason_code: Some("provider_request_rejected".to_owned()),
+                        detail: Some(rejection.detail.to_owned()),
+                    });
                 }
             }
             // Without a served window there is no client-side fitting to tighten:
@@ -464,7 +468,18 @@ pub(crate) fn endpoint_converse_with<T: EndpointTransport>(
                     converse_failure("context_window_exceeded")
                 }
                 OverflowDecision::Budget => converse_failure("context_budget_exceeded"),
-                OverflowDecision::Contract => converse_failure("local_endpoint_contract_failed"),
+                OverflowDecision::Contract => {
+                    let rejection = terminal_request_rejection(&response.body);
+                    let reason_code = "provider_request_rejected";
+                    let (retryable, blocking) =
+                        crate::converse::converse_failure_flags(reason_code);
+                    Err(ConverseFailure {
+                        reason_code: reason_code.to_owned(),
+                        retryable,
+                        blocking,
+                        detail: Some(rejection.detail.to_owned()),
+                    })
+                }
             };
         }
         response
@@ -670,7 +685,12 @@ fn converse_messages_to_value(messages: &[ConverseMessage]) -> Value {
                     tool_call_id,
                     tool_name: _,
                     output,
-                } => json!({"role": "tool", "tool_call_id": tool_call_id, "content": output}),
+                    is_error,
+                } => json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": crate::converse::tool_result_envelope_string(*is_error, output),
+                }),
             })
             .collect(),
     )
@@ -776,6 +796,56 @@ pub fn endpoint_overflow_decision(
     } else {
         OverflowDecision::Contract
     }
+}
+
+pub(crate) const REQUEST_REJECTED_DETAIL: &str = "the local endpoint rejected the request";
+pub(crate) const REQUEST_REJECTED_SCHEMA_DETAIL: &str =
+    "the local endpoint rejected the structured-output schema";
+pub(crate) const DIAGNOSTIC_CLASS_SCHEMA: &str = "structured_output_schema_rejection";
+pub(crate) const DIAGNOSTIC_CLASS_GENERIC: &str = "request_rejected";
+const SCHEMA_REJECTION_PREFIX: &str = "Failed to compile json grammar:";
+
+pub(crate) struct RequestRejection {
+    pub(crate) diagnostic_class: &'static str,
+    pub(crate) detail: &'static str,
+}
+
+pub(crate) fn terminal_request_rejection(body: &str) -> RequestRejection {
+    let rejection = if let Ok(Value::Object(map)) = serde_json::from_str::<Value>(body) {
+        let is_bad_request = map.get("type").and_then(Value::as_str) == Some("BadRequestError");
+        let is_400 = map.get("code").and_then(Value::as_u64) == Some(400);
+        let is_schema_prefix = map
+            .get("message")
+            .and_then(Value::as_str)
+            .is_some_and(|msg| msg.starts_with(SCHEMA_REJECTION_PREFIX));
+        if is_bad_request && is_400 && is_schema_prefix {
+            RequestRejection {
+                diagnostic_class: DIAGNOSTIC_CLASS_SCHEMA,
+                detail: REQUEST_REJECTED_SCHEMA_DETAIL,
+            }
+        } else {
+            RequestRejection {
+                diagnostic_class: DIAGNOSTIC_CLASS_GENERIC,
+                detail: REQUEST_REJECTED_DETAIL,
+            }
+        }
+    } else {
+        RequestRejection {
+            diagnostic_class: DIAGNOSTIC_CLASS_GENERIC,
+            detail: REQUEST_REJECTED_DETAIL,
+        }
+    };
+
+    log::warn!(
+        "{}",
+        serde_json::json!({
+            "status": 400,
+            "provider": "local",
+            "diagnostic_class": rejection.diagnostic_class,
+        })
+    );
+
+    rejection
 }
 
 impl EndpointRuntime {
@@ -966,6 +1036,7 @@ mod tests {
     use std::thread;
 
     use serde_json::json;
+    use solstone_core_generate::ReasonCodeValue;
 
     use super::*;
 
@@ -1077,6 +1148,48 @@ mod tests {
             }
             Err(EndpointTransportError::Other)
         }
+    }
+
+    struct TestLogger;
+    static LOGGER: TestLogger = TestLogger;
+    static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
+    static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+    static WARN_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    impl log::Log for TestLogger {
+        fn enabled(&self, metadata: &log::Metadata) -> bool {
+            metadata.level() <= log::Level::Warn
+        }
+        fn log(&self, record: &log::Record) {
+            if self.enabled(record.metadata())
+                && let Ok(mut logs) = LOGS
+                    .get_or_init(|| std::sync::Mutex::new(Vec::new()))
+                    .lock()
+            {
+                logs.push(record.args().to_string());
+            }
+        }
+        fn flush(&self) {}
+    }
+
+    fn install_warn_capture() -> std::sync::MutexGuard<'static, ()> {
+        let guard = WARN_TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        LOGGER_INIT.call_once(|| {
+            let _ = log::set_logger(&LOGGER);
+            log::set_max_level(log::LevelFilter::Warn);
+        });
+        LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+        guard
+    }
+
+    fn captured_warns() -> Vec<String> {
+        LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn endpoint(base_url: &str) -> ByoEndpoint {
@@ -1654,6 +1767,7 @@ mod tests {
 
     #[test]
     fn detailed_context_overflow_is_not_reposted_for_converse() {
+        let _guard = install_warn_capture();
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let overflow = "maximum context length of 1000 tokens: 600 tokens from the input messages and 400 tokens for the completion";
@@ -1679,11 +1793,17 @@ mod tests {
         assert_eq!(error.reason_code, "context_window_exceeded");
         assert_eq!(transport.posts.len(), 1);
         assert_eq!(transport.posts[0]["max_tokens"], 64);
+        for warn in captured_warns() {
+            if let Ok(v) = serde_json::from_str::<Value>(&warn) {
+                assert!(v.get("diagnostic_class").is_none());
+            }
+        }
         let _ = std::fs::remove_dir_all(journal);
     }
 
     #[test]
     fn too_small_completion_room_refits_input_for_generate() {
+        let _guard = install_warn_capture();
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let mut oversized = request(None);
@@ -1712,11 +1832,17 @@ mod tests {
         let first = transport.posts[0]["messages"].to_string().len();
         let second = transport.posts[1]["messages"].to_string().len();
         assert!(second < first);
+        for warn in captured_warns() {
+            if let Ok(v) = serde_json::from_str::<Value>(&warn) {
+                assert!(v.get("diagnostic_class").is_none());
+            }
+        }
         let _ = std::fs::remove_dir_all(journal);
     }
 
     #[test]
     fn contract_400s_are_not_retried() {
+        let _guard = install_warn_capture();
         let runtime = EndpointRuntime::default();
         let journal = journal_path();
         let mut transport = StubTransport {
@@ -1733,14 +1859,65 @@ mod tests {
                 &mut transport,
                 Instant::now(),
             ),
-            failure("local_endpoint_contract_failed")
+            EndpointResult::Failed(EndpointFailure {
+                reason_code: Some("provider_request_rejected".to_owned()),
+                detail: Some(REQUEST_REJECTED_DETAIL.to_owned()),
+            })
         );
         assert_eq!(transport.posts.len(), 1);
+        let warns = captured_warns();
+        assert_eq!(warns.len(), 1);
+        let warn_val: Value = serde_json::from_str(&warns[0]).unwrap();
+        assert_eq!(warn_val["status"], 400);
+        assert_eq!(warn_val["provider"], "local");
+        assert_eq!(warn_val["diagnostic_class"], DIAGNOSTIC_CLASS_GENERIC);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn unrecognized_non_context_400_is_provider_request_rejected() {
+        let _guard = install_warn_capture();
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(bad_request("unexpected endpoint response"))],
+            ..Default::default()
+        };
+        let result = endpoint_generate_with(
+            &request(None),
+            &journal,
+            &endpoint("http://endpoint"),
+            &served_window_config(),
+            &runtime,
+            &mut transport,
+            Instant::now(),
+        );
+        let EndpointResult::Failed(failure) = result else {
+            panic!("expected failed endpoint result, got {result:?}");
+        };
+        assert_eq!(
+            failure.reason_code,
+            Some("provider_request_rejected".to_owned())
+        );
+        assert_eq!(failure.detail, Some(REQUEST_REJECTED_DETAIL.to_owned()));
+        assert_eq!(transport.posts.len(), 1);
+
+        let refusal =
+            crate::refusal_for(&crate::LaneOutcome::EndpointFailure(failure), "local", None);
+        assert_eq!(
+            refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+            Some("provider_request_rejected")
+        );
+        assert!(refusal.retryable);
+        assert!(!refusal.blocking);
+        assert_eq!(refusal.detail, REQUEST_REJECTED_DETAIL);
+
         let _ = std::fs::remove_dir_all(journal);
     }
 
     #[test]
     fn credentials_are_threaded_and_provider_text_never_reaches_refusal_detail() {
+        let _guard = install_warn_capture();
         let credential = "endpoint-secret";
         for configured in [Some(credential), None] {
             let runtime = EndpointRuntime::default();
@@ -1781,12 +1958,16 @@ mod tests {
             ) else {
                 panic!("plain 400 must refuse");
             };
+            let warns = captured_warns();
+            for warn in &warns {
+                assert!(!warn.contains(credential));
+            }
             let refusal = crate::refusal_for(
                 &crate::LaneOutcome::EndpointFailure(failed.clone()),
                 "local",
                 None,
             );
-            assert_eq!(refusal.detail, crate::refusal::LIVE_PROVIDER_FAILURE_DETAIL);
+            assert_eq!(refusal.detail, REQUEST_REJECTED_DETAIL);
             assert!(!refusal.detail.contains(credential));
             assert_eq!(
                 transport.get_credentials,
@@ -1797,7 +1978,8 @@ mod tests {
                 vec![configured.map(str::to_owned), configured.map(str::to_owned)]
             );
             for body in &transport.posts {
-                assert!(!body.to_string().contains(credential));
+                let serialized = body.to_string();
+                assert!(!serialized.contains(credential));
             }
             assert!(!format!("{failed:?}").contains(credential));
             assert!(!format!("{refusal:?}").contains(credential));
@@ -1824,6 +2006,306 @@ mod tests {
             assert_eq!(files.len(), 1);
             let log = std::fs::read_to_string(&files[0]).expect("read token log");
             assert!(!log.contains(credential));
+            let _ = std::fs::remove_dir_all(journal);
+        }
+    }
+
+    #[test]
+    fn refusal_for_preserves_request_rejected_detail() {
+        for (detail, expected_detail) in [
+            (REQUEST_REJECTED_DETAIL, REQUEST_REJECTED_DETAIL),
+            (
+                REQUEST_REJECTED_SCHEMA_DETAIL,
+                REQUEST_REJECTED_SCHEMA_DETAIL,
+            ),
+        ] {
+            let failure = EndpointFailure {
+                reason_code: Some("provider_request_rejected".to_owned()),
+                detail: Some(detail.to_owned()),
+            };
+            let refusal =
+                crate::refusal_for(&crate::LaneOutcome::EndpointFailure(failure), "local", None);
+            assert_eq!(
+                refusal.reason_code.as_ref().map(ReasonCodeValue::as_wire),
+                Some("provider_request_rejected")
+            );
+            assert_eq!(refusal.detail, expected_detail);
+        }
+    }
+
+    #[test]
+    fn converse_contract_400_is_provider_request_rejected_with_detail_and_warning() {
+        let _guard = install_warn_capture();
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(bad_request("unexpected converse failure"))],
+            ..Default::default()
+        };
+        let request = request(None);
+        let messages = [];
+        let tools = [];
+        let config = served_window_config();
+        let endpoint = endpoint("http://endpoint");
+        let result = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request,
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                endpoint: &endpoint,
+                config: &config,
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        );
+        let Err(failure) = result else {
+            panic!("expected converse failure, got {result:?}");
+        };
+        assert_eq!(failure.reason_code, "provider_request_rejected");
+        assert!(failure.retryable);
+        assert!(!failure.blocking);
+        assert_eq!(failure.detail, Some(REQUEST_REJECTED_DETAIL.to_owned()));
+        assert_eq!(transport.posts.len(), 1);
+        let warns = captured_warns();
+        assert_eq!(warns.len(), 1);
+        let warn_val: Value = serde_json::from_str(&warns[0]).unwrap();
+        let obj = warn_val.as_object().unwrap();
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["diagnostic_class", "provider", "status"]);
+        assert_eq!(warn_val["status"], 400);
+        assert_eq!(warn_val["provider"], "local");
+        assert_eq!(warn_val["diagnostic_class"], DIAGNOSTIC_CLASS_GENERIC);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn endpoint_converse_confidential_contract_400_is_provider_request_rejected() {
+        let _guard = install_warn_capture();
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(bad_request(
+                "unexpected confidential converse rejection",
+            ))],
+            ..Default::default()
+        };
+        let request = request(None);
+        let messages = [];
+        let tools = [];
+        let config = served_window_config();
+        let mut endpoint = endpoint("http://endpoint");
+        endpoint.is_confidential = true;
+        let result = endpoint_converse_with(
+            EndpointConverseCall {
+                request: &request,
+                messages: &messages,
+                tools: &tools,
+                journal_path: &journal,
+                endpoint: &endpoint,
+                config: &config,
+                runtime: &runtime,
+            },
+            &mut transport,
+            Instant::now(),
+        );
+        let Err(failure) = result else {
+            panic!("expected converse failure, got {result:?}");
+        };
+        assert_eq!(failure.reason_code, "provider_request_rejected");
+        assert!(failure.retryable);
+        assert!(!failure.blocking);
+        assert_eq!(failure.detail, Some(REQUEST_REJECTED_DETAIL.to_owned()));
+        assert_eq!(transport.posts.len(), 1);
+        let warns = captured_warns();
+        assert_eq!(warns.len(), 1);
+        let warn_val: Value = serde_json::from_str(&warns[0]).unwrap();
+        let obj = warn_val.as_object().unwrap();
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["diagnostic_class", "provider", "status"]);
+        assert_eq!(warn_val["status"], 400);
+        assert_eq!(warn_val["provider"], "local");
+        assert_eq!(warn_val["diagnostic_class"], DIAGNOSTIC_CLASS_GENERIC);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn endpoint_generate_schema_400_sets_schema_diagnostic_and_detail() {
+        let _guard = install_warn_capture();
+        let runtime = EndpointRuntime::default();
+        let journal = journal_path();
+        let schema_body = json!({
+            "type": "BadRequestError",
+            "code": 400,
+            "message": "Failed to compile json grammar: syntax error in schema",
+        })
+        .to_string();
+        let mut transport = StubTransport {
+            post_script: vec![Ok(bad_request(&schema_body))],
+            ..Default::default()
+        };
+        let result = endpoint_generate_with(
+            &request(None),
+            &journal,
+            &endpoint("http://endpoint"),
+            &served_window_config(),
+            &runtime,
+            &mut transport,
+            Instant::now(),
+        );
+        let EndpointResult::Failed(failure) = result else {
+            panic!("expected endpoint failure, got {result:?}");
+        };
+        assert_eq!(
+            failure.reason_code,
+            Some("provider_request_rejected".to_owned())
+        );
+        assert_eq!(
+            failure.detail,
+            Some(REQUEST_REJECTED_SCHEMA_DETAIL.to_owned())
+        );
+        assert_eq!(transport.posts.len(), 1);
+        let warns = captured_warns();
+        assert_eq!(warns.len(), 1);
+        let warn_val: Value = serde_json::from_str(&warns[0]).unwrap();
+        let obj = warn_val.as_object().unwrap();
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort();
+        assert_eq!(keys, vec!["diagnostic_class", "provider", "status"]);
+        assert_eq!(warn_val["status"], 400);
+        assert_eq!(warn_val["provider"], "local");
+        assert_eq!(warn_val["diagnostic_class"], DIAGNOSTIC_CLASS_SCHEMA);
+        let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn endpoint_generate_schema_matrix_tests() {
+        const SENTINELS: &[&str] = &[
+            "SENTINEL_CRED_9f3a",
+            "SENTINEL_PROVIDER_e1d4",
+            "SENTINEL_OWNER_b7c2",
+        ];
+        let cases = [
+            (
+                json!({
+                    "type": "BadRequestError",
+                    "code": 400,
+                    "message": "Failed to compile json grammar: syntax error in schema",
+                })
+                .to_string(),
+                DIAGNOSTIC_CLASS_SCHEMA,
+                REQUEST_REJECTED_SCHEMA_DETAIL,
+            ),
+            (
+                json!({
+                    "type": "OtherError",
+                    "code": 400,
+                    "message": "Failed to compile json grammar: syntax error",
+                })
+                .to_string(),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+            (
+                json!({
+                    "type": "BadRequestError",
+                    "code": 500,
+                    "message": "Failed to compile json grammar: syntax error",
+                })
+                .to_string(),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+            (
+                json!({
+                    "type": "BadRequestError",
+                    "code": 400,
+                    "message": "Some other error",
+                })
+                .to_string(),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+            (
+                json!({
+                    "type": "BadRequestError",
+                    "code": "400",
+                    "message": "Failed to compile json grammar: syntax error",
+                })
+                .to_string(),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+            (
+                json!({
+                    "type": "BadRequestError",
+                    "code": 400,
+                    "message": "prefix Failed to compile json grammar: nope",
+                })
+                .to_string(),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+            (
+                format!(
+                    "The schema and grammar failed to compile due to {} and {} and {}",
+                    SENTINELS[0], SENTINELS[1], SENTINELS[2]
+                ),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+            (
+                "plain text error".to_owned(),
+                DIAGNOSTIC_CLASS_GENERIC,
+                REQUEST_REJECTED_DETAIL,
+            ),
+        ];
+
+        for (body, expected_diag, expected_detail) in cases {
+            let _guard = install_warn_capture();
+            let runtime = EndpointRuntime::default();
+            let journal = journal_path();
+            let mut transport = StubTransport {
+                post_script: vec![Ok(bad_request(&body))],
+                ..Default::default()
+            };
+            let result = endpoint_generate_with(
+                &request(None),
+                &journal,
+                &endpoint("http://endpoint"),
+                &served_window_config(),
+                &runtime,
+                &mut transport,
+                Instant::now(),
+            );
+            let EndpointResult::Failed(failure) = result else {
+                panic!("expected endpoint failure for body: {body}");
+            };
+            assert_eq!(
+                failure.reason_code,
+                Some("provider_request_rejected".to_owned())
+            );
+            assert_eq!(failure.detail, Some(expected_detail.to_owned()));
+            let warns = captured_warns();
+            assert_eq!(warns.len(), 1, "expected 1 warn for body: {body}");
+            let warn_val: Value = serde_json::from_str(&warns[0]).unwrap();
+            let obj = warn_val.as_object().unwrap();
+            let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+            keys.sort();
+            assert_eq!(keys, vec!["diagnostic_class", "provider", "status"]);
+            assert_eq!(warn_val["status"], 400);
+            assert_eq!(warn_val["provider"], "local");
+            assert_eq!(warn_val["diagnostic_class"], expected_diag);
+
+            if body.contains("SENTINEL") {
+                for sentinel in SENTINELS {
+                    assert!(!failure.detail.as_deref().unwrap_or("").contains(sentinel));
+                    assert!(!warns[0].contains(sentinel));
+                }
+            }
             let _ = std::fs::remove_dir_all(journal);
         }
     }
@@ -2146,6 +2628,7 @@ mod tests {
                     tool_call_id: "prior-call".into(),
                     tool_name: "weather".into(),
                     output: "sunny".into(),
+                    is_error: false,
                 },
             ];
             let mut transport = StubTransport {
@@ -2179,7 +2662,7 @@ mod tests {
                         "type": "function",
                         "function": {"name": "weather", "arguments": "{\"city\":\"Denver\"}"},
                     }]},
-                    {"role": "tool", "tool_call_id": "prior-call", "content": "sunny"},
+                    {"role": "tool", "tool_call_id": "prior-call", "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"},
                 ],
                 "tools": [{"type": "function", "function": {"name": "weather", "description": "weather", "parameters": {"type": "object"}}}],
                 "temperature": 0.2,
@@ -2216,6 +2699,7 @@ mod tests {
                 tool_call_id: id,
                 tool_name: "weather".into(),
                 output: "y".repeat(500),
+                is_error: false,
             });
         }
         messages.push(ConverseMessage::User {
@@ -2281,6 +2765,7 @@ mod tests {
                 tool_call_id: id,
                 tool_name: "weather".into(),
                 output: "y".repeat(650),
+                is_error: false,
             });
         }
         messages.push(ConverseMessage::User {
@@ -2354,6 +2839,7 @@ mod tests {
                 tool_call_id: "huge".into(),
                 tool_name: "weather".into(),
                 output: "y".repeat(20_000),
+                is_error: false,
             },
         ];
         let mut blocked = StubTransport::default();
@@ -2374,6 +2860,164 @@ mod tests {
         assert_eq!(error.reason_code, "context_budget_exceeded");
         assert!(blocked.posts.is_empty());
         let _ = std::fs::remove_dir_all(journal);
+    }
+
+    #[test]
+    fn endpoint_converse_encodes_error_and_success_and_collision_twins() {
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_val = converse_messages_to_value(&err_messages);
+        assert_eq!(
+            err_val[2],
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"file not found\"}"
+            })
+        );
+
+        // Success twin
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_val = converse_messages_to_value(&ok_messages);
+        assert_eq!(
+            ok_val[2],
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+            })
+        );
+
+        // Collision twin
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city": "Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_val = converse_messages_to_value(&collision_messages);
+        assert_eq!(
+            collision_val[2],
+            json!({
+                "role": "tool",
+                "tool_call_id": "call-1",
+                "content": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"{\\\"schema\\\":\\\"solstone-tool-result-v1\\\",\\\"is_error\\\":true,\\\"output\\\":\\\"nested\\\"}\"}"
+            })
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: String::new(),
+                tool_calls: vec![
+                    ConverseToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Denver"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                    ConverseToolCall {
+                        id: "call-2".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city": "Boulder"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let encoded = converse_messages_to_value(&ordered);
+        assert_eq!(encoded[2]["role"], "tool");
+        assert_eq!(encoded[2]["tool_call_id"], "call-1");
+        assert_eq!(
+            encoded[2]["content"],
+            "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":false,\"output\":\"sunny\"}"
+        );
+        assert_eq!(encoded[3]["role"], "tool");
+        assert_eq!(encoded[3]["tool_call_id"], "call-2");
+        assert_eq!(encoded[4]["role"], "user");
+        assert_eq!(encoded[4]["content"], "Resource budget warning");
+        assert_eq!(encoded[5]["role"], "user");
+        assert_eq!(encoded[5]["content"], "Turn budget warning");
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_messages_to_value(&early_nudge);
+        assert_ne!(encoded, mutated);
+        assert_eq!(mutated[3]["role"], "user");
     }
 
     #[test]

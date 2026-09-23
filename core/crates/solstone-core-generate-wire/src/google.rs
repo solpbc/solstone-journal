@@ -19,7 +19,6 @@ use crate::{
 
 const GOOGLE_API_KEY_ENV: &str = "GOOGLE_API_KEY";
 const GOOGLE_BASE_URL: &str = "https://generativelanguage.googleapis.com";
-const DEFAULT_MODEL: &str = "gemini-3.5-flash";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(120);
 // Google does not publish stable context-window error text, so this is the
 // same best-effort heuristic used by the other provider arms.
@@ -134,7 +133,9 @@ fn google_converse_with<T: GoogleTransport>(
     let Some(api_key) = configured_api_key(config) else {
         return converse_failure("provider_key_missing");
     };
-    let model = configured_model(config);
+    let Some(model) = crate::overrides::configured_model(config) else {
+        return converse_failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url(config, GOOGLE_BASE_URL);
     let path = format!("/v1beta/models/{model}:generateContent");
     let body = converse_request_body(request, messages, tools);
@@ -189,7 +190,9 @@ fn google_generate_with_lookup<T: GoogleTransport>(
     else {
         return failure("provider_key_missing");
     };
-    let model = crate::overrides::configured_model_with(config, DEFAULT_MODEL, env);
+    let Some(model) = crate::overrides::configured_model_with(config, env) else {
+        return failure("model_missing");
+    };
     let base_url = crate::overrides::configured_base_url_with(config, GOOGLE_BASE_URL, env);
     let path = format!("/v1beta/models/{model}:generateContent");
     let body = request_body(request, &model);
@@ -220,10 +223,13 @@ fn configured_api_key(config: &Map<String, Value>) -> Option<String> {
     crate::overrides::configured_api_key(config, GOOGLE_API_KEY_ENV)
 }
 
-fn configured_model(config: &Map<String, Value>) -> String {
-    crate::overrides::configured_model(config, DEFAULT_MODEL)
-}
-
+/// Build the smallest request every Gemini model accepts: contents, an output
+/// ceiling, an optional system instruction and the JSON response format.
+/// Sampling and thinking controls are deliberately never sent. Their accepted
+/// values differ by model generation (a zero thinking budget is refused by
+/// models that always think), so each model runs at its provider's own
+/// defaults. The request's thinking budget still widens `maxOutputTokens` so a
+/// model that thinks by default has room to answer.
 fn request_body(request: &GenerateRequest, _model: &str) -> Value {
     let parts = request
         .contents
@@ -238,7 +244,6 @@ fn request_body(request: &GenerateRequest, _model: &str) -> Value {
     let mut body = json!({
         "contents": [{"role": "user", "parts": parts}],
         "generationConfig": {
-            "temperature": request.temperature,
             "maxOutputTokens": generate_token_budget(
                 "google",
                 request.max_output_tokens,
@@ -248,9 +253,6 @@ fn request_body(request: &GenerateRequest, _model: &str) -> Value {
     });
     if let Some(system) = &request.system_instruction {
         body["systemInstruction"] = json!({"parts": [{"text": system}]});
-    }
-    if let Some(budget) = request.thinking_budget {
-        body["generationConfig"]["thinkingConfig"] = json!({"thinkingBudget": budget});
     }
     if let Some(schema) = prepare_provider_schema(request.json_schema.as_ref(), "google") {
         body["generationConfig"]["responseJsonSchema"] = schema;
@@ -313,12 +315,13 @@ fn converse_request_body(
                 tool_call_id,
                 tool_name,
                 output,
+                is_error,
             } => json!({
                 "role": "user",
                 "parts": [{"functionResponse": {
                     "id": tool_call_id,
                     "name": tool_name,
-                    "response": {"result": output},
+                    "response": crate::converse::tool_result_envelope_value(*is_error, output),
                 }}],
             }),
         })
@@ -331,7 +334,6 @@ fn converse_request_body(
             "parameters": gemini_schema(&tool.parameters),
         })).collect::<Vec<_>>() }],
         "generationConfig": {
-            "temperature": request.temperature,
             "maxOutputTokens": generate_token_budget(
                 "google",
                 request.max_output_tokens,
@@ -341,9 +343,6 @@ fn converse_request_body(
     });
     if let Some(system) = &request.system_instruction {
         body["systemInstruction"] = json!({"parts": [{"text": system}]});
-    }
-    if let Some(budget) = request.thinking_budget {
-        body["generationConfig"]["thinkingConfig"] = json!({"thinkingBudget": budget});
     }
     body
 }
@@ -602,6 +601,8 @@ fn normalize_finish_reason(candidate: &Value) -> String {
 fn classify_http_failure(status: u16, body: &str) -> &'static str {
     match status {
         401 | 403 => "provider_key_invalid",
+        400 if body.contains("API_KEY_INVALID") => "provider_key_invalid",
+        404 => "model_not_found",
         429 => "provider_quota_exceeded",
         400 if is_context_window_error(body) => "context_window_exceeded",
         // Bare Gemini INVALID_ARGUMENT errors reject the request, not its response.
@@ -746,9 +747,10 @@ mod tests {
             env.insert(GOOGLE_API_KEY_ENV.into(), Value::String(key.into()));
         }
         let mut active = Map::new();
-        if let Some(model) = model {
-            active.insert("model".into(), Value::String(model.into()));
-        }
+        active.insert(
+            "model".into(),
+            Value::String(model.unwrap_or("gemini-test-model").into()),
+        );
         let mut providers = Map::new();
         providers.insert("active".into(), Value::Object(active));
         let mut config = Map::new();
@@ -799,7 +801,7 @@ mod tests {
         let mut request = request();
         request.thinking_budget = Some(500);
         assert_eq!(
-            request_body(&request, DEFAULT_MODEL)["generationConfig"]["maxOutputTokens"],
+            request_body(&request, "gemini-test-model")["generationConfig"]["maxOutputTokens"],
             4_500
         );
     }
@@ -810,33 +812,39 @@ mod tests {
         request.max_output_tokens = 65_000;
         request.thinking_budget = Some(1_000);
         assert_eq!(
-            request_body(&request, DEFAULT_MODEL)["generationConfig"]["maxOutputTokens"],
+            request_body(&request, "gemini-test-model")["generationConfig"]["maxOutputTokens"],
             65_535
         );
     }
 
     #[test]
-    fn temperature_is_always_present_for_google() {
-        let mut request = request();
-        request.thinking_budget = Some(5_000);
-        assert_eq!(
-            request_body(&request, DEFAULT_MODEL)["generationConfig"]["temperature"],
-            json!(request.temperature)
-        );
+    fn request_never_sends_sampling_or_thinking_controls() {
+        for budget in [None, Some(0), Some(5_000)] {
+            let mut request = request();
+            request.thinking_budget = budget;
+            let config = &request_body(&request, "gemini-test-model")["generationConfig"];
+            assert!(config.get("temperature").is_none(), "budget {budget:?}");
+            assert!(config.get("thinkingConfig").is_none(), "budget {budget:?}");
+        }
     }
 
     #[test]
-    fn thinking_budget_uses_google_thinking_config_shape() {
-        for (budget, expected) in [
-            (Some(0), Some(json!({"thinkingBudget": 0}))),
-            (Some(5_000), Some(json!({"thinkingBudget": 5_000}))),
-            (None, None),
-        ] {
-            let mut request = request();
-            request.thinking_budget = budget;
-            let config = &request_body(&request, DEFAULT_MODEL)["generationConfig"];
-            assert_eq!(config.get("thinkingConfig"), expected.as_ref());
-        }
+    fn missing_model_is_refused_before_any_request() {
+        let mut config = config(Some("configured-secret"), None);
+        config["providers"]["active"]
+            .as_object_mut()
+            .expect("active is an object")
+            .remove("model");
+        let mut transport = StubTransport::default();
+        let result = google_generate_with(&request(), &config, &mut transport);
+        assert_eq!(
+            result,
+            GoogleResult::Failed(GoogleFailure {
+                reason_code: Some("model_missing".into()),
+                detail: None,
+            })
+        );
+        assert!(transport.posts.is_empty());
     }
 
     #[test]
@@ -853,7 +861,7 @@ mod tests {
             "items": {"type": "string", "maxLength": 2, "minimum": 0},
             "properties": {"nested": {"type": "string", "minLength": 1, "maximum": 3}},
         }));
-        let config = &request_body(&request, DEFAULT_MODEL)["generationConfig"];
+        let config = &request_body(&request, "gemini-test-model")["generationConfig"];
         let schema = &config["responseJsonSchema"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert!(schema.get("minLength").is_none());
@@ -872,7 +880,7 @@ mod tests {
     fn json_output_without_schema_uses_only_response_mime_type() {
         let mut request = request();
         request.json_output = true;
-        let config = &request_body(&request, DEFAULT_MODEL)["generationConfig"];
+        let config = &request_body(&request, "gemini-test-model")["generationConfig"];
         assert_eq!(config["responseMimeType"], "application/json");
         assert!(config.get("responseJsonSchema").is_none());
     }
@@ -894,7 +902,7 @@ mod tests {
         );
         assert_eq!(
             transport.paths,
-            vec!["/v1beta/models/gemini-3.5-flash:generateContent".to_owned()]
+            vec!["/v1beta/models/gemini-test-model:generateContent".to_owned()]
         );
         assert_eq!(transport.api_keys, vec!["configured-secret".to_owned()]);
     }
@@ -906,7 +914,7 @@ mod tests {
             mime_type: "image/png".into(),
             data: "encoded".into(),
         });
-        let body = request_body(&request, DEFAULT_MODEL);
+        let body = request_body(&request, "gemini-test-model");
         assert_eq!(body["contents"][0]["parts"][0], json!({"text": "hello"}));
         assert_eq!(
             body["contents"][0]["parts"][1],
@@ -1409,6 +1417,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: "sunny".into(),
+                is_error: false,
             },
         ];
         let tools = vec![ConverseToolSpec {
@@ -1423,10 +1432,10 @@ mod tests {
                 "contents":[
                     {"role":"user","parts":[{"text":"ask"}]},
                     {"role":"model","parts":[{"text":"working"},{"functionCall":{"id":"call-1","name":"weather","args":{"city":"Denver"}},"thoughtSignature":"sig-1"}]},
-                    {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"result":"sunny"}}}]}
+                    {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"schema":"solstone-tool-result-v1","is_error":false,"output":"sunny"}}}]}
                 ],
                 "tools":[{"functionDeclarations":[{"name":"weather","description":"weather","parameters":{"type":"object"}}]}],
-                "generationConfig":{"temperature":0.3,"maxOutputTokens":4000},
+                "generationConfig":{"maxOutputTokens":4000},
                 "systemInstruction":{"parts":[{"text":"system"}]}
             }))
         );
@@ -1455,6 +1464,7 @@ mod tests {
                 tool_call_id: "call-1".into(),
                 tool_name: "weather".into(),
                 output: "sunny".into(),
+                is_error: false,
             },
         ];
         let tools = vec![ConverseToolSpec {
@@ -1469,10 +1479,10 @@ mod tests {
                 "contents":[
                     {"role":"user","parts":[{"text":"ask"}]},
                     {"role":"model","parts":[{"text":"working"},{"functionCall":{"id":"call-1","name":"weather","args":{"city":"Denver"}}}]},
-                    {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"result":"sunny"}}}]}
+                    {"role":"user","parts":[{"functionResponse":{"id":"call-1","name":"weather","response":{"schema":"solstone-tool-result-v1","is_error":false,"output":"sunny"}}}]}
                 ],
                 "tools":[{"functionDeclarations":[{"name":"weather","description":"weather","parameters":{"type":"object"}}]}],
-                "generationConfig":{"temperature":0.3,"maxOutputTokens":4000},
+                "generationConfig":{"maxOutputTokens":4000},
                 "systemInstruction":{"parts":[{"text":"system"}]}
             }))
         );
@@ -1490,7 +1500,199 @@ mod tests {
                 &tools
             ))
         );
+    }
 
+    #[test]
+    fn google_converse_encodes_error_and_success_and_collision_twins() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+
+        // Error twin
+        let err_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "file not found".into(),
+                is_error: true,
+            },
+        ];
+        let err_body = converse_request_body(&request(), &err_messages, &tools);
+        assert_eq!(
+            err_body["contents"][2]["parts"][0],
+            json!({
+                "functionResponse": {
+                    "id": "call-1",
+                    "name": "weather",
+                    "response": {
+                        "schema": "solstone-tool-result-v1",
+                        "is_error": true,
+                        "output": "file not found"
+                    }
+                }
+            })
+        );
+
+        // Success twin
+        let ok_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+        ];
+        let ok_body = converse_request_body(&request(), &ok_messages, &tools);
+        assert_eq!(
+            ok_body["contents"][2]["parts"][0],
+            json!({
+                "functionResponse": {
+                    "id": "call-1",
+                    "name": "weather",
+                    "response": {
+                        "schema": "solstone-tool-result-v1",
+                        "is_error": false,
+                        "output": "sunny"
+                    }
+                }
+            })
+        );
+
+        // Collision twin (output string is envelope JSON, but outer is_error is false)
+        let collision_output =
+            r#"{"schema":"solstone-tool-result-v1","is_error":true,"output":"nested"}"#;
+        let collision_messages = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![ConverseToolCall {
+                    id: "call-1".into(),
+                    name: "weather".into(),
+                    arguments: json!({"city":"Denver"}),
+                    not_offered: false,
+                    thought_signature: None,
+                }],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: collision_output.into(),
+                is_error: false,
+            },
+        ];
+        let collision_body = converse_request_body(&request(), &collision_messages, &tools);
+        assert_eq!(
+            collision_body["contents"][2]["parts"][0],
+            json!({
+                "functionResponse": {
+                    "id": "call-1",
+                    "name": "weather",
+                    "response": {
+                        "schema": "solstone-tool-result-v1",
+                        "is_error": false,
+                        "output": "{\"schema\":\"solstone-tool-result-v1\",\"is_error\":true,\"output\":\"nested\"}"
+                    }
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn converse_keeps_results_together_then_resource_then_turn_nudges() {
+        let tools = vec![ConverseToolSpec {
+            name: "weather".into(),
+            description: "weather".into(),
+            parameters: json!({"type":"object"}),
+        }];
+        let ordered = vec![
+            ConverseMessage::User { text: "ask".into() },
+            ConverseMessage::Assistant {
+                text: "working".into(),
+                tool_calls: vec![
+                    ConverseToolCall {
+                        id: "call-1".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city":"Denver"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                    ConverseToolCall {
+                        id: "call-2".into(),
+                        name: "weather".into(),
+                        arguments: json!({"city":"Boulder"}),
+                        not_offered: false,
+                        thought_signature: None,
+                    },
+                ],
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-1".into(),
+                tool_name: "weather".into(),
+                output: "sunny".into(),
+                is_error: false,
+            },
+            ConverseMessage::ToolResult {
+                tool_call_id: "call-2".into(),
+                tool_name: "weather".into(),
+                output: "windy".into(),
+                is_error: false,
+            },
+            ConverseMessage::User {
+                text: "Resource budget warning".into(),
+            },
+            ConverseMessage::User {
+                text: "Turn budget warning".into(),
+            },
+        ];
+        let body = converse_request_body(&request(), &ordered, &tools);
+        let contents = body["contents"].as_array().expect("contents");
+        assert_eq!(contents.len(), 6);
+        assert_eq!(contents[2]["parts"][0]["functionResponse"]["id"], "call-1");
+        assert_eq!(contents[3]["parts"][0]["functionResponse"]["id"], "call-2");
+        assert!(
+            contents[2]["parts"][0]["functionResponse"]["response"]
+                .get("result")
+                .is_none()
+        );
+        assert_eq!(contents[4]["parts"][0]["text"], "Resource budget warning");
+        assert_eq!(contents[5]["parts"][0]["text"], "Turn budget warning");
+        let mut early_nudge = ordered.clone();
+        early_nudge.splice(3..3, [ordered[4].clone()]);
+        early_nudge.remove(5);
+        let mutated = converse_request_body(&request(), &early_nudge, &tools);
+        assert_ne!(body["contents"], mutated["contents"]);
+        assert_eq!(
+            mutated["contents"][3]["parts"][0]["text"],
+            "Resource budget warning"
+        );
+    }
+
+    #[test]
+    fn converse_responses_parse_turn_and_tool_shapes() {
         let offered = ["weather".to_owned()].into_iter().collect();
         let GoogleConverseResult::Turn(turn) = parse_converse_response(&json!({
             "modelVersion":"gemini", "usageMetadata":{"promptTokenCount":2,"candidatesTokenCount":3,"totalTokenCount":5,"thoughtsTokenCount":1},
@@ -1612,5 +1814,28 @@ mod tests {
         };
         assert_eq!(failure.reason_code, "provider_quota_exceeded");
         assert!(failure.blocking);
+    }
+
+    #[test]
+    fn unknown_model_and_auth_failures_classify_distinctly() {
+        assert_eq!(
+            classify_http_failure(
+                404,
+                r#"{"error":{"code":404,"message":"models/solstone-key-check is not found","status":"NOT_FOUND"}}"#
+            ),
+            "model_not_found"
+        );
+        // Shape captured from the live Gemini API.
+        assert_eq!(
+            classify_http_failure(
+                400,
+                r#"{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"API_KEY_INVALID"}]}}"#
+            ),
+            "provider_key_invalid"
+        );
+        assert_eq!(
+            classify_http_failure(400, r#"{"error":{"status":"INVALID_ARGUMENT"}}"#),
+            "provider_request_rejected"
+        );
     }
 }

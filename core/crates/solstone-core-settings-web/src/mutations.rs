@@ -361,14 +361,15 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
             json!({"title":"Muted Thing","description":"Muted Thing desc","color":"#334455","emoji":"🔇","consent":true}),
         ),
         (
-            "PUT",
-            "/app/settings/api/facet/muted-thing",
-            json!({"muted":true}),
-        ),
-        (
             "POST",
             "/app/settings/api/facet",
             json!({"title":"Work Life","description":"Work Life desc","color":"#334455","emoji":"💼","icon":"briefcase","consent":true}),
+        ),
+        // Muting waits for a second enabled facet: a journal keeps at least one on.
+        (
+            "PUT",
+            "/app/settings/api/facet/muted-thing",
+            json!({"muted":true}),
         ),
         (
             "POST",
@@ -423,6 +424,12 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
     let lifecycle = crate::test_support::phase_root("rich");
     let lifecycle_router = crate::test_support::shell_router(lifecycle.path());
     for (method, path, body) in [
+        // A journal keeps one enabled facet, so deleting "renamed" needs a sibling.
+        (
+            "POST",
+            "/app/settings/api/facet",
+            json!({"title":"Personal","consent":true}),
+        ),
         (
             "POST",
             "/app/settings/api/facet",

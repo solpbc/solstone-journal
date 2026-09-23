@@ -829,11 +829,43 @@ pub fn prepare_local_schema(schema: &Value) -> Value {
     prepared
 }
 
+// The pinned llama-server grammar builder accepts a repetition bound of 1,999
+// and rejects 2,000 with its sane-repetitions guard. Large canonical bounds
+// remain enforced after generation; omitting only the unsupported wire hint is
+// safer than either rejecting the entire request or silently lowering the
+// product contract.
+const LOCAL_SCHEMA_MAX_REPETITION_EXCLUSIVE: u64 = 2_000;
+
 fn prepare_schema_node(node: &mut Value) {
     match node {
         Value::Object(object) => {
-            for key in ["pattern", "minLength", "maxLength", "x-truncate"] {
-                object.remove(key);
+            // `x-truncate` is solstone's own post-hoc-truncation annotation (see
+            // solstone-core-generate-wire::schema_validation), not a JSON Schema
+            // keyword any provider's structured-output feature could act on; it
+            // is never safe to forward. `pattern`/`minLength`/`maxLength` used to
+            // be stripped here too, on the assumption the local llama-server
+            // couldn't honor them via grammar. Direct measurements against the
+            // pinned build (b10068, 571d0d540) show that it does enforce these
+            // constraints, except that either length bound is rejected at 2,000
+            // or above. Supported bounds therefore pass through, while larger
+            // canonical bounds remain enforced by response validation after the
+            // unsupported wire hint is omitted. The measured portable subset
+            // shared by bundled and endpoint grammar engines excludes bare
+            // `\d`/`\w`/`\s` regex
+            // shorthand, independently anchored alternatives, and empty
+            // alternation branches (write optional content as `^(X)?$`) -- see
+            // `shipped_talent_schemas_stay_in_the_portable_local_regex_subset`
+            // below for the cheap recurrence guard. Live grammar compilation
+            // remains a separate integration proof.
+            object.remove("x-truncate");
+            for key in ["minLength", "maxLength"] {
+                if object
+                    .get(key)
+                    .and_then(Value::as_u64)
+                    .is_some_and(|bound| bound >= LOCAL_SCHEMA_MAX_REPETITION_EXCLUSIVE)
+                {
+                    object.remove(key);
+                }
             }
             let array = matches!(object.get("type"), Some(Value::String(kind)) if kind == "array")
                 || matches!(object.get("type"), Some(Value::Array(kinds)) if kinds.iter().any(|kind| kind == "array"));
@@ -1825,8 +1857,250 @@ mod tests {
         );
         assert_eq!(
             serde_json::to_string(&schema_body).unwrap(),
-            r#"{"model":"served-model","messages":[{"role":"user","content":"schema"}],"temperature":0.5,"max_tokens":128,"stream":false,"chat_template_kwargs":{"enable_thinking":false},"top_p":0.8,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"response_format":{"type":"json_schema","json_schema":{"name":"local_schema","schema":{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"},"maxItems":192},"literal":{"const":{"pattern":"must-stay"}}}},"strict":true}}}"#
+            r#"{"model":"served-model","messages":[{"role":"user","content":"schema"}],"temperature":0.5,"max_tokens":128,"stream":false,"chat_template_kwargs":{"enable_thinking":false},"top_p":0.8,"top_k":20,"min_p":0.0,"presence_penalty":1.5,"response_format":{"type":"json_schema","json_schema":{"name":"local_schema","schema":{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string","pattern":"^[a-z]+$","minLength":2,"maxLength":10},"maxItems":192},"literal":{"const":{"pattern":"must-stay"}}}},"strict":true}}}"#
         );
+    }
+
+    // AC: measured directly against the pinned llama-server (b10068,
+    // 571d0d540) on fedora. Pattern and supported length bounds pass through;
+    // the server accepts 1,999 and rejects 2,000 for both minLength and
+    // maxLength, so larger canonical bounds stay exclusively in post-generation
+    // validation.
+    #[test]
+    fn prepare_local_schema_preserves_supported_bounds_and_omits_rejected_repetitions() {
+        let schema = json!({
+            "type": "object",
+            "properties": {
+                "time": {"type": "string", "pattern": "^(|([0-1][0-9]|2[0-3]):[0-5][0-9])$", "maxLength": 5},
+                "note": {"type": "string", "minLength": 1, "maxLength": 1999},
+                "large_minimum": {"type": "string", "minLength": 2000},
+                "large_maximum": {"type": "string", "maxLength": 3000}
+            }
+        });
+        let prepared = prepare_local_schema(&schema);
+        assert_eq!(
+            prepared["properties"]["time"]["pattern"],
+            schema["properties"]["time"]["pattern"]
+        );
+        assert_eq!(prepared["properties"]["time"]["maxLength"], 5);
+        assert_eq!(prepared["properties"]["note"]["minLength"], 1);
+        assert_eq!(prepared["properties"]["note"]["maxLength"], 1999);
+        assert_eq!(
+            prepared["properties"]["large_minimum"].get("minLength"),
+            None
+        );
+        assert_eq!(
+            prepared["properties"]["large_maximum"].get("maxLength"),
+            None
+        );
+    }
+
+    /// The two llama.cpp grammar limits measured 2026-09-21 against the pinned
+    /// build (b10068, 571d0d540) on a real GPU host, directly:
+    /// `\d`/`\w`/`\s` regex shorthand and a bare backslash-digit class make the
+    /// server return `400 failed to parse grammar` outright (reproduced on
+    /// `\d\d:\d\d` alone, no alternation involved); a `pattern` shaped as two
+    /// independently anchored branches joined by top-level alternation
+    /// (`^$|^X$`) parses but silently emits the literal `^`/`$` characters
+    /// instead of enforcing either branch (reproduced on `^$|^[0-9][0-9]:...$`
+    /// -- the model returned `{"time":"$"}`). Explicit `[0-9]`/`[^ )]` classes
+    /// measured clean, 8/8 and 3/3 samples respectively, including against an
+    /// adversarial "meeting from 1:00pm to 1:30pm" prompt that had been
+    /// reliably producing a time RANGE in production (`morning_briefing`'s
+    /// `your_day` items, found in live triage 2026-09-21).
+    ///
+    /// A second deployed grammar family, SGLang 0.5.14 with xgrammar 0.2.1,
+    /// rejects `^(|X)$` while compiling its EBNF (`Expect element, but got |`).
+    /// Both engines accept the equivalent `^(X)?$`. This scanner guards the
+    /// measured incompatible shapes; it does not claim to compile a provider
+    /// grammar. The ignored live-schema integration test supplies that proof.
+    ///
+    /// `pattern` now flows unmodified to the local provider (see
+    /// `prepare_schema_node` above), so a shipped schema carrying either shape
+    /// stops enforcing anything for real owners and, worse, may 400 every
+    /// local call that reaches it. This walks every shipped talent schema and
+    /// asserts neither shape recurs.
+    #[test]
+    fn shipped_talent_schemas_stay_in_the_portable_local_regex_subset() {
+        let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repository root")
+            .to_path_buf();
+        let mut schema_dirs = vec![repository_root.join("core/payload/solstone/talent")];
+        let apps_dir = repository_root.join("core/payload/solstone/apps");
+        if let Ok(entries) = std::fs::read_dir(&apps_dir) {
+            for entry in entries.flatten() {
+                let talent_dir = entry.path().join("talent");
+                if talent_dir.is_dir() {
+                    schema_dirs.push(talent_dir);
+                }
+            }
+        }
+        let mut schema_files = Vec::new();
+        for dir in &schema_dirs {
+            let Ok(entries) = std::fs::read_dir(dir) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|ext| ext.to_str()) == Some("json")
+                    && path
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".schema.json"))
+                {
+                    schema_files.push(path);
+                }
+            }
+        }
+        assert!(
+            schema_files.len() >= 3,
+            "expected to find the shipped talent schemas from repository root {}, found {}",
+            repository_root.display(),
+            schema_files.len()
+        );
+
+        let mut violations = Vec::new();
+        for path in &schema_files {
+            let contents = std::fs::read_to_string(path).expect("read schema file");
+            let schema: Value = serde_json::from_str(&contents).expect("schema is valid JSON");
+            collect_pattern_violations(&schema, &path.display().to_string(), &mut violations);
+        }
+        assert!(
+            violations.is_empty(),
+            "shipped talent schema pattern(s) outside the measured portable local grammar \
+             subset (see this test's doc comment for the engine matrix):\n{}",
+            violations.join("\n")
+        );
+    }
+
+    fn collect_pattern_violations(node: &Value, path: &str, violations: &mut Vec<String>) {
+        match node {
+            Value::Object(object) => {
+                if let Some(Value::String(pattern)) = object.get("pattern") {
+                    if pattern.contains("\\d")
+                        || pattern.contains("\\D")
+                        || pattern.contains("\\w")
+                        || pattern.contains("\\W")
+                        || pattern.contains("\\s")
+                        || pattern.contains("\\S")
+                    {
+                        violations.push(format!(
+                            "{path}: pattern {pattern:?} uses \\d/\\w/\\s regex shorthand -- \
+                             the local grammar engine only supports explicit character classes \
+                             (e.g. [0-9], not \\d)"
+                        ));
+                    }
+                    if pattern.contains("$|^") {
+                        violations.push(format!(
+                            "{path}: pattern {pattern:?} joins two independently anchored \
+                             branches with top-level alternation (`X$|^Y`) -- wrap the whole \
+                             alternation in one anchor pair instead (`^(X|Y)$`)"
+                        ));
+                    }
+                    if pattern.contains("(|") || pattern.contains("|)") {
+                        violations.push(format!(
+                            "{path}: pattern {pattern:?} contains an empty alternation branch -- \
+                             endpoint grammar engines reject that shape; express optional content \
+                             with a quantified non-empty group (`^(X)?$`)"
+                        ));
+                    }
+                }
+                for (key, value) in object {
+                    if key != "const" && key != "enum" {
+                        collect_pattern_violations(value, path, violations);
+                    }
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    collect_pattern_violations(value, path, violations);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn portable_subset_guard_rejects_each_measured_failure_shape() {
+        for pattern in [
+            r"^\d\d:\d\d$",
+            r"^$|^[0-9]+$",
+            r"^(|[0-9]+)$",
+            r"^([0-9]+|)$",
+        ] {
+            let schema = json!({"type": "string", "pattern": pattern});
+            let mut violations = Vec::new();
+            collect_pattern_violations(&schema, "fixture", &mut violations);
+            assert_eq!(
+                violations.len(),
+                1,
+                "the portable-subset guard must reject {pattern:?}: {violations:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn morning_briefing_optional_patterns_keep_their_language() {
+        let repository_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(3)
+            .expect("repository root");
+        let contents = std::fs::read_to_string(
+            repository_root.join("core/payload/solstone/talent/morning_briefing.schema.json"),
+        )
+        .expect("read morning briefing schema");
+        let schema: Value = serde_json::from_str(&contents).expect("schema is valid JSON");
+        let cases = [
+            (
+                "/properties/your_day/items/properties/start/pattern",
+                &["", "00:00", "23:59"][..],
+                &["24:00", "9:00", "12:60", " 12:00"][..],
+            ),
+            (
+                "/properties/your_day/items/properties/end/pattern",
+                &["", "00:00", "23:59"][..],
+                &["24:00", "9:00", "12:60", "12:00 "][..],
+            ),
+            (
+                "/properties/needs_attention/items/properties/source_id/pattern",
+                &["", "sol://facet/day/item"][..],
+                &[
+                    "http://facet/day/item",
+                    "sol://has space",
+                    "sol://ends)here",
+                ][..],
+            ),
+        ];
+        for (pointer, accepted, rejected) in &cases {
+            let pattern = schema
+                .pointer(pointer)
+                .and_then(Value::as_str)
+                .unwrap_or_else(|| panic!("missing pattern at {pointer}"));
+            let expression = regex::Regex::new(pattern).expect("shipped pattern compiles");
+            for value in *accepted {
+                assert!(
+                    expression.is_match(value),
+                    "{pointer} must accept {value:?} via {pattern:?}"
+                );
+            }
+            for value in *rejected {
+                assert!(
+                    !expression.is_match(value),
+                    "{pointer} must reject {value:?} via {pattern:?}"
+                );
+            }
+        }
+
+        let prepared = prepare_local_schema(&schema);
+        for (pointer, _, _) in &cases {
+            assert_eq!(
+                prepared.pointer(pointer),
+                schema.pointer(pointer),
+                "schema preparation must preserve {pointer}"
+            );
+        }
     }
 
     #[test]

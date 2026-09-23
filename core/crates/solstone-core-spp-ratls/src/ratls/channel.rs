@@ -348,6 +348,66 @@ pub fn send_json_request(
     })
 }
 
+/// Posts one qualification multipart transcription request over an already attested transport.
+///
+/// This is the qualification probe's transcription post, not the production ASR path.
+pub(crate) fn send_transcription_request(
+    stream: &mut dyn AttestedIo,
+    host: &str,
+    wav: &[u8],
+) -> Result<AttestedHttpResponse, AttestedHttpError> {
+    use ring::rand::SecureRandom;
+
+    let mut boundary_bytes = [0u8; 16];
+    ring::rand::SystemRandom::new()
+        .fill(&mut boundary_bytes)
+        .map_err(|_| AttestedHttpError::Protocol("transcription_entropy_failed"))?;
+    let boundary = format!(
+        "solstone-confidential-stt-{}",
+        boundary_bytes
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let mut body = Vec::new();
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.wav\"\r\nContent-Type: audio/wav\r\n\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(wav);
+    body.extend_from_slice(
+        format!(
+            "\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"response_format\"\r\n\r\nverbose_json\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(
+        format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"timestamp_granularities[]=word\"\r\n\r\nword\r\n"
+        )
+        .as_bytes(),
+    );
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+
+    let request = format!(
+        "POST /v1/audio/transcriptions HTTP/1.1\r\nHost: {host}\r\nContent-Type: multipart/form-data; boundary={boundary}\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+    stream
+        .write_all(request.as_bytes())
+        .and_then(|_| stream.write_all(&body))
+        .and_then(|_| stream.flush())
+        .map_err(AttestedHttpError::Transport)?;
+    let response = recv_bounded_http_response(stream).map_err(http_error)?;
+    let status = response_status(&response.status_line).map_err(AttestedHttpError::Protocol)?;
+    Ok(AttestedHttpResponse {
+        status,
+        body: response.body,
+    })
+}
+
 fn recv_proof_response(
     stream: &mut StreamOwned<ClientConnection, TcpStream>,
 ) -> Result<Vec<u8>, RatlsChannelError> {

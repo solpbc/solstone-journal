@@ -50,7 +50,7 @@ pub enum Carrier {
     ViaSpl,
 }
 
-/// The accept-time bases available to the HTTP substrate.
+/// Localhost and LinkedDevice are both the owner. The basis records which device is asking and is used for attribution, audit, labels, and a device's own registration. It never refuses or hides an owner action. Only PairingPeer is confined.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AccessBasis {
     Localhost,

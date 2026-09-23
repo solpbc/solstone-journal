@@ -28,9 +28,10 @@ use solstone_core_entity_matching::{
 use solstone_core_indexer::entity_search::json_truthy;
 use solstone_core_indexer_query::{
     EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, IndexAccessError, IndexDegraded,
-    NetworkOverviewRequest, NetworkRequest, Order, OwnerBoundary, QueryBoundary, SearchHit,
-    SearchRequest, coverage, indexed_entity_ids, is_safe_entity_id_component, load_edge_evidence,
-    load_entity_network, load_network_overview, search,
+    NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX, NetworkOverviewRequest, NetworkRequest,
+    Order, OwnerBoundary, QueryBoundary, SearchHit, SearchRequest, coverage, indexed_entity_ids,
+    is_safe_entity_id_component, load_edge_evidence, load_entity_network, load_network_overview,
+    network_bound_detail, search,
 };
 
 use crate::deferred_delete::DeferredDeleteRegistry;
@@ -4712,15 +4713,53 @@ fn index_plate_integer(
     }
 }
 
+fn parse_network_bound(
+    value: Option<&str>,
+    name: &str,
+    default: i64,
+    max: i64,
+) -> Result<i64, Box<Response>> {
+    let trimmed = match value.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => value,
+        None => return Ok(default),
+    };
+    let digits_part = trimmed
+        .strip_prefix('+')
+        .or_else(|| trimmed.strip_prefix('-'))
+        .unwrap_or(trimmed);
+    if digits_part.is_empty() || !digits_part.chars().all(|c| c.is_ascii_digit()) {
+        return Err(Box::new(refusal(
+            ReasonCode::InvalidRequestValue,
+            format!("{name} must be an integer"),
+        )));
+    }
+    match trimmed.parse::<i64>() {
+        Ok(parsed) if (0..=max).contains(&parsed) => Ok(parsed),
+        _ => Err(Box::new(refusal(
+            ReasonCode::InvalidRequestValue,
+            network_bound_detail(name, max),
+        ))),
+    }
+}
+
 fn validate_index_plate_pagination(
     route: IndexPlateRoute,
     query: &IndexPlateQuery,
 ) -> Result<(), Box<Response>> {
     match route {
         IndexPlateRoute::Network => {
-            let _limit = index_plate_integer(query.limit.as_deref(), "limit", 25)?;
-            let _evidence_limit =
-                index_plate_integer(query.evidence_limit.as_deref(), "evidence_limit", 5)?;
+            let _limit = parse_network_bound(
+                query.limit.as_deref(),
+                "limit",
+                25,
+                NETWORK_NEIGHBOR_LIMIT_MAX,
+            )?;
+            let _evidence_limit = parse_network_bound(
+                query.evidence_limit.as_deref(),
+                "evidence_limit",
+                5,
+                NETWORK_EVIDENCE_LIMIT_MAX,
+            )?;
         }
         IndexPlateRoute::History => {
             let _limit = index_plate_integer(query.limit.as_deref(), "limit", 50)?;

@@ -8,7 +8,7 @@ use std::time::Duration;
 use crate::context::{DispatchFailure, ThinkContext};
 use crate::dispatch::{
     DrainOutcome, ModeResult, PendingUse, dispatch_direct, drain_with_deadline_observed,
-    drain_with_failure_policy, merge_mode_result, runtime,
+    drain_with_failure_policy, merge_mode_result, runtime, use_log_failure_detail,
 };
 use crate::helpers;
 use crate::run_log::RunLogWriter;
@@ -1369,6 +1369,12 @@ fn log_use_terminal(
     // in for a reason it does not carry.
     if let Some(reason_code) = carried_cause {
         fields.insert("reason_code".to_owned(), Value::String(reason_code));
+        // Same gap as daily mode's log_daily_failure: reason_code alone drops whatever
+        // else the worker's terminal error carried (e.g. schema_validation's per-field
+        // violations).
+        if let Some(detail) = use_log_failure_detail(&context.journal, &item.use_id) {
+            fields.insert("detail".to_owned(), detail);
+        }
     }
     log.log(event, context.event_now_ms(), fields);
 }

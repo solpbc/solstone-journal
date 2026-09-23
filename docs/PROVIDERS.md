@@ -99,6 +99,18 @@ The configured logical provider remains `local`, so the same readiness and
 safety boundary applies without maintaining vendor-specific adapters. Native generate owns endpoint requests; the local lane adds governed admission
 around native cogitate execution.
 
+Bundled and configured local endpoints can use different JSON grammar engines.
+Shipped talent schemas therefore stay inside the measured regex subset shared
+by the pinned llama-server and the supported endpoint engine. The ordinary test
+suite checks the known incompatible shapes and schema semantics. Schema
+preparation also omits `minLength` or `maxLength` at 2,000 and above because the
+pinned llama-server rejects those repetition bounds; canonical response
+validation still enforces the original bound. These checks do not compile either
+provider grammar. For schema and preparation changes, run the
+ignored `live_schema_compatibility` test once against each engine. That probe
+first verifies the endpoint rejects a deliberately invalid pattern, then asks it
+to admit every shipped prepared schema without recording response bodies.
+
 ## Local Admission
 
 Bundled local and non-confidential arbitrary endpoints share the governed local

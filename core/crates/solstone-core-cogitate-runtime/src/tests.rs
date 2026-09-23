@@ -56,6 +56,7 @@ impl ConverseProvider for ScriptedProvider {
 struct ScriptedTools {
     executions: VecDeque<ToolExecution>,
     calls: Vec<String>,
+    execute_delay: Option<Duration>,
 }
 
 struct FailingLease;
@@ -76,6 +77,9 @@ impl ToolExecutor for ScriptedTools {
     }
     fn execute(&mut self, _config: &RunConfig, call: &ConverseToolCall) -> ToolExecution {
         self.calls.push(call.name.clone());
+        if let Some(delay) = self.execute_delay {
+            std::thread::sleep(delay);
+        }
         self.executions
             .pop_front()
             .unwrap_or_else(|| ToolExecution {
@@ -108,6 +112,15 @@ fn input(mut config: RunConfig) -> RunInput {
 }
 
 fn turn(text: &str, calls: Vec<ConverseToolCall>, usage: Value) -> ProviderResponse {
+    turn_with_id("response-1", text, calls, usage)
+}
+
+fn turn_with_id(
+    response_id: &str,
+    text: &str,
+    calls: Vec<ConverseToolCall>,
+    usage: Value,
+) -> ProviderResponse {
     ProviderResponse {
         turn: ConverseTurn {
             text: text.to_owned(),
@@ -117,8 +130,52 @@ fn turn(text: &str, calls: Vec<ConverseToolCall>, usage: Value) -> ProviderRespo
             model: "test".to_owned(),
             thinking: None,
         },
-        response_id: "response-1".to_owned(),
+        response_id: response_id.to_owned(),
     }
+}
+
+struct TestLogger;
+static LOGGER: TestLogger = TestLogger;
+static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
+static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+
+impl log::Log for TestLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+                .lock()
+                .expect("warn capture lock")
+                .push(record.args().to_string());
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static WARN_TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn install_warn_capture() -> std::sync::MutexGuard<'static, ()> {
+    let guard = WARN_TEST_MUTEX.lock().unwrap();
+    LOGGER_INIT.call_once(|| {
+        log::set_logger(&LOGGER).expect("warn capture logger installs");
+        log::set_max_level(log::LevelFilter::Warn);
+    });
+    LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+        .lock()
+        .expect("warn capture lock")
+        .clear();
+    guard
+}
+
+fn captured_warns() -> Vec<String> {
+    LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+        .lock()
+        .expect("warn capture lock")
+        .clone()
 }
 
 fn call(name: &str, arguments: Value) -> ConverseToolCall {
@@ -213,7 +270,8 @@ fn tool_observation_is_carried_into_the_next_provider_turn() {
             ConverseMessage::ToolResult {
                 tool_call_id: "read_file-id".to_owned(),
                 tool_name: "read_file".to_owned(),
-                output: "contents".to_owned()
+                output: "contents".to_owned(),
+                is_error: false,
             },
         ]
     );
@@ -509,13 +567,15 @@ fn turn_ladder_counts_off_by_one_and_dedupes_before_armed_check() {
 }
 
 #[test]
-fn two_calls_in_one_response_show_resource_turn_dedupe_asymmetry() {
+fn two_calls_in_one_response_advance_resource_ladder_once() {
+    let _guard = install_warn_capture();
     let mut config = RunConfig {
         context_window: Some(1),
         ..RunConfig::default()
     };
-    config.max_turns = 2;
-    let response = turn(
+    config.max_turns = 10;
+    let response1 = turn_with_id(
+        "response-1",
         "partial",
         vec![
             call("read_file", json!({"path":"a"})),
@@ -523,32 +583,57 @@ fn two_calls_in_one_response_show_resource_turn_dedupe_asymmetry() {
         ],
         json!({"input_tokens": 1}),
     );
-    let mut provider = ScriptedProvider::new([Ok(response)]);
+    let response2 = turn_with_id(
+        "response-2",
+        "followup",
+        vec![final_call(false, "done")],
+        json!({}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(response1), Ok(response2)]);
     let mut tools = ScriptedTools::default();
     let mut sink = RecordingEventSink::default();
     let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
-    // Resource checks have no response-id dedupe, while turn checks do.
-    assert_eq!(
-        outcome.reason_code.as_deref(),
-        Some("token_budget_exceeded")
-    );
-    assert_eq!(tools.calls, vec!["read_file"]);
-    assert!(sink.events.iter().any(|event| matches!(
-        event,
-        RuntimeEvent::BudgetEscalation {
-            ladder: BudgetLadder::Resource,
-            stage: BudgetStage::ForceStopped,
-            ..
-        }
-    )));
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(tools.calls, vec!["read_file", "read_file"]);
+    let resource_events: Vec<_> = sink
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            RuntimeEvent::BudgetEscalation {
+                ladder: BudgetLadder::Resource,
+                stage,
+                message,
+                ..
+            } => Some((*stage, message.clone())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(resource_events.len(), 1);
+    assert_eq!(resource_events[0].0, BudgetStage::FinalTurn);
+    assert!(resource_events[0].1.is_some());
     assert!(!sink.events.iter().any(|event| matches!(
         event,
         RuntimeEvent::BudgetEscalation {
-            ladder: BudgetLadder::Turn,
             stage: BudgetStage::ForceStopped,
             ..
         }
     )));
+    let next = &provider.seen_messages[1];
+    assert_results_follow_calls(next);
+    let [.., assistant, first, second, nudge] = next.as_slice() else {
+        panic!("expected assistant, two results, resource nudge");
+    };
+    assert!(
+        matches!(assistant, ConverseMessage::Assistant { tool_calls, .. } if tool_calls.len() == 2)
+    );
+    assert!(matches!(first, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(second, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(nudge, ConverseMessage::User { text } if text.contains("Resource budget")));
+    let logs = captured_warns();
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("nudged cid=cid ladder=resource stage=final_turn"))
+    );
 }
 
 #[test]
@@ -851,32 +936,60 @@ fn events_include_tool_ladder_and_terminal() {
         context_window: Some(1),
         ..RunConfig::default()
     };
-    let mut provider = ScriptedProvider::new([Ok(turn(
+    let response1 = turn_with_id(
+        "response-1",
         "partial",
         vec![
             call("read_file", json!({"path":"x"})),
             call("read_file", json!({"path":"y"})),
         ],
-        json!({"input_tokens":1}),
-    ))]);
+        json!({"input_tokens": 1}),
+    );
+    let response2 = turn_with_id(
+        "response-2",
+        "followup",
+        vec![final_call(false, "done")],
+        json!({}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(response1), Ok(response2)]);
     let mut tools = ScriptedTools::default();
     let mut sink = RecordingEventSink::default();
-    let _ = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
-    assert!(
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(
         sink.events
             .iter()
-            .any(|event| matches!(event, RuntimeEvent::ToolStart { .. }))
+            .filter(|event| matches!(event, RuntimeEvent::ToolStart { .. }))
+            .count(),
+        2
     );
-    assert!(
+    assert_eq!(
         sink.events
             .iter()
-            .any(|event| matches!(event, RuntimeEvent::ToolEnd { .. }))
+            .filter(|event| matches!(event, RuntimeEvent::ToolEnd { .. }))
+            .count(),
+        2
     );
-    assert!(
-        sink.events
-            .iter()
-            .any(|event| matches!(event, RuntimeEvent::BudgetEscalation { .. }))
-    );
+    let last_tool_end = sink
+        .events
+        .iter()
+        .rposition(|event| matches!(event, RuntimeEvent::ToolEnd { .. }))
+        .expect("tool end");
+    let first_escalation = sink
+        .events
+        .iter()
+        .position(|event| {
+            matches!(
+                event,
+                RuntimeEvent::BudgetEscalation {
+                    stage: BudgetStage::FinalTurn,
+                    message: Some(_),
+                    ..
+                }
+            )
+        })
+        .expect("held final-turn publication");
+    assert!(first_escalation > last_tool_end);
     assert!(matches!(
         sink.events.last(),
         Some(RuntimeEvent::Terminal { .. })
@@ -1294,4 +1407,728 @@ fn each_warning_names_the_terminal_tool_the_run_has_and_the_two_branches_differ(
         assert!(!text_only.contains(wrong_call), "{text_only}");
         assert_ne!(repeat_text, text_only, "each branch says what it saw");
     }
+}
+
+#[test]
+fn tool_execution_is_error_propagates_to_converse_tool_result_and_runtime_event() {
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path":"secret.txt"}))],
+            json!({}),
+        )),
+        Ok(turn("", vec![final_call(false, "done")], json!({}))),
+    ]);
+    let mut tools = ScriptedTools::default();
+    tools.executions.push_back(crate::tools::ToolExecution {
+        output: "permission denied".to_owned(),
+        is_error: true,
+        sol_budget_exhausted: None,
+        slot_reacquire_error: None,
+    });
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(
+        &mut provider,
+        &mut tools,
+        input(RunConfig::default()),
+        &mut sink,
+    );
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(
+        provider.seen_messages[1][2],
+        ConverseMessage::ToolResult {
+            tool_call_id: "read_file-id".to_owned(),
+            tool_name: "read_file".to_owned(),
+            output: "permission denied".to_owned(),
+            is_error: true,
+        }
+    );
+    assert!(sink.events.iter().any(|event| matches!(
+        event,
+        RuntimeEvent::ToolEnd {
+            tool,
+            result,
+            is_error: true,
+            ..
+        } if tool == "read_file" && result == "permission denied"
+    )));
+}
+
+#[test]
+fn held_budget_nudge_appended_after_all_tool_results_of_turn() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let response1 = turn_with_id(
+        "response-1",
+        "working",
+        vec![
+            call("read_file", json!({"path":"a"})),
+            call("read_file", json!({"path":"b"})),
+        ],
+        json!({"input_tokens": 72}),
+    );
+    let response2 = turn_with_id(
+        "response-2",
+        "finishing",
+        vec![final_call(false, "done")],
+        json!({}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(response1), Ok(response2)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+
+    let msgs = &provider.seen_messages[1];
+    assert_eq!(msgs.len(), 5);
+    assert!(matches!(msgs[0], ConverseMessage::User { .. }));
+    assert!(matches!(msgs[1], ConverseMessage::Assistant { .. }));
+    assert!(matches!(
+        &msgs[2],
+        ConverseMessage::ToolResult {
+            is_error: false,
+            ..
+        }
+    ));
+    assert!(matches!(
+        &msgs[3],
+        ConverseMessage::ToolResult {
+            is_error: false,
+            ..
+        }
+    ));
+    assert!(matches!(&msgs[4], ConverseMessage::User { text } if text.contains("Resource budget")));
+
+    let tool_end_indices: Vec<usize> = sink
+        .events
+        .iter()
+        .enumerate()
+        .filter_map(|(i, e)| matches!(e, RuntimeEvent::ToolEnd { .. }).then_some(i))
+        .collect();
+    let escalation_index = sink
+        .events
+        .iter()
+        .position(|e| {
+            matches!(
+                e,
+                RuntimeEvent::BudgetEscalation {
+                    stage: BudgetStage::Warning,
+                    ..
+                }
+            )
+        })
+        .expect("warning escalation event");
+    assert_eq!(tool_end_indices.len(), 2);
+    assert!(
+        escalation_index > tool_end_indices[1],
+        "escalation must be emitted after all tool ends"
+    );
+
+    let logs = captured_warns();
+    assert!(
+        logs.iter()
+            .any(|l| l.contains("nudged cid=cid ladder=resource stage=warning"))
+    );
+}
+
+#[test]
+fn held_nudge_dropped_if_turn_exits_early() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let response1 = turn_with_id(
+        "response-1",
+        "working",
+        vec![
+            call("read_file", json!({"path":"a"})),
+            call("read_file", json!({"path":"b"})),
+        ],
+        json!({"input_tokens": 72}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(response1)]);
+    let mut tools = ScriptedTools::default();
+    tools.executions.push_back(crate::tools::ToolExecution {
+        output: "err".to_owned(),
+        is_error: true,
+        sol_budget_exhausted: None,
+        slot_reacquire_error: Some("slot broken".to_owned()),
+    });
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some("sol_slot_reacquire_failed")
+    );
+
+    assert!(
+        !sink
+            .events
+            .iter()
+            .any(|e| matches!(e, RuntimeEvent::BudgetEscalation { .. }))
+    );
+    let logs = captured_warns();
+    assert!(!logs.iter().any(|l| l.contains("nudged cid=")));
+}
+
+#[test]
+fn moment_one_force_stop_emits_escalation_without_message_or_log() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let response1 = turn_with_id(
+        "response-1",
+        "working",
+        vec![call("read_file", json!({"path":"a"}))],
+        json!({"input_tokens": 80}),
+    );
+    let response2 = turn_with_id(
+        "response-2",
+        "still working",
+        vec![call("read_file", json!({"path":"b"}))],
+        json!({"input_tokens": 80}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(response1), Ok(response2)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some("token_budget_exceeded")
+    );
+
+    assert_eq!(tools.calls.len(), 1);
+
+    let force_stopped_event = sink.events.iter().find(|e| {
+        matches!(
+            e,
+            RuntimeEvent::BudgetEscalation {
+                ladder: BudgetLadder::Resource,
+                stage: BudgetStage::ForceStopped,
+                message: None,
+                ..
+            }
+        )
+    });
+    assert!(force_stopped_event.is_some());
+
+    let logs = captured_warns();
+    assert!(
+        logs.iter()
+            .any(|l| l.contains("nudged cid=cid ladder=resource stage=final_turn"))
+    );
+    assert!(!logs.iter().any(|l| l.contains("stage=force_stopped")));
+}
+
+fn tool_result_after_one_call(is_error: bool, output: &str) -> ConverseMessage {
+    let mut provider = ScriptedProvider::new([
+        Ok(turn(
+            "",
+            vec![call("read_file", json!({"path": "note.txt"}))],
+            json!({}),
+        )),
+        Ok(turn("", vec![final_call(false, "done")], json!({}))),
+    ]);
+    let mut tools = ScriptedTools::default();
+    tools.executions.push_back(ToolExecution {
+        output: output.to_owned(),
+        is_error,
+        sol_budget_exhausted: None,
+        slot_reacquire_error: None,
+    });
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(
+        &mut provider,
+        &mut tools,
+        input(RunConfig::default()),
+        &mut sink,
+    );
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    provider.seen_messages[1]
+        .iter()
+        .find(|message| matches!(message, ConverseMessage::ToolResult { .. }))
+        .cloned()
+        .expect("tool result carried into the next request")
+}
+
+#[test]
+fn successful_and_failed_tool_results_differ_only_by_output_and_is_error() {
+    let success = tool_result_after_one_call(false, "contents");
+    let failure = tool_result_after_one_call(true, "permission denied");
+    let ConverseMessage::ToolResult {
+        tool_call_id: success_id,
+        tool_name: success_name,
+        output: success_output,
+        is_error: success_error,
+    } = success
+    else {
+        panic!("success twin");
+    };
+    let ConverseMessage::ToolResult {
+        tool_call_id: failure_id,
+        tool_name: failure_name,
+        output: failure_output,
+        is_error: failure_error,
+    } = failure
+    else {
+        panic!("failure twin");
+    };
+    assert_eq!(success_id, failure_id);
+    assert_eq!(success_name, failure_name);
+    assert_eq!(success_output, "contents");
+    assert_eq!(failure_output, "permission denied");
+    assert!(!success_error);
+    assert!(failure_error);
+    assert_ne!(success_error, failure_error);
+}
+
+#[test]
+fn turn_threshold_nudge_follows_every_result_of_a_multi_call_turn() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        max_turns: 4,
+        ..Default::default()
+    };
+    let warmup = turn_with_id(
+        "r1",
+        "",
+        vec![call("read_file", json!({"path": "a"}))],
+        json!({}),
+    );
+    let crossing = turn_with_id(
+        "r2",
+        "",
+        vec![
+            call("read_file", json!({"path": "b"})),
+            call("read_file", json!({"path": "c"})),
+        ],
+        json!({}),
+    );
+    let finish = turn_with_id("r3", "", vec![final_call(false, "done")], json!({}));
+    let mut provider = ScriptedProvider::new([Ok(warmup), Ok(crossing), Ok(finish)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    let next = &provider.seen_messages[2];
+    assert_results_follow_calls(next);
+    let [.., assistant, first, second, nudge] = next.as_slice() else {
+        panic!("expected assistant, two results, turn nudge");
+    };
+    assert!(
+        matches!(assistant, ConverseMessage::Assistant { tool_calls, .. } if tool_calls.len() == 2)
+    );
+    assert!(matches!(first, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(second, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(nudge, ConverseMessage::User { text } if text.contains("Turn budget")));
+    let logs = captured_warns();
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("nudged cid=cid ladder=turn stage=warning"))
+    );
+}
+
+#[test]
+fn double_ladder_publishes_resource_then_turn_after_every_result() {
+    let _guard = install_warn_capture();
+    let mut config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    config.max_turns = 4;
+    let warmup = turn_with_id(
+        "r1",
+        "",
+        vec![call("read_file", json!({"path": "a"}))],
+        json!({"input_tokens": 1}),
+    );
+    let crossing = turn_with_id(
+        "r2",
+        "",
+        vec![
+            call("read_file", json!({"path": "b"})),
+            call("read_file", json!({"path": "c"})),
+        ],
+        json!({"input_tokens": 72}),
+    );
+    let finish = turn_with_id("r3", "", vec![final_call(false, "done")], json!({}));
+    let mut provider = ScriptedProvider::new([Ok(warmup), Ok(crossing), Ok(finish)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    let next = &provider.seen_messages[2];
+    assert_results_follow_calls(next);
+    let [.., assistant, first, second, resource, turn_nudge] = next.as_slice() else {
+        panic!("expected assistant, two results, resource nudge, turn nudge");
+    };
+    assert!(
+        matches!(assistant, ConverseMessage::Assistant { tool_calls, .. } if tool_calls.len() == 2)
+    );
+    assert!(matches!(first, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(second, ConverseMessage::ToolResult { .. }));
+    assert!(matches!(resource, ConverseMessage::User { text } if text.contains("Resource budget")));
+    assert!(matches!(turn_nudge, ConverseMessage::User { text } if text.contains("Turn budget")));
+    let escalations: Vec<_> = sink
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            RuntimeEvent::BudgetEscalation {
+                ladder,
+                stage,
+                message: Some(_),
+                ..
+            } => Some((*ladder, *stage)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        escalations,
+        vec![
+            (BudgetLadder::Resource, BudgetStage::Warning),
+            (BudgetLadder::Turn, BudgetStage::Warning),
+        ]
+    );
+    let logs = captured_warns();
+    let resource_log = logs
+        .iter()
+        .position(|line| line.contains("nudged cid=cid ladder=resource stage=warning"))
+        .expect("resource marker");
+    let turn_log = logs
+        .iter()
+        .position(|line| line.contains("nudged cid=cid ladder=turn stage=warning"))
+        .expect("turn marker");
+    assert!(resource_log < turn_log);
+    assert_eq!(
+        logs.iter()
+            .filter(|line| line.contains("nudged cid="))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn armed_nonterminal_then_finish_force_stops_without_dispatch() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let arm = turn_with_id(
+        "r1",
+        "",
+        vec![call("read_file", json!({"path": "a"}))],
+        json!({"input_tokens": 80}),
+    );
+    let mixed = turn_with_id(
+        "r2",
+        "",
+        vec![
+            call("read_file", json!({"path": "b"})),
+            final_call(false, "should not finish"),
+        ],
+        json!({"input_tokens": 80}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(arm), Ok(mixed)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some("token_budget_exceeded")
+    );
+    assert_eq!(tools.calls, vec!["read_file"]);
+    assert_eq!(
+        sink.events
+            .iter()
+            .filter(|event| matches!(event, RuntimeEvent::ToolStart { .. }))
+            .count(),
+        1
+    );
+    assert!(sink.events.iter().any(|event| matches!(
+        event,
+        RuntimeEvent::BudgetEscalation {
+            ladder: BudgetLadder::Resource,
+            stage: BudgetStage::ForceStopped,
+            message: None,
+            ..
+        }
+    )));
+    let logs = captured_warns();
+    assert!(!logs.iter().any(|line| line.contains("stage=force_stopped")));
+}
+
+#[test]
+fn armed_finish_then_nonterminal_finalizes_without_dispatching_either() {
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let arm = turn_with_id(
+        "r1",
+        "",
+        vec![call("read_file", json!({"path": "a"}))],
+        json!({"input_tokens": 80}),
+    );
+    let mixed = turn_with_id(
+        "r2",
+        "",
+        vec![
+            final_call(false, "done"),
+            call("read_file", json!({"path": "b"})),
+        ],
+        json!({"input_tokens": 80}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(arm), Ok(mixed)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.reason_code, None);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(tools.calls, vec!["read_file"]);
+    assert!(!sink.events.iter().any(|event| matches!(
+        event,
+        RuntimeEvent::BudgetEscalation {
+            stage: BudgetStage::ForceStopped,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn both_armed_ladders_emit_message_less_force_stops_in_resource_then_turn_order() {
+    let _guard = install_warn_capture();
+    let mut config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    config.max_turns = 2;
+    let arm = turn_with_id(
+        "r1",
+        "",
+        vec![
+            call("read_file", json!({"path": "a"})),
+            call("read_file", json!({"path": "b"})),
+        ],
+        json!({"input_tokens": 80}),
+    );
+    let next = turn_with_id(
+        "r2",
+        "",
+        vec![call("read_file", json!({"path": "c"}))],
+        json!({"input_tokens": 80}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(arm), Ok(next)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(
+        outcome.reason_code.as_deref(),
+        Some("token_budget_exceeded")
+    );
+    assert_eq!(tools.calls, vec!["read_file", "read_file"]);
+    assert_eq!(
+        sink.events
+            .iter()
+            .filter(|event| matches!(event, RuntimeEvent::ToolStart { .. }))
+            .count(),
+        2
+    );
+    let force_stops: Vec<_> = sink
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            RuntimeEvent::BudgetEscalation {
+                ladder,
+                stage: BudgetStage::ForceStopped,
+                message: None,
+                ..
+            } => Some(*ladder),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        force_stops,
+        vec![BudgetLadder::Resource, BudgetLadder::Turn]
+    );
+    let logs = captured_warns();
+    assert!(!logs.iter().any(|line| line.contains("stage=force_stopped")));
+}
+
+#[test]
+fn coincident_budget_nudge_then_stuck_warning_and_second_trip_ends() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let mut responses = vec![
+        Ok(turn_with_id(
+            "r1",
+            "",
+            vec![same_call()],
+            json!({"input_tokens": 1}),
+        )),
+        Ok(turn_with_id(
+            "r2",
+            "",
+            vec![same_call()],
+            json!({"input_tokens": 1}),
+        )),
+        Ok(turn_with_id(
+            "r3",
+            "",
+            vec![
+                call_with_id("x-0", same_call()),
+                call_with_id("x-1", same_call()),
+            ],
+            json!({"input_tokens": 72}),
+        )),
+    ];
+    responses.extend((4..8).map(|index| {
+        Ok(turn_with_id(
+            &format!("r{index}"),
+            "",
+            vec![same_call()],
+            json!({"input_tokens": 1}),
+        ))
+    }));
+    let mut provider = ScriptedProvider::new(responses);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    let after_first_trip = &provider.seen_messages[3];
+    assert_results_follow_calls(after_first_trip);
+    let [.., assistant, first, second, budget, stuck] = after_first_trip.as_slice() else {
+        panic!("expected assistant, results, budget nudge, stuck warning");
+    };
+    assert!(
+        matches!(assistant, ConverseMessage::Assistant { tool_calls, .. } if tool_calls.len() == 2)
+    );
+    assert!(
+        matches!(first, ConverseMessage::ToolResult { tool_call_id, .. } if tool_call_id == "x-0")
+    );
+    assert!(
+        matches!(second, ConverseMessage::ToolResult { tool_call_id, .. } if tool_call_id == "x-1")
+    );
+    assert!(matches!(budget, ConverseMessage::User { text } if text.contains("Resource budget")));
+    assert!(matches!(stuck, ConverseMessage::User { text } if text.contains("repeating steps")));
+    assert_eq!(
+        warnings(after_first_trip)
+            .iter()
+            .filter(|text| text.contains("Resource budget"))
+            .count(),
+        1
+    );
+    assert_eq!(warnings(provider.seen_messages.last().unwrap()).len(), 2);
+    let logs = captured_warns();
+    assert!(
+        logs.iter()
+            .any(|line| line.contains("nudged cid=cid ladder=resource stage=warning"))
+    );
+}
+
+#[test]
+fn threshold_crossing_nonterminal_then_finish_drops_held_nudge() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let mixed = turn_with_id(
+        "r1",
+        "",
+        vec![
+            call("read_file", json!({"path": "a"})),
+            final_call(false, "done"),
+        ],
+        json!({"input_tokens": 72}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(mixed)]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.result.as_deref(), Some("done"));
+    assert_eq!(tools.calls, vec!["read_file"]);
+    assert!(
+        !sink
+            .events
+            .iter()
+            .any(|event| matches!(event, RuntimeEvent::BudgetEscalation { .. }))
+    );
+    assert!(!captured_warns().iter().any(|line| line.contains("nudged")));
+}
+
+#[test]
+fn deadline_after_first_result_drops_held_nudge() {
+    let _guard = install_warn_capture();
+    let mut config = RunConfig {
+        context_window: Some(100),
+        timeout: Duration::from_millis(200),
+        ..RunConfig::default()
+    };
+    config.max_turns = 10;
+    let crossing = turn_with_id(
+        "r1",
+        "",
+        vec![
+            call("read_file", json!({"path": "a"})),
+            call("read_file", json!({"path": "b"})),
+        ],
+        json!({"input_tokens": 72}),
+    );
+    let mut provider = ScriptedProvider::new([Ok(crossing)]);
+    let mut tools = ScriptedTools {
+        execute_delay: Some(Duration::from_millis(150)),
+        ..ScriptedTools::default()
+    };
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.reason_code.as_deref(), Some("wall_clock_exceeded"));
+    assert_eq!(tools.calls, vec!["read_file"]);
+    assert!(
+        !sink
+            .events
+            .iter()
+            .any(|event| matches!(event, RuntimeEvent::BudgetEscalation { .. }))
+    );
+    assert!(!captured_warns().iter().any(|line| line.contains("nudged")));
+}
+
+#[test]
+fn first_stuck_trip_before_last_call_drops_held_nudge() {
+    let _guard = install_warn_capture();
+    let config = RunConfig {
+        context_window: Some(100),
+        ..RunConfig::default()
+    };
+    let mut calls: Vec<_> = (0..4)
+        .map(|index| call_with_id(&format!("x-{index}"), same_call()))
+        .collect();
+    calls.push(final_call(false, "claims work that never ran"));
+    let mut provider = ScriptedProvider::new([Ok(turn_with_id(
+        "r1",
+        "partial",
+        calls,
+        json!({"input_tokens": 72}),
+    ))]);
+    let mut tools = ScriptedTools::default();
+    let mut sink = RecordingEventSink::default();
+    let outcome = run_cogitate(&mut provider, &mut tools, input(config), &mut sink);
+    assert_eq!(outcome.reason_code.as_deref(), Some("agent_stuck"));
+    assert_eq!(tools.calls, vec!["read_file"; 4]);
+    assert!(
+        !sink
+            .events
+            .iter()
+            .any(|event| matches!(event, RuntimeEvent::BudgetEscalation { .. }))
+    );
+    assert!(!captured_warns().iter().any(|line| line.contains("nudged")));
 }

@@ -351,7 +351,7 @@
     const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
     const day = resolveDay(data);
-    const source = importedJson.source_display || importedJson.source_type || data?.source_display || data?.source_type;
+    const source = data?.source_display || data?.source_type || importedJson.source_display || importedJson.source_type;
     const facts = [
       derived.status,
       source,
@@ -383,7 +383,7 @@
   function processingFacts(data) {
     const importedJson = asObject(data?.imported_json) || {};
     const derived = deriveStatus(data);
-    const source = importedJson.source_display || importedJson.source_type || data?.source_display || data?.source_type;
+    const source = data?.source_display || data?.source_type || importedJson.source_display || importedJson.source_type;
     const unavailPages = typeof data?.unavailable_pages === 'number'
       ? (data.unavailable_pages > 0
           ? (data.unavailable_pages === 1
@@ -491,7 +491,7 @@
       const source = item?.source_name || '';
       const target = item?.target_name || '';
       const path = item?.staging_path || '';
-      return `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(source)} ${escapeHtml('->')} ${escapeHtml(target)}</span><span class="ev-meta"><code>${escapeHtml(path)}</code></span></li>`;
+      return `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(source)} ${escapeHtml('→')} ${escapeHtml(target)}</span><span class="ev-meta"><code>${escapeHtml(path)}</code></span></li>`;
     });
     const errored = asArray(highlights.errored_segments).map((item) => (
       `<li class="drawer-evidence-row"><span class="drawer-evidence-title">${escapeHtml(item?.item_id || '')}</span><span class="ev-meta">${escapeHtml(item?.reason || '')}</span></li>`
@@ -581,7 +581,8 @@
       open: derived.open,
       bodyHtml: renderDrawerBody(data)
     });
-    return renderLeadsCard(data) + drawer;
+    const leads = derived.status === strings.completed ? renderLeadsCard(data) : '';
+    return leads + drawer;
   }
 
   window.ImportDetail = Object.freeze({

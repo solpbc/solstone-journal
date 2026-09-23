@@ -135,6 +135,7 @@ fn facet_muted_pop_on_clear_removes_the_key() {
         None,
     )
     .unwrap();
+    create_facet(temporary.path(), "personal", "Personal", "", "", "", None).unwrap();
     set_facet_muted(temporary.path(), "work", true).unwrap();
     set_facet_muted(temporary.path(), "work", false).unwrap();
 
@@ -301,6 +302,7 @@ fn news_and_log_writers_admit_declared_muted_and_legacy_id_less_facets() {
     let temporary = TempDir::new();
     let root = temporary.path();
     create_facet(root, "work", "Work", "", "", "", None).unwrap();
+    create_facet(root, "personal", "Personal", "", "", "", None).unwrap();
     write_news_file(root, "work", "20260101.md", "# Declared\n").unwrap();
     write_log_file(root, "work", "20260101.jsonl", "{}\n").unwrap();
 
@@ -420,6 +422,7 @@ fn facet_entity_link_retarget_does_not_move_or_orphan_observations() {
 fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "old-facet");
+    create_test_facet(temporary.path(), "personal");
     let convey_path = temporary.path().join("config/convey.json");
     fs::create_dir_all(convey_path.parent().unwrap()).unwrap();
     let convey_bytes = br#"{ "facets": { "selected": "old-facet", "order": "malformed" }, "unrelated": { "preserved": true } }"#.to_vec();
@@ -490,6 +493,7 @@ fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
 fn delete_facet_leaves_legacy_convey_selection_bytes_untouched() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "old-facet");
+    create_test_facet(temporary.path(), "personal");
     let convey_path = temporary.path().join("config/convey.json");
     fs::create_dir_all(convey_path.parent().unwrap()).unwrap();
     let convey_bytes =

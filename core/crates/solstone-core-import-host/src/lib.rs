@@ -6,3 +6,4 @@
 pub mod audio;
 pub mod audio_publication;
 pub mod cli_argv;
+pub mod text_publication;

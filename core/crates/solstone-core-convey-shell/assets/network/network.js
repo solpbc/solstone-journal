@@ -168,6 +168,7 @@
         && Number.isFinite(body.expires_in)
         && body.expires_in > 0
         && (body.device_label === undefined || typeof body.device_label === 'string')
+        && typeof body.home_address_is_public === 'boolean'
         && typeof global.qrcode === 'function'
       );
     }
@@ -176,7 +177,10 @@
       const label = typeof body.device_label === 'string' ? body.device_label.trim() : '';
       elements.label.textContent = label;
       elements.labelRow.hidden = !label;
-      elements.networkLine.textContent = copy('PAIR_NETWORK_LINE').replace('{time}', formatExpiry(body.expires_in));
+      const networkCopy = body.home_address_is_public
+        ? 'PAIR_PUBLIC_ADDRESS_LINE'
+        : 'PAIR_NETWORK_LINE';
+      elements.networkLine.textContent = copy(networkCopy).replace('{time}', formatExpiry(body.expires_in));
       elements.fingerprint.textContent = body.ca_fingerprint;
       elements.linkValue.textContent = body.pair_link;
       renderCode(body.pair_link);
@@ -557,10 +561,8 @@
 
   function createClientLabels({ request, changed }) {
     const editors = new Map();
-    let editable = false;
     function editor(cid) { return editors.get(cid); }
-    function receive(clients, allowed) {
-      editable = allowed === true;
+    function receive(clients) {
       const present = new Set(clients.map(row => row.cid));
       for (const cid of editors.keys()) if (!present.has(cid)) editors.delete(cid);
       return clients.map(row => {
@@ -582,7 +584,7 @@
     }
     function input(cid, value) {
       const state = editor(cid);
-      if (!state || state.pending || !editable) return;
+      if (!state || state.pending) return;
       state.draft = value; state.dirty = true; state.message = '';
     }
     function cancel(cid) {
@@ -593,7 +595,7 @@
     }
     async function save(cid, clear = false) {
       const state = editor(cid);
-      if (!state || state.pending || !editable) return;
+      if (!state || state.pending) return;
       const label = clear ? null : state.draft.trim() || null;
       if (label !== null && (new TextEncoder().encode(label).length > 80 || /[\p{Cc}]/u.test(label))) {
         state.message = 'use a shorter name without control characters.'; changed(cid); return;
@@ -619,16 +621,14 @@
         if (error?.status === 404) {
           editors.delete(cid); changed(cid); return;
         }
-        if (error?.status === 403) editable = false;
         state.message = error?.status === 400 ? 'use a shorter name without control characters.'
-          : error?.status === 403 ? "change this name from the journal's own device."
           : "couldn't confirm the save. check the current name before trying again.";
         state.dirty = true;
       } finally {
         if (editors.get(cid) === state) { state.pending = false; changed(cid); }
       }
     }
-    return { receive, editor, input, cancel, save, canEdit: () => editable };
+    return { receive, editor, input, cancel, save };
   }
 
   const NetworkRender = {

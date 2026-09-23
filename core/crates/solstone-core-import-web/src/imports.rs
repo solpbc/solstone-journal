@@ -342,6 +342,15 @@ pub(crate) fn load_import_info(root: &Path, timestamp: &str) -> Result<ImportInf
     // gaps); every other importer's row keeps exactly the shape it always had.
     if proj.is_native() {
         values.extend(proj.native_row_overlay());
+        // A source_type with no upload tile (e.g. `audio`) has no SOURCES entry to name
+        // it, so the row would otherwise carry no source_display at all. Fall back to the
+        // projection's own computed display; a source_type with a tile keeps the tile's
+        // own wording untouched.
+        if values.get("source_display").is_none_or(Value::is_null)
+            && source(&proj.source_type).is_none()
+        {
+            values.insert("source_display".into(), json!(proj.source_display));
+        }
     }
     Ok(ImportInfo {
         imported_at,
@@ -527,9 +536,13 @@ pub(crate) async fn detail(
     let projection = solstone_core_import::project_import_result(&state.root, &timestamp);
     if projection.is_native() {
         body.extend(projection.native_row_overlay());
-        // Same lowercase display name the list row carries for this source.
+        // Same lowercase display name the list row carries for this source, when the
+        // source has an upload tile. A source_type with no tile (e.g. `audio`) falls
+        // back to the projection's own computed display rather than the raw source_type.
         if let Some(display) = source(&projection.source_type).map(|item| item.display_name) {
             body.insert("source_display".into(), json!(display));
+        } else {
+            body.insert("source_display".into(), json!(projection.source_display));
         }
     }
     body.insert(
@@ -551,4 +564,212 @@ pub(crate) async fn detail(
             .unwrap_or(Value::Null),
     );
     json_response(StatusCode::OK, Value::Object(body))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    // A minimal native-producer import.json: enough for `is_native()` (via the attempt
+    // block) and a stamped source_type, without a publication record — the display
+    // fallback under test does not depend on how source_type was derived.
+    fn write_native_attempt(journal: &Path, id: &str, source_type: &str) {
+        let dir = journal.join("imports").join(id);
+        fs::create_dir_all(&dir).unwrap();
+        let metadata = json!({
+            "original_filename": "meeting.m4a",
+            "source_type": source_type,
+            "task_id": id,
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": "completed",
+                "started_at_ms": 1_000,
+            }
+        });
+        fs::write(
+            dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_source_type_with_no_upload_tile_still_gets_a_display_name() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120000");
+        write_native_attempt(journal, id, "audio");
+
+        let info = load_import_info(journal, id).unwrap();
+        assert_eq!(info.values["source_type"], "audio");
+        assert_eq!(
+            info.values["source_display"], "audio",
+            "no SOURCES tile is named audio; the row must not go blank, and house casing \
+             stays lowercase for a served list's own display name: {info:?}"
+        );
+    }
+
+    #[test]
+    fn a_source_type_with_an_upload_tile_is_unaffected_by_the_no_tile_fallback() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120001");
+        write_native_attempt(journal, id, "image");
+
+        let info = load_import_info(journal, id).unwrap();
+        // Set by the pre-existing tile-gated path, not by the new fallback (which never
+        // fires here because a tile exists) — this pins that the fallback is additive.
+        assert_eq!(info.values["source_display"], "Image", "{info:?}");
+    }
+
+    #[tokio::test]
+    async fn the_detail_route_names_an_audio_row_instead_of_the_raw_source_type() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260101_120002");
+        write_native_attempt(journal, id, "audio");
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+        };
+        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["source_display"], "audio", "{body:?}");
+    }
+
+    #[tokio::test]
+    async fn list_and_detail_project_completed_attempt_only_archive_as_success() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260809_120000");
+        let import_dir = journal.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        let metadata = json!({
+            "original_filename": "archive.zip",
+            "source_type": "journal_archive",
+            "source_hint": "journal_archive",
+            "task_id": id,
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": "completed",
+                "started_at_ms": 1_000,
+            }
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+        };
+
+        // Test list endpoint
+        let list_resp = list(State(state.clone()), Query(HashMap::new())).await;
+        let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list_body: Value = serde_json::from_slice(&list_bytes).unwrap();
+        let imports = list_body["imports"].as_array().expect("imports array");
+        let row = imports
+            .iter()
+            .find(|r| r["timestamp"] == id)
+            .expect("row exists");
+        assert_eq!(row["status"], "success", "{row:?}");
+        assert_eq!(row["source_type"], "journal_archive", "{row:?}");
+        assert!(row["error"].is_null(), "{row:?}");
+
+        // Test detail endpoint
+        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "success", "{body:?}");
+        assert_eq!(body["source_type"], "journal_archive", "{body:?}");
+        assert!(body["error"].is_null(), "{body:?}");
+    }
+
+    #[tokio::test]
+    async fn lock_failed_import_surfaces_safe_error_string_without_raw_path() {
+        let dir = tempdir().unwrap();
+        let (journal, id) = (dir.path(), "20260809_120001");
+        let import_dir = journal.join("imports").join(id);
+        fs::create_dir_all(&import_dir).unwrap();
+        let metadata = json!({
+            "source_type": "journal_archive",
+            "source_hint": "journal_archive",
+            "attempt": {
+                "attempt_id": format!("{id}:1"),
+                "generation": 1,
+                "state": "unconfirmed",
+                "started_at_ms": 1_000,
+                "finished_at_ms": 2_000,
+                "duration_ms": 1_000,
+                "failure_reason": "import failed"
+            }
+        });
+        fs::write(
+            import_dir.join("import.json"),
+            serde_json::to_vec(&metadata).unwrap(),
+        )
+        .unwrap();
+
+        let state = AppState {
+            root: journal.to_path_buf(),
+        };
+
+        // Test list endpoint
+        let list_resp = list(State(state.clone()), Query(HashMap::new())).await;
+        let list_bytes = axum::body::to_bytes(list_resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let list_body: Value = serde_json::from_slice(&list_bytes).unwrap();
+        let imports = list_body["imports"].as_array().expect("imports array");
+        let row = imports
+            .iter()
+            .find(|r| r["timestamp"] == id)
+            .expect("row exists");
+        assert_eq!(row["status"], "failed", "{row:?}");
+        assert_eq!(row["error"], "import failed", "{row:?}");
+
+        // Test detail endpoint
+        let response = detail(State(state), AxumPath(id.to_owned())).await;
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["status"], "failed", "{body:?}");
+        assert_eq!(body["error"], "import failed", "{body:?}");
+
+        // Assert neither error nor any detail field exposes the absolute journal path
+        let raw_path = journal.to_string_lossy();
+        fn assert_no_path(val: &Value, raw_path: &str) {
+            match val {
+                Value::String(s) => {
+                    assert!(
+                        !s.contains(raw_path),
+                        "value contained raw journal path: {s}"
+                    );
+                }
+                Value::Array(arr) => {
+                    for item in arr {
+                        assert_no_path(item, raw_path);
+                    }
+                }
+                Value::Object(map) => {
+                    for (k, v) in map {
+                        assert!(!k.contains(raw_path), "key contained raw journal path: {k}");
+                        assert_no_path(v, raw_path);
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert_no_path(&body, &raw_path);
+        assert_no_path(&list_body, &raw_path);
+    }
 }

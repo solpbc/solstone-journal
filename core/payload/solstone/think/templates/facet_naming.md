@@ -1,1 +1,0 @@
-When naming a context, use specific, descriptive names grounded in what is actually happening. Prefer names that identify the real activity or context, for example "engineering-work" not "work" and "investor-calls" not "meetings".

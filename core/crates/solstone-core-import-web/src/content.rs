@@ -253,6 +253,48 @@ fn image_content_items(_root: &Path, directory: &Path) -> Option<Vec<Value>> {
     if items.is_empty() { None } else { Some(items) }
 }
 
+/// Audio has no `content_manifest.jsonl` writer and no `manifest.json`, so its gate has
+/// only the one live disjunct `image_content_items` also has: `import.json`'s `source`
+/// field, planted at upload time by `source_for()` and never overwritten by admission.
+fn audio_content_items(_root: &Path, directory: &Path) -> Option<Vec<Value>> {
+    let imported_path = directory.join("imported.json");
+    let imported: Value = json_from_file(&imported_path).unwrap_or(Value::Null);
+    let import_meta: Value = json_from_file(&directory.join("import.json")).unwrap_or(Value::Null);
+
+    let is_audio = import_meta.get("source").and_then(Value::as_str) == Some("audio");
+    if !is_audio {
+        return None;
+    }
+
+    let title = import_meta
+        .get("original_filename")
+        .and_then(Value::as_str)
+        .unwrap_or("Audio import");
+
+    let segments = imported.get("segments").and_then(Value::as_array)?.clone();
+
+    let mut items = Vec::new();
+    for (idx, seg) in segments.into_iter().enumerate() {
+        let day = seg.get("day").and_then(Value::as_str).unwrap_or("");
+        let key = seg.get("segment").and_then(Value::as_str).unwrap_or("");
+        let stream = seg
+            .get("stream")
+            .and_then(Value::as_str)
+            .unwrap_or("import.audio");
+        if !day.is_empty() && !key.is_empty() {
+            items.push(json!({
+                "id": format!("item_{idx}"),
+                "title": title,
+                "date": day,
+                "type": "audio",
+                "stream": stream,
+                "segments": [{"day": day, "key": key, "stream": stream}],
+            }));
+        }
+    }
+    if items.is_empty() { None } else { Some(items) }
+}
+
 fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>), Box<Response>> {
     if timestamp.is_empty() || timestamp.contains(['/', '\\']) || matches!(timestamp, "." | "..") {
         return Err(Box::new(import_not_found("Import not found")));
@@ -303,9 +345,20 @@ fn content_manifest(root: &Path, timestamp: &str) -> Result<(PathBuf, Vec<Value>
         return Ok((directory, items));
     }
 
+    if let Some(items) = audio_content_items(root, &directory) {
+        return Ok((directory, items));
+    }
+
     match derive_content_items(root, timestamp) {
         Ok(Some(items)) => Ok((directory, items)),
-        Ok(None) => Err(Box::new(import_not_found("No content available"))),
+        // `import_not_found`'s fixed "that import isn't in your journal." is wrong here:
+        // the import exists and is visible in the list, it just has nothing browsable.
+        Ok(None) => Err(Box::new(error(
+            StatusCode::NOT_FOUND,
+            "there's nothing to browse for this import.",
+            "import_content_unavailable",
+            "No content available".to_owned(),
+        ))),
         Err(error_detail) => Err(Box::new(error(
             StatusCode::INTERNAL_SERVER_ERROR,
             "that import metadata couldn't be read.",

@@ -144,7 +144,7 @@ fn archive_marker_failure_is_terminal_after_published_content_is_preserved() {
     let error = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap_err();
 
     match error {
-        ImportSourcesError::MergePublishFailed { detail } => {
+        ImportSourcesError::MergePublishFailed { detail, .. } => {
             assert!(detail.contains("stream marker update failed"), "{detail}");
             assert!(
                 detail.contains("published content was not rolled back"),

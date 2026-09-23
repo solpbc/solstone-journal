@@ -337,6 +337,17 @@ fn export_entities(
     )
 }
 
+/// Strips the two fields that are the sending journal's own attempt-tracking
+/// bookkeeping, never meaningful to a receiving peer: `attempt` (generation,
+/// state, timestamps) and `task_id`. Everything else in `import_json` ships as-is.
+fn sanitize_import_json_for_wire(mut import_json: Value) -> Value {
+    if let Some(map) = import_json.as_object_mut() {
+        map.remove("attempt");
+        map.remove("task_id");
+    }
+    import_json
+}
+
 fn export_imports(
     journal: &Path,
     loopback: &PeerLoopbackClient,
@@ -391,7 +402,12 @@ fn export_imports(
         {
             unchanged += 1;
         } else {
-            to_send.push(json!({"id": id, "import_json": import_json, "imported_json": imported_json, "content_manifest": content_manifest}));
+            // The receiver already strips these two on its accept branch (ingest.rs);
+            // stripping them here too closes the id_collision branch, which stages the
+            // wire payload unsanitized. Only the outbound copy changes: the hash above
+            // still covers the full on-disk import.json, so change-detection is unaffected.
+            let sanitized_import_json = sanitize_import_json_for_wire(import_json.clone());
+            to_send.push(json!({"id": id, "import_json": sanitized_import_json, "imported_json": imported_json, "content_manifest": content_manifest}));
         }
     }
     if dry_run {
@@ -1341,5 +1357,34 @@ mod tests {
             std::fs::read(root.path().join("timeline.state.json")).unwrap(),
             b"fixture"
         );
+    }
+
+    #[test]
+    fn wire_sanitization_strips_attempt_and_task_id_but_keeps_everything_else() {
+        let raw = json!({
+            "original_filename": "meeting.m4a",
+            "task_id": "20260101_120000",
+            "attempt": {
+                "attempt_id": "20260101_120000:1",
+                "generation": 1,
+                "state": "completed",
+            },
+        });
+        let sanitized = sanitize_import_json_for_wire(raw);
+        assert_eq!(sanitized["original_filename"], "meeting.m4a");
+        assert!(
+            sanitized.get("attempt").is_none(),
+            "attempt is sender-side bookkeeping, never sent: {sanitized:?}"
+        );
+        assert!(
+            sanitized.get("task_id").is_none(),
+            "task_id is sender-side bookkeeping, never sent: {sanitized:?}"
+        );
+    }
+
+    #[test]
+    fn wire_sanitization_is_a_no_op_on_an_import_json_with_neither_field() {
+        let raw = json!({"original_filename": "notes.pdf", "mime_type": "application/pdf"});
+        assert_eq!(sanitize_import_json_for_wire(raw.clone()), raw);
     }
 }

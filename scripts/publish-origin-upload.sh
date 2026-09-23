@@ -4,8 +4,9 @@
 
 # Uploads a locally-staged release tree to the release origin,
 # https://updates.solstone.app/solstone-journal/{lane}/{version}/{filename},
-# mirrors CHANGELOG.md, and advances each lane's `latest` pointer only after
-# every artifact under it is fully published.
+# mirrors CHANGELOG.md, publishes the Linux-only compatibility bootstrap, and
+# advances each lane's `latest` pointer only after every artifact under it is
+# fully published.
 #
 # This is the upload half of what solstone-linux's and solstone-tmux's
 # scripts/packaging/publish-origin.sh do in one step. Journal's own
@@ -44,6 +45,9 @@ export LC_ALL=C
 PRODUCT="solstone-journal"
 BUCKET="${SOLSTONE_ORIGIN_BUCKET:-solstone-updates}"
 ORIGIN_URL="https://updates.solstone.app"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+BOOTSTRAP_SOURCE="$SCRIPT_DIR/../core/distribution/install.sh"
+BOOTSTRAP_KEY="$PRODUCT/install.sh"
 
 die() {
     printf 'release origin uploader: %s\n' "$1" >&2
@@ -92,6 +96,9 @@ done
 stage="$(realpath "$stage")"
 product_root="$stage/$PRODUCT"
 [[ -d "$product_root" ]] || die "stage-empty: no $PRODUCT/ under $stage — nothing to upload"
+[[ -f "$BOOTSTRAP_SOURCE" && ! -L "$BOOTSTRAP_SOURCE" ]] ||
+    die "bootstrap-missing: $BOOTSTRAP_SOURCE must be a regular file"
+BOOTSTRAP_SOURCE="$(realpath "$BOOTSTRAP_SOURCE")"
 
 if [[ -n "$changelog_file" ]]; then
     [[ -f "$changelog_file" && ! -L "$changelog_file" ]] ||
@@ -240,6 +247,27 @@ for relative in "${non_latest_keys[@]}"; do
     checkpoint "object:$name"
 done
 checkpoint "objects"
+
+# Keep the old product-scoped bootstrap URL safe for existing Linux callers.
+# It is no longer the owner-facing installer, but publishing a new release
+# before its minimum-compatible bootstrap would make that compatibility path
+# refuse every install. This copy deliberately comes from the same checkout
+# as the release uploader. Its own platform gate makes direct macOS use fail
+# closed and points to the native-app installer at solstone.app/install.sh.
+if $dry_run; then
+    printf '  would publish %s/%s\n' "$ORIGIN_URL" "$BOOTSTRAP_KEY"
+else
+    bootstrap_remote="$stage_scratch/remote-bootstrap"
+    if remote_get "$BOOTSTRAP_KEY" "$bootstrap_remote" &&
+        cmp -s "$bootstrap_remote" "$BOOTSTRAP_SOURCE"; then
+        printf '  present  %s\n' "$BOOTSTRAP_KEY"
+    else
+        remote_put "$BOOTSTRAP_KEY" "$BOOTSTRAP_SOURCE" "text/plain; charset=utf-8" "no-cache"
+        printf '  put      %s\n' "$BOOTSTRAP_KEY"
+    fi
+    rm -f "$bootstrap_remote"
+fi
+checkpoint "bootstrap"
 
 # CHANGELOG.md mirror — lane-independent (there is one changelog, not one per
 # lane), uploaded only when the caller passes --changelog. This lets

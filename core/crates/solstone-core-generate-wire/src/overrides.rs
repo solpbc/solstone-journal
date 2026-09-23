@@ -24,18 +24,20 @@ pub(crate) fn configured_api_key_with(
     take_env(&env, API_KEY_OVERRIDE_ENV).or_else(|| config_string(config, &["env", config_key]))
 }
 
-pub fn configured_model(config: &Map<String, Value>, default: &str) -> String {
-    configured_model_with(config, default, non_blank_process_env)
+/// The owner's configured model id, if any. There is deliberately no built-in
+/// fallback: provider model catalogs move faster than releases, so a compiled-in
+/// default goes stale and silently routes an owner to a model they never chose.
+/// A missing model is refused as `model_missing` by each cloud arm instead.
+pub fn configured_model(config: &Map<String, Value>) -> Option<String> {
+    configured_model_with(config, non_blank_process_env)
 }
 
 pub(crate) fn configured_model_with(
     config: &Map<String, Value>,
-    default: &str,
     env: impl Fn(&str) -> Option<String>,
-) -> String {
+) -> Option<String> {
     take_env(&env, MODEL_OVERRIDE_ENV)
         .or_else(|| config_string(config, &["providers", "active", "model"]))
-        .unwrap_or_else(|| default.to_owned())
 }
 
 /// Resolve a provider base URL, honouring the override only for loopback hosts.
@@ -302,10 +304,10 @@ mod tests {
         assert_eq!(
             configured_model_with(
                 &config(None, None, None),
-                "default",
                 lookup(&[(MODEL_OVERRIDE_ENV, "candidate")]),
-            ),
-            "candidate"
+            )
+            .as_deref(),
+            Some("candidate")
         );
     }
 
@@ -314,18 +316,26 @@ mod tests {
         assert_eq!(
             configured_model_with(
                 &config(None, Some("stored"), None),
-                "default",
                 lookup(&[(MODEL_OVERRIDE_ENV, "candidate")]),
-            ),
-            "candidate"
+            )
+            .as_deref(),
+            Some("candidate")
         );
     }
 
     #[test]
     fn model_config_is_used_without_override() {
         assert_eq!(
-            configured_model_with(&config(None, Some("stored"), None), "default", lookup(&[])),
-            "stored"
+            configured_model_with(&config(None, Some("stored"), None), lookup(&[])).as_deref(),
+            Some("stored")
+        );
+    }
+
+    #[test]
+    fn model_is_absent_without_override_or_config() {
+        assert_eq!(
+            configured_model_with(&config(None, None, None), lookup(&[])),
+            None
         );
     }
 }

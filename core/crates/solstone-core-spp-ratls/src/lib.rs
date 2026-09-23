@@ -9,6 +9,7 @@ pub mod fresh;
 pub mod nvattest;
 mod nvattest_authority;
 mod nvattest_install;
+pub mod qualification;
 pub mod ratls;
 pub mod state;
 

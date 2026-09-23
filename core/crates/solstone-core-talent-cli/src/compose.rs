@@ -8,7 +8,7 @@ use serde_json::{Map, Value};
 
 use crate::facets_context::resolve_facets;
 use crate::schema::load_talent_schema;
-use crate::templates::{compose_prompt_body, load_raw_templates};
+use crate::templates::compose_prompt_body;
 use solstone_core_talent_config::{
     TalentConfig, validate_access_tier, validate_cwd, validate_write,
 };
@@ -53,12 +53,7 @@ pub fn compose_talent(
             .parent()
             .ok_or_else(|| format!("talent {}: prompt path has no parent", config.key))?;
         let mut parsed = load_talent_schema(&config.key, talent_dir, schema_path)?;
-        let policy = if config.key == "sense" {
-            crate::facets_context::RuntimeFacetsPolicy::SenseEmptyRouting
-        } else {
-            crate::facets_context::RuntimeFacetsPolicy::DropEnum
-        };
-        crate::facets_context::substitute_runtime_facets(&mut parsed, journal_root, policy)?;
+        crate::facets_context::substitute_runtime_facets(&mut parsed, journal_root)?;
         composed.insert("json_schema".to_owned(), parsed);
         composed.remove("schema");
     }
@@ -89,18 +84,7 @@ pub fn compose_talent_instruction(
     focused_facet: Option<&str>,
     context: &BTreeMap<String, String>,
 ) -> Result<String, String> {
-    let facets = if focused_facet.is_none() {
-        match load_raw_templates(templates_dir) {
-            Ok(templates) => resolve_facets(
-                journal_root,
-                focused_facet,
-                templates.get("facet_naming").map(String::as_str),
-            )?,
-            Err(_) => String::new(),
-        }
-    } else {
-        resolve_facets(journal_root, focused_facet, None)?
-    };
+    let facets = resolve_facets(journal_root, focused_facet)?;
     let mut context = context.clone();
     context.insert("facets".to_owned(), facets);
     compose_prompt_body(&config.body, journal_root, templates_dir, &context)
@@ -293,38 +277,5 @@ mod tests {
         );
         assert!(composed.get("schema").is_none());
         assert!(composed.get("json_schema").is_none());
-    }
-
-    #[test]
-    fn discovery_mode_uses_raw_facet_naming_template_content() {
-        let root = setup();
-        fs::remove_dir_all(root.path().join("facets")).expect("remove facets");
-        fs::write(
-            root.path().join("think/templates/facet_naming.md"),
-            "Name contexts for $preferred.",
-        )
-        .expect("facet naming template");
-        let config = TalentConfig {
-            key: "plain".to_owned(),
-            file: "talent/plain.md".to_owned(),
-            metadata: Map::from_iter([(
-                "path".to_owned(),
-                json!(root.path().join("talent/plain.md")),
-            )]),
-            body: "$facets".to_owned(),
-        };
-        let composed = compose_talent(
-            &config,
-            root.path(),
-            &root.path().join("think/templates"),
-            None,
-        )
-        .expect("compose");
-        assert!(
-            composed["user_instruction"]
-                .as_str()
-                .expect("instruction")
-                .contains("Name contexts for $preferred.")
-        );
     }
 }

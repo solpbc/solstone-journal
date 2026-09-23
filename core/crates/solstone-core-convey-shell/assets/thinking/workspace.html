@@ -339,22 +339,6 @@
       width: 100%;
     }
 
-    .thinking-workspace .tierchoice {
-      align-items: start;
-      display: grid;
-      gap: 12px;
-      grid-template-columns: auto 1fr;
-    }
-
-    .thinking-workspace .tierchoice input {
-      margin-top: 4px;
-    }
-
-    .thinking-workspace .tierbody {
-      display: grid;
-      gap: 8px;
-    }
-
     .thinking-workspace .hidden-select {
       position: absolute;
       width: 1px;
@@ -1015,18 +999,10 @@
           <p class="micro" id="byoModelSub"></p>
         </div>
         <div class="notice" id="byoConfigurationGuidance" hidden></div>
-        <section class="provgrid" id="byoModelGrid" role="radiogroup" aria-labelledby="byoModelHeading"></section>
-        <button type="button" class="btn ghost" id="byoCustomToggle" aria-expanded="false"></button>
-        <section class="app-onoff" id="byoCustomRow" hidden>
-          <div class="field">
-            <label for="byoCustomModel" id="byoCustomLabel"></label>
-            <input type="text" id="byoCustomModel" autocomplete="off">
-          </div>
-          <div class="inline-actions">
-            <button type="button" class="btn" id="byoCustomCheck"></button>
-          </div>
-          <div class="message" id="byoCustomStatus" aria-live="polite"></div>
-        </section>
+        <div class="field">
+          <label for="byoModelInput" id="byoModelInputLabel"></label>
+          <input type="text" id="byoModelInput" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </div>
         <div class="message" id="byoModelStatus" aria-live="polite"></div>
         <div class="actions">
           <button type="button" class="btn primary" id="byoModelSave"></button>

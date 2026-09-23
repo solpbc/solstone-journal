@@ -6,8 +6,9 @@ use solstone_core_repository_contracts::advisory_audit::{
     AdvisoryAuditRequest, run_advisory_audit,
 };
 use solstone_core_repository_contracts::ci::{
-    Leg, PackageSuite, Registry, Suite, load_registry, pin_ci_cargo_environment,
-    scan_routine_boundaries, validate_boundary, validate_registry,
+    COVERAGE_REPORT_PATH_ENV, CoverageEntry, Leg, PackageSuite, Registry, Suite, load_registry,
+    pin_ci_cargo_environment, read_coverage_report, scan_routine_boundaries, validate_boundary,
+    validate_registry,
 };
 use solstone_core_repository_contracts::release_manifest::{ManifestSelection, run_manifest_check};
 use std::collections::{BTreeMap, BTreeSet};
@@ -522,6 +523,8 @@ struct ResultRow {
     command: Vec<String>,
     log_path: Option<String>,
     detail: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coverage: Option<Vec<CoverageEntry>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -574,6 +577,7 @@ fn execute(
                 command,
                 log_path: None,
                 detail: format!("platform {current_platform} not selected"),
+                coverage: None,
             });
             continue;
         }
@@ -591,6 +595,7 @@ fn execute(
                 command,
                 log_path: None,
                 detail: "reserved excluded lane: differential".to_owned(),
+                coverage: None,
             });
             continue;
         }
@@ -615,6 +620,7 @@ fn execute(
                 command,
                 log_path: None,
                 detail,
+                coverage: None,
             });
             continue;
         }
@@ -624,6 +630,7 @@ fn execute(
             .get(&item.timeout)
             .ok_or_else(|| format!("unknown timeout class {}", item.timeout))?;
         let log_path = log_root.join(format!("{:03}-{}.log", index + 1, safe_id(&item.id)));
+        let coverage_path = log_path.with_extension("coverage.json");
         let receipt_log_path = log_path
             .strip_prefix(repo)
             .unwrap_or(&log_path)
@@ -631,7 +638,13 @@ fn execute(
             .replace('\\', "/");
         println!("log: {receipt_log_path}");
         let started = Instant::now();
-        let outcome = run_item(repo, &item, Duration::from_secs(timeout), &log_path);
+        let outcome = run_item(
+            repo,
+            &item,
+            Duration::from_secs(timeout),
+            &log_path,
+            &coverage_path,
+        );
         let duration_ms = started.elapsed().as_millis();
         let (verdict, detail, cpu_user_ms, cpu_system_ms) = match outcome {
             Ok(outcome) if outcome.status.is_some_and(|status| status.success()) => (
@@ -676,6 +689,13 @@ fn execute(
             ),
             Err(error) => (Verdict::Blocked, error, 0, 0),
         };
+        let coverage = read_coverage_report(&coverage_path);
+        let detail = match &coverage {
+            Some(entries) if !entries.is_empty() => {
+                format!("{detail}; excluded {}", format_coverage_detail(entries))
+            }
+            _ => detail,
+        };
         let label = match &verdict {
             Verdict::Pass => "PASS",
             Verdict::Fail => "FAIL",
@@ -693,6 +713,7 @@ fn execute(
             command,
             log_path: Some(receipt_log_path),
             detail,
+            coverage,
         });
     }
 
@@ -766,6 +787,7 @@ fn run_item(
     item: &PlanItem,
     timeout: Duration,
     log_path: &Path,
+    coverage_path: &Path,
 ) -> Result<RunOutcome, String> {
     let argv = item_command(item);
     let log = File::create(log_path)
@@ -781,6 +803,7 @@ fn run_item(
         .current_dir(repo)
         .env("CARGO_NET_OFFLINE", "true")
         .env("TMPDIR", "/var/tmp")
+        .env(COVERAGE_REPORT_PATH_ENV, coverage_path)
         .env_remove("MAKEFLAGS")
         .env_remove("MFLAGS")
         .env_remove("GNUMAKEFLAGS")
@@ -956,6 +979,14 @@ fn safe_id(id: &str) -> String {
             }
         })
         .collect()
+}
+
+fn format_coverage_detail(entries: &[CoverageEntry]) -> String {
+    entries
+        .iter()
+        .map(|entry| format!("{} of {} ({})", entry.excluded, entry.declared, entry.scope))
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn race_log_inconclusive(log: &str) -> bool {

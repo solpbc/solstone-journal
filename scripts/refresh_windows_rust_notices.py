@@ -812,12 +812,23 @@ def git_source_substitutions(
                     "index's notice spans before refreshing the archive."
                 )
 
+    return {"spl-source.tar": source_tar(checkout)}
+
+
+def source_tar(checkout: Path) -> bytes:
+    """Archive a first-party checkout as a source offer.
+
+    Cargo's git checkout is itself a git repository. Its `.git` directory holds
+    the fetching machine's absolute paths and reflog identity, which are not
+    source and must never be published.
+    """
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w", format=tarfile.PAX_FORMAT) as tar:
         for path in sorted(checkout.rglob("*")):
-            if path.name == ".cargo-ok":
+            relative = path.relative_to(checkout)
+            if path.name == ".cargo-ok" or ".git" in relative.parts:
                 continue
-            info = tar.gettarinfo(str(path), arcname=str(path.relative_to(checkout)))
+            info = tar.gettarinfo(str(path), arcname=str(relative))
             # The archive is a source offer, not a filesystem image. Ownership
             # from whichever machine produced it is noise at best and a leak at
             # worst (VPE principle 8), and a checkout mtime is whenever cargo
@@ -833,7 +844,7 @@ def git_source_substitutions(
                     tar.addfile(info, handle)
             else:
                 tar.addfile(info)
-    return {"spl-source.tar": buffer.getvalue()}
+    return buffer.getvalue()
 
 
 def cargo_git_checkout(source: str, revision: str) -> Path:

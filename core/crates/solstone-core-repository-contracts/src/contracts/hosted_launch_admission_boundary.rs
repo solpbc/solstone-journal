@@ -311,6 +311,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "loopback_guard",
+        include_str!("../../../solstone-core-convey-shell/src/loopback_guard.rs"),
+    ),
+    (
+        "convey",
         "network",
         include_str!("../../../solstone-core-convey-shell/src/network.rs"),
     ),
@@ -448,6 +453,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
         "convey",
         "speakers_review",
         include_str!("../../../solstone-core-convey-shell/src/speakers_review.rs"),
+    ),
+    (
+        "convey",
+        "speakers_source",
+        include_str!("../../../solstone-core-convey-shell/src/speakers_source.rs"),
     ),
     (
         "speaker-resolve",

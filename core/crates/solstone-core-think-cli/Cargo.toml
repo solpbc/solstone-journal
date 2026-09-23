@@ -48,6 +48,8 @@ tokio = { workspace = true, features = ["net", "rt", "time"] }
 
 [dev-dependencies]
 solstone-core-generate.workspace = true
+solstone-core-generate-wire.workspace = true
+solstone-core-talent-runtime = { workspace = true, features = ["test-hooks"] }
 solstone-core-cogitate-wire.workspace = true
 axum = { workspace = true, features = ["tokio"] }
 filetime = "0.2.29"
@@ -58,4 +60,11 @@ tower.workspace = true
 [[test]]
 name = "think_cli_callosum_transport"
 path = "tests/think_cli_callosum_transport.rs"
+required-features = ["test-hooks"]
+
+# Loopback HTTP 400 is a network boundary, so it stays out of the routine
+# library harness and runs only with the test-hooks integration target.
+[[test]]
+name = "daily_provider_rejection_loopback"
+path = "tests/daily_provider_rejection_loopback.rs"
 required-features = ["test-hooks"]

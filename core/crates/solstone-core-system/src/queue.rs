@@ -7,7 +7,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::io;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -386,6 +386,17 @@ pub struct TaskQueueOptions {
     /// `journal think --day` catchup task borrows the supervisor's held
     /// generation. Tasks that do not consult these keys ignore them.
     pub child_environment: BTreeMap<OsString, OsString>,
+    /// The supervisor's own resolved sibling binary (see
+    /// `solstone_core::supervisor::runtime::preflight_journal_binary`), when one was
+    /// validated at startup. A dispatched task whose argv0 is the bare `journal`
+    /// re-entrant command is exec'd against this absolute path instead of a `PATH`
+    /// lookup — the hosted supervisor's own environment is not guaranteed to carry
+    /// the directory `journal` is installed to (a GUI-launched macOS process gets
+    /// the system default `PATH`, which excludes `/usr/local/bin`). `partition_for`
+    /// already recognizes an absolute path whose file name is `solstone-core-journal`
+    /// as the same command family, so this changes only how the child is located,
+    /// never how the task is classified, capped or deduplicated.
+    pub task_binary: Option<PathBuf>,
 }
 
 /// A synchronous, per-partition task queue.
@@ -420,6 +431,7 @@ struct QueueOptions {
     process_sink: Option<Arc<dyn ProcessEventSink>>,
     before_deadline_commit: Option<Arc<dyn Fn() + Send + Sync>>,
     child_environment: BTreeMap<OsString, OsString>,
+    task_binary: Option<PathBuf>,
 }
 
 struct QueueState {
@@ -556,6 +568,7 @@ impl TaskQueue {
                     process_sink: options.process_sink,
                     before_deadline_commit: options.before_deadline_commit,
                     child_environment: options.child_environment,
+                    task_binary: options.task_binary,
                 },
                 state: Mutex::new(QueueState {
                     ready: options.ready,
@@ -1248,6 +1261,24 @@ fn start_dispatch(inner: Arc<QueueInner>, mut dispatch: Dispatch) {
     }
 }
 
+/// The argv actually exec'd for a dispatch, distinct from `dispatch.submission.command`
+/// (which stays the bare-`journal` wire form used for dedup, classification and
+/// history everywhere else). When the supervisor resolved its own sibling binary at
+/// startup, a task whose argv0 is the bare re-entrant `journal` command execs against
+/// that absolute path instead of a `PATH` lookup — `partition_for` already treats an
+/// absolute path ending in `solstone-core-journal` as the same command family, so
+/// only where the child is found changes, never how it is caped, named or logged.
+fn exec_command(task_binary: Option<&Path>, command: &[String]) -> Vec<String> {
+    match (task_binary, command.first()) {
+        (Some(binary), Some(first)) if first == "journal" => {
+            let mut resolved = command.to_vec();
+            resolved[0] = binary.display().to_string();
+            resolved
+        }
+        _ => command.to_vec(),
+    }
+}
+
 fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
     let primary = dispatch.submission.reference.clone();
     let spawner = Arc::clone(
@@ -1258,7 +1289,10 @@ fn run_worker(inner: Arc<QueueInner>, dispatch: Dispatch) {
     );
     let timeout = dispatch.submission.cap;
     let process = spawner(
-        dispatch.submission.command.clone(),
+        exec_command(
+            inner.options.task_binary.as_deref(),
+            &dispatch.submission.command,
+        ),
         SpawnOptions {
             journal_root: inner.options.journal_root.clone(),
             reference: primary.clone(),
@@ -1569,6 +1603,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn exec_command_resolves_bare_journal_argv0_to_the_supervisors_sibling_binary() {
+        let binary = Path::new("/usr/local/lib/solstone-runtime/bin/solstone-core-journal");
+        let submitted = vec![
+            "journal".to_owned(),
+            "think".to_owned(),
+            "-v".to_owned(),
+            "--day".to_owned(),
+            "20260921".to_owned(),
+        ];
+        assert_eq!(
+            exec_command(Some(binary), &submitted),
+            vec![
+                binary.display().to_string(),
+                "think".to_owned(),
+                "-v".to_owned(),
+                "--day".to_owned(),
+                "20260921".to_owned(),
+            ]
+        );
+        // The wire form used for dedup/classification/history is never mutated in place.
+        assert_eq!(submitted[0], "journal");
+    }
+
+    #[test]
+    fn exec_command_leaves_argv_untouched_without_a_resolved_binary() {
+        let submitted = vec!["journal".to_owned(), "heartbeat".to_owned()];
+        assert_eq!(exec_command(None, &submitted), submitted);
+    }
+
+    #[test]
+    fn exec_command_does_not_rewrite_a_command_that_is_not_the_bare_journal_reentry() {
+        let binary = Path::new("/usr/local/lib/solstone-runtime/bin/solstone-core-journal");
+        let submitted = vec!["/bin/sleep".to_owned(), "60".to_owned()];
+        assert_eq!(exec_command(Some(binary), &submitted), submitted);
+    }
+
     enum Poll {
         Error,
         Complete(i32),
@@ -1738,6 +1809,7 @@ mod tests {
             ready,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(plan_spawner(plans));
         queue
@@ -2268,6 +2340,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(plan_spawner(VecDeque::from([SpawnPlan::Failure])));
         let provenance = DailyCatchupProvenance {
@@ -2327,6 +2400,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(plan_spawner(VecDeque::from([
             gated_plan(
@@ -2431,6 +2505,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(Arc::new(move |_, _, _| {
             spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2489,6 +2564,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(Arc::new(move |_, _, _| {
             spawn_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -2540,6 +2616,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_thread_spawner(Arc::new(|_| {
             Err(io::Error::other("injected worker-thread spawn failure"))
@@ -2594,6 +2671,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(plan_spawner(VecDeque::from([
             gated_plan(
@@ -2755,6 +2833,7 @@ mod tests {
             ready: true,
             before_deadline_commit: None,
             child_environment: BTreeMap::new(),
+            task_binary: None,
         });
         queue.set_worker_spawner(Arc::new(move |_, _, timeout| {
             *recorded.lock().expect("captured timeout") = Some(timeout);

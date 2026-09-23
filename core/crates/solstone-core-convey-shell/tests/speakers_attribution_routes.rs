@@ -217,6 +217,50 @@ fn request() -> Value {
     json!({"day":DAY,"stream_layout":"named","stream":STREAM,"segment_key":SEGMENT,"source":SOURCE,"sentence_id":1})
 }
 
+#[tokio::test]
+async fn speaker_post_routes_refuse_unsafe_source_components() {
+    let journal = Journal::new();
+    for source in [
+        "",
+        "..",
+        "../outside",
+        "..%2Foutside",
+        "..%5Coutside",
+        "/outside",
+        r"..\outside",
+        "C:outside",
+        "a\0b",
+        "a%00b",
+    ] {
+        for path in [
+            "/app/speakers/api/assign-attribution",
+            "/app/speakers/api/confirm-attribution",
+            "/app/speakers/api/correct-attribution",
+            "/app/speakers/api/owner/tag-cli",
+            "/app/speakers/api/owner/classify",
+        ] {
+            let mut body = request();
+            body["source"] = json!(source);
+            if path.ends_with("assign-attribution") || path.ends_with("owner/tag-cli") {
+                body["speaker"] = json!("owner");
+            }
+            if path.ends_with("correct-attribution") {
+                body["new_speaker"] = json!("owner");
+            }
+            let (status, response) = call(router(journal.0.clone()), path, body).await;
+            assert_eq!(
+                status,
+                StatusCode::BAD_REQUEST,
+                "{path} {source:?}: {response}"
+            );
+            assert_eq!(
+                response["reason_code"], "invalid_request_value",
+                "{path} {source:?}: {response}"
+            );
+        }
+    }
+}
+
 fn unit(first: f32, second: f32) -> Vec<f32> {
     let mut values = vec![0.0; 256];
     values[0] = first;
