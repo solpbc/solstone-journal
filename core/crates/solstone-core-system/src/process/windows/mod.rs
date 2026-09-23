@@ -44,7 +44,10 @@ mod job;
 #[cfg(any(windows, test))]
 mod job_process;
 #[cfg(windows)]
-pub use forward::{forward_windows_installed_task, forward_windows_native_command};
+pub use forward::{
+    forward_windows_installed_task, forward_windows_native_command, watch_windows_session_end,
+    windows_session_end_requested,
+};
 #[cfg(windows)]
 mod launch_control;
 #[cfg(windows)]

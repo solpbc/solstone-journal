@@ -288,7 +288,8 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
     })
 }
 
-/// Resolve once the retained forwarder latches its stop event.
+/// Resolve once the retained forwarder latches its stop event, or once Windows
+/// asks this process itself to end its session.
 ///
 /// Polled rather than waited on a handle so the supervisor keeps one runtime
 /// and no extra thread; the cadence bounds detection well inside the
@@ -297,13 +298,21 @@ fn plan_status_emission(inputs: StatusEmissionInputs<'_>) -> StatusEmissionPlan 
 async fn await_host_session_end(
     installed_task: Option<&solstone_core_system::process::AdmittedInstalledTaskLaunch>,
 ) {
-    let Some(installed_task) = installed_task else {
-        std::future::pending::<()>().await;
-        return;
-    };
-    while !installed_task.stop_requested().unwrap_or(false) {
+    while !host_session_ending(installed_task) {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// The forwarder's stop event is the ordinary path. The supervisor's own
+/// session-end window is the one that still works at a sign-out: Windows
+/// ends the windowless children at once, and only a process it asks first
+/// can clear the lifecycle markers.
+#[cfg(windows)]
+fn host_session_ending(
+    installed_task: Option<&solstone_core_system::process::AdmittedInstalledTaskLaunch>,
+) -> bool {
+    installed_task.is_some_and(|task| task.stop_requested().unwrap_or(false))
+        || solstone_core_system::process::windows_session_end_requested()
 }
 
 pub(crate) async fn run(
@@ -324,7 +333,7 @@ pub(crate) async fn run(
             return reason;
         }
         #[cfg(windows)]
-        if installed_task.is_some_and(|task| task.stop_requested().unwrap_or(false)) {
+        if host_session_ending(installed_task) {
             return SupervisorStopReason::HostSessionEnd;
         }
         #[cfg(windows)]
