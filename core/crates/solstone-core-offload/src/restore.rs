@@ -203,19 +203,44 @@ fn restore_segment(
         .cloned()
         .collect::<Vec<_>>();
     if !absent.is_empty() {
-        let (Some(destination), Some(keys)) = (
-            get_destination(journal).ok().flatten(),
-            get_keys(journal).ok().flatten(),
-        ) else {
-            return (err("backup_not_ready"), true, None);
+        let (repository, password, env, global_options) = if journal_is_operated(journal) {
+            match solstone_core_backup_runtime::archive_read_session(journal, services) {
+                Ok(Some(session)) => (
+                    session.repository,
+                    session.password,
+                    session.backend_env,
+                    session.global_options,
+                ),
+                Ok(None) => return (err("backup_not_ready"), true, None),
+                Err(reason) => {
+                    let code = if OFFLOAD_RESTORE_REASONS.contains(&reason.as_str()) {
+                        reason.as_str()
+                    } else {
+                        "failed"
+                    };
+                    return (
+                        err(code),
+                        true,
+                        Some(format!("hosted backup session unavailable: {reason}")),
+                    );
+                }
+            }
+        } else {
+            let (Some(destination), Some(keys)) = (
+                get_destination(journal).ok().flatten(),
+                get_keys(journal).ok().flatten(),
+            ) else {
+                return (err("backup_not_ready"), true, None);
+            };
+            let Ok(env) = assemble_backend_env(&destination) else {
+                return (err("failed"), true, None);
+            };
+            let env = env
+                .into_iter()
+                .map(|(key, value)| (key, value.as_str().map(str::to_owned)))
+                .collect::<BTreeMap<_, _>>();
+            (destination.repository, keys.daily_key, env, Vec::new())
         };
-        let Ok(env) = assemble_backend_env(&destination) else {
-            return (err("failed"), true, None);
-        };
-        let env = env
-            .into_iter()
-            .map(|(key, value)| (key, value.as_str().map(str::to_owned)))
-            .collect::<BTreeMap<_, _>>();
         let restic_path = match services.restic_path() {
             Ok(path) => path,
             Err(reason) => return (err(&reason), true, None),
@@ -227,7 +252,8 @@ fn restore_segment(
             Ok(path) => path,
             Err(_) => return (err("destination_admission_failed"), false, None),
         };
-        let mut args = vec![
+        let mut args = global_options;
+        args.extend([
             "restore".into(),
             format!(
                 "{}:{}",
@@ -236,15 +262,15 @@ fn restore_segment(
             ),
             "--target".into(),
             target_directory.display().to_string(),
-        ];
+        ]);
         for file in &absent {
             args.extend(["--include".into(), format!("/{}", file.name)])
         }
         let output = match run_restic(
             services.runner,
             &args,
-            &destination.repository,
-            &keys.daily_key,
+            &repository,
+            &password,
             restic_path,
             Some(&env),
             true,
@@ -400,16 +426,6 @@ fn run(
         result.bytes_expected = expected;
         return result;
     }
-    if operated_restore_requires_rclone(journal, services) {
-        let mut result = base("error", Some("rclone_unavailable"), scope, day);
-        result.segments_selected = selected.len() as u64;
-        result.files_expected = selected
-            .iter()
-            .map(|segment| segment.offloaded_file_count)
-            .sum();
-        result.bytes_expected = expected;
-        return result;
-    }
     let mut details = vec![];
     let mut record_result = true;
     let mut reason_detail = None;
@@ -494,15 +510,13 @@ fn run(
     }
     result
 }
-fn operated_restore_requires_rclone(journal: &Path, services: &BackupServices<'_>) -> bool {
-    let Ok(config) = get_backup_config(journal) else {
-        return false;
-    };
-    config.get("enabled") == Some(&Value::Bool(true))
-        && config.get("mode") == Some(&Value::String("operated".into()))
-        && get_keys(journal).ok().flatten().is_some()
-        && load_hosted_binding(journal).is_some()
-        && services.rclone_path.is_none()
+/// An operated journal's archives live in its hosted repository, not in any
+/// own-bucket destination the configuration may still carry.
+fn journal_is_operated(journal: &Path) -> bool {
+    get_backup_config(journal).is_ok_and(|config| {
+        config.get("mode") == Some(&Value::String("operated".into()))
+            && load_hosted_binding(journal).is_some()
+    })
 }
 pub fn restore_offload_day(
     journal: &Path,
@@ -544,9 +558,7 @@ mod tests {
     use std::os::unix::fs::PermissionsExt;
 
     use crate::ledger::append_offload_event;
-    use solstone_core_backup::{
-        HostedBinding, generate_and_store_keys, save_hosted_binding, set_enabled, set_mode,
-    };
+    use solstone_core_backup::{HostedBinding, save_hosted_binding, set_enabled, set_mode};
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
     use solstone_core_backup_runtime::{
         Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
@@ -656,8 +668,8 @@ mod tests {
     }
 
     fn services<'a>(
-        runner: &'a RestoreRunner,
-        http: &'a Http,
+        runner: &'a dyn ToolRunner,
+        http: &'a dyn HttpTransport,
         clock: &'a TestClock,
         maintenance: &'a Maintenance,
     ) -> BackupServices<'a> {
@@ -1296,15 +1308,48 @@ mod tests {
         assert_eq!(result.reason.as_deref(), Some("segment_missing"));
     }
 
-    #[test]
-    fn configured_operated_restore_without_rclone_reports_the_reference_reason_code() {
-        let journal = tempfile::tempdir().unwrap();
-        marked_segment(journal.path(), "20260114", "140000_014", b"operated");
-        generate_and_store_keys(journal.path()).unwrap();
-        set_enabled(journal.path(), true).unwrap();
-        set_mode(journal.path(), "operated").unwrap();
+    struct RepositoryRunner {
+        repositories: RefCell<Vec<String>>,
+    }
+
+    impl ToolRunner for RepositoryRunner {
+        fn run(&self, request: &ToolRequest<'_>) -> io::Result<ToolOutput> {
+            let repository = request
+                .env
+                .get(std::ffi::OsStr::new("RESTIC_REPOSITORY"))
+                .map(|value| value.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            self.repositories.borrow_mut().push(repository);
+            Ok(ToolOutput {
+                returncode: 1,
+                stdout: vec![],
+                stderr: vec![],
+            })
+        }
+    }
+
+    struct Broker(Option<&'static str>);
+    impl HttpTransport for Broker {
+        fn execute(&self, request: &HttpRequest) -> Result<HttpResponse, HttpError> {
+            assert!(request.url.ends_with("/backup/credentials"));
+            match self.0 {
+                Some(body) => Ok(HttpResponse {
+                    status: 200,
+                    headers: vec![],
+                    body: body.as_bytes().to_vec(),
+                }),
+                None => Err(HttpError::Unreachable),
+            }
+        }
+    }
+
+    /// An operated journal that still carries its earlier own-bucket destination.
+    fn operated_journal_with_retained_destination(journal: &Path) {
+        configure_test_repository(journal);
+        set_enabled(journal, true).unwrap();
+        set_mode(journal, "operated").unwrap();
         save_hosted_binding(
-            journal.path(),
+            journal,
             &HostedBinding {
                 broker_endpoint: "https://broker.example".into(),
                 account_id: "account".into(),
@@ -1315,8 +1360,46 @@ mod tests {
             },
         )
         .unwrap();
-        let runner = empty_runner();
-        let http = Http;
+    }
+
+    #[test]
+    fn an_operated_restore_reads_the_hosted_repository_without_rclone() {
+        let journal = tempfile::tempdir().unwrap();
+        let directory = marked_segment(journal.path(), "20260114", "140000_014", b"operated");
+        fs::remove_file(directory.join("raw.webm")).unwrap();
+        operated_journal_with_retained_destination(journal.path());
+        let runner = RepositoryRunner {
+            repositories: RefCell::new(vec![]),
+        };
+        let http = Broker(Some(
+            r#"{"access_key_id":"HOSTEDKEY","secret_access_key":"HOSTEDSECRET","session_token":"HOSTEDTOKEN","endpoint":"https://hosted.example","expires_at":"2026-01-14T15:00:00Z"}"#,
+        ));
+        let clock = TestClock;
+        let maintenance = Maintenance;
+
+        let result = restore_offload_day(
+            journal.path(),
+            &services(&runner, &http, &clock, &maintenance),
+            "20260114",
+        );
+
+        assert_ne!(result.reason.as_deref(), Some("rclone_unavailable"));
+        assert_eq!(
+            *runner.repositories.borrow(),
+            vec!["s3:https://hosted.example/bucket/prefix".to_owned()]
+        );
+    }
+
+    #[test]
+    fn an_operated_restore_never_falls_back_to_the_retained_destination() {
+        let journal = tempfile::tempdir().unwrap();
+        let directory = marked_segment(journal.path(), "20260114", "140000_014", b"operated");
+        fs::remove_file(directory.join("raw.webm")).unwrap();
+        operated_journal_with_retained_destination(journal.path());
+        let runner = RepositoryRunner {
+            repositories: RefCell::new(vec![]),
+        };
+        let http = Broker(None);
         let clock = TestClock;
         let maintenance = Maintenance;
 
@@ -1327,8 +1410,14 @@ mod tests {
         );
 
         assert_eq!(result.status, "error");
-        assert_eq!(result.reason.as_deref(), Some("rclone_unavailable"));
-        assert!(runner.calls.borrow().is_empty());
+        assert_eq!(result.reason.as_deref(), Some("failed"));
+        assert!(
+            result
+                .reason_detail
+                .as_deref()
+                .is_some_and(|detail| detail.contains("broker_unreachable"))
+        );
+        assert!(runner.repositories.borrow().is_empty());
     }
 
     #[test]

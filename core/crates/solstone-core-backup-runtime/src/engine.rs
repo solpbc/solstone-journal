@@ -1427,6 +1427,47 @@ pub fn run_archive_backup(
     }
 }
 
+/// The repository an archive read goes through, resolved for this journal's
+/// current mode.
+///
+/// Operated reads use the direct hosted session, as archive checks,
+/// verification and the hosted fresh restore do; only append-only writes need
+/// rclone.
+pub struct ArchiveReadSession {
+    pub repository: String,
+    pub password: String,
+    pub backend_env: BTreeMap<String, Option<String>>,
+    pub global_options: Vec<String>,
+}
+
+impl fmt::Debug for ArchiveReadSession {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ArchiveReadSession")
+            .field("repository", &self.repository)
+            .field("password", &"<redacted>")
+            .field("backend_env", &"<redacted>")
+            .field("global_options", &self.global_options)
+            .finish()
+    }
+}
+
+/// Resolve the session [`check_archive_snapshot_files`] reads through, for a
+/// caller that runs its own restic read (an offload restore).
+pub fn archive_read_session(
+    journal: &Path,
+    services: &BackupServices<'_>,
+) -> Result<Option<ArchiveReadSession>, String> {
+    Ok(
+        runtime(journal, services, "backup", false)?.map(|runtime| ArchiveReadSession {
+            repository: runtime.destination.repository,
+            password: runtime.password,
+            backend_env: runtime.backend_env,
+            global_options: runtime.global_options,
+        }),
+    )
+}
+
 pub fn check_archive_snapshot_files(
     journal: &Path,
     services: &BackupServices<'_>,

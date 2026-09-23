@@ -43,11 +43,12 @@ pub use destination_admission::{
     AdmittedDestination, DestinationAdmissionError, admit_restore_destination,
 };
 pub use engine::{
-    ARCHIVE_TAG, AdmittedCapability, ArchiveCheckResult, ArchiveFileVerdict, BACKUP_EXCLUDES,
-    BackupResult, BackupServices, Clock, ClosedToolError, JournalMaintenance,
+    ARCHIVE_TAG, AdmittedCapability, ArchiveCheckResult, ArchiveFileVerdict, ArchiveReadSession,
+    BACKUP_EXCLUDES, BackupResult, BackupServices, Clock, ClosedToolError, JournalMaintenance,
     JournalMaintenanceError, NativeJournalMaintenance, NativeRestoreRecorder, PruneResult,
-    RestoreRecorder, UnreadableSources, VerificationResult, check_archive_snapshot_files, prepare,
-    record_backup_error, run_archive_backup, run_backup, run_prune, run_verification,
+    RestoreRecorder, UnreadableSources, VerificationResult, archive_read_session,
+    check_archive_snapshot_files, prepare, record_backup_error, run_archive_backup, run_backup,
+    run_prune, run_verification,
 };
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
