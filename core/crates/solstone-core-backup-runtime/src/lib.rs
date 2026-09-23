@@ -31,7 +31,9 @@ mod restore_catalog;
 pub mod rotation;
 pub mod runner;
 pub mod s3_wipe;
+pub mod schedule;
 pub mod teardown;
+pub use schedule::effective_backup_schedule;
 #[cfg(windows)]
 pub mod windows_cleanup;
 mod windows_tool;

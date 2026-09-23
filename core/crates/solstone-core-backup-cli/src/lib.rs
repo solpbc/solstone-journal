@@ -275,7 +275,15 @@ fn run_cli_with(
         return usage_error("");
     };
     match command.as_str() {
-        "status" if no_positionals(rest) => render_json(status_view(journal).map(Value::Object)),
+        "status" if no_positionals(rest) => render_json(status_view(journal).map(|mut view| {
+            // The configured `schedule` is a default nothing runs; report what the
+            // scheduler will actually do, as the owner's server status does.
+            view.insert(
+                "schedule".into(),
+                solstone_core_backup_runtime::effective_backup_schedule(journal),
+            );
+            Value::Object(view)
+        })),
         "destination" => destination_command(rest, journal, services),
         "recovery-key" => recovery_key_command(rest, journal, services),
         "enable" if no_positionals(rest) => enable(journal, services),
@@ -4459,6 +4467,33 @@ mod resolution_tests {
             dirs(restic_dir.path(), Some(rclone_dir.path())),
         );
         assert!(rclone_program(&runner.argvs.borrow()).is_some());
+    }
+
+    #[test]
+    fn status_reports_the_schedulers_backup_cadence_not_the_config_default() {
+        let journal = tempfile::tempdir().unwrap();
+        fs::create_dir(journal.path().join("config")).unwrap();
+        fs::write(
+            journal.path().join("config/schedules.json"),
+            r#"{"maintenance:backup:run":{"cmd":["journal","maintenance","run","backup:run"],"every":"hourly","enabled":true}}"#,
+        )
+        .unwrap();
+        let runner = RecordingRunner::new();
+
+        let output = run_cli_with_deps(
+            &args(&["status"]),
+            journal.path(),
+            &runner,
+            &PanicDownload,
+            &UnusedHttp,
+            ToolInstallDirs::default(),
+        );
+
+        let value: Value = serde_json::from_str(&output.stdout).unwrap();
+        assert_eq!(
+            value["schedule"],
+            json!({"enabled": true, "every": "hourly"})
+        );
     }
 
     #[test]
