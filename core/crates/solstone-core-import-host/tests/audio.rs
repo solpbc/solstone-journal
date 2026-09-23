@@ -732,7 +732,9 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let success_temp = TempDir::new().unwrap();
     let mut success_request = request(&success_temp, "dropped-event");
     success_request.wait_for_processing = true;
-    success_request.stall_timeout = Duration::from_millis(20);
+    // This arm asserts the absence of a stall; allow a loaded machine to reconcile instead of
+    // making host scheduling delay the thing under test.
+    success_request.stall_timeout = Duration::from_secs(10);
     success_request.poll_interval = Duration::from_millis(1);
     let success = import_audio_with_seams(
         success_request.clone(),
@@ -776,7 +778,9 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let during_temp = TempDir::new().unwrap();
     let mut during_request = request(&during_temp, "during-loop");
     during_request.wait_for_processing = true;
-    during_request.stall_timeout = Duration::from_millis(50);
+    // The event and import are joined here, so host contention can delay either side. This tests
+    // reconciliation, not scheduling latency.
+    during_request.stall_timeout = Duration::from_secs(10);
     during_request.poll_interval = Duration::from_millis(1);
     let during_wait_request = during_request.clone();
     let during_sidecar = during_request
@@ -962,7 +966,9 @@ async fn ac10_wait_reconciles_disk_and_reports_failures_without_partial() {
     let event_temp = TempDir::new().unwrap();
     let mut event_request = request(&event_temp, "event-without-sidecar");
     event_request.wait_for_processing = true;
-    event_request.stall_timeout = Duration::from_millis(100);
+    // The event is this arm's success signal; let a loaded host process it before calling it a
+    // stall.
+    event_request.stall_timeout = Duration::from_secs(10);
     event_request.poll_interval = Duration::from_millis(1);
     let server =
         CallosumSocketServer::bind(event_request.journal_root.join("health/callosum.sock"))
