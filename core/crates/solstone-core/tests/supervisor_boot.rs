@@ -1675,6 +1675,7 @@ fn exercise_abandoned_generation_boots_unattended(systemd_scope_unit: Option<&st
     );
 
     let mut helper_child = Command::new(journal.system_test_child())
+        .arg("sleep")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
