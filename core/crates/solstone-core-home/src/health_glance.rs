@@ -266,7 +266,7 @@ fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
     issues
 }
 fn unknown_backlog() -> Value {
-    json!({"text":"it's unclear whether your journal is caught up right now.","severity":"amber","href":"/app/health"})
+    json!({"text":solstone_core_system_health::VERDICT_UNCLEAR_NOW,"severity":"amber","href":"/app/health"})
 }
 fn capture_issue(capture: &Value) -> Option<Value> {
     match capture.get("status").and_then(Value::as_str) {

@@ -11,6 +11,7 @@
     installPollGeneration: 0,
     runtimePollGeneration: 0,
     confidentialPollGeneration: 0,
+    localConfirmGeneration: 0,
     selectedByoProvider: '',
     byoMode: 'pick',
     byoSelectedModel: '',
@@ -820,9 +821,20 @@
     if (target !== 'confidential-setup') {
       stopConfidentialPoll({clearOperation: true});
     }
+    let previous = '';
     document.querySelectorAll('#providers [data-view]').forEach((section) => {
+      if (!previous && !section.hidden) previous = section.dataset.view;
       section.hidden = section.dataset.view !== target;
     });
+    if (target !== 'main') {
+      stopLocalConfirmation();
+    } else if (previous && previous !== 'main') {
+      // A setup page can change what the lane cards should say, and the main view
+      // renders from the providers it last fetched.
+      refreshProviders()
+        .then(() => followLocalConfirmation())
+        .catch((err) => setMessage('thinkingActiveDetail', err.message, 'error'));
+    }
     const nextHash = `#${target}`;
     // A hashless load already is the setup route: leave the address alone rather
     // than writing a route token the owner never asked for.
@@ -2200,6 +2212,21 @@
     return !!(readiness?.generate_ready && readiness?.cogitate_ready);
   }
 
+  // Local is the selected lane and installed (the provider reports no issue), but
+  // processing has not confirmed it ready yet.
+  function localAwaitingConfirmation() {
+    return state.providers.active_lane?.lane === 'local'
+      && !localIsReady()
+      && !localEndpointConfigured()
+      && !localReadiness().summary;
+  }
+
+  function localUnreadyCopy() {
+    if (localAwaitingConfirmation()) return "installed. waiting for processing to confirm it's ready.";
+    if (!state.localAvailability) return 'checking whether this computer can run a local model.';
+    return "couldn't tell whether this computer can run a local model.";
+  }
+
   function localIsGpuBlocked() {
     const reason = localReadiness().reason;
     return reason === 'gpu_unavailable';
@@ -2514,8 +2541,8 @@
       setText('localLaneStatus', 'turn on local →');
     } else {
       setPill('localLanePill', 'off');
-      setText('localLaneDescription', local.summary || 'checking whether this computer can run a local model.');
-      setText('localLaneStatus', 'set up →');
+      setText('localLaneDescription', local.summary || localUnreadyCopy());
+      setText('localLaneStatus', localAwaitingConfirmation() ? 'details →' : 'set up →');
     }
 
     renderConfidentialCard();
@@ -3083,6 +3110,23 @@
   async function refreshProviders() {
     state.providers = await refreshProvidersPayload();
     renderAll();
+  }
+
+  function stopLocalConfirmation() {
+    state.localConfirmGeneration += 1;
+  }
+
+  // Processing confirms a newly ready local model with a real generate and cogitate
+  // probe, which takes tens of seconds. Follow it for up to five minutes so the
+  // card turns active without a reload.
+  async function followLocalConfirmation() {
+    stopLocalConfirmation();
+    const generation = state.localConfirmGeneration;
+    for (let attempt = 0; attempt < 100 && localAwaitingConfirmation(); attempt += 1) {
+      await sleep(pollIntervalMs * 2);
+      if (generation !== state.localConfirmGeneration) return;
+      await refreshProviders();
+    }
   }
 
   async function refreshKeys() {
@@ -3767,6 +3811,7 @@
       await refreshLocalRuntime({autoResume: viewFromHash() === 'local-setup'});
       await refreshLocalAvailability();
       await Promise.all([refreshProviders(), refreshKeys()]);
+      if (viewFromHash() === 'main') await followLocalConfirmation();
     } catch (err) {
       setMessage('thinkingActiveDetail', err.message, 'error');
     }

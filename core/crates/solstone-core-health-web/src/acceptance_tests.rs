@@ -623,7 +623,7 @@ mod tests {
                 "it's unclear whether your journal is caught up; the last update age is unknown."
             );
 
-            // Delete stats.json -> still checking where your journal stands.
+            // Delete stats.json -> unclear whether the journal is caught up.
             fs::remove_file(&stats_path).unwrap();
             let r_del = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
             let resp = r_del
@@ -639,7 +639,7 @@ mod tests {
                     .unwrap();
             assert_eq!(
                 bdel["backlog"]["verdict"],
-                "still checking where your journal stands."
+                "it's unclear whether your journal is caught up right now."
             );
         });
     }
