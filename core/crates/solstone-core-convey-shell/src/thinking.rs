@@ -1562,6 +1562,9 @@ mod tests {
         ] {
             setup.insert(key.into(), json!(value));
         }
+        // "how it works" moved inside the confidential card's sentence and
+        // dropped the arrow that now belongs only to the card's action.
+        expected_copy["confidential"]["more_label"] = json!("how it works");
         assert_eq!(body["copy"], expected_copy);
         let _ = fs::remove_dir_all(root);
     }

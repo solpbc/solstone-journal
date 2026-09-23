@@ -96,6 +96,15 @@ fn corpus() -> Value {
                 project_byo_setup_copy(setup);
                 projected = true;
             }
+            // "how it works" moved inside the confidential card's sentence and
+            // dropped the arrow that now belongs only to the card's action.
+            if let Some(confidential) = case
+                .pointer_mut("/json/copy/confidential")
+                .and_then(Value::as_object_mut)
+            {
+                confidential.insert("more_label".into(), json!("how it works"));
+                projected = true;
+            }
             if projected {
                 assert_eq!(case["body_sha256_basis"], "normalized-json");
                 case["body_sha256"] = json!(sha256(canonical_json(&case["json"]).as_bytes()));

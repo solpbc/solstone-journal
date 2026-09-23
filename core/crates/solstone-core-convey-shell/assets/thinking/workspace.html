@@ -368,22 +368,20 @@
       font-weight: 700;
     }
 
-    .thinking-workspace .laneslot {
-      display: grid;
-      gap: 10px;
-      min-width: 0;
-    }
-
-    .thinking-workspace .lanemore {
+    /* The confidential card's "how it works" rides inside its description
+       sentence, not under the card: a line outside one card broke the row's
+       symmetry, and an arrow of its own competed with the card's action. It
+       opens the same setup view the card does, where the explanation lives. */
+    .thinking-workspace .laneinline {
       border: 0;
       background: transparent;
       color: var(--orange-text-aa);
       cursor: pointer;
+      display: inline;
       font: inherit;
-      font-size: 0.86rem;
-      font-weight: 650;
-      justify-self: start;
       padding: 0;
+      text-decoration: underline;
+      text-underline-offset: 2px;
     }
 
     .thinking-workspace .lanedetail {
@@ -750,13 +748,14 @@
         min-height: 46px;
       }
 
-      /* X-09: the lane status/detail links ("manage →", "set up the bundled
-         model →", "how it works →") are plain text with no padding, so their
-         tap target was just the text's own line height (16-19px). Widen the
-         box and center the text in it rather than changing the copy or the
-         underlying link behavior. */
-      .thinking-workspace .trail,
-      .thinking-workspace .lanemore {
+      /* X-09: the lane status links ("manage →", "set up the bundled
+         model →") are plain text with no padding, so their tap target was
+         just the text's own line height (16-19px). Widen the box and center
+         the text in it rather than changing the copy or the underlying link
+         behavior. The in-sentence "how it works" stays inline: a link inside
+         a sentence is exempt from the target minimum, and the whole card is
+         also a tap target for the same view. */
+      .thinking-workspace .trail {
         align-items: center;
         display: inline-flex;
         min-height: var(--touch-min, 44px);
@@ -817,19 +816,15 @@
           <button type="button" class="trail" data-open-view="local-setup" id="localLaneStatus"></button>
         </article>
 
-        <div class="laneslot" id="confidentialLaneSlot">
-          <article class="lane" id="lane-confidential" data-lane="confidential" data-open-view="confidential-setup" role="button" tabindex="0">
-            <div class="lanehead">
-              <h2 id="confidentialLaneTitle"></h2>
-              <span class="pill" id="confidentialLanePill"></span>
-            </div>
-            <p id="confidentialLaneDescription"></p>
-            <span class="activetag" id="confidentialActiveTag" hidden>active</span>
-            <button type="button" class="trail" data-open-view="confidential-setup" id="confidentialLaneStatus"></button>
-          </article>
-          <button type="button" class="lanemore" id="confidentialLaneMore" aria-controls="lane-detail-confidential" aria-expanded="false"></button>
-          <div class="lanedetail" id="lane-detail-confidential" hidden></div>
-        </div>
+        <article class="lane" id="lane-confidential" data-lane="confidential" data-open-view="confidential-setup" role="button" tabindex="0">
+          <div class="lanehead">
+            <h2 id="confidentialLaneTitle"></h2>
+            <span class="pill" id="confidentialLanePill"></span>
+          </div>
+          <p><span id="confidentialLaneDescription"></span> <button type="button" class="laneinline" data-open-view="confidential-setup" id="confidentialLaneMore"></button></p>
+          <span class="activetag" id="confidentialActiveTag" hidden>active</span>
+          <button type="button" class="trail" data-open-view="confidential-setup" id="confidentialLaneStatus"></button>
+        </article>
 
         <article class="lane" id="lane-byo" data-lane="byo" data-open-view="byo-setup" role="button" tabindex="0">
           <div class="lanehead">
@@ -877,6 +872,7 @@
             <div class="lanedetail-claims" id="confidentialTrustClaims"></div>
             <div class="lanedetail-line" id="confidentialTrustFailClosed"></div>
             <div class="lanedetail-line" id="confidentialTrustSubstrate"></div>
+            <div class="lanedetail-line" id="confidentialTrustEarlyAccess"></div>
           </div>
         </section>
 

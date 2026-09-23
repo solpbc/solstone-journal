@@ -146,7 +146,7 @@ pub const THINKING_COPY_PAYLOAD: CopyValue = CopyValue::Object(&[
         "confidential",
         CopyValue::Object(&[
             ("lane_detail", CopyValue::ConfidentialLaneDetail),
-            ("more_label", CopyValue::String("how it works →")),
+            ("more_label", CopyValue::String("how it works")),
             (
                 "setup",
                 CopyValue::Object(&[(

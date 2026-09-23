@@ -11,7 +11,6 @@
     installPollGeneration: 0,
     runtimePollGeneration: 0,
     confidentialPollGeneration: 0,
-    confidentialDetailOpen: false,
     selectedByoProvider: '',
     byoMode: 'pick',
     byoSelectedModel: '',
@@ -2352,47 +2351,8 @@
     pill.classList.toggle('bad', tone === 'bad');
   }
 
-  function renderConfidentialDetailPanel() {
-    const more = $('confidentialLaneMore');
-    const panel = $('lane-detail-confidential');
-    const detail = copy.confidential?.lane_detail || {};
-    if (!more || !panel) return;
-    more.textContent = copy.confidential?.more_label || '';
-    more.setAttribute('aria-expanded', state.confidentialDetailOpen ? 'true' : 'false');
-    panel.hidden = !state.confidentialDetailOpen;
-    panel.textContent = '';
-
-    const heading = document.createElement('div');
-    heading.className = 'lanedetail-heading';
-    heading.textContent = detail.heading || '';
-    const sub = document.createElement('div');
-    sub.className = 'lanedetail-sub';
-    sub.textContent = detail.sub || '';
-    panel.append(heading, sub);
-
-    ['mechanism', 'egress'].forEach((key) => {
-      const line = document.createElement('div');
-      line.className = 'lanedetail-line';
-      line.textContent = detail[key] || '';
-      panel.appendChild(line);
-    });
-
-    const claims = document.createElement('div');
-    claims.className = 'lanedetail-claims';
-    claims.textContent = detail.claims || '';
-    panel.appendChild(claims);
-
-    ['attestation', 'early_access'].forEach((key) => {
-      const line = document.createElement('div');
-      line.className = 'lanedetail-line';
-      line.textContent = detail[key] || '';
-      panel.appendChild(line);
-    });
-
-    more.onclick = () => {
-      state.confidentialDetailOpen = !state.confidentialDetailOpen;
-      renderConfidentialDetailPanel();
-    };
+  function renderConfidentialHowItWorks() {
+    setText('confidentialLaneMore', copy.confidential?.more_label || '');
   }
 
   function confidentialCheckedLabel(attestation) {
@@ -2421,6 +2381,7 @@
     setText('confidentialTrustClaims', beats.claims || '');
     setText('confidentialTrustFailClosed', beats.attestation || '');
     setText('confidentialTrustSubstrate', beats.substrate || '');
+    setText('confidentialTrustEarlyAccess', copy.confidential?.lane_detail?.early_access || '');
   }
 
   function renderConfidentialCard() {
@@ -2558,7 +2519,7 @@
     }
 
     renderConfidentialCard();
-    renderConfidentialDetailPanel();
+    renderConfidentialHowItWorks();
 
     const configured = configuredProviders();
     const activeByo = brain.kind === 'byo';

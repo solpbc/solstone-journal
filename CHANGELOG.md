@@ -14,6 +14,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - your journal now keeps at least one facet unmuted. when your journal starts with every facet muted, or with none, it unmutes Personal, or adds it if you don't have one. you can't mute or delete the last unmuted facet.
 - when you use your own provider key, you now type the model id yourself, exactly as your provider lists it. the short built-in list of models is gone, because it went out of date every time a provider released new models. your journal still checks the model with your provider before saving it.
+- on the thinking page, "how it works" for confidential processing now sits in the card's description and opens the card's own page, instead of expanding underneath the card. that page now also says who confidential processing is available to.
 
 ### Fixed
 
