@@ -127,6 +127,17 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
+id = "classified-full-tests-setup"
+make_target = "check-rust-classified-full-tests-setup"
+set = "component"
+areas = ["health"]
+packages = ["solstone-core-setup"]
+platforms = ["linux", "macos"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+default_full = true
+
+[[legs]]
 id = "journal-mcp-endpoint"
 make_target = "check-rust-journal-mcp-endpoint"
 set = "component"

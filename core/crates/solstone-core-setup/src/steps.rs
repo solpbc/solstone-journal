@@ -163,8 +163,12 @@ pub struct ProcessCommandRunner;
 
 impl CommandRunner for ProcessCommandRunner {
     fn run(&mut self, request: &CommandRequest) -> Result<CommandOutput, String> {
+        // Setup never writes a payload to a child. Leaving stdin inherited
+        // stalls the first child that reads it through to EOF (`solstone call`
+        // does) whenever the caller holds a non-TTY stdin open.
         let mut child = Command::new(&request.program)
             .args(&request.args)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
@@ -2231,6 +2235,7 @@ mod tests {
         fs::create_dir(&other).unwrap();
         assert!(!paths_match(other.to_str().unwrap(), &link, &root, &root));
     }
+
     use super::*;
     use crate::args::{ResolutionContext, parse_args_at, resolve_mode, resolve_setup};
     use crate::events::{EventSink, EventType};
@@ -3976,5 +3981,81 @@ mod tests {
         );
         assert!(native_already_keeps_journal_probe(&setup).unwrap());
         assert!(!home.join(".local/bin/solstone").exists());
+    }
+}
+
+/// Process boundary: a held-open stdin is not the routine unit harness.
+#[cfg(all(test, feature = "full-tests"))]
+mod held_stdin {
+    use std::io;
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use super::{CommandRequest, CommandRunner, ProcessCommandRunner};
+
+    /// A caller that keeps a non-TTY stdin open must not stall a setup child.
+    /// The child reads stdin through to EOF, as `solstone call` does, while the
+    /// parent's write end stays open for the whole run.
+    #[test]
+    fn held_open_non_tty_stdin_cannot_stall_a_setup_child() {
+        const PROBE: &str = "SOLSTONE_SETUP_STDIN_PROBE";
+        const TEST_NAME: &str =
+            "steps::held_stdin::held_open_non_tty_stdin_cannot_stall_a_setup_child";
+        const READER_ARG: &str = "--solstone-setup-stdin-reader";
+        if std::env::args().any(|arg| arg == READER_ARG) {
+            let mut sink = Vec::new();
+            io::Read::read_to_end(&mut io::stdin(), &mut sink).expect("read child stdin");
+            std::process::exit(42);
+        }
+        if std::env::var_os(PROBE).is_some() {
+            let output = ProcessCommandRunner
+                .run(&CommandRequest {
+                    program: std::env::current_exe().expect("test executable"),
+                    args: vec![
+                        "--exact".into(),
+                        TEST_NAME.into(),
+                        "--test-threads".into(),
+                        "1".into(),
+                        "--".into(),
+                        READER_ARG.into(),
+                    ],
+                    timeout_seconds: Some(15),
+                })
+                .expect("spawn reader");
+            if output.timed_out || output.exit_code != 42 {
+                eprintln!(
+                    "reader timed_out={} exit={} stdout={} stderr={}",
+                    output.timed_out, output.exit_code, output.stdout, output.stderr
+                );
+                std::process::exit(1);
+            }
+            std::process::exit(0);
+        }
+
+        let (read, write) = io::pipe().expect("pipe");
+        let mut child = Command::new(std::env::current_exe().expect("test executable"));
+        child
+            .args(["--exact", TEST_NAME, "--test-threads", "1"])
+            .env(PROBE, "1")
+            .stdin(Stdio::from(read));
+        let mut child = child.spawn().expect("spawn probe");
+        let started = Instant::now();
+        let status = loop {
+            if let Some(status) = child.try_wait().expect("probe wait") {
+                break status;
+            }
+            if started.elapsed() > Duration::from_secs(30) {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("probe did not finish; a held-open stdin stalled setup's child");
+            }
+            thread::sleep(Duration::from_millis(20));
+        };
+        drop(write);
+        assert!(
+            status.success(),
+            "setup child stalled or failed under a held-open non-TTY stdin: {status}"
+        );
     }
 }

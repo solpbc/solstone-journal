@@ -534,6 +534,7 @@ fn classified_same_crate_packages_are_routine_and_have_package_specific_full_rou
         "solstone-core-describe",
         "solstone-core-facets",
         "solstone-core-mcp-endpoint",
+        "solstone-core-setup",
         "solstone-core-sol-link",
         "solstone-core-speakers-analyze",
         "solstone-core-speakers-onnx",
@@ -626,6 +627,7 @@ fn efficient_ci_statically_checks_only_library_and_binary_targets() {
         "facets",
         "describe",
         "mcp-endpoint",
+        "setup",
     ] {
         let target = format!("check-rust-classified-full-clippy-{suffix}");
         assert!(full.contains(&target), "full Clippy lost {target}");

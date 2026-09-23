@@ -9,6 +9,9 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+[features]
+full-tests = []
+
 [dependencies]
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
