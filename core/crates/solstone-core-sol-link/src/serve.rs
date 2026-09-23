@@ -23,7 +23,7 @@ use solstone_core_sol_client::seam::{
     LinkServeRequest, LinkServeRunner, LinkServeRuntimeRecord, LinkServeSession,
     LinkServeStatusSnapshot, LinkServeTransportErrorKind, UnknownJournalSighting,
 };
-use spl_core::bridge::{BridgeNames, RequestHeaderPolicy};
+use spl_core::bridge::BridgeNames;
 use spl_transport::client::{DialedCarrier, TokenPersistHook, TransportClient};
 use spl_transport::credential::{Credential, EndpointAddr};
 use spl_transport::journal_bridge::{
@@ -812,7 +812,6 @@ fn bridge_policy(tracker: Arc<StatusTracker>) -> BridgePolicy {
             })
         }),
         attribution_headers: Arc::new(|_| Vec::new()),
-        request_headers: RequestHeaderPolicy::ForwardAll,
         max_request_body_bytes: CONNECTION_BODY_LIMIT,
     }
 }
