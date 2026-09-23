@@ -669,11 +669,16 @@ fn dirty_removed_day(journal: &Path, row: &mut TargetOutcome) -> bool {
         && row.post_commit_failure.is_none()
     {
         let path = health_marker_path(journal, &row.target.day, HealthMarkerKind::Stream);
-        let relative = path
-            .strip_prefix(journal)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
+        // A journal rel is `/`-separated on every platform; `display()` would
+        // spell it with backslashes on Windows.
+        let relative = match path.strip_prefix(journal) {
+            Ok(relative) => relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/"),
+            Err(_) => path.display().to_string(),
+        };
         row.post_commit_failure = Some(PostCommitFailure {
             entry: relative,
             reason: format!(
