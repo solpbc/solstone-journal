@@ -677,7 +677,7 @@ impl OneShotClient {
         // A plain spawn inherits the admitted parent's consumed launch descriptor,
         // and the child refuses it as expired. Only the product launcher filters it.
         #[cfg(windows)]
-        for name in solstone_core_system::process::launch_only_environment_names() {
+        for name in crate::WINDOWS_LAUNCH_ONLY_ENVIRONMENT {
             command.env_remove(name);
         }
         let child = command

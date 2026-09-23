@@ -33,6 +33,7 @@ mod bounded_cleanup;
 mod command_line;
 #[cfg(any(windows, test))]
 mod environment;
+#[cfg(windows)]
 pub use environment::launch_only_environment_names;
 #[cfg(windows)]
 mod forward;

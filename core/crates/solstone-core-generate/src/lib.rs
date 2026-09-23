@@ -30,3 +30,19 @@ pub use types::{
     ReasonCode, ReasonCodeValue, RefusalReason, RefusedResponse, SessionTerminal,
     UnknownReasonCode,
 };
+
+/// The Windows launch-protocol environment names a child may only receive fresh
+/// from its own launcher (`solstone_core_system::process::launch_only_environment_names`).
+/// This crate is publishable and cannot depend on `solstone-core-system`, so it keeps
+/// its own copy; `solstone-core-cogitate-wire` tests that the two lists are equal.
+pub const WINDOWS_LAUNCH_ONLY_ENVIRONMENT: [&str; 9] = [
+    "SOL_WINDOWS_LAUNCH",
+    "SOL_SUPERVISOR_SPAWNED",
+    "SOL_HOSTED_LAUNCH_ID",
+    "SOL_HOSTED_PARENT_INSTANCE",
+    "SOL_HOSTED_ACK_HANDLE",
+    "SOL_HOSTED_STOP_HANDLE",
+    "SOL_PARENT_LOSS_GENERATION",
+    "SOL_PARENT_LOSS_LAUNCH_ID",
+    "SOL_PARENT_LOSS_PARENT_LAUNCH_ID",
+];
