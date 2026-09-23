@@ -21,6 +21,9 @@ const NO_ELIGIBLE_HEADLINE: &str =
 // An idle device is a device with no new material. Reachability is a heartbeat
 // window, not something the journal measures for its own host, so the line says
 // what is known — nothing was added, and when the last thing was — and stops.
+// Day 0 with a device already delivering: things are arriving, and the summary
+// that could prove the rest hasn't had its first chance yet. Calm, never green.
+const NOT_YET_ACTIVE_HEADLINE: &str = "the solstone app is adding to your journal.";
 const UNNAMED_IDLE_ISSUE: &str =
     "the solstone app on one of your devices hasn't added anything to your journal recently.";
 
@@ -41,6 +44,28 @@ enum CaptureDisposition {
 }
 
 pub fn build_health_glance(
+    capture: &Value,
+    pipeline: &Value,
+    last_observe: Option<&str>,
+    backlog: &BacklogSource,
+    brain: &Value,
+    now: DateTime<Utc>,
+) -> Value {
+    let mut glance = derive_glance(capture, pipeline, last_observe, backlog, brain, now);
+    if let BacklogValidity::NotYet(not_yet) = backlog.validity {
+        // Not counted, never hidden: the note rides every verdict. Green is
+        // earned by a summary, so an `ok` the note sits beside becomes calm.
+        if glance["verdict"] == "ok" {
+            glance["verdict"] = json!("calm");
+            glance["severity"] = json!("neutral");
+            glance["headline"] = json!(NOT_YET_ACTIVE_HEADLINE);
+        }
+        glance["note"] = json!({"text": not_yet.text(), "href": not_yet.href()});
+    }
+    glance
+}
+
+fn derive_glance(
     capture: &Value,
     pipeline: &Value,
     last_observe: Option<&str>,
@@ -212,6 +237,9 @@ fn calm_json(kind: CalmKind) -> Value {
 }
 
 fn backlog_issues(source: &BacklogSource, now: DateTime<Utc>) -> Vec<Value> {
+    if matches!(source.validity, BacklogValidity::NotYet(_)) {
+        return Vec::new();
+    }
     if source.validity != BacklogValidity::Valid {
         return vec![unknown_backlog()];
     }
@@ -1047,5 +1075,79 @@ mod tests {
             g["issues"][0]["text"],
             "the solstone app on one of your devices is having trouble adding default to your journal."
         );
+    }
+
+    fn not_yet(kind: solstone_core_system_health::NotYet) -> BacklogSource {
+        BacklogSource {
+            backlog: None,
+            validity: BacklogValidity::NotYet(kind),
+            generated_at: None,
+        }
+    }
+
+    fn not_yet_glance(capture: &Value, brain: &Value, backlog: &BacklogSource) -> Value {
+        build_health_glance(
+            capture,
+            &json!({}),
+            Some("2 minutes ago"),
+            backlog,
+            brain,
+            now(),
+        )
+    }
+
+    /// Day 0: the missing summary is a note on every verdict, never an issue,
+    /// and never lets a delivering device turn home green (req_nqxybwmk).
+    #[test]
+    fn first_night_is_a_calm_note_never_a_count_and_never_green() {
+        use solstone_core_system_health::{NOT_YET_ENGINE, NOT_YET_FIRST_NIGHT, NotYet};
+        let note = |glance: &Value| glance["note"]["text"].as_str().map(str::to_owned);
+
+        // A device already delivering on day 0: calm, not ok.
+        let active = json!({"status": "active", "clients": [client("phone", "active", "active")], "registry": "registry_complete"});
+        let delivering = not_yet_glance(&active, &Value::Null, &not_yet(NotYet::FirstNight));
+        assert_eq!(delivering["verdict"], "calm");
+        assert_eq!(delivering["severity"], "neutral");
+        assert_eq!(delivering["headline"], NOT_YET_ACTIVE_HEADLINE);
+        assert_eq!(delivering["last_observation"], "2 minutes ago");
+        assert!(delivering["issues"].as_array().unwrap().is_empty());
+        assert_eq!(note(&delivering).as_deref(), Some(NOT_YET_FIRST_NIGHT));
+        assert_eq!(delivering["note"]["href"], "/app/health/#backlogVerdict");
+
+        // No way to think yet: the one real ask is the only count.
+        let empty = json!({"status": "no_clients", "registry": "registry_empty"});
+        let blocked = json!({"state": "blocked", "headline": "processing needs a setup"});
+        let no_engine = not_yet_glance(&empty, &blocked, &not_yet(NotYet::AwaitingEngine));
+        assert_eq!(no_engine["verdict"], "attention");
+        assert_eq!(no_engine["headline"], "1 thing needs your attention");
+        assert_eq!(no_engine["issues"][0]["text"], "processing needs a setup");
+        assert_eq!(note(&no_engine).as_deref(), Some(NOT_YET_ENGINE));
+        assert_eq!(no_engine["note"]["href"], "/app/thinking/");
+
+        // No devices, thinking set up: the first-run invite comes back.
+        let first_run = not_yet_glance(&empty, &Value::Null, &not_yet(NotYet::FirstNight));
+        assert_eq!(first_run["verdict"], "calm");
+        assert_eq!(first_run["headline"], EMPTY_REGISTRY_HEADLINE);
+        assert_eq!(first_run["cta"]["text"], "set one up →");
+        assert_eq!(note(&first_run).as_deref(), Some(NOT_YET_FIRST_NIGHT));
+
+        // A summary that is missing for any other reason keeps today's amber.
+        let missing = BacklogSource {
+            backlog: None,
+            validity: BacklogValidity::Missing,
+            generated_at: None,
+        };
+        let amber = not_yet_glance(&active, &Value::Null, &missing);
+        assert_eq!(amber["verdict"], "attention");
+        assert_eq!(
+            amber["issues"][0]["text"],
+            solstone_core_system_health::VERDICT_UNCLEAR_NOW
+        );
+        assert!(amber.get("note").is_none());
+
+        // A healthy summary: no note, and green is earned.
+        let green = glance_at(&active, Some("2 minutes ago"), &Value::Null, now());
+        assert_eq!(green["verdict"], "ok");
+        assert!(green.get("note").is_none());
     }
 }

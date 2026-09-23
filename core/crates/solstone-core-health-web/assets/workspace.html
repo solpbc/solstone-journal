@@ -393,6 +393,21 @@
   margin: 0;
 }
 
+/* Not yet, and that's fine: no warning rule, and the same hollow ring home uses. */
+.backlog-verdict-card.is-not-yet {
+  border-left-color: #e5e7eb;
+}
+.backlog-verdict-card.is-not-yet .backlog-verdict-line::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 0.55em;
+  border: 1.5px solid #6b7280;
+  border-radius: 50%;
+  vertical-align: 0.1em;
+}
+
 .backlog-needs-hand {
   background: #fffbeb;
   border: 1px solid #fcd34d;

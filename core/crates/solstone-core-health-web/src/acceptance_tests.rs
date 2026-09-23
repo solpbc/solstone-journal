@@ -319,6 +319,85 @@ mod tests {
             });
     }
 
+    fn state_body(root: &Path, now: chrono::DateTime<Utc>) -> Value {
+        let router = routes_with_clock(root.to_path_buf(), Clock::fixed(now));
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async {
+                let response = router
+                    .oneshot(
+                        Request::get("/app/health/api/state")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), 200);
+                let bytes = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+                serde_json::from_slice(&bytes).unwrap()
+            })
+    }
+
+    /// Day 0 on /app/health says what home says, from the same rule (req_nqxybwmk).
+    #[test]
+    fn a_summary_that_has_not_come_up_yet_is_calm_on_health() {
+        let temp = TempDir::new().unwrap();
+        let root = temp.path();
+        let now = Utc::now();
+
+        // No way to think chosen: the nightly run is off, and search makes no claim.
+        let body = state_body(root, now);
+        assert_eq!(body["backlog"]["not_yet"], "awaiting_engine");
+        assert_eq!(
+            body["backlog"]["verdict"],
+            solstone_core_system_health::NOT_YET_ENGINE
+        );
+        assert_eq!(body["search_index"]["text"], "");
+
+        // A way to think, and the journal began today: its first night is ahead.
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .unwrap();
+        let today = now
+            .with_timezone(&chrono::Local)
+            .format("%Y%m%d")
+            .to_string();
+        fs::create_dir_all(root.join("chronicle").join(&today)).unwrap();
+        let body = state_body(root, now);
+        assert_eq!(body["backlog"]["not_yet"], "first_night");
+        assert_eq!(
+            body["backlog"]["verdict"],
+            solstone_core_system_health::NOT_YET_FIRST_NIGHT
+        );
+        assert_eq!(
+            body["search_index"]["text"],
+            solstone_core_system_health::NOT_YET_SEARCH
+        );
+
+        // The injected clock decides: three days on, the first night has passed
+        // with no summary, so it is unclear again.
+        let later = state_body(root, now + Duration::days(3));
+        assert!(later["backlog"]["not_yet"].is_null());
+        assert_eq!(
+            later["backlog"]["verdict"],
+            solstone_core_system_health::VERDICT_UNCLEAR_NOW
+        );
+
+        // Any summary file at all keeps today's rules.
+        fs::write(root.join("stats.json"), "not json").unwrap();
+        let body = state_body(root, now);
+        assert!(body["backlog"]["not_yet"].is_null());
+        assert_eq!(
+            body["backlog"]["verdict"],
+            solstone_core_system_health::VERDICT_UNCLEAR_NOW
+        );
+    }
+
     #[test]
     fn test_10_routes_with_clock_uses_injected_clock() {
         let temp = TempDir::new().unwrap();
@@ -623,8 +702,17 @@ mod tests {
                 "it's unclear whether your journal is caught up; the last update age is unknown."
             );
 
-            // Delete stats.json -> unclear whether the journal is caught up.
+            // Delete stats.json -> unclear whether the journal is caught up,
+            // once a way to think is chosen and the first night has passed
+            // (before that it is not yet due: req_nqxybwmk).
             fs::remove_file(&stats_path).unwrap();
+            fs::create_dir_all(root.join("config")).unwrap();
+            fs::write(
+                root.join("config/journal.json"),
+                br#"{"providers":{"active":{"provider":"local"}}}"#,
+            )
+            .unwrap();
+            fs::create_dir_all(root.join("chronicle/20200101")).unwrap();
             let r_del = routes_with_clock(root.to_path_buf(), Clock::fixed(now_shortly));
             let resp = r_del
                 .oneshot(

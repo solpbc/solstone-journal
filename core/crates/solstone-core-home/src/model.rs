@@ -13,6 +13,9 @@ pub struct BacklogSource {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BacklogValidity {
     Missing,
+    /// No summary yet, and the nightly catch-up hasn't had its first chance to
+    /// write one. Calm on home: shown as a note, never counted.
+    NotYet(solstone_core_system_health::NotYet),
     Unparseable,
     Malformed,
     NoBacklogKey,

@@ -277,6 +277,9 @@
     const rows = Array.isArray(data.stuck_rows) ? data.stuck_rows : [];
     const verdictLine = document.querySelector('#backlogVerdict .backlog-verdict-line');
     if (verdictLine) renderBacklogVerdict(verdictLine, data, rows.length);
+    // Before the nightly run's first chance: calm, not a warning (req_nqxybwmk).
+    const verdictCard = document.getElementById('backlogVerdict');
+    if (verdictCard) verdictCard.classList.toggle('is-not-yet', typeof data.not_yet === 'string' && data.not_yet.length > 0);
 
     const unfinishedLine = document.querySelector('#backlogVerdict .backlog-unfinished-line');
     if (unfinishedLine) {

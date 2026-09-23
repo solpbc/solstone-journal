@@ -135,6 +135,24 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                 replace_text(&mut wanted, legacy, current);
                             }
                         }
+                        // req_nqxybwmk: the captured corpus predates the not-yet split.
+                        // No corpus phase chooses a way to think, so a phase with no
+                        // summary file reads the awaiting-engine verdict (search makes
+                        // no claim); a phase with one carries `not_yet: null`.
+                        if case["name"].as_str() == Some("api_state") && expected["status"] == 200 {
+                            let summary_exists = root.path().join("stats.json").exists();
+                            let backlog = wanted["backlog"].as_object_mut().expect("backlog");
+                            if summary_exists {
+                                backlog.insert("not_yet".into(), Value::Null);
+                            } else {
+                                backlog.insert("not_yet".into(), json!("awaiting_engine"));
+                                backlog.insert(
+                                    "verdict".into(),
+                                    json!(solstone_core_system_health::NOT_YET_ENGINE),
+                                );
+                                wanted["search_index"]["text"] = json!("");
+                            }
+                        }
                         for pattern in case["normalized"]
                             .as_array()
                             .expect("normalized")
@@ -410,7 +428,36 @@ async fn ac6_absent_and_unparseable_stats_share_the_unknown_backlog() {
             .clone()
     }
     let absent = backlog("stats_absent").await;
-    assert_eq!(absent, backlog("stats_unparseable").await);
+    // req_nqxybwmk: with no way to think chosen the nightly run is off, so an
+    // absent summary is not yet due; an unreadable one stays unclear.
+    assert_eq!(absent["not_yet"], "awaiting_engine");
+    let unparseable = backlog("stats_unparseable").await;
+    assert!(unparseable["not_yet"].is_null());
+    assert_eq!(
+        unparseable["verdict"],
+        solstone_core_system_health::VERDICT_UNCLEAR_NOW
+    );
+    // Once a way to think is chosen and the first night has passed, absent and
+    // unparseable share the unknown backlog again.
+    let root = crate::test_support::phase_root("stats_absent");
+    std::fs::write(
+        root.path().join("config/journal.json"),
+        br#"{"setup":{"completed_at":1700000000000},"identity":{"name":"Corpus Owner","timezone":"UTC"},"providers":{"active":{"provider":"local"}}}"#,
+    )
+    .unwrap();
+    let response = solstone_core_convey_shell::router(root.path().to_path_buf())
+        .oneshot(
+            Request::get("/app/health/api/state")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let engine_absent =
+        serde_json::from_slice::<Value>(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
+            .unwrap()["backlog"]
+            .clone();
+    assert_eq!(engine_absent, unparseable);
     assert_ne!(absent, backlog("established_populated").await);
 }
 

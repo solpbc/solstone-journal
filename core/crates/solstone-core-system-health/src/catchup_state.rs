@@ -31,6 +31,29 @@ pub fn read_backoff_summary(journal: &Path, day: &str) -> Option<BackoffSummary>
     })
 }
 
+/// Return whether any whole-day catch-up has run to a settled outcome. Admission
+/// writes the entry with an empty `last_outcome`; `superseded` and `progressing`
+/// are retried by the supervisor on its own, so they have not settled yet.
+pub fn read_daily_catchup_finished(journal: &Path) -> bool {
+    let Ok(bytes) = std::fs::read(catchup_state_path(journal)) else {
+        return false;
+    };
+    let Ok(value) = serde_json::from_slice::<Value>(&bytes) else {
+        return false;
+    };
+    let suffix = format!(":{KIND_DAILY_CATCHUP}");
+    normalized_entries(&value).iter().any(|(key, record)| {
+        key.ends_with(&suffix)
+            && record
+                .get("last_outcome")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .is_some_and(|outcome| {
+                    !outcome.is_empty() && !matches!(outcome, "superseded" | "progressing")
+                })
+    })
+}
+
 /// Return whether the segment-repair state records at least one attempt.
 pub fn read_segment_repair_attempted(journal: &Path, day: &str) -> bool {
     shared_record(journal, day, KIND_SEGMENT_REPAIR)

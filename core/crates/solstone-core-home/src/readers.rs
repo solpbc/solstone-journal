@@ -36,7 +36,7 @@ use crate::HomeContext;
 use crate::formatting::format_date;
 use crate::model::{BacklogSource, BacklogValidity, FlowDocument, PulseNarrative};
 
-const BRIEFING_MORNING_END_HOUR: u32 = 10;
+const BRIEFING_MORNING_END_HOUR: u32 = solstone_core_system_health::OVERNIGHT_WINDOW_END_HOUR;
 const BRIEFING_LATENESS_THRESHOLD_HOURS: u32 = 2;
 const BRIEFING_EOD_HOUR: u32 = 20;
 
@@ -695,9 +695,14 @@ pub fn load_backlog_source(context: &HomeContext) -> BacklogSource {
     let bytes = match fs::read(path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let validity = solstone_core_system_health::summary_not_yet(
+                context.journal_root(),
+                context.now_local().naive_local(),
+            )
+            .map_or(BacklogValidity::Missing, BacklogValidity::NotYet);
             return BacklogSource {
                 backlog: None,
-                validity: BacklogValidity::Missing,
+                validity,
                 generated_at: None,
             };
         }
@@ -1512,6 +1517,18 @@ mod tests {
     fn backlog_reader_distinguishes_missing_malformed_and_valid_root_documents() {
         let root = TempDir::new().unwrap();
         let context = context(root.path());
+        // No way to think chosen: the nightly run that writes the summary is off.
+        assert_eq!(
+            load_backlog_source(&context).validity,
+            BacklogValidity::NotYet(solstone_core_system_health::NotYet::AwaitingEngine)
+        );
+        // A way to think, and the journal's first night long past: missing is missing.
+        write(
+            root.path(),
+            "config/journal.json",
+            r#"{"providers":{"active":{"provider":"local"}}}"#,
+        );
+        fs::create_dir_all(root.path().join("chronicle/20200101")).unwrap();
         assert_eq!(
             load_backlog_source(&context).validity,
             BacklogValidity::Missing

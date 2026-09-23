@@ -132,8 +132,22 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
         .unwrap_or(Value::Null);
     let briefing_needs = briefing_needs_items(&briefing_document);
     let briefing_exists = !briefing_sections.as_object().is_none_or(Map::is_empty);
-    let briefing_phase =
-        compute_briefing_phase(segment_count, context.local_hour(), briefing_exists);
+    let briefing_not_yet = if briefing_exists {
+        None
+    } else {
+        solstone_core_system_health::journal_not_yet(
+            context.journal_root(),
+            context.now_local().naive_local(),
+        )
+    };
+    let briefing_phase = briefing_not_yet_phase(
+        briefing_exists,
+        briefing_not_yet,
+        segment_count > 0 || last_observe_relative.is_some(),
+    )
+    .unwrap_or_else(|| {
+        compute_briefing_phase(segment_count, context.local_hour(), briefing_exists)
+    });
     let briefing_lateness = briefing_lateness_state(context.now_local(), briefing_phase);
     let show_welcome = narrative_content.is_none()
         && anticipated_activities.is_empty()
@@ -336,6 +350,24 @@ fn build_pulse_context(context: &HomeContext) -> PulseContext {
 /// Project a full context to the public pulse API shape.
 pub fn pulse_payload(context: &HomeContext) -> Value {
     build_pulse_context(context).into_pulse_payload()
+}
+
+/// Before the nightly run has had its first chance, no briefing is late or
+/// missing: say when the first one is due instead (req_nqxybwmk).
+fn briefing_not_yet_phase(
+    briefing_exists: bool,
+    not_yet: Option<solstone_core_system_health::NotYet>,
+    has_content: bool,
+) -> Option<&'static str> {
+    use solstone_core_system_health::NotYet;
+    if briefing_exists {
+        return None;
+    }
+    match not_yet? {
+        NotYet::AwaitingEngine => Some("awaiting_engine"),
+        NotYet::FirstNight if has_content => Some("first_night"),
+        NotYet::FirstNight => Some("first_night_empty"),
+    }
 }
 
 /// Project the briefing fields from a freshly assembled context for this request.
@@ -602,6 +634,66 @@ mod tests {
         );
     }
 
+    /// The loader wiring, end to end: a journal with a way to think whose first
+    /// night is ahead reads calm with a note; once the window closes with no
+    /// summary it is the counted amber again (req_nqxybwmk).
+    #[test]
+    fn first_night_reaches_the_payload_and_ends_on_the_clock() {
+        let root = TempDir::new().unwrap();
+        engine_chosen(root.path());
+        fs::create_dir_all(root.path().join("chronicle/20260814")).unwrap();
+        let unclear = solstone_core_system_health::VERDICT_UNCLEAR_NOW;
+        let has_unclear = |payload: &Value| {
+            payload["health_glance"]["issues"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|issue| issue["text"] == unclear)
+        };
+
+        let day0 = pulse_payload(&utc_context(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 14, 15, 0, 0).unwrap(),
+        ));
+        assert_eq!(
+            day0["health_glance"]["note"]["text"],
+            solstone_core_system_health::NOT_YET_FIRST_NIGHT
+        );
+        assert!(!has_unclear(&day0), "{}", day0["health_glance"]);
+        assert_ne!(day0["health_glance"]["verdict"], "ok");
+        assert_eq!(day0["briefing_phase"], "first_night_empty");
+
+        let day1 = pulse_payload(&utc_context(
+            root.path(),
+            Utc.with_ymd_and_hms(2026, 8, 15, 10, 0, 0).unwrap(),
+        ));
+        assert!(day1["health_glance"].get("note").is_none());
+        assert!(has_unclear(&day1), "{}", day1["health_glance"]);
+        assert_eq!(day1["briefing_phase"], "missing");
+    }
+
+    #[test]
+    fn briefing_before_the_first_night_says_when_it_is_due() {
+        use solstone_core_system_health::NotYet;
+        assert_eq!(
+            briefing_not_yet_phase(false, Some(NotYet::AwaitingEngine), true),
+            Some("awaiting_engine")
+        );
+        assert_eq!(
+            briefing_not_yet_phase(false, Some(NotYet::FirstNight), true),
+            Some("first_night")
+        );
+        assert_eq!(
+            briefing_not_yet_phase(false, Some(NotYet::FirstNight), false),
+            Some("first_night_empty")
+        );
+        assert_eq!(
+            briefing_not_yet_phase(true, Some(NotYet::AwaitingEngine), true),
+            None
+        );
+        assert_eq!(briefing_not_yet_phase(false, None, true), None);
+    }
+
     #[test]
     fn empty_fixture_matches_the_captured_pulse_and_briefing() {
         let (_fixture, context) = fixture_context(
@@ -718,6 +810,9 @@ mod tests {
     #[test]
     fn empty_journal_phase_tracks_the_injected_hour() {
         let root = TempDir::new().unwrap();
+        // A way to think is chosen and the first night is long past, so the
+        // briefing clock alone decides the phase (req_nqxybwmk owns day 0).
+        engine_chosen_and_first_night_past(root.path());
         for hour in 0..24 {
             let context = utc_context(
                 root.path(),
@@ -749,6 +844,22 @@ mod tests {
             "pending",
         );
         assert_eq!(late, json!({"late":true,"late_hours":3}));
+
+        // With no way to think, no briefing is ever late: the card says what
+        // unlocks it, at every hour.
+        let blank = TempDir::new().unwrap();
+        for hour in [9, 13, 22] {
+            let context = utc_context(
+                blank.path(),
+                Utc.with_ymd_and_hms(2026, 8, 14, hour, 0, 0).unwrap(),
+            );
+            let payload = pulse_payload(&context);
+            assert_eq!(payload["briefing_phase"], "awaiting_engine", "hour {hour}");
+            assert_eq!(
+                payload["briefing_lateness"],
+                json!({"late":false,"late_hours":0})
+            );
+        }
     }
 
     fn mountain_day() -> FixedOffset {
@@ -806,6 +917,8 @@ mod tests {
     fn a_late_evening_pulse_reports_the_local_day_not_the_utc_one() {
         // 2026-09-05 21:30 in Denver is already 2026-09-06 03:30 UTC.
         let root = september_journal();
+        // Its first day is 09-04, so the first night is already past.
+        engine_chosen(root.path());
         let context = HomeContext::with_day_offset(
             root.path(),
             Utc.with_ymd_and_hms(2026, 9, 6, 3, 30, 0).unwrap(),
@@ -1248,6 +1361,20 @@ mod tests {
     /// host's zone; the local-day behaviour has its own tests below.
     fn utc_context(root: impl Into<std::path::PathBuf>, now: DateTime<Utc>) -> HomeContext {
         HomeContext::with_day_offset(root, now, utc_day())
+    }
+
+    fn engine_chosen_and_first_night_past(root: &Path) {
+        engine_chosen(root);
+        fs::create_dir_all(root.join("chronicle/20200101")).unwrap();
+    }
+
+    fn engine_chosen(root: &Path) {
+        fs::create_dir_all(root.join("config")).unwrap();
+        fs::write(
+            root.join("config/journal.json"),
+            br#"{"providers":{"active":{"provider":"local"}}}"#,
+        )
+        .unwrap();
     }
 
     fn fixture_context(fixture: &str, now: DateTime<Utc>) -> (TempDir, HomeContext) {

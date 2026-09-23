@@ -5,7 +5,7 @@
     "needs_badge": null,
     "needs_deduped": [],
     "needs_shared_count": 0,
-    "phase": "eod",
+    "phase": "awaiting_engine",
     "sections": {},
     "summary": null
   },
@@ -22,7 +22,7 @@
     "briefing_needs_badge": null,
     "briefing_needs_deduped": [],
     "briefing_needs_shared_count": 0,
-    "briefing_phase": "eod",
+    "briefing_phase": "awaiting_engine",
     "briefing_sections": {},
     "briefing_summary": null,
     "connections": {
@@ -33,13 +33,8 @@
     "flow_updated_at": null,
     "health_glance": {
       "cta": null,
-      "headline": "2 things need your attention",
+      "headline": "1 thing needs your attention",
       "issues": [
-        {
-          "href": "/app/health",
-          "severity": "amber",
-          "text": "it's unclear whether your journal is caught up right now."
-        },
         {
           "href": "/app/health/#brain",
           "severity": "amber",
@@ -47,6 +42,10 @@
         }
       ],
       "last_observation": null,
+      "note": {
+        "href": "/app/thinking/",
+        "text": "your journal starts catching up once processing is set up."
+      },
       "severity": "amber",
       "verdict": "attention"
     },

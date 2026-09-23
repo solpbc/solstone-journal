@@ -90,11 +90,20 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
     spawn_blocking_response(OwnerReadRole::HealthState, move || {
         let now = clock.now();
         let (generated_at, backlog) = backlog::load(&root);
-        let eval = solstone_core_system_health::evaluate_backlog_status(
-            backlog.as_ref(),
-            generated_at.as_deref(),
-            now,
+        // One rule with home and stats: before the nightly run's first chance,
+        // a summary that doesn't exist yet is calm, not unclear (req_nqxybwmk).
+        let not_yet = solstone_core_system_health::summary_not_yet(
+            &root,
+            now.with_timezone(&chrono::Local).naive_local(),
         );
+        let eval = match not_yet {
+            Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),
+            None => solstone_core_system_health::evaluate_backlog_status(
+                backlog.as_ref(),
+                generated_at.as_deref(),
+                now,
+            ),
+        };
         let indexer_phase = backlog
             .as_ref()
             .and_then(|b| b.get("indexer_phase"))
@@ -107,18 +116,32 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         } else {
             eval.freshness
         };
-        let search_index = search_freshness::evaluate_search_freshness(
+        let mut search_index = search_freshness::evaluate_search_freshness(
             &root,
             &search_freshness::FsIndexMetadata,
             indexer_phase.as_ref(),
             search_summary_freshness,
             now,
         );
+        if search_index.text == search_freshness::SEARCH_TEXT_UNCLEAR {
+            match not_yet {
+                Some(solstone_core_system_health::NotYet::FirstNight) => {
+                    search_index.text = solstone_core_system_health::NOT_YET_SEARCH.to_owned();
+                }
+                // Nothing catches search up until processing is set up; the
+                // verdict above already says so.
+                Some(solstone_core_system_health::NotYet::AwaitingEngine) => {
+                    search_index.text = String::new();
+                }
+                None => {}
+            }
+        }
         let (items, ok) = talent_failures::today(&root);
         let count = items.len();
         Json(json!({
             "backlog": {
                 "verdict": eval.verdict,
+                "not_yet": not_yet.map(solstone_core_system_health::NotYet::as_str),
                 "pending_days": eval.pending_days,
                 "oldest_pending_day": eval.oldest_pending_day,
                 "freshness": {

@@ -68,6 +68,21 @@ assert(late.includes('/app/thinking/#runs/20260905/morning_briefing'), late);
 assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(late), false, late);
 
 // A briefing that was never prepared says so instead of disappearing. X-04.
+// Before the nightly run's first chance, the card says when, never "late" or
+// "wasn't prepared" (req_nqxybwmk).
+for (const [phase, text] of [
+  ['awaiting_engine', 'morning briefings start once processing is set up.'],
+  ['first_night', 'your first briefing is due by 10 am, after your journal&#39;s first night.'],
+  ['first_night_empty', 'your first briefing is due the morning after something goes into your journal.'],
+]) {
+  const html = briefingPlaceholderHtml({ phase, exists: false }, { briefing_lateness: { late: true, late_hours: 3 } });
+  assert(html.includes(text), `${phase}: ${html}`);
+  assert.strictEqual(html.includes('late'), false, html);
+  const card = renderBriefingCardHtml({ phase, exists: false }, {});
+  assert(card.includes(text), `${phase} card: ${card}`);
+  assert.strictEqual(card.includes('role="button"'), false, card);
+}
+
 const missing = briefingPlaceholderHtml(
   { phase: 'missing', exists: false },
   { briefing_lateness: { late: true, late_hours: 1 }, today: '20260907', briefing_analysis_day: '20260906' },

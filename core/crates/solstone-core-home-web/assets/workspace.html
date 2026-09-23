@@ -98,6 +98,29 @@
 
 .pulse-vitals-cta { color: var(--orange-text-aa); text-decoration: none; }
 
+/* Not yet, and that's fine: a full-width calm row, a hollow ring (shape, not
+   only colour), never a chip and never counted. req_nqxybwmk. */
+.pulse-vitals > a.pulse-vitals-note {
+  flex-basis: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--hairline);
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+.pulse-vitals-ring {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--ink-faint);
+  flex-shrink: 0;
+  position: relative;
+  top: 1px;
+}
+
 /* Section Headers */
 .pulse-section-header {
   font-size: 0.8rem;
@@ -902,6 +925,7 @@
   .pulse-connections-more,
   .pulse-vitals-health-link,
   .pulse-vitals-cta,
+  .pulse-vitals-note,
   .pulse-tell-more,
   .pulse-reflection-link,
   .pulse-briefing-status-link,

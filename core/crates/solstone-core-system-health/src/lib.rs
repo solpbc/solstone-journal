@@ -15,6 +15,7 @@ mod event;
 mod freshness;
 mod grep_compile;
 mod loader;
+mod not_yet;
 mod progress;
 mod read;
 mod safe_text;
@@ -28,7 +29,8 @@ mod vocabulary;
 
 pub use backlog::{daily_failure_capped, read_backlog_view};
 pub use catchup_state::{
-    read_backoff_summary, read_segment_repair_attempted, read_segment_repair_summary,
+    read_backoff_summary, read_daily_catchup_finished, read_segment_repair_attempted,
+    read_segment_repair_summary,
 };
 pub use change_detection::{detect_segment_change, resolve_predecessor};
 pub use completion::{
@@ -52,6 +54,10 @@ pub use freshness::{
 pub use grep_compile::{GrepCompileError, GrepPattern, compile_grep_pattern, decimal_digit_value};
 pub use loader::{
     BoundedStderr, STDERR_LIMIT, classify_loader_failure, read_bounded_stderr, unresolved_library,
+};
+pub use not_yet::{
+    NOT_YET_ENGINE, NOT_YET_FIRST_NIGHT, NOT_YET_SEARCH, NotYet, OVERNIGHT_WINDOW_END_HOUR,
+    journal_not_yet, not_yet_evaluation, not_yet_rule, summary_not_yet,
 };
 pub use progress::{read_pending_facet_routing, read_segment_progress};
 pub use safe_text::{

@@ -97,4 +97,35 @@ assert(red.includes('pulse-vitals-dot red'), red);
 assert(red.includes('pulse-vitals-verdict red'), red);
 assert(red.includes('pulse-vitals-chip red'), red);
 
+// Not yet, and that's fine: the note rides any verdict as a calm row, never a
+// chip and never in the count (req_nqxybwmk).
+const noted = renderVitalsHtml({
+  health_glance: {
+    verdict: 'attention',
+    severity: 'amber',
+    headline: '1 thing needs your attention',
+    issues: [{ text: 'processing needs a setup', severity: 'amber', href: '/app/thinking/' }],
+    note: { text: 'your journal starts catching up once processing is set up.', href: '/app/health/#backlogVerdict' },
+  },
+});
+assert(noted.includes('<a class="pulse-vitals-note" href="/app/health/#backlogVerdict">'), noted);
+assert(noted.includes('pulse-vitals-ring'), noted);
+assert(noted.includes('your journal starts catching up once processing is set up. →'), noted);
+assert.strictEqual((noted.match(/pulse-vitals-chip/g) || []).length, 1, noted);
+const calmNoted = renderVitalsHtml({
+  health_glance: {
+    verdict: 'calm',
+    severity: 'neutral',
+    headline: 'the solstone app is adding to your journal.',
+    last_observation: '2 minutes ago',
+    issues: [],
+    note: { text: "you'll see whether your journal is caught up after its first night.", href: '/app/health/#backlogVerdict' },
+  },
+});
+assert(calmNoted.includes('pulse-vitals-note'), calmNoted);
+assert(calmNoted.includes('last reached your journal 2 minutes ago'), calmNoted);
+assert.strictEqual(calmNoted.includes('pulse-vitals-dot green'), false, calmNoted);
+assert.strictEqual(amber.includes('pulse-vitals-note'), false, amber);
+assert(css.includes('.pulse-vitals > a.pulse-vitals-note'), 'missing note row style');
+
 console.log('vitals render contract passed');

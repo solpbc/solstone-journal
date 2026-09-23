@@ -155,6 +155,21 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         }
     }
 
+    // req_nqxybwmk: the captured corpus predates the not-yet split. No corpus
+    // phase chooses a way to think, so with no summary file the stats page reads
+    // the awaiting-engine verdict.
+    if expected["status"] == 200
+        && !root.path().join("stats.json").exists()
+        && let Some(status) = wanted
+            .pointer_mut("/stats/journal_status")
+            .and_then(Value::as_object_mut)
+    {
+        status.insert(
+            "verdict".into(),
+            Value::String(solstone_core_system_health::NOT_YET_ENGINE.into()),
+        );
+    }
+
     if phase == "corrupt" {
         replace_text(
             &mut wanted,

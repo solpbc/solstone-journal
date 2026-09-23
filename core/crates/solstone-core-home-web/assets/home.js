@@ -287,7 +287,16 @@
           + esc(g.cta.text || '') + '</a>';
       }
     }
-    html += '<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">health →</a></div>';
+    html += '<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">health →</a>';
+    // Not yet, and that's fine: a calm row on any verdict, never a chip and
+    // never in the count (req_nqxybwmk).
+    const note = isPlainObject(g.note) ? g.note : null;
+    if (note && note.text) {
+      html += '<a class="pulse-vitals-note" href="' + esc(note.href || '/app/health/') + '">'
+        + '<span class="pulse-vitals-ring" aria-hidden="true"></span>'
+        + '<span>' + esc(note.text) + ' →</span></a>';
+    }
+    html += '</div>';
     return html;
   }
 
@@ -823,6 +832,14 @@
     return text.substring(Math.max(0, text.length - 5));
   }
 
+  // Before the nightly run has had its first chance, say when the first
+  // briefing is due rather than calling it late or missing (req_nqxybwmk).
+  const BRIEFING_NOT_YET = Object.assign(Object.create(null), {
+    awaiting_engine: 'morning briefings start once processing is set up.',
+    first_night: "your first briefing is due by 10 am, after your journal's first night.",
+    first_night_empty: 'your first briefing is due the morning after something goes into your journal.'
+  });
+
   function briefingPlaceholderHtml(data, pulseContext) {
     if (data.exists) return '';
     // A briefing that was never prepared used to render nothing at all from ten
@@ -833,6 +850,8 @@
         + '<a class="pulse-briefing-status-link" href="/app/thinking/#runs/' + esc(pulseContext?.briefing_analysis_day || '') + '/morning_briefing">see the run →</a>'
         + '</div>';
     }
+    const notYet = BRIEFING_NOT_YET[data.phase];
+    if (notYet) return '<div class="pulse-briefing-placeholder">' + esc(notYet) + '</div>';
     if (data.phase !== 'pending') return '';
     const lateness = pulseContext?.briefing_lateness || {};
     if (lateness.late) {
@@ -845,7 +864,7 @@
   }
 
   function renderBriefingCardHtml(data, pulseContext) {
-    if (!data.exists && data.phase !== 'pending' && data.phase !== 'missing') return '';
+    if (!data.exists && data.phase !== 'pending' && data.phase !== 'missing' && !BRIEFING_NOT_YET[data.phase]) return '';
     const existing = document.getElementById('pulse-briefing');
     const collapsed = data.phase === 'morning' ? 'false' : (existing?.dataset?.collapsed || (data.phase === 'morning' ? 'false' : 'true'));
     const metaText = data.meta && data.meta.generated ? formatBriefingTime(data.meta.generated) : '';
@@ -999,7 +1018,7 @@
 
   function toggleBriefingCard() {
     const card = document.getElementById('pulse-briefing');
-    if (!card || card.dataset.phase === 'pending') return;
+    if (!card || card.dataset.phase === 'pending' || BRIEFING_NOT_YET[card.dataset.phase]) return;
     // No body, nothing to toggle: the header is a heading in this phase. G1-104.
     if (!card.querySelector('.pulse-briefing-body')) return;
     card.dataset.collapsed = card.dataset.collapsed === 'true' ? 'false' : 'true';
