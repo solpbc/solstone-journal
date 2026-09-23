@@ -710,6 +710,20 @@
         `00:10 ${a.phase} ${a.w.toFixed(3)}, 01:00 ${b.phase} ${b.w.toFixed(3)}, 02:00 ${c.phase} ${c.w.toFixed(3)}, halves ok=${halves.every(Boolean)}, max minute step=${maxStep.toFixed(3)}`);
     }
 
+    // 24. The mirror of the extended axis: a sunrise before 00:30 (dawn before local midnight)
+    // reads the last minutes of the clock day on the dawn's side, against SUNARC.both().
+    {
+      const f = (m) => window.SunArc.frame(393, 852, m, 20, 1300, 'dark', tokens);
+      const a = f(1425);
+      const b = f(1435);
+      const c = f(0);
+      const ok = a.twilight.phase === 'before dawn' && Math.abs(a.twilight.w - 0.985) < 0.001 &&
+        b.twilight.phase === 'day' && Math.abs(b.t - 0.004) < 0.001 && Math.abs(b.night - 0.83) < 0.005 &&
+        c.twilight.phase === 'day' && Math.abs(c.t - 0.007) < 0.001;
+      assert('24_dawn_before_midnight_reads_on_the_dawn_side', ok,
+        `23:45 ${a.twilight.phase} w=${a.twilight.w.toFixed(3)}, 23:55 ${b.twilight.phase} t=${b.t.toFixed(4)} night=${b.night.toFixed(3)}, 00:00 ${c.twilight.phase} t=${c.t.toFixed(4)}`);
+    }
+
     assert('SUMMARY', failures === 0, failures ? `${failures} failure(s)` : `all ${testCount} assertions passed`);
   }
 

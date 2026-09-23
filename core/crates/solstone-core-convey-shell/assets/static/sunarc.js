@@ -340,7 +340,11 @@
     // same axis, so the small hours belong to the day that is still ending. Done here so the
     // function is total on its inputs.
     const set = setMinutes < rise ? setMinutes + 1440 : setMinutes;
-    const m = set + tw > 1440 && clockMinutes < set + tw - 1440 ? clockMinutes + 1440 : clockMinutes;
+    let m = clockMinutes;
+    if (set + tw > 1440 && m < set + tw - 1440) m += 1440;
+    // The mirror: a sunrise before 00:30 puts dawn before local midnight, so the last minutes
+    // of the clock day belong to the dawn that is starting, read on the same axis.
+    else if (rise - tw < 0 && m >= rise - tw + 1440) m -= 1440;
     const t = dayProgress(m, rise, set, tw);
     const envVal = env(t, tokens.envelopeEdge);
     const night = nightAmount(m, rise, set, tw);
