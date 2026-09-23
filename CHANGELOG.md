@@ -29,6 +29,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - the health page could say your journal was all caught up based on an update from days earlier. it now tells you when it can't tell, and how long ago it was last updated.
 - if your journal couldn't finish processing an activity on a day that was otherwise done, the problem disappeared from the health page. it now says how many couldn't finish, with a link to the oldest day affected, and `journal doctor` mentions them too.
 - the stats page warned that your stats were in an older format and asked you to regenerate them. the warning was mistaken, so regenerating couldn't clear it, and it no longer appears.
+- after you set up your local model, the home page and the thinking page could keep saying "processing needs a setup" while the model was already running, for up to a day. your journal now checks again as soon as the local model is ready.
 
 ## [2.0.14] - 2026-09-22
 

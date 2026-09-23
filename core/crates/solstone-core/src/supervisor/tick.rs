@@ -22,10 +22,11 @@ use solstone_core_system::process::{
     classify_process_observation,
 };
 use solstone_core_system::provider_runtime::{
-    CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig, ProbeStatus,
-    ProviderName, ProviderRetryState, ProviderRuntimeEvent, ProviderRuntimeEventSink,
-    ProviderRuntimeNow, ProviderRuntimeState, ReasonCode, ReconcileContext, RuntimePhase,
-    RuntimeStore, RuntimeStoreError, cancel_start, store_error_phase,
+    CortexEventKind, CortexOutcomeEvent, LocalLaunchCommon, LocalLaunchConfig,
+    LocalReadySideEffect, ProbeStatus, ProviderName, ProviderRetryState, ProviderRuntimeEvent,
+    ProviderRuntimeEventSink, ProviderRuntimeNow, ProviderRuntimeState, ReasonCode,
+    ReconcileContext, RuntimePhase, RuntimeStore, RuntimeStoreError, cancel_start,
+    store_error_phase,
 };
 use solstone_core_system::request::{
     BusTaskRequest, DailyCatchupProvenance, ExecutionRequest, TaskArgv,
@@ -930,7 +931,7 @@ fn submit_task(
     day: Option<&str>,
     daily_catchup_provenance: Option<DailyCatchupProvenance>,
 ) -> solstone_core_system::queue::SubmitOutcome {
-    let cmd = TaskArgv::from_wire(argv).expect("supervisor constructs a non-empty think argv");
+    let cmd = TaskArgv::from_wire(argv).expect("supervisor constructs a non-empty argv");
     queue.submit(ExecutionRequest::Bus(BusTaskRequest {
         cmd,
         reference,
@@ -1139,6 +1140,9 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.local.processes,
         &mut local_context,
     );
+    for effect in state.local.store.take_ready_side_effects() {
+        submit_local_ready_side_effect(&state.queue, effect);
+    }
     #[cfg(windows)]
     if !synchronize_parakeet_sense_credentials(state) {
         return;
@@ -1185,6 +1189,44 @@ pub(crate) fn reconcile_providers(state: &mut SupervisorState) {
         &mut state.parakeet.processes,
         &mut parakeet_context,
     );
+}
+
+/// Every processing surface -- the home page's attention banner, Thinking's
+/// brain summary and its lane cards -- reads the persisted brain record, and
+/// only a brain refresh writes it. A refresh that ran while Local was the lane
+/// but its model was not yet installed or running -- a fresh journal before
+/// local setup, or a daily check that caught the runtime stopped -- records
+/// `blocked`, and nothing else re-checks once the runtime comes up. So a
+/// runtime reaching Ready asks for one more refresh. The expected
+/// fingerprint makes it a no-op when the brain is already ready or the active
+/// lane has moved off this runtime; brain commands share one queue partition,
+/// so it runs after any refresh already in flight rather than losing to it.
+fn submit_local_ready_side_effect(queue: &TaskQueue, effect: LocalReadySideEffect) {
+    let (argv, reference) = local_ready_task(effect);
+    if submit_task(queue, argv, reference, None, None) == SubmitOutcome::Rejected {
+        log::warn!("supervisor: local-ready brain refresh rejected");
+    }
+}
+
+/// ⚠ `--expected-fingerprint` alone compares against the bundled runtime's
+/// fingerprint, which is what the effect carries. Adding
+/// `--expected-active-fingerprint` would compare it against the brain record's
+/// own fingerprint instead, never match, and silently refresh nothing.
+fn local_ready_task(effect: LocalReadySideEffect) -> (Vec<String>, String) {
+    match effect {
+        LocalReadySideEffect::RefreshBrain {
+            expected_fingerprint_sha256,
+        } => (
+            vec![
+                "journal".to_owned(),
+                "brain".to_owned(),
+                "refresh".to_owned(),
+                "--expected-fingerprint".to_owned(),
+                expected_fingerprint_sha256.clone(),
+            ],
+            format!("brain-refresh:local-ready:{expected_fingerprint_sha256}"),
+        ),
+    }
 }
 
 /// A Windows Parakeet launch rotates its in-memory loopback credential. Sense
@@ -2069,6 +2111,83 @@ mod tests {
                 .contains_reference("supervisor-observed-20260831-120000_60"),
             "an ordinary capture segment must still be submitted for enrichment"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_local_runtime_reaching_ready_queues_one_brain_refresh() {
+        // The runtime store records a refresh request when Local publishes
+        // Ready; the brain record every processing surface reads stays at a
+        // stale `blocked` unless the supervisor actually submits it.
+        use solstone_core_system::provider_runtime::{InFlight, ProviderFence, ReadyProcess};
+
+        let journal = TempDir::new().expect("temporary journal");
+        let mut state = queue_only_state(journal.path()).await;
+        let reference = "brain-refresh:local-ready:fingerprint";
+
+        reconcile_providers(&mut state);
+        assert!(
+            !state.queue.contains_reference(reference),
+            "a runtime that never reached Ready asks for no refresh"
+        );
+
+        let fence = ProviderFence {
+            incarnation: "incarnation".to_owned(),
+            generation: 4,
+            fingerprint: Some("fingerprint".to_owned()),
+            attempt: 1,
+        };
+        state.local.shared.record_ready_process(
+            &fence,
+            ReadyProcess {
+                process_id: "local:42".to_owned(),
+                process_name: "local".to_owned(),
+                pid: 42,
+                port: 4312,
+            },
+        );
+        let mut ready = ProviderRuntimeState::new(ProviderName::Local);
+        ready.generation = 4;
+        ready.desired_fingerprint = Some("fingerprint".to_owned());
+        ready.latest_phase = RuntimePhase::Ready;
+        ready.retry.attempt_count = 1;
+        ready.start = Some(InFlight {
+            fence,
+            result: None,
+        });
+        state
+            .local
+            .store
+            .publish_state(&ready)
+            .expect("ready publishes");
+
+        reconcile_providers(&mut state);
+        assert!(
+            state.queue.contains_reference(reference),
+            "a runtime reaching Ready must queue a brain refresh"
+        );
+        assert!(
+            state.local.store.take_ready_side_effects().is_empty(),
+            "the request is consumed, so a later reconcile cannot submit it again"
+        );
+    }
+
+    #[test]
+    fn the_local_ready_refresh_compares_against_the_runtime_fingerprint() {
+        let (argv, reference) = local_ready_task(LocalReadySideEffect::RefreshBrain {
+            expected_fingerprint_sha256: "fingerprint".to_owned(),
+        });
+        assert_eq!(
+            argv,
+            [
+                "journal",
+                "brain",
+                "refresh",
+                "--expected-fingerprint",
+                "fingerprint"
+            ]
+        );
+        assert_eq!(reference, "brain-refresh:local-ready:fingerprint");
     }
 
     #[test]
