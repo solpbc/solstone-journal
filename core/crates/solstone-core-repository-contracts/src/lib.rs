@@ -54,6 +54,9 @@ mod distribution_workspace_bins;
 #[path = "contracts/facet_read_purity.rs"]
 mod facet_read_purity;
 #[cfg(test)]
+#[path = "contracts/generated_native_inventory.rs"]
+mod generated_native_inventory;
+#[cfg(test)]
 #[path = "contracts/hosted_launch_admission_boundary.rs"]
 mod hosted_launch_admission_boundary;
 #[cfg(test)]

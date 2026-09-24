@@ -82,10 +82,6 @@ fn mixed_writability_child() {
         fs::read(home.join(".codex/skills/solstone/SKILL.md")).unwrap(),
         fs::read(source.join("SKILL.md")).unwrap()
     );
-    assert_eq!(
-        fs::read(home.join(".codex/skills/solstone/references/commands.md")).unwrap(),
-        fs::read(source.join("references/commands.md")).unwrap()
-    );
 }
 
 fn listing(dir: &Path) -> Vec<String> {

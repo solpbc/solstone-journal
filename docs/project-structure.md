@@ -26,7 +26,7 @@ The public `solstone` launcher execs `solstone-core-sol`, which reaches the jour
 
 ## Agent & Skill Organization
 
-`core/payload/` is the shipped payload: everything the installed binary reads at runtime, staged in the repository under the same relative paths it has once installed, so `core/payload/` is the checkout's stand-in for the installed `share/` prefix. `core/payload/solstone/talent/*.md` stores agent personas and generator templates. There is no separate Python post-hook tree — every possible talent write is a typed `WriteIntent` variant in `core/crates/solstone-core-talent-runtime/src/writers.rs` (see `AGENTS.md` §7 L8). The installed project skills are the two router skills at `core/payload/solstone/talent/solstone/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/*/talent/*/SKILL.md` are builder source for generated router references, not top-level installed skills.
+`core/payload/` is the shipped payload: everything the installed binary reads at runtime, staged in the repository under the same relative paths it has once installed, so `core/payload/` is the checkout's stand-in for the installed `share/` prefix. `core/payload/solstone/talent/*.md` stores agent personas and generator templates. There is no separate Python post-hook tree — every possible talent write is a typed `WriteIntent` variant in `core/crates/solstone-core-talent-runtime/src/writers.rs` (see `AGENTS.md` §7 L8). The installed project skills are the two router skills at `core/payload/solstone/talent/solstone/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/*/talent/*/SKILL.md` are optional reference guidance, not top-level installed skills.
 
 ## File Locations
 
@@ -35,5 +35,5 @@ The public `solstone` launcher execs `solstone-core-sol`, which reaches the jour
 - **Live Logs**: `journal/health/<service>.log`
 - **Agent Personas**: `core/payload/solstone/talent/*.md`
 - **Generator Templates**: `core/payload/solstone/talent/*.md`
-- **Agent Skills**: `core/payload/solstone/talent/{solstone,journal}/SKILL.md` - the two router skills installed into `journal/.agents/skills/` and `journal/.claude/skills/`; app `SKILL.md` fragments feed generated references via `make skills` (`scripts/build_skill_references.py`)
+- **Agent Skills**: `core/payload/solstone/talent/{solstone,journal}/SKILL.md` - the two router skills installed into `journal/.agents/skills/` and `journal/.claude/skills/`; app `SKILL.md` fragments hold additional guidance, while live CLI help lists current commands
 - **Scratch Space**: `scratch/` - git-ignored local workspace

@@ -141,15 +141,15 @@ If you change the helper source, rebuild it before testing the CoreML parakeet p
 
 Talent prompts live under `core/payload/solstone/talent/<name>.md`; apps may add app-specific talent files under `core/payload/solstone/apps/<app>/talent/`. Talent frontmatter declares type, schedule, provider/model behavior, hooks, priority, and output expectations.
 
-The installed project skills are the two router skills under `core/payload/solstone/talent/solstone/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/<app>/talent/<app>/SKILL.md` feed the generated router references; they are not installed as top-level skills.
+The installed project skills are the two router skills under `core/payload/solstone/talent/solstone/` and `core/payload/solstone/talent/journal/`. App command fragments under `core/payload/solstone/apps/<app>/talent/<app>/SKILL.md` carry extra guidance, but are not installed as top-level skills. The router skills use live CLI help for command lists.
 
-After changing a router skill or an app command fragment, run:
+After changing a router skill, run:
 
 ```bash
 make skills
 ```
 
-That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `solstone` + `journal` router skill symlinks inside the journal. Run `make check-skill-references` to catch stale generated references; no automated gate runs it.
+That target refreshes the `solstone` + `journal` router skill symlinks inside the journal. Update the router's short app map when adding an app that agents should use; `solstone call <app> --help` is the current command reference.
 
 ## Migrating from a source install to a tree install
 

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
+// authority-source-sha256: 082f4394dd4576a2ab4c970cb5cef76aab54a85c54d5d7337d420c5e1fcc0edf
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;

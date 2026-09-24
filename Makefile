@@ -1199,7 +1199,6 @@ brand-sync:
 
 # Setup skill symlinks
 skills:
-	@$(VENV_BIN)/python scripts/build_skill_references.py
 	@$(RUST_BIN)/solstone-core-sol skills install --project journal --agent all
 
 # Start local dev stack against fixture journal (no observers, no daily processing).
@@ -1500,10 +1499,6 @@ pre-commit: .installed
 # SPL git dependency pin guard
 check-spl-dependency-pin:
 	python3 scripts/check_spl_dependency_pin.py
-
-# Generated router skill references gate
-check-skill-references: .installed
-	$(VENV_BIN)/python scripts/build_skill_references.py --check
 
 build-native-sol-inventory:
 	python3 scripts/build_native_sol_inventory.py

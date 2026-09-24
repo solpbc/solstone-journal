@@ -71,8 +71,8 @@ Boundaries:
 - `journal identity` owns local owner/sol identity operations; use its help
   output before changing identity data.
 
-For app-contributed host command guidance, see
-[Commands](references/commands.md).
+Use `journal health --help` for status flags, `journal health logs --help` for
+log flags, and `journal talent --help` to find talent commands.
 
 ## Vocabulary
 
@@ -107,4 +107,3 @@ For the full table, see [storage](references/storage.md).
 - [Original Media and Extracts](references/captures.md) — layers, imports, segment layout
 - [Logs](references/logs.md) — action logs, token usage, talent logs, health
 - [Storage](references/storage.md) — top-level layout, app storage, search index
-- [Commands](references/commands.md) — journal-host command guidance contributed by apps (generated)

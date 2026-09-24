@@ -90,10 +90,14 @@ solstone call journal storage-summary
 
 ## Per-app command map
 
-See [Commands](references/commands.md) for the generated inventory of every
-`solstone call <app>` command contributed by app skill fragments, including triggers
-and read/write/other polarity. Regenerate it with `make skills`
-(`scripts/build_skill_references.py`); do not inline those command tables here.
+Use `solstone call <app> --help` to find commands, then add `--help` to a
+specific command to see its flags.
+
+Start with `activities` for activity records, `entities` for people and relationships,
+`health` for journal pipeline reports, or `transcripts` for spoken words.
+For behavior notes beyond CLI help, read the app's
+`solstone/apps/<app>/talent/<app>/SKILL.md` in the active payload: under
+`core/payload/` in a source checkout or `share/` in an installed tree.
 
 ## Paths
 

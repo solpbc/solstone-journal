@@ -22,7 +22,6 @@ solstone/talent/facet_newsletter.md
 solstone/talent/journal/contract/bundle.json
 solstone/talent/journal/references/captures.md
 solstone/talent/journal/references/cli.md
-solstone/talent/journal/references/commands.md
 solstone/talent/journal/references/config.md
 solstone/talent/journal/references/facets.md
 solstone/talent/journal/references/logs.md
@@ -43,7 +42,6 @@ solstone/talent/screen.md
 solstone/talent/screen.schema.json
 solstone/talent/sense.md
 solstone/talent/sense.schema.json
-solstone/talent/solstone/references/commands.md
 solstone/talent/solstone/SKILL.md
 solstone/talent/speaker_attribution.md
 solstone/talent/speaker_attribution.schema.json
