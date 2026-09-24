@@ -186,7 +186,7 @@
     {
       "path": ["facet", "merge"],
       "owner": "journal-direct",
-      "grammar": "journal facet merge SOURCE --into DEST [--consent]",
+      "grammar": "journal facet merge SOURCE --into DEST [--consent] [--dry-run]",
       "reads_stdin": false,
       "retired_spellings": ["sol call journal facet merge"],
       "capabilities": [
@@ -202,7 +202,8 @@
         "source-only regular facet files are copied into the staged destination; an unrecognized conflicting regular file aborts before commit",
         "remove SOURCE from config/convey.json selected and order fields in the same transaction",
         "include consent in the audit params only when --consent is supplied",
-        "after commit request the native in-process full index rebuild; a rebuild failure exits nonzero and reports that the facet transaction committed"
+        "after commit request the native in-process full index rebuild; a rebuild failure exits nonzero and reports that the facet transaction committed",
+        "--dry-run stages the merge under the same lock with the same classification, reports the file collisions, the per-file jsonl records and entity.json fields DEST would keep over SOURCE, and whether SOURCE's facet.json is dropped, then removes the stage; it writes no audit entry and requests no index rebuild"
       ],
       "cases": [
         {
@@ -229,6 +230,17 @@
           "expected_tree_unchanged_after_recovery": ["${JOURNAL}/facets/source", "${JOURNAL}/facets/dest"],
           "expected_audit_count_after_recovery": 0,
           "expected_index_rebuild_count_after_recovery": 0
+        },
+        {
+          "name": "dry_run_changes_nothing",
+          "argv": ["facet", "merge", "source", "--into", "dest", "--dry-run"],
+          "stdin": "",
+          "fixture": "overlapping_facets",
+          "expected_exit": 0,
+          "expected_stderr": "",
+          "expected_tree_unchanged": ["${JOURNAL}/facets"],
+          "expected_audit_count": 0,
+          "expected_index_rebuild_count": 0
         }
       ]
     },

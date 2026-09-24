@@ -179,12 +179,13 @@ solstone call journal facet delete old-facet --yes
 ## facet merge
 
 ```bash
-journal facet merge <source> --into <dest> [--consent]
+journal facet merge <source> --into <dest> [--consent] [--dry-run]
 ```
 
-Move the contents of facet `<source>` into facet `<dest>`, remove `<source>`, and rebuild the search index. `.jsonl` logs and entity records that both facets have are combined; where both have the same record id or field, `<dest>`'s is kept. For any other file both facets have, `<dest>` keeps its own copy, `<source>`'s copy is deleted with `<source>`, and the command lists those files. `<source>`'s own facet settings are not carried over. Before asking the owner, compare the two facets and name any files that would be lost; to keep both copies, rename one of the two files before merging. This runs with the `journal` command on the computer the journal is on; there is no `solstone call journal` form.
+Move the contents of facet `<source>` into facet `<dest>`, remove `<source>`, and rebuild the search index. `.jsonl` logs and entity records that both facets have are combined; where both have the same record id or field, `<dest>`'s is kept. For any other file both facets have, `<dest>` keeps its own copy, `<source>`'s copy is deleted with `<source>`, and the command lists those files. `<source>`'s own facet settings are not carried over. Before asking the owner, run it with `--dry-run` and tell them what it lists; to keep both copies of a file it lists as one both facets have, rename one of the two before merging. This runs with the `journal` command on the computer the journal is on; there is no `solstone call journal` form.
 
 - `--consent`: asserts that the agent has received explicit owner approval before performing this destructive operation. Agents pass it only after the owner has approved this merge. Adds `"consent": true` to the audit log entry.
+- `--dry-run`: changes nothing. It lists the files both facets have that can't be combined, counts per file the records and entity fields that would give way to a different version with the same id or field (for records, the first with each id is kept, reading `<dest>` first; for entity fields, `<dest>`'s value is kept), and says whether `<source>`'s own settings would be dropped. Needs no `--consent`.
 
 Example:
 

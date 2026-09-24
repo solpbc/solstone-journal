@@ -4,6 +4,12 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- `journal facet merge --dry-run` shows what a merge would lose before you merge: how many records and entity fields in each file would give way to a different version with the same id or field, the files both facets have that can't be combined, and the settings of the facet you merge away. it changes nothing.
+
 ## [2.0.16] - 2026-09-24
 
 ### Removed

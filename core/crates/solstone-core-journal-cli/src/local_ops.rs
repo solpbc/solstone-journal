@@ -1026,13 +1026,17 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     };
     if source == "--help" || source == "-h" {
         return if args.len() == 1 {
-            success("Usage: journal facet merge SOURCE --into DEST [--consent]\n".to_owned())
+            success(
+                "Usage: journal facet merge SOURCE --into DEST [--consent] [--dry-run]\n"
+                    .to_owned(),
+            )
         } else {
             usage("facet merge", "unexpected argument")
         };
     }
     let mut destination: Option<&str> = None;
     let mut consent = false;
+    let mut dry_run = false;
     let mut index = 1;
     while index < args.len() {
         match args[index].to_str() {
@@ -1045,6 +1049,10 @@ fn facet_merge(args: &[OsString]) -> Outcome {
             }
             Some("--consent") if !consent => {
                 consent = true;
+                index += 1;
+            }
+            Some("--dry-run") if !dry_run => {
+                dry_run = true;
                 index += 1;
             }
             _ => return usage("facet merge", "unexpected argument"),
@@ -1060,7 +1068,102 @@ fn facet_merge(args: &[OsString]) -> Outcome {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
+    if dry_run {
+        return facet_merge_preview_in_journal(&journal, source, destination);
+    }
     facet_merge_in_journal(&journal, source, destination, consent)
+}
+
+/// Stages a merge exactly as the real one does, reports what it would lose,
+/// and discards the staged copy. Nothing under `facets/` changes.
+#[cfg(not(target_os = "ios"))]
+fn facet_merge_preview_in_journal(journal: &Path, source: &str, destination: &str) -> Outcome {
+    let source_path = journal.join("facets").join(source);
+    let destination_path = journal.join("facets").join(destination);
+    for path in [&source_path, &destination_path] {
+        if let Err(error) = require_real_directory(path) {
+            return failure("facet merge", &error, EXIT_DATA);
+        }
+    }
+    let _lock = match hold_facet_trust_lock(journal) {
+        Ok(lock) => lock,
+        Err(error) => return failure("facet merge", &error.to_string(), EXIT_IO),
+    };
+    for path in [&source_path, &destination_path] {
+        if let Err(error) = require_real_directory(path) {
+            return failure("facet merge", &error, EXIT_DATA);
+        }
+    }
+    let stage = journal
+        .join("facets")
+        .join(format!(".facet-merge-{}.preview", transaction_id()));
+    let report = match stage_facet_merge(&source_path, &destination_path, &stage) {
+        Ok(report) => report,
+        Err(outcome) => return outcome,
+    };
+    if let Err(error) = fs::remove_dir_all(&stage) {
+        return failure(
+            "facet merge",
+            &format!(
+                "dry run could not remove its scratch copy {}: {error}; nothing else was changed, and that folder can be deleted",
+                stage.display()
+            ),
+            EXIT_IO,
+        );
+    }
+    let settings_dropped = source_path.join("facet.json").is_file();
+    success(facet_merge_preview_text(
+        source,
+        destination,
+        &report,
+        settings_dropped,
+    ))
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_merge_preview_text(
+    source: &str,
+    destination: &str,
+    report: &FacetTreeMergeReport,
+    settings_dropped: bool,
+) -> String {
+    let mut text = format!(
+        "Dry run, nothing was changed. Merging '{source}' into '{destination}' would lose:\n"
+    );
+    let before = text.len();
+    if !report.regular_file_collisions.is_empty() {
+        text.push_str(&format!(
+            "Files both facets have that can't be combined. '{destination}' would keep its own copy, and the copy in '{source}' would be deleted with that facet:\n"
+        ));
+        for path in &report.regular_file_collisions {
+            text.push_str(&format!("  {}\n", path.display()));
+        }
+    }
+    if !report.jsonl_records_dropped.is_empty() {
+        text.push_str(&format!(
+            "Records that would be dropped because a different record with the same id is kept (the first record with each id is kept, reading '{destination}' first):\n"
+        ));
+        for (path, count) in &report.jsonl_records_dropped {
+            text.push_str(&format!("  {}: {count}\n", path.display()));
+        }
+    }
+    if !report.entity_fields_superseded.is_empty() {
+        text.push_str(&format!(
+            "Entity fields where '{destination}' would keep its own, different value:\n"
+        ));
+        for (path, count) in &report.entity_fields_superseded {
+            text.push_str(&format!("  {}: {count}\n", path.display()));
+        }
+    }
+    if settings_dropped {
+        text.push_str(&format!(
+            "The settings in the facet.json of '{source}', which would not be carried over.\n"
+        ));
+    }
+    if text.len() == before {
+        text.push_str("Nothing.\n");
+    }
+    text
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -1122,6 +1225,27 @@ fn facet_merge_collision_notice(
     notice
 }
 
+/// Copies DEST into a fresh STAGE and merges SOURCE into it. On failure the
+/// stage is removed; on success the caller owns it.
+#[cfg(not(target_os = "ios"))]
+fn stage_facet_merge(
+    source_path: &Path,
+    destination_path: &Path,
+    stage: &Path,
+) -> Result<FacetTreeMergeReport, Outcome> {
+    if let Err(error) = create_private_dir_exclusive(stage) {
+        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
+    }
+    if let Err(error) = copy_tree(destination_path, stage, true) {
+        let _ = fs::remove_dir_all(stage);
+        return Err(failure("facet merge", &error, EXIT_IO));
+    }
+    merge_tree(source_path, stage).map_err(|error| {
+        let _ = fs::remove_dir_all(stage);
+        failure("facet merge", &error, EXIT_IO)
+    })
+}
+
 #[cfg(not(target_os = "ios"))]
 struct FacetMergeCommit {
     report: FacetTreeMergeReport,
@@ -1164,20 +1288,7 @@ fn facet_merge_transaction_in_journal(
     if let Err(error) = require_missing(&backup).and_then(|()| require_missing(&source_backup)) {
         return Err(failure("facet merge", &error, EXIT_IO));
     }
-    if let Err(error) = create_private_dir_exclusive(&stage) {
-        return Err(failure("facet merge", &error.to_string(), EXIT_IO));
-    }
-    if let Err(error) = copy_tree(&destination_path, &stage, true) {
-        let _ = fs::remove_dir_all(&stage);
-        return Err(failure("facet merge", &error, EXIT_IO));
-    }
-    let report = match merge_tree(&source_path, &stage) {
-        Ok(report) => report,
-        Err(error) => {
-            let _ = fs::remove_dir_all(&stage);
-            return Err(failure("facet merge", &error, EXIT_IO));
-        }
-    };
+    let report = stage_facet_merge(&source_path, &destination_path, &stage)?;
     if let Err(error) = fs::rename(&destination_path, &backup) {
         let _ = fs::remove_dir_all(&stage);
         return Err(failure("facet merge", &error.to_string(), EXIT_IO));
@@ -1339,7 +1450,7 @@ mod facet_merge_tests {
 
     use solstone_core_facets::hold_facet_trust_lock;
 
-    use super::{Outcome, facet_merge_in_journal};
+    use super::{Outcome, facet_merge_in_journal, facet_merge_preview_in_journal};
 
     static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
 
@@ -1455,6 +1566,128 @@ mod facet_merge_tests {
                 .expect("nested facet.json is carried over"),
             b"nested"
         );
+    }
+
+    /// Collisions of every kind a merge can lose, plus the source's settings.
+    fn seed_lossy_merge(journal: &TempJournal) {
+        let facets = journal.path().join("facets");
+        for (facet, body) in [("source", "source"), ("destination", "destination")] {
+            fs::create_dir_all(facets.join(facet).join("notes")).expect("notes directory");
+            fs::create_dir_all(facets.join(facet).join("entities/ada")).expect("entity directory");
+            fs::write(facets.join(facet).join("collision.md"), body).expect("collision");
+            fs::write(facets.join(facet).join("notes/today.md"), body).expect("nested collision");
+        }
+        fs::write(facets.join("source/facet.json"), br#"{"title":"Source"}"#)
+            .expect("source settings");
+        fs::write(
+            facets.join("source/log.jsonl"),
+            "{\"id\":\"1\",\"v\":\"source\"}\n{\"id\":\"2\",\"v\":\"same\"}\n{\"id\":\"3\"}\n",
+        )
+        .expect("source log");
+        fs::write(
+            facets.join("destination/log.jsonl"),
+            "{\"id\":\"1\",\"v\":\"destination\"}\n{\"id\":\"2\",\"v\":\"same\"}\n{\"id\":\"4\",\"v\":\"old\"}\n{\"id\":\"4\",\"v\":\"new\"}\n",
+        )
+        .expect("destination log");
+        fs::write(
+            facets.join("source/entities/ada/entity.json"),
+            br#"{"name":"Ada","role":"source","seen":"x"}"#,
+        )
+        .expect("source entity");
+        fs::write(
+            facets.join("destination/entities/ada/entity.json"),
+            br#"{"name":"Ada","role":"destination"}"#,
+        )
+        .expect("destination entity");
+    }
+
+    fn listed_after<'a>(stdout: &'a str, header: &str) -> Vec<&'a str> {
+        stdout
+            .lines()
+            .skip_while(|line| !line.starts_with(header))
+            .skip(1)
+            .take_while(|line| line.starts_with("  "))
+            .map(str::trim)
+            .collect()
+    }
+
+    fn without_locks(tree: BTreeMap<PathBuf, Vec<u8>>) -> BTreeMap<PathBuf, Vec<u8>> {
+        tree.into_iter()
+            .filter(|(path, _)| !path.starts_with("health/locks"))
+            .collect()
+    }
+
+    #[test]
+    fn facet_merge_dry_run_changes_nothing_and_names_what_a_merge_would_lose() {
+        let journal = TempJournal::new();
+        seed_lossy_merge(&journal);
+        let before = without_locks(tree_bytes(journal.path()));
+
+        let outcome = facet_merge_preview_in_journal(journal.path(), "source", "destination");
+
+        let Outcome::LocalSuccess { stdout, .. } = outcome else {
+            panic!("dry run succeeds");
+        };
+        assert_eq!(without_locks(tree_bytes(journal.path())), before);
+        assert!(
+            stdout.starts_with("Dry run, nothing was changed."),
+            "{stdout}"
+        );
+        assert_eq!(
+            listed_after(&stdout, "Files both facets have that"),
+            ["collision.md", "notes/today.md"]
+        );
+        assert_eq!(
+            // id 1 loses to the destination; the destination's own second id 4 loses to its first.
+            listed_after(&stdout, "Records that would be dropped"),
+            ["log.jsonl: 2"]
+        );
+        assert_eq!(
+            listed_after(&stdout, "Entity fields"),
+            ["entities/ada/entity.json: 1"]
+        );
+        assert!(
+            stdout.contains("The settings in the facet.json of 'source'"),
+            "{stdout}"
+        );
+    }
+
+    #[test]
+    fn facet_merge_dry_run_lists_the_same_collisions_the_merge_then_reports() {
+        let journal = TempJournal::new();
+        seed_lossy_merge(&journal);
+
+        let Outcome::LocalSuccess {
+            stdout: preview, ..
+        } = facet_merge_preview_in_journal(journal.path(), "source", "destination")
+        else {
+            panic!("dry run succeeds");
+        };
+        let Outcome::LocalSuccess { stdout: merged, .. } =
+            facet_merge_in_journal(journal.path(), "source", "destination", false)
+        else {
+            panic!("merge succeeds");
+        };
+
+        let previewed = listed_after(&preview, "Files both facets have that");
+        assert!(!previewed.is_empty());
+        assert_eq!(
+            previewed,
+            listed_after(&merged, "Both facets had these files.")
+        );
+    }
+
+    #[test]
+    fn facet_merge_dry_run_says_nothing_is_lost_when_nothing_is() {
+        let journal = TempJournal::new();
+
+        let Outcome::LocalSuccess { stdout, .. } =
+            facet_merge_preview_in_journal(journal.path(), "source", "destination")
+        else {
+            panic!("dry run succeeds");
+        };
+        assert!(stdout.ends_with("would lose:\nNothing.\n"), "{stdout}");
+        assert!(journal.path().join("facets/source/source.txt").exists());
     }
 
     #[test]
@@ -1658,6 +1891,12 @@ fn copy_tree_into(
 struct FacetTreeMergeReport {
     copied_regular_files: Vec<PathBuf>,
     regular_file_collisions: Vec<PathBuf>,
+    /// Per `.jsonl` file: records dropped because a different record with the
+    /// same id is kept (the first one, reading the destination first).
+    jsonl_records_dropped: Vec<(PathBuf, usize)>,
+    /// Per `entity.json`: fields both copies set to different values. The
+    /// destination's value is kept.
+    entity_fields_superseded: Vec<(PathBuf, usize)>,
 }
 
 fn merge_tree(source: &Path, destination: &Path) -> Result<FacetTreeMergeReport, String> {
@@ -1665,6 +1904,8 @@ fn merge_tree(source: &Path, destination: &Path) -> Result<FacetTreeMergeReport,
     merge_tree_into(source, destination, Path::new(""), &mut report)?;
     report.copied_regular_files.sort();
     report.regular_file_collisions.sort();
+    report.jsonl_records_dropped.sort();
+    report.entity_fields_superseded.sort();
     Ok(report)
 }
 
@@ -1716,12 +1957,20 @@ fn merge_tree_into(
                 Some(ExistingPathKind::RegularFile)
                     if entry.path().extension() == Some(OsStr::new("jsonl")) =>
                 {
-                    merge_jsonl(&target, &entry.path())?;
+                    let dropped = merge_jsonl(&target, &entry.path())?;
+                    if dropped > 0 {
+                        report.jsonl_records_dropped.push((child_relative, dropped));
+                    }
                 }
                 Some(ExistingPathKind::RegularFile)
                     if entry.file_name() == OsStr::new("entity.json") =>
                 {
-                    merge_json_object(&target, &entry.path())?;
+                    let superseded = merge_json_object(&target, &entry.path())?;
+                    if superseded > 0 {
+                        report
+                            .entity_fields_superseded
+                            .push((child_relative, superseded));
+                    }
                 }
                 Some(ExistingPathKind::RegularFile) => {
                     report.regular_file_collisions.push(child_relative);
@@ -1735,12 +1984,15 @@ fn merge_tree_into(
     Ok(())
 }
 
-fn merge_jsonl(destination: &Path, source: &Path) -> Result<(), String> {
+/// Returns how many records were dropped for a different record with the
+/// same id. Identical duplicates lose nothing and are not counted.
+fn merge_jsonl(destination: &Path, source: &Path) -> Result<usize, String> {
     let destination_text = fs::read_to_string(destination).map_err(|error| error.to_string())?;
     let source_text = fs::read_to_string(source).map_err(|error| error.to_string())?;
-    let mut seen_ids = BTreeSet::new();
+    let mut kept_by_id: BTreeMap<String, &str> = BTreeMap::new();
     let mut seen_lines = BTreeSet::new();
     let mut lines = Vec::new();
+    let mut dropped = 0;
     for line in destination_text.lines().chain(source_text.lines()) {
         if line.trim().is_empty() {
             continue;
@@ -1749,7 +2001,18 @@ fn merge_jsonl(destination: &Path, source: &Path) -> Result<(), String> {
             .ok()
             .and_then(|value| value.get("id").and_then(Value::as_str).map(str::to_owned));
         let keep = match id {
-            Some(id) if !id.is_empty() => seen_ids.insert(id),
+            Some(id) if !id.is_empty() => match kept_by_id.get(&id) {
+                Some(kept) => {
+                    if *kept != line {
+                        dropped += 1;
+                    }
+                    false
+                }
+                None => {
+                    kept_by_id.insert(id, line);
+                    true
+                }
+            },
             _ => seen_lines.insert(line.to_owned()),
         };
         if keep {
@@ -1765,10 +2028,12 @@ fn merge_jsonl(destination: &Path, source: &Path) -> Result<(), String> {
         merged.as_bytes(),
         AtomicWriteOptions { mode: Some(0o600) },
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    Ok(dropped)
 }
 
-fn merge_json_object(destination: &Path, source: &Path) -> Result<(), String> {
+/// Returns how many source fields lost to a different destination value.
+fn merge_json_object(destination: &Path, source: &Path) -> Result<usize, String> {
     let source_value: Value =
         serde_json::from_slice(&fs::read(source).map_err(|error| error.to_string())?)
             .map_err(|error| error.to_string())?;
@@ -1782,6 +2047,10 @@ fn merge_json_object(destination: &Path, source: &Path) -> Result<(), String> {
     let Value::Object(destination_map) = destination_value else {
         return Err(format!("{} is not a JSON object", destination.display()));
     };
+    let superseded = destination_map
+        .iter()
+        .filter(|(key, value)| merged.get(*key).is_some_and(|source| source != *value))
+        .count();
     merged.extend(destination_map);
     let mut bytes =
         serde_json::to_vec_pretty(&Value::Object(merged)).map_err(|error| error.to_string())?;
@@ -1791,7 +2060,8 @@ fn merge_json_object(destination: &Path, source: &Path) -> Result<(), String> {
         &bytes,
         AtomicWriteOptions { mode: Some(0o600) },
     )
-    .map_err(|error| error.to_string())
+    .map_err(|error| error.to_string())?;
+    Ok(superseded)
 }
 
 fn default_export_path(journal: &Path, exported_at: &str) -> Result<PathBuf, String> {
