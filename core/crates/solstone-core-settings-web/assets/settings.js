@@ -34,7 +34,7 @@
     if (streamCount === 0) return null;
     const overrides = perStream && typeof perStream === 'object' ? perStream : {};
     const configuredCount = streamList.filter((stream) => overrides[stream?.name]?.raw_media).length;
-    const bodyHtml = '<p style="color: #666; font-size: 0.85em; margin: 0 0 1em 0;">override the global retention mode for individual streams.</p><div id="streamOverridesList"></div>';
+    const bodyHtml = '<p style="color: var(--ink-soft); font-size: 0.85em; margin: 0 0 1em 0;">override the global retention mode for individual streams.</p><div id="streamOverridesList"></div>';
     return {
       id: 'stream-overrides',
       open: false,

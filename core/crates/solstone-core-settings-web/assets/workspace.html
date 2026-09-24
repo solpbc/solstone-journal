@@ -20,6 +20,7 @@
 
 /* Left navigation */
 .settings-nav {
+  background: var(--panel);
   width: 180px;
   flex-shrink: 0;
   position: sticky;
@@ -43,7 +44,7 @@
 .settings-nav-label {
   font-size: 0.75em;
   font-weight: 500;
-  color: #aaa;
+  color: var(--ink-faint);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   padding: 0 0.75rem 0.125rem 0.75rem;
@@ -59,18 +60,18 @@
   background: none;
   text-align: left;
   font-size: 0.95em;
-  color: #333;
+  color: var(--ink);
   cursor: pointer;
   border-radius: 8px;
   transition: background 0.15s;
 }
 
 .settings-nav-item:hover {
-  background: rgba(0,0,0,0.05);
+  background: color-mix(in srgb, var(--surface-dark) 5%, transparent);
 }
 
 .settings-nav-item:active:not(.active) {
-  background: #e4e4e4;
+  background: var(--cream);
 }
 
 .settings-nav-item.active {
@@ -90,7 +91,7 @@
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #d97706;
+  background: var(--warn);
   margin-left: 0.4em;
   vertical-align: middle;
   flex-shrink: 0;
@@ -106,14 +107,15 @@
   width: 100%;
   padding: 0.75em 1em;
   font-size: 1em;
-  border: 1px solid #ddd;
+  border: 1px solid var(--hairline-2);
   border-radius: 8px;
-  background: white;
+  background: var(--paper);
   cursor: pointer;
 }
 
 /* Right content panel */
 .settings-content {
+  background: var(--panel);
   flex: 1;
   min-width: 0;
   max-width: 600px;
@@ -137,12 +139,12 @@
 .settings-section h2 {
   font-size: 1.5em;
   font-weight: 600;
-  color: #333;
+  color: var(--ink);
   margin: 0 0 0.5em 0;
 }
 
 .settings-section-desc {
-  color: #666;
+  color: var(--ink-soft);
   font-size: 0.85em;
   margin-bottom: 1em;
   padding-bottom: 0.75em;
@@ -171,7 +173,7 @@
   width: 26px;
   text-align: center;
   font-size: 17px;
-  color: #999;
+  color: var(--ink-faint);
   flex: none;
 }
 .sapp-b {
@@ -182,7 +184,7 @@
   display: block;
   font-weight: 600;
   font-size: 1rem;
-  color: #333;
+  color: var(--ink);
 }
 .sapp-desc {
   display: block;
@@ -201,11 +203,11 @@
   cursor: default;
 }
 .sapp-muted:hover .sapp-title {
-  color: #333;
+  color: var(--ink);
 }
 .sapp-tag {
   font-size: 0.82rem;
-  color: #999;
+  color: var(--ink-faint);
   font-weight: 600;
   flex: none;
 }
@@ -219,7 +221,7 @@
 .settings-field-label {
   display: block;
   font-weight: 600;
-  color: #333;
+  color: var(--ink);
   margin-bottom: 0.4em;
   font-size: 0.9em;
 }
@@ -241,14 +243,14 @@
 .settings-field textarea:focus,
 .settings-field select:focus {
   outline: none;
-  border-color: var(--facet-color, #E8913A);
-  box-shadow: 0 0 0 3px var(--facet-bg, rgba(232, 146, 58, 0.15));
+  border-color: var(--facet-color, var(--orange));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 15%, transparent);
 }
 
 .settings-field input:hover,
 .settings-field textarea:hover,
 .settings-field select:hover {
-  border-color: #bbb;
+  border-color: var(--hairline-2);
 }
 
 .settings-field textarea {
@@ -259,7 +261,7 @@
 .settings-field small {
   display: block;
   margin-top: 0.3em;
-  color: var(--ink-muted, #66594A);
+  color: var(--ink-faint);
   font-size: 0.85em;
   line-height: 1.5;
   transition: opacity 0.3s ease;
@@ -267,7 +269,7 @@
 
 /* Inline save status - replaces helper text temporarily */
 .settings-field small.status-saved {
-  color: #166534;
+  color: var(--success-ink);
 }
 
 .settings-field small.status-saved::before {
@@ -275,7 +277,7 @@
 }
 
 .settings-field small.status-error {
-  color: #991b1b;
+  color: var(--danger);
 }
 
 .settings-field small.status-error::before {
@@ -287,7 +289,7 @@
 }
 
 .settings-field small .control-save-error {
-  color: var(--color-warning, #f59e0b);
+  color: var(--warn-ink);
   margin-left: 0;
   font-size: inherit;
   display: inline;
@@ -298,7 +300,7 @@
   padding: 0.85em;
   border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #fff;
+  background: var(--paper);
 }
 
 .settings-disclosure h3 {
@@ -309,7 +311,7 @@
 
 .settings-disclosure p {
   margin: 0 0 0.85em;
-  color: #666;
+  color: var(--ink-soft);
   font-size: 0.9em;
   line-height: 1.45;
 }
@@ -322,7 +324,7 @@
 
 .settings-disclosure .control-save-error {
   margin-top: 0.65em;
-  color: #991b1b;
+  color: var(--danger);
   font-size: 0.85em;
 }
 
@@ -333,28 +335,28 @@
 }
 
 .key-status-journal {
-  color: #28a745;
+  color: var(--success-ink);
 }
 
 .key-status-system {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.85em;
 }
 
 .key-status-valid {
-  color: #28a745;
+  color: var(--success-ink);
   font-size: 0.85em;
   margin-left: 0.5em;
 }
 
 .key-status-invalid {
-  color: #dc3545;
+  color: var(--danger);
   font-size: 0.85em;
   margin-left: 0.5em;
 }
 
 .key-status-validating {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.85em;
   margin-left: 0.5em;
   font-style: italic;
@@ -384,16 +386,16 @@
   border: none;
   padding: 0.5em;
   cursor: pointer;
-  color: #666;
+  color: var(--ink-soft);
   font-size: 1.1em;
 }
 
 .password-toggle:hover {
-  color: #333;
+  color: var(--ink);
 }
 
 .password-toggle:active {
-  color: #111;
+  color: var(--ink);
   transform: translateY(-50%) scale(0.9);
 }
 
@@ -414,7 +416,7 @@
 .toggle-label {
   font-weight: 500;
   font-size: 0.95em;
-  color: #333;
+  color: var(--ink);
   min-width: 60px;
 }
 
@@ -438,7 +440,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: #28a745;
+  background-color: var(--success);
   transition: 0.3s;
   border-radius: 28px;
 }
@@ -450,7 +452,7 @@
   width: 22px;
   left: 3px;
   bottom: 3px;
-  background-color: white;
+  background-color: var(--paper);
   transition: 0.3s;
   border-radius: 50%;
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
@@ -465,20 +467,20 @@
 }
 
 input:checked + .slider {
-  background-color: #6c757d;
+  background-color: var(--ink-faint);
 }
 
 input:checked + .slider:before {
   transform: translateX(24px);
 }
 
-/* Positive toggle: green when checked (for enable/active states) */
+/* Positive toggle: orange when checked (for enable/active states) */
 .toggle-switch.toggle-positive .slider {
-  background-color: #6c757d;
+  background-color: var(--ink-faint);
 }
 
 .toggle-switch.toggle-positive input:checked + .slider {
-  background-color: #E8913A;
+  background-color: var(--orange);
 }
 
 /* Editable fields (double-tap to edit) */
@@ -501,18 +503,18 @@ input:checked + .slider:before {
 }
 
 .editable-field .field-display:hover {
-  background: #f5f5f5;
-  border-color: #ddd;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .editable-field .field-display:active {
-  background: #ebebeb;
+  background: var(--cream);
 }
 
 .editable-field .field-input {
   width: 100%;
   padding: 0.7em 0.85em;
-  border: 1px solid var(--facet-color, #E8913A);
+  border: 1px solid var(--facet-color, var(--orange));
   border-radius: 8px;
   font-size: 0.95em;
   font-family: inherit;
@@ -532,7 +534,7 @@ input:checked + .slider:before {
 
 .emoji-display:hover {
   transform: scale(1.1);
-  background: #f5f5f5;
+  background: var(--cream-bright);
 }
 
 .emoji-display:active {
@@ -540,7 +542,7 @@ input:checked + .slider:before {
 }
 
 .emoji-display:focus-visible {
-  outline: 2px solid var(--facet-color, #E8913A);
+  outline: 2px solid var(--facet-color, var(--orange));
   outline-offset: 2px;
   border-radius: 12px;
 }
@@ -549,7 +551,7 @@ input:checked + .slider:before {
   width: 100%;
   max-width: 200px;
   padding: 0.6em 0.75em;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
   font-size: 1.2em;
   text-align: center;
@@ -562,31 +564,32 @@ input:checked + .slider:before {
   gap: 0.75em;
   cursor: pointer;
   padding: 0.6em 0.75em;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
-  background: #fff;
+  background: var(--paper);
   color: var(--orange-text-aa);
   transition: all 0.2s;
 }
 
 .icon-picker-trigger:hover {
-  background: #f5f5f5;
-  border-color: #999;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .icon-picker-trigger:focus-visible {
-  outline: 2px solid var(--facet-color, #E8913A);
+  outline: 2px solid var(--facet-color, var(--orange));
   outline-offset: 2px;
 }
 
 .icon-picker-preview,
 .icon-modal-preview-glyph {
+  --pill-color: var(--facet-color, var(--orange));
   width: 32px;
   height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--pill-color, var(--facet-color, #E8913A));
+  color: var(--pill-color, var(--facet-color, var(--orange)));
 }
 
 .icon-picker-preview svg,
@@ -599,14 +602,14 @@ input:checked + .slider:before {
 }
 
 .icon-picker-name {
-  color: #333;
+  color: var(--ink);
   font-weight: 600;
 }
 
 .icon-search-input {
   width: 100%;
   padding: 0.65em 0.75em;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
   font: inherit;
   margin-bottom: 1em;
@@ -623,10 +626,10 @@ input:checked + .slider:before {
 
 .icon-result-btn {
   aspect-ratio: 1;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
-  background: #fff;
-  color: var(--pill-color, var(--facet-color, #E8913A));
+  background: var(--paper);
+  color: var(--pill-color, var(--facet-color, var(--orange)));
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -635,8 +638,8 @@ input:checked + .slider:before {
 }
 
 .icon-result-btn:hover {
-  background: #f5f5f5;
-  border-color: #999;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .icon-result-btn:active {
@@ -644,21 +647,21 @@ input:checked + .slider:before {
 }
 
 .icon-result-btn.selected {
-  border-color: var(--facet-color, #E8913A);
-  box-shadow: 0 0 0 2px #fff, 0 0 0 5px var(--facet-color, #E8913A);
+  border-color: var(--facet-color, var(--orange));
+  box-shadow: 0 0 0 2px var(--ink-on-dark), 0 0 0 5px var(--facet-color, var(--orange));
 }
 
 .icon-picker-message {
   padding: 0.75em;
   border-radius: 8px;
-  background: #f8f8f8;
-  color: #555;
+  background: var(--cream-bright);
+  color: var(--ink-soft);
   margin-bottom: 1em;
 }
 
 .icon-picker-message.error {
-  background: #fff4f4;
-  color: #a33;
+  background: var(--danger-wash);
+  color: var(--danger);
 }
 
 .icon-picker-actions {
@@ -673,9 +676,9 @@ input:checked + .slider:before {
 .icon-clear-btn {
   flex: 1;
   padding: 0.75em 1.5em;
-  background: #fff;
-  color: #333;
-  border: 2px solid #ddd;
+  background: var(--paper);
+  color: var(--ink);
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
   font-size: 1em;
   font-weight: 600;
@@ -683,8 +686,8 @@ input:checked + .slider:before {
 }
 
 .icon-clear-btn:hover {
-  background: #f5f5f5;
-  border-color: #999;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 /* Color picker */
@@ -694,19 +697,19 @@ input:checked + .slider:before {
   gap: 1em;
   cursor: pointer;
   padding: 0.6em 0.75em;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
   width: fit-content;
   transition: all 0.2s;
 }
 
 .color-picker-trigger:hover {
-  background: #f5f5f5;
-  border-color: #999;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .color-picker-trigger:focus-visible {
-  outline: 2px solid var(--facet-color, #E8913A);
+  outline: 2px solid var(--facet-color, var(--orange));
   outline-offset: 2px;
 }
 
@@ -714,7 +717,7 @@ input:checked + .slider:before {
   width: 40px;
   height: 40px;
   border-radius: 8px;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
 }
 
 .color-picker-trigger span {
@@ -733,11 +736,11 @@ input:checked + .slider:before {
   top: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0,0,0,0.5);
+  background: color-mix(in srgb, var(--surface-dark) 50%, transparent);
 }
 
 .color-modal-content {
-  background: white;
+  background: var(--paper);
   margin: 5% auto;
   padding: 2em;
   border-radius: 12px;
@@ -754,23 +757,23 @@ input:checked + .slider:before {
   top: 1em;
   font-size: 2em;
   font-weight: bold;
-  color: #999;
+  color: var(--ink-faint);
   cursor: pointer;
   line-height: 1;
 }
 
 .color-close:hover {
-  color: #333;
+  color: var(--ink);
 }
 
 .color-close:active {
-  color: #111;
+  color: var(--ink);
   transform: scale(0.9);
 }
 
 .color-modal h3 {
   margin: 0 0 1.5em 0;
-  color: #333;
+  color: var(--ink);
 }
 
 .color-swatches {
@@ -791,7 +794,7 @@ input:checked + .slider:before {
 
 .color-swatch:hover {
   transform: scale(1.1);
-  border-color: #333;
+  border-color: var(--hairline-2);
 }
 
 .color-swatch:active {
@@ -799,8 +802,8 @@ input:checked + .slider:before {
 }
 
 .color-swatch.selected {
-  border-color: #000;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 5px #000;
+  border-color: var(--surface-dark);
+  box-shadow: 0 0 0 2px var(--ink-on-dark), 0 0 0 5px rgba(0, 0, 0, 0.85);
 }
 
 .custom-color {
@@ -811,7 +814,7 @@ input:checked + .slider:before {
   display: block;
   font-weight: 600;
   margin-bottom: 0.5em;
-  color: #333;
+  color: var(--ink);
 }
 
 .color-input-group {
@@ -824,7 +827,7 @@ input:checked + .slider:before {
   width: 60px;
   height: 45px;
   padding: 0.2em;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
   cursor: pointer;
 }
@@ -832,7 +835,7 @@ input:checked + .slider:before {
 .custom-color input[type="text"] {
   flex: 1;
   padding: 0.6em 0.75em;
-  border: 2px solid #ddd;
+  border: 2px solid var(--hairline-2);
   border-radius: 8px;
   font-family: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', 'Consolas', monospace;
   font-size: 1em;
@@ -841,14 +844,14 @@ input:checked + .slider:before {
 
 .color-preview-section {
   padding: 1em;
-  background: #f8f8f8;
+  background: var(--cream-bright);
   border-radius: 8px;
   margin-bottom: 1.5em;
 }
 
 .color-preview-section h4 {
   margin: 0 0 0.75em 0;
-  color: #333;
+  color: var(--ink);
   font-size: 0.9em;
 }
 
@@ -858,8 +861,8 @@ input:checked + .slider:before {
   gap: 0.5em;
   padding: 0.6em 1.2em;
   border-radius: 20px;
-  border: 2px solid #E8913A;
-  background: rgba(232, 146, 58, 0.1);
+  border: 2px solid var(--hairline-2);
+  background: color-mix(in srgb, var(--focus) 10%, transparent);
   font-weight: 500;
 }
 
@@ -892,7 +895,7 @@ input:checked + .slider:before {
 
 /* Activity log */
 .log-panel {
-  background: #fafafa;
+  background: var(--cream);
   border: 1px solid var(--hairline);
   border-radius: 8px;
 }
@@ -902,7 +905,7 @@ input:checked + .slider:before {
   border-bottom: 1px solid var(--hairline);
   font-weight: 600;
   font-size: 0.9em;
-  color: #555;
+  color: var(--ink-soft);
 }
 
 .log-entries {
@@ -914,7 +917,7 @@ input:checked + .slider:before {
 .log-empty {
   padding: 2em 1em;
   text-align: center;
-  color: #999;
+  color: var(--ink-faint);
   font-size: 0.9em;
 }
 
@@ -929,12 +932,12 @@ input:checked + .slider:before {
 .log-day-line {
   flex: 1;
   height: 1px;
-  background: #ddd;
+  background: var(--hairline);
 }
 
 .log-day-label {
   font-size: 0.75em;
-  color: #888;
+  color: var(--ink-faint);
   font-weight: 500;
 }
 
@@ -947,7 +950,7 @@ input:checked + .slider:before {
 }
 
 .log-row:hover {
-  background: #f0f0f0;
+  background: var(--cream);
 }
 
 .log-icon {
@@ -958,19 +961,19 @@ input:checked + .slider:before {
   flex: 1;
   min-width: 0;
   overflow-wrap: anywhere;
-  color: #333;
+  color: var(--ink);
   font-weight: 500;
 }
 
 .log-actor {
-  color: var(--ink-muted);
+  color: var(--ink-faint);
   font-size: 0.9em;
 }
 
 .log-actor::before {
   content: "\2022";
   margin-right: 0.5em;
-  color: #ccc;
+  color: var(--ink-faint);
 }
 
 .log-more {
@@ -990,16 +993,16 @@ input:checked + .slider:before {
 }
 
 .log-more-btn:hover {
-  background: var(--facet-bg, rgba(232, 146, 58, 0.1));
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent);
 }
 
 .log-more-btn:disabled {
-  color: #ccc;
+  color: var(--ink-faint);
   cursor: default;
 }
 
 .log-more-btn:active:not(:disabled) {
-  background: color-mix(in srgb, var(--facet-bg, rgba(232, 146, 58, 0.1)) 80%, #000);
+  background: color-mix(in srgb, color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent) 80%, var(--surface-dark));
 }
 
 .storage-summary-grid {
@@ -1015,15 +1018,15 @@ input:checked + .slider:before {
   gap: 0.5em;
   margin-top: 0.5em;
   padding: 0.5em 0.75em;
-  background: #fff8dc;
-  border: 1px solid #ffd700;
+  background: var(--warn-wash);
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   font-size: 0.85em;
-  color: #856404;
+  color: var(--warn-ink);
 }
 
 .provider-key-warning a {
-  color: #0066cc;
+  color: var(--orange-text-aa);
   text-decoration: none;
 }
 
@@ -1041,7 +1044,7 @@ input:checked + .slider:before {
 .form-help {
   margin-top: 0.5em;
   font-size: 0.85em;
-  color: var(--surface-muted, #666);
+  color: var(--ink-faint);
 }
 
 .redact-list {
@@ -1053,7 +1056,7 @@ input:checked + .slider:before {
   align-items: center;
   gap: 0.5em;
   padding: 0.5em 0.5em;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--hairline);
 }
 
 .redact-item:last-child {
@@ -1061,13 +1064,13 @@ input:checked + .slider:before {
 }
 
 .redact-item:hover {
-  background: #fafafa;
+  background: var(--cream);
 }
 
 .redact-text {
   flex: 1;
   font-size: 0.9em;
-  color: #333;
+  color: var(--ink);
   cursor: default;
   padding: 0.25em 0.5em;
   border-radius: 4px;
@@ -1077,14 +1080,14 @@ input:checked + .slider:before {
 }
 
 .redact-text:hover {
-  border-color: #e0e0e0;
+  border-color: var(--hairline-2);
 }
 
 .redact-input {
   flex: 1;
   font-size: 0.9em;
   padding: 0.25em 0.5em;
-  border: 1px solid var(--facet-color, #E8913A);
+  border: 1px solid var(--facet-color, var(--orange));
   border-radius: 4px;
   outline: none;
 }
@@ -1092,7 +1095,7 @@ input:checked + .slider:before {
 .redact-remove {
   background: none;
   border: none;
-  color: #ccc;
+  color: var(--ink-faint);
   font-size: 1.2em;
   cursor: pointer;
   padding: 0 0.25em;
@@ -1101,13 +1104,13 @@ input:checked + .slider:before {
 }
 
 .redact-remove:hover {
-  color: #e74c3c;
+  color: var(--danger);
 }
 
 .redact-empty {
   padding: 1.5em;
   text-align: center;
-  color: #888;
+  color: var(--ink-faint);
   font-size: 0.9em;
 }
 
@@ -1121,31 +1124,31 @@ input:checked + .slider:before {
   flex: 1;
   font-size: 0.9em;
   padding: 0.4em 0.75em;
-  border: 1px solid #ddd;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   outline: none;
 }
 
 .redact-add-input:focus {
-  border-color: var(--facet-color, #E8913A);
+  border-color: var(--facet-color, var(--orange));
 }
 
 .redact-add-btn {
   background: none;
-  border: 1px dashed #ccc;
+  border: 1px dashed var(--hairline-2);
   border-radius: 20px;
   padding: 0.4em 0.75em;
   font-size: 0.85em;
-  color: #666;
+  color: var(--ink-soft);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
 }
 
 .redact-add-btn:hover {
-  border-color: var(--facet-color, #E8913A);
+  border-color: var(--facet-color, var(--orange));
   color: var(--orange-text-aa);
-  background: var(--facet-bg, rgba(232, 146, 58, 0.05));
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 5%, transparent);
 }
 
 .redact-add-btn:disabled {
@@ -1154,13 +1157,13 @@ input:checked + .slider:before {
 }
 
 .redact-add-btn:active:not(:disabled) {
-  background: color-mix(in srgb, var(--facet-bg, rgba(232, 146, 58, 0.05)) 80%, #000);
+  background: color-mix(in srgb, color-mix(in srgb, var(--facet-color, var(--orange)) 5%, transparent) 80%, var(--surface-dark));
   transform: scale(0.98);
 }
 
 .redact-validation {
   font-size: 0.8em;
-  color: #e74c3c;
+  color: var(--danger);
   padding: 0.25em 0.5em;
 }
 
@@ -1175,7 +1178,7 @@ input:checked + .slider:before {
 .context-group-label {
   font-size: 0.75em;
   font-weight: 600;
-  color: #888;
+  color: var(--ink-faint);
   margin-bottom: 0.5em;
   padding-left: 0.25em;
 }
@@ -1190,13 +1193,13 @@ input:checked + .slider:before {
 }
 
 .context-item:hover {
-  background: #f5f5f5;
+  background: var(--cream-bright);
 }
 
 .context-label {
   flex: 1;
   font-size: 0.9em;
-  color: #333;
+  color: var(--ink);
 }
 
 .context-value {
@@ -1207,20 +1210,20 @@ input:checked + .slider:before {
 
 .context-select {
   padding: 0.3em 0.5em;
-  border: 1px solid #ddd;
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
   font-size: 0.85em;
-  background: white;
+  background: var(--paper);
   min-width: 80px;
 }
 
 .context-select:hover {
-  border-color: #bbb;
+  border-color: var(--hairline-2);
 }
 
 .context-select:focus {
-  border-color: var(--facet-color, #E8913A);
-  box-shadow: 0 0 0 3px var(--facet-bg, rgba(232, 146, 58, 0.1));
+  border-color: var(--facet-color, var(--orange));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent);
   outline: none;
 }
 
@@ -1232,7 +1235,7 @@ input:checked + .slider:before {
 .context-reset {
   background: none;
   border: none;
-  color: #888;
+  color: var(--ink-faint);
   cursor: pointer;
   font-size: 0.9em;
   padding: 0.2em 0.4em;
@@ -1247,12 +1250,12 @@ input:checked + .slider:before {
 }
 
 .context-reset:hover {
-  color: #d32f2f;
-  background: #ffebee;
+  color: var(--danger);
+  background: var(--danger-wash);
 }
 
 .context-saved {
-  color: #28a745;
+  color: var(--success);
   opacity: 1;
   transition: opacity 0.3s;
 }
@@ -1274,22 +1277,22 @@ input:checked + .slider:before {
 }
 
 .vision-extraction-display:hover {
-  background: #f5f5f5;
-  border-color: #ddd;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .vision-extraction-display.vision-extraction-default {
-  color: #666;
+  color: var(--ink-soft);
   font-style: italic;
 }
 
 .vision-extraction-display.vision-extraction-empty {
-  color: #999;
+  color: var(--ink-faint);
   font-style: italic;
 }
 
 .vision-extraction-display.vision-extraction-disabled {
-  color: #999;
+  color: var(--ink-faint);
   font-style: italic;
   opacity: 0.5;
   cursor: default;
@@ -1304,7 +1307,7 @@ input:checked + .slider:before {
   width: 100%;
   padding: 0.4em 0.6em;
   font-size: 0.85em;
-  border: 2px solid var(--facet-color, #E8913A);
+  border: 2px solid var(--facet-color, var(--orange));
   border-radius: 4px;
   font-family: inherit;
   line-height: 1.4;
@@ -1323,23 +1326,23 @@ input:checked + .slider:before {
 }
 
 .importance-section.importance-high {
-  background: linear-gradient(135deg, #d4edda 0%, #c3e6cb 100%);
-  border: 1px solid #b1dfbb;
+  background: linear-gradient(135deg, var(--success-wash) 0%, var(--success-wash) 100%);
+  border: 1px solid var(--hairline-2);
 }
 
 .importance-section.importance-normal {
-  background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
-  border: 1px solid #abdde5;
+  background: linear-gradient(135deg, var(--cream-bright) 0%, var(--cream-bright) 100%);
+  border: 1px solid var(--hairline-2);
 }
 
 .importance-section.importance-low {
-  background: linear-gradient(135deg, #fff3cd 0%, #ffeeba 100%);
-  border: 1px solid #ffc107;
+  background: linear-gradient(135deg, var(--warn-wash) 0%, var(--warn-wash) 100%);
+  border: 1px solid var(--warn);
 }
 
 .importance-section.importance-ignore {
-  background: linear-gradient(135deg, #e2e3e5 0%, #d6d8db 100%);
-  border: 1px solid #c6c8ca;
+  background: linear-gradient(135deg, var(--cream) 0%, var(--cream) 100%);
+  border: 1px solid var(--hairline-2);
 }
 
 .importance-section-header {
@@ -1352,10 +1355,10 @@ input:checked + .slider:before {
   gap: 0.5em;
 }
 
-.importance-high .importance-section-header { color: #155724; }
-.importance-normal .importance-section-header { color: #0c5460; }
-.importance-low .importance-section-header { color: #856404; }
-.importance-ignore .importance-section-header { color: #383d41; }
+.importance-high .importance-section-header { color: var(--success-ink); }
+.importance-normal .importance-section-header { color: var(--ink-soft); }
+.importance-low .importance-section-header { color: var(--warn-ink); }
+.importance-ignore .importance-section-header { color: var(--ink-soft); }
 
 .importance-section-empty {
   font-size: 0.85em;
@@ -1365,7 +1368,7 @@ input:checked + .slider:before {
 }
 
 .vision-category-item {
-  background: rgba(255,255,255,0.7);
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
   border-radius: 6px;
   padding: 0.5em;
   margin-bottom: 0.5em;
@@ -1377,7 +1380,7 @@ input:checked + .slider:before {
 }
 
 .vision-category-item:hover {
-  background: rgba(255,255,255,0.9);
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
 }
 
 .vision-category-item.moving {
@@ -1401,8 +1404,8 @@ input:checked + .slider:before {
 }
 
 .vision-move-btn {
-  background: rgba(255,255,255,0.8);
-  border: 1px solid #ccc;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
   width: 44px;
   height: 44px;
@@ -1412,14 +1415,14 @@ input:checked + .slider:before {
   justify-content: center;
   cursor: pointer;
   font-size: 0.85em;
-  color: #555;
+  color: var(--ink-soft);
   transition: all 0.15s;
 }
 
 .vision-move-btn:hover:not(:disabled) {
-  background: white;
-  border-color: #999;
-  color: #333;
+  background: var(--paper);
+  border-color: var(--hairline-2);
+  color: var(--ink);
 }
 
 .vision-move-btn:disabled {
@@ -1439,19 +1442,19 @@ input:checked + .slider:before {
   align-items: center;
   justify-content: space-between;
   padding: 0.75em 1em;
-  background: #f8f8f8;
+  background: var(--cream-bright);
   border-bottom: 1px solid var(--hairline);
 }
 
 .activities-title {
   font-weight: 600;
   font-size: 0.95em;
-  color: #333;
+  color: var(--ink);
 }
 
 .activities-count {
   font-weight: normal;
-  color: #888;
+  color: var(--ink-faint);
   font-size: 0.85em;
 }
 
@@ -1462,7 +1465,7 @@ input:checked + .slider:before {
 .activities-empty {
   padding: 1.5em;
   text-align: center;
-  color: #888;
+  color: var(--ink-faint);
   font-size: 0.9em;
 }
 
@@ -1473,7 +1476,7 @@ input:checked + .slider:before {
   padding: 0.75em;
   border-radius: 6px;
   margin-bottom: 0.5em;
-  background: #fafafa;
+  background: var(--cream);
   transition: background 0.15s;
 }
 
@@ -1482,7 +1485,7 @@ input:checked + .slider:before {
 }
 
 .activity-item:hover {
-  background: #f0f0f0;
+  background: var(--cream);
 }
 
 .activity-icon {
@@ -1509,13 +1512,13 @@ input:checked + .slider:before {
 .activity-name {
   font-weight: 600;
   font-size: 0.95em;
-  color: #333;
+  color: var(--ink);
   margin-bottom: 0.2em;
 }
 
 .activity-desc {
   font-size: 0.85em;
-  color: #666;
+  color: var(--ink-soft);
   line-height: 1.3;
 }
 
@@ -1528,12 +1531,12 @@ input:checked + .slider:before {
 }
 
 .activity-desc.activity-desc-editable:hover {
-  background: #e8e8e8;
+  background: var(--cream);
 }
 
 .activity-instructions {
   font-size: 0.85em;
-  color: var(--ink-muted);
+  color: var(--ink-faint);
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
@@ -1555,17 +1558,17 @@ input:checked + .slider:before {
 
 .activity-priority {
   padding: 0.25em 0.5em;
-  border: 1px solid #ddd;
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
   font-size: 0.8em;
-  background: white;
+  background: var(--paper);
   cursor: pointer;
 }
 
 .activity-remove {
   background: none;
   border: none;
-  color: #999;
+  color: var(--ink-faint);
   cursor: pointer;
   font-size: 1.1em;
   padding: 0.2em 0.4em;
@@ -1574,8 +1577,8 @@ input:checked + .slider:before {
 }
 
 .activity-remove:hover {
-  color: #d32f2f;
-  background: #ffebee;
+  color: var(--danger);
+  background: var(--danger-wash);
 }
 
 /* Add activities panel */
@@ -1595,8 +1598,8 @@ input:checked + .slider:before {
   align-items: center;
   gap: 0.4em;
   padding: 0.4em 0.75em;
-  background: #f0f0f0;
-  border: 1px solid #ddd;
+  background: var(--cream);
+  border: 1px solid var(--hairline-2);
   border-radius: 20px;
   font-size: 0.85em;
   cursor: pointer;
@@ -1604,8 +1607,8 @@ input:checked + .slider:before {
 }
 
 .activity-chip:hover {
-  background: #e0e0e0;
-  border-color: #bbb;
+  background: var(--cream);
+  border-color: var(--hairline-2);
 }
 
 .activity-chip.activity-chip-attached {
@@ -1614,12 +1617,12 @@ input:checked + .slider:before {
 }
 
 .activity-chip:active:not(.activity-chip-attached) {
-  background: #d0d0d0;
+  background: var(--cream-bright);
   transform: scale(0.97);
 }
 
 .activity-chip:focus-visible {
-  outline: 2px solid var(--facet-color, #E8913A);
+  outline: 2px solid var(--facet-color, var(--orange));
   outline-offset: 2px;
 }
 
@@ -1640,51 +1643,51 @@ input:checked + .slider:before {
 
 .activities-custom {
   padding-top: 0.5em;
-  border-top: 1px solid #eee;
+  border-top: 1px solid var(--hairline);
 }
 
 .activities-add-custom-btn {
   background: none;
-  border: 1px dashed #ccc;
+  border: 1px dashed var(--hairline-2);
   border-radius: 20px;
   padding: 0.4em 0.75em;
   font-size: 0.85em;
-  color: #666;
+  color: var(--ink-soft);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .activities-add-custom-btn:hover {
-  border-color: var(--facet-color, #E8913A);
+  border-color: var(--facet-color, var(--orange));
   color: var(--orange-text-aa);
-  background: var(--facet-bg, rgba(232, 146, 58, 0.05));
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 5%, transparent);
 }
 
 .activities-add-custom-btn:active {
-  background: color-mix(in srgb, var(--facet-bg, rgba(232, 146, 58, 0.05)) 80%, #000);
+  background: color-mix(in srgb, color-mix(in srgb, var(--facet-color, var(--orange)) 5%, transparent) 80%, var(--surface-dark));
   transform: scale(0.98);
 }
 
 .settings-preset-btn {
   padding: 0.35em 0.75em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
-  background: white;
+  background: var(--paper);
   cursor: pointer;
   font-size: 0.85em;
 }
 
 .settings-preset-btn:hover {
-  background: #f0f0f0;
+  background: var(--cream);
 }
 
 .settings-preset-btn:active:not(.active) {
-  background: #e0e0e0;
+  background: var(--cream);
 }
 
 .settings-preset-btn.active {
-  border-color: var(--accent, #E8913A);
-  color: var(--accent, #E8913A);
+  border-color: var(--orange-ink);
+  color: var(--orange-text-aa);
 }
 
 .retention-days-row.is-disabled {
@@ -1697,7 +1700,7 @@ input:checked + .slider:before {
   align-items: center;
   gap: 0.75em;
   padding: 0.5em 0;
-  border-bottom: 1px solid #f0f0f0;
+  border-bottom: 1px solid var(--hairline);
 }
 
 @media (max-width: 600px) {
@@ -1728,7 +1731,7 @@ input:checked + .slider:before {
   min-width: 0;
   max-width: 100%;
   padding: 0.35em 0.5em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
   font-size: 0.85em;
 }
@@ -1736,20 +1739,20 @@ input:checked + .slider:before {
 .stream-override-days {
   width: 4em;
   padding: 0.35em 0.5em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
   font-size: 0.85em;
 }
 
 .stream-override-select:hover,
 .stream-override-days:hover {
-  border-color: #999;
+  border-color: var(--hairline-2);
 }
 
 .stream-override-select:focus,
 .stream-override-days:focus {
-  border-color: var(--facet-color, #E8913A);
-  box-shadow: 0 0 0 3px var(--facet-bg, rgba(232, 146, 58, 0.1));
+  border-color: var(--facet-color, var(--orange));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent);
   outline: none;
 }
 
@@ -1767,19 +1770,19 @@ input:checked + .slider:before {
 .icon-clear-btn:focus-visible,
 .field-display:focus-visible,
 button:focus-visible {
-  outline: 2px solid var(--facet-color, #E8913A);
+  outline: 2px solid var(--facet-color, var(--orange));
   outline-offset: 2px;
   border-radius: 4px;
 }
 
 /* Active nav item needs contrasting focus ring since it already has a colored background */
 .settings-nav-item.active:focus-visible {
-  outline-color: #333;
+  outline-color: var(--focus);
 }
 
 /* Toggle switches */
 .toggle-switch input:focus-visible + .slider {
-  outline: 2px solid var(--facet-color, #E8913A);
+  outline: 2px solid var(--facet-color, var(--orange));
   outline-offset: 2px;
   border-radius: 12px;
 }
@@ -1799,19 +1802,19 @@ button:focus:not(:focus-visible) {
 .settings-subsection-title {
   font-size: 0.95em;
   font-weight: 600;
-  color: #374151;
+  color: var(--ink-soft);
   margin: 1.5em 0 0.5em 0;
 }
 
 .settings-subsection-desc {
-  color: #666;
+  color: var(--ink-soft);
   font-size: 0.85em;
   margin: 0 0 0.75em 0;
   line-height: 1.4;
 }
 
 .settings-summary-card {
-  background: #fafafa;
+  background: var(--cream);
   border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 1em 1.25em;
@@ -1825,15 +1828,15 @@ button:focus:not(:focus-visible) {
 
 .storage-stat-label {
   font-size: 0.85em;
-  color: #666;
+  color: var(--ink-soft);
 }
 
 /* Button variants */
 .btn-secondary {
   padding: 0.5em 1em;
-  background: white;
-  color: #374151;
-  border: 1px solid #d1d5db;
+  background: var(--paper);
+  color: var(--ink-soft);
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   font-size: 0.9em;
   cursor: pointer;
@@ -1841,17 +1844,17 @@ button:focus:not(:focus-visible) {
 }
 
 .btn-secondary:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .btn-secondary:active {
-  background: #e5e7eb;
+  background: var(--hairline);
 }
 
 .action-button-danger {
-  background: #dc3545;
-  color: white;
+  background: var(--danger);
+  color: var(--ink-on-danger);
   border: none;
   padding: 0.6em 1.2em;
   border-radius: 6px;
@@ -1861,47 +1864,47 @@ button:focus:not(:focus-visible) {
 }
 
 .action-button-danger:hover {
-  background: #c82333;
+  background: color-mix(in srgb, var(--danger) 82%, var(--surface-dark));
 }
 
 .action-button-danger:active {
-  background: #b21f2d;
+  background: color-mix(in srgb, var(--danger) 70%, var(--surface-dark));
 }
 
 .cleanup-preview-btn {
   padding: 0.5em 1em;
-  border: 1px solid #ccc;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
-  background: white;
+  background: var(--paper);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .cleanup-preview-btn:hover {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .cleanup-preview-btn:active {
-  background: #e5e7eb;
+  background: var(--hairline);
 }
 
 .cleanup-confirm-btn {
   padding: 0.5em 1em;
   border: none;
   border-radius: 6px;
-  background: #dc3545;
-  color: white;
+  background: var(--danger);
+  color: var(--ink-on-danger);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .cleanup-confirm-btn:hover:not(:disabled) {
-  background: #c82333;
+  background: color-mix(in srgb, var(--danger) 82%, var(--surface-dark));
 }
 
 .cleanup-confirm-btn:active:not(:disabled) {
-  background: #b21f2d;
+  background: color-mix(in srgb, var(--danger) 70%, var(--surface-dark));
 }
 
 .cleanup-confirm-btn:disabled {
@@ -1933,7 +1936,7 @@ button:focus:not(:focus-visible) {
   align-items: center;
   display: inline-flex;
   gap: 0.35rem;
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 0.9rem;
   margin-bottom: 1.5rem;
   text-decoration: none;
@@ -1951,14 +1954,14 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-detail-heading {
-  color: #111827;
+  color: var(--ink);
   font-size: 2rem;
   line-height: 1.15;
   margin: 0;
 }
 
 .facet-detail-swatch {
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
   border-radius: 50%;
   display: inline-block;
   height: 1.25rem;
@@ -1989,7 +1992,7 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-list-row:hover {
-  border-color: var(--facet-color, #E8913A);
+  border-color: var(--facet-color, var(--orange));
 }
 
 .facet-list-row-main {
@@ -2004,7 +2007,7 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-list-swatch {
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
   border-radius: 50%;
   display: inline-block;
   flex: 0 0 auto;
@@ -2013,9 +2016,9 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-list-muted {
-  background: #f1f5f9;
+  background: var(--cream-bright);
   border-radius: 999px;
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 0.8rem;
   padding: 0.2rem 0.6rem;
 }
@@ -2028,13 +2031,13 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-list-chevron {
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 1.35rem;
   line-height: 1;
 }
 
 .facets-list-empty {
-  color: #64748b;
+  color: var(--ink-soft);
 }
 
 .facets-list-action {
@@ -2042,7 +2045,7 @@ button:focus:not(:focus-visible) {
 }
 
 .facet-create-reassurance {
-  color: #64748b;
+  color: var(--ink-soft);
   font-size: 0.85rem;
   margin: 0.5rem 0 1rem;
 }
@@ -2071,15 +2074,15 @@ button:focus:not(:focus-visible) {
   background: transparent;
   border: 0;
   border-bottom: 2px solid transparent;
-  color: #64748b;
+  color: var(--ink-soft);
   cursor: pointer;
   font: inherit;
   padding: 0.6rem 0.75rem;
 }
 
 .facet-detail-tab.active {
-  border-bottom-color: var(--facet-color, #E8913A);
-  color: #111827;
+  border-bottom-color: var(--facet-color, var(--orange));
+  color: var(--ink);
   font-weight: 600;
 }
 
@@ -2461,7 +2464,7 @@ button:focus:not(:focus-visible) {
           </span>
         </summary>
         <div class="drawer-body">
-          <p style="color:#666;font-size:0.9em;margin:0 0 1em 0">instructions the model follows to redact sensitive content from screen analysis. double-click a rule to edit it.</p>
+          <p style="color:var(--ink-soft);font-size:0.9em;margin:0 0 1em 0">instructions the model follows to redact sensitive content from screen analysis. double-click a rule to edit it.</p>
           <div class="redact-list" id="redactRulesList"></div>
           <div class="redact-add-row">
             <input type="text" class="redact-add-input" id="redactAddInput" placeholder="add a redaction rule…" maxlength="200">
@@ -2481,7 +2484,7 @@ button:focus:not(:focus-visible) {
           </span>
         </summary>
         <div class="drawer-body" id="visionCategoriesBody">
-          <p style="color:#666;font-size:0.9em;margin:0 0 1em 0">how much each kind of screen matters, and the instructions the model follows when it reads one. double-click an instruction to edit it.</p>
+          <p style="color:var(--ink-soft);font-size:0.9em;margin:0 0 1em 0">how much each kind of screen matters, and the instructions the model follows when it reads one. double-click an instruction to edit it.</p>
           <div id="visionCategoryGroups">loading…</div>
         </div>
       </details>
@@ -2509,12 +2512,12 @@ button:focus:not(:focus-visible) {
               <input type="checkbox" id="field-plaud-sync-enabled">
               <span class="slider"></span>
             </label>
-            <span style="color: #666; font-size: 0.9em;">sync and import Plaud material every hour</span>
+            <span style="color: var(--ink-soft); font-size: 0.9em;">sync and import Plaud material every hour</span>
           </div>
         </div>
 
-        <p id="plaudSyncTokenNote" style="display: none; color: #888; font-size: 0.85em; margin-top: 1em; padding: 0.75em; background: #f8f9fa; border-radius: 4px;">
-          configure your Plaud token in <a href="#apikeys" id="plaudApiKeysLink" style="color: var(--orange-ink);">API keys</a> to enable sync.
+        <p id="plaudSyncTokenNote" style="display: none; color: var(--ink-faint); font-size: 0.85em; margin-top: 1em; padding: 0.75em; background: var(--cream-bright); border-radius: 4px;">
+          configure your Plaud token in <a href="#apikeys" id="plaudApiKeysLink" style="color: var(--orange-text-aa);">API keys</a> to enable sync.
         </p>
       </div>
 
@@ -2531,7 +2534,7 @@ button:focus:not(:focus-visible) {
               <input type="checkbox" id="field-obsidian-sync-enabled">
               <span class="slider"></span>
             </label>
-            <span style="color: #666; font-size: 0.9em;">check for changes every hour</span>
+            <span style="color: var(--ink-soft); font-size: 0.9em;">check for changes every hour</span>
           </div>
         </div>
       </div>
@@ -2563,7 +2566,7 @@ button:focus:not(:focus-visible) {
             <div class="storage-stat-label">segments</div>
           </div>
         </div>
-        <div style="margin-top: 0.75em; font-size: 0.8em; color: var(--ink-muted, #66594A); text-align: center;" id="storageSummaryDetail"></div>
+        <div style="margin-top: 0.75em; font-size: 0.8em; color: var(--ink-faint); text-align: center;" id="storageSummaryDetail"></div>
       </div>
 
       <div class="settings-field" id="retentionModeField">
@@ -2573,14 +2576,14 @@ button:focus:not(:focus-visible) {
           <button type="button" class="settings-preset-btn" data-days="7">7</button>
           <button type="button" class="settings-preset-btn" data-days="30">30</button>
           <button type="button" class="settings-preset-btn" data-days="90">90</button>
-          <input type="number" id="retentionDaysInput" min="1" max="365" style="width: 7em; padding: 0.4em 0.6em; border: 1px solid #ccc; border-radius: 4px;" placeholder="custom">
-          <span style="color: #666; font-size: 0.9em;">days</span>
+          <input type="number" id="retentionDaysInput" min="1" max="365" style="width: 7em; padding: 0.4em 0.6em; border: 1px solid var(--hairline-2); border-radius: 4px;" placeholder="custom">
+          <span style="color: var(--ink-soft); font-size: 0.9em;">days</span>
         </div>
-        <label for="retentionDontRetain" style="display: flex; align-items: center; gap: 0.5em; margin-top: 0.75em; color: #666; font-size: 0.9em;">
+        <label for="retentionDontRetain" style="display: flex; align-items: center; gap: 0.5em; margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">
           <input type="checkbox" id="retentionDontRetain">
           <span>list originals for removal after processing</span>
         </label>
-        <div id="retentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: keep everything.</div>
+        <div id="retentionStatus" style="margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">currently: keep everything.</div>
       </div>
 
       <div class="settings-field" id="emptyAudioField">
@@ -2593,7 +2596,7 @@ button:focus:not(:focus-visible) {
           </label>
           <label for="emptyAudioKeep" class="toggle-label" style="cursor: pointer;">keep audio with no speech</label>
         </div>
-        <div id="emptyAudioStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: list audio with no speech for removal after processing.</div>
+        <div id="emptyAudioStatus" style="margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">currently: list audio with no speech for removal after processing.</div>
       </div>
 
       <div id="streamOverridesMount"></div>
@@ -2612,19 +2615,19 @@ button:focus:not(:focus-visible) {
           <button type="button" class="settings-preset-btn" data-days="7">7</button>
           <button type="button" class="settings-preset-btn" data-days="30">30</button>
           <button type="button" class="settings-preset-btn" data-days="90">90</button>
-          <input type="number" id="logRetentionDaysInput" min="1" max="365" style="width: 7em; padding: 0.4em 0.6em; border: 1px solid #ccc; border-radius: 4px;" placeholder="custom">
-          <span style="color: #666; font-size: 0.9em;">days</span>
+          <input type="number" id="logRetentionDaysInput" min="1" max="365" style="width: 7em; padding: 0.4em 0.6em; border: 1px solid var(--hairline-2); border-radius: 4px;" placeholder="custom">
+          <span style="color: var(--ink-soft); font-size: 0.9em;">days</span>
         </div>
-        <div id="logRetentionStatus" style="margin-top: 0.75em; color: #666; font-size: 0.9em;">currently: keep operational logs 30 days</div>
+        <div id="logRetentionStatus" style="margin-top: 0.75em; color: var(--ink-soft); font-size: 0.9em;">currently: keep operational logs 30 days</div>
         <div style="margin-top: 1em;">
           <button type="button" id="cleanupLogsBtn" class="btn-secondary">clean up logs</button>
-          <small style="display: block; margin-top: 0.5em; color: #666;">manually clean up operational logs older than a specified number of days.</small>
+          <small style="display: block; margin-top: 0.5em; color: var(--ink-soft);">manually clean up operational logs older than a specified number of days.</small>
         </div>
       </div>
 
       <div class="settings-danger-section">
         <button type="button" id="cleanupNowBtn" class="action-button-danger">build the list</button>
-        <small style="display: block; margin-top: 0.5em; color: #666;">build the list of original media ready for removal, based on your retention settings. building the list does not delete anything.</small>
+        <small style="display: block; margin-top: 0.5em; color: var(--ink-soft);">build the list of original media ready for removal, based on your retention settings. building the list does not delete anything.</small>
       </div>
       </form>
     </section>
@@ -2760,7 +2763,7 @@ button:focus:not(:focus-visible) {
           <input type="text" id="customActivityIcon" placeholder="e.g., 🔬" maxlength="4" style="max-width: 100px;">
         </div>
         <div class="settings-field">
-          <label for="customActivityInstructions">instructions <span style="font-weight:normal;color:#888;">(optional)</span></label>
+          <label for="customActivityInstructions">instructions <span style="font-weight:normal;color:var(--ink-faint);">(optional)</span></label>
           <textarea id="customActivityInstructions" rows="2" placeholder="detection hints and level guidance for the model"></textarea>
         </div>
         <button class="save-color-btn" id="saveCustomActivityBtn">add activity</button>
@@ -2821,18 +2824,18 @@ button:focus:not(:focus-visible) {
   <div class="color-modal-content" style="max-width: 480px;">
     <span class="color-close" id="cleanupModalClose">&times;</span>
     <h3 id="cleanupHeading">build the list</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">lists original media ready for removal, based on your retention settings.</p>
+    <p style="color: var(--ink-soft); font-size: 0.9em; margin-bottom: 1em;">lists original media ready for removal, based on your retention settings.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupStreamFilter">stream filter (optional)</label>
-      <select id="cleanupStreamFilter" style="padding: 0.4em 0.6em; border: 1px solid #ccc; border-radius: 4px; width: 100%;">
+      <select id="cleanupStreamFilter" style="padding: 0.4em 0.6em; border: 1px solid var(--hairline-2); border-radius: 4px; width: 100%;">
         <option value="">all streams</option>
       </select>
     </div>
 
-    <div id="cleanupPreview" style="background: #f8f8f8; border-radius: 6px; padding: 1em; margin-bottom: 1em; display: none;">
+    <div id="cleanupPreview" style="background: var(--cream-bright); border-radius: 6px; padding: 1em; margin-bottom: 1em; display: none;">
       <div style="font-weight: 600; margin-bottom: 0.5em;">results</div>
-      <div id="cleanupPreviewText" style="font-size: 0.9em; color: #666;"></div>
+      <div id="cleanupPreviewText" style="font-size: 0.9em; color: var(--ink-soft);"></div>
     </div>
 
     <div style="display: flex; gap: 0.75em; justify-content: flex-end;">
@@ -2847,19 +2850,19 @@ button:focus:not(:focus-visible) {
   <div class="color-modal-content" style="max-width: 560px;">
     <span class="color-close" id="cleanupLogsModalClose">&times;</span>
     <h3 id="cleanupLogsHeading">clean up logs</h3>
-    <p style="color: #666; font-size: 0.9em; margin-bottom: 1em;">clean up operational logs older than the specified number of days. this does not affect your original media or your journal.</p>
+    <p style="color: var(--ink-soft); font-size: 0.9em; margin-bottom: 1em;">clean up operational logs older than the specified number of days. this does not affect your original media or your journal.</p>
 
     <div class="settings-field" style="margin-bottom: 1em;">
       <label for="cleanupLogsDaysInput">older than</label>
       <div style="display: flex; gap: 0.5em; align-items: center;">
-        <input type="number" id="cleanupLogsDaysInput" min="1" value="30" style="width: 5em; padding: 0.4em 0.6em; border: 1px solid #ccc; border-radius: 4px;">
-        <span style="color: #666;">days</span>
+        <input type="number" id="cleanupLogsDaysInput" min="1" value="30" style="width: 5em; padding: 0.4em 0.6em; border: 1px solid var(--hairline-2); border-radius: 4px;">
+        <span style="color: var(--ink-soft);">days</span>
       </div>
     </div>
 
-    <div id="cleanupLogsPreview" style="background: #f8f8f8; border-radius: 6px; padding: 1em; margin-bottom: 1em; display: none;">
+    <div id="cleanupLogsPreview" style="background: var(--cream-bright); border-radius: 6px; padding: 1em; margin-bottom: 1em; display: none;">
       <div style="font-weight: 600; margin-bottom: 0.5em;">preview</div>
-      <div id="cleanupLogsPreviewText" style="font-size: 0.9em; color: #666;"></div>
+      <div id="cleanupLogsPreviewText" style="font-size: 0.9em; color: var(--ink-soft);"></div>
     </div>
 
     <div style="display: flex; gap: 0.75em; justify-content: flex-end;">
@@ -2906,7 +2909,20 @@ let logNextCursor = null;
 let keyValidationData = {};
 let transcribeResource = null;
 let settingsInitialized = false;
-const FACET_COLORS = ['#007bff','#28a745','#17a2b8','#ffc107','#6f42c1','#fd7e14','#e83e8c','#6c757d','#20c997','#ff5722','#9c27b0','#795548'];
+const FACET_COLORS = [
+  'var(--orange)',
+  'var(--gold)',
+  'var(--success)',
+  'var(--warn)',
+  'var(--surface-dark)',
+  'color-mix(in srgb, var(--orange) 75%, var(--gold))',
+  'color-mix(in srgb, var(--orange) 65%, var(--surface-dark))',
+  'color-mix(in srgb, var(--gold) 75%, var(--surface-dark))',
+  'color-mix(in srgb, var(--success) 75%, var(--surface-dark))',
+  'color-mix(in srgb, var(--warn) 75%, var(--surface-dark))',
+  'color-mix(in srgb, var(--orange) 50%, var(--success))',
+  'color-mix(in srgb, var(--gold) 50%, var(--warn))'
+];
 const iconSvgCache = new Map();
 const escapeHtml = (value) => window.AppServices.escapeHtml(value);
 // ========== TAB ATTENTION ==========
@@ -3885,7 +3901,7 @@ function setupIconPicker() {
   function updateIconPreview() {
     const color = facetConfig?.color || '#667eea';
     previewPill.style.borderColor = color;
-    previewPill.style.backgroundColor = color + '1a';
+    previewPill.style.backgroundColor = `color-mix(in srgb, ${color} 10%, transparent)`;
     previewGlyph.style.setProperty('--pill-color', color);
     previewTitle.style.color = color;
     previewTitle.textContent = document.getElementById('facetTitleDisplay').textContent;
@@ -4009,14 +4025,22 @@ function setupIconPicker() {
   };
 }
 
-function colorName(hex) {
+function colorName(color) {
   const names = {
-    '#007bff': 'blue', '#28a745': 'green', '#17a2b8': 'teal',
-    '#ffc107': 'yellow', '#6f42c1': 'purple', '#fd7e14': 'orange',
-    '#e83e8c': 'pink', '#6c757d': 'gray', '#20c997': 'mint',
-    '#ff5722': 'red-orange', '#9c27b0': 'deep purple', '#795548': 'brown'
+    'var(--orange)': 'orange',
+    'var(--gold)': 'gold',
+    'var(--success)': 'success',
+    'var(--warn)': 'warning',
+    'var(--surface-dark)': 'dark',
+    'color-mix(in srgb, var(--orange) 75%, var(--gold))': 'orange gold',
+    'color-mix(in srgb, var(--orange) 65%, var(--surface-dark))': 'burnt orange',
+    'color-mix(in srgb, var(--gold) 75%, var(--surface-dark))': 'bronze',
+    'color-mix(in srgb, var(--success) 75%, var(--surface-dark))': 'forest',
+    'color-mix(in srgb, var(--warn) 75%, var(--surface-dark))': 'olive',
+    'color-mix(in srgb, var(--orange) 50%, var(--success))': 'orange green',
+    'color-mix(in srgb, var(--gold) 50%, var(--warn))': 'gold warning'
   };
-  return names[hex.toLowerCase()] || hex;
+  return names[color.toLowerCase()] || color;
 }
 
 function setupColorPicker() {
@@ -4097,7 +4121,7 @@ function setupColorPicker() {
     // Update preview
     const preview = document.getElementById('modalPreview');
     preview.style.borderColor = color;
-    preview.style.backgroundColor = color + '1a';
+    preview.style.backgroundColor = `color-mix(in srgb, ${color} 10%, transparent)`;
     document.getElementById('modalPreviewTitle').style.color = color;
     document.getElementById('modalPreviewEmoji').textContent = document.getElementById('emojiDisplay').textContent;
     document.getElementById('modalPreviewTitle').textContent = document.getElementById('facetTitleDisplay').textContent;
@@ -5159,7 +5183,7 @@ function renderActivities(data) {
   const availableDefaults = defaults.filter(d => !attachedIds.has(d.id));
 
   if (availableDefaults.length === 0 && attached.length > 0) {
-    defaultsList.innerHTML = '<span style="color:#888;font-size:0.85em;">all default activities attached</span>';
+    defaultsList.innerHTML = '<span style="color:var(--ink-faint);font-size:0.85em;">all default activities attached</span>';
   } else {
     defaultsList.innerHTML = defaults.map(d => {
       const isAttached = attachedIds.has(d.id);

@@ -200,7 +200,7 @@ button.daygrid-cell {
 .daygrid-cell--range-endpoint {
   border-color: var(--orange);
   background: var(--orange);
-  color: var(--orange-ink);
+  color: var(--ink-on-brand);
   opacity: 1;
 }
 

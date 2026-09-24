@@ -1,22 +1,12 @@
 <div class="workspace-content thinking-workspace" id="providers">
   <style>
     .thinking-workspace {
-      --cream: #FCF3E4;
-      --paper: #FFF;
-      --ink: #1A1A1A;
-      --muted: #6E6255;
-      --orange: #E8913A;
-      --orange-ink: #B06A1A;
-      --orange-wash: #FBEFDD;
-      --hairline: #ECE3D0;
-      --danger: #9F2F1F;
-      --ok: #3F6F46;
-      --radius: 14px;
-      --radius-sm: 9px;
+      --muted: var(--ink-faint);
+      --ok: var(--success);
       color: var(--ink);
       font-family: "Inter", system-ui, sans-serif;
       background: var(--cream);
-      border-radius: var(--radius);
+      border-radius: 14px;
     }
 
     .thinking-workspace [hidden] {
@@ -26,8 +16,8 @@
     .thinking-workspace .appframe {
       background: var(--paper);
       border: 1px solid var(--hairline);
-      border-radius: var(--radius);
-      box-shadow: 0 18px 50px rgba(26, 26, 26, 0.08);
+      border-radius: 14px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
       padding: 28px;
     }
 
@@ -105,7 +95,7 @@
 
     .thinking-workspace .glance {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius);
+      border-radius: 14px;
       background: var(--orange-wash);
       display: grid;
       gap: 5px;
@@ -113,7 +103,7 @@
     }
 
     .thinking-workspace .glance.none {
-      background: #F7F1E7;
+      background: var(--cream);
     }
 
     .thinking-workspace .glabel,
@@ -148,7 +138,7 @@
     .thinking-workspace .notice,
     .thinking-workspace .disclosure {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius);
+      border-radius: 14px;
       background: var(--paper);
     }
 
@@ -228,9 +218,9 @@
     }
 
     .thinking-workspace .pill.bad {
-      border-color: rgba(159, 47, 31, 0.2);
+      border-color: color-mix(in srgb, var(--danger) 20%, transparent);
       color: var(--danger);
-      background: #FCF0EA;
+      background: var(--danger-wash);
     }
 
     .thinking-workspace .activetag {
@@ -249,7 +239,7 @@
     .thinking-workspace .btn,
     .thinking-workspace button.btn {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       background: var(--paper);
       color: var(--ink);
       cursor: pointer;
@@ -262,7 +252,7 @@
     .thinking-workspace button.btn.primary {
       background: var(--orange);
       border-color: var(--orange);
-      color: var(--ink);
+      color: var(--ink-on-brand);
       font-weight: 700;
     }
 
@@ -287,7 +277,7 @@
       align-items: center;
       background: var(--orange-wash);
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       display: flex;
       gap: 12px;
       justify-content: space-between;
@@ -332,7 +322,7 @@
     .thinking-workspace .field select,
     .thinking-workspace .field textarea {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       box-sizing: border-box;
       color: var(--ink);
       padding: 10px 11px;
@@ -386,7 +376,7 @@
 
     .thinking-workspace .lanedetail {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       background: var(--cream);
       color: var(--muted);
       padding: 11px 13px;
@@ -422,7 +412,7 @@
 
     .thinking-workspace .confidential-audio-row {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       background: var(--paper);
       display: grid;
       gap: 7px;
@@ -465,7 +455,7 @@
 
     .thinking-workspace .switchnode {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       padding: 13px;
     }
 
@@ -489,7 +479,7 @@
     .thinking-workspace .thinking-runs-tab {
       background: var(--paper);
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       color: var(--ink);
       cursor: pointer;
       flex: 0 0 auto;
@@ -512,7 +502,7 @@
 
     .thinking-workspace .thinking-runs-status {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       color: var(--ink);
       line-height: 1.45;
       padding: 10px 12px;
@@ -522,7 +512,7 @@
       align-self: start;
       background: var(--paper);
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       color: var(--ink);
       cursor: pointer;
       font: inherit;
@@ -550,7 +540,7 @@
     .thinking-workspace .thinking-runs-controls input,
     .thinking-workspace .thinking-runs-controls select {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       min-height: 44px;
       padding: 7px 10px;
     }
@@ -561,7 +551,7 @@
     .thinking-workspace .thinking-runs-modal-close {
       background: var(--paper);
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       color: var(--ink);
       cursor: pointer;
       font: inherit;
@@ -628,7 +618,7 @@
     .thinking-workspace .thinking-runs-detail,
     .thinking-workspace .thinking-runs-modal-content {
       border: 1px solid var(--hairline);
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       padding: 14px;
     }
 
@@ -661,7 +651,7 @@
 
     .thinking-workspace .thinking-runs-modal {
       border: 0;
-      border-radius: var(--radius-sm);
+      border-radius: 9px;
       padding: 0;
       width: min(calc(100% - 32px), 760px);
       max-height: calc(100dvh - 32px);
@@ -669,7 +659,7 @@
     }
 
     .thinking-workspace .thinking-runs-modal::backdrop {
-      background: rgba(26, 26, 26, 0.45);
+      background: color-mix(in srgb, var(--surface-dark) 45%, transparent);
     }
 
     #thinkingRunsPromptContent,
@@ -683,7 +673,7 @@
     .thinking-output-document p, .thinking-output-document ul, .thinking-output-document ol { margin: 0.8em 0; }
     .thinking-output-document h1, .thinking-output-document h2, .thinking-output-document h3 { margin: 1.2em 0 0.4em; line-height: 1.25; }
     .thinking-output-document > :first-child { margin-top: 0; }
-    .thinking-output-document a { color: var(--orange-text-aa, #A15F17); text-decoration: underline; }
+    .thinking-output-document a { color: var(--orange-text-aa); text-decoration: underline; }
     .thinking-output-document img { max-width: 100%; height: auto; }
     .thinking-output-document table { display: block; max-width: 100%; overflow: auto; }
     #thinkingRunsOutputPanel > details { margin-top: 1em; }
@@ -713,7 +703,7 @@
       }
 
       .thinking-workspace .appframe {
-        border-radius: var(--radius-sm);
+        border-radius: 9px;
         padding: 18px;
       }
 
@@ -769,7 +759,7 @@
         display: grid;
       }
     }
-   .thinking-runs-filters{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:16px 0}.thinking-runs-filters label{display:flex;align-items:center;gap:8px;min-height:44px}.thinking-runs-filters input{width:20px;height:20px}.thinking-run-failed{background:#fff2eb}.thinking-runs-filters a{color:var(--orange-text-aa,#a15f17)}#thinkingRunsContent>section{overflow-x:auto}
+   .thinking-runs-filters{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:16px 0}.thinking-runs-filters label{display:flex;align-items:center;gap:8px;min-height:44px}.thinking-runs-filters input{width:20px;height:20px}.thinking-run-failed{background:var(--danger-wash)}.thinking-runs-filters a{color:var(--orange-text-aa)}#thinkingRunsContent>section{overflow-x:auto}
 #thinkingIdentityDetails summary {cursor:pointer;min-height:46px;padding:10px 0}
 </style>
 

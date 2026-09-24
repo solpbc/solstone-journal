@@ -1058,10 +1058,10 @@
     const errEl = ensureChild(idx++);
     if (!state.agentErrorsOk) {
       errEl.textContent = "couldn't check talent errors today.";
-      errEl.style.color = '#92400e';
+      errEl.style.color = 'var(--warn-ink)';
     } else if (errCount > 0) {
       errEl.textContent = errCount + ' recent error' + (errCount !== 1 ? 's' : '');
-      errEl.style.color = '#dc2626';
+      errEl.style.color = 'var(--danger)';
     } else {
       errEl.textContent = 'no recent errors';
       errEl.style.color = '';
@@ -1245,7 +1245,7 @@
 
     if (!state.agentErrorsOk && entries.length > 0) {
       const degraded = document.createElement('div');
-      degraded.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: #92400e;';
+      degraded.style.cssText = 'padding: 0.3em 0; font-size: 0.85em; color: var(--warn-ink);';
       degraded.textContent = "couldn't check talent errors today.";
       container.appendChild(degraded);
     }
@@ -1666,19 +1666,19 @@
       if (staleCount > 0) {
         const staleNames = staleHeartbeats.map(s => serviceName(s)).join(', ');
         mainSpan.textContent = staleCount + ' service' + (staleCount === 1 ? '' : 's') + ' not responding';
-        mainSpan.style.color = '#f59e0b';
+        mainSpan.style.color = 'var(--warn-ink)';
         staleListSpan.textContent = '(' + staleNames + ')';
         staleListSpan.style.display = '';
         updateVitalsStatus('warning');
       } else if (hasCrashed) {
         mainSpan.textContent = 'services need attention';
-        mainSpan.style.color = '#f87171';
+        mainSpan.style.color = 'var(--danger)';
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
         updateVitalsStatus('error');
       } else if (hasRetrying) {
         mainSpan.textContent = 'services retrying';
-        mainSpan.style.color = '#f59e0b';
+        mainSpan.style.color = 'var(--warn-ink)';
         staleListSpan.textContent = '';
         staleListSpan.style.display = 'none';
         updateVitalsStatus('warning');

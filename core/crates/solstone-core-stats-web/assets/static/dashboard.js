@@ -22,19 +22,17 @@ const Dashboard = (function() {
 
   // Warm replacement for the prior cool blue (#2171b5) used by the input and
   // audio series — gold, from --gold in tokens.css (X-12).
-  const WARM_INPUT_COLOR = '#FFCC33';
+  const WARM_INPUT_COLOR = 'var(--gold)';
 
-  // Warm categorical base (gold -> orange -> coral/danger -> warm plum ->
-  // olive/success -> ink-soft), derived from the brand tokens, replacing the
-  // prior unbranded rainbow palette for facets/activities legends (X-12).
-  // Hex values mirror --gold, --orange, --danger, --success and --ink-soft in
-  // tokens.css; "warm plum" has no existing token, so it is a hand-picked
-  // warm-hued fill between the coral and olive anchors.
-  const WARM_CATEGORICAL_BASE = ['#FFCC33', '#E8913A', '#9F2D2D', '#6B3A46', '#3F9D6A', '#5B5246'];
-
-  // Orange sequential ramp for the heatmap, replacing the prior cool
-  // rgba(102,126,234,…) indigo (X-12). RGB of --orange (#E8913A).
-  const WARM_HEATMAP_RGB = '232,145,58';
+  // Stable warm token roles replace the prior unbranded rainbow palette.
+  const WARM_CATEGORICAL_BASE = [
+    'var(--gold)',
+    'var(--orange)',
+    'var(--danger)',
+    'var(--surface-dark)',
+    'var(--success)',
+    'var(--ink-soft)'
+  ];
 
   // DOM element factory
   function el(tag, attrs = {}, children = []) {
@@ -257,8 +255,8 @@ const Dashboard = (function() {
         el('div', {
           className: 'legend-color',
           style: {
-            background: '#e6550d',
-            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px)'
+            background: 'var(--orange)',
+            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, color-mix(in srgb, var(--paper) 30%, transparent) 3px, color-mix(in srgb, var(--paper) 30%, transparent) 6px)'
           },
           'aria-hidden': 'true'
         }),
@@ -268,8 +266,8 @@ const Dashboard = (function() {
         el('div', {
           className: 'legend-color',
           style: {
-            background: '#31a354',
-            backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px)',
+            background: 'var(--success)',
+            backgroundImage: 'radial-gradient(circle, color-mix(in srgb, var(--paper) 30%, transparent) 1px, transparent 1px)',
             backgroundSize: '6px 6px'
           },
           'aria-hidden': 'true'
@@ -360,8 +358,8 @@ const Dashboard = (function() {
         el('div', {
           className: 'legend-color',
           style: {
-            background: '#e6550d',
-            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px)'
+            background: 'var(--orange)',
+            backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, color-mix(in srgb, var(--paper) 30%, transparent) 3px, color-mix(in srgb, var(--paper) 30%, transparent) 6px)'
           },
           'aria-hidden': 'true'
         }),
@@ -472,6 +470,7 @@ const Dashboard = (function() {
 
       for (let h = 0; h < 24; h++) {
         const intensity = data[d][h] / maxVal;
+        const percent = (intensity * 100).toFixed(2);
         // One duration ladder for the whole app; it grew an hours rung for
         // these buckets, which run to thousands of minutes (G2-B14, S-3). An
         // empty hour is not a duration, so it says so rather than reading
@@ -480,7 +479,7 @@ const Dashboard = (function() {
         const cellTitle = `${days[d]} ${heatmapHourSpoken(h)} · ${bucketMinutes > 0 ? window.JournalFormat.duration(bucketMinutes * 60) : 'no activity'}`;
         row.appendChild(el('div', {
           className: 'heatmap-cell',
-          style: {background: `rgba(${WARM_HEATMAP_RGB},${intensity})`},
+          style: {background: `color-mix(in srgb, var(--orange) ${percent}%, transparent)`},
           'data-tip': cellTitle,
           'aria-label': cellTitle,
           role: 'gridcell',
@@ -500,30 +499,15 @@ const Dashboard = (function() {
     if (note) note.textContent = heatmapNarrowNote(data);
   }
 
-  // Lighten (positive percent) or darken (negative percent) a hex color,
-  // used to extend the warm categorical base past its 6 anchor hues.
-  function shadeHex(hex, percent) {
-    const num = parseInt(hex.slice(1), 16);
-    const r = (num >> 16) & 0xff;
-    const g = (num >> 8) & 0xff;
-    const b = num & 0xff;
-    const target = percent < 0 ? 0 : 255;
-    const amount = Math.min(1, Math.abs(percent) / 100);
-    const mix = (channel) => Math.round((target - channel) * amount + channel);
-    return '#' + [mix(r), mix(g), mix(b)].map(v => v.toString(16).padStart(2, '0')).join('');
-  }
-
-  // Generate consistent colors for categories from the warm categorical base
-  // (X-12). Cycles of six reuse the same six warm hues at alternating
-  // lighter/darker shades so a repeated hue at the same palette position
-  // still reads apart from its first pass, instead of falling back to an
-  // unbranded (and previously cool-hued) default set.
+  // Generate stable CSS colors for repeated cycles of the warm categorical
+  // palette while keeping every paint tied to an existing token.
   function getCategoryColor(index, total) {
     const cycle = Math.floor(index / WARM_CATEGORICAL_BASE.length);
     const base = WARM_CATEGORICAL_BASE[index % WARM_CATEGORICAL_BASE.length];
     if (cycle === 0) return base;
-    const step = Math.ceil(cycle / 2) * 22;
-    return shadeHex(base, cycle % 2 === 1 ? step : -step);
+    const percent = Math.max(25, 100 - Math.ceil(cycle / 2) * 18);
+    const target = cycle % 2 === 1 ? 'var(--surface-dark)' : 'var(--paper)';
+    return `color-mix(in srgb, ${base} ${percent}%, ${target})`;
   }
 
   // Reserved runtime placeholders (e.g. __RUNTIME_FACETS__) that a producer

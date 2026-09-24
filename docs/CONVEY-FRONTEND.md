@@ -23,7 +23,8 @@ server.
 - **No framework, no build step.** Vanilla JS (ES modules or classic scripts),
   template literals, `<template>` elements where they help. Static files ship
   in the wheel as-is. Consistency comes from the shared helpers and design
-  tokens (`static/tokens.css`), not from a framework.
+  tokens (`static/tokens.css` and `static/tokens-dark.css`), not from a framework;
+  `shell.html` and `init.html` link `tokens-dark.css` immediately after `tokens.css`.
 - **`AppServices`** (`static/app.js`) is the shared client runtime: service
   and task registration, notifications, `renderMarkdown` (marked + DOMPurify),
   `escapeHtml`. **`apiJson`/`ApiError`** (`static/api.js`) is the only HTTP

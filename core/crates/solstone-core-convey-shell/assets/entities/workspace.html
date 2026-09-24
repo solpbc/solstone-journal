@@ -1,7 +1,7 @@
 <style>
 /* Entity cards grid */
 .entity-cards-container {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -19,7 +19,7 @@
 .entity-type-header {
   font-size: 0.85em;
   font-weight: 500;
-  color: #6c757d;
+  color: var(--ink-faint);
   margin-bottom: 1em;
   padding-bottom: 0.65em;
   border-bottom: 1px solid var(--hairline);
@@ -36,7 +36,7 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  background: #f8f9fa;
+  background: var(--cream-bright);
   border: 1px solid var(--hairline-2);
   border-radius: 8px;
   padding: 1.5em 2.2em 1.7em 1.2em;
@@ -47,24 +47,24 @@
 }
 
 .entity-card:hover {
-  background: #fff;
+  background: var(--paper);
   border-color: var(--facet-color, var(--orange));
-  box-shadow: 0 2px 8px var(--facet-bg, rgba(102, 126, 234, 0.15));
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--facet-color, var(--orange)) 15%, transparent);
 }
 .entity-card:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .entity-card:active {
-  background: #e9ecef;
+  background: var(--cream);
   transform: scale(0.98);
 }
 
 .entity-card-name {
   font-weight: 500;
   font-size: 14px;
-  color: #212529;
+  color: var(--ink);
   margin-bottom: 0.4em;
   white-space: nowrap;
   overflow: hidden;
@@ -73,7 +73,7 @@
 
 .entity-card-meta {
   font-size: 12px;
-  color: #6c757d;
+  color: var(--ink-faint);
   display: flex;
   align-items: center;
   gap: 0.5em;
@@ -100,7 +100,7 @@
   position: absolute;
   top: -1px;
   right: -1px;
-  background: color-mix(in srgb, var(--facet-color, var(--orange)) 25%, white);
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 25%, var(--paper));
   color: var(--facet-color, var(--orange-ink));
   font-size: 11px;
   font-weight: 600;
@@ -116,7 +116,7 @@
 
 .entity-card-date {
   font-size: 12px;
-  color: #6c757d;
+  color: var(--ink-faint);
   font-variant-numeric: tabular-nums;
 }
 
@@ -129,21 +129,21 @@
 
 /* Principal card state - the journal owner */
 .entity-card-principal {
-  background: linear-gradient(135deg, #fff9e6 0%, #fff4d6 100%);
-  border-color: #f0c040;
+  background: linear-gradient(135deg, var(--warn-wash) 0%, var(--warn-wash) 100%);
+  border-color: var(--gold);
 }
 
 .entity-card-principal:hover {
-  border-color: #d4a012;
-  box-shadow: 0 2px 8px rgba(212, 160, 18, 0.25);
+  border-color: var(--gold);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .entity-card-principal-badge {
   position: absolute;
   top: -1px;
   left: -1px;
-  background: linear-gradient(135deg, #f0c040 0%, #d4a012 100%);
-  color: white;
+  background: var(--warn);
+  color: var(--ink-on-brand);
   font-size: 0.65em;
   font-weight: 600;
   padding: 0.15em 0.5em;
@@ -153,13 +153,13 @@
 /* Blocked card state */
 .entity-card-blocked {
   opacity: 0.5;
-  background: #f3f4f6;
-  border-color: #d1d5db;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .entity-card-blocked:hover {
   opacity: 0.7;
-  border-color: #9ca3af;
+  border-color: var(--hairline-2);
   box-shadow: none;
 }
 
@@ -167,8 +167,8 @@
   position: absolute;
   top: -1px;
   left: -1px;
-  background: #6b7280;
-  color: white;
+  background: var(--ink-faint);
+  color: var(--ink-on-dark);
   font-size: 0.65em;
   font-weight: 600;
   padding: 0.15em 0.5em;
@@ -181,14 +181,14 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--type-color, #95a5a6);
+  background: var(--type-color, var(--ink-faint));
 }
 
 /* Type colors */
-.entity-card-type-person { --type-color: #4a90d9; }
-.entity-card-type-company { --type-color: #e6a23c; }
-.entity-card-type-project { --type-color: #27ae60; }
-.entity-card-type-tool { --type-color: #9b59b6; }
+.entity-card-type-person { --type-color: var(--focus); }
+.entity-card-type-company { --type-color: var(--warn); }
+.entity-card-type-project { --type-color: var(--success); }
+.entity-card-type-tool { --type-color: var(--orange); }
 
 /* Detail view affordance chevron */
 .entity-card-detail-affordance {
@@ -198,13 +198,13 @@
   transform: translateY(-50%);
   font-size: 1.1em;
   line-height: 1;
-  color: #adb5bd;
+  color: var(--ink-faint);
   pointer-events: none;
 }
 
 /* Entity detail view */
 .entity-detail-view {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   overflow: hidden;
@@ -212,7 +212,7 @@
 
 .entity-detail-header {
   padding: 1.5em;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--hairline-2);
 }
 
 .entity-detail-back {
@@ -270,8 +270,8 @@
 }
 
 .entity-detail-type {
-  background: #e9ecef;
-  color: #495057;
+  background: var(--cream);
+  color: var(--ink-soft);
   padding: 0.25em 0.75em;
   border-radius: 20px;
   font-size: 12px;
@@ -280,8 +280,8 @@
 }
 
 .entity-detail-detached-badge {
-  background: #ffc107;
-  color: #212529;
+  background: var(--warn);
+  color: var(--ink-on-brand);
   padding: 0.25em 0.75em;
   border-radius: 20px;
   font-size: 12px;
@@ -289,8 +289,8 @@
 }
 
 .entity-detail-principal-badge {
-  background: linear-gradient(135deg, #fff9e6 0%, #f0c040 100%);
-  color: #8b6914;
+  background: linear-gradient(135deg, var(--warn-wash) 0%, var(--warn) 100%);
+  color: var(--ink-on-brand);
   padding: 0.25em 0.75em;
   border-radius: 20px;
   font-size: 12px;
@@ -298,8 +298,8 @@
 }
 
 .entity-detail-blocked-badge {
-  background: #6b7280;
-  color: white;
+  background: var(--ink-faint);
+  color: var(--ink-on-dark);
   padding: 0.25em 0.75em;
   border-radius: 20px;
   font-size: 12px;
@@ -331,7 +331,7 @@
 }
 
 .entity-detail-aka {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.9em;
   line-height: 1.4;
 }
@@ -340,7 +340,7 @@
   display: block;
   margin-top: 0.75em;
   font-size: 0.85em;
-  color: #6c757d;
+  color: var(--ink-faint);
   line-height: 1.4;
 }
 
@@ -351,7 +351,7 @@
 
 .entity-detail-section {
   padding: 1.5em;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--hairline-2);
 }
 
 .entity-detail-section:last-child {
@@ -362,7 +362,7 @@
   margin: 0 0 1em 0;
   font-size: 0.9em;
   font-weight: 600;
-  color: #495057;
+  color: var(--ink-soft);
 }
 
 .entity-trust-controls,
@@ -376,18 +376,18 @@
 .entity-trust-controls select {
   min-width: min(100%, 260px);
   padding: 0.5em 0.75em;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
-  background: white;
+  background: var(--paper);
   font: inherit;
 }
 
 .entity-trust-panel {
   margin-top: 1em;
   padding: 0.85em;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
-  color: #374151;
+  color: var(--ink-soft);
 }
 
 .entity-trust-panel[hidden] {
@@ -406,7 +406,7 @@
   justify-content: space-between;
   gap: 1em;
   padding: 0.7em 0;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--hairline);
 }
 
 .entity-trust-row:last-child {
@@ -414,14 +414,14 @@
 }
 
 .entity-trust-meta {
-  color: #6b7280;
+  color: var(--ink-faint);
   font-size: 0.85em;
   line-height: 1.45;
 }
 
 /* Description section */
 .entity-desc-display {
-  color: #212529;
+  color: var(--ink);
   line-height: 1.5;
   padding: 4px 8px;
   margin: -4px -8px;
@@ -430,11 +430,11 @@
 }
 
 .entity-desc-display:hover {
-  background: #f8f9fa;
+  background: var(--cream-bright);
 }
 
 .entity-desc-display.empty {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-style: italic;
 }
 
@@ -447,7 +447,7 @@
 .entity-desc-input {
   flex: 1;
   padding: 0.5em 0.75em;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   font-size: inherit;
   font-family: inherit;
@@ -458,7 +458,7 @@
 .entity-desc-input:focus {
   outline: none;
   border-color: var(--facet-color, var(--orange));
-  box-shadow: 0 0 0 3px var(--facet-bg, rgba(102, 126, 234, 0.1));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent);
 }
 
 /* Edit form */
@@ -494,14 +494,14 @@
 
 .form-group label {
   font-weight: 500;
-  color: #495057;
+  color: var(--ink-soft);
   font-size: 0.9em;
 }
 
 .form-group input,
 .form-group select {
   padding: 0.5em 0.75em;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   font-size: inherit;
   font-family: inherit;
@@ -510,18 +510,18 @@
 
 .form-group input:hover,
 .form-group select:hover {
-  border-color: #adb5bd;
+  border-color: var(--hairline-2);
 }
 
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
   border-color: var(--facet-color, var(--orange));
-  box-shadow: 0 0 0 3px var(--facet-bg, rgba(102, 126, 234, 0.1));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent);
 }
 
 .form-group small {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.85em;
 }
 
@@ -540,23 +540,23 @@
 }
 
 .observation-item {
-  background: #f8f9fa;
+  background: var(--cream-bright);
   border-radius: 6px;
   padding: 0.75em 1em;
 }
 
 .observation-content {
-  color: #212529;
+  color: var(--ink);
   margin-bottom: 0.25em;
 }
 
 .observation-meta {
   font-size: 0.8em;
-  color: #6c757d;
+  color: var(--ink-faint);
 }
 
 .observations-empty {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-style: italic;
 }
 
@@ -678,7 +678,7 @@
 /* Detach/Re-attach section in detail view */
 .entity-detach-section {
   padding: 1.5em;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--hairline-2);
 }
 
 /* Buttons */
@@ -708,40 +708,41 @@
 }
 
 .btn-primary:disabled {
-  background: #adb5bd;
+  background: var(--ink-faint);
   box-shadow: none;
   cursor: not-allowed;
 }
 
 .btn-primary.saved {
-  background: #16a34a;
+  background: var(--success);
+  color: var(--ink-on-brand);
   box-shadow: none;
 }
 
 .btn-secondary {
-  background: #e9ecef;
-  color: #495057;
+  background: var(--cream);
+  color: var(--ink-soft);
 }
 
 .btn-secondary:hover {
-  background: #dee2e6;
+  background: var(--hairline);
 }
 
 .btn-secondary:active {
-  background: #ced4da;
+  background: var(--hairline);
 }
 
 .btn-danger {
-  background: #dc3545;
-  color: white;
+  background: var(--danger);
+  color: var(--ink-on-danger);
 }
 
 .btn-danger:hover {
-  background: #c82333;
+  background: color-mix(in srgb, var(--danger) 82%, var(--surface-dark));
 }
 
 .btn-danger:active {
-  background: #a71d2a;
+  background: color-mix(in srgb, var(--danger) 70%, var(--surface-dark));
 }
 
 .btn-sm {
@@ -778,7 +779,7 @@
 
 /* Detected entities table */
 .entities-container {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   overflow: hidden;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -793,20 +794,20 @@
 .entities-table td {
   padding: 12px 1.5em;
   text-align: left;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--hairline-2);
 }
 
 .entities-table th {
-  background: #f8f9fa;
+  background: var(--cream-bright);
   font-weight: 600;
-  color: #495057;
+  color: var(--ink-soft);
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .entities-table tr:hover {
-  background: #f8f9fa;
+  background: var(--cream-bright);
 }
 
 .detected-pagination {
@@ -819,9 +820,9 @@
 
 .detected-pagination button {
   padding: 6px 14px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
-  background: #fff;
+  background: var(--paper);
   cursor: pointer;
   font-size: 0.9em;
   font-family: inherit;
@@ -829,7 +830,7 @@
 }
 
 .detected-pagination button:hover {
-  background: #f5f5f5;
+  background: var(--cream-bright);
 }
 
 .detected-pagination button:focus-visible {
@@ -838,7 +839,7 @@
 }
 
 .detected-pagination button:active:not(:disabled) {
-  background: #e9ecef;
+  background: var(--cream);
 }
 
 .detected-pagination button:disabled {
@@ -848,14 +849,14 @@
 
 .detected-pagination .detected-page-info {
   font-size: 0.8em;
-  color: #6c757d;
+  color: var(--ink-faint);
 }
 
 .entity-type {
   font-size: 13px;
   width: 120px;
   font-weight: 500;
-  color: #6c757d;
+  color: var(--ink-faint);
 }
 
 .entity-name {
@@ -863,7 +864,7 @@
 }
 
 .entity-desc {
-  color: #6c757d;
+  color: var(--ink-faint);
   position: relative;
 }
 
@@ -876,7 +877,7 @@
   line-height: 1;
   transition: transform 0.2s;
   width: 40px;
-  color: #ccc;
+  color: var(--ink-faint);
   min-height: 44px;
   display: inline-flex;
   align-items: center;
@@ -885,7 +886,7 @@
 
 .star-button:hover {
   transform: scale(1.2);
-  color: #ffc107;
+  color: var(--warn-ink);
 }
 
 .star-button:focus-visible {
@@ -896,7 +897,7 @@
 
 .star-button:active {
   transform: scale(0.9);
-  color: #ffc107;
+  color: var(--warn-ink);
 }
 
 .star-button:disabled {
@@ -911,7 +912,7 @@
   top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
-  color: #6c757d;
+  color: var(--ink-faint);
   opacity: 0.4;
   transition: opacity 0.2s, color 0.2s;
   font-size: 1em;
@@ -931,21 +932,21 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-delete-btn:hover {
-  color: #dc3545;
+  color: var(--danger);
   opacity: 1 !important;
 }
 
 .entity-delete-btn:focus-visible {
-  color: #dc3545;
+  color: var(--danger);
   opacity: 1;
-  outline: 2px solid #dc3545;
+  outline: 2px solid var(--danger);
   outline-offset: 2px;
 }
 
 .entity-delete-btn:active {
-  color: #dc3545;
+  color: var(--danger);
   opacity: 1 !important;
-  background: rgba(220, 53, 69, 0.1);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* Section headers */
@@ -953,12 +954,17 @@ tr:hover .entity-delete-btn {
   margin-bottom: 2em;
 }
 
+#journal-entities-view > .entities-section,
+#entities-list-region > .entities-section:first-child {
+  background: var(--panel);
+}
+
 .entities-section h3 {
   padding: 1em 1.5em;
   margin: 0;
   font-size: 1em;
   font-weight: 600;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--hairline-2);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -967,7 +973,7 @@ tr:hover .entity-delete-btn {
 .entities-subtitle {
   margin: 0;
   padding: 0.5em 1.5em 1.25em;
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.85em;
   line-height: 1.4;
 }
@@ -975,14 +981,14 @@ tr:hover .entity-delete-btn {
 .no-entities {
   padding: 3em;
   text-align: center;
-  color: #6c757d;
+  color: var(--ink-faint);
   font-style: italic;
 }
 
 .entity-search-input {
   max-width: 250px;
   padding: 6px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   font-size: 0.9em;
   font-family: inherit;
@@ -990,33 +996,33 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-search-input:hover {
-  border-color: #adb5bd;
+  border-color: var(--hairline-2);
 }
 
 .entity-search-input:focus {
   outline: none;
   border-color: var(--facet-color, var(--orange));
-  box-shadow: 0 0 0 3px var(--facet-bg, rgba(102, 126, 234, 0.1));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--facet-color, var(--orange)) 10%, transparent);
 }
 
 .entity-card-search-count {
   font-size: 0.8em;
   font-weight: normal;
-  color: #888;
+  color: var(--ink-faint);
   margin-left: 8px;
 }
 
 .no-card-matches {
   text-align: center;
   padding: 2em 1em;
-  color: #888;
+  color: var(--ink-faint);
   font-size: 0.95em;
   display: none;
 }
 
 .mention-count-badge {
   margin-left: 8px;
-  background: color-mix(in srgb, var(--facet-color, var(--orange)) 15%, white);
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 15%, var(--paper));
   color: var(--facet-color, var(--orange-ink));
   padding: 2px 8px;
   border-radius: 12px;
@@ -1028,11 +1034,11 @@ tr:hover .entity-delete-btn {
 .no-facet-message {
   text-align: center;
   padding: 4em 2em;
-  color: #666;
+  color: var(--ink-soft);
 }
 
 .no-facet-message h2 {
-  color: #999;
+  color: var(--ink-faint);
   margin-bottom: 0.5em;
 }
 
@@ -1042,7 +1048,7 @@ tr:hover .entity-delete-btn {
   align-items: center;
   justify-content: center;
   min-height: 40vh;
-  color: #666;
+  color: var(--ink-soft);
 }
 
 .entities-scope-anchor {
@@ -1061,7 +1067,7 @@ tr:hover .entity-delete-btn {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  color: #4b5563;
+  color: var(--ink-soft);
   background: transparent;
   font: inherit;
   font-weight: 600;
@@ -1070,7 +1076,7 @@ tr:hover .entity-delete-btn {
 
 .entities-scope-trigger:hover,
 .entities-scope-trigger:focus-visible {
-  color: #111827;
+  color: var(--ink);
   text-decoration: underline;
 }
 
@@ -1087,10 +1093,10 @@ tr:hover .entity-delete-btn {
   max-height: min(24rem, 60vh);
   overflow: auto;
   padding: 0.5rem;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--hairline-2);
   border-radius: 0.75rem;
-  background: #fff;
-  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.16);
+  background: var(--paper);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
 }
 
 .entities-scope-option {
@@ -1102,7 +1108,7 @@ tr:hover .entity-delete-btn {
   border: 0;
   border-radius: 0.5rem;
   padding: 0.6rem 0.75rem;
-  color: #1f2937;
+  color: var(--ink);
   background: transparent;
   font: inherit;
   text-align: left;
@@ -1112,11 +1118,11 @@ tr:hover .entity-delete-btn {
 .entities-scope-option:hover,
 .entities-scope-option:focus-visible,
 .entities-scope-option[aria-selected="true"] {
-  background: #f3f4f6;
+  background: var(--cream-bright);
 }
 
 .entities-scope-option-count {
-  color: #6b7280;
+  color: var(--ink-faint);
   font-size: 0.875em;
 }
 
@@ -1126,10 +1132,11 @@ tr:hover .entity-delete-btn {
 
 .entities-scope-notice {
   margin: 0 0 1.25rem;
-  color: #6b7280;
+  color: var(--ink-faint);
 }
 
 .entities-list-region {
+  --entities-facet-color: transparent;
   border-top: 3px solid transparent;
 }
 
@@ -1138,19 +1145,20 @@ tr:hover .entity-delete-btn {
 }
 
 .entities-scope-empty {
+  background: var(--panel);
   padding: 4rem 2rem;
   text-align: center;
 }
 
 .entities-scope-empty h2 {
   margin: 0 0 0.75rem;
-  color: #374151;
+  color: var(--ink-soft);
 }
 
 .entities-scope-empty p {
   max-width: 34rem;
   margin: 0 auto 1.25rem;
-  color: #6b7280;
+  color: var(--ink-faint);
 }
 
 @media (max-width: 700px) {
@@ -1167,7 +1175,7 @@ tr:hover .entity-delete-btn {
     inset: 0;
     display: block;
     border: 0;
-    background: rgba(17, 24, 39, 0.45);
+    background: color-mix(in srgb, var(--surface-dark) 45%, transparent);
   }
 
   .entities-scope-menu {
@@ -1187,7 +1195,7 @@ tr:hover .entity-delete-btn {
   display: block;
   width: 40px;
   height: 40px;
-  border: 4px solid #f0f0f0;
+  border: 4px solid var(--hairline);
   border-top-color: var(--facet-color, var(--orange));
   border-radius: 50%;
   animation: spin 1s linear infinite;
@@ -1207,13 +1215,13 @@ tr:hover .entity-delete-btn {
   top: 60px;
   width: 100%;
   height: calc(100% - 60px);
-  background: rgba(0,0,0,0.6);
+  background: color-mix(in srgb, var(--surface-dark) 60%, transparent);
   align-items: center;
   justify-content: center;
 }
 
 .modal-content {
-  background: white;
+  background: var(--paper);
   padding: 0;
   width: 90%;
   max-width: 500px;
@@ -1225,7 +1233,7 @@ tr:hover .entity-delete-btn {
 
 .modal-header {
   padding: 1.5em;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--hairline-2);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1237,7 +1245,7 @@ tr:hover .entity-delete-btn {
 }
 
 .modal-header.danger h3 {
-  color: #dc3545;
+  color: var(--danger);
 }
 
 .modal-body {
@@ -1246,14 +1254,14 @@ tr:hover .entity-delete-btn {
 
 .modal-footer {
   padding: 1.5em;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--hairline-2);
   display: flex;
   gap: 0.5em;
   justify-content: flex-end;
 }
 
 .close {
-  color: #aaa;
+  color: var(--ink-faint);
   font-size: 28px;
   font-weight: bold;
   cursor: pointer;
@@ -1264,7 +1272,7 @@ tr:hover .entity-delete-btn {
 }
 
 .close:hover {
-  color: #000;
+  color: var(--ink);
 }
 
 .close:active {
@@ -1272,19 +1280,19 @@ tr:hover .entity-delete-btn {
 }
 
 .delete-warning {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
+  background: var(--warn-wash);
+  border: 1px solid var(--warn);
   border-radius: 6px;
   padding: 12px;
   margin-bottom: 1em;
-  color: #856404;
+  color: var(--warn-ink);
 }
 
 .delete-days-list {
   max-height: 200px;
   overflow-y: auto;
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline);
   border-radius: 6px;
   padding: 12px;
   margin-top: 8px;
@@ -1292,7 +1300,7 @@ tr:hover .entity-delete-btn {
 
 .delete-day-item {
   padding: 6px 0;
-  border-bottom: 1px solid #dee2e6;
+  border-bottom: 1px solid var(--hairline);
 }
 
 .delete-day-item:last-child {
@@ -1301,9 +1309,9 @@ tr:hover .entity-delete-btn {
 
 /* Error message */
 .error-message {
-  color: #dc3545;
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
+  color: var(--danger);
+  background: var(--danger-wash);
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
   padding: 0.75em 1em;
   margin-bottom: 1em;
@@ -1343,24 +1351,24 @@ tr:hover .entity-delete-btn {
   align-items: flex-start;
   gap: 1em;
   padding: 0.75em 1em;
-  background: #f8f9fa;
+  background: var(--cream-bright);
   border-radius: 8px;
-  border-left: 3px solid #888;
+  border-left: 3px solid var(--hairline-2);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .facet-relationship-row:hover {
-  background: #fff;
+  background: var(--paper);
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 .facet-relationship-row:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .facet-relationship-row:active:not(.detached) {
-  background: #e9ecef;
+  background: var(--cream);
 }
 
 .facet-rel-info {
@@ -1381,12 +1389,12 @@ tr:hover .entity-delete-btn {
 
 .facet-rel-title {
   font-weight: 500;
-  color: #212529;
+  color: var(--ink);
 }
 
 .facet-rel-description {
   font-size: 0.9em;
-  color: #6c757d;
+  color: var(--ink-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1397,7 +1405,7 @@ tr:hover .entity-delete-btn {
   align-items: center;
   gap: 1em;
   font-size: 0.85em;
-  color: #6c757d;
+  color: var(--ink-faint);
   flex-shrink: 0;
 }
 
@@ -1412,7 +1420,7 @@ tr:hover .entity-delete-btn {
 }
 
 .no-facet-relationships {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-style: italic;
   padding: 1em;
   text-align: center;
@@ -1425,7 +1433,7 @@ tr:hover .entity-delete-btn {
 }
 
 .facet-relationship-row.detached:hover {
-  background: #f8f9fa;
+  background: var(--cream-bright);
   box-shadow: none;
 }
 
@@ -1433,8 +1441,8 @@ tr:hover .entity-delete-btn {
   display: inline-block;
   font-size: 0.7em;
   padding: 0.15em 0.5em;
-  background: #ffc107;
-  color: #212529;
+  background: var(--warn);
+  color: var(--ink-on-brand);
   border-radius: 4px;
   margin-left: 0.5em;
   font-weight: 500;
@@ -1443,32 +1451,32 @@ tr:hover .entity-delete-btn {
 
 .entity-attach-section {
   padding: 1em;
-  background: #f0f7ff;
+  background: var(--cream-bright);
   border-radius: 8px;
   margin-top: 1em;
 }
 
 .entity-attach-section h4 {
   margin-bottom: 0.75em;
-  color: #1971c2;
+  color: var(--ink-soft);
 }
 
 .entity-attach-section .attach-description-label {
   display: block;
   margin-bottom: 0.5em;
   font-weight: 500;
-  color: #495057;
+  color: var(--ink-soft);
 }
 
 .entity-attach-section .attach-description-label .required {
-  color: #dc3545;
+  color: var(--danger);
 }
 
 .entity-attach-section textarea {
   width: 100%;
   min-height: 80px;
   padding: 0.5em;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
   font-family: inherit;
   font-size: 0.95em;
@@ -1478,18 +1486,18 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-attach-section textarea:hover {
-  border-color: #adb5bd;
+  border-color: var(--hairline-2);
 }
 
 .entity-attach-section textarea:focus {
   outline: none;
-  border-color: #1971c2;
-  box-shadow: 0 0 0 2px rgba(25, 113, 194, 0.2);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus) 20%, transparent);
 }
 
 .entity-attach-section .btn-attach {
-  background: #1971c2;
-  color: #fff;
+  background: var(--cream-bright);
+  color: var(--ink-soft);
   border: none;
   padding: 0.5em 1.5em;
   border-radius: 4px;
@@ -1504,32 +1512,32 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-attach-section .btn-attach:not(:disabled):hover {
-  background: #1864ab;
+  background: var(--hairline);
 }
 
 .entity-attach-section .btn-attach:focus-visible {
-  outline: 2px solid #1971c2;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .entity-attach-section .btn-attach:not(:disabled):active {
-  background: #155d8a;
+  background: var(--hairline-2);
 }
 
 /* Empty journal state */
 .no-journal-entities {
   text-align: center;
   padding: 4em 2em;
-  color: #666;
+  color: var(--ink-soft);
 }
 
 .no-journal-entities h2 {
-  color: #999;
+  color: var(--ink-faint);
   margin-bottom: 0.5em;
 }
 
 .entity-conn-state {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-style: italic;
   line-height: 1.4;
 }
@@ -1553,14 +1561,14 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-with-you-card {
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: var(--cream-bright);
+  border: 1px solid var(--hairline-2);
   border-radius: 8px;
   padding: 0.9em 1em;
 }
 
 .entity-conn-with-you-eyebrow {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.78em;
   font-weight: 600;
   margin-bottom: 0.35em;
@@ -1568,19 +1576,19 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-with-you-summary {
-  color: #212529;
+  color: var(--ink);
   font-weight: 500;
   margin-bottom: 0.6em;
 }
 
 .entity-conn-summary {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.85em;
   margin-bottom: 0.8em;
 }
 
 .entity-conn-horizon {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.85em;
   margin-top: 0.8em;
 }
@@ -1592,7 +1600,7 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-row {
-  border: 1px solid #e9ecef;
+  border: 1px solid var(--hairline-2);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -1600,7 +1608,7 @@ tr:hover .entity-delete-btn {
 .entity-conn-row-head,
 .entity-conn-with-you-toggle {
   align-items: center;
-  background: #f8f9fa;
+  background: var(--cream-bright);
   border: 0;
   color: inherit;
   cursor: pointer;
@@ -1622,7 +1630,7 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-row-head:hover {
-  background: #fff;
+  background: var(--paper);
 }
 
 .entity-conn-row-head:focus-visible,
@@ -1631,12 +1639,12 @@ tr:hover .entity-delete-btn {
 .entity-conn-view-link:focus-visible,
 .entity-conn-state-link:focus-visible,
 .entity-conn-evidence-date:focus-visible {
-  outline: 2px solid #2563eb;
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .entity-conn-chevron {
-  color: #adb5bd;
+  color: var(--ink-faint);
   flex: 0 0 auto;
   transform: rotate(0deg);
   transition: transform 0.15s;
@@ -1647,14 +1655,14 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-name {
-  color: #212529;
+  color: var(--ink);
   flex: 1 1 auto;
   font-weight: 500;
   min-width: 0;
 }
 
 .entity-conn-meta {
-  color: #6c757d;
+  color: var(--ink-faint);
   flex: 0 0 auto;
   font-size: 0.85em;
 }
@@ -1669,10 +1677,10 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-chip {
-  background: color-mix(in srgb, var(--facet-color, var(--orange)) 12%, white);
-  border: 1px solid color-mix(in srgb, var(--facet-color, var(--orange)) 25%, white);
+  background: color-mix(in srgb, var(--facet-color, var(--orange)) 12%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--facet-color, var(--orange)) 25%, var(--paper));
   border-radius: 999px;
-  color: #495057;
+  color: var(--ink-soft);
   font-size: 0.75em;
   line-height: 1;
   padding: 0.3em 0.55em;
@@ -1684,8 +1692,8 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-evidence {
-  background: #fff;
-  border-top: 1px solid #e9ecef;
+  background: var(--paper);
+  border-top: 1px solid var(--hairline-2);
   padding: 0.85em 1em 1em;
 }
 
@@ -1694,7 +1702,7 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-evidence-caption {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.82em;
   margin-bottom: 0.65em;
 }
@@ -1707,7 +1715,7 @@ tr:hover .entity-delete-btn {
 
 .entity-conn-evidence-row {
   align-items: baseline;
-  color: #212529;
+  color: var(--ink);
   display: flex;
   flex-wrap: wrap;
   gap: 0.35em;
@@ -1715,12 +1723,12 @@ tr:hover .entity-delete-btn {
 }
 
 .entity-conn-evidence-row-upcoming {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-style: italic;
 }
 
 .entity-conn-evidence-failed {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.9em;
   font-style: italic;
   margin-top: 0.8em;
@@ -1738,7 +1746,7 @@ tr:hover .entity-delete-btn {
 
 .entity-conn-evidence-kind,
 .entity-conn-evidence-source {
-  color: #6c757d;
+  color: var(--ink-faint);
   font-size: 0.88em;
 }
 
@@ -1912,7 +1920,7 @@ body.presentation-mode .entity-cards-container { padding: 1.5em 2em 4em; }
 body.presentation-mode .entity-type-header {
   font-size: 1.05rem;
   font-weight: 700;
-  color: #1f2937;
+  color: var(--ink);
   letter-spacing: 0.05em;
   text-transform: uppercase;
   padding-bottom: 0.85em;
@@ -1923,13 +1931,13 @@ body.presentation-mode .entity-cards-grid {
   gap: 1.25em 1.5em;
 }
 body.presentation-mode .entity-card { padding: 1.4em 1.5em; border-width: 2px; }
-body.presentation-mode .entity-card-name { font-size: 22px; font-weight: 600; color: #0b1220; }
-body.presentation-mode .entity-card-meta { font-size: 15px; color: #4b5563; }
-body.presentation-mode .entity-card-date { font-size: 15px; color: #4b5563; }
+body.presentation-mode .entity-card-name { font-size: 22px; font-weight: 600; color: var(--ink); }
+body.presentation-mode .entity-card-meta { font-size: 15px; color: var(--ink-soft); }
+body.presentation-mode .entity-card-date { font-size: 15px; color: var(--ink-soft); }
 body.presentation-mode .entity-card-type-indicator { width: 14px; height: 14px; }
 
 body.presentation-mode .entity-detail-header { padding: 2em 2em 1.5em; }
-body.presentation-mode .entity-detail-name { font-size: 2.2em; color: #0b1220; }
+body.presentation-mode .entity-detail-name { font-size: 2.2em; color: var(--ink); }
 body.presentation-mode .entity-detail-type,
 body.presentation-mode .entity-detail-detached-badge,
 body.presentation-mode .entity-detail-principal-badge,
@@ -1938,22 +1946,22 @@ body.presentation-mode .entity-detail-blocked-badge {
   padding: 0.4em 1em;
 }
 body.presentation-mode .entity-detail-aka,
-body.presentation-mode .entity-detail-indicators { font-size: 1.05em; color: #4b5563; }
+body.presentation-mode .entity-detail-indicators { font-size: 1.05em; color: var(--ink-soft); }
 body.presentation-mode .entity-detail-section { padding: 1.75em 2em; }
 body.presentation-mode .entity-detail-section h4 {
   font-size: 1.05rem;
-  color: #1f2937;
+  color: var(--ink);
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-body.presentation-mode .entity-desc-display { font-size: 1.15em; line-height: 1.6; color: #0b1220; }
+body.presentation-mode .entity-desc-display { font-size: 1.15em; line-height: 1.6; color: var(--ink); }
 body.presentation-mode .observation-item { padding: 1em 1.25em; }
-body.presentation-mode .observation-content { font-size: 1.1em; color: #0b1220; line-height: 1.55; }
-body.presentation-mode .observation-meta { font-size: 0.95em; color: #4b5563; }
+body.presentation-mode .observation-content { font-size: 1.1em; color: var(--ink); line-height: 1.55; }
+body.presentation-mode .observation-meta { font-size: 0.95em; color: var(--ink-soft); }
 body.presentation-mode .entities-table th { font-size: 14px; }
 body.presentation-mode .entities-table td { font-size: 1.05em; padding: 14px 1.5em; }
-body.presentation-mode .entity-name { font-weight: 600; color: #0b1220; }
-body.presentation-mode .entity-desc { color: #4b5563; }
+body.presentation-mode .entity-name { font-weight: 600; color: var(--ink); }
+body.presentation-mode .entity-desc { color: var(--ink-soft); }
 
 .entity-card-legend{margin:0 0 12px;font-size:0.85em;color:var(--ink-soft)}
 .entity-card-legend .entity-facet-dot,.entity-card-legend .entity-card-type-indicator{display:inline-block;vertical-align:middle;margin-right:4px;background:var(--ink-faint)}
@@ -1961,17 +1969,17 @@ body.presentation-mode .entity-desc { color: #4b5563; }
 .journal-entity-cards-error[hidden]{display:none}
 .journal-entity-cards-error{margin:12px 0;padding:12px 14px;border:1px solid var(--danger);border-radius:8px;background:var(--danger-wash);color:var(--ink);display:flex;flex-wrap:wrap;gap:12px;align-items:center}
 .journal-entity-cards-error-detail{font-size:0.85em;color:var(--ink-soft)}
-.journal-entity-cards-error button{font:inherit;min-height:44px;padding:10px 14px;border:1px solid var(--hairline);border-radius:8px;background:white;color:inherit;cursor:pointer}
+.journal-entity-cards-error button{font:inherit;min-height:44px;padding:10px 14px;border:1px solid var(--hairline);border-radius:8px;background:var(--paper);color:inherit;cursor:pointer}
 .entity-merge-picker{position:relative;flex:1;min-width:min(100%,260px)}
-.entity-merge-picker input{width:100%;min-height:44px;padding:0.5em 0.75em;border:1px solid #ced4da;border-radius:6px;background:white;font:inherit}
-.entity-merge-results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;max-height:min(50vh,320px);overflow-y:auto;background:white;border:1px solid var(--hairline);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12)}
+.entity-merge-picker input{width:100%;min-height:44px;padding:0.5em 0.75em;border:1px solid var(--hairline-2);border-radius:6px;background:var(--paper);font:inherit}
+.entity-merge-results{position:absolute;z-index:20;left:0;right:0;top:calc(100% + 4px);margin:0;padding:4px;list-style:none;max-height:min(50vh,320px);overflow-y:auto;background:var(--paper);border:1px solid var(--hairline);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.12)}
 .entity-merge-results[hidden]{display:none}
 .entity-merge-results li{margin:0}
 .entity-merge-option{display:flex;flex-direction:column;justify-content:center;gap:2px;width:100%;min-height:44px;padding:8px 10px;border:0;border-radius:6px;background:transparent;font:inherit;text-align:left;cursor:pointer}
 .entity-merge-option:hover,.entity-merge-option:focus-visible,.entity-merge-option[aria-selected="true"]{background:var(--orange-wash);outline:none}
 .entity-merge-option-meta{font-size:0.8em;color:var(--ink-soft)}
 .entity-merge-empty{padding:10px;font-size:0.9em;color:var(--ink-soft)}
-.journal-entity-filter{display:flex;gap:10px;align-items:center;margin:12px 0}.journal-entity-filter select,.journal-entity-pages button{font:inherit;min-height:46px;padding:10px 14px;border:1px solid #d5c8b5;background:white;border-radius:8px;color:inherit}.journal-entity-pages{display:flex;gap:16px;margin:24px 0}.journal-entity-pages button{cursor:pointer}.journal-entity-pages button:disabled{opacity:.5}.journal-entity-filter{min-width:0}.journal-entity-filter select{flex:1;min-width:0;max-width:100%}.journal-entity-filter select:focus-visible,.journal-entity-pages button:focus-visible{outline:2px solid #b06a1a;outline-offset:3px}
+.journal-entity-filter{display:flex;gap:10px;align-items:center;margin:12px 0}.journal-entity-filter select,.journal-entity-pages button{font:inherit;min-height:46px;padding:10px 14px;border:1px solid var(--hairline-2);background:var(--paper);border-radius:8px;color:inherit}.journal-entity-pages{display:flex;gap:16px;margin:24px 0}.journal-entity-pages button{cursor:pointer}.journal-entity-pages button:disabled{opacity:.5}.journal-entity-filter{min-width:0}.journal-entity-filter select{flex:1;min-width:0;max-width:100%}.journal-entity-filter select:focus-visible,.journal-entity-pages button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 </style>
 
 <div class="workspace-content">
@@ -2091,7 +2099,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
         <button class="btn btn-danger" id="journal-detail-delete-btn" disabled>delete</button>
       </div>
       <div id="block-action-error" class="error-message" style="display: none;"></div>
-      <p style="margin-top: 0.75em; font-size: 0.85em; color: #6c757d;">
+      <p style="margin-top: 0.75em; font-size: 0.85em; color: var(--ink-faint);">
         <strong>block</strong> hides the entity from all views but preserves data.
         <strong>delete</strong> permanently removes the entity and all associated data.
       </p>
@@ -2199,11 +2207,11 @@ body.presentation-mode .entity-desc { color: #4b5563; }
       <h4>attach to <span id="attach-facet-name"></span></h4>
       <label class="attach-description-label">
         description <span class="required">*</span>
-        <small style="font-weight: normal; color: #6c757d;">(how does this entity relate to this facet?)</small>
+        <small style="font-weight: normal; color: var(--ink-faint);">(how does this entity relate to this facet?)</small>
       </label>
       <textarea id="attach-description" placeholder="e.g., lead engineer on the project, primary contact for sales…"></textarea>
       <button class="btn-attach" id="attach-entity-btn" disabled>attach to facet</button>
-      <div id="attach-error" style="color: #dc3545; margin-top: 0.5em; display: none;"></div>
+      <div id="attach-error" style="color: var(--danger); margin-top: 0.5em; display: none;"></div>
     </div>
   </div>
 </div>
@@ -2246,7 +2254,7 @@ body.presentation-mode .entity-desc { color: #4b5563; }
       <p>entity: <strong id="deleteJournalEntityName"></strong></p>
       <div id="deleteJournalEntityInfo">
         <p>this will remove:</p>
-        <ul style="margin: 0.5em 0; padding-left: 1.5em; color: #495057;">
+        <ul style="margin: 0.5em 0; padding-left: 1.5em; color: var(--ink-soft);">
           <li>the entity record</li>
           <li id="deleteJournalEntityFacets"></li>
           <li id="deleteJournalEntityObs"></li>
@@ -4035,7 +4043,7 @@ function renderJournalDetailView(entity) {
       if (isDetachedFacet) {
         row.classList.add('detached');
       }
-      row.style.borderLeftColor = facet.color || '#888';
+      row.style.borderLeftColor = facet.color || 'var(--ink-faint)';
 
       if (isBlocked) {
         // Blocked dominates: non-navigable (covers blocked, and blocked+detached).
@@ -5834,7 +5842,7 @@ function createJournalEntityCard(entity) {
     facets.forEach(facet => {
       const dot = document.createElement('span');
       dot.className = 'entity-facet-dot';
-      dot.style.backgroundColor = facet.color || '#888';
+      dot.style.backgroundColor = facet.color || 'var(--ink-faint)';
       dot.title = `facet: ${facet.title || facet.name}`;
       dot.setAttribute('role', 'img');
       dot.setAttribute('aria-label', dot.title);

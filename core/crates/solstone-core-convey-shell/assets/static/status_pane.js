@@ -70,8 +70,8 @@ window.whenShellReady(() => {
     if (existing) existing.style.height = '0px';
     const scroller = document.scrollingElement || document.documentElement;
     const top = target.getBoundingClientRect().top + scroller.scrollTop;
-    const margin = parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0;
-    const needed = Math.ceil(top - margin + window.innerHeight - scroller.scrollHeight);
+    const scrollMarginTop = parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0;
+    const needed = Math.ceil(top - scrollMarginTop + window.innerHeight - scroller.scrollHeight);
     if (needed <= 0) {
       existing?.remove();
       return;

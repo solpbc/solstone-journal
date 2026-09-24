@@ -21,6 +21,9 @@ mod client_description_contract_bundle;
 #[path = "contracts/client_ingest_contract_bundle.rs"]
 mod client_ingest_contract_bundle;
 #[cfg(test)]
+#[path = "contracts/convey_color.rs"]
+mod convey_color;
+#[cfg(test)]
 #[path = "contracts/convey_shell_assets.rs"]
 mod convey_shell_assets;
 #[cfg(test)]

@@ -9,6 +9,11 @@
 
 .backup-header {
   margin: 0 0 1rem;
+  background: var(--panel);
+}
+
+[data-backup-loading] {
+  background: var(--panel);
 }
 
 .backup-header h1 {
@@ -398,13 +403,13 @@
 .backup-panel button.primary {
   background: var(--orange);
   border-color: var(--orange);
-  color: var(--ink);
+  color: var(--ink-on-brand);
   font-weight: 600;
 }
 
 .backup-panel button.primary:hover:not(:disabled) {
-  background: #d9821f;
-  border-color: #d9821f;
+  background: color-mix(in srgb, var(--orange) 82%, var(--surface-dark));
+  border-color: color-mix(in srgb, var(--orange) 82%, var(--surface-dark));
 }
 
 .backup-panel button.danger {

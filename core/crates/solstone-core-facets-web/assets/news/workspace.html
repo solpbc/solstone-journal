@@ -4,6 +4,7 @@
   margin: 0 auto;
   padding: 2rem 2rem 5rem;
   color: var(--ink);
+  background: var(--panel);
 }
 
 .news-header {
@@ -19,7 +20,7 @@
 }
 
 .news-back-link {
-  color: var(--orange-text-aa, #a15f17);
+  color: var(--orange-text-aa);
   font-size: 0.9rem;
   text-decoration: none;
 }
@@ -34,14 +35,14 @@
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: none;
-  color: var(--orange-text-aa, #a15f17);
+  color: var(--orange-text-aa);
 }
 
 .news-title {
   margin: 0;
   font-size: clamp(1.8rem, 4vw, 2.7rem);
   line-height: 1.1;
-  color: #111827;
+  color: var(--ink);
 }
 
 .news-subtitle {
@@ -65,8 +66,8 @@
   min-height: 42px;
   padding: 0 1rem;
   border-radius: 999px;
-  border: 1px solid #d6d3d1;
-  background: #f8fafc;
+  border: 1px solid var(--hairline-2);
+  background: var(--cream-bright);
   color: var(--ink);
   font: inherit;
   text-decoration: none;
@@ -82,17 +83,17 @@
 
 .news-body,
 .news-index {
-  background: #fff;
-  border: 1px solid #e7e5e4;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
   border-radius: 18px;
   padding: 1.5rem;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
 }
 
 .news-body h1,
 .news-body h2,
 .news-body h3 {
-  color: #111827;
+  color: var(--ink);
 }
 
 .news-body p,
@@ -115,7 +116,7 @@
 
 .news-body a,
 .news-index a {
-  color: var(--orange-text-aa, #a15f17);
+  color: var(--orange-text-aa);
 }
 
 .news-body a:hover,
@@ -178,7 +179,7 @@
 }
 
 .news-index-token {
-  color: #78716c;
+  color: var(--ink-faint);
   font-size: 0.85rem;
 }
 
@@ -228,7 +229,7 @@
 }
 
 .news-debug-link a {
-  color: var(--orange-text-aa, #a15f17);
+  color: var(--orange-text-aa);
 }
 
 .news-sample-banner {
@@ -349,7 +350,7 @@
     grid-column: 2;
   }
 }
-.news-earlier>summary{min-height:46px;padding:14px 0;cursor:pointer;font-weight:600}.news-day-group h3{font-size:1.05rem}.news-index-link{gap:16px;flex-wrap:wrap}.news-index-link>span:last-child{font-size:.9rem}.news-earlier>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:3px}
+.news-earlier>summary{min-height:46px;padding:14px 0;cursor:pointer;font-weight:600}.news-day-group h3{font-size:1.05rem}.news-index-link{gap:16px;flex-wrap:wrap}.news-index-link>span:last-child{font-size:.9rem}.news-earlier>summary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
 /* phone: collapse each day's newsletters into one compact row. the day label
    appears once, then each newsletter is a tappable chip, so the index shows
    about a week per screen instead of one card per newsletter. presentation

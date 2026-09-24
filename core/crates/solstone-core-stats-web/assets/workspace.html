@@ -1,6 +1,7 @@
 <style>
 /* Layout */
 .dashboard {
+  background: var(--panel);
   padding: 1.5rem 2rem 2rem;
   max-width: 1200px;
   margin: 0 auto;
@@ -17,15 +18,15 @@ h1 {
 #loading {
   text-align: center;
   padding: 4em;
-  color: #666;
+  color: var(--ink-soft);
 }
 
 .spinner {
   display: inline-block;
   width: 40px;
   height: 40px;
-  border: 4px solid #f0f0f0;
-  border-top-color: var(--facet-color, #b06a1a);
+  border: 4px solid var(--cream-bright);
+  border-top-color: var(--facet-color, var(--orange));
   border-radius: 50%;
   animation: spin 1s linear infinite;
   margin: 0 auto 1em;
@@ -43,19 +44,19 @@ h1 {
 }
 
 .alert-warning {
-  background: #fff3cd;
-  border: 1px solid #ffeaa7;
-  color: #856404;
+  background: var(--warn-wash);
+  border: 1px solid var(--warn);
+  color: var(--warn-ink);
 }
 
 .alert-error {
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
+  background: var(--danger-wash);
+  border: 1px solid var(--danger);
+  color: var(--danger);
 }
 
 .stats-freshness {
-  color: #888;
+  color: var(--ink-faint);
   font-size: 0.85em;
   font-weight: 500;
   margin: 0.25em 0 1.5em;
@@ -96,7 +97,7 @@ h1 {
    belongs to the 30-day backlog hero. Give them their own scope, in the
    same kicker style the audio-processing card already uses (G2-B10). */
 .stats-grid-scope {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   font-size: 0.8em;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -104,21 +105,21 @@ h1 {
 }
 
 .stat-card {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   padding: 1.5em;
   box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--hairline);
   transition: border-color 0.2s;
 }
 
 .stat-card:hover {
-  border-color: var(--facet-border, #e5e0db);
+  border-color: var(--hairline);
 }
 
 .stat-card h3 {
   font-size: 0.9em;
-  color: #666;
+  color: var(--ink-soft);
   margin: 0 0 0.75em 0;
   text-transform: none;
   letter-spacing: 0.05em;
@@ -149,20 +150,20 @@ h1 {
 }
 
 .progress-card {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   padding: 1.5em;
   box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--hairline);
 }
 
 .progress-card h3 {
   margin-top: 0;
-  color: #333;
+  color: var(--ink);
 }
 
 .progress-bar {
-  background: #f0f0f0;
+  background: var(--cream-bright);
   border-radius: 8px;
   height: 24px;
   overflow: hidden;
@@ -187,7 +188,7 @@ h1 {
 .progress-stats {
   display: flex;
   justify-content: space-between;
-  color: #666;
+  color: var(--ink-soft);
   font-size: 0.8em;
   padding: 0 0.25em;
 }
@@ -200,15 +201,15 @@ h1 {
 }
 
 .backlog-hero {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   padding: 1.25em 1.5em;
   box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--hairline);
 }
 
 .backlog-hero-scope {
-  color: #675f58;
+  color: var(--ink-soft-paper);
   font-size: 0.8em;
   font-weight: 600;
   letter-spacing: 0.03em;
@@ -216,7 +217,7 @@ h1 {
 }
 
 .backlog-hero-line {
-  color: #2f2a24;
+  color: var(--ink);
   font-size: 1.35em;
   font-weight: 700;
   line-height: 1.25;
@@ -227,7 +228,7 @@ h1 {
    so the two figures read as one honest sentence instead of a
    contradiction the owner has to resolve on their own (X-11/G2-36). */
 .backlog-hero-secondary {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   font-size: 0.95em;
   font-weight: 500;
   line-height: 1.4;
@@ -235,22 +236,22 @@ h1 {
 }
 
 .backlog-needs-hand {
-  background: #fffaf0;
-  border: 1px solid #f4d08a;
-  border-left: 4px solid #d4a843;
+  background: var(--warn-wash);
+  border: 1px solid var(--warn);
+  border-left: 4px solid var(--warn);
   border-radius: 12px;
   padding: 1.25em 1.5em;
 }
 
 .backlog-needs-hand h2,
 .backlog-list h2 {
-  color: #333;
+  color: var(--ink);
   font-size: 1.1em;
   margin: 0 0 0.5em;
 }
 
 .backlog-description {
-  color: #5f564d;
+  color: var(--ink-soft-paper);
   margin: 0 0 1em;
 }
 
@@ -260,8 +261,8 @@ h1 {
 }
 
 .backlog-row {
-  background: white;
-  border: 1px solid rgba(0,0,0,0.06);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 0.9em 1em;
 }
@@ -281,26 +282,26 @@ h1 {
 }
 
 .backlog-row-day {
-  color: #2f2a24;
+  color: var(--ink);
   font-weight: 700;
 }
 
 .backlog-row-copy {
-  color: #675f58;
+  color: var(--ink-soft-paper);
   font-size: 0.9em;
 }
 
 .backlog-row-reason {
-  color: #675f58;
+  color: var(--ink-soft-paper);
   font-size: 0.85em;
 }
 
 .backlog-badge {
   align-self: start;
-  background: #fff3cd;
-  border: 1px solid #e6c76b;
+  background: var(--warn-wash);
+  border: 1px solid var(--warn);
   border-radius: 999px;
-  color: #6c4b00;
+  color: var(--warn-ink);
   font-size: 0.8em;
   font-weight: 700;
   justify-self: start;
@@ -321,18 +322,18 @@ h1 {
 }
 
 .backlog-action {
-  background: white;
-  border: 1px solid #d1d5db;
+  background: var(--paper);
+  border: 1px solid var(--hairline-2);
   border-radius: 4px;
-  color: #374151;
+  color: var(--ink-soft-paper);
   cursor: pointer;
   font-size: 0.8em;
   padding: 0.35em 0.65em;
 }
 
 .backlog-action:hover:not(:disabled) {
-  background: #f3f4f6;
-  border-color: #9ca3af;
+  background: var(--cream-bright);
+  border-color: var(--hairline-2);
 }
 
 .backlog-action:disabled {
@@ -341,20 +342,20 @@ h1 {
 }
 
 .backlog-action-status {
-  color: #675f58;
+  color: var(--ink-soft-paper);
   font-size: 0.85em;
 }
 
 .backlog-list {
-  background: white;
-  border: 1px solid rgba(0,0,0,0.06);
+  background: var(--paper);
+  border: 1px solid var(--hairline);
   border-radius: 12px;
   box-shadow: 0 4px 15px rgba(0,0,0,0.08);
   padding: 1.25em 1.5em;
 }
 
 .backlog-routine-note {
-  color: #675f58;
+  color: var(--ink-soft-paper);
   margin: 0 0 1em;
 }
 
@@ -367,24 +368,24 @@ h1 {
 }
 
 .backlog-why-list {
-  color: #675f58;
+  color: var(--ink-soft-paper);
   margin: 0.5em 0 0;
   padding-left: 1.25em;
 }
 
 /* Chart sections */
 .chart-section {
-  background: white;
+  background: var(--paper);
   border-radius: 12px;
   padding: 1.5em;
   margin-bottom: 1.5em;
   box-shadow: 0 4px 15px rgba(0,0,0,0.08);
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid var(--hairline);
 }
 
 .chart-section h2 {
   margin-top: 0;
-  color: #333;
+  color: var(--ink);
   font-size: 1.5em;
   font-weight: 600;
 }
@@ -434,8 +435,8 @@ h1 {
   bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  background: #333;
-  color: white;
+  background: var(--surface-dark);
+  color: var(--ink-on-dark);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.75em;
@@ -457,7 +458,7 @@ h1 {
   left: 50%;
   transform: translateX(-50%);
   font-size: 0.75em;
-  color: #666;
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 
@@ -468,7 +469,7 @@ h1 {
   transform: translateX(-50%);
   font-size: 0.8em;
   font-weight: 500;
-  color: #333;
+  color: var(--ink);
   white-space: nowrap;
   opacity: 0;
   transition: opacity 0.15s;
@@ -509,7 +510,7 @@ h1 {
 
 .heatmap-label {
   font-size: 0.8em;
-  color: #666;
+  color: var(--ink-soft);
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -520,7 +521,7 @@ h1 {
 .heatmap-cell {
   aspect-ratio: 1;
   border-radius: 2px;
-  background: #f0f0f0;
+  background: var(--cream-bright);
   transition: transform 0.2s;
   cursor: default;
   position: relative;
@@ -537,8 +538,8 @@ h1 {
   bottom: calc(100% + 4px);
   left: 50%;
   transform: translateX(-50%);
-  background: #333;
-  color: white;
+  background: var(--surface-dark);
+  color: var(--ink-on-dark);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.75em;
@@ -570,7 +571,7 @@ h1 {
 }
 
 .heatmap-cell:focus-visible {
-  outline: 2px solid var(--facet-color, #b06a1a);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
   transform: scale(1.2);
   z-index: 10;
@@ -600,7 +601,7 @@ h1 {
    What changed is that the section no longer vanishes without a word: the
    same peak the grid shows is written out in one line instead (G2-B06). */
 .heatmap-narrow-note {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   display: none;
   margin: 1em 0 0;
 }
@@ -608,9 +609,9 @@ h1 {
 
 /* Repair alert */
 .alert-repair {
-  background: white;
-  border: 1px solid rgba(0,0,0,0.06);
-  border-left: 3px solid #d4a843;
+  background: var(--paper);
+  border: 1px solid var(--hairline);
+  border-left: 3px solid var(--warn);
   padding: 1em 1.5em;
 }
 
@@ -622,7 +623,7 @@ h1 {
 /* Names the population this tile counts, so it doesn't read as
    contradicting the differently-scoped audio backlog above it (G2-41). */
 .repair-section-note {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   margin: 0.25em 0 1em;
 }
 
@@ -643,33 +644,33 @@ h1 {
 .model-select {
   padding: 0.5em 1em;
   font-size: 0.9em;
-  border: 1px solid var(--facet-border, #e5e0db);
+  border: 1px solid var(--hairline);
   border-radius: 6px;
-  background: white;
-  color: #333;
+  background: var(--paper);
+  color: var(--ink);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .model-select:hover {
-  border-color: var(--facet-color, #b06a1a);
+  border-color: var(--focus);
   box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .model-select:focus {
   outline: none;
-  border-color: var(--facet-color, #b06a1a);
-  box-shadow: 0 0 0 3px rgba(176, 106, 26, 0.1);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 10%, transparent);
 }
 
 .model-select:focus-visible {
-  outline: 2px solid var(--facet-color, #b06a1a);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
 }
 
 .model-select:active {
-  border-color: var(--facet-color, #b06a1a);
-  box-shadow: 0 0 0 3px rgba(176, 106, 26, 0.2);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 20%, transparent);
 }
 
 .sr-only {
@@ -702,28 +703,28 @@ h1 {
 
 .stack-segment.input {
   /* Was a cool blue (#2171b5); gold (--gold) keeps the brand warm (X-12). */
-  background: var(--gold, #FFCC33);
+  background: var(--gold);
 }
 
 .stack-segment.reasoning {
-  background: #e6550d;
-  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px);
+  background: var(--orange);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, color-mix(in srgb, var(--paper) 30%, transparent) 3px, color-mix(in srgb, var(--paper) 30%, transparent) 6px);
 }
 
 .stack-segment.output {
-  background: #31a354;
-  background-image: radial-gradient(circle, rgba(255,255,255,0.3) 1px, transparent 1px);
+  background: var(--success);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--paper) 30%, transparent) 1px, transparent 1px);
   background-size: 6px 6px;
 }
 
 .stack-segment.audio {
   /* Was a cool blue (#2171b5); gold (--gold) keeps the brand warm (X-12). */
-  background: var(--gold, #FFCC33);
+  background: var(--gold);
 }
 
 .stack-segment.screen {
-  background: #e6550d;
-  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(255,255,255,0.3) 3px, rgba(255,255,255,0.3) 6px);
+  background: var(--orange);
+  background-image: repeating-linear-gradient(45deg, transparent, transparent 3px, color-mix(in srgb, var(--paper) 30%, transparent) 3px, color-mix(in srgb, var(--paper) 30%, transparent) 6px);
 }
 
 .token-legend {
@@ -745,11 +746,11 @@ h1 {
 .token-card-status,
 .token-unknown-note,
 .token-table-note {
-  color: #675f58;
+  color: var(--ink-soft-paper);
 }
 
 .token-card-status {
-  border-left: 3px solid var(--facet-color, #b06a1a);
+  border-left: 3px solid var(--facet-color, var(--orange));
   margin: 1rem 0;
   padding: 0.65rem 0.85rem;
 }
@@ -767,9 +768,9 @@ h1 {
 #statsDateNav [data-date-nav-prev],
 #statsDateNav [data-date-nav-next] {
   background: transparent;
-  border: 1px solid var(--hairline, #ece3d0);
+  border: 1px solid var(--hairline);
   border-radius: 6px;
-  color: var(--ink, #1a1a1a);
+  color: var(--ink);
   cursor: pointer;
   font-size: 1.1em;
   min-height: var(--touch-min, 44px);
@@ -778,7 +779,7 @@ h1 {
 
 #statsDateNav [data-date-nav-prev]:hover,
 #statsDateNav [data-date-nav-next]:hover {
-  border-color: var(--orange-ink, #b06a1a);
+  border-color: var(--orange-ink);
 }
 
 .token-rollup {
@@ -791,6 +792,7 @@ h1 {
 }
 
 .token-rollup__bar {
+  --bar-fill: 0%;
   /* The button itself stays full-height (a real hit target, G2-10); the
      visible "bar" is a hard-stop gradient fill up to --bar-fill (set per
      button in JS), so the magnitude still reads the same as a resized box
@@ -799,8 +801,8 @@ h1 {
      matches the same --touch-min every other control on this page uses. */
   background: linear-gradient(
     to top,
-    var(--facet-color, #b06a1a) 0%,
-    var(--facet-color, #b06a1a) var(--bar-fill, 0%),
+    var(--facet-color, var(--orange)) 0%,
+    var(--facet-color, var(--orange)) var(--bar-fill, 0%),
     transparent var(--bar-fill, 0%),
     transparent 100%
   );
@@ -818,12 +820,12 @@ h1 {
 }
 
 .token-rollup__bar[aria-pressed="true"] {
-  outline: 3px solid #111827;
+  outline: 3px solid var(--focus);
   outline-offset: 2px;
 }
 
 .token-detail {
-  border-top: 1px solid #e5e7eb;
+  border-top: 1px solid var(--hairline);
   padding-top: 1rem;
 }
 
@@ -835,8 +837,8 @@ h1 {
 }
 
 .token-comparison-card {
-  background: #faf8f5;
-  border: 1px solid #e5e0db;
+  background: var(--cream);
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 0.85rem;
 }
@@ -863,7 +865,7 @@ h1 {
 
 .token-detail th,
 .token-detail td {
-  border-bottom: 1px solid #ece7e1;
+  border-bottom: 1px solid var(--hairline);
   padding: 0.55rem;
   text-align: left;
 }
@@ -880,7 +882,7 @@ h1 {
 }
 
 .token-table-summary-detail {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   display: block;
   margin-top: 0.2rem;
 }
@@ -890,7 +892,7 @@ h1 {
 }
 
 .token-table-summary summary {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   cursor: pointer;
   font-size: 0.9em;
   min-height: 44px;
@@ -899,7 +901,7 @@ h1 {
 }
 
 .token-table-note {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   margin: 0 0 1rem;
 }
 
@@ -1019,7 +1021,7 @@ h1 {
 /* Names the decomposition shared by the facets/activities pair so they
    don't read as a duplicate of each other (G2-37). */
 .chart-pair-lede {
-  color: var(--ink-soft, #5B5246);
+  color: var(--ink-soft);
   margin: 0 0 -0.5em;
 }
 
@@ -1053,12 +1055,12 @@ h1 {
 }
 
 .token-scroll-fade:has(> .has-scroll-fade-start)::before {
-  background: linear-gradient(to left, transparent, var(--paper, #FFFFFF));
+  background: linear-gradient(to left, transparent, var(--paper));
   left: 0;
 }
 
 .token-scroll-fade:has(> .has-scroll-fade)::after {
-  background: linear-gradient(to right, transparent, var(--paper, #FFFFFF));
+  background: linear-gradient(to right, transparent, var(--paper));
   right: 0;
 }
 
@@ -1069,7 +1071,7 @@ h1 {
 }
 
 .token-model-ids {
-  color: var(--ink-faint, #6E6453);
+  color: var(--ink-faint);
   font-size: 0.85em;
   margin: 0.25em 0 0;
 }

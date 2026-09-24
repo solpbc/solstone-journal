@@ -6,6 +6,7 @@
   display: flex;
   flex-direction: column;
   gap: 1em;
+  background: var(--panel);
 }
 
 .curation-header {
@@ -32,10 +33,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.6em;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
   padding: 0.85em;
   color: var(--ink-soft);
+  background: var(--paper);
 }
 
 .curation-toolbar {
@@ -54,9 +56,9 @@
 }
 
 .curation-item {
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--hairline);
   border-radius: 8px;
-  background: #fff;
+  background: var(--paper);
   padding: 1em;
 }
 
@@ -120,9 +122,9 @@
 
 .curation-button {
   min-height: 44px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--hairline-2);
   border-radius: 6px;
-  background: #fff;
+  background: var(--paper);
   color: var(--ink);
   padding: 0.45em 0.75em;
   font: inherit;
@@ -130,23 +132,23 @@
 }
 
 .curation-button:hover:not(:disabled) {
-  background: #f9fafb;
+  background: var(--cream-bright);
 }
 
 .curation-button-primary {
-  border-color: #b06a1a;
-  background: #e8913a;
-  color: #211b14;
+  border-color: var(--orange);
+  background: var(--orange);
+  color: var(--ink-on-brand);
 }
 
 .curation-button-primary:hover:not(:disabled) {
-  background: #df8126;
+  background: color-mix(in srgb, var(--orange) 82%, var(--surface-dark));
 }
 
 .curation-button-link {
   border-color: transparent;
   background: transparent;
-  color: var(--orange-text-aa, #a15f17);
+  color: var(--orange-text-aa);
   padding-left: 0;
   padding-right: 0;
 }
@@ -158,7 +160,7 @@
 
 .curation-preview {
   margin-top: 0.85em;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--hairline);
   padding-top: 0.85em;
 }
 
@@ -180,7 +182,7 @@
 }
 
 .curation-preview-error {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .curation-batch-confirm {
@@ -208,12 +210,12 @@
 }
 
 .curation-batch-status-error {
-  color: #b91c1c;
+  color: var(--danger);
 }
 
 .curation-item-error {
   margin: 0.75em 0 0;
-  color: #b91c1c;
+  color: var(--danger);
   line-height: 1.4;
 }
 
@@ -238,7 +240,7 @@
 
 .curation-pair-evidence {
   margin-top: 0.85em;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--hairline);
   padding-top: 0.85em;
 }
 
@@ -324,13 +326,13 @@
     width: 100%;
   }
 }
-.curation-group{border:1px solid #dfd6c9;border-radius:12px;background:#fff}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-more{display:grid;gap:16px}.curation-group-more[hidden]{display:none}.curation-group-items .curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items .curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:#b06a1a}.curation-group>summary:focus-visible{outline:2px solid #b06a1a;outline-offset:2px}
+.curation-group{border:1px solid var(--hairline);border-radius:12px;background:var(--paper)}.curation-group>summary{padding:18px;cursor:pointer;font-weight:600;min-height:48px}.curation-group-items{padding:0 18px 18px;display:grid;grid-template-columns:minmax(0,1fr);gap:16px}.curation-group-more{display:grid;gap:16px}.curation-group-more[hidden]{display:none}.curation-group-items .curation-item{min-width:0;overflow-wrap:anywhere}.curation-group-items .curation-item{content-visibility:auto;contain-intrinsic-block-size:auto 240px}.curation-group:focus-within{outline-color:var(--focus)}.curation-group>summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 /* Every disclosure inside a curation item is a tap target. The existing
    min-height only ever reached a group's own summary, so the per-interval
    and source-evidence disclosures measured 29-33px on phone (G2-B07). The
    shell drawer brings its own summary chrome and is left alone. */
 .curation-item details:not(.drawer) > summary{box-sizing:border-box;min-height:44px;padding:6px 0}
-.curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px;color:var(--orange-text-aa,#a15f17)}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
+.curation-source-dates{display:flex;flex-wrap:wrap;gap:8px 16px}.curation-source-dates a{display:inline-flex;align-items:center;min-height:46px;color:var(--orange-text-aa)}.curation-origin-details summary{cursor:pointer;padding:12px 0}.curation-origin-details li{overflow-wrap:anywhere}
 </style>
 
 <section class="curation-shell" data-curation-root>

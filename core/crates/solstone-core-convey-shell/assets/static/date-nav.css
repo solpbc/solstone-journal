@@ -232,7 +232,7 @@
 
 .date-nav-content__note {
   color: var(--ink-soft);
-  font-size: var(--text-sm, 14px);
+  font-size: var(--text-min);
   text-align: center;
 }
 

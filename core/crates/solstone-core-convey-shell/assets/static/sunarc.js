@@ -624,8 +624,8 @@
     // dark row is drawn only where the page itself declares dark support in CSS
     // `color-scheme`, so the ground and the page's own text always follow one source: a
     // light-only page keeps the light row at every hour instead of putting its ink on a dark
-    // ground. The CSS property is what counts, not the <meta name="color-scheme"> tag. Convey
-    // declares `color-scheme: light` (app.css) until it has dark styling.
+    // ground. The CSS property is what counts, not the <meta name="color-scheme"> tag.
+    // Convey has a dark appearance, and this engine still follows the computed scheme.
     const appearanceQuery = systemAppearanceQuery(opts.matchMedia);
     const getAppearance = () => (
       pageSupportsDark(root) && appearanceQuery && appearanceQuery.matches ? 'dark' : 'light'
