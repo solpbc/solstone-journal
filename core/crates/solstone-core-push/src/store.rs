@@ -7,6 +7,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use solstone_core_convey_http::identity::LinkedDeviceCid;
 use solstone_core_journal_io::{
@@ -50,18 +51,14 @@ impl PushRegistry {
         &self.path
     }
 
-    pub(crate) fn register(
+    pub(crate) fn register_ios(
         &self,
         cid: &LinkedDeviceCid,
         device_token: String,
         bundle_id: String,
         environment: PushEnvironment,
-        platform: PushPlatform,
         push_key: PushKey,
     ) -> Result<(bool, PushDeviceItem), PushStoreError> {
-        match platform {
-            PushPlatform::Ios => {}
-        }
         let _lock = hold_lock(
             &self.path,
             LockOptions {
@@ -75,13 +72,13 @@ impl PushRegistry {
         let mut devices = loaded.registry.devices;
         let cid_str = cid.as_str();
 
-        // Check if this pair existed
         let existing_index = devices.iter().position(|d| match d {
             StoredDevice::Ios {
                 cid: row_cid,
                 device_token: row_token,
                 ..
             } => row_cid == cid_str && row_token == &device_token,
+            _ => false,
         });
         let is_created = existing_index.is_none();
 
@@ -92,6 +89,7 @@ impl PushRegistry {
                 device_token: row_token,
                 ..
             } => row_token != &device_token || row_cid == cid_str,
+            _ => true,
         });
 
         let registered_at = now_rfc3339_utc()?;
@@ -99,7 +97,7 @@ impl PushRegistry {
 
         let new_device = StoredDevice::Ios {
             cid: cid_str.to_owned(),
-            device_token,
+            device_token: device_token.clone(),
             bundle_id,
             environment,
             push_key,
@@ -111,34 +109,15 @@ impl PushRegistry {
                 cid: row_cid,
                 device_token: row_token,
                 ..
-            } => {
-                row_cid == cid_str
-                    && row_token
-                        == match &new_device {
-                            StoredDevice::Ios { device_token, .. } => device_token,
-                        }
-            }
+            } => row_cid == cid_str && row_token == &device_token,
+            _ => false,
         }) {
             devices[idx] = new_device;
         } else {
             devices.push(new_device);
         }
 
-        // Sort rows by (cid, device_token)
-        devices.sort_by(|a, b| match (a, b) {
-            (
-                StoredDevice::Ios {
-                    cid: c1,
-                    device_token: t1,
-                    ..
-                },
-                StoredDevice::Ios {
-                    cid: c2,
-                    device_token: t2,
-                    ..
-                },
-            ) => c1.cmp(c2).then_with(|| t1.cmp(t2)),
-        });
+        sort_devices(&mut devices);
 
         if let Some(n) = loaded.legacy_discarded
             && n >= 1
@@ -157,21 +136,110 @@ impl PushRegistry {
             PushDeviceItem {
                 platform: PushPlatform::Ios,
                 target,
-                environment,
+                environment: Some(environment),
                 registered_at,
             },
         ))
     }
 
-    pub(crate) fn deregister(
+    pub(crate) fn register_android(
         &self,
         cid: &LinkedDeviceCid,
-        platform: PushPlatform,
+        endpoint: String,
+        p256dh: String,
+        auth: String,
+        push_key: PushKey,
+    ) -> Result<(bool, PushDeviceItem), PushStoreError> {
+        let _lock = hold_lock(
+            &self.path,
+            LockOptions {
+                mode: Some(OWNER_ONLY_MODE),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(PushStoreError::Lock)?;
+
+        let loaded = self.read_registry()?;
+        let mut devices = loaded.registry.devices;
+        let cid_str = cid.as_str();
+
+        let existing_index = devices.iter().position(|d| match d {
+            StoredDevice::Android {
+                cid: row_cid,
+                endpoint: row_endpoint,
+                ..
+            } => row_cid == cid_str && row_endpoint == &endpoint,
+            _ => false,
+        });
+        let is_created = existing_index.is_none();
+
+        // Steal: drop any other row with this endpoint on another CID
+        devices.retain(|d| match d {
+            StoredDevice::Android {
+                cid: row_cid,
+                endpoint: row_endpoint,
+                ..
+            } => row_endpoint != &endpoint || row_cid == cid_str,
+            _ => true,
+        });
+
+        let registered_at = now_rfc3339_utc()?;
+        let target = crate::endpoint::endpoint_target(&endpoint)
+            .map(|(host, _)| host)
+            .unwrap_or_else(|| "invalid".to_owned());
+
+        let new_device = StoredDevice::Android {
+            cid: cid_str.to_owned(),
+            endpoint: endpoint.clone(),
+            p256dh,
+            auth,
+            push_key,
+            registered_at: registered_at.clone(),
+        };
+
+        if let Some(idx) = devices.iter().position(|d| match d {
+            StoredDevice::Android {
+                cid: row_cid,
+                endpoint: row_endpoint,
+                ..
+            } => row_cid == cid_str && row_endpoint == &endpoint,
+            _ => false,
+        }) {
+            devices[idx] = new_device;
+        } else {
+            devices.push(new_device);
+        }
+
+        sort_devices(&mut devices);
+
+        if let Some(n) = loaded.legacy_discarded
+            && n >= 1
+        {
+            log::info!("discarded {n} legacy push registrations");
+        }
+
+        let registry = RegistryV2 {
+            version: 2,
+            devices,
+        };
+        self.write_registry(&registry)?;
+
+        Ok((
+            is_created,
+            PushDeviceItem {
+                platform: PushPlatform::Android,
+                target,
+                environment: None,
+                registered_at,
+            },
+        ))
+    }
+
+    pub(crate) fn deregister_ios(
+        &self,
+        cid: &LinkedDeviceCid,
         device_token: &str,
     ) -> Result<bool, PushStoreError> {
-        match platform {
-            PushPlatform::Ios => {}
-        }
         let _lock = hold_lock(
             &self.path,
             LockOptions {
@@ -192,24 +260,53 @@ impl PushRegistry {
                 device_token: row_token,
                 ..
             } => !(row_cid == cid_str && row_token == device_token),
+            _ => true,
         });
 
         let removed = devices.len() != initial_len;
         if removed {
-            devices.sort_by(|a, b| match (a, b) {
-                (
-                    StoredDevice::Ios {
-                        cid: c1,
-                        device_token: t1,
-                        ..
-                    },
-                    StoredDevice::Ios {
-                        cid: c2,
-                        device_token: t2,
-                        ..
-                    },
-                ) => c1.cmp(c2).then_with(|| t1.cmp(t2)),
-            });
+            sort_devices(&mut devices);
+
+            let registry = RegistryV2 {
+                version: 2,
+                devices,
+            };
+            self.write_registry(&registry)?;
+        }
+        Ok(removed)
+    }
+
+    pub(crate) fn deregister_android(
+        &self,
+        cid: &LinkedDeviceCid,
+        endpoint: &str,
+    ) -> Result<bool, PushStoreError> {
+        let _lock = hold_lock(
+            &self.path,
+            LockOptions {
+                mode: Some(OWNER_ONLY_MODE),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(PushStoreError::Lock)?;
+
+        let loaded = self.read_registry()?;
+        let mut devices = loaded.registry.devices;
+        let cid_str = cid.as_str();
+
+        let initial_len = devices.len();
+        devices.retain(|d| match d {
+            StoredDevice::Android {
+                cid: row_cid,
+                endpoint: row_endpoint,
+                ..
+            } => !(row_cid == cid_str && row_endpoint == endpoint),
+            _ => true,
+        });
+
+        let removed = devices.len() != initial_len;
+        if removed {
+            sort_devices(&mut devices);
 
             let registry = RegistryV2 {
                 version: 2,
@@ -236,10 +333,12 @@ impl PushRegistry {
         let initial_len = devices.len();
         devices.retain(|d| match d {
             StoredDevice::Ios { cid: row_cid, .. } => row_cid != cid,
+            StoredDevice::Android { cid: row_cid, .. } => row_cid != cid,
         });
 
         let removed = devices.len() != initial_len;
         if removed {
+            sort_devices(&mut devices);
             let registry = RegistryV2 {
                 version: 2,
                 devices,
@@ -291,7 +390,34 @@ impl PushRegistry {
                         PushDeviceItem {
                             platform: PushPlatform::Ios,
                             target,
-                            environment,
+                            environment: Some(environment),
+                            registered_at,
+                        },
+                    ))
+                }
+                StoredDevice::Android {
+                    cid,
+                    endpoint,
+                    registered_at,
+                    ..
+                } => {
+                    let parsed_time = parse_registered_at(&registered_at).ok_or_else(|| {
+                        PushStoreError::InvalidRegistry {
+                            path: self.path.clone(),
+                            detail: "registered_at",
+                        }
+                    })?;
+                    let target = crate::endpoint::endpoint_target(&endpoint)
+                        .map(|(host, _)| host)
+                        .unwrap_or_else(|| "invalid".to_owned());
+                    Ok((
+                        parsed_time,
+                        target.clone(),
+                        cid,
+                        PushDeviceItem {
+                            platform: PushPlatform::Android,
+                            target,
+                            environment: None,
                             registered_at,
                         },
                     ))
@@ -475,6 +601,58 @@ pub(crate) enum StoredDevice {
         push_key: PushKey,
         registered_at: String,
     },
+    Android {
+        cid: String,
+        endpoint: String,
+        p256dh: String,
+        auth: String,
+        push_key: PushKey,
+        registered_at: String,
+    },
+}
+
+impl StoredDevice {
+    #[cfg(test)]
+    pub(crate) fn cid(&self) -> &str {
+        match self {
+            Self::Ios { cid, .. } => cid,
+            Self::Android { cid, .. } => cid,
+        }
+    }
+}
+
+fn sort_devices(devices: &mut [StoredDevice]) {
+    devices.sort_by(|a, b| {
+        let rank_a = match a {
+            StoredDevice::Ios { .. } => 0,
+            StoredDevice::Android { .. } => 1,
+        };
+        let rank_b = match b {
+            StoredDevice::Ios { .. } => 0,
+            StoredDevice::Android { .. } => 1,
+        };
+        let cid_a = match a {
+            StoredDevice::Ios { cid, .. } => cid.as_str(),
+            StoredDevice::Android { cid, .. } => cid.as_str(),
+        };
+        let cid_b = match b {
+            StoredDevice::Ios { cid, .. } => cid.as_str(),
+            StoredDevice::Android { cid, .. } => cid.as_str(),
+        };
+        let ident_a = match a {
+            StoredDevice::Ios { device_token, .. } => device_token.as_str(),
+            StoredDevice::Android { endpoint, .. } => endpoint.as_str(),
+        };
+        let ident_b = match b {
+            StoredDevice::Ios { device_token, .. } => device_token.as_str(),
+            StoredDevice::Android { endpoint, .. } => endpoint.as_str(),
+        };
+
+        rank_a
+            .cmp(&rank_b)
+            .then_with(|| cid_a.cmp(cid_b))
+            .then_with(|| ident_a.cmp(ident_b))
+    });
 }
 
 fn validate_registry_v2(path: &Path, registry: &RegistryV2) -> Result<(), PushStoreError> {
@@ -536,6 +714,83 @@ fn validate_registry_v2(path: &Path, registry: &RegistryV2) -> Result<(), PushSt
                     });
                 }
             }
+            StoredDevice::Android {
+                cid,
+                endpoint,
+                p256dh,
+                auth,
+                registered_at,
+                ..
+            } => {
+                LinkedDeviceCid::try_from(cid.as_str()).map_err(|_| {
+                    PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "cid",
+                    }
+                })?;
+                if !crate::endpoint::endpoint_stored_shape_ok(endpoint) {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "endpoint",
+                    });
+                }
+                if p256dh.len() != 87 {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "p256dh",
+                    });
+                }
+                let p256dh_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(p256dh)
+                    .map_err(|_| PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "p256dh",
+                    })?;
+                if p256dh_bytes.len() != 65 || p256dh_bytes[0] != 0x04 {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "p256dh",
+                    });
+                }
+                if auth.len() != 22 {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "auth",
+                    });
+                }
+                let auth_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(auth)
+                    .map_err(|_| PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "auth",
+                    })?;
+                if auth_bytes.len() != 16 {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "auth",
+                    });
+                }
+                parse_registered_at(registered_at).ok_or(PushStoreError::InvalidRegistry {
+                    path: path.to_path_buf(),
+                    detail: "registered_at",
+                })?;
+
+                if !seen_pairs.insert((cid.clone(), endpoint.clone())) {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "endpoint",
+                    });
+                }
+
+                if let Some(existing_cid) = seen_tokens.insert(endpoint.clone(), cid.clone())
+                    && existing_cid != *cid
+                {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "endpoint",
+                    });
+                }
+            }
         }
     }
     Ok(())
@@ -587,52 +842,67 @@ mod tests {
         PushKey::from_bytes(VALID_KEY)
     }
 
+    const ANDROID_P256DH: &str =
+        "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+    const ANDROID_AUTH: &str = "BTBZMqHH6r4Tts7J_aSIgg";
+    const ENDPOINT_1: &str = "https://push.example.com/sub/1";
+    const ENDPOINT_2: &str = "https://push.example.com/sub/2";
+
     #[test]
     fn remove_cid_registrations_removes_all_tokens_for_cid_and_preserves_others() {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
         set_test_clock(None);
         let reg = registry(&root);
         let key_b = PushKey::from_bytes([99u8; 32]);
-        reg.register(
+        reg.register_ios(
             &cid(CID_A),
             TOKEN_1.to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key(),
         )
         .unwrap();
-        reg.register(
+        reg.register_ios(
             &cid(CID_A),
             TOKEN_2.to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key(),
         )
         .unwrap();
-        reg.register(
+        reg.register_android(
+            &cid(CID_A),
+            ENDPOINT_1.to_owned(),
+            ANDROID_P256DH.to_owned(),
+            ANDROID_AUTH.to_owned(),
+            key(),
+        )
+        .unwrap();
+        reg.register_ios(
             &cid(CID_B),
             "1122334455667788".to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key_b,
         )
         .unwrap();
-        assert_eq!(reg.device_count().unwrap(), 3);
+        reg.register_android(
+            &cid(CID_B),
+            ENDPOINT_2.to_owned(),
+            ANDROID_P256DH.to_owned(),
+            ANDROID_AUTH.to_owned(),
+            key_b,
+        )
+        .unwrap();
+        assert_eq!(reg.device_count().unwrap(), 5);
 
         remove_cid_registrations(root.path(), CID_A).unwrap();
-        assert_eq!(reg.device_count().unwrap(), 1);
+        assert_eq!(reg.device_count().unwrap(), 2);
 
         let devices = reg.read_devices_locked().unwrap();
-        assert_eq!(devices.len(), 1);
-        match &devices[0] {
-            StoredDevice::Ios { cid, push_key, .. } => {
-                assert_eq!(cid, CID_B);
-                assert_eq!(push_key, &key_b);
-            }
-        }
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].cid(), CID_B);
+        assert_eq!(devices[1].cid(), CID_B);
 
         // Idempotent / missing CID does not error
         remove_cid_registrations(
@@ -640,7 +910,7 @@ mod tests {
             "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         )
         .unwrap();
-        assert_eq!(reg.device_count().unwrap(), 1);
+        assert_eq!(reg.device_count().unwrap(), 2);
     }
 
     #[test]
@@ -650,21 +920,19 @@ mod tests {
         let reg = Arc::new(registry(&root));
 
         // Two different valid tokens for one CID both remain
-        reg.register(
+        reg.register_ios(
             &cid(CID_A),
             TOKEN_1.to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key(),
         )
         .unwrap();
-        reg.register(
+        reg.register_ios(
             &cid(CID_A),
             TOKEN_2.to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key(),
         )
         .unwrap();
@@ -679,12 +947,11 @@ mod tests {
             let b = Arc::clone(&barrier);
             workers.push(thread::spawn(move || {
                 b.wait();
-                let _ = r.register(
+                let _ = r.register_ios(
                     &LinkedDeviceCid::try_from(CID_A).unwrap(),
                     TOKEN_1.to_owned(),
                     "org.example.concurrent".to_owned(),
                     PushEnvironment::Development,
-                    PushPlatform::Ios,
                     PushKey::from_bytes(VALID_KEY),
                 );
             }));
@@ -702,36 +969,47 @@ mod tests {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
         set_test_clock(None);
         let reg = registry(&root);
-        reg.register(
+        reg.register_ios(
             &cid(CID_A),
             TOKEN_1.to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key(),
         )
         .unwrap();
-        reg.register(
+        reg.register_ios(
             &cid(CID_A),
             TOKEN_2.to_owned(),
             "org.example".to_owned(),
             PushEnvironment::Development,
-            PushPlatform::Ios,
             key(),
         )
         .unwrap();
-        assert_eq!(reg.device_count().unwrap(), 2);
+        reg.register_android(
+            &cid(CID_A),
+            ENDPOINT_1.to_owned(),
+            ANDROID_P256DH.to_owned(),
+            ANDROID_AUTH.to_owned(),
+            key(),
+        )
+        .unwrap();
+        assert_eq!(reg.device_count().unwrap(), 3);
 
         let reopened = PushRegistry::new(root.path());
+        assert!(reopened.deregister_ios(&cid(CID_A), TOKEN_1).unwrap());
+        assert_eq!(reopened.device_count().unwrap(), 2);
+        assert!(!reopened.deregister_ios(&cid(CID_A), TOKEN_1).unwrap());
+        assert_eq!(reopened.device_count().unwrap(), 2);
+
         assert!(
             reopened
-                .deregister(&cid(CID_A), PushPlatform::Ios, TOKEN_1)
+                .deregister_android(&cid(CID_A), ENDPOINT_1)
                 .unwrap()
         );
         assert_eq!(reopened.device_count().unwrap(), 1);
         assert!(
             !reopened
-                .deregister(&cid(CID_A), PushPlatform::Ios, TOKEN_1)
+                .deregister_android(&cid(CID_A), ENDPOINT_1)
                 .unwrap()
         );
         assert_eq!(reopened.device_count().unwrap(), 1);
@@ -748,12 +1026,11 @@ mod tests {
 
         assert!(reg.status().is_err());
         assert!(
-            reg.register(
+            reg.register_ios(
                 &cid(CID_A),
                 TOKEN_1.to_owned(),
                 "org.example".to_owned(),
                 PushEnvironment::Development,
-                PushPlatform::Ios,
                 key(),
             )
             .is_err()
