@@ -1498,7 +1498,7 @@ a:focus-visible {
   z-index: 9999;
   padding: 8px 16px;
   background: var(--orange);
-  color: var(--ink);
+  color: var(--ink-on-brand);
   text-decoration: none;
   font-size: 14px;
   border-radius: 0 0 4px 0;

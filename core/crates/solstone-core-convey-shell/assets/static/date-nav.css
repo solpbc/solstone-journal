@@ -115,7 +115,7 @@
   border: 1px solid var(--hairline-2);
   border-radius: var(--radius);
   background: var(--cream-bright);
-  box-shadow: 0 16px 40px color-mix(in srgb, var(--ink) 18%, transparent);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--surface-dark) 18%, transparent);
 }
 
 .date-nav-content__panelbar {
@@ -202,7 +202,7 @@
 
 .date-nav-content__cell--selected {
   background: var(--orange);
-  color: var(--ink);
+  color: var(--ink-on-brand);
   border-color: var(--orange);
 }
 
@@ -214,7 +214,7 @@
 }
 
 .date-nav-content__cell--selected .date-nav-content__cell-count {
-  color: var(--ink);
+  color: var(--ink-on-brand);
 }
 
 .date-nav-content__cell--empty .date-nav-content__cell-count {

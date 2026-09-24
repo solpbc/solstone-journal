@@ -290,7 +290,7 @@ button.daygrid-cell {
   border: 1px solid var(--hairline-2);
   border-radius: var(--radius-sm);
   background: var(--paper);
-  box-shadow: 0 10px 24px color-mix(in srgb, var(--ink) 12%, transparent);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--surface-dark) 12%, transparent);
   color: var(--ink-soft-paper);
   font-size: var(--text-min);
   line-height: 1.25;
@@ -334,7 +334,7 @@ button.daygrid-cell {
    above carries that overflow; these two cues say so, so the columns are not
    just clipped at the edges. Both are driven from day-grid.js. */
 .daygrid--scrolled .daygrid-gutter {
-  box-shadow: 6px 0 8px -6px color-mix(in srgb, var(--ink) 30%, transparent);
+  box-shadow: 6px 0 8px -6px color-mix(in srgb, var(--surface-dark) 30%, transparent);
 }
 
 .daygrid::after {

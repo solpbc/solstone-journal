@@ -3260,7 +3260,7 @@
     if (audio_file) {
       audioContainer.innerHTML = `
         <div class="spk-player-controls">
-          <button class="spk-skip-back" id="spkSkipBack" title="back 5s">&#8634; 5s</button>
+          <button class="spk-skip-back" id="spkSkipBack" title="back 5s">↺ 5s</button>
           <audio id="spkAudio" controls preload="metadata">
             <source src="${audio_file}" type="${audio_mimetype}">
           </audio>
@@ -3356,7 +3356,7 @@
           <div class="spk-status-container" id="status-${sentence.id}" role="status" aria-live="polite"></div>
         </div>
         <div class="spk-sentence-actions">
-          <button class="spk-btn spk-btn-icon spk-play-btn" aria-label="${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}" title="${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}">&#9654;</button>
+          <button class="spk-btn spk-btn-icon spk-play-btn" aria-label="${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}" title="${escapeHtml(SPK_COPY.SPK_PLAY_FROM_HERE_LABEL || '')}">▶</button>
           ${actionsHtml}
         </div>
       </div>
@@ -3681,14 +3681,14 @@
     audioPlayer.addEventListener('play', () => {
       if (playingSentenceId !== null) {
         const btn = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"] .spk-play-btn`);
-        if (btn) btn.innerHTML = '&#9208;';
+        if (btn) btn.innerHTML = '⏸';
       }
     });
 
     audioPlayer.addEventListener('pause', () => {
       if (playingSentenceId !== null) {
         const btn = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"] .spk-play-btn`);
-        if (btn) btn.innerHTML = '&#9654;';
+        if (btn) btn.innerHTML = '▶';
       }
     });
 
@@ -3697,7 +3697,7 @@
         const row = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"]`);
         if (row) {
           row.classList.remove('spk-playing');
-          row.querySelector('.spk-play-btn').innerHTML = '&#9654;';
+          row.querySelector('.spk-play-btn').innerHTML = '▶';
         }
         playingSentenceId = null;
       }
@@ -3750,7 +3750,7 @@
       const prevRow = detailPanel.querySelector(`.spk-sentence[data-id="${playingSentenceId}"]`);
       if (prevRow) {
         prevRow.classList.remove('spk-playing');
-        prevRow.querySelector('.spk-play-btn').innerHTML = '&#9654;';
+        prevRow.querySelector('.spk-play-btn').innerHTML = '▶';
       }
     }
 
@@ -3760,7 +3760,7 @@
       if (newRow) {
         newRow.classList.add('spk-playing');
         if (!audioPlayer.paused) {
-          newRow.querySelector('.spk-play-btn').innerHTML = '&#9208;';
+          newRow.querySelector('.spk-play-btn').innerHTML = '⏸';
         }
         newRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
       }

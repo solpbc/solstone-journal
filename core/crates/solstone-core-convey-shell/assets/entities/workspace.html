@@ -6377,14 +6377,14 @@ function failPendingEntity(agentId, error) {
 
   // Show error state briefly then remove
   pending.element.classList.remove('entity-card-pending');
-  pending.element.style.background = '#fee';
-  pending.element.style.borderColor = '#fcc';
+  pending.element.style.background = 'var(--danger-wash)';
+  pending.element.style.borderColor = 'var(--danger)';
   pending.element.title = `Error: ${error}`;
 
   const meta = pending.element.querySelector('.entity-card-meta');
   if (meta) {
     meta.textContent = `Error: ${error}`;
-    meta.style.color = '#c33';
+    meta.style.color = 'var(--danger)';
   }
 
   pendingEntities.delete(agentId);

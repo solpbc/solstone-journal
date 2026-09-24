@@ -3712,9 +3712,9 @@ function populateFacetForm(facetName, config) {
     loadIconDisplaySvg(config.icon);
   }
 
-  const color = config.color || '#667eea';
+  const color = config.color || 'var(--orange)';
   document.getElementById('colorPreview').style.backgroundColor = color;
-  document.getElementById('colorHexDisplay').textContent = color;
+  document.getElementById('colorHexDisplay').textContent = colorName(color);
 
 }
 
@@ -3899,7 +3899,7 @@ function setupIconPicker() {
   }
 
   function updateIconPreview() {
-    const color = facetConfig?.color || '#667eea';
+    const color = facetConfig?.color || 'var(--orange)';
     previewPill.style.borderColor = color;
     previewPill.style.backgroundColor = `color-mix(in srgb, ${color} 10%, transparent)`;
     previewGlyph.style.setProperty('--pill-color', color);
@@ -4027,8 +4027,8 @@ function setupIconPicker() {
 
 function colorName(color) {
   const names = {
-    'var(--orange)': 'orange',
-    'var(--gold)': 'gold',
+    'var(--orange)': 'orange swatch',
+    'var(--gold)': 'gold swatch',
     'var(--success)': 'success',
     'var(--warn)': 'warning',
     'var(--surface-dark)': 'dark',
@@ -4036,7 +4036,7 @@ function colorName(color) {
     'color-mix(in srgb, var(--orange) 65%, var(--surface-dark))': 'burnt orange',
     'color-mix(in srgb, var(--gold) 75%, var(--surface-dark))': 'bronze',
     'color-mix(in srgb, var(--success) 75%, var(--surface-dark))': 'forest',
-    'color-mix(in srgb, var(--warn) 75%, var(--surface-dark))': 'olive',
+    'color-mix(in srgb, var(--warn) 75%, var(--surface-dark))': 'olive swatch',
     'color-mix(in srgb, var(--orange) 50%, var(--success))': 'orange green',
     'color-mix(in srgb, var(--gold) 50%, var(--warn))': 'gold warning'
   };
@@ -4052,7 +4052,7 @@ function setupColorPicker() {
   const picker = document.getElementById('customColorPicker');
   const hexInput = document.getElementById('customColorInput');
 
-  let selectedColor = '#667eea';
+  let selectedColor = picker.value;
 
   // Populate swatches
   swatches.innerHTML = FACET_COLORS.map(c => `<div class="color-swatch" role="button" tabindex="0" aria-label="${colorName(c)}" data-color="${c}" style="background:${c}"></div>`).join('');
@@ -4086,7 +4086,7 @@ function setupColorPicker() {
   };
 
   trigger.onclick = () => {
-    selectedColor = facetConfig?.color || '#667eea';
+    selectedColor = facetConfig?.color || picker.value;
     updateColorUI(selectedColor);
     modal.style.display = 'block';
     modal._openAccessible(trigger);
@@ -4272,10 +4272,10 @@ document.querySelectorAll('.password-toggle').forEach(btn => {
     if (input && icon) {
       if (input.type === 'password') {
         input.type = 'text';
-        icon.innerHTML = '&#128064;'; // eye with line
+        icon.innerHTML = '👀'; // eye with line
       } else {
         input.type = 'password';
-        icon.innerHTML = '&#128065;'; // eye
+        icon.innerHTML = '👁'; // eye
       }
     }
   };
@@ -5572,7 +5572,7 @@ function populateStorageMeasurement(data) {
     data.warnings.forEach(w => {
       const div = document.createElement('div');
       div.className = 'provider-key-warning';
-      div.innerHTML = '<span>&#9888;</span> <span>' + escapeHtml(w.message) + '</span>';
+      div.innerHTML = '<span>⚠</span> <span>' + escapeHtml(w.message) + '</span>';
       warningsEl.appendChild(div);
     });
   }

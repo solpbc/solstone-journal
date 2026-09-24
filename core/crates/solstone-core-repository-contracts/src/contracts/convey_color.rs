@@ -364,8 +364,7 @@ fn clean_source(source: &str, kind: FileKind) -> String {
     for tag in html_tags(&clean) {
         if tag.name == "style" || tag.name == "script" {
             let start = tag.start + clean[tag.start..].find('>').unwrap_or(0) + 1;
-            if let Some(close_rel) = clean[start..].find("</") {
-                let end = start + close_rel;
+            if let Some(end) = find_raw_text_close(&clean, start, &tag.name) {
                 let kind = if tag.name == "style" {
                     FileKind::Css
                 } else {
@@ -387,6 +386,116 @@ fn clean_source(source: &str, kind: FileKind) -> String {
     }
     clean = String::from_utf8(bytes).expect("embedded comment stripping preserves UTF-8");
     clean
+}
+
+fn find_raw_text_close(source: &str, start: usize, tag_name: &str) -> Option<usize> {
+    #[derive(Clone, Copy)]
+    enum State {
+        Code { interpolation: bool, braces: usize },
+        Quoted(u8),
+        Template,
+        LineComment,
+        BlockComment,
+    }
+
+    fn is_close_tag(bytes: &[u8], index: usize, tag_name: &str) -> bool {
+        let name_start = index + 2;
+        let name_end = name_start + tag_name.len();
+        bytes.get(index..name_start) == Some(b"</")
+            && bytes
+                .get(name_start..name_end)
+                .is_some_and(|name| name.eq_ignore_ascii_case(tag_name.as_bytes()))
+            && bytes
+                .get(name_end)
+                .is_some_and(|next| next.is_ascii_whitespace() || matches!(next, b'>' | b'/'))
+    }
+
+    let bytes = source.as_bytes();
+    let mut states = vec![State::Code {
+        interpolation: false,
+        braces: 0,
+    }];
+    let mut index = start;
+    while index < bytes.len() {
+        match *states.last().expect("raw-text scanner always has a state") {
+            State::Code {
+                interpolation,
+                braces,
+            } => {
+                if is_close_tag(bytes, index, tag_name) {
+                    return Some(index);
+                }
+                if tag_name == "script" && bytes[index..].starts_with(b"//") {
+                    states.push(State::LineComment);
+                    index += 2;
+                } else if bytes[index..].starts_with(b"/*") {
+                    states.push(State::BlockComment);
+                    index += 2;
+                } else if matches!(bytes[index], b'\'' | b'"') {
+                    states.push(State::Quoted(bytes[index]));
+                    index += 1;
+                } else if tag_name == "script" && bytes[index] == b'`' {
+                    states.push(State::Template);
+                    index += 1;
+                } else if interpolation && bytes[index] == b'{' {
+                    if let Some(State::Code { braces, .. }) = states.last_mut() {
+                        *braces += 1;
+                    }
+                    index += 1;
+                } else if interpolation && bytes[index] == b'}' {
+                    if braces == 1 {
+                        states.pop();
+                    } else if let Some(State::Code { braces, .. }) = states.last_mut() {
+                        *braces -= 1;
+                    }
+                    index += 1;
+                } else {
+                    index += 1;
+                }
+            }
+            State::Quoted(quote) => {
+                if bytes[index] == b'\\' {
+                    index = (index + 2).min(bytes.len());
+                } else if bytes[index] == quote {
+                    states.pop();
+                    index += 1;
+                } else {
+                    index += 1;
+                }
+            }
+            State::Template => {
+                if bytes[index] == b'\\' {
+                    index = (index + 2).min(bytes.len());
+                } else if bytes[index] == b'`' {
+                    states.pop();
+                    index += 1;
+                } else if bytes[index..].starts_with(b"${") {
+                    states.push(State::Code {
+                        interpolation: true,
+                        braces: 1,
+                    });
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+            }
+            State::LineComment => {
+                if matches!(bytes[index], b'\n' | b'\r') {
+                    states.pop();
+                }
+                index += 1;
+            }
+            State::BlockComment => {
+                if bytes[index..].starts_with(b"*/") {
+                    states.pop();
+                    index += 2;
+                } else {
+                    index += 1;
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(Clone, Debug)]
@@ -842,11 +951,10 @@ fn scan_html(
     }
     for tag in &tags {
         let after_tag = tag.start + file.clean[tag.start..].find('>').unwrap_or(0) + 1;
-        let Some(close_rel) = file.clean[after_tag..].find("</") else {
+        let Some(content_end) = find_raw_text_close(&file.clean, after_tag, &tag.name) else {
             continue;
         };
         let content_start = after_tag;
-        let content_end = after_tag + close_rel;
         let body = &file.clean[content_start..content_end];
         match tag.name.as_str() {
             "style" => {
@@ -1611,9 +1719,9 @@ fn html_style_declarations(source: &str) -> Vec<Declaration> {
             continue;
         }
         let after_tag = tag.start + source[tag.start..].find('>').unwrap_or(0) + 1;
-        if let Some(close_rel) = source[after_tag..].find("</") {
+        if let Some(content_end) = find_raw_text_close(source, after_tag, "style") {
             let start = after_tag;
-            declarations.extend(css_declarations(&source[start..start + close_rel], start));
+            declarations.extend(css_declarations(&source[start..content_end], start));
         }
     }
     declarations
@@ -1626,8 +1734,8 @@ fn html_script_sources(source: &str) -> Vec<&str> {
             continue;
         }
         let start = tag.start + source[tag.start..].find('>').unwrap_or(0) + 1;
-        if let Some(close_rel) = source[start..].find("</") {
-            scripts.push(&source[start..start + close_rel]);
+        if let Some(content_end) = find_raw_text_close(source, start, "script") {
+            scripts.push(&source[start..content_end]);
         }
     }
     scripts
@@ -1669,7 +1777,10 @@ fn color_literals(value: &str, js_context: bool) -> Vec<Literal> {
                 end += 1;
             }
             let digits = end - index - 1;
-            if matches!(digits, 3 | 4 | 6 | 8) && (end == bytes.len() || !is_ident(bytes[end])) {
+            if matches!(digits, 3 | 4 | 6 | 8)
+                && (index == 0 || bytes[index - 1] != b'&')
+                && (end == bytes.len() || !is_ident(bytes[end]))
+            {
                 result.push(Literal {
                     start: index,
                     text: value[index..end].to_string(),
@@ -2521,6 +2632,25 @@ mod mutation_tests {
         let fixture = Fixture::new();
         fixture.set_js("// #fff and rgba(0,0,0,.2)\nnode.style.color = 'var(--ink)';");
         assert!(!fixture.has_rule("color_literal"));
+    }
+
+    #[test]
+    fn mutation_script_literal_after_embedded_close_fails() {
+        let fixture = Fixture::new();
+        fixture.set_workspace(
+            "<script>const markup = '</not-a-close>'; node.style.color = '#fff';</script>",
+        );
+        assert!(fixture.has_rule("color_literal"));
+    }
+
+    #[test]
+    fn mutation_numeric_character_reference_passes() {
+        let fixture = Fixture::new();
+        fixture.set_js("const icon = '&#128064; &#x1F440;';");
+        assert!(!fixture.has_rule("color_literal"));
+
+        fixture.set_css("body { background: #128064; }");
+        assert!(fixture.has_rule("color_literal"));
     }
 
     #[test]

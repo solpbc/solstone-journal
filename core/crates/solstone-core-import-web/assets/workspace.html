@@ -316,7 +316,7 @@
   font-size: 0.95rem;
   font-weight: 700;
   background: var(--orange);
-  color: var(--ink);
+  color: var(--ink-on-brand);
   border: none;
   border-radius: 10px;
   cursor: pointer;
@@ -324,7 +324,7 @@
 }
 
 .import-primary-btn:hover {
-  background: color-mix(in srgb, var(--orange) 80%, var(--ink));
+  background: color-mix(in srgb, var(--orange) 80%, var(--surface-dark));
 }
 
 .import-primary-btn:disabled {
@@ -334,7 +334,7 @@
 }
 
 .import-primary-btn:active:not(:disabled) {
-  background: color-mix(in srgb, var(--orange) 65%, var(--ink));
+  background: color-mix(in srgb, var(--orange) 65%, var(--surface-dark));
 }
 
 .import-secondary-btn {
@@ -2715,7 +2715,7 @@ if (document.readyState === 'loading') {
 .import-content-pagination { display: flex; gap: 0.5em; justify-content: center; margin-top: 1em; }
 .import-content-pagination button { padding: 6px 14px; border: 1px solid var(--hairline-2); border-radius: 4px; background: var(--paper); cursor: pointer; font-size: 0.9em; }
 .import-content-pagination button:hover { background: var(--cream-bright); }
-.import-content-pagination button.active { background: var(--facet-color, var(--orange)); color: var(--paper); border-color: var(--facet-color, var(--orange)); }
+.import-content-pagination button.active { background: var(--facet-color, var(--orange)); color: var(--ink-on-brand); border-color: var(--facet-color, var(--orange)); }
 .import-content-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
 .import-content-pagination button { transition: background 0.1s ease; }
 .import-content-pagination button:active:not(:disabled):not(.active) { background: var(--hairline); }

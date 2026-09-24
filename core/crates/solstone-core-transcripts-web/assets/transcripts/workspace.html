@@ -2648,6 +2648,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       // Pending thumbnail promises per frame
       this.pendingThumbs = new Map();
       this.warnedUrls = new Set();
+      this.unsupportedPlaceholderCanvases = new Set();
     }
 
     // Load video and wait for metadata
@@ -2806,6 +2807,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     // Clear all loaded videos and cached thumbnails
     clear() {
+      for (const canvas of [...this.unsupportedPlaceholderCanvases]) {
+        this._clearUnsupportedPlaceholder(canvas);
+      }
       for (const entry of this.videos.values()) {
         entry.thumbs.clear();
         entry.video.src = '';
@@ -2838,6 +2842,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         };
         canvas.__unsupportedPlaceholderRedraw = { media, listener };
         media.addEventListener('change', listener);
+        this.unsupportedPlaceholderCanvases.add(canvas);
       }
 
       const minDim = Math.min(width, height);
@@ -2903,6 +2908,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     _clearUnsupportedPlaceholder(canvas) {
       const redraw = canvas.__unsupportedPlaceholderRedraw;
       if (redraw) redraw.media.removeEventListener('change', redraw.listener);
+      this.unsupportedPlaceholderCanvases.delete(canvas);
       delete canvas.__unsupportedPlaceholderRedraw;
       delete canvas.__unsupportedPlaceholderState;
     }
@@ -6328,9 +6334,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     } catch (err) {
       const notice = document.createElement('div');
       notice.className = 'tr-warning-notice visible';
-      notice.style.borderColor = '#fca5a5';
-      notice.style.background = '#fef2f2';
-      notice.style.color = '#991b1b';
+      notice.style.borderColor = 'var(--danger)';
+      notice.style.background = 'var(--danger-wash)';
+      notice.style.color = 'var(--danger)';
       notice.innerHTML = '<svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> <span>' + escapeHtml(err.message) + '</span>';
       panel.insertBefore(notice, panel.firstChild);
       setTimeout(() => {
