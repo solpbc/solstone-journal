@@ -434,7 +434,9 @@ talent_orchestration_rung() {
 	done
 	endpoint=http://$(cat "$journal/generation.addr")
 	setup_fixture_journal "$journal"
-	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
+	# Keep cadence out of the controlled daily catchup batch. The valid sense
+	# facet now also exercises the empty entity-suggestion daily path.
+	printf '%s\n' "{\"setup\":{\"completed_at\":1},\"talent_overrides\":{\"talent.system.pulse\":{\"disabled\":true},\"talent.system.steward\":{\"disabled\":true}},\"providers\":{\"active\":{\"provider\":\"local\"},\"local\":{\"endpoint_url\":\"$endpoint\",\"served_model_id\":\"cleanroom\"}}}" \
 		>"$journal/config/journal.json"
 	export SOLSTONE_JOURNAL=$journal
 	export SOL_SKIP_SUPERVISOR_CHECK=1
@@ -481,6 +483,7 @@ talent_orchestration_rung() {
 		|| refuse "orchestration fallback leaked into schedule metadata"
 	sorted=$(LC_ALL=C sort "$journal/generation-evidence")
 	[ "$sorted" = "daily_schedule
+entity_suggest
 morning_briefing
 schedule
 sense" ] || {
