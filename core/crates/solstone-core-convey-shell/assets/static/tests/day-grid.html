@@ -337,7 +337,13 @@
     const wideTargetCenter = wideTargetRect.left + (wideTargetRect.width / 2);
     const wideScrollerCenter = wideScrollerRect.left + (wideScrollerRect.width / 2);
     equal('autoscroll wide overflow is above threshold', wideScroller.scrollWidth - wideScroller.clientWidth > 24, true);
-    equal('autoscroll wide overflow centers target', Math.abs(wideTargetCenter - wideScrollerCenter) <= 1, true);
+    // Centred where the scroller can reach it; a target near the grid's end (here the last
+    // column) is scrolled as far as it goes and stays fully in view, since scrollLeft clamps.
+    const wideMax = wideScroller.scrollWidth - wideScroller.clientWidth;
+    const wideCentred = Math.abs(wideTargetCenter - wideScrollerCenter) <= 1;
+    const wideClampedInView = wideScroller.scrollLeft >= wideMax - 1
+      && wideTargetRect.left >= wideScrollerRect.left - 1 && wideTargetRect.right <= wideScrollerRect.right + 1;
+    equal('autoscroll wide overflow centers target', wideCentred || wideClampedInView, true);
 
     // A narrow grid scrolls inside its own container, every column has to be
     // reachable, and it has to show that it scrolls (X-13).
