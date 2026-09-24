@@ -1697,6 +1697,14 @@ mod tests {
     use super::*;
     use crate::bootstrap_mcp_endpoint_owner_identity;
 
+    /// The production v1 bridge address, pinned on purpose. The v1 wire
+    /// contract names the live `*.solstone.me` bridge, and admission accepts
+    /// only a public address (`V1_DENIED_IPV4_RANGES` denies every
+    /// documentation range), so a placeholder would be refused. It is public
+    /// in DNS. The raw-JSON cases below and `test-fixtures/mcp_bridge_v1.json`
+    /// carry the same address as text.
+    const V1_BRIDGE_ADDRESS: &str = "20.186.92.169";
+
     const FIXED_POP_PKCS8_BASE64: &str = "MFECAQEwBQYDK2VwBCIEIK3BpJ7oyV0+ISBYqk1FhL7ddzXR7+nKfGOiBQ658apJgSEAWAnp/vbc7Fjw8uOw1n6YgKEZV+CDrOhYNcO2yPuva30=";
     const P256_SPKI_PREFIX: [u8; 26] = [
         0x30, 0x59, 0x30, 0x13, 0x06, 0x07, 0x2a, 0x86, 0x48, 0xce, 0x3d, 0x02, 0x01, 0x06, 0x08,
@@ -2021,6 +2029,8 @@ mod tests {
 
     #[test]
     fn fixture_provenance_is_pinned() {
+        // The fixture's bridge address is `V1_BRIDGE_ADDRESS`; JSON cannot
+        // carry the reason, so it lives on that constant.
         const SOURCE_REPOSITORY: &str = "solstone.app";
         const SOURCE_PATH: &str = "account/test-fixtures/mcp_bridge_v1.json";
         const SOURCE_COMMIT: &str = "6c3dc18376b365792f5cb512eb5bf17d8eff17bc";
@@ -2637,7 +2647,7 @@ mod tests {
             "instance_id": "8488ae64-b592-80a3-97c6-490e995daa85",
             "hostname": "aaaqeaye.solstone.me",
             "bridge_id": "mcp-bridge-fixture",
-            "bridge_addresses": ["20.186.92.169"]
+            "bridge_addresses": [V1_BRIDGE_ADDRESS]
         })
     }
 
@@ -2899,6 +2909,7 @@ mod tests {
             ExpectedResponseError::CacheControlMissing,
         );
 
+        // The bridge address in these raw bodies is `V1_BRIDGE_ADDRESS`.
         let internal_whitespace = br#"{
             "token" 	: "opaque-bridge-token" ,
             "token_type":	"Bearer",
@@ -3189,6 +3200,7 @@ mod tests {
             );
         }
 
+        // The bridge address here is `V1_BRIDGE_ADDRESS`.
         let reordered = br#"{
             "bridge_addresses":["20.186.92.169"],
             "bridge_id":"mcp-bridge-fixture",
@@ -3243,7 +3255,7 @@ mod tests {
             serde_json::Value::Null,
             serde_json::json!(true),
             serde_json::json!(1),
-            serde_json::json!("20.186.92.169"),
+            serde_json::json!(V1_BRIDGE_ADDRESS),
             serde_json::json!({}),
         ] {
             let mut value = baseline.clone();
@@ -3512,7 +3524,7 @@ mod tests {
             ),
             ("191.255.255.255", None),
             ("192.0.1.0", None),
-            ("20.186.92.169", None),
+            (V1_BRIDGE_ADDRESS, None),
         ] {
             let mut value = baseline.clone();
             value["bridge_addresses"] = serde_json::json!([address]);
@@ -3810,7 +3822,7 @@ mod tests {
             instance_id: owner.committed.instance_id().to_owned(),
             hostname: "aaaqeaye.solstone.me".to_owned(),
             bridge_id: "mcp-bridge-fixture".to_owned(),
-            bridge_address: "20.186.92.169".to_owned(),
+            bridge_address: V1_BRIDGE_ADDRESS.to_owned(),
         }
     }
 
@@ -3984,7 +3996,7 @@ mod tests {
         assert_eq!(registration.token, expected_token);
         assert_eq!(registration.hostname, "aaaqeaye.solstone.me");
         assert_eq!(registration.bridge_id, "mcp-bridge-fixture");
-        assert_eq!(registration.bridge_address, "20.186.92.169");
+        assert_eq!(registration.bridge_address, V1_BRIDGE_ADDRESS);
         assert_eq!(registration.issued_at, REGISTRATION_WALL_START);
         assert_eq!(registration.expires_at, REGISTRATION_WALL_START + 600);
     }
@@ -4764,7 +4776,7 @@ mod tests {
             parse_account_registration_response(response.status, &response.headers, &response.body)
                 .expect("fixture parser receives exact bounded fields");
         assert_eq!(wire.hostname, "aaaqeaye.solstone.me");
-        assert_eq!(wire.bridge_address, "20.186.92.169");
+        assert_eq!(wire.bridge_address, V1_BRIDGE_ADDRESS);
     }
 
     #[test]
