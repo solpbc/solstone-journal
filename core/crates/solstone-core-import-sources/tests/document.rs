@@ -535,7 +535,7 @@ fn system_pdf_worker_reads_large_stdout_without_timeout() {
         "large-worker.sh",
         "#!/bin/sh\nprintf '%s' '{\"schema\":\"sol-pdf/1\",\"engine\":\"test\",\"page_count\":1,\"pages\":[{\"index\":1,\"chars\":262145,\"text\":\"'\nhead -c 262145 /dev/zero | tr '\\000' x\nprintf '%s\\n' '\"}]}'\n",
     );
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
 
     let payload = worker
         .execute(&PdfWorkerRequest {
@@ -567,7 +567,7 @@ fn system_pdf_worker_accepts_stdout_at_byte_limit() {
             "#!/bin/sh\nprintf '%s' '{prefix}'\nhead -c {padding} /dev/zero | tr '\\000' x\nprintf '%s' '{suffix}'\n"
         ),
     );
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
 
     let payload = worker
         .execute(&PdfWorkerRequest {
@@ -595,7 +595,7 @@ fn system_pdf_worker_accepts_interleaved_stderr_at_byte_limit() {
             "#!/bin/sh\nhead -c {first} /dev/zero | tr '\\000' x >&2\nprintf '%s' '{WORKER_SUCCESS_RESPONSE}'\nhead -c {second} /dev/zero | tr '\\000' x >&2\n"
         ),
     );
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
 
     let payload = worker
         .execute(&PdfWorkerRequest {
@@ -622,7 +622,7 @@ fn system_pdf_worker_rejects_stdout_over_byte_limit_after_exit() {
             PDF_WORKER_STDOUT_MAX_BYTES + 1
         ),
     );
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
 
     let failure = worker
         .execute(&PdfWorkerRequest {
@@ -649,7 +649,7 @@ fn system_pdf_worker_rejects_stderr_over_byte_limit_after_exit() {
             PDF_WORKER_STDERR_MAX_BYTES + 1
         ),
     );
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
 
     let failure = worker
         .execute(&PdfWorkerRequest {
@@ -677,7 +677,7 @@ fn system_pdf_worker_kills_stdout_over_byte_limit_before_timeout() {
         ),
     );
     let marker = PathBuf::from(format!("{}.pid", script.display()));
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(30));
+    let worker = script_worker(script, Duration::from_secs(30));
 
     let started = Instant::now();
     let failure = worker
@@ -709,7 +709,7 @@ fn system_pdf_worker_kills_stderr_over_byte_limit_before_timeout() {
         ),
     );
     let marker = PathBuf::from(format!("{}.pid", script.display()));
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(30));
+    let worker = script_worker(script, Duration::from_secs(30));
 
     let started = Instant::now();
     let failure = worker
@@ -737,7 +737,7 @@ fn system_pdf_worker_keeps_in_budget_error_response_exit_code() {
         "in-budget-error-worker.sh",
         "#!/bin/sh\nprintf '%s\\n' '{\"error\":\"corrupt\",\"detail\":\"bad PDF\"}'\nexit 4\n",
     );
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
 
     let failure = worker
         .execute(&PdfWorkerRequest {
@@ -764,7 +764,7 @@ fn document_rejects_invalid_worker_protocol_before_artifact_writes() {
     let tree = TestTree::new();
     let source = tree.pdf("invalid.pdf", b"source");
     let script = write_executable_script(&tree, "invalid-worker.sh", "#!/bin/sh\nprintf '{}\\n'\n");
-    let worker = SystemPdfWorker::new(script, Duration::from_secs(5));
+    let worker = script_worker(script, Duration::from_secs(5));
     let model = FakeModel::generated([]);
     let publication = FakePublication::default();
 
@@ -1174,6 +1174,37 @@ impl TestTree {
         fs::write(&path, contents).unwrap();
         path
     }
+}
+
+/// Runs a worker script this test process has just written. A child that a
+/// parallel test forks inherits the script's write descriptor until it execs,
+/// so the kernel can briefly refuse to execute the script with ETXTBSY
+/// ("Text file busy", os error 26). Only that spawn failure is retried, and
+/// only for a bounded time; every other outcome returns unchanged.
+#[cfg(unix)]
+struct FreshScriptWorker(SystemPdfWorker);
+
+#[cfg(unix)]
+impl PdfWorker for FreshScriptWorker {
+    fn execute(&self, request: &PdfWorkerRequest) -> Result<PdfPayload, WorkerFailure> {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match self.0.execute(request) {
+                Err(WorkerFailure::Process {
+                    detail: Some(detail),
+                    ..
+                }) if detail.contains("(os error 26)") && Instant::now() < deadline => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                outcome => return outcome,
+            }
+        }
+    }
+}
+
+#[cfg(unix)]
+fn script_worker(script: PathBuf, timeout: Duration) -> FreshScriptWorker {
+    FreshScriptWorker(SystemPdfWorker::new(script, timeout))
 }
 
 #[cfg(unix)]
