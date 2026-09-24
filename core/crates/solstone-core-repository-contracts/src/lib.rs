@@ -80,6 +80,9 @@ mod paired_stream_allocator_governance;
 #[cfg(test)]
 #[path = "contracts/pairing_contract_bundle.rs"]
 mod pairing_contract_bundle;
+#[cfg(test)]
+#[path = "contracts/private_host_names.rs"]
+mod private_host_names;
 
 #[cfg(test)]
 #[path = "contracts/bound_read_race_closure.rs"]

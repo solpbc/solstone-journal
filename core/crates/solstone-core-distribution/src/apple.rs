@@ -502,7 +502,7 @@ fn field(report: &str, key: &str) -> Option<String> {
 /// `errSecInteractionNotAllowed (-25308)`, which reads exactly like a locked
 /// keychain or a cleared partition list and is neither: the key was imported
 /// with `-T /usr/bin/codesign -T /usr/bin/productbuild`, so `pkgbuild` is not
-/// an admitted tool for it and `productsign` is. Measured 2026-08-17 on pro5e
+/// an admitted tool for it and `productsign` is. Measured 2026-08-17 on the macOS build host
 /// in one session — `pkgbuild --sign` refused while `productsign` and
 /// `productbuild --sign` both succeeded with the same identity, keychain and
 /// unlock state. ⛔ Do not "fix" this by re-running the partition-list grant.
@@ -631,7 +631,7 @@ pub fn assess(path: &Path, kind: &str) -> Result<String, AppleError> {
 // of this file had one whose rationale was wrong in a way worth recording:
 // *"marking the tree is what makes the Gatekeeper check able to fail."*
 //
-// Measured 2026-08-17 on pro5e, both halves:
+// Measured 2026-08-17 on the macOS build host, both halves:
 //   · a fresh `tar -xzf` of our own tarball carries NO `com.apple.quarantine`
 //     at all, and `curl` sets none either — so the owner's real path is never
 //     marked, and a rung that marks it is testing a state no install produces;

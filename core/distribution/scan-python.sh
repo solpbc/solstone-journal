@@ -34,7 +34,7 @@ trap 'rm -f "$candidates" "$matches"' 0 1 2 15
 # A single `find /` is not survivable on macOS: the first TCC-protected
 # directory makes `find` abort the WHOLE traversal with `fts_read: Permission
 # denied`, and everything after it is silently never visited. Measured
-# 2026-08-17 on pro5e — a host running Python 3.14.6 at two paths — where one
+# 2026-08-17 on the macOS build host, which runs Python 3.14.6 at two paths — where one
 # `find /` produced **zero** classified findings and 281 lines of permission
 # errors, because the walk died before reaching either `/usr/bin` or
 # `/opt/homebrew/bin`. ⛔ That zero is indistinguishable from a clean host.

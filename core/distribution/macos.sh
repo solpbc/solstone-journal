@@ -338,7 +338,7 @@ assert_starts() {
 # 🔴 The extracted tree carries NO quarantine, and that is a fact about the
 # owner's real path rather than an oversight to correct.
 #
-# Measured 2026-08-17 on pro5e: a fresh `tar -xzf` of our tarball has no
+# Measured 2026-08-17 on the macOS build host: a fresh `tar -xzf` of our tarball has no
 # `com.apple.quarantine` xattr at all, and `curl` does not set one either — only
 # quarantine-aware launchers (browsers, Mail, Messages) do. ⛔ So the `.tar.gz`
 # path is **not adjudicated by Gatekeeper on first launch**; the signature and
