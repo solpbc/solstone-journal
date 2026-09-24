@@ -28,9 +28,7 @@ SKIP_DIRS = {
     "target",
 }
 ALLOWED_PATHS = {
-    "docs/design/native-sol-client/06-cutover-design.md",
     "scripts/check_removed_time_parser_ready.py",
-    "tests/test_removed_time_parser_guard.py",
 }
 
 
