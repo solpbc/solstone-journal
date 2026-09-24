@@ -15,13 +15,20 @@
 <script>
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
   // status_pane.js runs its whole body inside this callback.
@@ -42,7 +49,8 @@
     const offlineRow = websocketSource
       .split('\n')
       .find(line => line.includes('"capture": "offline"')
-        && line.includes('"variant": "mark-offline"')) || '';
+        && line.includes('"variant": "mark-paused"')
+        && line.includes("a device hasn't added recently")) || '';
     const offlineMatch = offlineRow.match(/"label":\s*("(?:[^"\\]|\\.)*")/);
     const offlineLabel = offlineMatch ? JSON.parse(offlineMatch[1]) : '';
     assert('websocket.js still carries a silent-device label',
@@ -105,9 +113,21 @@
     assert('another status word is not re-plurals', other === 'connecting', `got "${other}"`);
 
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   })().catch(error => {
     assert('uncaught', false, String(error));
     assert('summary', false, 'uncaught exception');
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   });
 </script>
 </html>

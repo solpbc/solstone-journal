@@ -18,6 +18,8 @@
 <script>
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
   const unit = { one: 'segment', other: 'segments', none: 'no segments' };
   const activityUnit = { one: 'activity', other: 'activities', none: 'no activities' };
   const currencyUnit = { kind: 'currency' };
@@ -27,7 +29,12 @@
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (condition) {
+      passed += 1;
+    } else {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    }
   }
 
   function equal(name, actual, expected) {
@@ -277,10 +284,12 @@
     equal('present week intensity matches', firstIntensity, secondIntensity);
 
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
   }
 
   run().catch((error) => {
     assert('run threw', false, error?.stack || String(error));
+    window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
   });
 </script>
 </html>

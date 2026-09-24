@@ -13,13 +13,20 @@
 <script>
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (condition) {
+      passed += 1;
+    } else {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    }
   }
 
   // Fixed reference "today" so this page never depends on the wall clock.
@@ -169,6 +176,7 @@
       JSON.stringify([window.JournalFormat.sinceDay(NaN), window.JournalFormat.sinceDay(undefined)]));
 
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
   }
 
   run();

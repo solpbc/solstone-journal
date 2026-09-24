@@ -15,10 +15,15 @@
     constructor(url) {
       this.url = url;
       MockEventSource.instance = this;
+      this.listeners = {};
       setTimeout(() => this.onopen && this.onopen(), 0);
     }
     emit(payload) { this.onmessage && this.onmessage({ data: payload }); }
     fail(error) { this.onerror && this.onerror(error); }
+    close() {}
+    addEventListener(type, fn) {
+      (this.listeners[type] = this.listeners[type] || []).push(fn);
+    }
   }
   window.EventSource = MockEventSource;
   window.AppServices = { notifications: { show() { return 1; }, dismiss() {} } };
@@ -28,13 +33,20 @@
 <script>
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
   function wait(ms) {
@@ -42,6 +54,9 @@
   }
 
   (async function run() {
+    if (document.readyState === 'loading') {
+      await new Promise((resolve) => document.addEventListener('DOMContentLoaded', resolve));
+    }
     await wait(0);
     const source = window.EventSource.instance;
 
@@ -93,6 +108,12 @@
     offParseA();
     offParseB();
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   })();
 </script>
 </html>

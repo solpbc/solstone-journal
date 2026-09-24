@@ -21,13 +21,20 @@
   const results = document.getElementById('results');
   const fixture = document.getElementById('fixture');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
   function equal(name, actual, expected) {
@@ -140,19 +147,14 @@
     });
     assert('preserve restores gate drawer', fixture.querySelector('[data-drawer-id="speakers-owner-gate-diagnostics"]').open === true);
 
-    if (failures > 0) {
-      throw new Error(`${failures} gate drawer smoke assertion(s) failed`);
-    }
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   }
 
-  try {
-    run();
-  } catch (error) {
-    const row = document.createElement('div');
-    row.className = 'fail';
-    row.textContent = `FAIL unhandled error - ${error.message}`;
-    results.appendChild(row);
-    throw error;
-  }
+  run();
 </script>
 </html>

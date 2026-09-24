@@ -75,6 +75,8 @@
   const STORAGE_KEY = 'solstone:diagnostic-console';
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
   let reloadCounter = 0;
 
   function assert(name, condition, detail) {
@@ -82,7 +84,12 @@
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (condition) {
+      passed += 1;
+    } else {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    }
   }
 
   function tick() {
@@ -451,10 +458,12 @@
     navHost.remove();
 
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
   }
 
   runTests().catch(error => {
     assert('summary', false, error && error.message ? error.message : String(error));
+    window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
   });
 </script>
 </html>

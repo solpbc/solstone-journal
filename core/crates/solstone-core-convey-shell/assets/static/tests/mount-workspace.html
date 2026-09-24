@@ -21,15 +21,26 @@
   <script src="../shell_gate.js"></script>
   <script>window.resolveSolShellReady({source: 'mount-workspace-test'});</script>
   <script src="../convey_copy.js"></script>
+  <script src="../convey_icons.js"></script>
   <script src="../app.js"></script>
   <script src="../mount-workspace.js"></script>
   <script>
     const rows = document.getElementById('assertions');
+    let failures = 0;
+    let passed = 0;
+    const failureList = [];
+
     function assertRow(label, ok, detail) {
       const row = document.createElement('div');
       row.className = ok ? 'pass' : 'fail';
       row.textContent = `${ok ? 'PASS' : 'FAIL'} ${label}${detail ? ': ' + detail : ''}`;
       rows.appendChild(row);
+      if (!ok) {
+        failures += 1;
+        failureList.push({ name: label, detail: detail || '' });
+      } else {
+        passed += 1;
+      }
     }
 
     async function run() {
@@ -80,10 +91,23 @@
       retry.click();
       await remounted;
       assertRow('retry recovered', document.getElementById('main-content').textContent.includes('retry mounted'));
+
+      window.__solstoneConveyTest = {
+        complete: true,
+        passed,
+        failed: failures,
+        failures: failureList
+      };
     }
 
     run().catch((error) => {
       assertRow('unexpected error', false, error.message || String(error));
+      window.__solstoneConveyTest = {
+        complete: true,
+        passed,
+        failed: failures,
+        failures: failureList
+      };
     });
   </script>
 </body>

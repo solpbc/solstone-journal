@@ -35,17 +35,24 @@
     const results = document.getElementById('results');
     const copy = window.solActivitiesCopy;
     let failures = 0;
+    let passed = 0;
+    const failureList = [];
 
     function report(name, ok, detail) {
       const item = document.createElement('li');
       item.className = ok ? 'pass' : 'fail';
       item.textContent = `${ok ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
       results.appendChild(item);
-      if (!ok) failures += 1;
+      if (ok) {
+        passed += 1;
+      } else {
+        failures += 1;
+        failureList.push({ name, detail: detail || '' });
+      }
     }
 
-    function assert(name, condition) {
-      report(name, !!condition);
+    function assert(name, condition, detail) {
+      report(name, !!condition, detail);
     }
 
     function renderFixture(name) {
@@ -146,6 +153,7 @@
       summary.textContent = failures
         ? `FAIL activities participation render: ${failures} failure(s)`
         : 'PASS activities participation render: 0 failure(s)';
+      window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
     }
 
     try {
@@ -155,6 +163,7 @@
       report('uncaught exception', false, error && error.message ? error.message : String(error));
       summary.className = 'fail';
       summary.textContent = `FAIL activities participation render: ${failures} failure(s)`;
+      window.__solstoneConveyTest = { complete: true, passed, failed: failures, failures: failureList };
     }
   </script>
 </body>

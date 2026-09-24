@@ -17,17 +17,25 @@
 <script src="../api.js"></script>
 <script src="../shell_gate.js"></script>
 <script>window.resolveSolShellReady({source: 'static-test'});</script>
+<script src="../convey_icons.js"></script>
 <script src="../app.js"></script>
 <script>
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
   function wait(ms) {
@@ -82,6 +90,12 @@
 
     task.stop();
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   })();
 </script>
 </html>

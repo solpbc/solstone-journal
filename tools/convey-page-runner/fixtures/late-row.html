@@ -1,0 +1,25 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<html>
+<head><meta charset="utf-8"><title>fixture late row</title></head>
+<body>
+<div id="results">
+  <div class="pass">PASS check 1</div>
+</div>
+<script>
+  window.__solstoneConveyTest = {
+    complete: true,
+    passed: 1,
+    failed: 0,
+    failures: []
+  };
+  setTimeout(() => {
+    const row = document.createElement('div');
+    row.className = 'pass';
+    row.textContent = 'PASS late row';
+    document.getElementById('results').appendChild(row);
+  }, 200);
+</script>
+</body>
+</html>

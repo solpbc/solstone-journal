@@ -1,3 +1,5 @@
+Run automated tests with `make check-convey-pages`. Excluded pages are listed in `tools/convey-page-runner/exclude.txt`.
+
 Open these HTML files directly in a browser; each assertion reports pass/fail inline. `support.html` is the exception: with the convey server running, open `/static/tests/support.html` so its server-mounted script can load.
 
 - `api.html`

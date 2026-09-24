@@ -1,0 +1,24 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: AGPL-3.0-only -->
+<!-- Copyright (c) 2026 sol pbc -->
+<html>
+<head><meta charset="utf-8"><title>fixture summary fail</title></head>
+<body>
+<div id="results">
+  <div class="pass">PASS check 1</div>
+  <div class="fail">FAIL check 2</div>
+  <div class="fail">FAIL summary - 1 failure(s)</div>
+</div>
+<script>
+  window.__solstoneConveyTest = {
+    complete: true,
+    passed: 1,
+    failed: 2,
+    failures: [
+      { name: 'check 2', detail: 'bad' },
+      { name: 'summary', detail: '1 failure(s)' }
+    ]
+  };
+</script>
+</body>
+</html>

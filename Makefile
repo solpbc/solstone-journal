@@ -341,6 +341,7 @@ UV_OPTIONAL_GOALS := \
 	ci-contained ci-prep-ffmpeg \
 	ci-full-prep ci-full-prep-cargo ci-full-prep-onnx ci-full-prep-pdf \
 	verify test build format format-check report-rust-code-evidence \
+	check-convey-pages \
 	check-service-legacy-evidence service-legacy-evidence-capture audit \
 	test-cov test-integration test-performance test-app test-only watch coverage
 ifndef UV
@@ -1314,6 +1315,11 @@ test:
 	@$(MAKE) --no-print-directory check-rust-unit
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=test report-rust-code-evidence
 
+.PHONY: check-convey-pages
+check-convey-pages:
+	node tools/convey-page-runner/run.mjs --self-test
+	node tools/convey-page-runner/run.mjs
+
 check-journal-device-sim:
 	python3 -m unittest discover -s tools/journal_device_sim/tests -p 'test_*.py' -v
 
@@ -1439,6 +1445,7 @@ ci-under-poison:
 	@$(MAKE) check-rust-ci-topology
 	@$(MAKE) check-rust-clippy
 	@$(MAKE) check-rust-unit
+	@if [ "$(HOST_SYSTEM)" = Linux ]; then $(MAKE) check-convey-pages; fi
 	@$(MAKE) --no-print-directory RUST_CODE_EVIDENCE_CONTEXT=ci report-rust-code-evidence
 
 # HOPPER_LID is set by the external build orchestrator that runs isolated

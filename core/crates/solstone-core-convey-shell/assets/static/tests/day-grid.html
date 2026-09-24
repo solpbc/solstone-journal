@@ -24,13 +24,20 @@
   const unit = { one: 'segment', other: 'segments', none: 'no segments' };
   const nativeMatchMedia = window.matchMedia;
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` - ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
   function equal(name, actual, expected) {
@@ -289,7 +296,10 @@
 
     const dec31 = root.querySelector('[data-daygrid-date="20241231"]');
     dec31.focus();
-    keydown(dec31, 'ArrowRight');
+    if (document.activeElement !== dec31) {
+      dec31.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    }
+    keydown(document.activeElement || dec31, 'ArrowRight');
     equal('cross-block right keeps weekday', document.activeElement.dataset.daygridDate, '20250107');
     keydown(document.activeElement, 'ArrowLeft');
     equal('cross-block left keeps weekday', document.activeElement.dataset.daygridDate, '20241231');
@@ -383,6 +393,7 @@
     equal('today quiet outline color', todayStyle.outlineColor, 'rgb(118, 118, 118)');
     today.focus();
     keydown(today, 'ArrowDown');
+    document.activeElement.focus({ focusVisible: true });
     const focusStyle = getComputedStyle(document.activeElement);
     equal('focus outline width', focusStyle.outlineWidth, '2px');
     equal('focus outline color', focusStyle.outlineColor, 'rgb(176, 106, 26)');
@@ -805,17 +816,14 @@
     equal('speakers caught-up grid has only worklist data cells', mounted.root.querySelectorAll('.daygrid-cell--data').length, 2);
     resetPointer();
 
-    if (failures > 0) {
-      throw new Error(`${failures} day-grid smoke assertion(s) failed`);
-    }
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   }
 
-  run().catch((error) => {
-    const row = document.createElement('div');
-    row.className = 'fail';
-    row.textContent = `FAIL unhandled error - ${error.message}`;
-    results.appendChild(row);
-    throw error;
-  });
+  run();
 </script>
 </html>

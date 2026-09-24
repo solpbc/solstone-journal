@@ -14,17 +14,30 @@
 <script>
   const results = document.getElementById('results');
   let failures = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     const row = document.createElement('div');
     row.className = condition ? 'pass' : 'fail';
     row.textContent = `${condition ? 'PASS' : 'FAIL'} ${name}${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
-  function response({ status = 200, statusText = 'OK', body = '' }) {
-    return { status, statusText, ok: status >= 200 && status < 300, text: async () => body };
+  function response({ status = 200, statusText = 'OK', body = '', headers = null }) {
+    return {
+      status,
+      statusText,
+      ok: status >= 200 && status < 300,
+      text: async () => body,
+      headers: headers || { get: () => null }
+    };
   }
 
   async function withFetch(impl, fn) {
@@ -119,6 +132,12 @@
     });
 
     assert('summary', failures === 0, failures ? `${failures} failure(s)` : 'all checks passed');
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   }
 
   run();

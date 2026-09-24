@@ -23,6 +23,8 @@
   const results = document.getElementById('results');
   let failures = 0;
   let testCount = 0;
+  let passed = 0;
+  const failureList = [];
 
   function assert(name, condition, detail) {
     testCount += 1;
@@ -30,7 +32,12 @@
     row.className = 'test-row ' + (condition ? 'pass' : 'fail');
     row.textContent = `${condition ? 'PASS' : 'FAIL'} [${name}]${detail ? ` — ${detail}` : ''}`;
     results.appendChild(row);
-    if (!condition) failures += 1;
+    if (!condition) {
+      failures += 1;
+      failureList.push({ name, detail: detail || '' });
+    } else {
+      passed += 1;
+    }
   }
 
   function approx(a, b, epsilon = 0.01) {
@@ -725,6 +732,12 @@
     }
 
     assert('SUMMARY', failures === 0, failures ? `${failures} failure(s)` : `all ${testCount} assertions passed`);
+    window.__solstoneConveyTest = {
+      complete: true,
+      passed,
+      failed: failures,
+      failures: failureList
+    };
   }
 
   run();

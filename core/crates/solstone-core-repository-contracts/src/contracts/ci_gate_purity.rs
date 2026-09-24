@@ -312,6 +312,10 @@ fn make_ci_runs_only_library_and_binary_unit_harnesses() {
     assert!(ci.contains("$(MAKE) check-rust-fmt"));
     assert!(ci.contains("$(MAKE) check-rust-clippy"));
     assert!(ci.contains("$(MAKE) check-rust-unit"));
+    assert!(
+        ci.contains("if [ \"$(HOST_SYSTEM)\" = Linux ]; then $(MAKE) check-convey-pages; fi"),
+        "make ci must run check-convey-pages guarded by Linux HOST_SYSTEM"
+    );
     for forbidden in [
         "check-rust-msrv",
         "check-rust-doc",

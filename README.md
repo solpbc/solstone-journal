@@ -235,7 +235,7 @@ Before contributing a change:
 
 ```bash
 make test                  # the selected unit harnesses
-make ci                    # the routine gate: fmt, topology, clippy, unit tests. Run before every commit
+make ci                    # the routine gate: fmt, topology, clippy, unit tests (on Linux, also convey pages). Run before every commit
 make ci-full               # the full operator gate, on the exact final tree, after `make ci-full-prep`
 ```
 
