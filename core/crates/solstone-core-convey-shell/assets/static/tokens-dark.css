@@ -17,7 +17,7 @@
  * What does not move: --gold, --orange, the status bases (--success, --warn),
  * --surface-dark / --ink-on-dark, and --ink-on-brand (tokens.css). Text on an
  * orange or gold fill is --ink-on-brand, never --ink, because --ink turns
- * cream here.
+ * cream here. Text on a danger fill is --ink-on-danger.
  *
  * Where the values come from (OKLab mixes of the canon colours):
  *   text        tile cream #FCF3E4, the text on the sun arc's dark row, and two
@@ -69,6 +69,7 @@
     /* status — text inks lift, washes darken; the decoration bases stay */
     --danger:       #D7998C;
     --danger-wash:  #3F271F;
+    --ink-on-danger: #1A1A1A; /* the label on a --danger fill: 7.31:1 on #D7998C (white is 2.38) */
     --success-ink:  #7AB58B;
     --success-wash: #333729;
     --warn-ink:     #CEA245;

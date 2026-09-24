@@ -83,6 +83,7 @@
    * Contrast verified on cream: success-ink 5.88 / warn-ink 6.69 / danger 6.58. */
   --danger:        #9F2D2D; /* destructive / error text */
   --danger-wash:   #F8E9E6; /* error band / destructive-state fill */
+  --ink-on-danger: #FFFFFF; /* the label on a --danger fill (a filled destructive button, a count badge): 7.27:1. The dark appearance re-points it to #1A1A1A (tokens-dark.css) */
   --success:       #3F9D6A; /* done / healthy — decoration / icon / border only */
   --success-ink:   #166534; /* success text + detail (accessible) */
   --success-wash:  #E7F1E9; /* success badge / band fill */
