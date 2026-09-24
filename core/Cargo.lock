@@ -4792,7 +4792,9 @@ name = "solstone-core-push"
 version = "2.0.16"
 dependencies = [
  "axum",
+ "base64 0.22.1",
  "log",
+ "ring",
  "serde",
  "serde_json",
  "solstone-core-convey-http",

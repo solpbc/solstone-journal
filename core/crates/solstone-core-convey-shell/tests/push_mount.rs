@@ -11,6 +11,8 @@ use solstone_core_convey_shell::router;
 use tower::ServiceExt;
 
 const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TOKEN: &str = "0123456789abcdef";
+const PUSH_KEY: &str = "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio";
 
 fn established_journal() -> tempfile::TempDir {
     let journal = tempfile::TempDir::new_in("/var/tmp").expect("journal root");
@@ -30,13 +32,13 @@ fn basis() -> AccessBasis {
     }
 }
 
-async fn call(
+async fn call_raw(
     app: &axum::Router,
     method: &str,
     uri: &str,
     body: impl Into<Body>,
     basis: Option<AccessBasis>,
-) -> (StatusCode, Value) {
+) -> (StatusCode, Vec<u8>) {
     let mut request = Request::builder()
         .method(method)
         .uri(uri)
@@ -51,20 +53,40 @@ async fn call(
     let body = to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("response body");
+    (status, body.to_vec())
+}
+
+async fn call(
+    app: &axum::Router,
+    method: &str,
+    uri: &str,
+    body: impl Into<Body>,
+    basis: Option<AccessBasis>,
+) -> (StatusCode, Value) {
+    let (status, bytes) = call_raw(app, method, uri, body, basis).await;
     (
         status,
-        serde_json::from_slice(&body).expect("JSON response"),
+        serde_json::from_slice(&bytes).expect("JSON response"),
     )
 }
 
 fn registration() -> Vec<u8> {
     serde_json::to_vec(&json!({
-        "device_token": "token-ABCD",
+        "platform": "ios",
+        "device_token": TOKEN,
         "bundle_id": "org.example.push",
         "environment": "development",
-        "platform": "ios"
+        "push_key": PUSH_KEY
     }))
     .expect("registration JSON")
+}
+
+fn deregistration() -> Vec<u8> {
+    serde_json::to_vec(&json!({
+        "platform": "ios",
+        "device_token": TOKEN
+    }))
+    .expect("deregistration JSON")
 }
 
 #[tokio::test]
@@ -80,8 +102,10 @@ async fn all_push_routes_resolve_through_the_composed_shell_router() {
         Some(basis()),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"registered": true}));
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(body["platform"], "ios");
+    assert_eq!(body["target"], "...cdef");
+    assert_eq!(body["environment"], "development");
 
     let (status, body) = call(
         &app,
@@ -92,22 +116,24 @@ async fn all_push_routes_resolve_through_the_composed_shell_router() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["count"], 1);
+    assert_eq!(body["total"], 1);
+    assert_eq!(body["items"][0]["target"], "...cdef");
+    assert!(body["cursor"].is_null());
 
     let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), Some(basis())).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body, json!({"device_count": 1}));
 
-    let (status, body) = call(
+    let (status, body_bytes) = call_raw(
         &app,
         "DELETE",
         "/api/push/register",
-        Body::empty(),
+        deregistration(),
         Some(basis()),
     )
     .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"removed": true}));
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    assert!(body_bytes.is_empty());
 }
 
 #[tokio::test]

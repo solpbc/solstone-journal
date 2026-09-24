@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::fs;
@@ -15,10 +14,23 @@ use solstone_core_journal_io::{
 };
 use time::{OffsetDateTime, UtcOffset, format_description::well_known::Rfc3339};
 
-use crate::model::{PushDeviceStatus, PushEnvironment, PushPlatform};
+use crate::envelope::PushKey;
+use crate::model::{
+    PushDeviceItem, PushEnvironment, PushPlatform, device_token_is_valid, mask_target,
+};
 
 const REGISTRY_FILE: &str = "push-registry.json";
 const OWNER_ONLY_MODE: u32 = 0o600;
+
+#[cfg(test)]
+thread_local! {
+    static TEST_CLOCK: std::cell::RefCell<Option<OffsetDateTime>> = const { std::cell::RefCell::new(None) };
+}
+
+#[cfg(test)]
+pub(crate) fn set_test_clock(time: Option<OffsetDateTime>) {
+    TEST_CLOCK.with(|c| *c.borrow_mut() = time);
+}
 
 /// Durable device-registration store owned by this crate.
 #[derive(Clone, Debug)]
@@ -45,7 +57,11 @@ impl PushRegistry {
         bundle_id: String,
         environment: PushEnvironment,
         platform: PushPlatform,
-    ) -> Result<(), PushStoreError> {
+        push_key: PushKey,
+    ) -> Result<(bool, PushDeviceItem), PushStoreError> {
+        match platform {
+            PushPlatform::Ios => {}
+        }
         let _lock = hold_lock(
             &self.path,
             LockOptions {
@@ -54,26 +70,108 @@ impl PushRegistry {
             },
         )
         .map_err(PushStoreError::Lock)?;
-        let mut registry = self.read_registry()?;
-        let cid = cid.as_str();
 
-        registry.devices.retain(|existing_cid, existing| {
-            existing_cid != cid && existing.device_token != device_token
+        let loaded = self.read_registry()?;
+        let mut devices = loaded.registry.devices;
+        let cid_str = cid.as_str();
+
+        // Check if this pair existed
+        let existing_index = devices.iter().position(|d| match d {
+            StoredDevice::Ios {
+                cid: row_cid,
+                device_token: row_token,
+                ..
+            } => row_cid == cid_str && row_token == &device_token,
         });
-        registry.devices.insert(
-            cid.to_owned(),
-            StoredDevice {
-                device_token,
-                bundle_id,
+        let is_created = existing_index.is_none();
+
+        // Steal: drop any other row with this token on another CID
+        devices.retain(|d| match d {
+            StoredDevice::Ios {
+                cid: row_cid,
+                device_token: row_token,
+                ..
+            } => row_token != &device_token || row_cid == cid_str,
+        });
+
+        let registered_at = now_rfc3339_utc()?;
+        let target = mask_target(&device_token);
+
+        let new_device = StoredDevice::Ios {
+            cid: cid_str.to_owned(),
+            device_token,
+            bundle_id,
+            environment,
+            push_key,
+            registered_at: registered_at.clone(),
+        };
+
+        if let Some(idx) = devices.iter().position(|d| match d {
+            StoredDevice::Ios {
+                cid: row_cid,
+                device_token: row_token,
+                ..
+            } => {
+                row_cid == cid_str
+                    && row_token
+                        == match &new_device {
+                            StoredDevice::Ios { device_token, .. } => device_token,
+                        }
+            }
+        }) {
+            devices[idx] = new_device;
+        } else {
+            devices.push(new_device);
+        }
+
+        // Sort rows by (cid, device_token)
+        devices.sort_by(|a, b| match (a, b) {
+            (
+                StoredDevice::Ios {
+                    cid: c1,
+                    device_token: t1,
+                    ..
+                },
+                StoredDevice::Ios {
+                    cid: c2,
+                    device_token: t2,
+                    ..
+                },
+            ) => c1.cmp(c2).then_with(|| t1.cmp(t2)),
+        });
+
+        if let Some(n) = loaded.legacy_discarded
+            && n >= 1
+        {
+            log::info!("discarded {n} legacy push registrations");
+        }
+
+        let registry = RegistryV2 {
+            version: 2,
+            devices,
+        };
+        self.write_registry(&registry)?;
+
+        Ok((
+            is_created,
+            PushDeviceItem {
+                platform: PushPlatform::Ios,
+                target,
                 environment,
-                platform,
-                registered_at: now_rfc3339_utc()?,
+                registered_at,
             },
-        );
-        self.write_registry(&registry)
+        ))
     }
 
-    pub(crate) fn deregister(&self, cid: &LinkedDeviceCid) -> Result<bool, PushStoreError> {
+    pub(crate) fn deregister(
+        &self,
+        cid: &LinkedDeviceCid,
+        platform: PushPlatform,
+        device_token: &str,
+    ) -> Result<bool, PushStoreError> {
+        match platform {
+            PushPlatform::Ios => {}
+        }
         let _lock = hold_lock(
             &self.path,
             LockOptions {
@@ -82,42 +180,109 @@ impl PushRegistry {
             },
         )
         .map_err(PushStoreError::Lock)?;
-        let mut registry = self.read_registry()?;
-        let removed = registry.devices.remove(cid.as_str()).is_some();
+
+        let loaded = self.read_registry()?;
+        let mut devices = loaded.registry.devices;
+        let cid_str = cid.as_str();
+
+        let initial_len = devices.len();
+        devices.retain(|d| match d {
+            StoredDevice::Ios {
+                cid: row_cid,
+                device_token: row_token,
+                ..
+            } => !(row_cid == cid_str && row_token == device_token),
+        });
+
+        let removed = devices.len() != initial_len;
         if removed {
+            devices.sort_by(|a, b| match (a, b) {
+                (
+                    StoredDevice::Ios {
+                        cid: c1,
+                        device_token: t1,
+                        ..
+                    },
+                    StoredDevice::Ios {
+                        cid: c2,
+                        device_token: t2,
+                        ..
+                    },
+                ) => c1.cmp(c2).then_with(|| t1.cmp(t2)),
+            });
+
+            let registry = RegistryV2 {
+                version: 2,
+                devices,
+            };
             self.write_registry(&registry)?;
         }
         Ok(removed)
     }
 
-    pub(crate) fn status(&self) -> Result<Vec<PushDeviceStatus>, PushStoreError> {
-        let registry = self.read_registry()?;
-        let mut devices = registry
+    pub(crate) fn status(&self) -> Result<(Vec<PushDeviceItem>, usize), PushStoreError> {
+        let loaded = self.read_registry()?;
+        let mut items = loaded
+            .registry
             .devices
-            .into_values()
-            .map(PushDeviceStatus::from)
-            .collect::<Vec<_>>();
-        devices.sort_by(|left, right| {
-            parse_registered_at(&right.registered_at)
-                .expect("registry validation checked timestamp")
-                .cmp(
-                    &parse_registered_at(&left.registered_at)
-                        .expect("registry validation checked timestamp"),
-                )
-                .then_with(|| left.device_token.cmp(&right.device_token))
-        });
-        Ok(devices)
+            .into_iter()
+            .map(|device| match device {
+                StoredDevice::Ios {
+                    cid,
+                    device_token,
+                    environment,
+                    registered_at,
+                    ..
+                } => {
+                    let parsed_time = parse_registered_at(&registered_at).ok_or_else(|| {
+                        PushStoreError::InvalidRegistry {
+                            path: self.path.clone(),
+                            detail: "registered_at",
+                        }
+                    })?;
+                    let target = mask_target(&device_token);
+                    Ok((
+                        parsed_time,
+                        target.clone(),
+                        cid,
+                        PushDeviceItem {
+                            platform: PushPlatform::Ios,
+                            target,
+                            environment,
+                            registered_at,
+                        },
+                    ))
+                }
+            })
+            .collect::<Result<Vec<_>, PushStoreError>>()?;
+
+        items.sort_by(
+            |(time_a, target_a, cid_a, _), (time_b, target_b, cid_b, _)| {
+                time_b
+                    .cmp(time_a)
+                    .then_with(|| target_a.cmp(target_b))
+                    .then_with(|| cid_a.cmp(cid_b))
+            },
+        );
+
+        let result_items: Vec<PushDeviceItem> =
+            items.into_iter().map(|(_, _, _, item)| item).collect();
+        let total = result_items.len();
+        Ok((result_items, total))
     }
 
     pub(crate) fn device_count(&self) -> Result<usize, PushStoreError> {
-        Ok(self.read_registry()?.devices.len())
+        Ok(self.read_registry()?.registry.devices.len())
     }
 
-    fn read_registry(&self) -> Result<Registry, PushStoreError> {
+    fn read_registry(&self) -> Result<LoadedRegistry, PushStoreError> {
         let contents = match fs::read_to_string(&self.path) {
             Ok(contents) => contents,
             Err(source) if source.kind() == io::ErrorKind::NotFound => {
-                return Ok(Registry::default());
+                return Ok(LoadedRegistry {
+                    registry: RegistryV2::default(),
+                    legacy_discarded: None,
+                });
             }
             Err(source) => {
                 return Err(PushStoreError::Read {
@@ -126,17 +291,34 @@ impl PushRegistry {
                 });
             }
         };
-        let registry = serde_json::from_str::<Registry>(&contents).map_err(|source| {
-            PushStoreError::Parse {
+
+        let raw_value: serde_json::Value =
+            serde_json::from_str(&contents).map_err(|_| PushStoreError::Parse {
                 path: self.path.clone(),
-                source,
-            }
-        })?;
-        validate_registry(&self.path, &registry)?;
-        Ok(registry)
+            })?;
+
+        // Check for v1 shape
+        if let Some(legacy_count) = check_v1_shape(&raw_value) {
+            return Ok(LoadedRegistry {
+                registry: RegistryV2::default(),
+                legacy_discarded: Some(legacy_count),
+            });
+        }
+
+        // Deserialize v2
+        let registry: RegistryV2 =
+            serde_json::from_value(raw_value).map_err(|_| PushStoreError::Parse {
+                path: self.path.clone(),
+            })?;
+
+        validate_registry_v2(&self.path, &registry)?;
+        Ok(LoadedRegistry {
+            registry,
+            legacy_discarded: None,
+        })
     }
 
-    fn write_registry(&self, registry: &Registry) -> Result<(), PushStoreError> {
+    fn write_registry(&self, registry: &RegistryV2) -> Result<(), PushStoreError> {
         write_json(
             &self.path,
             registry,
@@ -149,21 +331,43 @@ impl PushRegistry {
     }
 }
 
+struct LoadedRegistry {
+    registry: RegistryV2,
+    legacy_discarded: Option<usize>,
+}
+
+fn check_v1_shape(val: &serde_json::Value) -> Option<usize> {
+    let obj = val.as_object()?;
+    if obj.len() != 1 || !obj.contains_key("devices") {
+        return None;
+    }
+    let devices_obj = obj.get("devices")?.as_object()?;
+    for (_cid, device_val) in devices_obj {
+        let dev_obj = device_val.as_object()?;
+        if dev_obj.len() != 5 {
+            return None;
+        }
+        for field in [
+            "device_token",
+            "bundle_id",
+            "environment",
+            "platform",
+            "registered_at",
+        ] {
+            if !dev_obj.get(field).is_some_and(serde_json::Value::is_string) {
+                return None;
+            }
+        }
+    }
+    Some(devices_obj.len())
+}
+
 #[derive(Debug)]
 pub(crate) enum PushStoreError {
     Lock(LockError),
-    Read {
-        path: PathBuf,
-        source: io::Error,
-    },
-    Parse {
-        path: PathBuf,
-        source: serde_json::Error,
-    },
-    InvalidRegistry {
-        path: PathBuf,
-        detail: String,
-    },
+    Read { path: PathBuf, source: io::Error },
+    Parse { path: PathBuf },
+    InvalidRegistry { path: PathBuf, detail: &'static str },
     Write(AtomicWriteError),
     Clock,
 }
@@ -173,7 +377,9 @@ impl fmt::Display for PushStoreError {
         match self {
             Self::Lock(error) => error.fmt(formatter),
             Self::Read { path, source } => write!(formatter, "{}: {source}", path.display()),
-            Self::Parse { path, source } => write!(formatter, "{}: {source}", path.display()),
+            Self::Parse { path } => {
+                write!(formatter, "{}: invalid push registry JSON", path.display())
+            }
             Self::InvalidRegistry { path, detail } => {
                 write!(
                     formatter,
@@ -192,74 +398,105 @@ impl Error for PushStoreError {
         match self {
             Self::Lock(error) => Some(error),
             Self::Read { source, .. } => Some(source),
-            Self::Parse { source, .. } => Some(source),
             Self::Write(error) => Some(error),
-            Self::InvalidRegistry { .. } | Self::Clock => None,
+            Self::Parse { .. } | Self::InvalidRegistry { .. } | Self::Clock => None,
         }
     }
 }
 
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
-struct Registry {
-    devices: BTreeMap<String, StoredDevice>,
+struct RegistryV2 {
+    version: u32,
+    #[serde(default)]
+    devices: Vec<StoredDevice>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-struct StoredDevice {
-    device_token: String,
-    bundle_id: String,
-    environment: PushEnvironment,
-    platform: PushPlatform,
-    registered_at: String,
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "platform", deny_unknown_fields)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StoredDevice {
+    Ios {
+        cid: String,
+        device_token: String,
+        bundle_id: String,
+        environment: PushEnvironment,
+        push_key: PushKey,
+        registered_at: String,
+    },
 }
 
-impl From<StoredDevice> for PushDeviceStatus {
-    fn from(device: StoredDevice) -> Self {
-        Self {
-            bundle_id: device.bundle_id,
-            environment: device.environment,
-            platform: device.platform,
-            registered_at: device.registered_at,
-            device_token: mask_token(&device.device_token),
-        }
-    }
-}
-
-fn validate_registry(path: &Path, registry: &Registry) -> Result<(), PushStoreError> {
-    for (cid, device) in &registry.devices {
-        LinkedDeviceCid::try_from(cid.as_str()).map_err(|_| PushStoreError::InvalidRegistry {
+fn validate_registry_v2(path: &Path, registry: &RegistryV2) -> Result<(), PushStoreError> {
+    if registry.version != 2 {
+        return Err(PushStoreError::InvalidRegistry {
             path: path.to_path_buf(),
-            detail: format!("invalid linked-device CID {cid:?}"),
-        })?;
-        if device.device_token.trim().is_empty() {
-            return Err(invalid_registry(path, "device_token must not be blank"));
+            detail: "version",
+        });
+    }
+
+    let mut seen_pairs = std::collections::HashSet::new();
+    let mut seen_tokens = std::collections::HashMap::new();
+
+    for device in &registry.devices {
+        match device {
+            StoredDevice::Ios {
+                cid,
+                device_token,
+                bundle_id,
+                registered_at,
+                ..
+            } => {
+                LinkedDeviceCid::try_from(cid.as_str()).map_err(|_| {
+                    PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "cid",
+                    }
+                })?;
+                if !device_token_is_valid(device_token) {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "device_token",
+                    });
+                }
+                if bundle_id.trim().is_empty() {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "bundle_id",
+                    });
+                }
+                parse_registered_at(registered_at).ok_or(PushStoreError::InvalidRegistry {
+                    path: path.to_path_buf(),
+                    detail: "registered_at",
+                })?;
+
+                if !seen_pairs.insert((cid.clone(), device_token.clone())) {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "device_token",
+                    });
+                }
+
+                if let Some(existing_cid) = seen_tokens.insert(device_token.clone(), cid.clone())
+                    && existing_cid != *cid
+                {
+                    return Err(PushStoreError::InvalidRegistry {
+                        path: path.to_path_buf(),
+                        detail: "device_token",
+                    });
+                }
+            }
         }
-        if device.bundle_id.trim().is_empty() {
-            return Err(invalid_registry(path, "bundle_id must not be blank"));
-        }
-        parse_registered_at(&device.registered_at).ok_or_else(|| {
-            invalid_registry(
-                path,
-                "registered_at must be an RFC3339 UTC timestamp ending in Z",
-            )
-        })?;
     }
     Ok(())
 }
 
-fn invalid_registry(path: &Path, detail: impl Into<String>) -> PushStoreError {
-    PushStoreError::InvalidRegistry {
-        path: path.to_path_buf(),
-        detail: detail.into(),
-    }
-}
-
 fn now_rfc3339_utc() -> Result<String, PushStoreError> {
-    OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .map_err(|_| PushStoreError::Clock)
+    #[cfg(test)]
+    let now = TEST_CLOCK.with(|c| c.borrow().unwrap_or_else(OffsetDateTime::now_utc));
+    #[cfg(not(test))]
+    let now = OffsetDateTime::now_utc();
+
+    now.format(&Rfc3339).map_err(|_| PushStoreError::Clock)
 }
 
 fn parse_registered_at(value: &str) -> Option<OffsetDateTime> {
@@ -270,32 +507,21 @@ fn parse_registered_at(value: &str) -> Option<OffsetDateTime> {
         .filter(|timestamp| timestamp.offset() == UtcOffset::UTC)
 }
 
-fn mask_token(token: &str) -> String {
-    let suffix = token
-        .chars()
-        .rev()
-        .take(4)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<String>();
-    format!("...{suffix}")
-}
-
 #[cfg(test)]
 mod tests {
     use std::fs;
     use std::sync::{Arc, Barrier};
     use std::thread;
 
-    use serde_json::{Value, json};
     use solstone_core_convey_http::identity::LinkedDeviceCid;
     use tempfile::TempDir;
 
-    use super::{PushEnvironment, PushPlatform, PushRegistry};
+    use super::*;
 
     const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    const TOKEN_1: &str = "0123456789abcdef";
+    const TOKEN_2: &str = "fedcba9876543210";
+    const VALID_KEY: [u8; 32] = [42u8; 32];
 
     fn cid(value: &str) -> LinkedDeviceCid {
         LinkedDeviceCid::try_from(value).expect("fixture cid")
@@ -305,71 +531,54 @@ mod tests {
         PushRegistry::new(root.path())
     }
 
-    fn register(registry: &PushRegistry, cid: &str, token: &str, bundle_id: &str) {
-        registry
-            .register(
-                &super::LinkedDeviceCid::try_from(cid).expect("fixture cid"),
-                token.to_owned(),
-                bundle_id.to_owned(),
-                PushEnvironment::Development,
-                PushPlatform::Ios,
-            )
-            .expect("register device");
+    fn key() -> PushKey {
+        PushKey::from_bytes(VALID_KEY)
     }
 
     #[test]
-    fn register_creates_the_fresh_registry_with_exact_values() {
+    fn concurrent_registers_maintain_distinct_and_deduplicate_same() {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
-        let registry = registry(&root);
-        register(&registry, CID_A, " Token AbCd ", " org.example.push ");
+        set_test_clock(None);
+        let reg = Arc::new(registry(&root));
 
+        // Two different valid tokens for one CID both remain
+        reg.register(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key(),
+        )
+        .unwrap();
+        reg.register(
+            &cid(CID_A),
+            TOKEN_2.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key(),
+        )
+        .unwrap();
+        assert_eq!(reg.device_count().unwrap(), 2);
         assert!(!root.path().join("config/push_devices.json").exists());
-        let value: Value =
-            serde_json::from_slice(&fs::read(registry.path()).expect("registry bytes"))
-                .expect("registry JSON");
-        let row = &value["devices"][CID_A];
-        assert_eq!(row["device_token"], " Token AbCd ");
-        assert_eq!(row["bundle_id"], " org.example.push ");
-        assert_eq!(row["environment"], "development");
-        assert_eq!(row["platform"], "ios");
-        assert!(
-            row["registered_at"]
-                .as_str()
-                .expect("timestamp")
-                .ends_with('Z')
-        );
-    }
 
-    #[test]
-    fn reregister_replaces_same_identity_and_token_steal_drops_old_identity() {
-        let root = TempDir::new_in("/var/tmp").expect("journal root");
-        let registry = registry(&root);
-        register(&registry, CID_A, "first", "org.example.first");
-        register(&registry, CID_A, "second", "org.example.second");
-        assert_eq!(registry.device_count().unwrap(), 1);
-        let value: Value = serde_json::from_slice(&fs::read(registry.path()).unwrap()).unwrap();
-        assert_eq!(value["devices"][CID_A]["device_token"], "second");
-        assert_eq!(value["devices"][CID_A]["bundle_id"], "org.example.second");
-
-        register(&registry, CID_B, "second", "org.example.stolen");
-        assert_eq!(registry.device_count().unwrap(), 1);
-        let value: Value = serde_json::from_slice(&fs::read(registry.path()).unwrap()).unwrap();
-        assert_eq!(value["devices"][CID_A], Value::Null);
-        assert_eq!(value["devices"][CID_B]["device_token"], "second");
-    }
-
-    #[test]
-    fn concurrent_same_identity_registers_leave_one_row() {
-        let root = TempDir::new_in("/var/tmp").expect("journal root");
-        let registry = Arc::new(registry(&root));
+        // Same token across threads collapses to one row
         let barrier = Arc::new(Barrier::new(3));
         let mut workers = Vec::new();
-        for token in ["first", "second"] {
-            let registry = Arc::clone(&registry);
-            let barrier = Arc::clone(&barrier);
+        for _ in 0..2 {
+            let r = Arc::clone(&reg);
+            let b = Arc::clone(&barrier);
             workers.push(thread::spawn(move || {
-                barrier.wait();
-                register(&registry, CID_A, token, "org.example.concurrent");
+                b.wait();
+                let _ = r.register(
+                    &LinkedDeviceCid::try_from(CID_A).unwrap(),
+                    TOKEN_1.to_owned(),
+                    "org.example.concurrent".to_owned(),
+                    PushEnvironment::Development,
+                    PushPlatform::Ios,
+                    PushKey::from_bytes(VALID_KEY),
+                );
             }));
         }
         barrier.wait();
@@ -377,81 +586,70 @@ mod tests {
             worker.join().expect("worker");
         }
 
-        assert_eq!(registry.device_count().unwrap(), 1);
-        let value: Value = serde_json::from_slice(&fs::read(registry.path()).unwrap()).unwrap();
-        assert!(matches!(
-            value["devices"][CID_A]["device_token"].as_str(),
-            Some("first" | "second")
-        ));
+        assert_eq!(reg.device_count().unwrap(), 2);
     }
 
     #[test]
-    fn deregister_is_idempotent_and_persists_across_reopen() {
+    fn deregister_is_token_scoped_and_persists_across_reopen() {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
-        let registry = registry(&root);
-        register(&registry, CID_A, "token", "org.example");
-        let reopened = PushRegistry::new(root.path());
-        assert_eq!(reopened.device_count().unwrap(), 1);
-        assert!(reopened.deregister(&cid(CID_A)).unwrap());
-        assert!(!reopened.deregister(&cid(CID_A)).unwrap());
-    }
-
-    #[test]
-    fn status_masks_exact_token_and_orders_newest_first() {
-        let root = TempDir::new_in("/var/tmp").expect("journal root");
-        let registry = registry(&root);
-        fs::create_dir_all(root.path().join("config")).unwrap();
-        fs::write(
-            registry.path(),
-            serde_json::to_vec(&json!({
-                "devices": {
-                    CID_A: {
-                        "device_token": "first-token",
-                        "bundle_id": "org.example.first",
-                        "environment": "development",
-                        "platform": "ios",
-                        "registered_at": "2026-08-27T10:00:00Z"
-                    },
-                    CID_B: {
-                        "device_token": " Token AbCd ",
-                        "bundle_id": " org.example.latest ",
-                        "environment": "production",
-                        "platform": "ios",
-                        "registered_at": "2026-08-27T11:00:00Z"
-                    }
-                }
-            }))
-            .unwrap(),
+        set_test_clock(None);
+        let reg = registry(&root);
+        reg.register(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key(),
         )
         .unwrap();
+        reg.register(
+            &cid(CID_A),
+            TOKEN_2.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key(),
+        )
+        .unwrap();
+        assert_eq!(reg.device_count().unwrap(), 2);
 
-        let status = registry.status().unwrap();
-        assert_eq!(status.len(), 2);
-        assert_eq!(status[0].bundle_id, " org.example.latest ");
-        assert_eq!(status[0].device_token, "...bCd ");
-        assert_eq!(status[1].device_token, "...oken");
+        let reopened = PushRegistry::new(root.path());
+        assert!(
+            reopened
+                .deregister(&cid(CID_A), PushPlatform::Ios, TOKEN_1)
+                .unwrap()
+        );
+        assert_eq!(reopened.device_count().unwrap(), 1);
+        assert!(
+            !reopened
+                .deregister(&cid(CID_A), PushPlatform::Ios, TOKEN_1)
+                .unwrap()
+        );
+        assert_eq!(reopened.device_count().unwrap(), 1);
     }
 
     #[test]
-    fn malformed_registry_is_not_treated_as_empty_or_overwritten() {
+    fn malformed_file_is_unavailable_and_unmodified() {
         let root = TempDir::new_in("/var/tmp").expect("journal root");
-        let registry = registry(&root);
+        set_test_clock(None);
+        let reg = registry(&root);
         fs::create_dir_all(root.path().join("config")).unwrap();
-        fs::write(registry.path(), b"not JSON").unwrap();
-        let before = fs::read(registry.path()).unwrap();
+        fs::write(reg.path(), b"not JSON").unwrap();
+        let before = fs::read(reg.path()).unwrap();
 
-        assert!(registry.status().is_err());
+        assert!(reg.status().is_err());
         assert!(
-            registry
-                .register(
-                    &cid(CID_A),
-                    "token".to_owned(),
-                    "org.example".to_owned(),
-                    PushEnvironment::Development,
-                    PushPlatform::Ios,
-                )
-                .is_err()
+            reg.register(
+                &cid(CID_A),
+                TOKEN_1.to_owned(),
+                "org.example".to_owned(),
+                PushEnvironment::Development,
+                PushPlatform::Ios,
+                key(),
+            )
+            .is_err()
         );
-        assert_eq!(fs::read(registry.path()).unwrap(), before);
+        assert_eq!(fs::read(reg.path()).unwrap(), before);
     }
 }

@@ -24,7 +24,7 @@ impl ReasonCode {
 }
 
 /// The APNS environment declared by a device registration.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PushEnvironment {
     Development,
@@ -42,7 +42,7 @@ impl PushEnvironment {
 }
 
 /// The device platform accepted by the current push contract.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PushPlatform {
     Ios,
@@ -54,30 +54,37 @@ impl PushPlatform {
     }
 }
 
-/// The display-safe representation of one registered device.
+/// Validate that a device token has even length in 16..=200 and lowercase hex chars.
+pub(crate) fn device_token_is_valid(token: &str) -> bool {
+    let len = token.len();
+    if !(16..=200).contains(&len) || !len.is_multiple_of(2) {
+        return false;
+    }
+    token
+        .bytes()
+        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// Build the masked target string (...last4).
+pub(crate) fn mask_target(token: &str) -> String {
+    let suffix = &token[token.len().saturating_sub(4)..];
+    format!("...{suffix}")
+}
+
+/// The public status representation of one registered device.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct PushDeviceStatus {
-    pub bundle_id: String,
-    pub environment: PushEnvironment,
+pub(crate) struct PushDeviceItem {
     pub platform: PushPlatform,
+    pub target: String,
+    pub environment: PushEnvironment,
     pub registered_at: String,
-    pub device_token: String,
-}
-
-#[derive(Serialize)]
-pub(crate) struct RegisterResponse {
-    pub registered: bool,
-}
-
-#[derive(Serialize)]
-pub(crate) struct DeregisterResponse {
-    pub removed: bool,
 }
 
 #[derive(Serialize)]
 pub(crate) struct StatusResponse {
-    pub count: usize,
-    pub devices: Vec<PushDeviceStatus>,
+    pub items: Vec<PushDeviceItem>,
+    pub total: usize,
+    pub cursor: Option<String>,
 }
 
 #[derive(Serialize)]
