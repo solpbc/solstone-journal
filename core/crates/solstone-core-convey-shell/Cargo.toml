@@ -89,6 +89,11 @@ path = "tests/network_corpus.rs"
 name = "shell_chrome_dom"
 path = "tests/shell_chrome_dom.rs"
 
+# Cargo auto-discovery is disabled; this custom Node target checks the sun-arc engine's pure frame math.
+[[test]]
+name = "sunarc_frame"
+path = "tests/sunarc_frame.rs"
+
 # Cargo auto-discovery is disabled; this custom Node target drives global shell action handlers.
 [[test]]
 name = "shell_global_facet_contract_dom"

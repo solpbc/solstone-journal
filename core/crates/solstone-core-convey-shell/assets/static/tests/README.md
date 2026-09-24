@@ -12,7 +12,7 @@ Open these HTML files directly in a browser; each assertion reports pass/fail in
 - `quiet-notifs-disclosure.html`: manual, not CI-gated
 - `relative-time.html`
 - `status-pane-label.html`
-- `sunarc.html`
+- `sunarc.html`: the sun arc in a real document (mount, timers, listeners, the ground it paints). Its pure day/night math also runs without a browser in `make ci-full`, as `tests/sunarc_frame.js` under plain Node
 - `support.html`: exact local report card, editable recent lines, and fragment-only handoff
 - `surface-state.html`
 - `ws-listen.html`
