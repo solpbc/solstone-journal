@@ -4404,6 +4404,10 @@ pub const SERVICE_USAGE: &str = concat!(
     "       journal down                           (stop)\n",
 );
 
+/// The hidden service verb the Windows post-update hook runs.
+#[doc(hidden)]
+pub const SERVICE_RESUME_AFTER_UPDATE: &str = "__resume-after-update";
+
 /// A parsed service lifecycle action. This pure grammar is not executable.
 #[doc(hidden)]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -4428,6 +4432,9 @@ pub enum ServiceAction {
     },
     Up,
     Down,
+    /// Hidden: started by the Windows build's post-update and post-install
+    /// hook to put back the resident an update took down. Never in usage text.
+    ResumeAfterUpdate,
 }
 
 /// The hidden identity fields carried from `journal setup` to service rendering.
@@ -4751,6 +4758,8 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
         Some(ServiceAction::Status)
     } else if command == OsStr::new("down") {
         Some(ServiceAction::Down)
+    } else if command == OsStr::new(SERVICE_RESUME_AFTER_UPDATE) && rest.is_empty() {
+        Some(ServiceAction::ResumeAfterUpdate)
     } else {
         None
     };
@@ -5926,6 +5935,15 @@ mod tests {
             parse_service_args(&args(&["restart", "ignored", "--if-installed"])),
             ServiceParseOutcome::Dispatch(ServiceAction::Restart { if_installed: true })
         );
+        assert_eq!(
+            parse_service_args(&args(&["__resume-after-update"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::ResumeAfterUpdate)
+        );
+        assert!(matches!(
+            parse_service_args(&args(&["__resume-after-update", "extra"])),
+            ServiceParseOutcome::Exit { code: 1, .. }
+        ));
+        assert!(!SERVICE_USAGE.contains(SERVICE_RESUME_AFTER_UPDATE));
         let ServiceParseOutcome::Exit {
             code,
             stdout,

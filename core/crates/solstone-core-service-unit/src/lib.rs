@@ -20,10 +20,13 @@ pub use systemd::{
     LAUNCHD_DEFAULT_EXIT_TIMEOUT_SECONDS, SERVICE_STOP_TIMEOUT_SECONDS, render_systemd_unit,
     systemd_unit_port,
 };
-pub use windows_task::{WindowsTaskInput, render_windows_task_xml};
+pub use windows_task::{
+    WINDOWS_TASK_RECOVERY_INTERVAL, WindowsTaskInput, WindowsTaskProfile, render_windows_task_xml,
+};
 
 pub use windows_action::{
-    WindowsServiceAction, decode_windows_task_arguments, encode_windows_task_arguments,
+    WINDOWS_COMMAND_LINE_LIMIT, WindowsServiceAction, decode_windows_task_arguments,
+    encode_windows_task_arguments, powershell_encoded_length, powershell_wire_script,
 };
 
 pub use windows_task_readback::{

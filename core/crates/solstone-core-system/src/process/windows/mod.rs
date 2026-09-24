@@ -35,6 +35,30 @@ mod command_line;
 mod environment;
 #[cfg(windows)]
 pub use environment::launch_only_environment_names;
+
+/// Keep this process's standard handles out of every child it starts next.
+///
+/// A process whose own output is read to its end by a parent (Velopack reads
+/// its hook's output) must not hand those pipes to a longer-lived child: the
+/// parent would wait on a process it never started. A missing or invalid
+/// handle only makes the call fail, which leaves nothing to inherit anyway.
+#[cfg(windows)]
+pub fn stop_standard_handle_inheritance() {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::{HANDLE_FLAG_INHERIT, SetHandleInformation};
+    for handle in [
+        std::io::stdin().as_raw_handle(),
+        std::io::stdout().as_raw_handle(),
+        std::io::stderr().as_raw_handle(),
+    ] {
+        #[allow(unsafe_code)]
+        // SAFETY: clears one flag on this process's own standard handle; the
+        // call reads no caller memory.
+        unsafe {
+            SetHandleInformation(handle.cast(), HANDLE_FLAG_INHERIT, 0);
+        }
+    }
+}
 #[cfg(windows)]
 mod forward;
 #[cfg(any(windows, test))]

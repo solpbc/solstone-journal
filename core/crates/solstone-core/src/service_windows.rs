@@ -17,8 +17,9 @@ use solstone_core_installation_identity::{
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
-    WindowsServiceAction, WindowsTaskDefinition, WindowsTaskInput, encode_windows_task_xml,
-    parse_windows_task_xml, render_windows_task_xml, windows_service_update_plan,
+    WindowsServiceAction, WindowsTaskDefinition, WindowsTaskInput, WindowsTaskProfile,
+    encode_windows_task_xml, parse_windows_task_xml, render_windows_task_xml,
+    windows_service_update_plan,
 };
 use solstone_core_system::lifecycle::wait_ready;
 mod native_process;
@@ -60,6 +61,7 @@ pub(crate) fn run(action: ServiceAction) -> ExitCode {
         ServiceAction::Status => run_status(),
         ServiceAction::Up => run_up(),
         ServiceAction::Down => run_down(),
+        ServiceAction::ResumeAfterUpdate => run_resume_after_update(),
         ServiceAction::Logs { .. } => unreachable!("logs handled by service_logs"),
     }
 }
@@ -233,11 +235,15 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         journal: journal_display.to_owned(),
         guard: ctx.guard.clone(),
     };
+    let enabled = registered.as_ref().is_none_or(|definition| {
+        registered_run_intent(ctx, definition, !before.instances.is_empty())
+    });
     let xml = render_windows_task_xml(&WindowsTaskInput {
         principal_sid: &ctx.sid,
         command,
         action: &action,
         working_directory: journal_display,
+        enabled,
     })
     .map_err(task_error)?;
     // The Scheduler accepts an update only against an idle task, so a
@@ -251,8 +257,17 @@ fn install_task(ctx: &ServiceContext, requested_port: Option<u16>) -> Result<(),
         let current = if plan.stop_before_update {
             stop_task(ctx)?;
             let idle = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
-            validate_task(ctx, &idle)?;
-            if !same_task_profile(&before, &idle) {
+            let idle_definition = validate_task(ctx, &idle)?;
+            // The stop records itself as a disabled registration, which is the
+            // only difference the update may find; anything else is a change
+            // someone else made.
+            if !same_task_security(&before, &idle)
+                || registered.as_ref().is_none_or(|definition| {
+                    definition.action != idle_definition.action
+                        || definition.profile != idle_definition.profile
+                        || idle_definition.enabled
+                })
+            {
                 // The owner is left with a stopped service and no update, so
                 // the line says both, in the same words the rest of this
                 // surface uses for the thing that was stopped.
@@ -340,11 +355,67 @@ struct RetainedTaskRun {
 }
 
 fn same_task_profile(left: &Snapshot, right: &Snapshot) -> bool {
+    same_task_security(left, right) && left.xml == right.xml
+}
+
+fn same_task_security(left: &Snapshot, right: &Snapshot) -> bool {
     left.present
         && right.present
-        && left.xml == right.xml
         && left.task_sddl == right.task_sddl
         && left.folder_sddl == right.folder_sddl
+}
+
+/// Whether the owner wants this registration running, read before it is
+/// replaced.
+///
+/// A current profile carries the answer: `service stop` disables it. A running
+/// task is wanted by definition. A legacy (logon-only) registration came from
+/// a build whose stop left the task enabled, so an idle legacy task is only
+/// wanted if its resident was taken down rather than stopped: an orderly stop
+/// or sign-out clears the supervisor's lifecycle markers, while an update or a
+/// kill leaves them on disk with no live process behind them.
+fn registered_run_intent(
+    ctx: &ServiceContext,
+    definition: &WindowsTaskDefinition,
+    running: bool,
+) -> bool {
+    running
+        || (definition.enabled
+            && (definition.profile == WindowsTaskProfile::Current
+                || resident_was_taken_down(&ctx.journal)))
+}
+
+fn resident_was_taken_down(journal: &Path) -> bool {
+    let health = journal.join("health");
+    [
+        "supervisor.ready",
+        "supervisor.pid",
+        "supervisor.process_instance",
+    ]
+    .iter()
+    .any(|marker| health.join(marker).exists())
+        && !solstone_core_system::lifecycle::readiness_is_valid(journal)
+}
+
+/// Record the owner's run intent on the registration and return its readback.
+fn set_task_enabled(
+    ctx: &ServiceContext,
+    before: &Snapshot,
+    enabled: bool,
+    deadline: Instant,
+) -> Result<Snapshot, ExitCode> {
+    let after = task_scheduler::execute_until(
+        &ctx.sid,
+        &ctx.guard.id.as_hex(),
+        Operation::SetEnabled { before, enabled },
+        deadline,
+    )
+    .map_err(task_error)?;
+    let definition = validate_task(ctx, &after)?;
+    if definition.enabled != enabled || !same_task_security(before, &after) {
+        return Err(task_error("service task changed while recording its state"));
+    }
+    Ok(after)
 }
 
 fn retain_task_run(
@@ -428,8 +499,14 @@ fn retain_task_run(
 
 fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
     let deadline = Instant::now() + READY_TIMEOUT;
-    let before = inspect_task(ctx, deadline)?;
-    validate_task(ctx, &before)?;
+    let mut before = inspect_task(ctx, deadline)?;
+    if !validate_task(ctx, &before)?.enabled {
+        // A stopped service is a disabled registration; starting it is the
+        // owner taking that back, so every trigger resumes with it.
+        set_task_enabled(ctx, &before, true, deadline)?;
+        before = inspect_task(ctx, deadline)?;
+        validate_task(ctx, &before)?;
+    }
     let selected_guid = match before.instances.as_slice() {
         [] => {
             let started = task_scheduler::execute_until(
@@ -464,13 +541,19 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
             "service task is absent and its forwarder cleanup cannot be verified",
         ));
     }
-    validate_task(ctx, &before)?;
+    // Disable first. The stop is the owner saying "stay stopped": recorded on
+    // the registration, no trigger (sign-in or the recovery repetition)
+    // starts it again until `service start`, and none can race the stop below.
+    let before = if validate_task(ctx, &before)?.enabled {
+        set_task_enabled(ctx, &before, false, deadline)?
+    } else {
+        before
+    };
     let selected = match before.instances.as_slice() {
         [instance] => instance,
         [] => {
-            return Err(task_error(
-                "scheduler is idle and its forwarder cleanup cannot be verified",
-            ));
+            println!("background service stopped");
+            return Ok(());
         }
         _ => return Err(task_error("cannot identify one running service task")),
     };
@@ -527,7 +610,7 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
             if !same_task_profile(&before, &after) {
                 return Err(task_error("service task changed during stop"));
             }
-            if after.instances.is_empty() && after.state == Some(3) {
+            if after.instances.is_empty() && after.state == Some(1) {
                 println!("background service stopped");
                 return Ok(());
             }
@@ -724,16 +807,91 @@ fn run_status() -> ExitCode {
         println!("background service is not installed");
         return ExitCode::from(3);
     }
-    if let Err(code) = validate_task(&ctx, &snapshot) {
-        return code;
-    }
+    let definition = match validate_task(&ctx, &snapshot) {
+        Ok(definition) => definition,
+        Err(code) => return code,
+    };
     let ready = solstone_core_system::lifecycle::readiness_is_valid(&ctx.journal);
     println!("Task: {}", ctx.task_path);
     println!(
         "Supervisor readiness: {}",
         if ready { "ready" } else { "not ready" }
     );
+    if !definition.enabled {
+        println!("{STOPPED_STATUS_COPY}");
+    }
     ExitCode::SUCCESS
+}
+
+/// The one status line a stopped service adds: after `service stop` it stays
+/// stopped through sign-ins and restarts, so the owner is told how it resumes.
+const STOPPED_STATUS_COPY: &str = "Stopped: your journal stays off until you start it again.";
+
+/// The step an update or reinstall owes the resident it took down.
+///
+/// 🔴 Velopack stops every process under the app directory to apply an update,
+/// and a Setup run over an existing install does the same, and nothing started
+/// the resident again: the task sat Ready with stale lifecycle markers until
+/// the owner ran `journal service start` (measured on Windows 11 after
+/// `Update.exe apply` and after a Setup over an installed build). Velopack
+/// runs its hooks from the *new* build, which starts this action detached.
+/// It moves the registration to the current profile (re-registering an
+/// already-current one changes nothing) and starts the service if the owner
+/// wants it running. A service the owner stopped stays stopped.
+fn run_resume_after_update() -> ExitCode {
+    let Ok(ctx) = resolve_context() else {
+        // A first install has no binding yet: setup registers the service.
+        return ExitCode::SUCCESS;
+    };
+    let outcome = resume_after_update(&ctx);
+    record_after_update(
+        &ctx,
+        match &outcome {
+            Ok(outcome) => *outcome,
+            Err(_) => "failed",
+        },
+    );
+    match outcome {
+        Ok(_) => ExitCode::SUCCESS,
+        Err(code) => code,
+    }
+}
+
+fn resume_after_update(ctx: &ServiceContext) -> Result<&'static str, ExitCode> {
+    if !inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?.present {
+        return Ok("not-installed");
+    }
+    install_task(ctx, None)?;
+    let after = inspect_task(ctx, Instant::now() + STOP_TIMEOUT)?;
+    if !validate_task(ctx, &after)?.enabled {
+        return Ok("stopped");
+    }
+    start_task(ctx)?;
+    Ok("started")
+}
+
+/// Nobody reads a detached hook's output, so its outcome is kept beside the
+/// saved task profile, where support and the Windows proofs can find it.
+fn record_after_update(ctx: &ServiceContext, outcome: &str) {
+    let provider = ctx.owner.path();
+    let Some(directory) = provider.ancestors().nth(2) else {
+        return;
+    };
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let record = serde_json::json!({
+        "schema": "solstone-windows-after-update-v1",
+        "outcome": outcome,
+        "at_unix_seconds": at,
+        "version": env!("CARGO_PKG_VERSION"),
+    });
+    let _ = fs::write(
+        directory
+            .join("journal-service")
+            .join(format!("{}.after-update.json", ctx.guard.namespace)),
+        record.to_string(),
+    );
 }
 
 /// Recognize the exact installed action before logger/runtime initialization.

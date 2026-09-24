@@ -359,6 +359,48 @@ fn is_segment_directory(value: &str) -> bool {
     )
 }
 
+/// A speakers-analyze generation write that failed.
+///
+/// 🔴 A full disk is not a broken installation. Under disk pressure the
+/// supervisor's restart used to refuse with "installation is incomplete …
+/// reinstall", measured on Windows with the owner's quota filled: freeing space
+/// and starting the journal was the whole repair, and reinstalling would have
+/// fixed nothing. Out-of-space (including a disk quota) gets its own copy;
+/// every other write failure keeps the installation remediation.
+pub(crate) fn generation_write_error<E>(step: &str, error: E) -> CliError
+where
+    E: std::error::Error + 'static,
+{
+    let detail = format!("{step}: {error}");
+    if is_out_of_space(&error) {
+        CliError::SpeakersInstallation {
+            message: format!("{DISK_FULL_COPY} ({detail}). Repair: {DISK_FULL_REPAIR}."),
+        }
+    } else {
+        installation_error(detail)
+    }
+}
+
+pub(crate) const DISK_FULL_COPY: &str = "Your journal has run out of space on its disk";
+pub(crate) const DISK_FULL_REPAIR: &str =
+    "free up space on that disk, then start your journal again";
+
+fn is_out_of_space(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut current = Some(error);
+    while let Some(error) = current {
+        if let Some(io) = error.downcast_ref::<std::io::Error>()
+            && matches!(
+                io.kind(),
+                std::io::ErrorKind::StorageFull | std::io::ErrorKind::QuotaExceeded
+            )
+        {
+            return true;
+        }
+        current = error.source();
+    }
+    false
+}
+
 pub(crate) fn installation_error(detail: impl Into<String>) -> CliError {
     CliError::SpeakersInstallation {
         message: format!(
@@ -394,6 +436,75 @@ mod tests {
 
     fn empty_env(_: &str) -> Option<String> {
         None
+    }
+
+    #[test]
+    fn a_full_disk_is_named_as_one_and_never_sent_to_reinstall() {
+        for kind in [
+            std::io::ErrorKind::StorageFull,
+            std::io::ErrorKind::QuotaExceeded,
+        ] {
+            let error = super::generation_write_error(
+                "generation-record",
+                std::io::Error::new(kind, "There is not enough space on the disk."),
+            );
+            let message = error.message().unwrap();
+            assert!(
+                message.starts_with(
+                    "Your journal has run out of space on its disk (generation-record: "
+                )
+            );
+            assert!(
+                message.ends_with(
+                    "Repair: free up space on that disk, then start your journal again."
+                )
+            );
+            assert!(!message.contains("reinstall"), "{message}");
+            assert_eq!(error.exit_code(), 78);
+        }
+    }
+
+    #[test]
+    fn a_full_disk_is_found_behind_a_wrapping_error() {
+        #[derive(Debug)]
+        struct Wrapped(std::io::Error);
+        impl std::fmt::Display for Wrapped {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(
+                    formatter,
+                    "C:\\journal\\install-generation.json: {}",
+                    self.0
+                )
+            }
+        }
+        impl std::error::Error for Wrapped {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        let error = super::generation_write_error(
+            "generation-record",
+            Wrapped(std::io::Error::from(std::io::ErrorKind::StorageFull)),
+        );
+        assert!(
+            error
+                .message()
+                .unwrap()
+                .starts_with("Your journal has run out of space on its disk")
+        );
+    }
+
+    #[test]
+    fn any_other_generation_write_failure_keeps_the_installation_repair() {
+        let error = super::generation_write_error(
+            "generation-token",
+            std::io::Error::from(std::io::ErrorKind::PermissionDenied),
+        );
+        let message = error.message().unwrap();
+        assert!(
+            message.starts_with("Speakers-analyze installation is incomplete (generation-token: ")
+        );
+        assert!(message.contains("Repair: reinstall"));
     }
 
     #[test]

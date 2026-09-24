@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - in Chrome and possibly other browsers, connecting an agent stopped after you entered the pairing code and never finished. it now finishes and returns you to the agent.
 - your journal labels every tool it offers agents as read-only again. agents that look for that label can see that these tools only read.
 - in a journal with no transcripts yet, an agent that asks for transcripts now gets an empty list instead of an error.
+- if your journal runs out of disk space, the message now says it's out of space and to free some up, instead of saying its installation is incomplete and needs reinstalling.
 
 ## [2.0.17] - 2026-09-24
 

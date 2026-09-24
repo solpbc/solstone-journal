@@ -16,6 +16,12 @@ fn main() -> ExitCode {
         // arguments to the journal's existing OsString boundary below.
         velopack::VelopackApp::build()
             .set_auto_apply_on_startup(false)
+            .on_after_install_fast_callback(|_| {
+                solstone_core_journal_cli::resume_service_after_update();
+            })
+            .on_after_update_fast_callback(|_| {
+                solstone_core_journal_cli::resume_service_after_update();
+            })
             .run();
     }
     install_logger();

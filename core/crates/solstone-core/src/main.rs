@@ -7009,6 +7009,29 @@ fn eprint_journal_path_error(error: JournalPathError) {
 
 #[cfg(test)]
 mod tests {
+
+    /// The Windows Task Scheduler worker travels as one `-EncodedCommand`. The
+    /// full `powershell.exe` path and flags ride along, so the encoded script
+    /// keeps a margin under the command-line limit, and the wire form is only
+    /// sound for a script with no here-strings or block comments.
+    #[test]
+    fn the_windows_task_scheduler_worker_fits_one_command_line() {
+        let source = include_str!("service_windows/task_scheduler.ps1");
+        for construct in ["@'", "'@", "@\"", "\"@", "<#", "#>"] {
+            assert!(
+                !source.contains(construct),
+                "wire form cannot carry {construct}"
+            );
+        }
+        let wire = solstone_core_service_unit::powershell_wire_script(source);
+        let encoded = solstone_core_service_unit::powershell_encoded_length(&wire);
+        assert!(
+            encoded + 1_024 < solstone_core_service_unit::WINDOWS_COMMAND_LINE_LIMIT,
+            "encoded worker is {encoded} characters"
+        );
+        assert!(wire.contains("$task.Enabled = ($operation -ceq 'enable')"));
+        assert!(!wire.lines().any(|line| line.starts_with('#')));
+    }
     use std::io;
     use std::path::PathBuf;
     use std::time::Duration;

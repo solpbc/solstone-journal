@@ -85,6 +85,84 @@ impl ProcessSpawner for RealProcessSpawner {
     }
 }
 
+/// Put back the resident that a Velopack update or reinstall took down.
+///
+/// 🔴 Velopack stops every process under the install root to apply an update,
+/// and a Setup run over an installed build does the same; nothing started the
+/// resident again, so it stayed down until the owner ran `journal service
+/// start`. Velopack runs this hook from the *new* build, inside a bounded hook
+/// window, and then sweeps the install root once more: a child started from
+/// the root is killed with it (measured on Windows 11, `Update.exe apply`). So
+/// the hook starts Windows PowerShell, which lives outside the root, to wait
+/// until nothing runs from the root any more and only then run the hidden
+/// `service __resume-after-update` step. That step decides: a service the
+/// owner stopped stays stopped. The task's recovery trigger is the backstop.
+#[cfg(windows)]
+pub fn resume_service_after_update() {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let Ok(journal) = std::env::current_exe() else {
+        return;
+    };
+    // <root>\current\bin\journal.exe
+    let Some(root) = journal.ancestors().nth(3) else {
+        return;
+    };
+    let (Some(journal), Some(root)) = (journal.to_str(), root.to_str()) else {
+        return;
+    };
+    let system_root = std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into());
+    let powershell = std::path::Path::new(&system_root)
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    // The updater reads this hook's output to its end. A child that inherited
+    // the same pipes would hold them open, and the updater would wait out its
+    // hook timeout on a process it never started.
+    solstone_core_system::process::stop_standard_handle_inheritance();
+    let mut command = std::process::Command::new(powershell);
+    command
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            &resume_after_update_script(root, journal),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        // A console with no window: the step and its own Task Scheduler
+        // worker inherit it instead of opening one in front of the owner.
+        .creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    // Launch-only variables are admitted once, by the process they were
+    // minted for; an inherited one makes the new process refuse to start.
+    for name in solstone_core_system::process::launch_only_environment_names() {
+        command.env_remove(name);
+    }
+    let _ = command.spawn();
+}
+
+/// The waiter the post-update hook hands to Windows PowerShell. Paths travel
+/// as single-quoted literals (a quote doubled), which PowerShell never
+/// expands, and a Windows path cannot contain a double quote.
+#[cfg(any(windows, test))]
+fn resume_after_update_script(root: &str, journal: &str) -> String {
+    let literal = |value: &str| format!("'{}'", value.replace('\'', "''"));
+    format!(
+        "$root={}; $journal={}; $deadline=[DateTime]::UtcNow.AddMinutes(2); \
+         do {{ Start-Sleep -Seconds 2; $busy=@(Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase) }}).Count }} \
+         while ($busy -gt 0 -and [DateTime]::UtcNow -lt $deadline); \
+         & $journal service __resume-after-update; exit $LASTEXITCODE",
+        literal(root),
+        literal(journal)
+    )
+}
+
 /// Run the same-device journal command surface as its own process identity.
 #[must_use]
 pub fn run(args: Vec<OsString>) -> ExitCode {
@@ -355,6 +433,21 @@ fn dispatch_native_process(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_post_update_waiter_carries_paths_as_literals_and_runs_the_hidden_step() {
+        let script = resume_after_update_script(
+            "C:\\Users\\O'Brien $x\\AppData\\Local\\Journal",
+            "C:\\Users\\O'Brien $x\\AppData\\Local\\Journal\\current\\bin\\journal.exe",
+        );
+        assert!(script.starts_with("$root='C:\\Users\\O''Brien $x\\AppData\\Local\\Journal'; "));
+        assert!(script.contains(
+            "$journal='C:\\Users\\O''Brien $x\\AppData\\Local\\Journal\\current\\bin\\journal.exe'; "
+        ));
+        assert!(script.contains("StartsWith($root + '\\', [StringComparison]::OrdinalIgnoreCase)"));
+        assert!(script.ends_with("& $journal service __resume-after-update; exit $LASTEXITCODE"));
+        assert!(!script.contains('"'));
+    }
     use crate::manifest::{
         JOURNAL_COMMAND_COUNT, JOURNAL_HOST_COMMAND_COUNT, all_leaf_paths, process_command_tokens,
     };

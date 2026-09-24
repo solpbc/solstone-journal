@@ -160,7 +160,7 @@ try {
     $folderPath = '\solstone-' + $ownerSid
     $name = [string]$request.installation_id
     $operation = [string]$request.operation
-    if ($operation -cnotin @('inspect', 'create', 'update', 'run', 'delete')) { throw 'task-request-operation' }
+    if ($operation -cnotin @('inspect', 'create', 'update', 'run', 'delete', 'enable', 'disable')) { throw 'task-request-operation' }
     $service = New-Object -ComObject 'Schedule.Service'
     $service.Connect()
     try { $folder = $service.GetFolder($folderPath) }
@@ -191,19 +191,29 @@ try {
         $task = $folder.GetTask($name)
         if ($operation -ceq 'run') {
             $runInstance = Read-Instance ($task.Run($null))
+        } elseif ($operation -ceq 'enable' -or $operation -ceq 'disable') {
+            # The owner's run intent. A running instance is left running: the
+            # caller stops it through the resident, never through the scheduler.
+            $task.Enabled = ($operation -ceq 'enable')
         } elseif ($operation -ceq 'update') {
-            if ($before.instances.Count -ne 0 -or $before.state -ne 3) { throw 'task-not-idle-before-update' }
+            # Idle is Ready (3), or Disabled (1) when the owner stopped the service.
+            if ($before.instances.Count -ne 0 -or ($before.state -ne 3 -and $before.state -ne 1)) { throw 'task-not-idle-before-update' }
             # TASK_UPDATE | TASK_DONT_ADD_PRINCIPAL_ACE, after caller profile
             # verification and this exact XML + ACL recheck. Preserve the ACL.
             $null = $folder.RegisterTask($name, [string]$request.xml, 20, $ownerSid, $null, 3, $before.task_sddl)
         } elseif ($operation -ceq 'delete') {
-            if ($before.instances.Count -ne 0 -or $before.state -ne 3) { throw 'task-not-idle-before-delete' }
+            if ($before.instances.Count -ne 0 -or ($before.state -ne 3 -and $before.state -ne 1)) { throw 'task-not-idle-before-delete' }
             $folder.DeleteTask($name, 0)
         }
     }
     $after = Read-Snapshot $folder $name $ownerSid
     if ($operation -ceq 'delete' -and $after.present) { throw 'task-delete-not-observed' }
-    if (($operation -ceq 'create' -or $operation -ceq 'update' -or $operation -ceq 'run') -and !$after.present) { throw 'task-mutation-not-observed' }
+    if (($operation -cin @('create', 'update', 'run', 'enable', 'disable')) -and !$after.present) { throw 'task-mutation-not-observed' }
+    # A disabled task that still has a running instance reads as Running (4),
+    # so the intent is read from the registration, not from the state.
+    if ($operation -ceq 'enable' -or $operation -ceq 'disable') {
+        if ([bool]($folder.GetTask($name).Enabled) -ne ($operation -ceq 'enable')) { throw ('task-' + $operation + '-not-observed') }
+    }
     $after.run_instance = $runInstance
     $after.schema = 'solstone-windows-task-operation-v1'
     $after | ConvertTo-Json -Compress -Depth 6

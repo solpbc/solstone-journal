@@ -178,6 +178,36 @@ pub fn decode_windows_task_arguments(value: &str) -> Result<Vec<String>, &'stati
     Ok(result)
 }
 
+/// The longest command line `CreateProcessW` accepts, in UTF-16 units.
+pub const WINDOWS_COMMAND_LINE_LIMIT: usize = 32_767;
+
+/// A PowerShell script as it travels on a command line: full-line comments
+/// and indentation dropped, code unchanged.
+///
+/// 🔴 The Task Scheduler worker ships its whole script as a base64 UTF-16
+/// `-EncodedCommand`, so every commented line in the source costs about 2.7
+/// times its length on the command line. The script had grown to within a
+/// few hundred characters of [`WINDOWS_COMMAND_LINE_LIMIT`], and one more
+/// operation pushed it over: every `journal service` command then failed with
+/// "The filename or extension is too long" (os error 206), measured on
+/// Windows 11. Keep the reasoning in the source; send only the code. Valid
+/// only for scripts with no here-strings or block comments, which the caller
+/// asserts.
+pub fn powershell_wire_script(source: &str) -> String {
+    source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Length of `powershell_wire_script(source)` once base64-encoded as UTF-16LE,
+/// the form `-EncodedCommand` takes.
+pub fn powershell_encoded_length(wire: &str) -> usize {
+    wire.encode_utf16().count().saturating_mul(2).div_ceil(3) * 4
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

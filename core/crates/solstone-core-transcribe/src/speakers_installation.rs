@@ -24,7 +24,7 @@ use solstone_core_system::process::{
     current_process_identity,
 };
 
-use crate::args::{CliError, installation_error};
+use crate::args::{CliError, generation_write_error, installation_error};
 #[cfg(not(windows))]
 use crate::model_assets::resolve_model_asset_path;
 use crate::resolve_model_asset;
@@ -231,7 +231,7 @@ fn enter_impl(
     let id = random_hex()?;
     let token = random_hex()?;
     fs::write(lease.path(), &token)
-        .map_err(|error| installation_error(format!("generation-token: {error}")))?;
+        .map_err(|error| generation_write_error("generation-token", error))?;
     let fd = duplicate_for_inheritance(&lease)?;
     let record = json!({
         "schema": INSTALL_GENERATION_SCHEMA,
@@ -241,7 +241,7 @@ fn enter_impl(
     });
     if let Err(error) = write_json(&generation_path, &record, OWNER_WRITE_OPTIONS) {
         close_inherited_fd(fd);
-        return Err(installation_error(format!("generation-record: {error}")));
+        return Err(generation_write_error("generation-record", error));
     }
     let _ = write_owner_record(journal, role, &id);
     Ok(SpeakersAnalyzeGeneration {
@@ -302,7 +302,7 @@ pub fn enter_speakers_analyze_generation(
     }
     let lease_path = generation_lock_path(journal);
     fs::create_dir_all(lease_path.parent().expect("generation lock has parent"))
-        .map_err(|error| installation_error(format!("generation-directory: {error}")))?;
+        .map_err(|error| generation_write_error("generation-directory", error))?;
     let mut file = fs::OpenOptions::new()
         .read(true)
         .write(true)
@@ -314,7 +314,7 @@ pub fn enter_speakers_analyze_generation(
             if error.raw_os_error() == Some(32) {
                 generation_contention_error(journal)
             } else {
-                installation_error(format!("generation-open: {error}"))
+                generation_write_error("generation-open", error)
             }
         })?;
     let attributes = file
@@ -332,7 +332,7 @@ pub fn enter_speakers_analyze_generation(
     file.set_len(0)
         .and_then(|_| file.write_all(token.as_bytes()))
         .and_then(|_| file.sync_all())
-        .map_err(|error| installation_error(format!("generation-token: {error}")))?;
+        .map_err(|error| generation_write_error("generation-token", error))?;
     let grant =
         ReadFileGrant::try_clone_read_only(ReadFileGrantKind::SpeakersAnalyzeGeneration, &file)
             .map_err(|error| installation_error(format!("generation-capability: {error}")))?;
@@ -343,7 +343,7 @@ pub fn enter_speakers_analyze_generation(
         }),
         OWNER_WRITE_OPTIONS,
     )
-    .map_err(|error| installation_error(format!("generation-record: {error}")))?;
+    .map_err(|error| generation_write_error("generation-record", error))?;
     // Observability only: a later contended root names this owner exactly as
     // the Unix path does. Never consulted for admission.
     let _ = write_owner_record(journal, role, &id);

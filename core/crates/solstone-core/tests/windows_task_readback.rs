@@ -39,6 +39,7 @@ fn normalizes_only_private_embedded_task_security() {
         command: r"C:\Program Files\Journal\journal.exe",
         working_directory: journal,
         action: &action,
+        enabled: true,
     })
     .unwrap();
     let sddl = format!("O:{sid}G:{sid}D:PAI(A;;FA;;;{sid})(A;;FA;;;SY)(A;;FA;;;BA)");

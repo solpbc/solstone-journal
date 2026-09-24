@@ -10,7 +10,9 @@ use quick_xml::{Reader, events::Event};
 use super::windows_action::{
     WindowsServiceAction, decode_windows_task_arguments, xml_text_is_valid,
 };
-use super::windows_task::{WindowsTaskInput, render_windows_task_xml};
+use super::windows_task::{
+    WindowsTaskInput, WindowsTaskProfile, render_windows_task_profile_xml, render_windows_task_xml,
+};
 
 const MAX_XML_BYTES: usize = 128 * 1024;
 const TASK_NAMESPACE: &str = "http://schemas.microsoft.com/windows/2004/02/mit/task";
@@ -21,6 +23,9 @@ pub struct WindowsTaskDefinition {
     pub command: String,
     pub working_directory: String,
     pub action: WindowsServiceAction,
+    /// The owner's run intent, as the registration records it.
+    pub enabled: bool,
+    pub profile: WindowsTaskProfile,
 }
 
 /// UTF-16LE with a BOM, matching the task's XML declaration.
@@ -201,6 +206,13 @@ fn elements(xml: &str) -> Result<BTreeMap<String, Node>, &'static str> {
 /// Validate the complete fixed task profile, including action and all four
 /// guard fields. Callers must separately compare against the loaded binding
 /// and verify the scheduler task/folder security descriptors before mutation.
+///
+/// Two profiles are valid: the current one and the logon-only [legacy]
+/// profile every earlier build registered, so an existing installation keeps
+/// working until `journal service install` migrates it. The enabled flag is
+/// the owner's run intent and may be either value in both.
+///
+/// [legacy]: WindowsTaskProfile::Legacy
 pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'static str> {
     let mut nodes = elements(xml)?;
     let text = |path: &str| {
@@ -209,21 +221,76 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
             .map(|node| node.text.clone())
             .ok_or("missing required Windows task field")
     };
-    let definition = WindowsTaskDefinition {
-        principal_sid: text("Task/Principals/Principal/UserId")?,
-        command: text("Task/Actions/Exec/Command")?,
-        working_directory: text("Task/Actions/Exec/WorkingDirectory")?,
-        action: WindowsServiceAction::parse(&decode_windows_task_arguments(&text(
-            "Task/Actions/Exec/Arguments",
-        )?)?)?,
+    let principal_sid = text("Task/Principals/Principal/UserId")?;
+    let command = text("Task/Actions/Exec/Command")?;
+    let working_directory = text("Task/Actions/Exec/WorkingDirectory")?;
+    let action = WindowsServiceAction::parse(&decode_windows_task_arguments(&text(
+        "Task/Actions/Exec/Arguments",
+    )?)?)?;
+    // Task Scheduler omits `Enabled` when it is true and writes `false` when
+    // the task is disabled; any other spelling fails closed.
+    let enabled = match nodes.remove("Task/Settings/Enabled") {
+        None => true,
+        Some(node) if !node.attributes.is_empty() => {
+            return Err("unexpected task scheduling setting");
+        }
+        Some(node) if node.text == "true" => true,
+        Some(node) if node.text == "false" => false,
+        Some(_) => return Err("unexpected task scheduling setting"),
     };
-    let expected_xml = render_windows_task_xml(&WindowsTaskInput {
-        principal_sid: &definition.principal_sid,
-        command: &definition.command,
-        working_directory: &definition.working_directory,
-        action: &definition.action,
-    })?;
-    let mut expected = elements(&expected_xml)?;
+    let input = WindowsTaskInput {
+        principal_sid: &principal_sid,
+        command: &command,
+        working_directory: &working_directory,
+        action: &action,
+        enabled,
+    };
+    normalize_readback(&mut nodes, &elements(&render_windows_task_xml(&input)?)?)?;
+    for profile in [WindowsTaskProfile::Current, WindowsTaskProfile::Legacy] {
+        let mut expected = elements(&render_windows_task_profile_xml(&input, profile)?)?;
+        expected.remove("Task/Settings/Enabled");
+        for (path, _) in SCHEDULER_OMITTED_DEFAULTS {
+            expected.remove(*path);
+        }
+        if nodes == expected {
+            return Ok(WindowsTaskDefinition {
+                principal_sid,
+                command,
+                working_directory,
+                action,
+                enabled,
+                profile,
+            });
+        }
+    }
+    Err("Windows task definition differs from the managed profile")
+}
+
+/// Settings Task Scheduler omits on readback because they equal its defaults.
+/// Their absence is accepted only where the managed profile uses that default;
+/// an explicit different value or any attributes still fail closed.
+const SCHEDULER_OMITTED_DEFAULTS: &[(&str, &str)] = &[
+    ("Task/Triggers/LogonTrigger/Enabled", "true"),
+    ("Task/Triggers/TimeTrigger/Enabled", "true"),
+    (
+        "Task/Triggers/TimeTrigger/Repetition/StopAtDurationEnd",
+        "false",
+    ),
+    ("Task/Settings/DisallowStartOnRemoteAppSession", "false"),
+    ("Task/Principals/Principal/RunLevel", "LeastPrivilege"),
+    ("Task/Settings/AllowHardTerminate", "true"),
+    ("Task/Settings/StartWhenAvailable", "false"),
+    ("Task/Settings/RunOnlyIfNetworkAvailable", "false"),
+    ("Task/Settings/AllowStartOnDemand", "true"),
+    ("Task/Settings/Hidden", "false"),
+    ("Task/Settings/RunOnlyIfIdle", "false"),
+    ("Task/Settings/WakeToRun", "false"),
+];
+
+fn normalize_readback(
+    nodes: &mut BTreeMap<String, Node>,
+    expected: &BTreeMap<String, Node>,
+) -> Result<(), &'static str> {
     // Whitespace/quoting normalization of Arguments is safe only after parsing
     // the exact action grammar, with no additional flags or executable action.
     nodes
@@ -242,33 +309,14 @@ pub fn parse_windows_task_xml(xml: &str) -> Result<WindowsTaskDefinition, &'stat
             return Err("unexpected registration metadata attributes");
         }
     }
-    // Task Scheduler omits settings that equal its defaults on readback.
-    // Accept their absence only where the managed profile uses that default;
-    // an explicit different value or any attributes still fail closed.
-    for (path, value) in [
-        ("Task/Triggers/LogonTrigger/Enabled", "true"),
-        ("Task/Settings/DisallowStartOnRemoteAppSession", "false"),
-        ("Task/Principals/Principal/RunLevel", "LeastPrivilege"),
-        ("Task/Settings/AllowHardTerminate", "true"),
-        ("Task/Settings/StartWhenAvailable", "false"),
-        ("Task/Settings/RunOnlyIfNetworkAvailable", "false"),
-        ("Task/Settings/AllowStartOnDemand", "true"),
-        ("Task/Settings/Enabled", "true"),
-        ("Task/Settings/Hidden", "false"),
-        ("Task/Settings/RunOnlyIfIdle", "false"),
-        ("Task/Settings/WakeToRun", "false"),
-    ] {
-        if let Some(node) = nodes.remove(path)
-            && (!node.attributes.is_empty() || node.text != value)
+    for (path, value) in SCHEDULER_OMITTED_DEFAULTS {
+        if let Some(node) = nodes.remove(*path)
+            && (!node.attributes.is_empty() || node.text != *value)
         {
             return Err("unexpected task scheduling setting");
         }
-        expected.remove(path);
     }
-    if nodes != expected {
-        return Err("Windows task definition differs from the managed profile");
-    }
-    Ok(definition)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -302,8 +350,17 @@ mod tests {
             command: "C:\\Program Files\\Solstone\\journal.exe",
             working_directory: &action.journal,
             action: &action,
+            enabled: true,
         })
         .unwrap()
+    }
+
+    /// The logon-only profile every build before the recovery trigger wrote.
+    fn legacy_xml() -> String {
+        let source = xml();
+        let start = source.find("\n    <TimeTrigger>").unwrap();
+        let end = source.find("</TimeTrigger>").unwrap() + "</TimeTrigger>".len();
+        format!("{}{}", &source[..start], &source[end..])
     }
 
     #[test]
@@ -427,6 +484,7 @@ mod tests {
             "<RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>",
             "<AllowStartOnDemand>true</AllowStartOnDemand>",
             "<Enabled>true</Enabled>",
+            "<StopAtDurationEnd>false</StopAtDurationEnd>",
             "<Hidden>false</Hidden>",
             "<RunOnlyIfIdle>false</RunOnlyIfIdle>",
             "<WakeToRun>false</WakeToRun>",
@@ -462,7 +520,6 @@ mod tests {
             ("StartWhenAvailable", "false", "true"),
             ("RunOnlyIfNetworkAvailable", "false", "true"),
             ("AllowStartOnDemand", "true", "false"),
-            ("Enabled", "true", "false"),
             ("Hidden", "false", "true"),
             ("RunOnlyIfIdle", "false", "true"),
             ("WakeToRun", "false", "true"),
@@ -479,6 +536,113 @@ mod tests {
                     "accepted changed {field}: {replacement}"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn current_and_legacy_profiles_are_both_read_and_told_apart() {
+        let current = parse_windows_task_xml(&xml()).unwrap();
+        assert_eq!(current.profile, WindowsTaskProfile::Current);
+        assert!(current.enabled);
+        let legacy = parse_windows_task_xml(&legacy_xml()).unwrap();
+        assert_eq!(legacy.profile, WindowsTaskProfile::Legacy);
+        assert!(legacy.enabled);
+        assert_eq!(legacy.action, current.action);
+        // The legacy profile is exactly what the earlier renderer produced.
+        assert!(!legacy_xml().contains("TimeTrigger"));
+        assert!(legacy_xml().contains("<LogonTrigger>"));
+    }
+
+    #[test]
+    fn a_disabled_registration_reads_as_the_owners_stop_in_either_profile() {
+        for source in [xml(), legacy_xml()] {
+            let disabled = source.replacen(
+                "<AllowStartOnDemand>true</AllowStartOnDemand>\n    <Enabled>true</Enabled>",
+                "<AllowStartOnDemand>true</AllowStartOnDemand>\n    <Enabled>false</Enabled>",
+                1,
+            );
+            assert_ne!(disabled, source);
+            let parsed = parse_windows_task_xml(&disabled).unwrap();
+            assert!(!parsed.enabled);
+            for invalid in ["FALSE", "0", ""] {
+                assert!(
+                    parse_windows_task_xml(&disabled.replace(
+                        "<Enabled>false</Enabled>",
+                        &format!("<Enabled>{invalid}</Enabled>")
+                    ))
+                    .is_err()
+                );
+            }
+            assert!(
+                parse_windows_task_xml(
+                    &disabled.replace("<Enabled>false<", "<Enabled x=\"1\">false<")
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn renders_the_enabled_flag_it_was_given() {
+        let source = xml();
+        let action = parse_windows_task_xml(&source).unwrap().action;
+        let stopped = render_windows_task_xml(&WindowsTaskInput {
+            principal_sid: "S-1-5-21-1-2-3-1001",
+            command: "C:\\Program Files\\Solstone\\journal.exe",
+            working_directory: &action.journal,
+            action: &action,
+            enabled: false,
+        })
+        .unwrap();
+        assert!(!parse_windows_task_xml(&stopped).unwrap().enabled);
+        assert_eq!(
+            parse_windows_task_xml(&stopped).unwrap().profile,
+            WindowsTaskProfile::Current
+        );
+    }
+
+    #[test]
+    fn accepts_the_recovery_trigger_as_task_scheduler_reads_it_back() {
+        // Measured on Windows 11 26200: readback drops the trigger's default
+        // `Enabled` and `StopAtDurationEnd`, and puts StartBoundary first.
+        let source = xml();
+        let start = source.find("<TimeTrigger>").unwrap();
+        let end = source.find("</TimeTrigger>").unwrap() + "</TimeTrigger>".len();
+        let readback = format!(
+            "{}<TimeTrigger>\n      <StartBoundary>2026-01-01T00:00:00</StartBoundary>\n      <Repetition>\n        <Interval>PT5M</Interval>\n      </Repetition>\n    </TimeTrigger>{}",
+            &source[..start],
+            &source[end..]
+        );
+        let parsed = parse_windows_task_xml(&readback).unwrap();
+        assert_eq!(parsed.profile, WindowsTaskProfile::Current);
+        assert!(parsed.enabled);
+    }
+
+    #[test]
+    fn refuses_a_recovery_trigger_that_is_not_the_managed_one() {
+        let source = xml();
+        for altered in [
+            source.replace("<Interval>PT5M</Interval>", "<Interval>PT1M</Interval>"),
+            source.replace(
+                "<StartBoundary>2026-01-01T00:00:00</StartBoundary>",
+                "<StartBoundary>2030-01-01T00:00:00</StartBoundary>",
+            ),
+            source.replace(
+                "<StopAtDurationEnd>false</StopAtDurationEnd>",
+                "<StopAtDurationEnd>false</StopAtDurationEnd><Duration>PT1H</Duration>",
+            ),
+            source.replace(
+                "      <Enabled>true</Enabled>\n    </TimeTrigger>",
+                "      <Enabled>false</Enabled>\n    </TimeTrigger>",
+            ),
+            source.replace("</TimeTrigger>", "</TimeTrigger><TimeTrigger/>"),
+            legacy_xml().replace("</Triggers>", "<BootTrigger/></Triggers>"),
+        ] {
+            assert_ne!(altered, source);
+            assert!(
+                parse_windows_task_xml(&altered).is_err(),
+                "accepted altered task: {altered}"
+            );
         }
     }
 }

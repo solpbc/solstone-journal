@@ -61,16 +61,31 @@ pub(super) struct Snapshot {
 
 pub(super) enum Operation<'a> {
     Inspect,
-    Create { xml: &'a str },
-    Update { before: &'a Snapshot, xml: &'a str },
-    Run { before: &'a Snapshot },
-    Delete { before: &'a Snapshot },
+    Create {
+        xml: &'a str,
+    },
+    Update {
+        before: &'a Snapshot,
+        xml: &'a str,
+    },
+    Run {
+        before: &'a Snapshot,
+    },
+    Delete {
+        before: &'a Snapshot,
+    },
+    /// Record the owner's run intent on the registration itself.
+    SetEnabled {
+        before: &'a Snapshot,
+        enabled: bool,
+    },
 }
 
 /// Encode the fixed script for PowerShell's UTF-16LE EncodedCommand boundary.
 /// No request data enters the script or its command-line arguments.
 fn encoded_script() -> String {
-    let bytes: Vec<_> = SCRIPT.encode_utf16().flat_map(u16::to_le_bytes).collect();
+    let wire = solstone_core_service_unit::powershell_wire_script(SCRIPT);
+    let bytes: Vec<_> = wire.encode_utf16().flat_map(u16::to_le_bytes).collect();
     base64::engine::general_purpose::STANDARD.encode(bytes)
 }
 
@@ -99,6 +114,14 @@ pub(super) fn execute_until(
         Operation::Update { before, xml } => ("update", Some(before), Some(xml)),
         Operation::Run { before } => ("run", Some(before), None),
         Operation::Delete { before } => ("delete", Some(before), None),
+        Operation::SetEnabled {
+            before,
+            enabled: true,
+        } => ("enable", Some(before), None),
+        Operation::SetEnabled {
+            before,
+            enabled: false,
+        } => ("disable", Some(before), None),
     };
     let mut directory = vec![0u16; 32768];
     #[allow(unsafe_code)]
