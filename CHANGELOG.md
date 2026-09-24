@@ -4,16 +4,16 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.16] - 2026-09-24
 
 ### Removed
 
 - `journal transfer send` is gone. it couldn't deliver into another journal, so nothing that worked was lost. to bring one journal into another, download it from the journal card in that journal's import app, or run `journal archive export`. then merge the zip with the journal card in the receiving journal's import app, or run `journal archive merge`.
-- journal sources, which let another journal push content into yours, are gone too: `journal importer journal-source`, and `solstone call import list-staged`, `resolve-entity`, `resolve-staged-facet`, `resolve-config` and `resolve-config-all`. anything a source already merged stays in your journal. items a source left waiting for your review can no longer be resolved.
+- journal sources, the receiving end of `journal transfer send`, are gone too: `journal importer journal-source`, and `solstone call import list-staged`, `resolve-entity`, `resolve-staged-facet`, `resolve-config` and `resolve-config-all`. anything a source already merged stays in your journal. items a source left waiting for your review can no longer be resolved.
 - pairing a device as a peer is no longer offered. a device you paired that way before stays paired until you unpair it.
 - `journal export`, `journal transfer export`, `journal transfer import` and `journal config journal PATH --merge` are gone. they only printed a message. use `journal archive export` and `journal archive merge`.
 - the `--remote` option on `journal supervisor` and `journal start` is gone. it did nothing except stop parts of your journal from running. if a script passes it, remove it, or your journal won't start.
-- your journal no longer reads the `.tgz` day archives `journal transfer export` made before 2.0. if you have one, merge it before you install this update. if you've already updated, export that day again as a zip from the journal it came from (`journal archive export --day`) and merge that zip, or merge the `.tgz` into a new, empty journal on an earlier 2.x release, export that journal as a zip, and merge that zip into your journal.
+- your journal no longer reads the `.tgz` day archives `journal transfer export` made before 2.0. if you have one, merge it before you install this update. if you've already updated, export that day again as a zip from the journal it came from (`journal archive export --day YYYYMMDD`) and merge that zip, or merge the `.tgz` into a new, empty journal on an earlier 2.x release, export that journal as a zip, and merge that zip into your journal.
 
 ### Changed
 
@@ -21,9 +21,11 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- if sol pbc runs your encrypted backup and media offload moved older media into it, you can now bring that media back. before, every try failed, though the media itself stayed in your backup.
+- `journal backup status` now shows the schedule your backups actually run on. before, it showed the schedule as off and daily while backups ran every hour.
 - `journal facet merge` now lists the files it didn't keep because both facets had a file with that name. the facet you merge into keeps its own copy, and the other copy is deleted with the facet you merged. before, that happened without a word. a `facet.json` file inside a folder both facets had is now handled like any other file in that folder; before, it was deleted.
 - on a new journal, home said something needed your attention before the journal had had a single night to catch up, or while processing wasn't set up yet, and the morning briefing card said a briefing wasn't prepared when none was due yet. home, the health page and the stats page now say when you'll see whether your journal is caught up, and the briefing card says when your first briefing is due. if it's still unclear after the first night, they say so, as before.
-- your journal could keep your computer busy while a paired device had nothing new to send, because each time that device checked in, your journal looked through every day and every source in it. it now looks only at that device's own folders.
+- your journal could keep your computer busy while a paired device had nothing new to send, because each time that device checked in, your journal looked through every day and everything in it. it now looks only at that device's own folders.
 
 ## [2.0.15] - 2026-09-23
 
