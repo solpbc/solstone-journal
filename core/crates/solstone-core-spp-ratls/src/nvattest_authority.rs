@@ -120,7 +120,7 @@ mod tests {
             let spec = parse_nvattest_target(NVATTEST_AUTHORITY_JSON, platform)
                 .expect("fixture target parses");
             assert_eq!(spec.platform, platform);
-            assert_eq!(spec.version, "1.2.2-sol.2");
+            assert_eq!(spec.version, "1.2.2-sol.3");
             assert_eq!(spec.origin_key, format!("providers/nvattest/{}", spec.name));
             assert_eq!(
                 spec.url,

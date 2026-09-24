@@ -123,9 +123,12 @@ fn run_nvattest(
     invocation: crate::nvgpu::NvattestCommand,
     timeout: Duration,
 ) -> Result<Output, GpuAppraisalReason> {
+    // The released Linux binary's RUNPATH ends in an empty entry, which the
+    // loader reads as the working directory: never inherit the caller's.
     let mut process = Command::new(&invocation.executable)
         .args(invocation.argv.iter().skip(1))
         .envs(invocation.env)
+        .current_dir("/")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -394,6 +397,23 @@ mod tests {
         install_script(
             root.path(),
             "#!/bin/sh\nbase=$(dirname \"$0\")/..\ncat \"$base/diagnostic.stderr\" >&2\nexec cat \"$base/positive.stdout\"\n",
+        );
+
+        let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
+        assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
+    }
+
+    #[test]
+    fn appraiser_runs_nvattest_from_the_filesystem_root() {
+        let root = TempDir::new();
+        fs::write(
+            root.path().join("positive.stdout"),
+            fixture_bytes("nvattest/positive.stdout"),
+        )
+        .expect("write stdout");
+        install_script(
+            root.path(),
+            "#!/bin/sh\n[ \"$(pwd -P)\" = / ] || exit 7\nexec cat \"$(dirname \"$0\")/../positive.stdout\"\n",
         );
 
         let appraisal = appraise(root.path(), Duration::from_secs(1)).expect("green appraisal");
