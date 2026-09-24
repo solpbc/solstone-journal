@@ -741,11 +741,12 @@ snapshot_artifacts() {
 		"$base.release" \
 		"$base.sha256" \
 		"$base.manifest.json" \
-		"$base.manifest.json.minisig"
+		"$base.manifest.json.minisig" \
+		"${base%-linux-x86_64}-install.sh"
 	artifact_member_marks=$(find "$artifact_input" -mindepth 1 -maxdepth 1 -printf .) \
 		|| refuse "could not enumerate artifact directory"
-	[ "${#artifact_member_marks}" -eq 7 ] \
-		|| refuse "artifact directory must contain exactly seven shipped members"
+	[ "${#artifact_member_marks}" -eq 8 ] \
+		|| refuse "artifact directory must contain exactly eight shipped members"
 	for name in "$@"; do
 		path=$artifact_input/$name
 		[ -f "$path" ] && [ ! -L "$path" ] \
@@ -842,6 +843,8 @@ snapshot_qualification_tools() {
 	installer_sha256=${installer_sha256%% *}
 	[ "$installer_sha256" = "$expected_installer_sha256" ] \
 		|| refuse "artifact-source installer digest does not match the explicit pin"
+	cmp -s "$INSTALL_SH" "$ARTIFACTS/solstone-journal-$version-install.sh" \
+		|| refuse "delivered installer differs from the artifact-source installer"
 	producer_sha256=$(sha256sum "$BIN") || refuse "could not hash qualification producer"
 	producer_sha256=${producer_sha256%% *}
 	[ "$producer_sha256" = "$expected_producer_sha256" ] \
@@ -863,10 +866,10 @@ verify_artifact_set() {
 	base=${base%.release}
 	sha=$ARTIFACTS/$base.sha256
 	manifest=$ARTIFACTS/$base.manifest.json
-	[ "$(awk 'NF { count++ } END { print count + 0 }' "$sha")" -eq 4 ] \
-		|| refuse "checksum sidecar must name exactly three archives and the release declaration"
-	for suffix in .tar.gz .deb .rpm .release; do
-		name=$base$suffix
+	bootstrap=${base%-linux-x86_64}-install.sh
+	[ "$(awk 'NF { count++ } END { print count + 0 }' "$sha")" -eq 5 ] \
+		|| refuse "checksum sidecar must name exactly three archives, the release declaration, and the installer"
+	for name in "$base.tar.gz" "$base.deb" "$base.rpm" "$base.release" "$bootstrap"; do
 		line=$(awk -v name="$name" '$2 == name && NF == 2 { print $1 }' "$sha")
 		is_lower_hex "$line" 64 || refuse "checksum sidecar missing or invalid: $name"
 		[ "$(awk -v name="$name" '$2 == name && NF == 2 { count++ } END { print count + 0 }' "$sha")" -eq 1 ] \
@@ -878,8 +881,8 @@ verify_artifact_set() {
 	sha_digest=${sha_digest%% *}
 	grep -F "\"$base.sha256\": \"$sha_digest\"" "$manifest" >/dev/null \
 		|| refuse "manifest checksum mismatch: $base.sha256"
-	[ "$(grep -c '^    "' "$manifest")" -eq 5 ] \
-		|| refuse "manifest must name exactly three archives, the release declaration, and the checksum sidecar"
+	[ "$(grep -c '^    "' "$manifest")" -eq 6 ] \
+		|| refuse "manifest must name exactly three archives, the release declaration, the installer, and the checksum sidecar"
 	(cd "$ARTIFACTS" && sha256sum --strict -c "$base.sha256")
 	product=$(awk -F= '$1 == "product" { print $2 }' "$release")
 	version=$(awk -F= '$1 == "version" { print $2 }' "$release")
@@ -889,8 +892,8 @@ verify_artifact_set() {
 	epoch=$(awk -F= '$1 == "upgrade_epoch" { print $2 }' "$release")
 	window=$(awk -F= '$1 == "retention_window" { print $2 }' "$release")
 	min_bootstrap=$(awk -F= '$1 == "min_bootstrap_revision" { print $2 }' "$release")
-	[ "$(awk 'NF { count++ } END { print count + 0 }' "$release")" -eq 8 ] \
-		|| refuse "release sidecar must contain exactly eight fields"
+	[ "$(awk 'NF { count++ } END { print count + 0 }' "$release")" -eq 12 ] \
+		|| refuse "release sidecar must contain exactly twelve fields"
 	[ "$product" = solstone-journal ] || refuse "release product mismatch"
 	[ "$target" = linux-x86_64 ] || refuse "release target mismatch"
 	[ "$base" = "solstone-journal-$version-linux-x86_64" ] \
@@ -899,7 +902,15 @@ verify_artifact_set() {
 	is_lower_hex "$lock" 64 || refuse "release lock digest is invalid"
 	[ "$epoch" = journal-v2 ] || refuse "release upgrade epoch is invalid"
 	[ "$window" = 3 ] || refuse "release retention window is invalid"
-	[ "$min_bootstrap" = 1 ] || refuse "release minimum bootstrap revision is invalid"
+	[ "$min_bootstrap" = 2 ] || refuse "release minimum bootstrap revision is invalid"
+	[ "$(awk -F= '$1 == "bootstrap_contract_version" { print $2 }' "$release")" = 2 ] \
+		|| refuse "release bootstrap contract version is invalid"
+	[ "$(awk -F= '$1 == "bootstrap_filename" { print $2 }' "$release")" = "$bootstrap" ] \
+		|| refuse "release bootstrap filename is invalid"
+	[ "$(awk -F= '$1 == "state_reader_min" { print $2 }' "$release")" = 1.0.0 ] \
+		|| refuse "release state reader minimum is invalid"
+	[ "$(awk -F= '$1 == "state_reader_max" { print $2 }' "$release")" = "$version" ] \
+		|| refuse "release state reader maximum is invalid"
 	grep -F '  "product": "solstone-journal",' "$manifest" >/dev/null \
 		|| refuse "manifest product mismatch"
 	grep -F "  \"version\": \"$version\"," "$manifest" >/dev/null \
@@ -1085,10 +1096,15 @@ self_test() {
 		'lock_sha256=0000000000000000000000000000000000000000000000000000000000000001' \
 		'upgrade_epoch=journal-v2' \
 		'retention_window=3' \
-		'min_bootstrap_revision=1' \
+		'min_bootstrap_revision=2' \
+		'bootstrap_contract_version=2' \
+		'bootstrap_filename=solstone-journal-1.0.22-install.sh' \
+		'state_reader_min=1.0.0' \
+		'state_reader_max=1.0.22' \
 		>"$artifact_dir/$base.release"
+	cp "$test_root/original-install.sh" "$artifact_dir/solstone-journal-1.0.22-install.sh"
 	(cd "$artifact_dir" && sha256sum "$base.tar.gz" "$base.deb" "$base.rpm" \
-		"$base.release" >"$base.sha256")
+		"$base.release" solstone-journal-1.0.22-install.sh >"$base.sha256")
 	archive_digest=$(sha256sum "$artifact_dir/$base.tar.gz" | awk '{ print $1 }')
 	release_digest=$(sha256sum "$artifact_dir/$base.release" | awk '{ print $1 }')
 	sha_digest=$(sha256sum "$artifact_dir/$base.sha256" | awk '{ print $1 }')
@@ -1102,6 +1118,7 @@ self_test() {
 		"    \"$base.deb\": \"$archive_digest\"," \
 		"    \"$base.rpm\": \"$archive_digest\"," \
 		"    \"$base.release\": \"$release_digest\"," \
+		"    \"solstone-journal-1.0.22-install.sh\": \"$expected_installer_sha256\"," \
 		"    \"$base.sha256\": \"$sha_digest\"" \
 		'  }' \
 		'}' >"$artifact_dir/$base.manifest.json"
@@ -1218,6 +1235,16 @@ pdf" ] || refuse "fake runtime did not see the exact rung order"
 	[ ! -e "$SOLSTONE_CLEANROOM_RECEIPT" ] \
 		|| refuse "missing-signature run published a receipt"
 	mv "$test_root/missing.minisig" "$artifact_dir/$base.manifest.json.minisig"
+
+	printf mutation >>"$artifact_dir/solstone-journal-1.0.22-install.sh"
+	set +e
+	(host_main "$test_root/artifacts") >/dev/null 2>&1
+	installer_status=$?
+	set -e
+	[ "$installer_status" -ne 0 ] || refuse "modified delivered installer was accepted"
+	[ ! -e "$SOLSTONE_CLEANROOM_RECEIPT" ] \
+		|| refuse "modified-installer run published a receipt"
+	cp "$test_root/original-install.sh" "$artifact_dir/solstone-journal-1.0.22-install.sh"
 
 	: >"$artifact_dir/unexpected-member"
 	set +e
