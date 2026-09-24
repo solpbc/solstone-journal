@@ -58,6 +58,7 @@ fn load_merge_candidates_filters_object_rows_and_skips_malformed_rows() {
     )
     .unwrap();
 
+    let before = fs::read(&path).unwrap();
     assert_eq!(
         load_merge_candidates(temporary.path(), Some("work"), Some("open")).unwrap(),
         vec![json!({"facet":"work","status":"open","source":"one"})]
@@ -68,6 +69,8 @@ fn load_merge_candidates_filters_object_rows_and_skips_malformed_rows() {
             .len(),
         2
     );
+    assert_eq!(fs::read(&path).unwrap(), before);
+    assert_eq!(fs::read_dir(path.parent().unwrap()).unwrap().count(), 1);
 }
 
 fn record_candidate(

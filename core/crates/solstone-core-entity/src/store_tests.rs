@@ -26,9 +26,9 @@ use crate::{
     dismiss_ambiguity, guard_restore_does_not_cross_merge, guard_visible_event_collision,
     load_all_journal_entities, load_resolved_ambiguity_choice, publish_identity_change,
     read_ambiguities, read_entity_identity, read_identity_map, read_prepared_history,
-    read_visible_history, record_ambiguity_choice, record_ambiguity_observation,
-    refresh_identity_map_cache, repair_entity_identities, rescope_facet_ambiguities,
-    resolve_ambiguity_group, restore_review, save_entity_identity,
+    read_visible_history, record_ambiguity_choice, record_ambiguity_group_choice,
+    record_ambiguity_observation, refresh_identity_map_cache, repair_entity_identities,
+    rescope_facet_ambiguities, restore_review, save_entity_identity,
     save_entity_identity_with_timeout, set_forced_history_apply_failure,
     set_forced_identity_write_failure, set_repair_identity_write_failure_on_attempt,
     sweep_entity_review_policy, write_history_event_json_for_test,
@@ -2760,13 +2760,18 @@ fn review_policy_stale_ambiguity_set_aside_and_reopen() {
         query: "Unknown Person".to_owned(),
         normalized_query: "unknown person".to_owned(),
         observed_tier: 5,
-        ranked_candidates: vec![json!({"id": "ghost_entity", "name": "Ghost Entity", "tier": 5, "score": 90.0})],
+        ranked_candidates: vec![
+            json!({"id": "ghost_entity", "name": "Ghost Entity", "tier": 5, "score": 90.0}),
+        ],
         origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
     };
 
     let row = record_ambiguity_observation(temporary.path(), &obs).unwrap();
     let review = row.get("review").and_then(Value::as_object).unwrap();
-    let suppression = review.get("suppression").and_then(Value::as_object).unwrap();
+    let suppression = review
+        .get("suppression")
+        .and_then(Value::as_object)
+        .unwrap();
     assert_eq!(suppression["reason"], "stale");
     assert_eq!(suppression["evidence_key"], "stale:ghost_entity");
 
@@ -2781,7 +2786,11 @@ fn review_policy_stale_ambiguity_set_aside_and_reopen() {
 
     let reopened = record_ambiguity_observation(temporary.path(), &obs).unwrap();
     let reopened_review = reopened.get("review").and_then(Value::as_object).unwrap();
-    assert!(reopened_review.get("suppression").is_none_or(Value::is_null));
+    assert!(
+        reopened_review
+            .get("suppression")
+            .is_none_or(Value::is_null)
+    );
     let history = reopened_review["history"].as_array().unwrap();
     assert_eq!(history.last().unwrap()["action"], "reopen");
 }
@@ -2803,12 +2812,15 @@ fn review_policy_placeholder_ambiguity_set_aside() {
         normalized_query: "speaker 01".to_owned(),
         observed_tier: 5,
         ranked_candidates: vec![json!({"id": "alice", "name": "Alice", "tier": 5, "score": 80.0})],
-        origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        origin: json!({"lane": "apps.speakers.attribution", "day": "20260804", "segment_id": "s1"}),
     };
 
     let row = record_ambiguity_observation(temporary.path(), &obs).unwrap();
     let review = row.get("review").and_then(Value::as_object).unwrap();
-    let suppression = review.get("suppression").and_then(Value::as_object).unwrap();
+    let suppression = review
+        .get("suppression")
+        .and_then(Value::as_object)
+        .unwrap();
     assert_eq!(suppression["reason"], "placeholder");
     assert_eq!(suppression["evidence_key"], "placeholder:speaker 01");
 }
@@ -2829,13 +2841,18 @@ fn review_policy_speaker_type_non_person_set_aside_and_reopen() {
         query: "Acme".to_owned(),
         normalized_query: "acme".to_owned(),
         observed_tier: 5,
-        ranked_candidates: vec![json!({"id": "acme_corp", "name": "Acme Corp", "tier": 5, "score": 90.0})],
+        ranked_candidates: vec![
+            json!({"id": "acme_corp", "name": "Acme Corp", "tier": 5, "score": 90.0}),
+        ],
         origin: json!({"lane": "apps.speakers.attribution", "speaker_id": "spk_1"}),
     };
 
     let row = record_ambiguity_observation(temporary.path(), &obs).unwrap();
     let review = row.get("review").and_then(Value::as_object).unwrap();
-    let suppression = review.get("suppression").and_then(Value::as_object).unwrap();
+    let suppression = review
+        .get("suppression")
+        .and_then(Value::as_object)
+        .unwrap();
     assert_eq!(suppression["reason"], "speaker_type");
     assert_eq!(suppression["evidence_key"], "speaker_type:acme_corp");
 
@@ -2862,7 +2879,11 @@ fn review_policy_speaker_type_non_person_set_aside_and_reopen() {
 
     let reopened = record_ambiguity_observation(temporary.path(), &obs_with_person).unwrap();
     let reopened_review = reopened.get("review").and_then(Value::as_object).unwrap();
-    assert!(reopened_review.get("suppression").is_none_or(Value::is_null));
+    assert!(
+        reopened_review
+            .get("suppression")
+            .is_none_or(Value::is_null)
+    );
     let history = reopened_review["history"].as_array().unwrap();
     assert_eq!(history.last().unwrap()["action"], "reopen");
 }
@@ -2884,7 +2905,9 @@ fn review_policy_low_prefix_score_boundary_and_reopen() {
         query: "Al".to_owned(),
         normalized_query: "al".to_owned(),
         observed_tier: 7,
-        ranked_candidates: vec![json!({"id": "alice_walker", "name": "Alice Walker", "tier": 7, "score": 35.0})],
+        ranked_candidates: vec![
+            json!({"id": "alice_walker", "name": "Alice Walker", "tier": 7, "score": 35.0}),
+        ],
         origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
     };
     let row_35 = record_ambiguity_observation(temporary.path(), &obs_35).unwrap();
@@ -2896,12 +2919,17 @@ fn review_policy_low_prefix_score_boundary_and_reopen() {
         query: "Al".to_owned(),
         normalized_query: "al".to_owned(),
         observed_tier: 7,
-        ranked_candidates: vec![json!({"id": "alice_walker", "name": "Alice Walker", "tier": 7, "score": 30.0})],
+        ranked_candidates: vec![
+            json!({"id": "alice_walker", "name": "Alice Walker", "tier": 7, "score": 30.0}),
+        ],
         origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
     };
     let row_30 = record_ambiguity_observation(temporary.path(), &obs_30).unwrap();
     let review = row_30.get("review").and_then(Value::as_object).unwrap();
-    let suppression = review.get("suppression").and_then(Value::as_object).unwrap();
+    let suppression = review
+        .get("suppression")
+        .and_then(Value::as_object)
+        .unwrap();
     assert_eq!(suppression["reason"], "low_prefix");
     assert_eq!(suppression["evidence_key"], "low_prefix:alice_walker");
 
@@ -2911,18 +2939,24 @@ fn review_policy_low_prefix_score_boundary_and_reopen() {
         query: "Al".to_owned(),
         normalized_query: "al".to_owned(),
         observed_tier: 7,
-        ranked_candidates: vec![json!({"id": "alice_walker", "name": "Alice Walker", "tier": 7, "score": 40.0})],
+        ranked_candidates: vec![
+            json!({"id": "alice_walker", "name": "Alice Walker", "tier": 7, "score": 40.0}),
+        ],
         origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
     };
     let reopened = record_ambiguity_observation(temporary.path(), &obs_40).unwrap();
     let reopened_review = reopened.get("review").and_then(Value::as_object).unwrap();
-    assert!(reopened_review.get("suppression").is_none_or(Value::is_null));
+    assert!(
+        reopened_review
+            .get("suppression")
+            .is_none_or(Value::is_null)
+    );
     let history = reopened_review["history"].as_array().unwrap();
     assert_eq!(history.last().unwrap()["action"], "reopen");
 }
 
 #[test]
-fn review_policy_participation_lane_veto() {
+fn review_policy_participation_stale_candidates_are_unanswerable() {
     let temporary = TempDir::new();
     let obs = AmbiguityObservation {
         scope: json!({"kind": "journal"}),
@@ -2934,7 +2968,7 @@ fn review_policy_participation_lane_veto() {
     };
 
     let row = record_ambiguity_observation(temporary.path(), &obs).unwrap();
-    assert!(row.get("review").is_none() || row["review"]["suppression"].is_null());
+    assert_eq!(row["review"]["suppression"]["reason"], "stale");
 }
 
 #[test]
@@ -2954,7 +2988,7 @@ fn review_policy_restore_records_released_and_prevents_resuppression() {
         normalized_query: "speaker 01".to_owned(),
         observed_tier: 5,
         ranked_candidates: vec![json!({"id": "alice", "name": "Alice", "tier": 5, "score": 80.0})],
-        origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        origin: json!({"lane": "apps.speakers.attribution", "day": "20260804", "segment_id": "s1"}),
     };
 
     let row = record_ambiguity_observation(temporary.path(), &obs).unwrap();
@@ -2995,7 +3029,9 @@ fn review_policy_typo_switch_off_and_on_and_fold_collision_and_undo() {
         query: "Charli Bucket".to_owned(),
         normalized_query: "charli bucket".to_owned(),
         observed_tier: 8,
-        ranked_candidates: vec![json!({"id": "charlie_bucket", "name": "Charlie Bucket", "tier": 8, "score": 95.0})],
+        ranked_candidates: vec![
+            json!({"id": "charlie_bucket", "name": "Charlie Bucket", "tier": 8, "score": 95.0}),
+        ],
         origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
     };
 
@@ -3041,7 +3077,23 @@ fn review_policy_typo_switch_off_and_on_and_fold_collision_and_undo() {
     assert_eq!(review["choice"]["reason"], "typo");
     assert_eq!(review["choice"]["entity_id"], "charlie_bucket");
 
-    let identity_before = fs::read(temporary.path().join("entities/charlie_bucket/entity.json")).unwrap();
+    // Disabling stops new choices, but does not erase a choice already recorded.
+    fs::write(temporary.path().join("config/journal.json"), b"{}").unwrap();
+    assert!(
+        load_resolved_ambiguity_choice(temporary.path(), &obs.scope, &obs.normalized_query)
+            .unwrap()
+            .is_some()
+    );
+
+    save_entity_identity(
+        temporary.path(),
+        "charlie_bucket",
+        &json!({"id":"charlie_bucket", "name":"Charlie Bucket", "description":"Later owner edit"}),
+        None,
+    )
+    .unwrap();
+    let identity_before =
+        fs::read(temporary.path().join("entities/charlie_bucket/entity.json")).unwrap();
 
     // Undo via restore_review returns row to open, records released typo, leaves entity identity file unchanged
     let undone = restore_review(
@@ -3059,7 +3111,16 @@ fn review_policy_typo_switch_off_and_on_and_fold_collision_and_undo() {
     assert!(undone_rev["choice"].is_null());
     assert_eq!(undone_rev["released"][0]["reason"], "typo");
 
-    let identity_after = fs::read(temporary.path().join("entities/charlie_bucket/entity.json")).unwrap();
+    let reobserved = record_ambiguity_observation(temporary.path(), &obs).unwrap();
+    assert_eq!(reobserved["status"], "open");
+    assert!(
+        load_resolved_ambiguity_choice(temporary.path(), &obs.scope, &obs.normalized_query)
+            .unwrap()
+            .is_none()
+    );
+
+    let identity_after =
+        fs::read(temporary.path().join("entities/charlie_bucket/entity.json")).unwrap();
     assert_eq!(identity_before, identity_after);
 }
 
@@ -3105,8 +3166,14 @@ fn review_policy_resolve_ambiguity_group_with_revision_lock() {
     eligible_by_member.insert(
         amb1_id.clone(),
         vec![
-            AmbiguityChoiceEntity { id: "alice".to_owned(), blocked: false },
-            AmbiguityChoiceEntity { id: "bob".to_owned(), blocked: false },
+            AmbiguityChoiceEntity {
+                id: "alice".to_owned(),
+                blocked: false,
+            },
+            AmbiguityChoiceEntity {
+                id: "bob".to_owned(),
+                blocked: false,
+            },
         ],
     );
 
@@ -3119,7 +3186,7 @@ fn review_policy_resolve_ambiguity_group_with_revision_lock() {
         revision: "stale_revision".to_owned(),
         eligible_by_member: eligible_by_member.clone(),
     };
-    let stale_res = resolve_ambiguity_group(temporary.path(), &stale_req);
+    let stale_res = record_ambiguity_group_choice(temporary.path(), &stale_req);
     assert!(stale_res.is_err());
     let bytes_after_stale = fs::read(temporary.path().join("entities/ambiguities.jsonl")).unwrap();
     assert_eq!(bytes_before, bytes_after_stale);
@@ -3131,7 +3198,7 @@ fn review_policy_resolve_ambiguity_group_with_revision_lock() {
         revision: group_rev,
         eligible_by_member,
     };
-    let ok_res = resolve_ambiguity_group(temporary.path(), &ok_req).unwrap();
+    let ok_res = record_ambiguity_group_choice(temporary.path(), &ok_req).unwrap();
     assert_eq!(ok_res.len(), 1);
     assert_eq!(ok_res[0]["status"], "resolved");
     assert_eq!(ok_res[0]["resolved_entity_id"], "alice");
@@ -3163,7 +3230,9 @@ fn review_policy_sweep_empty_journal_and_idempotency_and_malformed_refusal() {
         query: "Unknown".to_owned(),
         normalized_query: "unknown".to_owned(),
         observed_tier: 5,
-        ranked_candidates: vec![json!({"id": "bad_entity", "name": "Bad Entity", "tier": 5, "score": 90.0})],
+        ranked_candidates: vec![
+            json!({"id": "bad_entity", "name": "Bad Entity", "tier": 5, "score": 90.0}),
+        ],
         origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
     };
     let bad_row = json!({
@@ -3185,13 +3254,231 @@ fn review_policy_sweep_empty_journal_and_idempotency_and_malformed_refusal() {
     });
     let amb_path = malformed_temp.path().join("entities/ambiguities.jsonl");
     fs::create_dir_all(malformed_temp.path().join("entities")).unwrap();
-    fs::write(&amb_path, format!("{}\n", serde_json::to_string(&bad_row).unwrap())).unwrap();
+    fs::write(
+        &amb_path,
+        format!("{}\n", serde_json::to_string(&bad_row).unwrap()),
+    )
+    .unwrap();
 
     let sweep_err = sweep_entity_review_policy(malformed_temp.path());
     assert!(sweep_err.is_err());
-    assert!(!malformed_temp.path().join("health/entity-review-sweep.json").exists());
+    assert!(
+        !malformed_temp
+            .path()
+            .join("health/entity-review-sweep.json")
+            .exists()
+    );
 
     let unparsed = fs::read_to_string(&amb_path).unwrap();
     let row_after: Value = serde_json::from_str(unparsed.trim()).unwrap();
     assert!(row_after.get("review").is_none() || row_after["review"]["suppression"].is_null());
+}
+
+#[test]
+fn review_group_rejects_changed_scores_and_current_block_without_partial_answers() {
+    let temporary = TempDir::new();
+    save_entity_identity(
+        temporary.path(),
+        "morgan",
+        &json!({"id":"morgan", "name":"Morgan Vale", "type":"Person"}),
+        None,
+    )
+    .unwrap();
+    let mut obs = AmbiguityObservation {
+        scope: json!({"kind":"journal"}),
+        query: "Morgan V".into(),
+        normalized_query: "morgan v".into(),
+        observed_tier: 7,
+        ranked_candidates: vec![
+            json!({"id":"morgan", "name":"Morgan Vale", "tier":7, "score":70.0}),
+        ],
+        origin: json!({"lane":"talent.participation", "record_id":"first"}),
+    };
+    let first = record_ambiguity_observation(temporary.path(), &obs).unwrap();
+    obs.query = "M Vale".into();
+    obs.normalized_query = "m vale".into();
+    let second = record_ambiguity_observation(temporary.path(), &obs).unwrap();
+    let ids = vec!["morgan".to_owned()];
+    let mut request = AmbiguityGroupResolveRequest {
+        entity_id: "morgan".into(),
+        member_ids: vec![first["ambiguity_id"].as_str().unwrap().into()],
+        revision: ambiguity_group_revision(
+            &ids,
+            &[first.as_object().unwrap(), second.as_object().unwrap()],
+        ),
+        eligible_by_member: HashMap::from([(
+            first["ambiguity_id"].as_str().unwrap().into(),
+            vec![AmbiguityChoiceEntity {
+                id: "morgan".into(),
+                blocked: false,
+            }],
+        )]),
+    };
+    obs.ranked_candidates[0]["score"] = json!(71.0);
+    let changed = record_ambiguity_observation(temporary.path(), &obs).unwrap();
+    let queue = temporary.path().join("entities/ambiguities.jsonl");
+    let before = fs::read(&queue).unwrap();
+    assert!(record_ambiguity_group_choice(temporary.path(), &request).is_err());
+    assert_eq!(fs::read(&queue).unwrap(), before);
+    request.revision = ambiguity_group_revision(
+        &ids,
+        &[first.as_object().unwrap(), changed.as_object().unwrap()],
+    );
+    save_entity_identity(
+        temporary.path(),
+        "morgan",
+        &json!({"id":"morgan", "name":"Morgan Vale", "type":"Person", "blocked":true}),
+        None,
+    )
+    .unwrap();
+    assert!(record_ambiguity_group_choice(temporary.path(), &request).is_err());
+    assert_eq!(fs::read(&queue).unwrap(), before);
+    save_entity_identity(
+        temporary.path(),
+        "morgan",
+        &json!({"id":"morgan", "name":"Morgan Vale", "type":"Person"}),
+        None,
+    )
+    .unwrap();
+    record_ambiguity_group_choice(temporary.path(), &request).unwrap();
+    let rows = read_ambiguities(temporary.path(), MalformedPolicy::Raise).unwrap();
+    assert_eq!(rows.iter().filter(|r| r["status"] == "resolved").count(), 1);
+    assert_eq!(rows.iter().filter(|r| r["status"] == "open").count(), 1);
+}
+
+#[test]
+fn new_stale_merge_suggestions_are_reversible_and_fresh_evidence_reopens() {
+    let temporary = TempDir::new();
+    let record = || {
+        crate::record_merge_candidate(
+            temporary.path(),
+            "work",
+            "20260924",
+            "Taylor Reed",
+            "taylor",
+            "Morgan Vale",
+            "morgan",
+            "name variant",
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+        .0
+    };
+    let row = record();
+    assert_eq!(row["review"]["suppression"]["reason"], "stale");
+    restore_review(
+        temporary.path(),
+        &ReviewRestoreTarget::MergeCandidate {
+            facet: "work".into(),
+            source_slug: "taylor".into(),
+            target_slug: "morgan".into(),
+        },
+    )
+    .unwrap();
+    assert!(record()["review"]["suppression"].is_null());
+    // A fresh row becomes answerable as soon as its target is present.
+    let proposals = vec![
+        json!({"facet":"home", "source":"Taylor Reed", "source_slug":"taylor", "target":"Morgan Vale", "target_slug":"morgan", "day":"20260924", "summary":"name variant"}),
+    ];
+    let prepared = crate::prepare_merge_proposals(temporary.path(), &proposals).unwrap();
+    crate::publish_merge_proposals(temporary.path(), &prepared, true, || Ok(()), || Ok(()))
+        .unwrap();
+    save_entity_identity(
+        temporary.path(),
+        "morgan",
+        &json!({"id":"morgan", "name":"Morgan Vale"}),
+        None,
+    )
+    .unwrap();
+    let prepared = crate::prepare_merge_proposals(temporary.path(), &proposals).unwrap();
+    let rows: Vec<Value> = prepared
+        .after
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert!(rows.iter().find(|r| r["facet"] == "home").unwrap()["review"]["suppression"].is_null());
+}
+
+#[test]
+fn review_sweep_refuses_bad_merge_rows_without_completion_and_retries_safely() {
+    let temporary = TempDir::new();
+    let entities = temporary.path().join("entities");
+    fs::create_dir_all(&entities).unwrap();
+    let merges = entities.join("review-candidates.jsonl");
+    fs::write(&merges, b"not json\n").unwrap();
+    assert!(sweep_entity_review_policy(temporary.path()).is_err());
+    assert_eq!(fs::read(&merges).unwrap(), b"not json\n");
+    assert!(
+        !temporary
+            .path()
+            .join("health/entity-review-sweep.json")
+            .exists()
+    );
+    fs::write(&merges, b"").unwrap();
+    sweep_entity_review_policy(temporary.path()).unwrap();
+    assert!(
+        temporary
+            .path()
+            .join("health/entity-review-sweep.json")
+            .exists()
+    );
+}
+
+#[test]
+fn typo_acceptance_requires_current_facet_membership_and_respects_any_undo() {
+    let temporary = TempDir::new();
+    save_entity_identity(
+        temporary.path(),
+        "charlie",
+        &json!({"id":"charlie", "name":"Charlie Bucket", "type":"Person"}),
+        None,
+    )
+    .unwrap();
+    fs::create_dir_all(temporary.path().join("config")).unwrap();
+    fs::write(
+        temporary.path().join("config/journal.json"),
+        br#"{"entities":{"accept_tier8_typos":true}}"#,
+    )
+    .unwrap();
+    let obs = AmbiguityObservation {
+        scope: json!({"kind":"facet", "facet":"work"}),
+        query: "Charli Bucket".to_owned(),
+        normalized_query: "charli bucket".to_owned(),
+        observed_tier: 8,
+        ranked_candidates: vec![
+            json!({"id":"charlie", "name":"Charlie Bucket", "tier":8, "score":95.0}),
+        ],
+        origin: json!({"lane":"talent.participation", "record_id":"first"}),
+    };
+    let absent = record_ambiguity_observation(temporary.path(), &obs).unwrap();
+    assert_eq!(absent["status"], "open");
+    let link = temporary
+        .path()
+        .join("facets/work/entities/relationship/entity.json");
+    fs::create_dir_all(link.parent().unwrap()).unwrap();
+    fs::write(&link, br#"{"entity_id":"charlie","detached":true}"#).unwrap();
+    assert_eq!(
+        record_ambiguity_observation(temporary.path(), &obs).unwrap()["status"],
+        "open"
+    );
+    fs::write(&link, br#"{"entity_id":"charlie"}"#).unwrap();
+    sweep_entity_review_policy(temporary.path()).unwrap();
+    assert!(
+        load_resolved_ambiguity_choice(temporary.path(), &obs.scope, &obs.normalized_query)
+            .unwrap()
+            .is_some()
+    );
+    restore_review(
+        temporary.path(),
+        &ReviewRestoreTarget::Ambiguity {
+            ambiguity_id: absent["ambiguity_id"].as_str().unwrap().to_owned(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        record_ambiguity_observation(temporary.path(), &obs).unwrap()["status"],
+        "open"
+    );
 }

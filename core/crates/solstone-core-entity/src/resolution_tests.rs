@@ -711,3 +711,57 @@ fn single_ambiguity_row(root: &Path) -> Value {
     assert_eq!(rows.len(), 1);
     rows.pop().unwrap()
 }
+
+#[test]
+fn speaker_placeholder_cannot_reuse_saved_choice_but_participation_can_match_it() {
+    let temporary = TempDir::new();
+    let entities = vec![entity(Some("speaker4"), "Speaker 4", false)];
+    crate::record_ambiguity_observation(
+        temporary.path(),
+        &crate::AmbiguityObservation {
+            scope: journal_scope(),
+            query: "Speaker 4".to_owned(),
+            normalized_query: "speaker 4".to_owned(),
+            observed_tier: 8,
+            ranked_candidates: vec![
+                json!({"id":"speaker4", "name":"Speaker 4", "tier":8, "score":100.0}),
+            ],
+            origin: json!({"lane":"talent.participation", "record_id":"first"}),
+        },
+    )
+    .unwrap();
+    record_ambiguity_choice(
+        temporary.path(),
+        &AmbiguityChoiceRequest {
+            scope: journal_scope(),
+            query: "Speaker 4".to_owned(),
+            entity_id: "speaker4".to_owned(),
+            origin: None,
+        },
+        &[AmbiguityChoiceEntity {
+            id: "speaker4".to_owned(),
+            blocked: false,
+        }],
+    )
+    .unwrap();
+    let speaker = resolve(
+        temporary.path(),
+        "Speaker 4",
+        &entities,
+        journal_scope(),
+        json!({"lane":"talent.speaker_attribution"}),
+        false,
+    )
+    .unwrap();
+    assert_ne!(speaker.outcome, EntityResolutionOutcome::Resolved);
+    let participation = resolve(
+        temporary.path(),
+        "Speaker 4",
+        &entities,
+        journal_scope(),
+        json!({"lane":"talent.participation"}),
+        false,
+    )
+    .unwrap();
+    assert_eq!(participation.outcome, EntityResolutionOutcome::Resolved);
+}

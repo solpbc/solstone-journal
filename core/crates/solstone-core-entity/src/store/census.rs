@@ -56,13 +56,6 @@ impl IdentityCensus {
 pub fn scan_identity_census(journal_root: &Path) -> Result<IdentityCensus, EntityStoreError> {
     let entities_dir = contained_path(journal_root, "entities")?;
 
-    if !entities_dir.exists() {
-        return Ok(IdentityCensus {
-            entities: HashMap::new(),
-            complete: true,
-        });
-    }
-
     let entries = match list_dir_entries(&entities_dir) {
         Ok(entries) => entries,
         Err(solstone_core_journal_io::PathError::Io { source, .. })

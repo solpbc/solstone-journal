@@ -1247,8 +1247,12 @@ mod tests {
             json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
             0.85,
             false,
-        ).unwrap();
-        assert_eq!(res1.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+        )
+        .unwrap();
+        assert_eq!(
+            res1.outcome,
+            solstone_core_entity::EntityResolutionOutcome::Resolved
+        );
 
         // 2. Person alias resolves
         let res2 = solstone_core_entity::record_entity_resolution(
@@ -1259,8 +1263,12 @@ mod tests {
             json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
             0.85,
             false,
-        ).unwrap();
-        assert_eq!(res2.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+        )
+        .unwrap();
+        assert_eq!(
+            res2.outcome,
+            solstone_core_entity::EntityResolutionOutcome::Resolved
+        );
 
         // 3. Saved Person choice
         let obs3 = solstone_core_entity::AmbiguityObservation {
@@ -1268,7 +1276,9 @@ mod tests {
             query: "Helen".to_owned(),
             normalized_query: "helen".to_owned(),
             observed_tier: 5,
-            ranked_candidates: vec![json!({"id": "helen_trent", "name": "Helen Trent", "tier": 5, "score": 80.0})],
+            ranked_candidates: vec![
+                json!({"id": "helen_trent", "name": "Helen Trent", "tier": 5, "score": 80.0}),
+            ],
             origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
         };
         solstone_core_entity::record_ambiguity_observation(root.path(), &obs3).unwrap();
@@ -1279,9 +1289,14 @@ mod tests {
             entity_id: "helen_trent".to_owned(),
             origin: None,
         };
-        let eligible = vec![solstone_core_entity::AmbiguityChoiceEntity { id: "helen_trent".to_owned(), blocked: false }];
+        let eligible = vec![solstone_core_entity::AmbiguityChoiceEntity {
+            id: "helen_trent".to_owned(),
+            blocked: false,
+        }];
         solstone_core_entity::record_ambiguity_choice(root.path(), &choice_req, &eligible).unwrap();
-        let excluded_person = saved_choice_excluded_by_admission(root.path(), &scope, "Helen", &all_entities).unwrap();
+        let excluded_person =
+            saved_choice_excluded_by_admission(root.path(), &scope, "Helen", &all_entities)
+                .unwrap();
         assert!(!excluded_person);
 
         // 4. Non-Person exact does not resolve in Person pool
@@ -1293,8 +1308,12 @@ mod tests {
             json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
             0.85,
             false,
-        ).unwrap();
-        assert_ne!(res4.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+        )
+        .unwrap();
+        assert_ne!(
+            res4.outcome,
+            solstone_core_entity::EntityResolutionOutcome::Resolved
+        );
 
         // 5. Non-Person alias does not resolve in Person pool
         let res5 = solstone_core_entity::record_entity_resolution(
@@ -1305,8 +1324,12 @@ mod tests {
             json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
             0.85,
             false,
-        ).unwrap();
-        assert_ne!(res5.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+        )
+        .unwrap();
+        assert_ne!(
+            res5.outcome,
+            solstone_core_entity::EntityResolutionOutcome::Resolved
+        );
 
         // 6. Saved Non-Person choice is excluded by admission
         let obs6 = solstone_core_entity::AmbiguityObservation {
@@ -1314,7 +1337,9 @@ mod tests {
             query: "Cutter".to_owned(),
             normalized_query: "cutter".to_owned(),
             observed_tier: 5,
-            ranked_candidates: vec![json!({"id": "laser_cutter_tool", "name": "Laser Cutter Tool", "tier": 5, "score": 80.0})],
+            ranked_candidates: vec![
+                json!({"id": "laser_cutter_tool", "name": "Laser Cutter Tool", "tier": 5, "score": 80.0}),
+            ],
             origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
         };
         solstone_core_entity::record_ambiguity_observation(root.path(), &obs6).unwrap();
@@ -1325,9 +1350,15 @@ mod tests {
             entity_id: "laser_cutter_tool".to_owned(),
             origin: None,
         };
-        let tool_eligible = vec![solstone_core_entity::AmbiguityChoiceEntity { id: "laser_cutter_tool".to_owned(), blocked: false }];
-        solstone_core_entity::record_ambiguity_choice(root.path(), &tool_choice, &tool_eligible).unwrap();
-        let excluded_tool = saved_choice_excluded_by_admission(root.path(), &scope, "Cutter", &all_entities).unwrap();
+        let tool_eligible = vec![solstone_core_entity::AmbiguityChoiceEntity {
+            id: "laser_cutter_tool".to_owned(),
+            blocked: false,
+        }];
+        solstone_core_entity::record_ambiguity_choice(root.path(), &tool_choice, &tool_eligible)
+            .unwrap();
+        let excluded_tool =
+            saved_choice_excluded_by_admission(root.path(), &scope, "Cutter", &all_entities)
+                .unwrap();
         assert!(excluded_tool);
     }
 
@@ -1356,8 +1387,12 @@ mod tests {
             json!({"lane": "talent.participation", "facet": "work"}),
             0.85,
             false,
-        ).unwrap();
-        assert_eq!(res.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+        )
+        .unwrap();
+        assert_eq!(
+            res.outcome,
+            solstone_core_entity::EntityResolutionOutcome::Resolved
+        );
         assert_eq!(res.entity_index, Some(0));
     }
 }

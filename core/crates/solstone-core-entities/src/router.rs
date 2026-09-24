@@ -3217,7 +3217,10 @@ async fn review_route(
             .and_then(|r| r.get("suppression"))
             .is_some_and(|s| !s.is_null());
 
-        if is_suppressed {
+        if (is_suppressed && status == "open")
+            || (status == "resolved"
+                && row.pointer("/review/choice/kind").and_then(Value::as_str) == Some("automatic"))
+        {
             set_aside_ambiguities.push(row);
             continue;
         }
@@ -3247,8 +3250,7 @@ async fn review_route(
     for (candidate_ids, members) in group_map {
         let member_objs: Vec<&serde_json::Map<String, Value>> =
             members.iter().filter_map(Value::as_object).collect();
-        let revision =
-            solstone_core_entity::ambiguity_group_revision(&candidate_ids, &member_objs);
+        let revision = solstone_core_entity::ambiguity_group_revision(&candidate_ids, &member_objs);
         let candidates = candidate_data_by_set
             .remove(&candidate_ids)
             .unwrap_or_default();
@@ -3397,24 +3399,31 @@ async fn group_resolve_ambiguities_route(
     let Some(member_ids) = body.get("member_ids").and_then(Value::as_array) else {
         return refusal(ReasonCode::MissingRequiredField, "member_ids is required");
     };
-    let member_ids: Vec<String> = member_ids
+    let Some(member_ids) = member_ids
         .iter()
-        .filter_map(Value::as_str)
-        .map(str::to_owned)
-        .collect();
+        .map(|value| value.as_str().map(str::to_owned))
+        .collect::<Option<Vec<String>>>()
+    else {
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "member_ids must contain only strings",
+        );
+    };
     if member_ids.is_empty() {
-        return refusal(ReasonCode::InvalidRequestValue, "member_ids must not be empty");
+        return refusal(
+            ReasonCode::InvalidRequestValue,
+            "member_ids must not be empty",
+        );
     }
     let Some(revision) = body.get("revision").and_then(Value::as_str) else {
         return refusal(ReasonCode::MissingRequiredField, "revision is required");
     };
     let revision = revision.to_owned();
 
-    // Look up eligible entities for each member
-    let plan = match solstone_core_serving::seam::run_blocking({
-        let root = Arc::clone(&root);
-        let member_ids = member_ids.clone();
-        move || {
+    let root = Arc::clone(&root);
+    match run_entity_write(move || {
+        let _trust = solstone_core_entity::hold_entity_trust_lock(&root)?;
+        let eligible_by_member = (|| -> Result<_, String> {
             let rows = solstone_core_entity::read_ambiguities(
                 &root,
                 solstone_core_entity::MalformedPolicy::Raise,
@@ -3427,7 +3436,7 @@ async fn group_resolve_ambiguities_route(
                 let Some(row) = rows.iter().find(|r| {
                     r.get("ambiguity_id").and_then(Value::as_str) == Some(member_id.as_str())
                 }) else {
-                    return Ok::<_, String>(None);
+                    return Err("group member not found".to_owned());
                 };
 
                 let scope = row
@@ -3496,30 +3505,18 @@ async fn group_resolve_ambiguities_route(
                 eligible_by_member.insert(member_id.clone(), eligible);
             }
 
-            Ok(Some(eligible_by_member))
-        }
+            Ok(eligible_by_member)
+        })()
+        .map_err(|detail| solstone_core_entity::EntityWriteError::AmbiguityRowInvalid { detail })?;
+        let req = solstone_core_entity::AmbiguityGroupResolveRequest {
+            entity_id,
+            member_ids,
+            revision,
+            eligible_by_member,
+        };
+        solstone_core_entity::record_ambiguity_group_choice(&root, &req)
     })
     .await
-    {
-        Ok(Ok(Some(plan))) => plan,
-        Ok(Ok(None)) => return refusal(ReasonCode::EntityNotFound, "member not found"),
-        _ => {
-            return refusal(
-                ReasonCode::InvalidRequestValue,
-                "group resolve eligibility lookup failed",
-            );
-        }
-    };
-
-    let req = solstone_core_entity::AmbiguityGroupResolveRequest {
-        entity_id,
-        member_ids,
-        revision,
-        eligible_by_member: plan,
-    };
-
-    let root = Arc::clone(&root);
-    match run_entity_write(move || solstone_core_entity::resolve_ambiguity_group(&root, &req)).await
     {
         Ok(Ok(resolved)) => Json(json!({"ok": true, "resolved": resolved})).into_response(),
         Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(

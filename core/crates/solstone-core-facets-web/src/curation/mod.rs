@@ -104,7 +104,7 @@ fn load_state(root: &Path) -> Result<Value, String> {
     let mut set_aside_items = Vec::new();
     for row in load_merge_candidates(root, None, None).map_err(|error| error.to_string())? {
         let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
-        if is_row_suppressed(&row) {
+        if is_row_suppressed(&row) && status == "open" {
             set_aside_items.push(set_aside_merge_item(row));
         } else if status == "open" {
             entity_items.push(entity_item(row));
@@ -118,7 +118,10 @@ fn load_state(root: &Path) -> Result<Value, String> {
 
     for row in read_ambiguities(root, MalformedPolicy::Raise).map_err(|error| error.to_string())? {
         let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
-        if is_row_suppressed(&row) {
+        if (is_row_suppressed(&row) && status == "open")
+            || (status == "resolved"
+                && row.pointer("/review/choice/kind").and_then(Value::as_str) == Some("automatic"))
+        {
             set_aside_items.push(set_aside_ambiguity_item(row));
         } else if status == "open" {
             ambiguity_items.push(ambiguity_item(row.clone()));
@@ -133,6 +136,7 @@ fn load_state(root: &Path) -> Result<Value, String> {
                     })
                     .unwrap_or_default();
                 candidate_ids.sort();
+                candidate_ids.dedup();
                 if !candidate_ids.is_empty() {
                     let candidates = obj
                         .get("ranked_candidates")
@@ -192,6 +196,8 @@ fn load_state(root: &Path) -> Result<Value, String> {
                 "query": query,
                 "occurrence_count": occurrence_count,
                 "origin_keys": origin_keys,
+                "scope": r.get("scope"),
+                "origins": r.get("origins"),
             }));
         }
         ambiguity_groups.push(json!({
@@ -416,6 +422,11 @@ fn set_aside_merge_item(row: Value) -> Value {
         obj.insert("kind".to_owned(), json!("entity_merge_set_aside"));
         obj.insert("reason".to_owned(), Value::String(reason));
         obj.insert("restore_id".to_owned(), Value::String(key));
+        obj.insert("restore".to_owned(), json!({"target":"merge_candidate", "facet":facet, "source_slug":source_slug, "target_slug":target_slug}));
+        obj.insert(
+            "target_name".to_owned(),
+            row.get("target").cloned().unwrap_or(Value::Null),
+        );
         obj.insert("target".to_owned(), json!("merge_candidate"));
         obj.insert(
             "review".to_owned(),
@@ -434,6 +445,7 @@ fn set_aside_ambiguity_item(row: Value) -> Value {
         .and_then(Value::as_object)
         .and_then(|s| s.get("reason"))
         .and_then(Value::as_str)
+        .or_else(|| row.pointer("/review/choice/reason").and_then(Value::as_str))
         .unwrap_or_default()
         .to_owned();
     let ambiguity_id = string(&row, "ambiguity_id");
@@ -441,6 +453,14 @@ fn set_aside_ambiguity_item(row: Value) -> Value {
         obj.insert("kind".to_owned(), json!("entity_ambiguity_set_aside"));
         obj.insert("reason".to_owned(), Value::String(reason));
         obj.insert("restore_id".to_owned(), Value::String(ambiguity_id));
+        obj.insert(
+            "restore".to_owned(),
+            json!({"target":"ambiguity", "ambiguity_id":row.get("ambiguity_id")}),
+        );
+        obj.insert(
+            "query".to_owned(),
+            row.get("latest_query").cloned().unwrap_or(Value::Null),
+        );
         obj.insert("target".to_owned(), json!("ambiguity"));
         obj.insert(
             "review".to_owned(),
@@ -1597,13 +1617,17 @@ mod tests {
             query: hostile_query.to_owned(),
             normalized_query: "script alert xss script foo".to_owned(),
             observed_tier: 5,
-            ranked_candidates: vec![json!({"id": "candidate_entity", "name": "Candidate Entity", "tier": 5, "score": 80.0})],
+            ranked_candidates: vec![
+                json!({"id": "candidate_entity", "name": "Candidate Entity", "tier": 5, "score": 80.0}),
+            ],
             origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
         };
         solstone_core_entity::record_ambiguity_observation(root.path(), &obs).expect("record");
 
         let state = load_state(root.path()).expect("load_state");
-        let amb_items = state["ambiguity_items"].as_array().expect("ambiguity_items");
+        let amb_items = state["ambiguity_items"]
+            .as_array()
+            .expect("ambiguity_items");
         assert_eq!(amb_items[0]["name"], hostile_query);
     }
 }

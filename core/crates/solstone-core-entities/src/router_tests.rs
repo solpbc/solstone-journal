@@ -6704,3 +6704,27 @@ async fn observations_pagination_over_200_rows() {
     assert_eq!(status, 400);
     assert_eq!(body["reason_code"], "invalid_request_value");
 }
+
+#[tokio::test]
+async fn group_choice_rejects_non_string_members_without_answering_valid_members() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    seed_facet_entity(j.path(), "work", "a");
+    let row = seed_facet_ambiguity(j.path(), "Alic");
+    let revision = solstone_core_entity::ambiguity_group_revision(
+        &["a".to_owned()],
+        &[row.as_object().unwrap()],
+    );
+    let path = j.path().join("entities/ambiguities.jsonl");
+    let before = fs::read(&path).unwrap();
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/ambiguities/group-resolve",
+        json!({
+            "entity_id":"a", "member_ids":[row["ambiguity_id"], 1], "revision":revision,
+        }),
+    )
+    .await;
+    assert_eq!(status, 400);
+    assert_eq!(fs::read(&path).unwrap(), before);
+}

@@ -345,8 +345,14 @@ fn record_entity_resolution_impl(
         .transpose()?;
     let normalized_query = normalize_resolution_query(query);
     let match_query = matchable_resolution_query(query);
+    let is_placeholder = matches!(
+        origin.get("lane").and_then(Value::as_str),
+        Some("apps.speakers.attribution" | "talent.speaker_attribution")
+    ) && crate::is_placeholder_query(&normalized_query);
 
-    if let Some(row) = load_resolved_ambiguity_choice(journal_root, &scope, &normalized_query)? {
+    if !is_placeholder
+        && let Some(row) = load_resolved_ambiguity_choice(journal_root, &scope, &normalized_query)?
+    {
         let ambiguity_id = row
             .get("ambiguity_id")
             .and_then(Value::as_str)
@@ -384,8 +390,6 @@ fn record_entity_resolution_impl(
     if entities.is_empty() {
         return Ok(no_match());
     }
-
-    let is_placeholder = crate::is_placeholder_query(&normalized_query);
 
     if !is_placeholder {
         let candidates: Vec<_> = entities

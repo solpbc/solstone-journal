@@ -514,12 +514,13 @@ pub fn record_ambiguity_observation(
     journal_root: &Path,
     observation: &AmbiguityObservation,
 ) -> Result<Value, EntityWriteError> {
-    let census = super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
+    let _trust = hold_entity_trust_lock(journal_root)?;
+    let census =
+        super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
     let config_read = solstone_core_journal_config::read_journal_config(journal_root).ok();
     let typo_enabled = solstone_core_journal_config::entity_tier8_typo_acceptance_enabled(
         config_read.as_ref().and_then(|r| r.config.as_ref()),
     );
-    let _trust = hold_entity_trust_lock(journal_root)?;
     mutate_ambiguities(journal_root, |rows| {
         let scope_key = ambiguity_scope_key(&observation.scope)?;
         let key = format!("{scope_key}|{}", observation.normalized_query);
@@ -579,7 +580,13 @@ pub fn record_ambiguity_observation(
                 object.insert("occurrence_count".to_owned(), Value::from(count));
                 object.insert("last_seen".to_owned(), Value::String(now.clone()));
             }
-            super::review_policy::apply_ambiguity_review_policy(object, &census, typo_enabled, &now);
+            let allow_typo = super::review_policy::typo_scope_is_current(
+                journal_root,
+                object,
+                &census,
+                typo_enabled,
+            )?;
+            super::review_policy::apply_ambiguity_review_policy(object, &census, allow_typo, &now);
             return Ok(row.clone());
         }
 
@@ -624,7 +631,9 @@ pub fn record_ambiguity_observation(
         let mut audit = Map::new();
         audit.insert("prior_choices".to_owned(), Value::Array(Vec::new()));
         row.insert("audit".to_owned(), Value::Object(audit));
-        super::review_policy::apply_ambiguity_review_policy(&mut row, &census, typo_enabled, &now);
+        let allow_typo =
+            super::review_policy::typo_scope_is_current(journal_root, &row, &census, typo_enabled)?;
+        super::review_policy::apply_ambiguity_review_policy(&mut row, &census, allow_typo, &now);
         let row = Value::Object(row);
         rows.push(row.clone());
         Ok(row)

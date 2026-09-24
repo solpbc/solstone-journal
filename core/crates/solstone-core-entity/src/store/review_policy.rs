@@ -179,6 +179,76 @@ pub(crate) fn ensure_review_object(
         .expect("review object ensured")
 }
 
+/// Check current scope membership before admitting a new automatic choice.
+pub(crate) fn typo_scope_is_current(
+    journal_root: &Path,
+    row: &Map<String, Value>,
+    census: &IdentityCensus,
+    enabled: bool,
+) -> Result<bool, EntityWriteError> {
+    if !enabled
+        || row.get("status").and_then(Value::as_str) != Some("open")
+        || row.get("observed_tier").and_then(Value::as_u64) != Some(8)
+    {
+        return Ok(false);
+    }
+    let scope = &row["scope"];
+    if scope["kind"] == "journal" {
+        return Ok(true);
+    }
+    let Some(facet) = scope.get("facet").and_then(Value::as_str) else {
+        return Ok(false);
+    };
+    let candidates: BTreeSet<&str> = row
+        .get("ranked_candidates")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|candidate| candidate.get("id").and_then(Value::as_str))
+        .filter(|id| census.is_proved_present(id))
+        .collect();
+    if candidates.len() != 1 {
+        return Ok(false);
+    }
+    let candidate_id = *candidates.first().expect("one candidate");
+    let directory = contained_path(journal_root, &format!("facets/{facet}/entities"))
+        .map_err(|error| EntityWriteError::Read(error.into()))?;
+    let entries = solstone_core_journal_io::list_dir_entries(&directory)
+        .map_err(|error| EntityWriteError::Read(error.into()))?;
+    for entry in entries {
+        if entry.kind != solstone_core_journal_io::DirEntryKind::Directory {
+            continue;
+        }
+        let Some(name) = entry.name.to_str() else {
+            continue;
+        };
+        let path = contained_path(
+            journal_root,
+            &format!("facets/{facet}/entities/{name}/entity.json"),
+        )
+        .map_err(|error| EntityWriteError::Read(error.into()))?;
+        let link = read_json::<Value>(&path, Value::Null, MalformedPolicy::Raise)
+            .map_err(|error| EntityWriteError::Read(error.into()))?;
+        if link.is_null() {
+            continue;
+        }
+        if !link.is_object() {
+            return Err(EntityWriteError::AmbiguityRowInvalid {
+                detail: "facet entity relationship is not an object".to_owned(),
+            });
+        }
+        let id = link
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .unwrap_or(name);
+        if id == candidate_id && link.get("detached") != Some(&Value::Bool(true)) {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Evaluate and apply automatic review policies to one ambiguity row.
 pub fn apply_ambiguity_review_policy(
     row: &mut Map<String, Value>,
@@ -206,14 +276,6 @@ pub fn apply_ambiguity_review_policy(
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default();
-    let has_participation = origins.iter().any(|origin| {
-        origin
-            .as_object()
-            .and_then(|o| o.get("lane"))
-            .and_then(Value::as_str)
-            == Some("talent.participation")
-    });
-
     let normalized_query = row
         .get("normalized_query")
         .and_then(Value::as_str)
@@ -261,8 +323,8 @@ pub fn apply_ambiguity_review_policy(
     // Check suppression predicates in priority order
     let mut qualifying_suppression: Option<(&'static str, String)> = None;
 
-    if !has_participation {
-        // 1. Stale: all candidates proved absent
+    {
+        // Missing candidates cannot be answered in any lane.
         if census.complete && all_proved && proved_present.is_empty() && !candidate_ids.is_empty() {
             let mut sorted_ids = candidate_ids.clone();
             sorted_ids.sort();
@@ -270,7 +332,10 @@ pub fn apply_ambiguity_review_policy(
         }
 
         // 2. Placeholder: normalized query matches full placeholder pattern
-        if qualifying_suppression.is_none() && is_placeholder_query(&normalized_query) {
+        if qualifying_suppression.is_none()
+            && is_speaker_only
+            && is_placeholder_query(&normalized_query)
+        {
             qualifying_suppression =
                 Some(("placeholder", format!("placeholder:{normalized_query}")));
         }
@@ -368,61 +433,62 @@ pub fn apply_ambiguity_review_policy(
             }));
 
             // Check if a new qualifying suppression applies and is not released
-            if let Some((new_reason, new_key)) = qualifying_suppression {
-                if !released_keys.contains(&(new_reason.to_owned(), new_key.clone())) {
-                    let review_mut = ensure_review_object(row, false);
-                    review_mut.insert(
-                        "suppression".to_owned(),
-                        json!({
-                            "reason": new_reason,
-                            "at": now,
-                            "evidence_key": new_key,
-                        }),
-                    );
-                    let history = review_mut
-                        .entry("history".to_owned())
-                        .or_insert_with(|| Value::Array(Vec::new()))
-                        .as_array_mut()
-                        .expect("history array");
-                    history.push(json!({
-                        "action": "set_aside",
+            if let Some((new_reason, new_key)) = qualifying_suppression
+                && !released_keys.contains(&(new_reason.to_owned(), new_key.clone()))
+            {
+                let review_mut = ensure_review_object(row, false);
+                review_mut.insert(
+                    "suppression".to_owned(),
+                    json!({
                         "reason": new_reason,
                         "at": now,
                         "evidence_key": new_key,
-                    }));
-                    suppression_active = true;
-                }
-            }
-        }
-    } else if let Some((new_reason, new_key)) = qualifying_suppression {
-        if !released_keys.contains(&(new_reason.to_owned(), new_key.clone())) {
-            let review_mut = ensure_review_object(row, false);
-            review_mut.insert(
-                "suppression".to_owned(),
-                json!({
+                    }),
+                );
+                let history = review_mut
+                    .entry("history".to_owned())
+                    .or_insert_with(|| Value::Array(Vec::new()))
+                    .as_array_mut()
+                    .expect("history array");
+                history.push(json!({
+                    "action": "set_aside",
                     "reason": new_reason,
                     "at": now,
                     "evidence_key": new_key,
-                }),
-            );
-            let history = review_mut
-                .entry("history".to_owned())
-                .or_insert_with(|| Value::Array(Vec::new()))
-                .as_array_mut()
-                .expect("history array");
-            history.push(json!({
-                "action": "set_aside",
+                }));
+                suppression_active = true;
+            }
+        }
+    } else if let Some((new_reason, new_key)) = qualifying_suppression
+        && !released_keys.contains(&(new_reason.to_owned(), new_key.clone()))
+    {
+        let review_mut = ensure_review_object(row, false);
+        review_mut.insert(
+            "suppression".to_owned(),
+            json!({
                 "reason": new_reason,
                 "at": now,
                 "evidence_key": new_key,
-            }));
-            suppression_active = true;
-        }
+            }),
+        );
+        let history = review_mut
+            .entry("history".to_owned())
+            .or_insert_with(|| Value::Array(Vec::new()))
+            .as_array_mut()
+            .expect("history array");
+        history.push(json!({
+            "action": "set_aside",
+            "reason": new_reason,
+            "at": now,
+            "evidence_key": new_key,
+        }));
+        suppression_active = true;
     }
 
     // Typo auto-acceptance runs only when no suppression is active
     if !suppression_active
         && typo_acceptance_enabled
+        && released_keys.is_empty()
         && observed_tier == 8
         && census.complete
         && all_proved
@@ -445,8 +511,15 @@ pub fn apply_ambiguity_review_policy(
 
         let candidate_entity = census.get_entity(candidate_id);
         let candidate_blocked = candidate_entity.is_some_and(|e| e.blocked);
-        let speaker_eligible = if is_speaker_only {
-            candidate_entity.is_some_and(|e| e.entity_type.as_deref() == Some("Person") && !e.blocked)
+        let has_speaker_origin = origins.iter().any(|origin| {
+            matches!(
+                origin.get("lane").and_then(Value::as_str),
+                Some("apps.speakers.attribution" | "talent.speaker_attribution")
+            )
+        });
+        let speaker_eligible = if has_speaker_origin {
+            candidate_entity
+                .is_some_and(|e| e.entity_type.as_deref() == Some("Person") && !e.blocked)
         } else {
             !candidate_blocked
         };
@@ -614,8 +687,14 @@ pub fn ambiguity_group_revision(
 
     let mut sorted_members = member_rows.to_vec();
     sorted_members.sort_by(|left, right| {
-        let left_id = left.get("ambiguity_id").and_then(Value::as_str).unwrap_or_default();
-        let right_id = right.get("ambiguity_id").and_then(Value::as_str).unwrap_or_default();
+        let left_id = left
+            .get("ambiguity_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let right_id = right
+            .get("ambiguity_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
         left_id.cmp(right_id)
     });
 
@@ -650,6 +729,16 @@ pub fn ambiguity_group_revision(
             count,
             origin_keys.join(",")
         ));
+        // Scores, scope and origin bodies are evidence too, even when IDs/counts stay fixed.
+        buffer.push_str(
+            &serde_json::to_string(&json!({
+                "candidates": member.get("ranked_candidates"),
+                "scope": member.get("scope"),
+                "origins": member.get("origins"),
+            }))
+            .expect("review evidence serializes"),
+        );
+        buffer.push('\n');
     }
 
     let digest = Sha256::digest(buffer.as_bytes());
@@ -666,7 +755,7 @@ pub struct AmbiguityGroupResolveRequest {
 }
 
 /// Execute group resolution across selected members of an ambiguity card.
-pub fn resolve_ambiguity_group(
+pub fn record_ambiguity_group_choice(
     journal_root: &Path,
     request: &AmbiguityGroupResolveRequest,
 ) -> Result<Vec<Value>, EntityWriteError> {
@@ -741,7 +830,8 @@ pub fn resolve_ambiguity_group(
             });
         }
 
-        let census = super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
+        let census =
+            super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
         if !census.complete {
             return Err(EntityWriteError::CensusIncomplete {
                 detail: "identity census is incomplete for group resolve".to_owned(),
@@ -754,6 +844,12 @@ pub fn resolve_ambiguity_group(
             });
         }
         let chosen_entity = census.get_entity(&request.entity_id);
+        if chosen_entity.is_none_or(|entity| entity.blocked) {
+            return Err(EntityWriteError::AmbiguityChoiceInvalid {
+                entity_id: request.entity_id.clone(),
+                detail: "chosen entity is unavailable or blocked".to_owned(),
+            });
+        }
 
         // Verify all selected members exist in the group and are eligible
         for member_id in &request.member_ids {
@@ -781,9 +877,8 @@ pub fn resolve_ambiguity_group(
                 })
                 .unwrap_or(false);
             if is_speaker_only {
-                let is_eligible_person = chosen_entity.is_some_and(|e| {
-                    e.entity_type.as_deref() == Some("Person") && !e.blocked
-                });
+                let is_eligible_person = chosen_entity
+                    .is_some_and(|e| e.entity_type.as_deref() == Some("Person") && !e.blocked);
                 if !is_eligible_person {
                     return Err(EntityWriteError::AmbiguityChoiceInvalid {
                         entity_id: request.entity_id.clone(),
@@ -795,23 +890,28 @@ pub fn resolve_ambiguity_group(
                 }
             }
 
-            let eligible = request
-                .eligible_by_member
-                .get(member_id)
-                .ok_or_else(|| EntityWriteError::AmbiguityRowInvalid {
+            let eligible = request.eligible_by_member.get(member_id).ok_or_else(|| {
+                EntityWriteError::AmbiguityRowInvalid {
                     detail: format!("eligibility missing for member {member_id}"),
-                })?;
+                }
+            })?;
             let selected = eligible
                 .iter()
                 .find(|e| e.id == request.entity_id)
                 .ok_or_else(|| EntityWriteError::AmbiguityChoiceInvalid {
                     entity_id: request.entity_id.clone(),
-                    detail: format!("entity {} ineligible for member {member_id}", request.entity_id),
+                    detail: format!(
+                        "entity {} ineligible for member {member_id}",
+                        request.entity_id
+                    ),
                 })?;
             if selected.blocked {
                 return Err(EntityWriteError::AmbiguityChoiceInvalid {
                     entity_id: request.entity_id.clone(),
-                    detail: format!("entity {} is blocked for member {member_id}", request.entity_id),
+                    detail: format!(
+                        "entity {} is blocked for member {member_id}",
+                        request.entity_id
+                    ),
                 });
             }
         }
@@ -902,10 +1002,7 @@ pub fn restore_review(
                 };
 
                 let review = ensure_review_object(row, false);
-                let choice = review
-                    .get("choice")
-                    .and_then(Value::as_object)
-                    .cloned();
+                let choice = review.get("choice").and_then(Value::as_object).cloned();
 
                 if let Some(choice_obj) = choice {
                     let choice_entity_id = choice_obj.get("entity_id").and_then(Value::as_str);
@@ -913,11 +1010,15 @@ pub fn restore_review(
 
                     if current_resolved == choice_entity_id {
                         row.insert("status".to_owned(), Value::String("open".to_owned()));
-                        row.remove("resolved_entity_id");
-                        row.remove("resolved_at");
+                        row.insert("resolved_entity_id".to_owned(), Value::Null);
+                        row.insert("resolved_at".to_owned(), Value::Null);
 
                         let candidate_id = choice_entity_id.unwrap_or_default().to_owned();
-                        let norm_query = row.get("normalized_query").and_then(Value::as_str).unwrap_or_default().to_owned();
+                        let norm_query = row
+                            .get("normalized_query")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned();
                         let typo_key = format!("typo:{candidate_id}:{norm_query}");
 
                         let review_mut = ensure_review_object(row, false);
@@ -959,8 +1060,16 @@ pub fn restore_review(
                         .cloned();
 
                     if let Some(supp_obj) = suppression {
-                        let reason = supp_obj.get("reason").and_then(Value::as_str).unwrap_or_default().to_owned();
-                        let evidence_key = supp_obj.get("evidence_key").and_then(Value::as_str).unwrap_or_default().to_owned();
+                        let reason = supp_obj
+                            .get("reason")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned();
+                        let evidence_key = supp_obj
+                            .get("evidence_key")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned();
 
                         review_mut.insert("suppression".to_owned(), Value::Null);
 
@@ -1005,16 +1114,18 @@ pub fn restore_review(
         } => {
             let res = super::review_candidates::mutate_candidates(journal_root, |rows| {
                 let target_key = format!("{facet}|{source_slug}|{target_slug}");
-                let Some(row) = rows
-                    .iter_mut()
-                    .filter_map(Value::as_object_mut)
-                    .find(|r| {
-                        let f = r.get("facet").and_then(Value::as_str).unwrap_or_default();
-                        let s = r.get("source_slug").and_then(Value::as_str).unwrap_or_default();
-                        let t = r.get("target_slug").and_then(Value::as_str).unwrap_or_default();
-                        format!("{f}|{s}|{t}") == target_key
-                    })
-                else {
+                let Some(row) = rows.iter_mut().filter_map(Value::as_object_mut).find(|r| {
+                    let f = r.get("facet").and_then(Value::as_str).unwrap_or_default();
+                    let s = r
+                        .get("source_slug")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let t = r
+                        .get("target_slug")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    format!("{f}|{s}|{t}") == target_key
+                }) else {
                     return Ok(Value::Null);
                 };
 
@@ -1027,8 +1138,16 @@ pub fn restore_review(
                         .cloned();
 
                     if let Some(supp_obj) = suppression {
-                        let reason = supp_obj.get("reason").and_then(Value::as_str).unwrap_or_default().to_owned();
-                        let evidence_key = supp_obj.get("evidence_key").and_then(Value::as_str).unwrap_or_default().to_owned();
+                        let reason = supp_obj
+                            .get("reason")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned();
+                        let evidence_key = supp_obj
+                            .get("evidence_key")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned();
 
                         review_mut.insert("suppression".to_owned(), Value::Null);
 
@@ -1098,19 +1217,17 @@ pub enum ReviewRestoreTarget {
 
 /// One-shot startup sweep executing review policy across ambiguities and merge candidates.
 pub fn sweep_entity_review_policy(journal_root: &Path) -> Result<(), EntityWriteError> {
+    let _trust = hold_entity_trust_lock(journal_root)?;
     let receipt_path = match contained_path(journal_root, REVIEW_SWEEP_RECEIPT_RELATIVE_PATH) {
         Ok(p) => p,
         Err(err) => return Err(EntityWriteError::Read(err.into())),
     };
 
-    if receipt_path.exists() {
-        if let Ok(value) = read_json::<Value>(&receipt_path, Value::Null, MalformedPolicy::Raise) {
-            if value.get("policy_version").and_then(Value::as_u64)
-                == Some(ENTITY_REVIEW_POLICY_VERSION)
-            {
-                return Ok(());
-            }
-        }
+    if receipt_path.exists()
+        && let Ok(value) = read_json::<Value>(&receipt_path, Value::Null, MalformedPolicy::Raise)
+        && value.get("policy_version").and_then(Value::as_u64) == Some(ENTITY_REVIEW_POLICY_VERSION)
+    {
+        return Ok(());
     }
 
     let census = scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
@@ -1121,16 +1238,14 @@ pub fn sweep_entity_review_policy(journal_root: &Path) -> Result<(), EntityWrite
     }
 
     let config_read = read_journal_config(journal_root).ok();
-    let typo_enabled = entity_tier8_typo_acceptance_enabled(
-        config_read.as_ref().and_then(|r| r.config.as_ref()),
-    );
+    let typo_enabled =
+        entity_tier8_typo_acceptance_enabled(config_read.as_ref().and_then(|r| r.config.as_ref()));
 
     let now = ambiguity_now_iso();
-    let _trust = hold_entity_trust_lock(journal_root)?;
-
     mutate_ambiguities(journal_root, |rows| {
         for row in rows.iter_mut().filter_map(Value::as_object_mut) {
-            apply_ambiguity_review_policy(row, &census, typo_enabled, &now);
+            let allow_typo = typo_scope_is_current(journal_root, row, &census, typo_enabled)?;
+            apply_ambiguity_review_policy(row, &census, allow_typo, &now);
         }
         Ok(Value::Null)
     })?;
@@ -1145,9 +1260,7 @@ pub fn sweep_entity_review_policy(journal_root: &Path) -> Result<(), EntityWrite
         super::review_candidates::EntityReviewCandidateError::TrustLock(e) => {
             EntityWriteError::TrustLock(e)
         }
-        super::review_candidates::EntityReviewCandidateError::Store(e) => {
-            EntityWriteError::Read(e)
-        }
+        super::review_candidates::EntityReviewCandidateError::Store(e) => EntityWriteError::Read(e),
         super::review_candidates::EntityReviewCandidateError::Lock(e) => {
             EntityWriteError::AmbiguityLock(e)
         }
@@ -1156,9 +1269,6 @@ pub fn sweep_entity_review_policy(journal_root: &Path) -> Result<(), EntityWrite
         }
     })?;
 
-    if let Some(parent) = receipt_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
     let receipt_json = json!({
         "schema_version": 1,
         "policy_version": ENTITY_REVIEW_POLICY_VERSION,

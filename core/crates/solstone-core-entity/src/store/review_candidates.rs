@@ -13,9 +13,9 @@ use solstone_core_journal_io::AtomicWriteError;
 use solstone_core_journal_io::AtomicWriteOptions;
 use solstone_core_journal_io::LockError;
 use solstone_core_journal_io::LockOptions;
-use solstone_core_journal_io::durability::{ArtifactId, read_jsonl_durable};
 use solstone_core_journal_io::hold_lock;
 use solstone_core_journal_io::write_text;
+use solstone_core_journal_io::{MalformedPolicy, read_jsonl};
 
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
@@ -72,6 +72,8 @@ pub fn record_merge_candidate(
 ) -> Result<(Value, bool), EntityReviewCandidateError> {
     let _trust =
         hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    let census = super::census::scan_identity_census(journal_root)
+        .map_err(EntityReviewCandidateError::Store)?;
     let key = candidate_key(facet, source_slug, target_slug);
     let basis = basis.unwrap_or(DEFAULT_BASIS);
     mutate_candidates(journal_root, |rows| {
@@ -98,11 +100,12 @@ pub fn record_merge_candidate(
                 evidence_object.insert("needs".to_owned(), Value::from(needs));
             }
             object.insert("last_surfaced".to_owned(), Value::String(day.to_owned()));
-            object.insert("updated_at".to_owned(), Value::String(now));
+            object.insert("updated_at".to_owned(), Value::String(now.clone()));
+            super::review_policy::apply_merge_candidate_review_policy(object, &census, &now);
             return Ok((existing.clone(), false));
         }
 
-        let row = serde_json::json!({
+        let mut row = serde_json::json!({
             "facet": facet,
             "source": source,
             "source_slug": source_slug,
@@ -120,6 +123,11 @@ pub fn record_merge_candidate(
             "created_at": now,
             "updated_at": now,
         });
+        super::review_policy::apply_merge_candidate_review_policy(
+            row.as_object_mut().expect("candidate object"),
+            &census,
+            &now,
+        );
         rows.push(row.clone());
         Ok((row, true))
     })
@@ -137,6 +145,7 @@ pub fn prepare_merge_proposals(
     proposals: &[Value],
 ) -> Result<PreparedMergeProposals, String> {
     let _trust = hold_entity_trust_lock(root).map_err(|e| e.to_string())?;
+    let census = super::census::scan_identity_census(root).map_err(|e| e.to_string())?;
     let path = review_candidates_path(root).map_err(|e| e.to_string())?;
     let _lock = hold_lock(&path, LockOptions::default()).map_err(|e| e.to_string())?;
     let before = proposal_bytes(&path)?;
@@ -190,6 +199,9 @@ pub fn prepare_merge_proposals(
                 "first_surfaced":proposal["day"], "last_surfaced":proposal["day"], "created_at":now, "updated_at":now,
             }));
         }
+    }
+    for row in rows.iter_mut().filter_map(Value::as_object_mut) {
+        super::review_policy::apply_merge_candidate_review_policy(row, &census, &now);
     }
     let after = rows
         .iter()
@@ -307,17 +319,9 @@ pub fn load_merge_candidates(
     status: Option<&str>,
 ) -> Result<Vec<Value>, EntityStoreError> {
     let path = review_candidates_path(journal_root)?;
-    let result =
-        read_jsonl_durable::<Value>(ArtifactId::EntityReviewCandidates, &path).map_err(|e| {
-            EntityStoreError::from(solstone_core_journal_io::ReadError::Io {
-                path: path.clone(),
-                source: e,
-            })
-        })?;
+    let result = read_candidate_rows(&path, MalformedPolicy::Skip)?;
     Ok(result
-        .records
         .into_iter()
-        .filter(Value::is_object)
         .filter(|row| {
             facet.is_none_or(|facet| row.get("facet").and_then(Value::as_str) == Some(facet))
         })
@@ -340,17 +344,8 @@ pub(crate) fn mutate_candidates<T>(
         },
     )
     .map_err(EntityReviewCandidateError::Lock)?;
-    let rows = read_jsonl_durable::<Value>(ArtifactId::EntityReviewCandidates, &path).map_err(
-        |error| {
-            EntityReviewCandidateError::Store(EntityStoreError::from(
-                solstone_core_journal_io::ReadError::Io {
-                    path: path.clone(),
-                    source: error,
-                },
-            ))
-        },
-    )?;
-    let mut rows: Vec<Value> = rows.records.into_iter().filter(Value::is_object).collect();
+    let mut rows = read_candidate_rows(&path, MalformedPolicy::Raise)
+        .map_err(EntityReviewCandidateError::Store)?;
     let result = mutate(&mut rows)?;
     let contents = rows
         .iter()
@@ -359,6 +354,29 @@ pub(crate) fn mutate_candidates<T>(
     write_text(&path, &contents, AtomicWriteOptions { mode: Some(0o600) })
         .map_err(EntityReviewCandidateError::Write)?;
     Ok(result)
+}
+
+fn read_candidate_rows(
+    path: &Path,
+    policy: MalformedPolicy,
+) -> Result<Vec<Value>, EntityStoreError> {
+    let rows = read_jsonl::<Map<String, Value>>(path, Vec::new(), policy)?;
+    for row in &rows {
+        if let Some(review) = row.get("review") {
+            let valid = review
+                .as_object()
+                .ok_or("review must be an object")
+                .and_then(|review| super::review_policy::validate_review_object(review, true));
+            if let Err(detail) = valid {
+                return Err(solstone_core_journal_io::ReadError::Io {
+                    path: path.to_owned(),
+                    source: std::io::Error::new(std::io::ErrorKind::InvalidData, detail),
+                }
+                .into());
+            }
+        }
+    }
+    Ok(rows.into_iter().map(Value::Object).collect())
 }
 
 fn candidate_key(facet: &str, source_slug: &str, target_slug: &str) -> String {

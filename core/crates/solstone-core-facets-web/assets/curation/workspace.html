@@ -660,10 +660,12 @@ window.CUR_COPY = CUR_COPY;
     const familiesHtml = Array.from(families.entries()).map(([normQuery, fMembers]) => {
       const memberIds = fMembers.map((m) => m.ambiguity_id);
       const displayQuery = fMembers[0]?.query || normQuery;
+      const facets = [...new Set(fMembers.flatMap(m => [m.scope?.facet, ...(m.origins || []).map(o => o.facet)]).filter(Boolean))];
+      const count = fMembers.reduce((n, m) => n + m.occurrence_count, 0);
       return `
         <label class="curation-select">
           <span class="curation-tap-target"><input type="checkbox" data-action="ambiguity-family-select" data-member-ids='${escapeAttr(JSON.stringify(memberIds))}' checked></span>
-          <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: displayQuery}))} (${memberIds.length})</span>
+          <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: displayQuery}))}<span class="curation-item-facets"> · ${count} ${count === 1 ? 'occurrence' : 'occurrences'} · ${escapeHtml(facets.length ? formatFacetList(facets) : 'journal')}</span></span>
         </label>
       `;
     }).join('');
@@ -680,6 +682,11 @@ window.CUR_COPY = CUR_COPY;
             </button>
           `).join('')}
         </div>
+        <details class="curation-origin-details"><summary>individual questions and sources</summary>
+          ${members.map(m => `<div><p>${escapeHtml(m.query)} · ${escapeHtml(m.scope?.facet ? formatFacetList([m.scope.facet]) : 'journal')} · ${m.occurrence_count} occurrences</p>
+            <button class="curation-button" type="button" data-action="ambiguity-dismiss" data-ambiguity-id="${escapeAttr(m.ambiguity_id)}">${escapeHtml(CUR_COPY.CUR_AMBIGUITY_DISMISS_ACTION)}</button>
+            <ul>${(m.origins || []).map(o => `<li>${escapeHtml([o.day, o.facet, o.lane, o.field].filter(Boolean).join(' · '))}</li>`).join('')}</ul></div>`).join('')}
+        </details>
         <p class="curation-item-error" hidden></p>
       </article>
     `;
@@ -688,14 +695,24 @@ window.CUR_COPY = CUR_COPY;
   function setAsideItemHtml(item) {
     const target = item.target || (item.kind === 'entity_merge_set_aside' ? 'merge_candidate' : 'ambiguity');
     const label = target === 'ambiguity'
-      ? (item.query || item.key)
+      ? (item.query || item.name || item.key)
       : `${item.source || item.source_slug} and ${item.target_name || item.target_slug}`;
+    const reasons = {
+      stale: 'the suggested entity is no longer here',
+      speaker_type: 'the suggested entity is not a person',
+      placeholder: 'this is a speaker label, not a name',
+      low_prefix: 'the names have little in common',
+      typo: 'a close spelling match was chosen automatically'
+    };
+    const at = item.review?.suppression?.at || item.review?.choice?.at || '';
     return `
-      <article class="curation-item" data-curation-item data-kind="${escapeAttr(item.kind)}" data-restore-id="${escapeAttr(item.restore_id || item.key)}" data-target="${escapeAttr(target)}">
-        <p class="curation-body">${escapeHtml(label)} <span class="curation-item-facets">(set aside: ${escapeHtml(item.reason || 'automatic')})</span></p>
+      <article class="curation-item" data-review-history data-kind="${escapeAttr(item.kind)}" data-restore-id="${escapeAttr(item.restore_id || item.key)}" data-target="${escapeAttr(target)}">
+        <p class="curation-body">${escapeHtml(label)} <span class="curation-item-facets"> · ${escapeHtml(reasons[item.reason] || item.reason)}</span></p>
+        ${at ? `<p class="curation-item-facets"><time datetime="${escapeAttr(at)}">${escapeHtml(new Date(at).toLocaleString())}</time></p>` : ''}
         <div class="curation-actions">
-          <button class="curation-button" type="button" data-action="review-restore" data-target="${escapeAttr(target)}" data-restore-id="${escapeAttr(item.restore_id || item.key)}">${escapeHtml(CUR_COPY.CUR_REVIEW_RESTORE_ACTION || 'restore to review')}</button>
+          <button class="curation-button" type="button" data-action="review-restore" data-restore='${escapeAttr(JSON.stringify(item.restore))}'>${escapeHtml(CUR_COPY.CUR_REVIEW_RESTORE_ACTION || 'restore to review')}</button>
         </div>
+        <details class="curation-origin-details"><summary>source evidence</summary><ul>${(item.evidence?.ranked_candidates || []).map(c => `<li>${escapeHtml(c.name)} · ${escapeHtml(String(c.score))}</li>`).join('')}${(item.evidence?.origins || []).map(o => `<li>${escapeHtml([o.day, o.facet, o.lane, o.field].filter(Boolean).join(' · '))}</li>`).join('')}</ul><p>${escapeHtml(item.evidence?.summary || '')}</p></details>
         <p class="curation-item-error" hidden></p>
       </article>
     `;
@@ -790,7 +807,7 @@ window.CUR_COPY = CUR_COPY;
 
   function refreshGroupCounts() {
     root.querySelectorAll('[data-review-group]').forEach(group => {
-      const remaining = group.querySelectorAll('[data-curation-item]').length;
+      const remaining = group.querySelectorAll('[data-curation-item], [data-review-history]').length;
       group.querySelector('[data-group-count]').textContent = `(${remaining})`;
       const progress = group.querySelector('[data-group-progress]');
       if (progress) {
@@ -832,7 +849,7 @@ window.CUR_COPY = CUR_COPY;
           ${reviewGroup('ambiguity', 'names to clarify', ambiguityGroups, ambiguityGroupHtml)}
           ${reviewGroup('speaker', 'possible duplicate speaker names', speakerItems, speakerItemHtml)}
           ${reviewGroup('pair', 'possible duplicate voices', speakerCandidatePairItems, speakerCandidatePairItemHtml)}
-          ${reviewGroup('set_aside', 'set aside', setAsideItems, setAsideItemHtml)}
+          ${reviewGroup('set_aside', 'automatic review', setAsideItems, setAsideItemHtml)}
         </div>
       `;
       const outcomes = root.querySelector('[data-curation-outcomes]');
@@ -866,7 +883,7 @@ window.CUR_COPY = CUR_COPY;
   }
 
   function itemFor(node) {
-    return node ? node.closest('[data-curation-item]') : null;
+    return node ? node.closest('[data-curation-item], [data-review-history]') : null;
   }
 
   function showError(item, message) {
@@ -1245,13 +1262,8 @@ window.CUR_COPY = CUR_COPY;
     }
 
     if (action === 'review-restore') {
-      const target = button.dataset.target;
-      const restoreId = button.dataset.restoreId;
       setBusy(button, true);
-      postJson('/app/entities/api/review/restore', {
-        target: target,
-        restore_id: restoreId
-      })
+      postJson('/app/entities/api/review/restore', JSON.parse(button.dataset.restore))
         .then(async () => {
           await refreshCurationState();
         })
@@ -1271,7 +1283,7 @@ window.CUR_COPY = CUR_COPY;
         `/app/entities/api/ambiguities/${encodeURIComponent(button.dataset.ambiguityId)}/dismiss`,
         {}
       )
-        .then(() => removeItem(item))
+        .then(() => refreshCurationState())
         .catch((err) => {
           setBusy(button, false);
           showError(item, err.serverMessage || err.message);

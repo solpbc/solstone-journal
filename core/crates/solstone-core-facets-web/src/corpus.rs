@@ -297,10 +297,16 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
                 );
             }
         }
-        if let Some(set_aside) = value.as_object_mut().and_then(|obj| obj.remove("set_aside_items")) {
+        if let Some(set_aside) = value
+            .as_object_mut()
+            .and_then(|obj| obj.remove("set_aside_items"))
+        {
             assert!(set_aside.is_array());
         }
-        if let Some(groups) = value.as_object_mut().and_then(|obj| obj.remove("ambiguity_groups")) {
+        if let Some(groups) = value
+            .as_object_mut()
+            .and_then(|obj| obj.remove("ambiguity_groups"))
+        {
             assert!(groups.is_array());
         }
         Sha256::digest(canonical(&value))

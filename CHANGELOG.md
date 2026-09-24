@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- names to clarify groups repeated questions across facets. choose which names your answer applies to. questions about missing entities, speaker labels, and weak name matches move to automatic review, where you can see why and bring them back.
 - your journal's web app now follows your device's light or dark setting, and so does the page where you let an agent read your journal. search now puts its text on a panel.
 
 ### Fixed

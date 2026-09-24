@@ -88,7 +88,8 @@ pub use review_policy::{
     AmbiguityGroupResolveRequest, ENTITY_REVIEW_POLICY_VERSION, PREFIX_CUTOFF,
     REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, ReviewRestoreTarget, TYPO_FLOOR, ambiguity_group_revision,
     apply_ambiguity_review_policy, apply_merge_candidate_review_policy, is_placeholder_query,
-    resolve_ambiguity_group, restore_review, sweep_entity_review_policy, validate_review_object,
+    record_ambiguity_group_choice, restore_review, sweep_entity_review_policy,
+    validate_review_object,
 };
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{
