@@ -1070,25 +1070,65 @@ fn facet_merge_in_journal(
     destination: &str,
     consent: bool,
 ) -> Outcome {
-    match facet_merge_transaction_in_journal(journal, source, destination, consent) {
-        Err(outcome) => outcome,
-        Ok(FacetMergeCommit {
-            post_commit_failure: Some(outcome),
-            ..
-        }) => outcome,
-        Ok(FacetMergeCommit {
-            post_commit_failure: None,
-            ..
-        }) => success(format!(
-            "Merged '{source}' into '{destination}'. Index rebuild completed.\n"
+    let FacetMergeCommit {
+        report,
+        post_commit_failure,
+        source_removed,
+    } = match facet_merge_transaction_in_journal(journal, source, destination, consent) {
+        Err(outcome) => return outcome,
+        Ok(commit) => commit,
+    };
+    // The merge has committed on both paths below, so the files it did not
+    // carry over are reported either way.
+    let collisions = facet_merge_collision_notice(source, destination, &report, source_removed);
+    match post_commit_failure {
+        None => success(format!(
+            "Merged '{source}' into '{destination}'. Index rebuild completed.\n{collisions}"
         )),
+        Some(Outcome::LocalFailure {
+            stdout,
+            stderr,
+            exit,
+        }) => Outcome::LocalFailure {
+            stdout: stdout + &collisions,
+            stderr,
+            exit,
+        },
+        Some(outcome) => outcome,
     }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_merge_collision_notice(
+    source: &str,
+    destination: &str,
+    report: &FacetTreeMergeReport,
+    source_removed: bool,
+) -> String {
+    if report.regular_file_collisions.is_empty() {
+        return String::new();
+    }
+    let fate = if source_removed {
+        "was deleted with that facet"
+    } else {
+        "was not carried over"
+    };
+    let mut notice = format!(
+        "Both facets had these files. '{destination}' kept its own copy; the copy in '{source}' {fate}:\n"
+    );
+    for path in &report.regular_file_collisions {
+        notice.push_str(&format!("  {}\n", path.display()));
+    }
+    notice
 }
 
 #[cfg(not(target_os = "ios"))]
 struct FacetMergeCommit {
     report: FacetTreeMergeReport,
     post_commit_failure: Option<Outcome>,
+    /// False when cleanup failed, so the source tree may still sit in its
+    /// backup directory.
+    source_removed: bool,
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -1168,6 +1208,7 @@ fn facet_merge_transaction_in_journal(
     if let Err(error) = remove_tree_pair(&backup, &source_backup) {
         return Ok(FacetMergeCommit {
             report,
+            source_removed: false,
             post_commit_failure: Some(failure(
                 "facet merge",
                 &format!("merge committed but backup cleanup failed: {error}"),
@@ -1185,6 +1226,7 @@ fn facet_merge_transaction_in_journal(
     Ok(FacetMergeCommit {
         report,
         post_commit_failure,
+        source_removed: true,
     })
 }
 
@@ -1374,10 +1416,27 @@ mod facet_merge_tests {
             b"destination",
         )
         .expect("destination collision");
+        // Both facets have `notes/`, so the merge recurses into it rather than
+        // copying the directory whole.
+        fs::create_dir_all(journal.path().join("facets/source/notes"))
+            .expect("nested source directory");
+        fs::create_dir_all(journal.path().join("facets/destination/notes"))
+            .expect("nested destination directory");
+        fs::write(
+            journal.path().join("facets/source/notes/facet.json"),
+            b"nested",
+        )
+        .expect("nested facet.json");
 
         let outcome = facet_merge_in_journal(journal.path(), "source", "destination", false);
 
-        assert!(matches!(outcome, Outcome::LocalSuccess { .. }));
+        let Outcome::LocalSuccess { stdout, .. } = outcome else {
+            panic!("merge succeeds");
+        };
+        assert!(
+            stdout.contains("the copy in 'source' was deleted with that facet:\n  collision.md\n"),
+            "{stdout}"
+        );
         assert_eq!(fs::read(config).expect("convey config after merge"), before);
         assert_eq!(
             fs::read(journal.path().join("facets/destination/collision.md"))
@@ -1390,6 +1449,11 @@ mod facet_merge_tests {
                 .path()
                 .join("facets/destination/source.txt")
                 .exists()
+        );
+        assert_eq!(
+            fs::read(journal.path().join("facets/destination/notes/facet.json"))
+                .expect("nested facet.json is carried over"),
+            b"nested"
         );
     }
 
@@ -1616,7 +1680,8 @@ fn merge_tree_into(
         .map_err(|error| error.to_string())?;
     entries.sort_by_key(fs::DirEntry::file_name);
     for entry in entries {
-        if entry.file_name() == OsStr::new("facet.json") {
+        // The facet's own settings record lives only at its root.
+        if relative.as_os_str().is_empty() && entry.file_name() == OsStr::new("facet.json") {
             continue;
         }
         let name = entry.file_name();

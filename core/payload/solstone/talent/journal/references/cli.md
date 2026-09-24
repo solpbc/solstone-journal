@@ -162,24 +162,35 @@ solstone call journal facet unmute personal
 ## facet delete
 
 ```bash
-solstone call journal facet delete <name> [--yes] [--consent]
+solstone call journal facet delete <name> --yes [--consent]
 ```
 
-Delete a facet directory and all its data.
+Delete a facet directory and all its data. Run it only after the owner has approved this delete.
 
-- `--yes`: skip confirmation prompt.
-- `--consent`: asserts that the agent has received explicit owner approval before performing this destructive operation. Agents should always pass both `--consent` and `--yes` when calling delete. Adds `"consent": true` to the audit log entry.
+- `--yes`: required. Without it the command refuses.
+- `--consent`: accepted but changes nothing. Every delete is logged with `"consent": true` in the audit log entry.
 
 Example:
 
 ```bash
-solstone call journal facet delete old-facet
 solstone call journal facet delete old-facet --yes
 ```
 
 ## facet merge
 
-Facet merging is temporarily unavailable while this command migrates to the native journal surface.
+```bash
+journal facet merge <source> --into <dest> [--consent]
+```
+
+Move the contents of facet `<source>` into facet `<dest>`, remove `<source>`, and rebuild the search index. `.jsonl` logs and entity records that both facets have are combined; where both have the same record id or field, `<dest>`'s is kept. For any other file both facets have, `<dest>` keeps its own copy, `<source>`'s copy is deleted with `<source>`, and the command lists those files. `<source>`'s own facet settings are not carried over. Before asking the owner, compare the two facets and name any files that would be lost; to keep both copies, rename one of the two files before merging. This runs with the `journal` command on the computer the journal is on; there is no `solstone call journal` form.
+
+- `--consent`: asserts that the agent has received explicit owner approval before performing this destructive operation. Agents pass it only after the owner has approved this merge. Adds `"consent": true` to the audit log entry.
+
+Example:
+
+```bash
+journal facet merge side-project --into work --consent
+```
 
 ## facets
 

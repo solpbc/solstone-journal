@@ -21,6 +21,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `journal facet merge` now lists the files it didn't keep because both facets had a file with that name. the facet you merge into keeps its own copy, and the other copy is deleted with the facet you merged. before, that happened without a word. a `facet.json` file inside a folder both facets had is now handled like any other file in that folder; before, it was deleted.
 - on a new journal, home said something needed your attention before the journal had had a single night to catch up, or while processing wasn't set up yet, and the morning briefing card said a briefing wasn't prepared when none was due yet. home, the health page and the stats page now say when you'll see whether your journal is caught up, and the briefing card says when your first briefing is due. if it's still unclear after the first night, they say so, as before.
 - your journal could keep your computer busy while a paired device had nothing new to send, because each time that device checked in, your journal looked through every day and every source in it. it now looks only at that device's own folders.
 
