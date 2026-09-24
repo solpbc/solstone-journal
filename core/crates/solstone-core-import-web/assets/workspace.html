@@ -713,6 +713,22 @@
 </div>
 
 <script>
+// Keep diagnostic detail out of the message shown to the owner.
+function importErrorMessage(data, fallback) {
+  if (data?.reason_code === 'invalid_operation_for_state') {
+    switch (data.detail) {
+      case 'content already imported':
+      case 'content already imported; will not start':
+        return "you've already imported this file.";
+      case 'import already started or processed':
+        return 'this import has already started. check its progress in your imports.';
+      default:
+        return 'this import has changed. refresh the page and try again.';
+    }
+  }
+  return data?.error || fallback;
+}
+
 const settingInput = document.getElementById('settingInput');
 const startBtn = document.getElementById('startBtn');
 
@@ -1899,7 +1915,7 @@ function setupQuickImportForm() {
 
       if (!response.ok) {
         if (window.showError) {
-          showError(data.error || 'Validation failed');
+          showError(importErrorMessage(data, 'Validation failed'));
         }
         return;
       }
@@ -1939,7 +1955,7 @@ async function uploadGuidedSourceFile(source) {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || 'Failed to save import');
+    throw new Error(importErrorMessage(data, 'Failed to save import'));
   }
 
   currentGuidedSaved = data;
@@ -1986,7 +2002,7 @@ async function saveGuidedPath(source) {
   });
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.error || 'Path not found');
+    throw new Error(importErrorMessage(data, 'Path not found'));
   }
 
   currentGuidedSaved = data;
@@ -2027,7 +2043,7 @@ async function startGuidedImport(source) {
 
     if (!metaResponse.ok) {
       const errorData = await metaResponse.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to save import settings');
+      throw new Error(importErrorMessage(errorData, 'Failed to save import settings'));
     }
 
     trackPendingImport(ts);
@@ -2050,7 +2066,7 @@ async function startGuidedImport(source) {
     if (!startResponse.ok) {
       clearPendingImport(ts);
       const errorData = await startResponse.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to start import');
+      throw new Error(importErrorMessage(errorData, 'Failed to start import'));
     }
 
     if (!importEvents[ts] || !IMPORT_TERMINAL_EVENTS.has(importEvents[ts].event)) {
@@ -2091,7 +2107,7 @@ async function previewGuidedJournalArchive(source) {
     });
     const data = await response.json();
     if (!response.ok) {
-      throw new Error(data.error || 'Failed to preview archive');
+      throw new Error(importErrorMessage(data, 'Failed to preview archive'));
     }
     const days = Array.isArray(data.days) ? data.days : [];
     preview.innerHTML = `
@@ -2319,7 +2335,7 @@ startBtn.addEventListener('click', async () => {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to save import settings');
+      throw new Error(importErrorMessage(errorData, 'Failed to save import settings'));
     }
 
     trackPendingImport(ts);
@@ -2342,7 +2358,7 @@ startBtn.addEventListener('click', async () => {
     if (!startResponse.ok) {
       clearPendingImport(ts);
       const errorData = await startResponse.json().catch(() => ({}));
-      throw new Error(errorData.error || 'Failed to start import');
+      throw new Error(importErrorMessage(errorData, 'Failed to start import'));
     }
 
     startBtn.disabled = false;
