@@ -9,6 +9,7 @@ pub enum ReasonCode {
     LinkedDeviceRequired,
     PushRequestInvalid,
     PushRegistryUnavailable,
+    PushVapidKeyUnavailable,
     PushLedgerUnavailable,
     FeatureUnavailable,
 }
@@ -19,6 +20,7 @@ impl ReasonCode {
             Self::LinkedDeviceRequired => "linked_device_required",
             Self::PushRequestInvalid => "push_request_invalid",
             Self::PushRegistryUnavailable => "push_registry_unavailable",
+            Self::PushVapidKeyUnavailable => "push_vapid_key_unavailable",
             Self::PushLedgerUnavailable => "push_ledger_unavailable",
             Self::FeatureUnavailable => "feature_unavailable",
         }
@@ -48,11 +50,16 @@ impl PushEnvironment {
 #[serde(rename_all = "snake_case")]
 pub enum PushPlatform {
     Ios,
+    Android,
 }
 
 impl PushPlatform {
     pub fn parse(value: &str) -> Option<Self> {
-        (value == "ios").then_some(Self::Ios)
+        match value {
+            "ios" => Some(Self::Ios),
+            "android" => Some(Self::Android),
+            _ => None,
+        }
     }
 }
 
@@ -94,7 +101,8 @@ pub(crate) fn sanitize_reason(reason: &str, batch_tokens: &[&str]) -> String {
 pub(crate) struct PushDeviceItem {
     pub platform: PushPlatform,
     pub target: String,
-    pub environment: PushEnvironment,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<PushEnvironment>,
     pub registered_at: String,
 }
 
@@ -107,6 +115,7 @@ pub(crate) struct StatusResponse {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TestItem {
+    pub platform: PushPlatform,
     pub target: String,
     pub outcome: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -116,4 +125,6 @@ pub struct TestItem {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TestResponse {
     pub items: Vec<TestItem>,
+    pub total: usize,
+    pub cursor: Option<String>,
 }
