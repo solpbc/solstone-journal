@@ -469,7 +469,10 @@ fn execute_tool_call(
         tool_arguments(request),
         chrono::Utc::now(),
     ) {
-        Ok(result) => JsonRpcResponse::success(request.id.as_ref(), tool_result(result)),
+        Ok(output) => JsonRpcResponse::success(
+            request.id.as_ref(),
+            tool_result(output.value, output.empty_note.as_deref()),
+        ),
         Err(DispatchError::InvalidInput) => JsonRpcResponse::invalid_params(request.id.as_ref()),
         Err(DispatchError::PermissionDenied(reason)) => {
             JsonRpcResponse::permission_denied(request.id.as_ref(), reason)

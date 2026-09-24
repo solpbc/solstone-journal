@@ -600,17 +600,24 @@ UNIT
         docker cp "$stage/solstone.service" "$CONTAINER:$home_dir/.config/systemd/user/solstone.service"
         rm -rf "$stage"
 
+        # docker cp creates root-owned files. Assign only these staged fixture
+        # files as root before the owner user makes them executable.
+        docker exec -i -u root "$CONTAINER" bash -s -- "$TEST_USER" "$home_dir" <<'OWNERSHIP'
+set -euo pipefail
+fixture_user=$1
+fixture_home=$2
+chown "$(id -u "$fixture_user"):$(id -g "$fixture_user")" \
+    "$fixture_home/.local/share/uv/tools/solstone/bin/solstone" \
+    "$fixture_home/.local/share/uv/tools/solstone/bin/sol" \
+    "$fixture_home/.local/share/uv/tools/solstone/bin/solstone-core" \
+    "$fixture_home/.local/share/uv/tools/solstone-journal/bin/python3" \
+    "$fixture_home/.local/share/uv/tools/solstone-journal/bin/stop-before-publish-check.sh" \
+    "$fixture_home/.local/share/uv/tools/solstone-journal/bin/journal" \
+    "$fixture_home/.config/systemd/user/solstone.service"
+OWNERSHIP
         log "legacy-upgrade-v1022: chmod, symlink, seed owner content, start the v1 unit"
         docker exec -u "$TEST_USER" "$CONTAINER" bash -lc '
             set -euo pipefail
-            chown "$(id -u):$(id -g)" \
-                "$HOME/.local/share/uv/tools/solstone/bin/solstone" \
-                "$HOME/.local/share/uv/tools/solstone/bin/sol" \
-                "$HOME/.local/share/uv/tools/solstone/bin/solstone-core" \
-                "$HOME/.local/share/uv/tools/solstone-journal/bin/python3" \
-                "$HOME/.local/share/uv/tools/solstone-journal/bin/stop-before-publish-check.sh" \
-                "$HOME/.local/share/uv/tools/solstone-journal/bin/journal" \
-                "$HOME/.config/systemd/user/solstone.service"
             chmod 755 \
                 "$HOME/.local/share/uv/tools/solstone/bin/solstone" \
                 "$HOME/.local/share/uv/tools/solstone/bin/sol" \

@@ -40,6 +40,23 @@ const MAX_SNIPPET_CHARS: usize = 800;
 
 static REFERENCES: OnceLock<ReferenceCodec> = OnceLock::new();
 
+// The plain-words reading of each empty result. ⚠ Search does not cover raw
+// transcripts (`coverage.transcript_index`), so an empty search must never be
+// worded as "the journal has nothing".
+const SEARCH_EMPTY: &str = "No results. Nothing this connection can see in the journal's \
+index matches this search. This is a complete answer, not an error. The index does not include \
+raw transcripts: if the owner named a day, call list_transcripts for that day, then \
+get_transcript to read what was said. Otherwise tell the owner a search of the journal found \
+nothing on this, rather than reading transcripts or entities one by one.";
+const SEARCH_EMPTY_INCOMPLETE: &str = "No results, but this search did not check the whole \
+index, so it does not show the journal has nothing on this. Tell the owner the search came back \
+empty and may be incomplete.";
+const LIST_FACETS_EMPTY: &str = "No facets. This connection can see none.";
+const LIST_ENTITIES_EMPTY: &str = "No entities. This connection can see none that match. This is a complete answer, not an error.";
+const LIST_TRANSCRIPTS_EMPTY: &str = "No transcript segments. This connection can see none that \
+match. This is a complete answer, not an error.";
+const GET_TRANSCRIPT_EMPTY: &str = "This segment has no transcript text.";
+
 /// A prepared response together with the owner coordinates it was built from.
 ///
 /// ⚠ Those coordinates are deliberately absent from `value`: an agent-visible
@@ -49,6 +66,7 @@ pub(crate) struct Prepared {
     value: Value,
     count: usize,
     targets: Vec<String>,
+    empty_note: Option<String>,
 }
 
 impl Prepared {
@@ -57,8 +75,31 @@ impl Prepared {
             value,
             count,
             targets,
+            empty_note: None,
         }
     }
+
+    /// Attach the plain-words reading of an empty result. Ignored when the
+    /// result is not empty, so a caller cannot tell an agent "nothing" about
+    /// a response that carries something.
+    fn when_empty(mut self, note: impl Into<String>) -> Self {
+        if self.count == 0 {
+            self.empty_note = Some(note.into());
+        }
+        self
+    }
+}
+
+/// A released tool response: the typed value, and for an empty result a plain
+/// sentence telling the agent what the zero means.
+///
+/// 🔑 Small local models keep digging after an empty result (measured: a 12B
+/// model made five or six calls on a question the journal had nothing on, and
+/// a skill-file rule did not stop it). The response itself is the lever, so a
+/// valid zero says so in words beside the typed empty array.
+pub(crate) struct ToolOutput {
+    pub(crate) value: Value,
+    pub(crate) empty_note: Option<String>,
 }
 
 /// The authenticated connection identity supplied by either wire or probe.
@@ -103,6 +144,7 @@ pub fn run_mcp_probe(
         Some(arguments),
         Utc::now(),
     )
+    .map(|output| output.value)
     .map_err(|error| match error {
         DispatchError::InvalidInput => McpProbeError::InvalidInput,
         DispatchError::PermissionDenied(_) => McpProbeError::PermissionDenied,
@@ -118,7 +160,7 @@ pub(crate) fn dispatch_authenticated_tool_call(
     tool_name: crate::jsonrpc::ToolName,
     arguments: Option<&Value>,
     now: DateTime<Utc>,
-) -> Result<Value, DispatchError> {
+) -> Result<ToolOutput, DispatchError> {
     let entry = find_tool(tool_name);
     // ⚠ Validation precedes admission, unchanged: malformed protocol traffic
     // stays outside the per-agent tool trail, and only a syntactically valid
@@ -227,7 +269,10 @@ pub(crate) fn dispatch_authenticated_tool_call(
     audit::write_outcome(journal_root, &coordinates, now, outcome, None, Some(shape))
         .map_err(|_| DispatchError::Tool(ToolError::AuditUnavailable))?;
 
-    Ok(prepared.value)
+    Ok(ToolOutput {
+        value: prepared.value,
+        empty_note: prepared.empty_note,
+    })
 }
 
 /// Record a terminal outcome for a call that is already failing.
@@ -719,6 +764,7 @@ fn search(
     let live_examination_complete =
         examined < MAX_SEARCH_EXAMINED_ROWS && !(live_dropped && results.len() < request.limit);
     let count = results.len();
+    let complete = index_coverage_complete && live_examination_complete && !degraded;
     Ok(Prepared::new(
         json!({
             "results": results,
@@ -732,7 +778,12 @@ fn search(
         }),
         count,
         targets,
-    ))
+    )
+    .when_empty(if complete {
+        SEARCH_EMPTY
+    } else {
+        SEARCH_EMPTY_INCOMPLETE
+    }))
 }
 
 fn resolve_search_cursor(
@@ -847,7 +898,7 @@ fn list_facets(
         } else { json!({"id": id, "name": title}) }
     }).collect::<Vec<_>>();
     let count = values.len();
-    Ok(Prepared::new(json!({"facets": values}), count, targets))
+    Ok(Prepared::new(json!({"facets": values}), count, targets).when_empty(LIST_FACETS_EMPTY))
 }
 
 fn list_entities(
@@ -889,7 +940,10 @@ fn list_entities(
         }
     }
     let count = entities.len();
-    Ok(Prepared::new(json!({"entities": entities}), count, targets))
+    Ok(
+        Prepared::new(json!({"entities": entities}), count, targets)
+            .when_empty(LIST_ENTITIES_EMPTY),
+    )
 }
 
 fn get_entity(
@@ -946,10 +1000,14 @@ fn list_transcripts(
     let chronicle = journal_root.join("chronicle");
     let mut segments = Vec::new();
     let mut targets = Vec::new();
-    for day in fs::read_dir(&chronicle)
-        .map_err(|_| DispatchError::Tool(ToolError::FileUnreadable))?
-        .filter_map(Result::ok)
-    {
+    // A journal that has recorded nothing yet has no `chronicle/`. That is an
+    // honest zero, not an unreadable file.
+    let days = match fs::read_dir(&chronicle) {
+        Ok(days) => days.filter_map(Result::ok).collect::<Vec<_>>(),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+        Err(_) => return Err(DispatchError::Tool(ToolError::FileUnreadable)),
+    };
+    for day in days {
         let Some(day) = day.file_name().to_str().map(str::to_owned) else {
             continue;
         };
@@ -990,11 +1048,10 @@ fn list_transcripts(
         }
     }
     let count = segments.len();
-    Ok(Prepared::new(
-        json!({"transcripts": segments}),
-        count,
-        targets,
-    ))
+    Ok(
+        Prepared::new(json!({"transcripts": segments}), count, targets)
+            .when_empty(LIST_TRANSCRIPTS_EMPTY),
+    )
 }
 
 fn get_transcript(
@@ -1107,7 +1164,8 @@ fn get_transcript(
         json!({"entries": entries, "next_cursor": next_cursor }),
         count,
         vec![target],
-    ))
+    )
+    .when_empty(GET_TRANSCRIPT_EMPTY))
 }
 
 /// An admitted segment-derived path used only to classify the segment's live

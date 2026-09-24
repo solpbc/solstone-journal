@@ -383,6 +383,57 @@ fn ac25b_a_search_that_matches_nothing_is_recorded_empty_rather_than_served() {
     );
 }
 
+fn dispatch_output(
+    journal: &tempfile::TempDir,
+    tool: &str,
+    arguments: Value,
+) -> crate::dispatch::ToolOutput {
+    let entry = crate::registry::tool_by_wire_name(tool).unwrap();
+    crate::dispatch::dispatch_authenticated_tool_call(
+        journal.path(),
+        crate::dispatch::DispatchPrincipal {
+            connection: CONNECTION,
+            agent_identity: CONNECTION,
+        },
+        entry.tool_name,
+        Some(&arguments),
+        chrono::Utc::now(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn an_empty_result_says_so_in_words_and_a_served_one_does_not() {
+    let journal = fixture();
+    let empty = dispatch_output(&journal, "search", json!({"query": "zzzznotpresent"}));
+    assert!(empty.value["results"].as_array().unwrap().is_empty());
+    let note = empty
+        .empty_note
+        .clone()
+        .expect("an empty search carries a plain note");
+    assert!(note.starts_with("No results"), "{note}");
+    // ⚠ Search does not cover raw transcripts, so the note must not claim the
+    // journal as a whole has nothing.
+    assert!(note.contains("raw transcripts"), "{note}");
+
+    let rendered = crate::jsonrpc::tool_result(empty.value, empty.empty_note.as_deref());
+    assert_eq!(rendered["content"][1]["text"], note);
+    assert!(rendered["structuredContent"].get("note").is_none());
+
+    let served = dispatch_output(&journal, "list_facets", json!({}));
+    assert!(!served.value["facets"].as_array().unwrap().is_empty());
+    assert!(served.empty_note.is_none());
+}
+
+#[test]
+fn a_journal_that_has_recorded_nothing_lists_no_transcripts_rather_than_failing() {
+    let journal = fixture();
+    fs::remove_dir_all(journal.path().join("chronicle")).unwrap();
+    let output = dispatch_output(&journal, "list_transcripts", json!({}));
+    assert!(output.value["transcripts"].as_array().unwrap().is_empty());
+    assert!(output.empty_note.is_some());
+}
+
 #[test]
 fn ac26_the_owners_activity_log_is_unreachable_through_the_boundary_it_audits() {
     // 🔴 The recursion, measured rather than argued. A connection with the

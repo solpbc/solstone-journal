@@ -168,6 +168,8 @@ pub(crate) fn advertised_tools_list(journal_root: &Path, permission: &Permission
                 "name": entry.wire_name,
                 "description": entry.description,
                 "inputSchema": (entry.input_schema)(&context),
+                // Every tool in the closed registry reads and none writes.
+                "annotations": { "readOnlyHint": true },
             })
         })
         .collect::<Vec<_>>();
@@ -473,6 +475,28 @@ mod tests {
             assert!(
                 tool["inputSchema"]["properties"].get("facet").is_none(),
                 "{} offered an unusable facet argument",
+                tool["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn every_advertised_tool_is_marked_read_only() {
+        // Dropped once in a rewrite without anyone noticing; clients use the
+        // hint to run a tool without asking the owner each time.
+        let journal = journal_with_two_facets();
+        let snapshot = ConnectionReadSnapshot {
+            categories: all_categories(),
+            scope: ConnectionScope::WholeJournal,
+            generation: 1,
+        };
+        let tools = advertised_tools_list(journal.path(), &PermissionDecision::Snapshot(snapshot));
+        let tools = tools["tools"].as_array().unwrap();
+        assert_eq!(tools.len(), TOOLS.len());
+        for tool in tools {
+            assert_eq!(
+                tool["annotations"]["readOnlyHint"], true,
+                "{} is not marked read-only",
                 tool["name"]
             );
         }

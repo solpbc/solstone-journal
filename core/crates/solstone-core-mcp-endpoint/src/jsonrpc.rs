@@ -202,10 +202,17 @@ pub(crate) fn initialize_result() -> Value {
 /// response is also available in `structuredContent`. Keeping both forms lets
 /// a client display the response while consuming its typed JSON without
 /// inferring a response type from a journal-specific object.
-pub(crate) fn tool_result(value: Value) -> Value {
-    let text = value.to_string();
+///
+/// An empty result adds a second text block that says in plain words what the
+/// zero means (see [`crate::dispatch::ToolOutput`]). `structuredContent` is
+/// unchanged by it.
+pub(crate) fn tool_result(value: Value, empty_note: Option<&str>) -> Value {
+    let mut content = vec![json!({ "type": "text", "text": value.to_string() })];
+    if let Some(note) = empty_note {
+        content.push(json!({ "type": "text", "text": note }));
+    }
     json!({
-        "content": [{ "type": "text", "text": text }],
+        "content": content,
         "structuredContent": value,
     })
 }
@@ -381,7 +388,8 @@ mod tests {
             .unwrap()
             .remove("drop_before_release");
 
-        let rendered = tool_result(prepared);
+        let rendered = tool_result(prepared, None);
+        assert_eq!(rendered["content"].as_array().unwrap().len(), 1);
         let content =
             serde_json::from_str::<Value>(rendered["content"][0]["text"].as_str().unwrap())
                 .unwrap();

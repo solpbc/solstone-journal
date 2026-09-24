@@ -330,7 +330,7 @@ fn generation_completion(
     {
         return Ok((
             "sense",
-            r#"{"density":"idle","content_type":"idle","activity_summary":"Held a quiet synthetic cleanroom interval.","entities":[],"facets":[],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"emotional_register":"neutral"}"#,
+            r#"{"density":"idle","content_type":"idle","activity_summary":"Held a quiet synthetic cleanroom interval.","entities":[],"facets":[{"facet":"personal","activity":"Quiet interval","level":"low"}],"speculative_facet":null,"meeting_detected":false,"speakers":[],"recommend":{"screen_record":false,"speaker_attribution":false},"emotional_register":"neutral"}"#,
         ));
     }
     if prompt.contains("Maintenance Window Analysis")
@@ -356,6 +356,11 @@ fn generation_completion(
     }
     if prompt.contains("Future Schedule Extraction") && prompt.contains("cancelled") {
         return Ok(("schedule", r#"{"events":[]}"#));
+    }
+    if prompt.contains("Propose candidate durable factoids about attached entities")
+        && prompt.contains("No active entities found in today's content.")
+    {
+        return Ok(("entity_suggest", r#"{"entities":[]}"#));
     }
     Err("unexpected-talent")
 }

@@ -4,6 +4,17 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- when an agent's search finds nothing, it now gets a plain-words note saying so, so it can tell you instead of reading through your journal one piece at a time.
+
+### Fixed
+
+- your journal marks every tool it offers agents as read-only again. agents that look for that mark can see that these tools only read.
+- in a journal with no transcripts yet, an agent that asks for transcripts now gets an empty list instead of an error.
+
 ## [2.0.17] - 2026-09-24
 
 ### Added

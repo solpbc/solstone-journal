@@ -159,6 +159,10 @@ impl SealedEnvelope {
     pub fn as_base64url(&self) -> String {
         URL_SAFE_NO_PAD.encode(&self.bytes)
     }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        &self.bytes
+    }
 }
 
 impl Serialize for SealedEnvelope {

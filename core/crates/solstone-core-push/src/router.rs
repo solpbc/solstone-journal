@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use solstone_core_convey_http::envelope::error_envelope;
@@ -58,6 +59,7 @@ pub(crate) fn api_router_with_transport(
         )
         .route("/api/push/status", get(push_status))
         .route("/api/push/test", post(push_test))
+        .route("/api/push/vapid-key", get(push_vapid_key))
         .with_state(PushState {
             registry: PushRegistry::new(&journal_root),
             journal_root,
@@ -82,14 +84,25 @@ async fn register_push_device(
         Ok(registration) => registration,
         Err(detail) => return push_request_invalid(detail),
     };
-    match state.registry.register(
-        &cid,
-        registration.device_token,
-        registration.bundle_id,
-        registration.environment,
-        registration.platform,
-        registration.push_key,
-    ) {
+    let result = match registration {
+        Registration::Ios {
+            device_token,
+            bundle_id,
+            environment,
+            push_key,
+        } => state
+            .registry
+            .register_ios(&cid, device_token, bundle_id, environment, push_key),
+        Registration::Android {
+            endpoint,
+            p256dh,
+            auth,
+            push_key,
+        } => state
+            .registry
+            .register_android(&cid, endpoint, p256dh, auth, push_key),
+    };
+    match result {
         Ok((is_created, item)) => {
             let status = if is_created {
                 StatusCode::CREATED
@@ -118,10 +131,11 @@ async fn deregister_push_device(
         Ok(deregistration) => deregistration,
         Err(detail) => return push_request_invalid(detail),
     };
-    match state
-        .registry
-        .deregister(&cid, deregistration.platform, &deregistration.device_token)
-    {
+    let result = match deregistration {
+        Deregistration::Ios { device_token } => state.registry.deregister_ios(&cid, &device_token),
+        Deregistration::Android { endpoint } => state.registry.deregister_android(&cid, &endpoint),
+    };
+    match result {
         Ok(_) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => push_registry_unavailable(error),
     }
@@ -137,6 +151,49 @@ async fn push_status(State(state): State<PushState>) -> Response {
         .into_response(),
         Err(error) => push_registry_unavailable(error),
     }
+}
+
+#[derive(Serialize)]
+struct VapidKeyResponse {
+    public_key: String,
+}
+
+async fn push_vapid_key(State(state): State<PushState>) -> Response {
+    match crate::vapid::read_vapid_key(&state.journal_root) {
+        Ok(key) => Json(VapidKeyResponse {
+            public_key: key.public_key_base64url(),
+        })
+        .into_response(),
+        Err(crate::vapid::VapidLoadError::NotFound) => {
+            #[cfg(test)]
+            crate::vapid::trigger_test_absent_hook();
+
+            let created_at_res = match now_rfc3339_utc() {
+                Ok(t) => t,
+                Err(e) => return push_registry_unavailable(e),
+            };
+
+            match crate::vapid::create_vapid_key(&state.journal_root, created_at_res) {
+                Ok(key) => Json(VapidKeyResponse {
+                    public_key: key.public_key_base64url(),
+                })
+                .into_response(),
+                Err(error) => push_vapid_key_unavailable(error),
+            }
+        }
+        Err(error) => push_vapid_key_unavailable(crate::vapid::VapidError::Load(error)),
+    }
+}
+
+fn push_vapid_key_unavailable(error: crate::vapid::VapidError) -> Response {
+    log::warn!("push-vapid.json unavailable: {error}");
+    error_envelope(
+        ReasonCode::PushVapidKeyUnavailable.as_str(),
+        "Push VAPID key temporarily unavailable",
+        "config/push-vapid.json is unavailable",
+        StatusCode::SERVICE_UNAVAILABLE,
+    )
+    .into_response()
 }
 
 async fn push_test(State(state): State<PushState>) -> Response {
@@ -185,7 +242,8 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
     let mut recent_devices = Vec::new();
     for device in loaded_devices {
         match &device {
-            StoredDevice::Ios { registered_at, .. } => {
+            StoredDevice::Ios { registered_at, .. }
+            | StoredDevice::Android { registered_at, .. } => {
                 if let Some(reg_time) = parse_registered_at(registered_at)
                     && reg_time >= cutoff
                 {
@@ -206,7 +264,8 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
         _ => HashSet::new(),
     };
 
-    let mut to_dispatch = Vec::new();
+    let mut to_dispatch_ios = Vec::new();
+    let mut to_dispatch_android = Vec::new();
 
     for device in recent_devices {
         match device {
@@ -220,17 +279,230 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
             } => {
                 if authorized_cids.contains(&cid) {
                     let target = mask_target(&device_token);
-                    to_dispatch.push((cid, device_token, bundle_id, environment, push_key, target));
+                    to_dispatch_ios.push((
+                        cid,
+                        device_token,
+                        bundle_id,
+                        environment,
+                        push_key,
+                        target,
+                    ));
+                }
+            }
+            StoredDevice::Android {
+                cid,
+                endpoint,
+                p256dh,
+                auth,
+                push_key,
+                ..
+            } => {
+                if authorized_cids.contains(&cid) {
+                    to_dispatch_android.push((cid, endpoint, p256dh, auth, push_key));
                 }
             }
         }
     }
 
-    if to_dispatch.is_empty() {
+    if to_dispatch_ios.is_empty() && to_dispatch_android.is_empty() {
         return feature_unavailable_no_devices();
     }
 
-    let items = dispatch_push_tests(&state, &to_dispatch, now);
+    let mut items = Vec::new();
+
+    // 1. Android VAPID key preparation if Android recipients present
+    let vapid_key = if !to_dispatch_android.is_empty() {
+        match crate::vapid::read_vapid_key(&state.journal_root) {
+            Ok(key) => Some(key),
+            Err(e) => {
+                log::warn!("could not read push VAPID key for test delivery: {e:?}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    // 2. Dispatch iOS devices
+    if !to_dispatch_ios.is_empty() {
+        let ios_items = dispatch_ios_push_tests(&state, &to_dispatch_ios, now);
+        items.extend(ios_items);
+    }
+
+    // 3. Dispatch Android devices
+    if !to_dispatch_android.is_empty() {
+        let notif = Notification {
+            at: now,
+            kind: "test".to_owned(),
+            title: "solstone".to_owned(),
+            body: "test notification from your journal.".to_owned(),
+            open: None,
+        };
+
+        for (_cid, endpoint, p256dh_b64, auth_b64, push_key) in to_dispatch_android {
+            let (target, origin) = match crate::endpoint::endpoint_target(&endpoint) {
+                Some((host, Some(port))) => {
+                    let origin = format!("https://{host}:{port}");
+                    (host, origin)
+                }
+                Some((host, None)) => {
+                    let origin = format!("https://{host}");
+                    (host, origin)
+                }
+                None => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target: "invalid".to_owned(),
+                        outcome: "failed".to_owned(),
+                        reason: Some("endpoint_invalid".to_owned()),
+                    });
+                    continue;
+                }
+            };
+
+            let Some(vapid) = vapid_key.as_ref() else {
+                items.push(TestItem {
+                    platform: PushPlatform::Android,
+                    target,
+                    outcome: "failed".to_owned(),
+                    reason: Some("vapid_key_unavailable".to_owned()),
+                });
+                continue;
+            };
+
+            let sealed = match seal(&push_key, &notif) {
+                Ok(s) => s,
+                Err(_) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("unspecified".to_owned()),
+                    });
+                    continue;
+                }
+            };
+
+            let p256dh_bytes: [u8; 65] = match base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(&p256dh_b64)
+                .ok()
+                .and_then(|v| v.try_into().ok())
+            {
+                Some(b) => b,
+                None => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("encrypt_failed".to_owned()),
+                    });
+                    continue;
+                }
+            };
+
+            let auth_bytes: [u8; 16] = match base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(&auth_b64)
+                .ok()
+                .and_then(|v| v.try_into().ok())
+            {
+                Some(b) => b,
+                None => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("encrypt_failed".to_owned()),
+                    });
+                    continue;
+                }
+            };
+
+            let encrypted_body = match crate::web_push::encrypt_web_push(
+                &p256dh_bytes,
+                &auth_bytes,
+                sealed.as_bytes(),
+            ) {
+                Ok(b) => b,
+                Err(_) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("encrypt_failed".to_owned()),
+                    });
+                    continue;
+                }
+            };
+
+            let jwt = match vapid.sign_jwt(&origin, now.unix_timestamp()) {
+                Ok(j) => j,
+                Err(_) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("vapid_key_unavailable".to_owned()),
+                    });
+                    continue;
+                }
+            };
+
+            let auth_header_val = format!("vapid t={jwt}, k={}", vapid.public_key_base64url());
+            let headers = [
+                ("Content-Encoding", "aes128gcm"),
+                ("Content-Type", "application/octet-stream"),
+                ("TTL", "86400"),
+                ("Urgency", "high"),
+                ("Authorization", auth_header_val.as_str()),
+            ];
+
+            match state
+                .transport
+                .post_bytes(&endpoint, &headers, &encrypted_body)
+            {
+                Ok(status) if (200..=299).contains(&status) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "sent".to_owned(),
+                        reason: None,
+                    });
+                }
+                Ok(404) | Ok(410) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "revoked".to_owned(),
+                        reason: None,
+                    });
+                }
+                Ok(status) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some(format!("endpoint_rejected_{status}")),
+                    });
+                }
+                Err(RelayFault::Timeout) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("endpoint_timeout".to_owned()),
+                    });
+                }
+                Err(_) => {
+                    items.push(TestItem {
+                        platform: PushPlatform::Android,
+                        target,
+                        outcome: "failed".to_owned(),
+                        reason: Some("endpoint_unreachable".to_owned()),
+                    });
+                }
+            }
+        }
+    }
 
     let sent = items.iter().filter(|i| i.outcome == "sent").count();
     let revoked = items.iter().filter(|i| i.outcome == "revoked").count();
@@ -255,7 +527,16 @@ fn execute_push_test(state: PushState, now: OffsetDateTime) -> Response {
         );
     }
 
-    (StatusCode::OK, Json(TestResponse { items })).into_response()
+    let total = items.len();
+    (
+        StatusCode::OK,
+        Json(TestResponse {
+            items,
+            total,
+            cursor: None,
+        }),
+    )
+        .into_response()
 }
 
 #[derive(Serialize)]
@@ -362,7 +643,7 @@ struct DispatchResultItem {
     reason: Option<String>,
 }
 
-fn dispatch_push_tests(
+fn dispatch_ios_push_tests(
     state: &PushState,
     devices: &[(String, String, String, PushEnvironment, PushKey, String)],
     now: OffsetDateTime,
@@ -373,6 +654,7 @@ fn dispatch_push_tests(
             return devices
                 .iter()
                 .map(|(_, _, _, _, _, target)| TestItem {
+                    platform: PushPlatform::Ios,
                     target: target.clone(),
                     outcome: "failed".to_owned(),
                     reason: Some(reason.clone()),
@@ -409,6 +691,7 @@ fn dispatch_push_tests(
                 Err(err) => {
                     log::warn!("failed to seal push test envelope: {err}");
                     batch_results.push(TestItem {
+                        platform: PushPlatform::Ios,
                         target: target.clone(),
                         outcome: "failed".to_owned(),
                         reason: Some("unspecified".to_owned()),
@@ -465,6 +748,7 @@ fn dispatch_push_tests(
                                         .as_deref()
                                         .map(|r| sanitize_reason(r, &batch_tokens));
                                     batch_results.push(TestItem {
+                                        platform: PushPlatform::Ios,
                                         target,
                                         outcome: res_item.outcome,
                                         reason,
@@ -473,6 +757,7 @@ fn dispatch_push_tests(
                             } else {
                                 for (target, _, _) in chunk_to_send {
                                     batch_results.push(TestItem {
+                                        platform: PushPlatform::Ios,
                                         target,
                                         outcome: "failed".to_owned(),
                                         reason: Some("relay_response_unverifiable".to_owned()),
@@ -483,6 +768,7 @@ fn dispatch_push_tests(
                         _ => {
                             for (target, _, _) in chunk_to_send {
                                 batch_results.push(TestItem {
+                                    platform: PushPlatform::Ios,
                                     target,
                                     outcome: "failed".to_owned(),
                                     reason: Some("relay_response_unverifiable".to_owned()),
@@ -495,6 +781,7 @@ fn dispatch_push_tests(
                     let reason = format!("relay_rejected_{}", reply.status);
                     for (target, _, _) in chunk_to_send {
                         batch_results.push(TestItem {
+                            platform: PushPlatform::Ios,
                             target,
                             outcome: "failed".to_owned(),
                             reason: Some(reason.clone()),
@@ -504,6 +791,7 @@ fn dispatch_push_tests(
                 Err(RelayFault::Timeout) => {
                     for (target, _, _) in chunk_to_send {
                         batch_results.push(TestItem {
+                            platform: PushPlatform::Ios,
                             target,
                             outcome: "failed".to_owned(),
                             reason: Some("relay_timeout".to_owned()),
@@ -513,6 +801,7 @@ fn dispatch_push_tests(
                 Err(_) => {
                     for (target, _, _) in chunk_to_send {
                         batch_results.push(TestItem {
+                            platform: PushPlatform::Ios,
                             target,
                             outcome: "failed".to_owned(),
                             reason: Some("relay_unreachable".to_owned()),
@@ -546,18 +835,25 @@ fn linked_device_cid(basis: Option<Extension<AccessBasis>>) -> Option<LinkedDevi
 }
 
 #[derive(Debug)]
-pub(crate) struct Registration {
-    pub device_token: String,
-    pub bundle_id: String,
-    pub environment: PushEnvironment,
-    pub platform: PushPlatform,
-    pub push_key: PushKey,
+pub(crate) enum Registration {
+    Ios {
+        device_token: String,
+        bundle_id: String,
+        environment: PushEnvironment,
+        push_key: PushKey,
+    },
+    Android {
+        endpoint: String,
+        p256dh: String,
+        auth: String,
+        push_key: PushKey,
+    },
 }
 
 #[derive(Debug)]
-pub(crate) struct Deregistration {
-    pub platform: PushPlatform,
-    pub device_token: String,
+pub(crate) enum Deregistration {
+    Ios { device_token: String },
+    Android { endpoint: String },
 }
 
 fn parse_registration(body: &[u8]) -> Result<Registration, String> {
@@ -567,71 +863,150 @@ fn parse_registration(body: &[u8]) -> Result<Registration, String> {
         .as_object()
         .ok_or_else(|| "request body must be a JSON object".to_owned())?;
 
-    for key in object.keys() {
-        if !matches!(
-            key.as_str(),
-            "platform" | "device_token" | "bundle_id" | "environment" | "push_key"
-        ) {
-            return Err(format!("unknown field `{key}`"));
-        }
-    }
-
-    for required in [
-        "platform",
-        "device_token",
-        "bundle_id",
-        "environment",
-        "push_key",
-    ] {
-        if !object.contains_key(required) {
-            return Err(format!("missing field `{required}`"));
-        }
-    }
-
-    let platform_str = object
+    let platform_val = object
         .get("platform")
         .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `platform`".to_owned())?;
+        .ok_or_else(|| {
+            if !object.contains_key("platform") {
+                "missing field `platform`".to_owned()
+            } else {
+                "invalid `platform`".to_owned()
+            }
+        })?;
+
     let platform =
-        PushPlatform::parse(platform_str).ok_or_else(|| "invalid `platform`".to_owned())?;
+        PushPlatform::parse(platform_val).ok_or_else(|| "invalid `platform`".to_owned())?;
 
-    let device_token = object
-        .get("device_token")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `device_token`".to_owned())?;
-    if !device_token_is_valid(device_token) {
-        return Err("invalid `device_token`".to_owned());
+    match platform {
+        PushPlatform::Ios => {
+            for key in object.keys() {
+                if !matches!(
+                    key.as_str(),
+                    "platform" | "device_token" | "bundle_id" | "environment" | "push_key"
+                ) {
+                    return Err(format!("unknown field `{key}`"));
+                }
+            }
+
+            for required in [
+                "platform",
+                "device_token",
+                "bundle_id",
+                "environment",
+                "push_key",
+            ] {
+                if !object.contains_key(required) {
+                    return Err(format!("missing field `{required}`"));
+                }
+            }
+
+            let device_token = object
+                .get("device_token")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `device_token`".to_owned())?;
+            if !device_token_is_valid(device_token) {
+                return Err("invalid `device_token`".to_owned());
+            }
+
+            let bundle_id = object
+                .get("bundle_id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `bundle_id`".to_owned())?;
+            if bundle_id.trim().is_empty() {
+                return Err("invalid `bundle_id`".to_owned());
+            }
+
+            let environment_str = object
+                .get("environment")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `environment`".to_owned())?;
+            let environment = PushEnvironment::parse(environment_str)
+                .ok_or_else(|| "invalid `environment`".to_owned())?;
+
+            let push_key_str = object
+                .get("push_key")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `push_key`".to_owned())?;
+            let push_key = PushKey::from_base64url(push_key_str)
+                .map_err(|_| "invalid `push_key`".to_owned())?;
+
+            Ok(Registration::Ios {
+                device_token: device_token.to_owned(),
+                bundle_id: bundle_id.to_owned(),
+                environment,
+                push_key,
+            })
+        }
+        PushPlatform::Android => {
+            for key in object.keys() {
+                if !matches!(
+                    key.as_str(),
+                    "platform" | "endpoint" | "p256dh" | "auth" | "push_key"
+                ) {
+                    return Err(format!("unknown field `{key}`"));
+                }
+            }
+
+            for required in ["platform", "endpoint", "p256dh", "auth", "push_key"] {
+                if !object.contains_key(required) {
+                    return Err(format!("missing field `{required}`"));
+                }
+            }
+
+            let endpoint = object
+                .get("endpoint")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `endpoint`".to_owned())?;
+            if crate::endpoint::endpoint_target(endpoint).is_none() {
+                return Err("invalid `endpoint`".to_owned());
+            }
+
+            let p256dh = object
+                .get("p256dh")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `p256dh`".to_owned())?;
+            if p256dh.len() != 87 {
+                return Err("invalid `p256dh`".to_owned());
+            }
+            let p256dh_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(p256dh)
+                .map_err(|_| "invalid `p256dh`".to_owned())?;
+            if p256dh_bytes.len() != 65 || p256dh_bytes[0] != 0x04 {
+                return Err("invalid `p256dh`".to_owned());
+            }
+            if p256::PublicKey::from_sec1_bytes(&p256dh_bytes).is_err() {
+                return Err("invalid `p256dh`".to_owned());
+            }
+
+            let auth = object
+                .get("auth")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `auth`".to_owned())?;
+            if auth.len() != 22 {
+                return Err("invalid `auth`".to_owned());
+            }
+            let auth_bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(auth)
+                .map_err(|_| "invalid `auth`".to_owned())?;
+            if auth_bytes.len() != 16 {
+                return Err("invalid `auth`".to_owned());
+            }
+
+            let push_key_str = object
+                .get("push_key")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `push_key`".to_owned())?;
+            let push_key = PushKey::from_base64url(push_key_str)
+                .map_err(|_| "invalid `push_key`".to_owned())?;
+
+            Ok(Registration::Android {
+                endpoint: endpoint.to_owned(),
+                p256dh: p256dh.to_owned(),
+                auth: auth.to_owned(),
+                push_key,
+            })
+        }
     }
-
-    let bundle_id = object
-        .get("bundle_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `bundle_id`".to_owned())?;
-    if bundle_id.trim().is_empty() {
-        return Err("invalid `bundle_id`".to_owned());
-    }
-
-    let environment_str = object
-        .get("environment")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `environment`".to_owned())?;
-    let environment = PushEnvironment::parse(environment_str)
-        .ok_or_else(|| "invalid `environment`".to_owned())?;
-
-    let push_key_str = object
-        .get("push_key")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `push_key`".to_owned())?;
-    let push_key =
-        PushKey::from_base64url(push_key_str).map_err(|_| "invalid `push_key`".to_owned())?;
-
-    Ok(Registration {
-        device_token: device_token.to_owned(),
-        bundle_id: bundle_id.to_owned(),
-        environment,
-        platform,
-        push_key,
-    })
 }
 
 fn parse_deregistration(body: &[u8]) -> Result<Deregistration, String> {
@@ -641,37 +1016,82 @@ fn parse_deregistration(body: &[u8]) -> Result<Deregistration, String> {
         .as_object()
         .ok_or_else(|| "request body must be a JSON object".to_owned())?;
 
-    for key in object.keys() {
-        if !matches!(key.as_str(), "platform" | "device_token") {
-            return Err(format!("unknown field `{key}`"));
-        }
-    }
-
-    for required in ["platform", "device_token"] {
-        if !object.contains_key(required) {
-            return Err(format!("missing field `{required}`"));
-        }
-    }
-
-    let platform_str = object
+    let platform_val = object
         .get("platform")
         .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `platform`".to_owned())?;
+        .ok_or_else(|| {
+            if !object.contains_key("platform") {
+                "missing field `platform`".to_owned()
+            } else {
+                "invalid `platform`".to_owned()
+            }
+        })?;
+
     let platform =
-        PushPlatform::parse(platform_str).ok_or_else(|| "invalid `platform`".to_owned())?;
+        PushPlatform::parse(platform_val).ok_or_else(|| "invalid `platform`".to_owned())?;
 
-    let device_token = object
-        .get("device_token")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "invalid `device_token`".to_owned())?;
-    if !device_token_is_valid(device_token) {
-        return Err("invalid `device_token`".to_owned());
+    match platform {
+        PushPlatform::Ios => {
+            for key in object.keys() {
+                if !matches!(key.as_str(), "platform" | "device_token") {
+                    return Err(format!("unknown field `{key}`"));
+                }
+            }
+
+            for required in ["platform", "device_token"] {
+                if !object.contains_key(required) {
+                    return Err(format!("missing field `{required}`"));
+                }
+            }
+
+            let device_token = object
+                .get("device_token")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `device_token`".to_owned())?;
+            if !device_token_is_valid(device_token) {
+                return Err("invalid `device_token`".to_owned());
+            }
+
+            Ok(Deregistration::Ios {
+                device_token: device_token.to_owned(),
+            })
+        }
+        PushPlatform::Android => {
+            for key in object.keys() {
+                if !matches!(key.as_str(), "platform" | "endpoint") {
+                    return Err(format!("unknown field `{key}`"));
+                }
+            }
+
+            for required in ["platform", "endpoint"] {
+                if !object.contains_key(required) {
+                    return Err(format!("missing field `{required}`"));
+                }
+            }
+
+            let endpoint = object
+                .get("endpoint")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "invalid `endpoint`".to_owned())?;
+            if crate::endpoint::endpoint_target(endpoint).is_none() {
+                return Err("invalid `endpoint`".to_owned());
+            }
+
+            Ok(Deregistration::Android {
+                endpoint: endpoint.to_owned(),
+            })
+        }
     }
+}
 
-    Ok(Deregistration {
-        platform,
-        device_token: device_token.to_owned(),
-    })
+fn now_rfc3339_utc() -> Result<String, PushStoreError> {
+    #[cfg(test)]
+    let now = crate::store::TEST_CLOCK.with(|c| c.borrow().unwrap_or_else(OffsetDateTime::now_utc));
+    #[cfg(not(test))]
+    let now = OffsetDateTime::now_utc();
+
+    now.format(&time::format_description::well_known::Rfc3339)
+        .map_err(|_| PushStoreError::Clock)
 }
 
 fn linked_device_required() -> Response {
@@ -793,14 +1213,18 @@ mod tests {
     }
 
     type RecordedCall = (String, Vec<u8>, Option<String>);
+    type RecordedBytesCall = (String, Vec<(String, String)>, Vec<u8>);
 
     #[derive(Default)]
     struct MockTransport {
         calls: Mutex<Vec<RecordedCall>>,
+        bytes_calls: Mutex<Vec<RecordedBytesCall>>,
         enroll_response: Mutex<Option<Result<RelayReply, RelayFault>>>,
         dispatch_response: Mutex<Option<Result<RelayReply, RelayFault>>>,
         dispatch_call_count: AtomicUsize,
         dispatch_responses: Mutex<Vec<Result<RelayReply, RelayFault>>>,
+        post_bytes_response: Mutex<Option<Result<u16, RelayFault>>>,
+        post_bytes_responses: Mutex<Vec<Result<u16, RelayFault>>>,
         sleep_duration: Mutex<Option<Duration>>,
     }
 
@@ -866,6 +1290,35 @@ mod tests {
                 status: 404,
                 body: Vec::new(),
             })
+        }
+
+        fn post_bytes(
+            &self,
+            url: &str,
+            headers: &[(&str, &str)],
+            body: &[u8],
+        ) -> Result<u16, RelayFault> {
+            if let Some(dur) = *self.sleep_duration.lock().unwrap() {
+                std::thread::sleep(dur);
+            }
+            self.bytes_calls.lock().unwrap().push((
+                url.to_owned(),
+                headers
+                    .iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                body.to_vec(),
+            ));
+            let mut queued = self.post_bytes_responses.lock().unwrap();
+            if !queued.is_empty() {
+                return queued.remove(0);
+            }
+            drop(queued);
+
+            if let Some(resp) = *self.post_bytes_response.lock().unwrap() {
+                return resp;
+            }
+            Ok(201)
         }
     }
 
@@ -1060,8 +1513,8 @@ mod tests {
 
         let logs = test_log::records_for_current_thread();
         assert!(
-            logs.iter()
-                .any(|(lvl, msg)| *lvl == Level::Warn && msg.contains("push registry unavailable")),
+            logs.iter().any(|(lvl, _target, msg)| *lvl == Level::Warn
+                && msg.contains("push registry unavailable")),
             "expected warn log for unavailable registry"
         );
 
@@ -1099,7 +1552,7 @@ mod tests {
             );
         }
 
-        for (_, msg) in &logs {
+        for (_, _, msg) in &logs {
             assert!(
                 !msg.contains(&key_a_b64url),
                 "found b64url key in log: {msg}"
@@ -1287,13 +1740,314 @@ mod tests {
             ),
             (
                 json!({
-                    "platform": "android",
+                    "platform": "unknown_platform",
                     "device_token": TOKEN_A1,
                     "bundle_id": "org.example",
                     "environment": "development",
                     "push_key": VALID_KEY_B64
                 }),
                 "platform",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "device_token": TOKEN_A1,
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "device_token",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "http://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "/relative/url",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https:///no/host",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": format!("https://example.com/{}", "a".repeat(2029)),
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://example.com/white space",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://example.com/path#fragment",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://user:pass@example.com/path",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": URL_SAFE_NO_PAD.encode([0x04; 64]),
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "p256dh",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": URL_SAFE_NO_PAD.encode([0x04; 65]),
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "p256dh",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": format!("{TEST_UA_PUB_B64}="),
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "p256dh",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64.replace('-', "+").replace('_', "/"),
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "p256dh",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": URL_SAFE_NO_PAD.encode([0u8; 15]),
+                    "push_key": VALID_KEY_B64
+                }),
+                "auth",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": URL_SAFE_NO_PAD.encode([0u8; 17]),
+                    "push_key": VALID_KEY_B64
+                }),
+                "auth",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": format!("{TEST_AUTH_B64}="),
+                    "push_key": VALID_KEY_B64
+                }),
+                "auth",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64
+                }),
+                "push_key",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64,
+                    "unknown_field": "val"
+                }),
+                "unknown_field",
+            ),
+            (
+                json!({
+                    "platform": "ios",
+                    "device_token": TOKEN_A1,
+                    "bundle_id": "org.example",
+                    "environment": "development",
+                    "push_key": VALID_KEY_B64,
+                    "endpoint": "https://push.example.com/sub/1"
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://push.example.com/sub/\u{1F600}",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://h/a<b",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://h/a>b",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://h/a`b",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://h/a{b",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://:443/x",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://h:99999/x",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://h:abc/x",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://[::1/x",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://ex!ample/x",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
+            ),
+            (
+                json!({
+                    "platform": "android",
+                    "endpoint": "https://a_b.example/x",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64
+                }),
+                "endpoint",
             ),
         ];
 
@@ -1318,6 +2072,11 @@ mod tests {
                 "expected detail '{detail}' to contain '{field_name}'"
             );
         }
+
+        // Verify values were not stored (status remains 1 device)
+        let (s_stat, b_stat) = call(&app, "GET", "/api/push/status", Body::empty(), None).await;
+        assert_eq!(s_stat, StatusCode::OK);
+        assert_eq!(b_stat["total"], 1);
 
         let bad_del = json!({
             "platform": "ios",
@@ -1463,7 +2222,7 @@ mod tests {
         assert!(
             !test_log::records_for_current_thread()
                 .iter()
-                .any(|(lvl, _)| *lvl == Level::Info)
+                .any(|(lvl, _, _)| *lvl == Level::Info)
         );
 
         let (status_reg, _) = call(
@@ -1478,10 +2237,10 @@ mod tests {
 
         let info_logs: Vec<_> = test_log::records_for_current_thread()
             .into_iter()
-            .filter(|(lvl, _)| *lvl == Level::Info)
+            .filter(|(lvl, _, _)| *lvl == Level::Info)
             .collect();
         assert_eq!(info_logs.len(), 1);
-        assert!(info_logs[0].1.contains('2'));
+        assert!(info_logs[0].2.contains('2'));
 
         test_log::clear_current_thread();
         let root_empty_v1 = root();
@@ -1502,7 +2261,7 @@ mod tests {
         assert!(
             !test_log::records_for_current_thread()
                 .iter()
-                .any(|(lvl, _)| *lvl == Level::Info)
+                .any(|(lvl, _, _)| *lvl == Level::Info)
         );
 
         let root_corrupt_v1 = root();
@@ -1803,10 +2562,11 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["outcome"], "sent");
         assert_eq!(items[0]["target"], "...cdef");
+        assert_eq!(items[0]["platform"], "ios");
         assert!(items[0].get("reason").is_none());
         assert!(items[0].get("cid").is_none());
-        assert!(items[0].get("platform").is_none());
         assert!(items[0].get("environment").is_none());
+        assert_eq!(body_test["total"], 1);
     }
 
     #[tokio::test]
@@ -2372,7 +3132,7 @@ mod tests {
         assert_eq!(b["items"][0]["reason"], "unspecified");
 
         let logs = test_log::records();
-        for (_, msg) in &logs {
+        for (_, _, msg) in &logs {
             assert!(!msg.contains(hex_leak));
             assert!(!msg.contains(TOKEN_A1));
             assert!(!msg.contains("mock-relay-token-123"));
@@ -2408,5 +3168,976 @@ mod tests {
 
         let (status_slow, _) = handle.await.unwrap();
         assert_eq!(status_slow, StatusCode::OK);
+    }
+
+    fn valid_android_register_body(
+        endpoint: &str,
+        p256dh: &str,
+        auth: &str,
+        push_key: &str,
+    ) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "platform": "android",
+            "endpoint": endpoint,
+            "p256dh": p256dh,
+            "auth": auth,
+            "push_key": push_key
+        }))
+        .unwrap()
+    }
+
+    fn valid_android_deregister_body(endpoint: &str) -> Vec<u8> {
+        serde_json::to_vec(&json!({
+            "platform": "android",
+            "endpoint": endpoint
+        }))
+        .unwrap()
+    }
+
+    const TEST_UA_PUB_B64: &str =
+        "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+    const TEST_UA_PRIV_B64: &str = "q1dXpw3UpT5VOmu_cf_v6ih07Aems3njxI-JWgLcM94";
+    const TEST_AUTH_B64: &str = "BTBZMqHH6r4Tts7J_aSIgg";
+
+    #[tokio::test]
+    async fn android_web_push_round_trip_e2e() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        let push_key_bytes = [77u8; 32];
+        let push_key_b64 = URL_SAFE_NO_PAD.encode(push_key_bytes);
+        let push_key = PushKey::from_bytes(push_key_bytes);
+
+        let (status_reg, body_reg) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/v1/sub123",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                &push_key_b64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(status_reg, StatusCode::CREATED);
+        assert_eq!(body_reg["platform"], "android");
+        assert_eq!(body_reg["target"], "push.example.com");
+        assert!(body_reg.get("environment").is_none() || body_reg["environment"].is_null());
+
+        let (status_test, body_test) =
+            call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status_test, StatusCode::OK);
+        assert_eq!(body_test["total"], 1);
+        assert_eq!(body_test["items"][0]["outcome"], "sent");
+        assert_eq!(body_test["items"][0]["platform"], "android");
+        assert_eq!(body_test["items"][0]["target"], "push.example.com");
+
+        let calls = transport.bytes_calls.lock().unwrap().clone();
+        assert_eq!(calls.len(), 1);
+        let (url, headers, body) = &calls[0];
+        assert_eq!(url, "https://push.example.com/v1/sub123");
+
+        let header_map: std::collections::HashMap<String, String> =
+            headers.clone().into_iter().collect();
+        assert_eq!(
+            header_map.get("Content-Encoding").map(String::as_str),
+            Some("aes128gcm")
+        );
+        assert_eq!(header_map.get("TTL").map(String::as_str), Some("86400"));
+        assert_eq!(header_map.get("Urgency").map(String::as_str), Some("high"));
+
+        let auth_header = header_map
+            .get("Authorization")
+            .expect("Authorization header");
+        assert!(
+            auth_header.starts_with("vapid t="),
+            "expected vapid auth header: {auth_header}"
+        );
+        assert!(
+            auth_header.contains(", k="),
+            "expected public key in auth header: {auth_header}"
+        );
+
+        // Decrypt with test decryptor
+        let ua_priv: [u8; 32] = URL_SAFE_NO_PAD
+            .decode(TEST_UA_PRIV_B64)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let ua_auth: [u8; 16] = URL_SAFE_NO_PAD
+            .decode(TEST_AUTH_B64)
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let decrypted_bytes = crate::web_push::decrypt_web_push_for_test(&ua_priv, &ua_auth, body)
+            .expect("decrypt web push");
+
+        // Sealed envelope opened with push_key
+        let opened = crate::envelope::open_envelope(&push_key, &decrypted_bytes)
+            .expect("open sealed envelope");
+        assert_eq!(opened.title, "solstone");
+        assert_eq!(opened.body, "test notification from your journal.");
+        assert_eq!(opened.kind, "test");
+    }
+
+    #[tokio::test]
+    async fn android_web_push_authorization_header_and_jwt_rules() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        let endpoints = [
+            ("https://push.example.com/sub/1", "https://push.example.com"),
+            (
+                "https://push.example.com:443/sub/1",
+                "https://push.example.com",
+            ),
+            (
+                "https://push.example.com:8443/sub/1",
+                "https://push.example.com:8443",
+            ),
+            ("https://[::1]:8443/sub/1", "https://[::1]:8443"),
+        ];
+
+        for (endpoint, expected_aud) in endpoints {
+            transport.bytes_calls.lock().unwrap().clear();
+            call(
+                &app,
+                "POST",
+                "/api/push/register",
+                valid_android_register_body(
+                    endpoint,
+                    TEST_UA_PUB_B64,
+                    TEST_AUTH_B64,
+                    VALID_KEY_B64,
+                ),
+                Some(basis(CID_A)),
+            )
+            .await;
+
+            let (status, _) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+            assert_eq!(status, StatusCode::OK);
+
+            let calls = transport.bytes_calls.lock().unwrap().clone();
+            assert_eq!(calls.len(), 1);
+            let (_, headers, _) = &calls[0];
+            let header_map: std::collections::HashMap<String, String> =
+                headers.clone().into_iter().collect();
+            let auth_header = header_map
+                .get("Authorization")
+                .expect("Authorization header");
+
+            let (t_part, k_part) = auth_header
+                .strip_prefix("vapid ")
+                .expect("vapid prefix")
+                .split_once(", k=")
+                .expect("split k");
+            let jwt = t_part.strip_prefix("t=").expect("t= prefix");
+            let pub_key_b64 = k_part;
+
+            let jwt_parts: Vec<&str> = jwt.split('.').collect();
+            assert_eq!(jwt_parts.len(), 3);
+
+            let header_json: Value =
+                serde_json::from_slice(&URL_SAFE_NO_PAD.decode(jwt_parts[0]).unwrap()).unwrap();
+            assert_eq!(header_json["typ"], "JWT");
+            assert_eq!(header_json["alg"], "ES256");
+
+            let claims_json: Value =
+                serde_json::from_slice(&URL_SAFE_NO_PAD.decode(jwt_parts[1]).unwrap()).unwrap();
+            assert_eq!(claims_json["aud"], expected_aud);
+            assert!(claims_json["exp"].as_i64().is_some());
+
+            let sig_bytes = URL_SAFE_NO_PAD.decode(jwt_parts[2]).unwrap();
+            let signing_input = format!("{}.{}", jwt_parts[0], jwt_parts[1]);
+            let pub_key_bytes = URL_SAFE_NO_PAD.decode(pub_key_b64).unwrap();
+            assert_eq!(pub_key_bytes.len(), 65);
+
+            let peer_pub = ring::signature::UnparsedPublicKey::new(
+                &ring::signature::ECDSA_P256_SHA256_FIXED,
+                &pub_key_bytes,
+            );
+            peer_pub
+                .verify(signing_input.as_bytes(), &sig_bytes)
+                .expect("signature valid");
+
+            let (del_status, _) = call_raw(
+                &app,
+                "DELETE",
+                "/api/push/register",
+                valid_android_deregister_body(endpoint),
+                Some(basis(CID_A)),
+            )
+            .await;
+            assert_eq!(del_status, StatusCode::NO_CONTENT);
+        }
+    }
+
+    #[tokio::test]
+    async fn android_web_push_error_outcome_mappings() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/err",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        let cases: &[(Result<u16, RelayFault>, &str, Option<&str>)] = &[
+            (Ok(404), "revoked", None),
+            (Ok(410), "revoked", None),
+            (Ok(500), "failed", Some("endpoint_rejected_500")),
+            (Ok(301), "failed", Some("endpoint_rejected_301")),
+            (Ok(302), "failed", Some("endpoint_rejected_302")),
+            (Err(RelayFault::Timeout), "failed", Some("endpoint_timeout")),
+            (
+                Err(RelayFault::Connect),
+                "failed",
+                Some("endpoint_unreachable"),
+            ),
+            (
+                Err(RelayFault::Transport),
+                "failed",
+                Some("endpoint_unreachable"),
+            ),
+        ];
+
+        for (mock_result, expected_outcome, expected_reason) in cases {
+            *transport.post_bytes_response.lock().unwrap() = Some(*mock_result);
+            let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(
+                body["items"][0]["outcome"], *expected_outcome,
+                "body is {body:#?}"
+            );
+            if let Some(reason) = expected_reason {
+                assert_eq!(body["items"][0]["reason"], *reason);
+            } else {
+                assert!(body["items"][0].get("reason").is_none());
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn android_web_push_registration_lifecycle_and_delete() {
+        let root = root();
+        let app = api_router(root.path(), PORTAL_URL);
+        set_test_clock(None);
+
+        // Register Android device
+        let (status_reg, body_reg) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/v1/sub_life",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(status_reg, StatusCode::CREATED);
+        assert_eq!(body_reg["platform"], "android");
+        assert_eq!(body_reg["target"], "push.example.com");
+
+        // Same registration returns 200 OK and replaces keys
+        let (status_reg2, _) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/v1/sub_life",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(status_reg2, StatusCode::OK);
+
+        // Status lists 1 device
+        let (status_stat, body_stat) =
+            call(&app, "GET", "/api/push/status", Body::empty(), None).await;
+        assert_eq!(status_stat, StatusCode::OK);
+        assert_eq!(body_stat["total"], 1);
+        assert_eq!(body_stat["items"][0]["platform"], "android");
+        assert_eq!(body_stat["items"][0]["target"], "push.example.com");
+
+        // Accepted endpoint variations:
+        // 2048-char endpoint
+        let endpoint_2048 = format!("https://example.com/{}", "a".repeat(2028));
+        assert_eq!(endpoint_2048.len(), 2048);
+        let (s_2048, _) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                &endpoint_2048,
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(s_2048, StatusCode::CREATED);
+
+        // https://fcm.example:443/x -> target is fcm.example
+        let (s_fcm443, b_fcm443) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://fcm.example:443/x",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(s_fcm443, StatusCode::CREATED);
+        assert_eq!(b_fcm443["target"], "fcm.example");
+
+        // uppercase host -> target is fcm.example
+        let (s_upper, b_upper) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://FCM.EXAMPLE/x",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(s_upper, StatusCode::CREATED);
+        assert_eq!(b_upper["target"], "fcm.example");
+
+        // https://[FE80::1]:8443/x -> target is [fe80::1]
+        let (s_ipv6, b_ipv6) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://[FE80::1]:8443/x",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(s_ipv6, StatusCode::CREATED);
+        assert_eq!(b_ipv6["target"], "[fe80::1]");
+
+        // Steal: endpoint held by CID_A moves to CID_B
+        let (s_move, _) = call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/v1/sub_life",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_B)),
+        )
+        .await;
+        assert_eq!(s_move, StatusCode::CREATED);
+
+        // DELETE of an http endpoint is 400
+        let (status_del_http, resp_del_http) = call(
+            &app,
+            "DELETE",
+            "/api/push/register",
+            valid_android_deregister_body("http://push.example.com/v1/sub_life"),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(status_del_http, StatusCode::BAD_REQUEST);
+        assert_eq!(resp_del_http["reason_code"], "push_request_invalid");
+
+        // DELETE is 204 even when nothing matched
+        let (status_del_nomatch, del_nomatch_bytes) = call_raw(
+            &app,
+            "DELETE",
+            "/api/push/register",
+            valid_android_deregister_body("https://push.example.com/v1/nonexistent"),
+            Some(basis(CID_A)),
+        )
+        .await;
+        assert_eq!(status_del_nomatch, StatusCode::NO_CONTENT);
+        assert!(del_nomatch_bytes.is_empty());
+
+        // Delete the device on CID_B
+        let (status_del, del_bytes) = call_raw(
+            &app,
+            "DELETE",
+            "/api/push/register",
+            valid_android_deregister_body("https://push.example.com/v1/sub_life"),
+            Some(basis(CID_B)),
+        )
+        .await;
+        assert_eq!(status_del, StatusCode::NO_CONTENT);
+        assert!(del_bytes.is_empty());
+    }
+
+    #[tokio::test]
+    async fn vapid_key_endpoint_lifecycle_and_permissions() {
+        let root_life = root();
+        let app = api_router(root_life.path(), PORTAL_URL);
+
+        // GET /api/push/vapid-key generates key
+        let (status1, body1) = call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        assert_eq!(status1, StatusCode::OK);
+        let pub_key1 = body1["public_key"].as_str().expect("public_key str");
+        assert_eq!(pub_key1.len(), 87);
+        let decoded1 = URL_SAFE_NO_PAD.decode(pub_key1).expect("decode base64url");
+        assert_eq!(decoded1.len(), 65);
+        assert_eq!(decoded1[0], 0x04);
+
+        // On unix, verify 0600 permissions
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let vapid_path = root_life.path().join("config/push-vapid.json");
+            let mode = fs::metadata(&vapid_path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
+
+        // Subsequent GET returns identical key
+        let (status2, body2) = call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        assert_eq!(status2, StatusCode::OK);
+        assert_eq!(body2["public_key"], pub_key1);
+
+        // Corrupt push-vapid.json causes 503 on vapid-key endpoint
+        let vapid_path = root_life.path().join("config/push-vapid.json");
+        fs::write(&vapid_path, b"not json").unwrap();
+        let (status_503, body_503) =
+            call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        assert_eq!(status_503, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body_503["reason_code"], "push_vapid_key_unavailable");
+
+        // Corrupt push-vapid.json marks Android items failed with vapid_key_unavailable
+        setup_authorized_client(root_life.path(), CID_A);
+        let reg_path = root_life.path().join("config/push-registry.json");
+        let reg_data = json!({
+            "version": 2,
+            "devices": [{
+                "platform": "android",
+                "cid": CID_A,
+                "endpoint": "https://push.example.com/sub/1",
+                "p256dh": TEST_UA_PUB_B64,
+                "auth": TEST_AUTH_B64,
+                "push_key": VALID_KEY_B64,
+                "registered_at": "2026-09-24T00:00:00Z"
+            }]
+        });
+        fs::write(&reg_path, serde_json::to_vec(&reg_data).unwrap()).unwrap();
+        let (status_test_err, body_test_err) =
+            call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status_test_err, StatusCode::OK);
+        assert_eq!(body_test_err["items"][0]["outcome"], "failed");
+        assert_eq!(body_test_err["items"][0]["reason"], "vapid_key_unavailable");
+
+        // Test hook race: absent hook creates key before create under lock, proving double-check works
+        let root_race = root();
+        let app_race = api_router(root_race.path(), PORTAL_URL);
+        let root_race_path = root_race.path().to_path_buf();
+        crate::vapid::set_test_absent_hook(Some(Box::new(move || {
+            let _ =
+                crate::vapid::create_vapid_key(&root_race_path, "2026-09-24T00:00:00Z".to_owned());
+        })));
+        let (status_race, body_race) =
+            call(&app_race, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        crate::vapid::set_test_absent_hook(None);
+        assert_eq!(status_race, StatusCode::OK);
+        assert_eq!(body_race["public_key"].as_str().unwrap().len(), 87);
+    }
+
+    #[tokio::test]
+    async fn status_endpoint_returns_stored_android_fixture_and_rejects_corrupt() {
+        let root = root();
+        let app = api_router(root.path(), PORTAL_URL);
+        let reg_path = root.path().join("config/push-registry.json");
+        fs::create_dir_all(root.path().join("config")).unwrap();
+
+        // Valid Android fixture in status
+        let valid_fixture = json!({
+            "version": 2,
+            "devices": [{
+                "platform": "android",
+                "cid": CID_A,
+                "endpoint": "https://push.example.com/sub/1",
+                "p256dh": TEST_UA_PUB_B64,
+                "auth": TEST_AUTH_B64,
+                "push_key": VALID_KEY_B64,
+                "registered_at": "2026-09-24T00:00:00Z"
+            }]
+        });
+        fs::write(&reg_path, serde_json::to_vec(&valid_fixture).unwrap()).unwrap();
+        let (status_ok, body_ok) = call(&app, "GET", "/api/push/status", Body::empty(), None).await;
+        assert_eq!(status_ok, StatusCode::OK);
+        assert_eq!(body_ok["total"], 1);
+        assert_eq!(body_ok["items"][0]["platform"], "android");
+        assert_eq!(body_ok["items"][0]["target"], "push.example.com");
+
+        // Stored corrupt variations:
+        // stored http endpoint, bad p256dh, 15-byte auth, duplicate (cid, endpoint),
+        // one endpoint under two CIDs, and android row carrying device_token
+        let corrupt_fixtures = [
+            json!({
+                "version": 2,
+                "devices": [{
+                    "platform": "android",
+                    "cid": CID_A,
+                    "endpoint": "http://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64,
+                    "registered_at": "2026-09-24T00:00:00Z"
+                }]
+            }),
+            json!({
+                "version": 2,
+                "devices": [{
+                    "platform": "android",
+                    "cid": CID_A,
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": "invalid_p256dh_length",
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64,
+                    "registered_at": "2026-09-24T00:00:00Z"
+                }]
+            }),
+            json!({
+                "version": 2,
+                "devices": [{
+                    "platform": "android",
+                    "cid": CID_A,
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": URL_SAFE_NO_PAD.encode([0u8; 15]),
+                    "push_key": VALID_KEY_B64,
+                    "registered_at": "2026-09-24T00:00:00Z"
+                }]
+            }),
+            json!({
+                "version": 2,
+                "devices": [
+                    {
+                        "platform": "android",
+                        "cid": CID_A,
+                        "endpoint": "https://push.example.com/sub/1",
+                        "p256dh": TEST_UA_PUB_B64,
+                        "auth": TEST_AUTH_B64,
+                        "push_key": VALID_KEY_B64,
+                        "registered_at": "2026-09-24T00:00:00Z"
+                    },
+                    {
+                        "platform": "android",
+                        "cid": CID_A,
+                        "endpoint": "https://push.example.com/sub/1",
+                        "p256dh": TEST_UA_PUB_B64,
+                        "auth": TEST_AUTH_B64,
+                        "push_key": VALID_KEY_B64,
+                        "registered_at": "2026-09-24T00:00:00Z"
+                    }
+                ]
+            }),
+            json!({
+                "version": 2,
+                "devices": [
+                    {
+                        "platform": "android",
+                        "cid": CID_A,
+                        "endpoint": "https://push.example.com/sub/1",
+                        "p256dh": TEST_UA_PUB_B64,
+                        "auth": TEST_AUTH_B64,
+                        "push_key": VALID_KEY_B64,
+                        "registered_at": "2026-09-24T00:00:00Z"
+                    },
+                    {
+                        "platform": "android",
+                        "cid": CID_B,
+                        "endpoint": "https://push.example.com/sub/1",
+                        "p256dh": TEST_UA_PUB_B64,
+                        "auth": TEST_AUTH_B64,
+                        "push_key": VALID_KEY_B64,
+                        "registered_at": "2026-09-24T00:00:00Z"
+                    }
+                ]
+            }),
+            json!({
+                "version": 2,
+                "devices": [{
+                    "platform": "android",
+                    "cid": CID_A,
+                    "endpoint": "https://push.example.com/sub/1",
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64,
+                    "device_token": TOKEN_A1,
+                    "registered_at": "2026-09-24T00:00:00Z"
+                }]
+            }),
+        ];
+
+        for corrupt_fixture in corrupt_fixtures {
+            let corrupt_bytes = serde_json::to_vec(&corrupt_fixture).unwrap();
+            fs::write(&reg_path, &corrupt_bytes).unwrap();
+
+            let (s_stat, b_stat) = call(&app, "GET", "/api/push/status", Body::empty(), None).await;
+            assert_eq!(s_stat, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(b_stat["reason_code"], "push_registry_unavailable");
+
+            let (s_test, b_test) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+            assert_eq!(s_test, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(b_test["reason_code"], "push_registry_unavailable");
+
+            let (s_reg, b_reg) = call(
+                &app,
+                "POST",
+                "/api/push/register",
+                valid_android_register_body(
+                    "https://push.example.com/v1/sub_new",
+                    TEST_UA_PUB_B64,
+                    TEST_AUTH_B64,
+                    VALID_KEY_B64,
+                ),
+                Some(basis(CID_A)),
+            )
+            .await;
+            assert_eq!(s_reg, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(b_reg["reason_code"], "push_registry_unavailable");
+
+            let (s_del, b_del) = call(
+                &app,
+                "DELETE",
+                "/api/push/register",
+                valid_android_deregister_body("https://push.example.com/sub/1"),
+                Some(basis(CID_A)),
+            )
+            .await;
+            assert_eq!(s_del, StatusCode::SERVICE_UNAVAILABLE);
+            assert_eq!(b_del["reason_code"], "push_registry_unavailable");
+
+            assert_eq!(fs::read(&reg_path).unwrap(), corrupt_bytes);
+        }
+    }
+
+    #[tokio::test]
+    async fn stored_off_curve_p256dh_fails_encrypt_and_does_not_post() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        let reg_path = root.path().join("config/push-registry.json");
+        fs::create_dir_all(root.path().join("config")).unwrap();
+
+        // 65-byte uncompressed key starting with 0x04, but off-curve
+        let off_curve_bytes = [0x04u8; 65];
+        let off_curve_b64 = URL_SAFE_NO_PAD.encode(off_curve_bytes);
+
+        let fixture = json!({
+            "version": 2,
+            "devices": [{
+                "platform": "android",
+                "cid": CID_A,
+                "endpoint": "https://push.example.com/sub/offcurve",
+                "p256dh": off_curve_b64,
+                "auth": TEST_AUTH_B64,
+                "push_key": VALID_KEY_B64,
+                "registered_at": "2026-09-24T00:00:00Z"
+            }]
+        });
+        fs::write(&reg_path, serde_json::to_vec(&fixture).unwrap()).unwrap();
+
+        let (status_stat, body_stat) =
+            call(&app, "GET", "/api/push/status", Body::empty(), None).await;
+        assert_eq!(status_stat, StatusCode::OK);
+        assert_eq!(body_stat["items"][0]["target"], "push.example.com");
+
+        let (status_test, body_test) =
+            call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status_test, StatusCode::OK);
+        assert_eq!(body_test["items"][0]["outcome"], "failed");
+        assert_eq!(body_test["items"][0]["reason"], "encrypt_failed");
+        assert_eq!(transport.bytes_calls.lock().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn stored_invalid_endpoints_produce_endpoint_invalid_and_do_not_post() {
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        let reg_path = root.path().join("config/push-registry.json");
+        fs::create_dir_all(root.path().join("config")).unwrap();
+
+        let endpoints = [
+            "https://[::1/x",
+            "https://:443/x",
+            "https://h:99999/x",
+            "https://ex!ample/x",
+            "https://valid.example.com/x",
+        ];
+
+        let devices: Vec<Value> = endpoints
+            .iter()
+            .map(|ep| {
+                json!({
+                    "platform": "android",
+                    "cid": CID_A,
+                    "endpoint": ep,
+                    "p256dh": TEST_UA_PUB_B64,
+                    "auth": TEST_AUTH_B64,
+                    "push_key": VALID_KEY_B64,
+                    "registered_at": "2026-09-24T00:00:00Z"
+                })
+            })
+            .collect();
+
+        let fixture = json!({
+            "version": 2,
+            "devices": devices
+        });
+        fs::write(&reg_path, serde_json::to_vec(&fixture).unwrap()).unwrap();
+
+        let (status_stat, body_stat) =
+            call(&app, "GET", "/api/push/status", Body::empty(), None).await;
+        assert_eq!(status_stat, StatusCode::OK);
+        assert_eq!(body_stat["total"], 5);
+
+        let (status_test, body_test) =
+            call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status_test, StatusCode::OK);
+        let items = body_test["items"].as_array().unwrap();
+        assert_eq!(items.len(), 5);
+
+        for item in items {
+            let is_target_invalid = item["target"] == "invalid";
+            let is_reason_endpoint_invalid =
+                item.get("reason").and_then(Value::as_str) == Some("endpoint_invalid");
+            assert_eq!(
+                is_target_invalid, is_reason_endpoint_invalid,
+                "for item {item:?}, target == invalid must match reason == endpoint_invalid"
+            );
+        }
+
+        let valid_item = items
+            .iter()
+            .find(|i| i["target"] == "valid.example.com")
+            .unwrap();
+        assert_eq!(valid_item["outcome"], "sent");
+        assert_eq!(transport.bytes_calls.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn mixed_ios_and_android_dispatch_and_isolation() {
+        let root_mixed = root();
+        setup_authorized_client(root_mixed.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        let app = api_router_with_transport(root_mixed.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+
+        // Register both iOS and Android
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_register_body(TOKEN_A1, "app", VALID_KEY_B64),
+            Some(basis(CID_A)),
+        )
+        .await;
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/mix",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        // Relay fails, Android still succeeds
+        *transport.enroll_response.lock().unwrap() = Some(Err(RelayFault::Connect));
+        *transport.post_bytes_response.lock().unwrap() = Some(Ok(201));
+
+        let (status1, body1) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status1, StatusCode::OK);
+        assert_eq!(body1["total"], 2);
+        let items1 = body1["items"].as_array().unwrap();
+        let ios_item = items1.iter().find(|i| i["platform"] == "ios").unwrap();
+        let android_item = items1.iter().find(|i| i["platform"] == "android").unwrap();
+        assert_eq!(ios_item["outcome"], "failed");
+        assert_eq!(ios_item["reason"], "relay_unreachable");
+        assert_eq!(android_item["outcome"], "sent");
+
+        // Android endpoint fails, iOS still succeeds
+        *transport.enroll_response.lock().unwrap() = None;
+        *transport.post_bytes_response.lock().unwrap() = Some(Ok(500));
+
+        let (status2, body2) = call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status2, StatusCode::OK);
+        let items2 = body2["items"].as_array().unwrap();
+        let ios_item2 = items2.iter().find(|i| i["platform"] == "ios").unwrap();
+        let android_item2 = items2.iter().find(|i| i["platform"] == "android").unwrap();
+        assert_eq!(ios_item2["outcome"], "sent");
+        assert_eq!(android_item2["outcome"], "failed");
+        assert_eq!(android_item2["reason"], "endpoint_rejected_500");
+
+        // Android-only registry does NOT contact relay
+        let root_android_only = root();
+        setup_authorized_client(root_android_only.path(), CID_A);
+        let transport_ao = Arc::new(MockTransport::default());
+        let app_ao =
+            api_router_with_transport(root_android_only.path(), PORTAL_URL, transport_ao.clone());
+        call(&app_ao, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        call(
+            &app_ao,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/only",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                VALID_KEY_B64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        let (status_ao, body_ao) =
+            call(&app_ao, "POST", "/api/push/test", Body::empty(), None).await;
+        assert_eq!(status_ao, StatusCode::OK);
+        assert_eq!(body_ao["items"][0]["outcome"], "sent");
+        assert_eq!(
+            transport_ao.calls.lock().unwrap().len(),
+            0,
+            "relay should never be called for android-only"
+        );
+    }
+
+    #[tokio::test]
+    async fn trace_level_logs_omit_all_secrets() {
+        test_log::clear();
+        test_log::set_capture_level(log::LevelFilter::Trace);
+        log::trace!(target: "solstone_core_push", "test trace marker");
+
+        let root = root();
+        setup_authorized_client(root.path(), CID_A);
+        let transport = Arc::new(MockTransport::default());
+        // Return 500 so that execute_push_test logs warn summary line
+        *transport.post_bytes_response.lock().unwrap() = Some(Ok(500));
+
+        let app = api_router_with_transport(root.path(), PORTAL_URL, transport.clone());
+        set_test_clock(None);
+
+        let push_key_raw = [0x99u8; 32];
+        let push_key_b64 = URL_SAFE_NO_PAD.encode(push_key_raw);
+        let push_key_hex = (0..32).map(|_| "99").collect::<String>();
+
+        call(
+            &app,
+            "POST",
+            "/api/push/register",
+            valid_android_register_body(
+                "https://push.example.com/sub/trace",
+                TEST_UA_PUB_B64,
+                TEST_AUTH_B64,
+                &push_key_b64,
+            ),
+            Some(basis(CID_A)),
+        )
+        .await;
+
+        call(&app, "GET", "/api/push/vapid-key", Body::empty(), None).await;
+        call(&app, "POST", "/api/push/test", Body::empty(), None).await;
+
+        let logs = test_log::records();
+        let push_logs: Vec<_> = logs
+            .iter()
+            .filter(|(_, target, _)| target.starts_with("solstone_core_push"))
+            .collect();
+
+        // Require both trace message and send warn summary
+        assert!(
+            push_logs
+                .iter()
+                .any(|(lvl, _, msg)| *lvl == log::Level::Trace && msg.contains("test trace marker")),
+            "expected trace level log"
+        );
+        assert!(
+            push_logs
+                .iter()
+                .any(|(lvl, _, msg)| *lvl == log::Level::Warn
+                    && msg.starts_with("push test delivery sent=")),
+            "expected warn summary log"
+        );
+
+        for (_, _, msg) in &push_logs {
+            assert!(!msg.contains(&push_key_b64), "found push_key in log: {msg}");
+            assert!(
+                !msg.contains(&push_key_hex),
+                "found push_key hex in log: {msg}"
+            );
+            assert!(
+                !msg.contains(TEST_UA_PRIV_B64),
+                "found receiver privkey in log: {msg}"
+            );
+            assert!(
+                !msg.contains(TEST_AUTH_B64),
+                "found auth secret in log: {msg}"
+            );
+        }
+
+        test_log::set_capture_level(log::LevelFilter::Info);
     }
 }
