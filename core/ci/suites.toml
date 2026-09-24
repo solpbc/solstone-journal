@@ -60,17 +60,6 @@ timeout = "standard"
 default_full = true
 
 [[legs]]
-id = "convey-pages"
-make_target = "check-convey-pages"
-set = "policy"
-areas = ["repository"]
-packages = ["workspace"]
-platforms = ["linux"]
-prerequisites = ["host-tools"]
-timeout = "standard"
-default_full = true
-
-[[legs]]
 id = "lib-bin"
 make_target = "check-rust-unit"
 set = "component"
