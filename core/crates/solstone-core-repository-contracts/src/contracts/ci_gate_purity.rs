@@ -306,6 +306,27 @@ fn make_normalizes_the_temporary_root_to_its_physical_spelling() {
 }
 
 #[test]
+fn make_gates_never_launch_a_browser() {
+    // `make ci` is unit tests only, and `make ci-full` is minimal integration on local
+    // tools. Neither launches a browser: a front-end check runs its JavaScript under
+    // plain Node with a stand-in DOM (see `shell_chrome_dom`), never a headless browser.
+    let makefile = makefile_text(&repo_root()).to_lowercase();
+    for forbidden in [
+        "google-chrome",
+        "chromium",
+        "playwright",
+        "puppeteer",
+        "--headless",
+        "webdriver",
+    ] {
+        assert!(
+            !makefile.contains(forbidden),
+            "the Makefile must not launch a browser from a gate (found {forbidden})"
+        );
+    }
+}
+
+#[test]
 fn make_ci_runs_only_library_and_binary_unit_harnesses() {
     let makefile = makefile_text(&repo_root());
     let ci = target_body(&makefile, "ci-under-poison");
