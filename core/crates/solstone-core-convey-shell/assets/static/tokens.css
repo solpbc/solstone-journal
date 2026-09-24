@@ -55,6 +55,7 @@
   --cream:        #FCF3E4; /* warm page bg (product-chrome / trust surfaces) */
   --cream-bright: #FEFCF8; /* elevated cards / inputs on cream */
   --paper:        #FFFFFF; /* white page bg / grouped-list rows */
+  --panel: rgb(254 252 248 / 0.90); /* translucent container for text over the sun arc: the sun reads through at 10 %, and every text role clears AA over the worst-case ground, sun and glow */
   --surface-dark: #1A1A1A; /* dark contexts (white-on-dark) */
 
   /* ── ink (text) ──────────────────────────────────────────────────────── */
@@ -62,6 +63,7 @@
   --ink-soft:    #5B5246; /* secondary — WARM; for cream/warm grounds */
   --ink-faint:   #6E6453; /* meta/muted — WARM; for cream/warm grounds */
   --ink-on-dark: #FFFFFF; /* text on --surface-dark only */
+  --ink-on-brand: #1A1A1A; /* text on an --orange / --gold fill (the primary button). Fixed: does not follow the dark appearance, where --ink turns cream (tokens-dark.css) */
   /* neutral inks — for --paper (white) grounds. Warm ink reads dusty on stark white,
    * so paper surfaces use these (approved two-ground rule):
    * warm ink on warm ground, neutral ink on paper. */

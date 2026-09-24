@@ -1,0 +1,77 @@
+/* ============================================================================
+ * sol pbc — web design tokens, the dark appearance (opt-in companion)
+ *
+ * Load order: tokens.css, then this file, then the surface's own styles.
+ *
+ * Loading this file is how a page says "I have a dark appearance". It declares
+ * `color-scheme: light dark` (the web platform's seam; the sun arc reads it to
+ * decide whether to draw its dark row) and, when the owner's system setting is
+ * dark, re-points the usage roles below at their dark values. The owner's
+ * setting picks it. Nothing here reads the clock, and a page never sets the
+ * appearance itself.
+ *
+ * Do not load it on a page whose own CSS still hard-codes light colours: its
+ * ink would turn cream on a cream card. This file only flips values the page
+ * reads through var().
+ *
+ * What does not move: --gold, --orange, the status bases (--success, --warn),
+ * --surface-dark / --ink-on-dark, and --ink-on-brand (tokens.css). Text on an
+ * orange or gold fill is --ink-on-brand, never --ink, because --ink turns
+ * cream here.
+ *
+ * Where the values come from (OKLab mixes of the canon colours):
+ *   text        tile cream #FCF3E4, the text on the sun arc's dark row, and two
+ *               mixes of it toward --paper (ink-soft 0.20, ink-faint 0.35)
+ *   containers  the sun arc's dark grounds (#392E26 day, #2E241C night,
+ *               #281E17 true dark) and ink #1A1A1A; elevation stays lighter
+ *   lines       tile cream over --cream-bright at 14 % and 20 %
+ *   orange text #F2A451, the dark orange the iOS app ships
+ *   status inks the least-pale tint of each status hue clearing 6.0:1 on --paper
+ *   washes      --cream-bright mixed 0.18 toward the family's base colour
+ *
+ * Contrast (WCAG, on --paper / --cream-bright / --cream):
+ *   ink 13.0 / 14.0 / 15.3 · ink-soft 8.5 / 9.2 / 10.0 · ink-faint 6.0 / 6.4 / 7.0
+ *   orange text 7.0 / 7.5 / 8.2 · danger 6.0 · success 6.0 · warn 6.1 (on --paper)
+ *   own ink on its wash: orange 5.6 · danger 5.8 · success 5.1 · warn 4.9
+ *   --ink-on-brand on --orange 7.08, on --gold 11.55
+ *   --panel, worst case over ground + sun + halo + twilight glow:
+ *     light ink 15.9 · soft 7.0 · faint 5.3 · orange text 4.6
+ *     dark  ink 13.5 · soft 8.8 · faint 6.2 · orange text 7.2
+ * ========================================================================== */
+
+:root { color-scheme: light dark; }
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* surfaces — elevation is lighter, as in light mode paper is the brightest */
+    --cream:        #221C19; /* page / recessed panel */
+    --cream-bright: #2B231C; /* card, input, elevated panel */
+    --paper:        #332820; /* grouped-list row, raised card */
+    --panel:        rgb(34 28 25 / 0.90); /* --cream at 90 %: text over the sun arc */
+
+    /* ink (text) — tile cream and two mixes of it */
+    --ink:             #FCF3E4;
+    --ink-soft:        #D0C6B8;
+    --ink-faint:       #B0A699;
+    --ink-soft-paper:  #D0C6B8; /* one dark ground family, so paper inks = warm inks */
+    --ink-faint-paper: #B0A699;
+
+    /* lines */
+    --hairline:   #484038;
+    --hairline-2: #514840;
+
+    /* orange text, focus, tint */
+    --orange-text-aa: #F2A451;
+    --orange-ink:     #F2A451;
+    --focus:          #F2A451;
+    --orange-wash:    #493524;
+
+    /* status — text inks lift, washes darken; the decoration bases stay */
+    --danger:       #D7998C;
+    --danger-wash:  #3F271F;
+    --success-ink:  #7AB58B;
+    --success-wash: #333729;
+    --warn-ink:     #CEA245;
+    --warn-wash:    #443622;
+  }
+}
