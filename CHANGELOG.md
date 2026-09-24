@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - this is a security fix. if you use confidential processing, the tool your journal installs to check the confidential hardware could have been made to run someone else's code as you. on linux, it looked for some of the files it loads in whatever folder you ran a command from, when that command used confidential processing, so a file someone else put there (a shared temporary folder, or a download or project you unpacked) could have run as you. your journal now always starts the tool from a folder only an administrator can change. on a mac, it looked for its settings in the home folder of an account with one particular name, so another account on your mac with that name could have put a settings file there that ran code as you. the tool no longer looks there. please install this update.
 - if a device's backup was replaced by a newer one somewhere else, it used to keep trying every hour, forever, without telling you. this release notices it once, clears the backup settings, and lets you know to run `journal backup enable` if you want a new backup here.
+- importing a file you already imported now says so. when a name clarification fails, it now distinguishes a busy journal, a missing suggestion or match, and a choice it could not apply.
 
 ## [2.0.16] - 2026-09-24
 

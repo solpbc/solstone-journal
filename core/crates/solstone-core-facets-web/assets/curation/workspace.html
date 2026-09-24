@@ -876,6 +876,21 @@ window.CUR_COPY = CUR_COPY;
     errorNode.hidden = !message;
   }
 
+  function ambiguityErrorMessage(err) {
+    switch (err?.payload?.reason_code) {
+      case 'entity_busy':
+        return 'another change is in progress. try again shortly.';
+      case 'entity_not_found':
+        return 'this suggestion or one of its matches is no longer available. refresh suggestions.';
+      case 'invalid_request_value':
+        return "couldn't apply that choice. refresh suggestions and try again.";
+      case 'entity_operation_failed':
+        return "couldn't save that change. try again.";
+      default:
+        return err?.serverMessage || err?.message;
+    }
+  }
+
   function repairRequired(err) {
     return err?.payload?.operation_state === 'repair_required';
   }
@@ -1207,7 +1222,7 @@ window.CUR_COPY = CUR_COPY;
         .then(() => removeItem(item))
         .catch((err) => {
           setBusy(button, false);
-          showError(item, err.serverMessage || err.message);
+          showError(item, ambiguityErrorMessage(err));
         });
       return;
     }
@@ -1239,7 +1254,7 @@ window.CUR_COPY = CUR_COPY;
         })
         .catch((err) => {
           setBusy(button, false);
-          showError(card, err.serverMessage || err.message);
+          showError(card, ambiguityErrorMessage(err));
         });
       return;
     }
@@ -1274,7 +1289,7 @@ window.CUR_COPY = CUR_COPY;
         .then(() => removeItem(item))
         .catch((err) => {
           setBusy(button, false);
-          showError(item, err.serverMessage || err.message);
+          showError(item, ambiguityErrorMessage(err));
         });
       return;
     }
