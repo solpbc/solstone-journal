@@ -465,20 +465,19 @@ fn removing_entity_ambiguity_references_rewrites_only_target_rows() {
 }
 
 #[test]
-fn removing_entity_ambiguity_references_drops_rows_without_candidates() {
+fn removing_entity_ambiguity_references_retains_rows_when_last_candidate_removed() {
     let temporary = TempDir::new();
     record_observation(temporary.path(), "only-target", vec!["target"]);
     let report = remove_entity_ambiguity_references(temporary.path(), "target").unwrap();
     assert_eq!(report.rewritten_ambiguity_ids, Vec::<String>::new());
-    assert_eq!(report.removed_ambiguity_ids.len(), 1);
-    assert!(
-        crate::read_ambiguities(
-            temporary.path(),
-            solstone_core_journal_io::MalformedPolicy::Raise,
-        )
-        .unwrap()
-        .is_empty()
-    );
+    assert_eq!(report.removed_ambiguity_ids, Vec::<String>::new());
+    let rows = crate::read_ambiguities(
+        temporary.path(),
+        solstone_core_journal_io::MalformedPolicy::Raise,
+    )
+    .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["ranked_candidates"][0]["id"], "target");
 }
 
 #[test]

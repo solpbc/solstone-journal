@@ -4049,6 +4049,7 @@ dependencies = [
  "sha2 0.10.9",
  "solstone-core-entity-matching",
  "solstone-core-indexer-store",
+ "solstone-core-journal-config",
  "solstone-core-journal-io",
  "solstone-core-npy",
  "unicode-normalization",

@@ -198,8 +198,8 @@ fn materialized_defaults_only_change_identity_resolution_fields() {
     let plain = plain_defaults();
     let materialized = materialized_defaults();
 
-    assert_eq!(plain.len(), 9);
-    assert_eq!(materialized.len(), 9);
+    assert_eq!(plain.len(), 10);
+    assert_eq!(materialized.len(), 10);
     let mut plain_without_identity = plain.clone();
     let mut materialized_without_identity = materialized.clone();
     plain_without_identity.remove("identity");
@@ -569,4 +569,19 @@ fn empty_json_object_is_valid() {
     let base = load_mutation_base(temporary.path()).unwrap();
     assert!(!base.materialized);
     assert_eq!(base.config, Map::new());
+}
+
+#[test]
+fn entity_tier8_typo_acceptance_enabled_detects_boolean_flag() {
+    assert!(!crate::entity_tier8_typo_acceptance_enabled(None));
+    let mut map = Map::new();
+    assert!(!crate::entity_tier8_typo_acceptance_enabled(Some(&map)));
+    map.insert("entities".to_owned(), json!({}));
+    assert!(!crate::entity_tier8_typo_acceptance_enabled(Some(&map)));
+    map.insert("entities".to_owned(), json!({"accept_tier8_typos": "true"}));
+    assert!(!crate::entity_tier8_typo_acceptance_enabled(Some(&map)));
+    map.insert("entities".to_owned(), json!({"accept_tier8_typos": false}));
+    assert!(!crate::entity_tier8_typo_acceptance_enabled(Some(&map)));
+    map.insert("entities".to_owned(), json!({"accept_tier8_typos": true}));
+    assert!(crate::entity_tier8_typo_acceptance_enabled(Some(&map)));
 }

@@ -199,7 +199,7 @@ pub fn remove_entity_ambiguity_references(
     };
 
     mutate_ambiguities(journal_root, |rows| {
-        rows.retain_mut(|row| {
+        for row in rows.iter_mut() {
             let object = row
                 .as_object_mut()
                 .expect("strict ambiguity reader returns objects");
@@ -212,14 +212,24 @@ pub fn remove_entity_ambiguity_references(
                 .get_mut("ranked_candidates")
                 .and_then(Value::as_array_mut)
                 .expect("strict ambiguity rows have candidates");
-            let candidates_before = candidates.len();
-            candidates
-                .retain(|candidate| candidate.get("id").and_then(Value::as_str) != Some(entity_id));
-            let candidates_changed = candidates.len() != candidates_before;
-            if candidates.is_empty() {
-                report.removed_ambiguity_ids.push(ambiguity_id);
-                return false;
-            }
+
+            let has_target = candidates
+                .iter()
+                .any(|candidate| candidate.get("id").and_then(Value::as_str) == Some(entity_id));
+
+            let candidates_changed = if has_target {
+                if candidates.len() > 1 {
+                    candidates.retain(|candidate| {
+                        candidate.get("id").and_then(Value::as_str) != Some(entity_id)
+                    });
+                    true
+                } else {
+                    // Stripping the deleted id would empty ranked_candidates: keep original candidate list.
+                    false
+                }
+            } else {
+                false
+            };
 
             let resolved_changed =
                 object.get("resolved_entity_id").and_then(Value::as_str) == Some(entity_id);
@@ -231,8 +241,7 @@ pub fn remove_entity_ambiguity_references(
             if candidates_changed || resolved_changed {
                 report.rewritten_ambiguity_ids.push(ambiguity_id);
             }
-            true
-        });
+        }
         Ok(Value::Null)
     })?;
 
@@ -584,6 +593,12 @@ pub(super) fn validate_row(row: &Map<String, Value>) -> Result<(), &'static str>
             return Err("invalid prior-choice origin");
         }
     }
+
+    if let Some(review) = row.get("review") {
+        let review_obj = review.as_object().ok_or("review is not an object")?;
+        super::review_policy::validate_review_object(review_obj, false)?;
+    }
+
     Ok(())
 }
 

@@ -4,6 +4,7 @@
 //! Durable read and write access to journal entity state.
 
 mod ambiguity;
+mod census;
 mod create;
 mod derived;
 mod entity_paths;
@@ -22,7 +23,8 @@ pub mod observations;
 mod paths;
 mod reconcile;
 mod repair;
-mod review_candidates;
+pub(crate) mod review_candidates;
+pub mod review_policy;
 mod undo;
 pub(crate) mod voiceprints;
 mod write;
@@ -32,6 +34,7 @@ pub use ambiguity::{
     load_resolved_ambiguity_choice, read_ambiguities, remove_entity_ambiguity_references,
     rescope_facet_ambiguities,
 };
+pub use census::{CensusEntity, IdentityCensus, scan_identity_census};
 pub use create::create_journal_entity;
 pub use derived::{
     DEFAULT_ACTIVITY_TS, entity_last_active_day, entity_last_active_ts,
@@ -80,6 +83,12 @@ pub use review_candidates::{
     EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,
     dismiss_merge_candidate, load_merge_candidates, prepare_merge_proposals,
     publish_merge_proposals, record_merge_candidate,
+};
+pub use review_policy::{
+    AmbiguityGroupResolveRequest, ENTITY_REVIEW_POLICY_VERSION, PREFIX_CUTOFF,
+    REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, ReviewRestoreTarget, TYPO_FLOOR, ambiguity_group_revision,
+    apply_ambiguity_review_policy, apply_merge_candidate_review_policy, is_placeholder_query,
+    resolve_ambiguity_group, restore_review, sweep_entity_review_policy, validate_review_object,
 };
 pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{

@@ -180,6 +180,9 @@ pub enum EntityWriteError {
         entity_id: String,
         detail: String,
     },
+    CensusIncomplete {
+        detail: String,
+    },
     CacheWriteAfterCommit(AtomicWriteError),
 }
 
@@ -251,6 +254,9 @@ impl fmt::Display for EntityWriteError {
                     "invalid ambiguity choice {entity_id:?}: {detail}"
                 )
             }
+            Self::CensusIncomplete { detail } => {
+                write!(formatter, "entity identity census is incomplete: {detail}")
+            }
         }
     }
 }
@@ -276,7 +282,8 @@ impl Error for EntityWriteError {
             | Self::PreparedStageCollision { .. }
             | Self::AmbiguityChoiceNotFound { .. }
             | Self::AmbiguityChoiceScopeMismatch { .. }
-            | Self::AmbiguityChoiceInvalid { .. } => None,
+            | Self::AmbiguityChoiceInvalid { .. }
+            | Self::CensusIncomplete { .. } => None,
         }
     }
 }
@@ -507,6 +514,11 @@ pub fn record_ambiguity_observation(
     journal_root: &Path,
     observation: &AmbiguityObservation,
 ) -> Result<Value, EntityWriteError> {
+    let census = super::census::scan_identity_census(journal_root).map_err(EntityWriteError::Read)?;
+    let config_read = solstone_core_journal_config::read_journal_config(journal_root).ok();
+    let typo_enabled = solstone_core_journal_config::entity_tier8_typo_acceptance_enabled(
+        config_read.as_ref().and_then(|r| r.config.as_ref()),
+    );
     let _trust = hold_entity_trust_lock(journal_root)?;
     mutate_ambiguities(journal_root, |rows| {
         let scope_key = ambiguity_scope_key(&observation.scope)?;
@@ -565,8 +577,9 @@ pub fn record_ambiguity_observation(
                             .to_owned(),
                     })?;
                 object.insert("occurrence_count".to_owned(), Value::from(count));
-                object.insert("last_seen".to_owned(), Value::String(now));
+                object.insert("last_seen".to_owned(), Value::String(now.clone()));
             }
+            super::review_policy::apply_ambiguity_review_policy(object, &census, typo_enabled, &now);
             return Ok(row.clone());
         }
 
@@ -603,7 +616,7 @@ pub fn record_ambiguity_observation(
             Value::Array(vec![Value::String(origin_key)]),
         );
         row.insert("first_seen".to_owned(), Value::String(now.clone()));
-        row.insert("last_seen".to_owned(), Value::String(now));
+        row.insert("last_seen".to_owned(), Value::String(now.clone()));
         row.insert("occurrence_count".to_owned(), Value::from(1));
         row.insert("status".to_owned(), Value::String("open".to_owned()));
         row.insert("resolved_entity_id".to_owned(), Value::Null);
@@ -611,6 +624,7 @@ pub fn record_ambiguity_observation(
         let mut audit = Map::new();
         audit.insert("prior_choices".to_owned(), Value::Array(Vec::new()));
         row.insert("audit".to_owned(), Value::Object(audit));
+        super::review_policy::apply_ambiguity_review_policy(&mut row, &census, typo_enabled, &now);
         let row = Value::Object(row);
         rows.push(row.clone());
         Ok(row)
@@ -708,6 +722,9 @@ pub fn record_ambiguity_choice(
             Value::String(choice.entity_id.clone()),
         );
         object.insert("resolved_at".to_owned(), Value::String(now));
+        if let Some(review) = object.get_mut("review").and_then(Value::as_object_mut) {
+            review.insert("choice".to_owned(), Value::Null);
+        }
         Ok(row.clone())
     })
 }
@@ -1156,7 +1173,7 @@ fn format_history_ts(now: DateTime<Utc>) -> String {
     }
 }
 
-fn ambiguity_now_iso() -> String {
+pub(crate) fn ambiguity_now_iso() -> String {
     format_ambiguity_ts(Utc::now())
 }
 

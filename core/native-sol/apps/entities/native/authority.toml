@@ -324,6 +324,44 @@ params = [
 ]
 
 [[entries]]
+path = ["entities", "resolve-ambiguity-group"]
+kind = "command"
+help = "Resolve an ambiguity card group for an entity candidate."
+operation_id = "entities.resolve-ambiguity-group"
+entry_type = "http"
+method = "POST"
+route = "/app/entities/api/ambiguities/group-resolve"
+contract_operation_id = "entities.resolve-ambiguity-group"
+handler = "resolve_ambiguity_group"
+params = [
+  { name = "entity_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["entity_id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "member_ids", kind = "option", type = "text", required = true, nargs = 1, multiple = true, options = ["--member-id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "revision", kind = "option", type = "text", required = true, nargs = 1, multiple = false, options = ["--revision"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
+path = ["entities", "restore-review"]
+kind = "command"
+help = "Restore one set-aside review item or undo an automatic choice."
+operation_id = "entities.restore-review"
+entry_type = "http"
+method = "POST"
+route = "/app/entities/api/review/restore"
+contract_operation_id = "entities.restore-review"
+handler = "restore_review"
+params = [
+  { name = "target", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["target"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "ambiguity_id", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--ambiguity-id"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "facet", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--facet", "-f"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "source_slug", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--source-slug"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "target_slug", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--target-slug"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
 path = ["entities", "restore-version"]
 kind = "command"
 help = "Restore one ordinary identity version."
@@ -337,6 +375,20 @@ params = [
   { name = "entity_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["entity_id"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "version_id", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["version_id"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+]
+
+[[entries]]
+path = ["entities", "review"]
+kind = "command"
+help = "List grouped entity review cards and set-aside items."
+operation_id = "entities.review"
+entry_type = "http"
+method = "GET"
+route = "/app/entities/api/review"
+contract_operation_id = "entities.review"
+handler = "review"
+params = [
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
@@ -357,6 +409,21 @@ params = [
   { name = "facet", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--facet", "-f"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "since", kind = "option", type = "text", required = false, nargs = 1, multiple = false, options = ["--since"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "limit", kind = "option", type = "integer", required = false, nargs = 1, multiple = false, default = 20, options = ["--limit", "-n"], secondary = [], hidden = false, is_flag = false, count = false },
+]
+
+[[entries]]
+path = ["entities", "sweep-review"]
+kind = "command"
+help = "Run the entity review policy sweep."
+operation_id = "entities.sweep-review"
+entry_type = "http"
+method = "POST"
+route = "/app/entities/api/review/sweep"
+contract_operation_id = "entities.sweep-review"
+handler = "sweep_review"
+params = [
+  { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
 [[entries]]

@@ -248,6 +248,7 @@ Verified directly against source, not against this table's own history — a sta
 | Speaker backfill operation ledger (`speakers/backfill-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/backfill_operations.rs` |
 | Speaker repair operation ledger (`speakers/repair-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/repair_operations.rs` |
 | Entity merge/undo interruption records (`health/entity-merge-recovery/*`) | `core/crates/solstone-core-entity/src/store/merge_rollback.rs`; merge/undo retry repairs committed derived work or restores unchanged checkpointed sources. Conflicts retain current files and before-images. Undo refuses merged-facet restoration without matching after-state. |
+| Entity review sweep completion (`health/entity-review-sweep.json`) | `core/crates/solstone-core-entity/src/store/review_policy.rs` (`sweep_entity_review_policy`) |
 | Entity resolution ambiguities (`entities/ambiguities.jsonl`) | `core/crates/solstone-core-entity/src/store/write.rs` (`record_ambiguity_observation`, `record_ambiguity_choice`, `mutate_ambiguities`) |
 | Entity merge candidates (`entities/review-candidates.jsonl`) | `core/crates/solstone-core-entity/src/store/review_candidates.rs` |
 | Facet review candidates (`facets/review-candidates.jsonl`) | `core/crates/solstone-core-facets/src/store/review_candidates.rs` |

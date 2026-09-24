@@ -385,56 +385,60 @@ fn record_entity_resolution_impl(
         return Ok(no_match());
     }
 
-    let candidates: Vec<_> = entities
-        .iter()
-        .map(|entity| EntityNameCandidate {
-            id: if name_evidence_only {
-                None
-            } else {
-                entity.id.clone()
-            },
-            name: entity.name.clone(),
-            aka: entity.aka.clone(),
-            emails: entity.emails.clone(),
-        })
-        .collect();
-    match find_matching_entity_detailed(&match_query, &candidates, fuzzy_threshold) {
-        EntityNameMatchOutcome::Matched {
-            candidate_index,
-            tier,
-        } if tier.is_high_confidence() => {
-            return Ok(EntityResolution {
-                outcome: EntityResolutionOutcome::Resolved,
-                entity_index: Some(candidate_index),
-                tier: Some(tier),
-                candidates: Vec::new(),
-                ambiguity_id: None,
-            });
-        }
-        EntityNameMatchOutcome::Ambiguous {
-            tier,
-            candidate_indices,
-        } if tier.is_high_confidence() => {
-            let colliding_entities = candidate_indices
-                .iter()
-                .map(|index| &entities[*index])
-                .collect::<Vec<_>>();
-            let candidates = equalize_ambiguous_candidate_scores(rank_resolution_candidates(
-                &match_query,
+    let is_placeholder = crate::is_placeholder_query(&normalized_query);
+
+    if !is_placeholder {
+        let candidates: Vec<_> = entities
+            .iter()
+            .map(|entity| EntityNameCandidate {
+                id: if name_evidence_only {
+                    None
+                } else {
+                    entity.id.clone()
+                },
+                name: entity.name.clone(),
+                aka: entity.aka.clone(),
+                emails: entity.emails.clone(),
+            })
+            .collect();
+        match find_matching_entity_detailed(&match_query, &candidates, fuzzy_threshold) {
+            EntityNameMatchOutcome::Matched {
+                candidate_index,
                 tier,
-                &colliding_entities,
-            ));
-            return Ok(EntityResolution {
-                outcome: EntityResolutionOutcome::Ambiguous,
-                entity_index: None,
-                tier: Some(tier),
-                candidates,
-                ambiguity_id: None,
-            });
+            } if tier.is_high_confidence() => {
+                return Ok(EntityResolution {
+                    outcome: EntityResolutionOutcome::Resolved,
+                    entity_index: Some(candidate_index),
+                    tier: Some(tier),
+                    candidates: Vec::new(),
+                    ambiguity_id: None,
+                });
+            }
+            EntityNameMatchOutcome::Ambiguous {
+                tier,
+                candidate_indices,
+            } if tier.is_high_confidence() => {
+                let colliding_entities = candidate_indices
+                    .iter()
+                    .map(|index| &entities[*index])
+                    .collect::<Vec<_>>();
+                let candidates = equalize_ambiguous_candidate_scores(rank_resolution_candidates(
+                    &match_query,
+                    tier,
+                    &colliding_entities,
+                ));
+                return Ok(EntityResolution {
+                    outcome: EntityResolutionOutcome::Ambiguous,
+                    entity_index: None,
+                    tier: Some(tier),
+                    candidates,
+                    ambiguity_id: None,
+                });
+            }
+            EntityNameMatchOutcome::Matched { .. }
+            | EntityNameMatchOutcome::Ambiguous { .. }
+            | EntityNameMatchOutcome::NoMatch => {}
         }
-        EntityNameMatchOutcome::Matched { .. }
-        | EntityNameMatchOutcome::Ambiguous { .. }
-        | EntityNameMatchOutcome::NoMatch => {}
     }
 
     let (tier, candidates) =

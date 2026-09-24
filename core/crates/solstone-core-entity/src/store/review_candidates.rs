@@ -327,7 +327,7 @@ pub fn load_merge_candidates(
         .collect())
 }
 
-fn mutate_candidates<T>(
+pub(crate) fn mutate_candidates<T>(
     journal_root: &Path,
     mutate: impl FnOnce(&mut Vec<Value>) -> Result<T, EntityReviewCandidateError>,
 ) -> Result<T, EntityReviewCandidateError> {

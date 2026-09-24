@@ -680,6 +680,177 @@ pub fn resolve_ambiguity(ctx: CommandContext<'_>) -> CommandOutput {
 }
 
 #[must_use]
+pub fn resolve_ambiguity_group(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(
+        ctx.args,
+        &[("--member-id", None), ("--revision", None)],
+        &[("--yes", None), ("--json", None)],
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(entity_id) = parsed.positionals.first() else {
+        return stderr("Error: missing argument ENTITY_ID");
+    };
+    let member_ids = parsed.values("--member-id");
+    if member_ids.is_empty() {
+        return stderr("Error: missing required option --member-id");
+    }
+    let Some(revision) = parsed.value("--revision") else {
+        return stderr("Error: missing required option --revision");
+    };
+    if !parsed.bool_value("--yes").unwrap_or(false) {
+        return stderr("Refusing to resolve this ambiguity group without --yes.");
+    }
+    let body = match request_json(
+        ctx,
+        HttpMethod::Post,
+        "/app/entities/api/ambiguities/group-resolve",
+        vec![],
+        Some(json!({
+            "entity_id": entity_id,
+            "member_ids": member_ids,
+            "revision": revision,
+        })),
+    ) {
+        Ok(body) => body,
+        Err(error) => return trust_error(error, parsed.bool_value("--json").unwrap_or(false)),
+    };
+    if parsed.bool_value("--json").unwrap_or(false) {
+        return stdout_json(&body);
+    }
+    stdout_line(format!(
+        "Resolved {} ambiguities to {entity_id}.",
+        member_ids.len()
+    ))
+}
+
+#[must_use]
+pub fn restore_review(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(
+        ctx.args,
+        &[
+            ("--ambiguity-id", None),
+            ("--facet", Some("-f")),
+            ("--source-slug", None),
+            ("--target-slug", None),
+        ],
+        &[("--yes", None), ("--json", None)],
+    ) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let Some(target) = parsed.positionals.first() else {
+        return stderr("Error: missing argument TARGET");
+    };
+    if !parsed.bool_value("--yes").unwrap_or(false) {
+        return stderr("Refusing to restore review item without --yes.");
+    }
+
+    let payload = match target.as_str() {
+        "ambiguity" => {
+            let Some(ambiguity_id) = parsed.value("--ambiguity-id") else {
+                return stderr("Error: missing required option --ambiguity-id");
+            };
+            json!({
+                "target": "ambiguity",
+                "ambiguity_id": ambiguity_id,
+            })
+        }
+        "merge_candidate" => {
+            let Some(facet) = parsed.value("--facet") else {
+                return stderr("Error: missing required option --facet");
+            };
+            let Some(source_slug) = parsed.value("--source-slug") else {
+                return stderr("Error: missing required option --source-slug");
+            };
+            let Some(target_slug) = parsed.value("--target-slug") else {
+                return stderr("Error: missing required option --target-slug");
+            };
+            json!({
+                "target": "merge_candidate",
+                "facet": facet,
+                "source_slug": source_slug,
+                "target_slug": target_slug,
+            })
+        }
+        _ => return stderr("Error: TARGET must be ambiguity or merge_candidate"),
+    };
+
+    let body = match request_json(
+        ctx,
+        HttpMethod::Post,
+        "/app/entities/api/review/restore",
+        vec![],
+        Some(payload),
+    ) {
+        Ok(body) => body,
+        Err(error) => return trust_error(error, parsed.bool_value("--json").unwrap_or(false)),
+    };
+    if parsed.bool_value("--json").unwrap_or(false) {
+        return stdout_json(&body);
+    }
+    stdout_line(format!("Restored review item {target}."))
+}
+
+#[must_use]
+pub fn review(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[("--json", None)]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    let body = match request_json(
+        ctx,
+        HttpMethod::Get,
+        "/app/entities/api/review",
+        vec![],
+        None,
+    ) {
+        Ok(body) => body,
+        Err(error) => return trust_error(error, parsed.bool_value("--json").unwrap_or(false)),
+    };
+    if parsed.bool_value("--json").unwrap_or(false) {
+        return stdout_json(&body);
+    }
+    let cards = array_field(&body, "ambiguity_cards");
+    let set_aside_amb = array_field(&body, "set_aside_ambiguities");
+    let set_aside_merge = array_field(&body, "set_aside_merge_candidates");
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "Review items: {} ambiguity card(s), {} set-aside ambiguity(ies), {} set-aside merge candidate(s).",
+        cards.len(),
+        set_aside_amb.len(),
+        set_aside_merge.len()
+    ));
+    stdout(lines)
+}
+
+#[must_use]
+pub fn sweep_review(ctx: CommandContext<'_>) -> CommandOutput {
+    let parsed = match parse_args(ctx.args, &[], &[("--yes", None), ("--json", None)]) {
+        Ok(parsed) => parsed,
+        Err(error) => return stderr(error),
+    };
+    if !parsed.bool_value("--yes").unwrap_or(false) {
+        return stderr("Refusing to run review sweep without --yes.");
+    }
+    let body = match request_json(
+        ctx,
+        HttpMethod::Post,
+        "/app/entities/api/review/sweep",
+        vec![],
+        Some(json!({})),
+    ) {
+        Ok(body) => body,
+        Err(error) => return trust_error(error, parsed.bool_value("--json").unwrap_or(false)),
+    };
+    if parsed.bool_value("--json").unwrap_or(false) {
+        return stdout_json(&body);
+    }
+    stdout_line("Completed entity review sweep.")
+}
+
+#[must_use]
 pub fn entity_history(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(ctx.args, &[], &[("--json", None)]) {
         Ok(parsed) => parsed,

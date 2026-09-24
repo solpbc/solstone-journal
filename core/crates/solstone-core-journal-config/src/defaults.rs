@@ -55,6 +55,9 @@ const DEFAULT_CONFIG_JSON: &str = r#"
     "home_address": null,
     "direct_port": 7657
   },
+  "entities": {
+    "accept_tier8_typos": false
+  },
   "backup": {
     "enabled": false,
     "mode": "byo",

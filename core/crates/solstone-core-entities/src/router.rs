@@ -140,7 +140,17 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             "/app/entities/api/dismiss-merge-candidate",
             post(dismiss_merge_candidate_route),
         )
+        .route("/app/entities/api/review", get(review_route))
+        .route("/app/entities/api/review/sweep", post(sweep_review_route))
+        .route(
+            "/app/entities/api/review/restore",
+            post(restore_review_route),
+        )
         .route("/app/entities/api/ambiguities", get(ambiguities_route))
+        .route(
+            "/app/entities/api/ambiguities/group-resolve",
+            post(group_resolve_ambiguities_route),
+        )
         .route(
             "/app/entities/api/ambiguities/{ambiguity_id}/resolve",
             post(resolve_ambiguity_route),
@@ -3155,6 +3165,372 @@ async fn dismiss_ambiguity_route(
             solstone_core_entity::LockError::Timeout(_),
         ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
         _ => refusal(ReasonCode::InvalidRequestValue, "ambiguity dismiss failed"),
+    }
+}
+
+async fn review_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let root = Arc::clone(&root);
+    let result = solstone_core_serving::seam::run_blocking(move || {
+        let ambiguities = solstone_core_entity::read_ambiguities(
+            &root,
+            solstone_core_entity::MalformedPolicy::Raise,
+        )
+        .map_err(|e| e.to_string())?;
+        let merge_candidates = solstone_core_entity::load_merge_candidates(&root, None, None)
+            .map_err(|e| e.to_string())?;
+        Ok::<_, String>((ambiguities, merge_candidates))
+    })
+    .await;
+
+    let (ambiguities, merge_candidates) = match result {
+        Ok(Ok(res)) => res,
+        Ok(Err(err)) => return refusal(ReasonCode::EntityOperationFailed, err),
+        Err(_) => return refusal(ReasonCode::EntityOperationFailed, "review read failed"),
+    };
+
+    let mut set_aside_ambiguities = Vec::new();
+    let mut set_aside_merge_candidates = Vec::new();
+
+    for candidate in merge_candidates {
+        if let Some(review) = candidate.get("review").and_then(Value::as_object)
+            && review.get("suppression").is_some_and(|s| !s.is_null())
+        {
+            set_aside_merge_candidates.push(candidate);
+        }
+    }
+
+    // Group open, unsuppressed ambiguities by candidate ID set
+    let mut group_map: HashMap<Vec<String>, Vec<Value>> = HashMap::new();
+    let mut candidate_data_by_set: HashMap<Vec<String>, Vec<Value>> = HashMap::new();
+
+    for row in ambiguities {
+        let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
+        let is_suppressed = row
+            .get("review")
+            .and_then(Value::as_object)
+            .and_then(|r| r.get("suppression"))
+            .is_some_and(|s| !s.is_null());
+
+        if is_suppressed {
+            set_aside_ambiguities.push(row);
+            continue;
+        }
+
+        if status != "open" {
+            continue;
+        }
+
+        let candidates = row
+            .get("ranked_candidates")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        let mut candidate_ids: Vec<String> = candidates
+            .iter()
+            .filter_map(|c| c.get("id").and_then(Value::as_str).map(str::to_owned))
+            .collect();
+        candidate_ids.sort();
+
+        candidate_data_by_set
+            .entry(candidate_ids.clone())
+            .or_insert_with(|| candidates);
+        group_map.entry(candidate_ids).or_default().push(row);
+    }
+
+    let mut ambiguity_cards = Vec::new();
+    for (candidate_ids, members) in group_map {
+        let member_objs: Vec<&serde_json::Map<String, Value>> =
+            members.iter().filter_map(Value::as_object).collect();
+        let revision =
+            solstone_core_entity::ambiguity_group_revision(&candidate_ids, &member_objs);
+        let candidates = candidate_data_by_set
+            .remove(&candidate_ids)
+            .unwrap_or_default();
+        ambiguity_cards.push(json!({
+            "candidate_ids": candidate_ids,
+            "candidates": candidates,
+            "members": members,
+            "revision": revision,
+        }));
+    }
+
+    // Sort cards deterministically by candidate_ids
+    ambiguity_cards.sort_by(|a, b| {
+        let a_key = a
+            .get("candidate_ids")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        let b_key = b
+            .get("candidate_ids")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(Value::as_str)
+                    .collect::<Vec<_>>()
+                    .join(",")
+            })
+            .unwrap_or_default();
+        a_key.cmp(&b_key)
+    });
+
+    Json(json!({
+        "ambiguity_cards": ambiguity_cards,
+        "set_aside_ambiguities": set_aside_ambiguities,
+        "set_aside_merge_candidates": set_aside_merge_candidates,
+    }))
+    .into_response()
+}
+
+async fn sweep_review_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let root = Arc::clone(&root);
+    match run_entity_write(move || solstone_core_entity::sweep_entity_review_policy(&root)).await {
+        Ok(Ok(())) => Json(json!({"ok": true})).into_response(),
+        Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
+            solstone_core_entity::EntityTrustLockError::Lock(
+                solstone_core_entity::LockError::Timeout(_),
+            ),
+        )))
+        | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
+            solstone_core_entity::LockError::Timeout(_),
+        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        _ => refusal(ReasonCode::EntityOperationFailed, "review sweep failed"),
+    }
+}
+
+async fn restore_review_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+    };
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
+    let target_kind = body
+        .get("target")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+
+    let target = match target_kind {
+        "ambiguity" => {
+            let Some(ambiguity_id) = body.get("ambiguity_id").and_then(Value::as_str) else {
+                return refusal(ReasonCode::MissingRequiredField, "ambiguity_id is required");
+            };
+            solstone_core_entity::ReviewRestoreTarget::Ambiguity {
+                ambiguity_id: ambiguity_id.to_owned(),
+            }
+        }
+        "merge_candidate" => {
+            let Some(facet) = body.get("facet").and_then(Value::as_str) else {
+                return refusal(ReasonCode::MissingRequiredField, "facet is required");
+            };
+            let Some(source_slug) = body.get("source_slug").and_then(Value::as_str) else {
+                return refusal(ReasonCode::MissingRequiredField, "source_slug is required");
+            };
+            let Some(target_slug) = body.get("target_slug").and_then(Value::as_str) else {
+                return refusal(ReasonCode::MissingRequiredField, "target_slug is required");
+            };
+            solstone_core_entity::ReviewRestoreTarget::MergeCandidate {
+                facet: facet.to_owned(),
+                source_slug: source_slug.to_owned(),
+                target_slug: target_slug.to_owned(),
+            }
+        }
+        _ => return refusal(ReasonCode::InvalidRequestValue, "invalid target kind"),
+    };
+
+    let root = Arc::clone(&root);
+    match run_entity_write(move || solstone_core_entity::restore_review(&root, &target)).await {
+        Ok(Ok(Some(item))) => Json(json!({"ok": true, "item": item})).into_response(),
+        Ok(Ok(None)) => refusal(ReasonCode::EntityNotFound, "review item not found"),
+        Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
+            solstone_core_entity::EntityTrustLockError::Lock(
+                solstone_core_entity::LockError::Timeout(_),
+            ),
+        )))
+        | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
+            solstone_core_entity::LockError::Timeout(_),
+        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        _ => refusal(ReasonCode::EntityOperationFailed, "review restore failed"),
+    }
+}
+
+async fn group_resolve_ambiguities_route(
+    Extension(b): Extension<AccessBasis>,
+    State(root): State<Arc<RouterState>>,
+    request: Request,
+) -> Response {
+    if let Some(r) = admitted(&b) {
+        return r;
+    }
+    let bytes = match axum::body::to_bytes(request.into_body(), usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => return refusal(ReasonCode::MissingRequestBody, "No data provided"),
+    };
+    let body: Value = serde_json::from_slice(&bytes).unwrap_or_else(|_| json!({}));
+    let Some(entity_id) = body.get("entity_id").and_then(Value::as_str) else {
+        return refusal(ReasonCode::MissingRequiredField, "entity_id is required");
+    };
+    let entity_id = entity_id.to_owned();
+    let Some(member_ids) = body.get("member_ids").and_then(Value::as_array) else {
+        return refusal(ReasonCode::MissingRequiredField, "member_ids is required");
+    };
+    let member_ids: Vec<String> = member_ids
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    if member_ids.is_empty() {
+        return refusal(ReasonCode::InvalidRequestValue, "member_ids must not be empty");
+    }
+    let Some(revision) = body.get("revision").and_then(Value::as_str) else {
+        return refusal(ReasonCode::MissingRequiredField, "revision is required");
+    };
+    let revision = revision.to_owned();
+
+    // Look up eligible entities for each member
+    let plan = match solstone_core_serving::seam::run_blocking({
+        let root = Arc::clone(&root);
+        let member_ids = member_ids.clone();
+        move || {
+            let rows = solstone_core_entity::read_ambiguities(
+                &root,
+                solstone_core_entity::MalformedPolicy::Raise,
+            )
+            .map_err(|error| error.to_string())?;
+
+            let mut eligible_by_member = HashMap::new();
+
+            for member_id in &member_ids {
+                let Some(row) = rows.iter().find(|r| {
+                    r.get("ambiguity_id").and_then(Value::as_str) == Some(member_id.as_str())
+                }) else {
+                    return Ok::<_, String>(None);
+                };
+
+                let scope = row
+                    .get("scope")
+                    .cloned()
+                    .ok_or_else(|| "ambiguity row has no scope".to_owned())?;
+
+                let origins = row
+                    .get("origins")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let is_speaker_only = !origins.is_empty()
+                    && origins.iter().all(|origin| {
+                        origin
+                            .as_object()
+                            .and_then(|o| o.get("lane"))
+                            .and_then(Value::as_str)
+                            .is_some_and(|lane| {
+                                lane == "apps.speakers.attribution"
+                                    || lane == "talent.speaker_attribution"
+                            })
+                    });
+
+                let mut eligible = Vec::new();
+                if scope.get("kind").and_then(Value::as_str) == Some("journal") {
+                    let identities = solstone_core_entity::read_identity_map(&root)
+                        .map_err(|error| error.to_string())?;
+                    for (id, entity_dir) in identities.resolved {
+                        let Some(identity) =
+                            solstone_core_entity::read_entity_identity(&root, &entity_dir)
+                                .map_err(|error| error.to_string())?
+                        else {
+                            continue;
+                        };
+                        let value = identity.value().clone();
+                        let kind = value.get("type").and_then(Value::as_str);
+                        if is_speaker_only && kind != Some("Person") {
+                            continue;
+                        }
+                        eligible.push(solstone_core_entity::AmbiguityChoiceEntity {
+                            id,
+                            blocked: value.get("blocked") == Some(&Value::Bool(true)),
+                        });
+                    }
+                } else {
+                    let facet = scope
+                        .get("facet")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| "facet ambiguity scope has no facet".to_owned())?;
+                    let entities = solstone_core_facets::list_scoped_facet_entities(
+                        &root, facet, false, false,
+                    )
+                    .map_err(|error| error.to_string())?;
+                    for entity in entities {
+                        let kind = entity.identity.get("type").and_then(Value::as_str);
+                        if is_speaker_only && kind != Some("Person") {
+                            continue;
+                        }
+                        eligible.push(solstone_core_entity::AmbiguityChoiceEntity {
+                            id: entity.entity_id,
+                            blocked: entity.blocked,
+                        });
+                    }
+                }
+                eligible_by_member.insert(member_id.clone(), eligible);
+            }
+
+            Ok(Some(eligible_by_member))
+        }
+    })
+    .await
+    {
+        Ok(Ok(Some(plan))) => plan,
+        Ok(Ok(None)) => return refusal(ReasonCode::EntityNotFound, "member not found"),
+        _ => {
+            return refusal(
+                ReasonCode::InvalidRequestValue,
+                "group resolve eligibility lookup failed",
+            );
+        }
+    };
+
+    let req = solstone_core_entity::AmbiguityGroupResolveRequest {
+        entity_id,
+        member_ids,
+        revision,
+        eligible_by_member: plan,
+    };
+
+    let root = Arc::clone(&root);
+    match run_entity_write(move || solstone_core_entity::resolve_ambiguity_group(&root, &req)).await
+    {
+        Ok(Ok(resolved)) => Json(json!({"ok": true, "resolved": resolved})).into_response(),
+        Ok(Err(solstone_core_entity::EntityWriteError::TrustLock(
+            solstone_core_entity::EntityTrustLockError::Lock(
+                solstone_core_entity::LockError::Timeout(_),
+            ),
+        )))
+        | Ok(Err(solstone_core_entity::EntityWriteError::AmbiguityLock(
+            solstone_core_entity::LockError::Timeout(_),
+        ))) => refusal(ReasonCode::EntityBusy, "entity busy"),
+        _ => refusal(ReasonCode::InvalidRequestValue, "group resolve failed"),
     }
 }
 

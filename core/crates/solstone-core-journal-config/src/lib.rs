@@ -34,8 +34,9 @@ pub use path::get_journal_config_path;
 #[cfg(unix)]
 pub use read::read_journal_config_bound;
 pub use read::{
-    ConfigLoadError, JournalConfigMutationBase, JournalConfigRead, load_mutation_base,
-    no_thinking_engine_chosen, read_journal_config,
+    ConfigLoadError, JournalConfigMutationBase, JournalConfigRead,
+    entity_tier8_typo_acceptance_enabled, load_mutation_base, no_thinking_engine_chosen,
+    read_journal_config,
 };
 
 #[cfg(test)]

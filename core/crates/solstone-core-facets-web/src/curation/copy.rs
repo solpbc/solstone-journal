@@ -13,7 +13,7 @@ pub fn payload() -> Value {
     )
 }
 
-const COPY: [(&str, &str); 53] = [
+const COPY: [(&str, &str); 54] = [
     ("CUR_HEADING", "suggestions"),
     (
         "CUR_FACET_BODY",
@@ -120,4 +120,5 @@ const COPY: [(&str, &str); 53] = [
     ("CUR_PREVIEW_OBSERVATIONS_LABEL", "notes moved"),
     ("CUR_PREVIEW_SEGMENTS_LABEL", "speaker labels updated"),
     ("CUR_PREVIEW_VOICEPRINTS_LABEL", "voice samples moved"),
+    ("CUR_REVIEW_RESTORE_ACTION", "restore to review"),
 ];

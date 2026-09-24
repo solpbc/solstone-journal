@@ -139,6 +139,19 @@ pub fn no_thinking_engine_chosen(journal: &Path) -> bool {
         .is_some_and(|provider| !provider.trim().is_empty())
 }
 
+/// Return whether tier-8 entity typo auto-acceptance is enabled.
+pub fn entity_tier8_typo_acceptance_enabled(config: Option<&Map<String, Value>>) -> bool {
+    let Some(config) = config else {
+        return false;
+    };
+    config
+        .get("entities")
+        .and_then(Value::as_object)
+        .and_then(|entities| entities.get("accept_tier8_typos"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+}
+
 fn read_config_path(path: &Path) -> Result<JournalConfigRead, ConfigLoadError> {
     let bytes = match read_bytes(path) {
         Ok(bytes) => Some(bytes),

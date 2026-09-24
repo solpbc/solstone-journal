@@ -1203,4 +1203,161 @@ mod tests {
         .unwrap();
         assert!(solstone_core_entity::load_entity_voiceprints_file(root.path(), "ada").is_some());
     }
+
+    #[test]
+    fn speaker_attribution_lane_admission_and_resolution_cases() {
+        let root = tempfile::tempdir().unwrap();
+        let person = solstone_core_entity::JournalEntity {
+            id: "helen_trent".to_owned(),
+            value: json!({
+                "id": "helen_trent",
+                "name": "Helen Trent",
+                "type": "Person",
+                "aka": ["Hel Trent"],
+                "blocked": false
+            }),
+        };
+
+        let non_person = solstone_core_entity::JournalEntity {
+            id: "laser_cutter_tool".to_owned(),
+            value: json!({
+                "id": "laser_cutter_tool",
+                "name": "Laser Cutter Tool",
+                "type": "Tool",
+                "aka": ["LCutter"],
+                "blocked": false
+            }),
+        };
+
+        let all_entities = vec![&person, &non_person];
+        let unblocked = vec![&person, &non_person];
+        let pool = admissible_person_pool(&unblocked);
+        assert_eq!(pool.len(), 1);
+        assert_eq!(pool[0].id, "helen_trent");
+
+        let resolution_entities = admissible_resolution_entities(&pool);
+        let scope = json!({"kind": "journal"});
+
+        // 1. Person exact resolves
+        let res1 = solstone_core_entity::record_entity_resolution(
+            root.path(),
+            "Helen Trent",
+            &resolution_entities,
+            scope.clone(),
+            json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
+            0.85,
+            false,
+        ).unwrap();
+        assert_eq!(res1.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+
+        // 2. Person alias resolves
+        let res2 = solstone_core_entity::record_entity_resolution(
+            root.path(),
+            "Hel Trent",
+            &resolution_entities,
+            scope.clone(),
+            json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
+            0.85,
+            false,
+        ).unwrap();
+        assert_eq!(res2.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+
+        // 3. Saved Person choice
+        let obs3 = solstone_core_entity::AmbiguityObservation {
+            scope: scope.clone(),
+            query: "Helen".to_owned(),
+            normalized_query: "helen".to_owned(),
+            observed_tier: 5,
+            ranked_candidates: vec![json!({"id": "helen_trent", "name": "Helen Trent", "tier": 5, "score": 80.0})],
+            origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        };
+        solstone_core_entity::record_ambiguity_observation(root.path(), &obs3).unwrap();
+
+        let choice_req = solstone_core_entity::AmbiguityChoiceRequest {
+            scope: scope.clone(),
+            query: "Helen".to_owned(),
+            entity_id: "helen_trent".to_owned(),
+            origin: None,
+        };
+        let eligible = vec![solstone_core_entity::AmbiguityChoiceEntity { id: "helen_trent".to_owned(), blocked: false }];
+        solstone_core_entity::record_ambiguity_choice(root.path(), &choice_req, &eligible).unwrap();
+        let excluded_person = saved_choice_excluded_by_admission(root.path(), &scope, "Helen", &all_entities).unwrap();
+        assert!(!excluded_person);
+
+        // 4. Non-Person exact does not resolve in Person pool
+        let res4 = solstone_core_entity::record_entity_resolution(
+            root.path(),
+            "Laser Cutter Tool",
+            &resolution_entities,
+            scope.clone(),
+            json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
+            0.85,
+            false,
+        ).unwrap();
+        assert_ne!(res4.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+
+        // 5. Non-Person alias does not resolve in Person pool
+        let res5 = solstone_core_entity::record_entity_resolution(
+            root.path(),
+            "LCutter",
+            &resolution_entities,
+            scope.clone(),
+            json!({"lane": "talent.speaker_attribution", "day": "20260101"}),
+            0.85,
+            false,
+        ).unwrap();
+        assert_ne!(res5.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+
+        // 6. Saved Non-Person choice is excluded by admission
+        let obs6 = solstone_core_entity::AmbiguityObservation {
+            scope: scope.clone(),
+            query: "Cutter".to_owned(),
+            normalized_query: "cutter".to_owned(),
+            observed_tier: 5,
+            ranked_candidates: vec![json!({"id": "laser_cutter_tool", "name": "Laser Cutter Tool", "tier": 5, "score": 80.0})],
+            origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        };
+        solstone_core_entity::record_ambiguity_observation(root.path(), &obs6).unwrap();
+
+        let tool_choice = solstone_core_entity::AmbiguityChoiceRequest {
+            scope: scope.clone(),
+            query: "Cutter".to_owned(),
+            entity_id: "laser_cutter_tool".to_owned(),
+            origin: None,
+        };
+        let tool_eligible = vec![solstone_core_entity::AmbiguityChoiceEntity { id: "laser_cutter_tool".to_owned(), blocked: false }];
+        solstone_core_entity::record_ambiguity_choice(root.path(), &tool_choice, &tool_eligible).unwrap();
+        let excluded_tool = saved_choice_excluded_by_admission(root.path(), &scope, "Cutter", &all_entities).unwrap();
+        assert!(excluded_tool);
+    }
+
+    #[test]
+    fn exact_tool_match_on_participation_lane_resolves_and_is_not_set_aside() {
+        let root = tempfile::tempdir().unwrap();
+        let tool = solstone_core_entity::JournalEntity {
+            id: "quantum_bench_tool".to_owned(),
+            value: json!({
+                "id": "quantum_bench_tool",
+                "name": "Quantum Bench Tool",
+                "type": "Tool",
+                "aka": [],
+                "blocked": false
+            }),
+        };
+
+        let resolution_entities = vec![tool.resolution_entity()];
+        let scope = json!({"kind": "journal"});
+
+        let res = solstone_core_entity::record_entity_resolution(
+            root.path(),
+            "Quantum Bench Tool",
+            &resolution_entities,
+            scope,
+            json!({"lane": "talent.participation", "facet": "work"}),
+            0.85,
+            false,
+        ).unwrap();
+        assert_eq!(res.outcome, solstone_core_entity::EntityResolutionOutcome::Resolved);
+        assert_eq!(res.entity_index, Some(0));
+    }
 }

@@ -287,12 +287,21 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             if let Some(dismiss) = copy.remove("CUR_AMBIGUITY_DISMISS_ACTION") {
                 assert_eq!(dismiss, Value::String("none of these".to_owned()));
             }
+            if let Some(restore) = copy.remove("CUR_REVIEW_RESTORE_ACTION") {
+                assert_eq!(restore, Value::String("restore to review".to_owned()));
+            }
             if let Some(empty) = copy.get_mut("CUR_EMPTY_STATE") {
                 assert_eq!(empty, "nothing to review. no new structure to suggest yet.");
                 *empty = Value::String(
                     "nothing to review — solstone hasn't spotted new structure to suggest.".into(),
                 );
             }
+        }
+        if let Some(set_aside) = value.as_object_mut().and_then(|obj| obj.remove("set_aside_items")) {
+            assert!(set_aside.is_array());
+        }
+        if let Some(groups) = value.as_object_mut().and_then(|obj| obj.remove("ambiguity_groups")) {
+            assert!(groups.is_array());
         }
         Sha256::digest(canonical(&value))
     };

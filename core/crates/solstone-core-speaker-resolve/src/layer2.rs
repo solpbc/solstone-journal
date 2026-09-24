@@ -199,3 +199,120 @@ fn apply_replacement_labels(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+    use tempfile::TempDir;
+
+    #[test]
+    fn resolve_entity_speaker_attribution_lane_rules() {
+        let temporary = TempDir::new().unwrap();
+        let person_entity = JournalEntity {
+            id: "dr_marcus_vance".to_owned(),
+            value: json!({
+                "id": "dr_marcus_vance",
+                "name": "Dr. Marcus Vance",
+                "type": "Person",
+                "aka": ["Marc Vance"],
+                "blocked": false
+            }),
+        };
+
+        let tool_entity = JournalEntity {
+            id: "quantum_compiler_tool".to_owned(),
+            value: json!({
+                "id": "quantum_compiler_tool",
+                "name": "Quantum Compiler Tool",
+                "type": "Tool",
+                "aka": ["QCompiler"],
+                "blocked": false
+            }),
+        };
+
+        let all_entities = vec![&person_entity, &tool_entity];
+        let pool = vec![&person_entity];
+        let resolution_entities = vec![person_entity.resolution_entity()];
+
+        let empty_names: Vec<String> = Vec::new();
+        let entity_slice = vec![person_entity.clone(), tool_entity.clone()];
+        let sids: Vec<i64> = Vec::new();
+        let margin_declined: HashSet<i64> = HashSet::new();
+
+        let inputs = Layer2Inputs {
+            speakers: &empty_names,
+            setting_names: &empty_names,
+            screen_names: &empty_names,
+            meeting_names: &empty_names,
+            entities: &entity_slice,
+            all_entities: &entity_slice,
+            non_owner_sids: &sids,
+            margin_declined_sids: &margin_declined,
+            journal_root: temporary.path(),
+            day: "20260804",
+            segment_key: "s1",
+            read_only: false,
+        };
+
+        // 1. Person exact resolves
+        let res1 = resolve_entity(&inputs, &all_entities, &pool, &resolution_entities, "Dr. Marcus Vance", "test_field").unwrap();
+        assert_eq!(res1.map(|e| e.id.as_str()), Some("dr_marcus_vance"));
+
+        // 2. Person alias resolves
+        let res2 = resolve_entity(&inputs, &all_entities, &pool, &resolution_entities, "Marc Vance", "test_field").unwrap();
+        assert_eq!(res2.map(|e| e.id.as_str()), Some("dr_marcus_vance"));
+
+        // 3. Saved Person choice resolves
+        let obs3 = solstone_core_entity::AmbiguityObservation {
+            scope: json!({"kind": "journal"}),
+            query: "Vance".to_owned(),
+            normalized_query: "vance".to_owned(),
+            observed_tier: 5,
+            ranked_candidates: vec![json!({"id": "dr_marcus_vance", "name": "Dr. Marcus Vance", "tier": 5, "score": 80.0})],
+            origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        };
+        solstone_core_entity::record_ambiguity_observation(temporary.path(), &obs3).unwrap();
+
+        let choice_req = solstone_core_entity::AmbiguityChoiceRequest {
+            scope: json!({"kind": "journal"}),
+            query: "Vance".to_owned(),
+            entity_id: "dr_marcus_vance".to_owned(),
+            origin: None,
+        };
+        let eligible = vec![solstone_core_entity::AmbiguityChoiceEntity { id: "dr_marcus_vance".to_owned(), blocked: false }];
+        solstone_core_entity::record_ambiguity_choice(temporary.path(), &choice_req, &eligible).unwrap();
+        let res3 = resolve_entity(&inputs, &all_entities, &pool, &resolution_entities, "Vance", "test_field").unwrap();
+        assert_eq!(res3.map(|e| e.id.as_str()), Some("dr_marcus_vance"));
+
+        // 4. Non-Person exact does not resolve
+        let res4 = resolve_entity(&inputs, &all_entities, &pool, &resolution_entities, "Quantum Compiler Tool", "test_field").unwrap();
+        assert_eq!(res4, None);
+
+        // 5. Non-Person alias does not resolve
+        let res5 = resolve_entity(&inputs, &all_entities, &pool, &resolution_entities, "QCompiler", "test_field").unwrap();
+        assert_eq!(res5, None);
+
+        // 6. Saved Non-Person choice does not resolve
+        let obs6 = solstone_core_entity::AmbiguityObservation {
+            scope: json!({"kind": "journal"}),
+            query: "Compiler".to_owned(),
+            normalized_query: "compiler".to_owned(),
+            observed_tier: 5,
+            ranked_candidates: vec![json!({"id": "quantum_compiler_tool", "name": "Quantum Compiler Tool", "tier": 5, "score": 80.0})],
+            origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        };
+        solstone_core_entity::record_ambiguity_observation(temporary.path(), &obs6).unwrap();
+
+        let tool_choice = solstone_core_entity::AmbiguityChoiceRequest {
+            scope: json!({"kind": "journal"}),
+            query: "Compiler".to_owned(),
+            entity_id: "quantum_compiler_tool".to_owned(),
+            origin: None,
+        };
+        let tool_eligible = vec![solstone_core_entity::AmbiguityChoiceEntity { id: "quantum_compiler_tool".to_owned(), blocked: false }];
+        solstone_core_entity::record_ambiguity_choice(temporary.path(), &tool_choice, &tool_eligible).unwrap();
+        let res6 = resolve_entity(&inputs, &all_entities, &pool, &resolution_entities, "Compiler", "test_field").unwrap();
+        assert_eq!(res6, None);
+    }
+}

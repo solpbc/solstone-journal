@@ -1493,6 +1493,9 @@ pub(crate) async fn boot_and_tick(
         server.stop().await;
         return Err(abort_pre_ready(&lifecycle, error));
     }
+    if let Err(err) = solstone_core_entity::sweep_entity_review_policy(&journal) {
+        log::error!("failed to sweep entity review policy: {err}");
+    }
     let default_cap = std::env::var("SOLSTONE_SUPERVISOR_TASK_CAP_SECONDS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())

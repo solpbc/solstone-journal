@@ -86,6 +86,13 @@ async fn state(State(root): State<PathBuf>) -> Response {
     }
 }
 
+fn is_row_suppressed(row: &Value) -> bool {
+    row.get("review")
+        .and_then(Value::as_object)
+        .and_then(|r| r.get("suppression"))
+        .is_some_and(|s| !s.is_null())
+}
+
 fn load_state(root: &Path) -> Result<Value, String> {
     let facet_items = solstone_core_facets::load_candidates(root)
         .map_err(|error| error.to_string())?
@@ -93,17 +100,108 @@ fn load_state(root: &Path) -> Result<Value, String> {
         .filter(|row| row.get("status").and_then(Value::as_str) == Some("open"))
         .map(facet_item)
         .collect::<Vec<_>>();
-    let entity_items = load_merge_candidates(root, None, Some("open"))
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .map(entity_item)
-        .collect::<Vec<_>>();
-    let ambiguity_items = read_ambiguities(root, MalformedPolicy::Raise)
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter(|row| row.get("status").and_then(Value::as_str) == Some("open"))
-        .map(ambiguity_item)
-        .collect::<Vec<_>>();
+    let mut entity_items = Vec::new();
+    let mut set_aside_items = Vec::new();
+    for row in load_merge_candidates(root, None, None).map_err(|error| error.to_string())? {
+        let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
+        if is_row_suppressed(&row) {
+            set_aside_items.push(set_aside_merge_item(row));
+        } else if status == "open" {
+            entity_items.push(entity_item(row));
+        }
+    }
+    let mut ambiguity_items = Vec::new();
+    let mut ambiguity_group_rows: std::collections::BTreeMap<Vec<String>, Vec<Map<String, Value>>> =
+        std::collections::BTreeMap::new();
+    let mut ambiguity_group_candidates: std::collections::BTreeMap<Vec<String>, Vec<Value>> =
+        std::collections::BTreeMap::new();
+
+    for row in read_ambiguities(root, MalformedPolicy::Raise).map_err(|error| error.to_string())? {
+        let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
+        if is_row_suppressed(&row) {
+            set_aside_items.push(set_aside_ambiguity_item(row));
+        } else if status == "open" {
+            ambiguity_items.push(ambiguity_item(row.clone()));
+            if let Some(obj) = row.as_object() {
+                let mut candidate_ids: Vec<String> = obj
+                    .get("ranked_candidates")
+                    .and_then(Value::as_array)
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|c| c.get("id").and_then(Value::as_str).map(str::to_owned))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                candidate_ids.sort();
+                if !candidate_ids.is_empty() {
+                    let candidates = obj
+                        .get("ranked_candidates")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    ambiguity_group_candidates
+                        .entry(candidate_ids.clone())
+                        .or_insert(candidates);
+                    ambiguity_group_rows
+                        .entry(candidate_ids)
+                        .or_default()
+                        .push(obj.clone());
+                }
+            }
+        }
+    }
+
+    let mut ambiguity_groups = Vec::new();
+    for (candidate_ids, rows) in ambiguity_group_rows {
+        let member_maps: Vec<&Map<String, Value>> = rows.iter().collect();
+        let revision = solstone_core_entity::ambiguity_group_revision(&candidate_ids, &member_maps);
+        let candidates = ambiguity_group_candidates
+            .get(&candidate_ids)
+            .cloned()
+            .unwrap_or_default();
+        let mut members = Vec::new();
+        for r in rows {
+            let ambiguity_id = r
+                .get("ambiguity_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let normalized_query = r
+                .get("normalized_query")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let query = r
+                .get("original_query")
+                .or_else(|| r.get("latest_query"))
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_owned();
+            let occurrence_count = r
+                .get("occurrence_count")
+                .and_then(Value::as_i64)
+                .unwrap_or(1);
+            let origin_keys = r
+                .get("origin_keys")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            members.push(json!({
+                "ambiguity_id": ambiguity_id,
+                "normalized_query": normalized_query,
+                "query": query,
+                "occurrence_count": occurrence_count,
+                "origin_keys": origin_keys,
+            }));
+        }
+        ambiguity_groups.push(json!({
+            "candidate_ids": candidate_ids,
+            "revision": revision,
+            "candidates": candidates,
+            "members": members,
+        }));
+    }
+
     let speaker_items = speaker_store::load_candidates(root)
         .map_err(|error| error.to_string())?
         .into_iter()
@@ -120,6 +218,8 @@ fn load_state(root: &Path) -> Result<Value, String> {
         "facet_items": sorted(facet_items),
         "entity_items": sorted(entity_items),
         "ambiguity_items": sorted(ambiguity_items),
+        "ambiguity_groups": sorted(ambiguity_groups),
+        "set_aside_items": sorted(set_aside_items),
         "speaker_items": sorted(speaker_items),
         "speaker_candidate_pair_items": sorted(pair_items),
         "facet_titles": facet_titles(root),
@@ -295,6 +395,59 @@ fn ambiguity_item(row: Value) -> Value {
         Value::Object(evidence),
         integer(row.get("occurrence_count")),
     )
+}
+
+fn set_aside_merge_item(row: Value) -> Value {
+    let mut entity = entity_item(row.clone());
+    let reason = row
+        .get("review")
+        .and_then(Value::as_object)
+        .and_then(|r| r.get("suppression"))
+        .and_then(Value::as_object)
+        .and_then(|s| s.get("reason"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let facet = string(&row, "facet");
+    let source_slug = string(&row, "source_slug");
+    let target_slug = string(&row, "target_slug");
+    let key = format!("{facet}|{source_slug}|{target_slug}");
+    if let Some(obj) = entity.as_object_mut() {
+        obj.insert("kind".to_owned(), json!("entity_merge_set_aside"));
+        obj.insert("reason".to_owned(), Value::String(reason));
+        obj.insert("restore_id".to_owned(), Value::String(key));
+        obj.insert("target".to_owned(), json!("merge_candidate"));
+        obj.insert(
+            "review".to_owned(),
+            row.get("review").cloned().unwrap_or(Value::Null),
+        );
+    }
+    entity
+}
+
+fn set_aside_ambiguity_item(row: Value) -> Value {
+    let mut amb = ambiguity_item(row.clone());
+    let reason = row
+        .get("review")
+        .and_then(Value::as_object)
+        .and_then(|r| r.get("suppression"))
+        .and_then(Value::as_object)
+        .and_then(|s| s.get("reason"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let ambiguity_id = string(&row, "ambiguity_id");
+    if let Some(obj) = amb.as_object_mut() {
+        obj.insert("kind".to_owned(), json!("entity_ambiguity_set_aside"));
+        obj.insert("reason".to_owned(), Value::String(reason));
+        obj.insert("restore_id".to_owned(), Value::String(ambiguity_id));
+        obj.insert("target".to_owned(), json!("ambiguity"));
+        obj.insert(
+            "review".to_owned(),
+            row.get("review").cloned().unwrap_or(Value::Null),
+        );
+    }
+    amb
 }
 
 fn include_speaker(root: &Path, row: &Value) -> bool {
@@ -1426,5 +1579,31 @@ mod tests {
             akas.iter().filter(|value| *value == "Source Alias").count(),
             1
         );
+    }
+
+    #[test]
+    fn load_state_preserves_hostile_strings_in_json() {
+        let root = crate::test_support::phase_root("established_empty");
+        let hostile_query = "<script>alert('xss')</script> & \"foo\"";
+        solstone_core_entity::save_entity_identity(
+            root.path(),
+            "candidate_entity",
+            &json!({"id": "candidate_entity", "name": "Candidate Entity"}),
+            None,
+        )
+        .expect("save entity");
+        let obs = solstone_core_entity::AmbiguityObservation {
+            scope: json!({"kind": "journal"}),
+            query: hostile_query.to_owned(),
+            normalized_query: "script alert xss script foo".to_owned(),
+            observed_tier: 5,
+            ranked_candidates: vec![json!({"id": "candidate_entity", "name": "Candidate Entity", "tier": 5, "score": 80.0})],
+            origin: json!({"lane": "segment", "day": "20260804", "segment_id": "s1"}),
+        };
+        solstone_core_entity::record_ambiguity_observation(root.path(), &obs).expect("record");
+
+        let state = load_state(root.path()).expect("load_state");
+        let amb_items = state["ambiguity_items"].as_array().expect("ambiguity_items");
+        assert_eq!(amb_items[0]["name"], hostile_query);
     }
 }

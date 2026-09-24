@@ -71,6 +71,7 @@
   margin: 0;
   color: var(--ink);
   line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .curation-item-facets {
@@ -646,6 +647,60 @@ window.CUR_COPY = CUR_COPY;
     `;
   }
 
+  function ambiguityGroupHtml(group) {
+    const candidates = group.candidates || [];
+    const members = group.members || [];
+    const families = new Map();
+    members.forEach((m) => {
+      const q = m.normalized_query || '';
+      if (!families.has(q)) families.set(q, []);
+      families.get(q).push(m);
+    });
+
+    const familiesHtml = Array.from(families.entries()).map(([normQuery, fMembers]) => {
+      const memberIds = fMembers.map((m) => m.ambiguity_id);
+      const displayQuery = fMembers[0]?.query || normQuery;
+      return `
+        <label class="curation-select">
+          <span class="curation-tap-target"><input type="checkbox" data-action="ambiguity-family-select" data-member-ids='${escapeAttr(JSON.stringify(memberIds))}' checked></span>
+          <span class="curation-body">${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_BODY, {query: displayQuery}))} (${memberIds.length})</span>
+        </label>
+      `;
+    }).join('');
+
+    return `
+      <article class="curation-item" data-curation-item data-kind="ambiguity_group" data-revision="${escapeAttr(group.revision)}">
+        <div class="curation-group-families">
+          ${familiesHtml}
+        </div>
+        <div class="curation-actions">
+          ${candidates.map((candidate) => `
+            <button class="curation-button curation-button-primary" type="button" data-action="ambiguity-group-resolve" data-entity-id="${escapeAttr(candidate.id)}">
+              ${escapeHtml(copyFormat(CUR_COPY.CUR_AMBIGUITY_CHOOSE_ACTION, {name: candidate.name}))}
+            </button>
+          `).join('')}
+        </div>
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
+  function setAsideItemHtml(item) {
+    const target = item.target || (item.kind === 'entity_merge_set_aside' ? 'merge_candidate' : 'ambiguity');
+    const label = target === 'ambiguity'
+      ? (item.query || item.key)
+      : `${item.source || item.source_slug} and ${item.target_name || item.target_slug}`;
+    return `
+      <article class="curation-item" data-curation-item data-kind="${escapeAttr(item.kind)}" data-restore-id="${escapeAttr(item.restore_id || item.key)}" data-target="${escapeAttr(target)}">
+        <p class="curation-body">${escapeHtml(label)} <span class="curation-item-facets">(set aside: ${escapeHtml(item.reason || 'automatic')})</span></p>
+        <div class="curation-actions">
+          <button class="curation-button" type="button" data-action="review-restore" data-target="${escapeAttr(target)}" data-restore-id="${escapeAttr(item.restore_id || item.key)}">${escapeHtml(CUR_COPY.CUR_REVIEW_RESTORE_ACTION || 'restore to review')}</button>
+        </div>
+        <p class="curation-item-error" hidden></p>
+      </article>
+    `;
+  }
+
   function entityBatchHtml() {
     return `
       <div class="curation-batch" data-curation-batch>
@@ -760,10 +815,11 @@ window.CUR_COPY = CUR_COPY;
     const facetItems = groupFacetItems(payload.facet_items || []);
     const entityItems = payload.entity_items || [];
     const entityGroups = groupEntityItems(entityItems);
-    const ambiguityItems = payload.ambiguity_items || [];
+    const ambiguityGroups = payload.ambiguity_groups || [];
+    const setAsideItems = payload.set_aside_items || [];
     const speakerItems = payload.speaker_items || [];
     const speakerCandidatePairItems = payload.speaker_candidate_pair_items || [];
-    const empty = !facetItems.length && !entityItems.length && !ambiguityItems.length && !speakerItems.length && !speakerCandidatePairItems.length;
+    const empty = !facetItems.length && !entityItems.length && !ambiguityGroups.length && !speakerItems.length && !speakerCandidatePairItems.length && !setAsideItems.length;
     window.Drawer.preserveOpen(root, () => {
       root.innerHTML = `
         <h1 class="curation-header">${escapeHtml(CUR_COPY.CUR_HEADING)}</h1>
@@ -773,9 +829,10 @@ window.CUR_COPY = CUR_COPY;
         <div class="curation-list" data-curation-list>
           ${reviewGroup('facet', 'facet suggestions', facetItems, facetItemHtml)}
           ${entityMergeGroupHtml(entityGroups)}
-          ${reviewGroup('ambiguity', 'names to clarify', ambiguityItems, ambiguityItemHtml)}
+          ${reviewGroup('ambiguity', 'names to clarify', ambiguityGroups, ambiguityGroupHtml)}
           ${reviewGroup('speaker', 'possible duplicate speaker names', speakerItems, speakerItemHtml)}
           ${reviewGroup('pair', 'possible duplicate voices', speakerCandidatePairItems, speakerCandidatePairItemHtml)}
+          ${reviewGroup('set_aside', 'set aside', setAsideItems, setAsideItemHtml)}
         </div>
       `;
       const outcomes = root.querySelector('[data-curation-outcomes]');
@@ -1148,6 +1205,56 @@ window.CUR_COPY = CUR_COPY;
         {entity_id: button.dataset.entityId}
       )
         .then(() => removeItem(item))
+        .catch((err) => {
+          setBusy(button, false);
+          showError(item, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    if (action === 'ambiguity-group-resolve') {
+      const card = item;
+      const revision = card?.dataset?.revision || '';
+      const entityId = button.dataset.entityId;
+      const checkedBoxes = Array.from(card.querySelectorAll('input[data-action="ambiguity-family-select"]:checked'));
+      let memberIds = [];
+      checkedBoxes.forEach((box) => {
+        try {
+          const ids = JSON.parse(box.dataset.memberIds || '[]');
+          memberIds.push(...ids);
+        } catch (e) {}
+      });
+      if (!memberIds.length) {
+        showError(card, 'please select at least one question to resolve.');
+        return;
+      }
+      setBusy(button, true);
+      postJson('/app/entities/api/ambiguities/group-resolve', {
+        entity_id: entityId,
+        member_ids: memberIds,
+        revision: revision
+      })
+        .then(async () => {
+          await refreshCurationState();
+        })
+        .catch((err) => {
+          setBusy(button, false);
+          showError(card, err.serverMessage || err.message);
+        });
+      return;
+    }
+
+    if (action === 'review-restore') {
+      const target = button.dataset.target;
+      const restoreId = button.dataset.restoreId;
+      setBusy(button, true);
+      postJson('/app/entities/api/review/restore', {
+        target: target,
+        restore_id: restoreId
+      })
+        .then(async () => {
+          await refreshCurationState();
+        })
         .catch((err) => {
           setBusy(button, false);
           showError(item, err.serverMessage || err.message);
