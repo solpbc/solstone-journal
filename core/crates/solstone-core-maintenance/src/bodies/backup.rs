@@ -40,6 +40,13 @@ pub(crate) fn backup_run_result(result: BackupResult) -> CliRun {
             result.snapshot_id.as_deref().unwrap_or("None")
         ),
         "skipped" => "backup: skipped".to_owned(),
+        // ⛔ Not a retry candidate: the broker has told us, permanently, that
+        // this device's binding was replaced by a newer one. Local settings
+        // are already cleared by the time this line prints (engine.rs), so
+        // the schedule stops asking a question with a known answer.
+        "cleared_superseded" => "backup: claimed by another device; local settings were \
+             cleared. run `journal backup enable` to set up a new backup here."
+            .to_owned(),
         _ => format!(
             "backup: error reason={}",
             result.error_reason.as_deref().unwrap_or("None")
@@ -95,7 +102,7 @@ fn backup_offload(args: &[String], journal: &Path, services: &BackupServices<'_>
 
 fn routine_result(line: String, status: &str) -> CliRun {
     CliRun {
-        exit_code: i32::from(!matches!(status, "ok" | "skipped")),
+        exit_code: i32::from(!matches!(status, "ok" | "skipped" | "cleared_superseded")),
         ..success(line)
     }
 }
@@ -137,11 +144,11 @@ mod tests {
     };
     use solstone_core_backup_runtime::hosted_runtime::HttpError;
     use solstone_core_backup_runtime::{
-        BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport, JournalMaintenance,
-        JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
+        BackupResult, BackupServices, Clock, HttpRequest, HttpResponse, HttpTransport,
+        JournalMaintenance, JournalMaintenanceError, ToolOutput, ToolRequest, ToolRunner,
     };
 
-    use super::run;
+    use super::{backup_run_result, run};
 
     struct FixtureRunner(RefCell<VecDeque<ToolOutput>>);
 
@@ -359,6 +366,28 @@ mod tests {
             invalid
                 .stderr
                 .starts_with("usage: journal maintenance run backup:run [-h]")
+        );
+    }
+
+    #[test]
+    fn cleared_superseded_reports_success_not_a_scheduler_failure() {
+        // The broker-to-clear mechanics are proven in
+        // solstone-core-backup-runtime::engine; this is the CLI rendering
+        // for the outcome that reaches the scheduler.
+        let result = backup_run_result(BackupResult {
+            status: "cleared_superseded".into(),
+            snapshot_id: None,
+            error_reason: Some("binding_superseded".into()),
+            unreadable: None,
+        });
+        assert_eq!(
+            result.stdout,
+            "backup: claimed by another device; local settings were cleared. run \
+             `journal backup enable` to set up a new backup here.\n"
+        );
+        assert_eq!(
+            result.exit_code, 0,
+            "a resolved terminal state is not an ongoing scheduler failure"
         );
     }
 

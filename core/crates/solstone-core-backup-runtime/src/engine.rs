@@ -11,9 +11,9 @@ use std::time::Duration;
 
 use serde_json::{Map, Value, json};
 use solstone_core_backup::{
-    BackupKeys, Destination, HostedBinding, assemble_backend_env, format_recovery_key_display,
-    get_backup_config, record_backup_result, record_prune_result, record_restore_result,
-    record_verification_result,
+    BackupKeys, Destination, HostedBinding, assemble_backend_env, clear_backup_config,
+    delete_hosted_binding, format_recovery_key_display, get_backup_config, record_backup_result,
+    record_prune_result, record_restore_result, record_verification_result,
 };
 
 use crate::hosted_runtime::{
@@ -1190,6 +1190,36 @@ impl AdmittedCapability {
                 error_reason: Some(reason),
                 unreadable: None,
             },
+        };
+        // 🔴 `binding_superseded` can only reach this branch through the
+        // Operated mint call above (teardown.rs's identical string is the
+        // only sibling producer, and that path never runs here). A
+        // superseded binding cannot become valid again by itself -- only an
+        // owner's new consent mints a new one -- so retrying it hourly,
+        // forever, teaches the scheduler nothing and costs the broker a
+        // refused mint every time. Clear local state the same way an
+        // explicit `journal backup off` already does on this exact reason
+        // (teardown.rs), so the next scheduled run finds nothing configured
+        // and skips cleanly instead of repeating a doomed mint.
+        let result = if result.status == "error"
+            && result.error_reason.as_deref() == Some("binding_superseded")
+        {
+            match clear_backup_config(&resolved_journal)
+                .and_then(|()| delete_hosted_binding(&resolved_journal))
+            {
+                Ok(()) => BackupResult {
+                    status: "cleared_superseded".into(),
+                    snapshot_id: None,
+                    error_reason: Some("binding_superseded".into()),
+                    unreadable: None,
+                },
+                // Clearing failed -- keep the original error so the run is
+                // retried rather than silently going quiet on a state we
+                // never actually cleared.
+                Err(_) => result,
+            }
+        } else {
+            result
         };
         record_backup(&resolved_journal, services.clock, &result);
         result
@@ -2530,6 +2560,70 @@ mod tests {
         assert_eq!(http.requests.borrow().len(), 1);
         assert_eq!(runner.commands.borrow()[1][0], "-o");
         assert_one_resolution_attempt();
+    }
+
+    #[test]
+    fn scheduled_run_on_a_superseded_binding_clears_local_state_instead_of_retrying() {
+        let journal = tempfile::tempdir().expect("test journal creates");
+        let mut backup = valid_backup_section(valid_destination());
+        backup["mode"] = Value::String("operated".into());
+        write_backup_section(journal.path(), backup);
+        solstone_core_backup::save_hosted_binding(
+            journal.path(),
+            &hosted_binding("https://broker"),
+        )
+        .expect("binding writes");
+        // The scheduled run must never touch restic once the broker has
+        // refused the mint -- a superseded binding can never produce
+        // credentials to back up with.
+        let runner = PanicRunner;
+        let http = ScriptedHttp {
+            responses: RefCell::new(VecDeque::from([Ok(HttpResponse {
+                status: 401,
+                headers: vec![],
+                body: br#"{"error":"binding_superseded"}"#.to_vec(),
+            })])),
+            requests: RefCell::new(vec![]),
+        };
+        let clock = FixedClock;
+        let maintenance = Maintenance;
+        let mut mint_services = services(&runner, &http, &clock, &maintenance);
+        mint_services.rclone_path = Some(Path::new("/fixture/bin/rclone"));
+        reset_backup_path_resolution_attempts();
+
+        let result = prepare(journal.path(), &clock)
+            .expect("operated backup admits")
+            .execute(&mint_services);
+
+        assert_eq!(result.status, "cleared_superseded");
+        assert_eq!(result.error_reason.as_deref(), Some("binding_superseded"));
+        assert_eq!(http.requests.borrow().len(), 1);
+        assert!(
+            solstone_core_backup::load_hosted_binding(journal.path()).is_none(),
+            "the superseded binding must be deleted, not just reported"
+        );
+        let config = solstone_core_backup::get_backup_config(journal.path()).expect("config reads");
+        assert_eq!(
+            config["enabled"],
+            Value::Bool(false),
+            "local backup settings must be cleared to their defaults, matching an explicit teardown"
+        );
+        assert_eq!(
+            config["last_backup"]["status"],
+            Value::String("cleared_superseded".into())
+        );
+
+        // A second scheduled run against the now-cleared config finds
+        // nothing configured and skips -- it never asks the broker again.
+        let quiet_runner = PanicRunner;
+        let quiet_http = ScriptedHttp {
+            responses: RefCell::new(VecDeque::new()),
+            requests: RefCell::new(vec![]),
+        };
+        let quiet_services = services(&quiet_runner, &quiet_http, &clock, &maintenance);
+        let second_result = run_backup(journal.path(), &quiet_services);
+        assert_eq!(second_result.status, "skipped");
+        assert_eq!(quiet_http.requests.borrow().len(), 0);
     }
 
     #[cfg(unix)]

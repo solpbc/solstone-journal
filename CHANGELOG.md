@@ -10,6 +10,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `journal facet merge --dry-run` shows what a merge would lose before you merge: how many records and entity fields in each file would give way to a different version with the same id or field, the files both facets have that can't be combined, and the settings of the facet you merge away. it changes nothing.
 
+### Fixed
+
+- if a device's backup was replaced by a newer one somewhere else, it used to keep trying every hour, forever, without telling you. this release notices it once, clears the backup settings, and lets you know to run `journal backup enable` if you want a new backup here.
+
 ## [2.0.16] - 2026-09-24
 
 ### Removed
