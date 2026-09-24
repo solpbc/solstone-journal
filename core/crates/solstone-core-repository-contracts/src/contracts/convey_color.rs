@@ -642,10 +642,10 @@ fn document_files(
             else {
                 continue;
             };
-            if let Some(path) = resolve_asset(root, html_path, &attribute.value, known_files) {
-                if !is_excluded_target(&path) {
-                    result.insert(path);
-                }
+            if let Some(path) = resolve_asset(root, html_path, &attribute.value, known_files)
+                && !is_excluded_target(&path)
+            {
+                result.insert(path);
             }
         }
     }
@@ -731,14 +731,15 @@ fn parse_light_tokens(source: &str) -> BTreeMap<String, String> {
             while open < bytes.len() && bytes[open].is_ascii_whitespace() {
                 open += 1;
             }
-            if depth == 0 && bytes.get(open) == Some(&b'{') {
-                if let Some(close) = matching_brace(&clean, open) {
-                    for declaration in css_declarations(&clean[open + 1..close], open + 1) {
-                        if declaration.property.starts_with("--") {
-                            tokens
-                                .entry(declaration.property)
-                                .or_insert_with(|| normalize_color_value(&declaration.value));
-                        }
+            if depth == 0
+                && bytes.get(open) == Some(&b'{')
+                && let Some(close) = matching_brace(&clean, open)
+            {
+                for declaration in css_declarations(&clean[open + 1..close], open + 1) {
+                    if declaration.property.starts_with("--") {
+                        tokens
+                            .entry(declaration.property)
+                            .or_insert_with(|| normalize_color_value(&declaration.value));
                     }
                 }
             }
@@ -838,12 +839,11 @@ fn css_declarations(source: &str, base: usize) -> Vec<Declaration> {
             _ => {}
         }
     }
-    if bare_list {
-        if let Some(declaration) =
+    if bare_list
+        && let Some(declaration) =
             parse_declaration_segment(&source[segment_start..], base + segment_start)
-        {
-            declarations.push(declaration);
-        }
+    {
+        declarations.push(declaration);
     }
     declarations
 }
@@ -1323,17 +1323,16 @@ fn scan_js_style_objects(
                     allow_ranges,
                     violations,
                 );
-                if is_color_value(&declaration.value, true)
-                    || identifier_is_color(&declaration.value, const_colors)
+                if (is_color_value(&declaration.value, true)
+                    || identifier_is_color(&declaration.value, const_colors))
+                    && !inside_ranges(declaration.value_offset, allow_ranges)
                 {
-                    if !inside_ranges(declaration.value_offset, allow_ranges) {
-                        add_violation(
-                            violations,
-                            file,
-                            declaration.value_offset,
-                            "dom_style_literal",
-                        );
-                    }
+                    add_violation(
+                        violations,
+                        file,
+                        declaration.value_offset,
+                        "dom_style_literal",
+                    );
                 }
             }
             cursor = close + 1;
@@ -1355,10 +1354,10 @@ fn scan_js_computed_reads(
             continue;
         }
         let info = computed_read_info(statement, tokens, literals, base + statement_start);
-        if let Some((binding, _)) = assigned_identifier(statement) {
-            if let Some(info) = info.clone() {
-                reads.insert(binding, info);
-            }
+        if let Some((binding, _)) = assigned_identifier(statement)
+            && let Some(info) = info.clone()
+        {
+            reads.insert(binding, info);
         }
         if contains_style_sink(statement) {
             let allowed =
@@ -2047,12 +2046,9 @@ fn is_black_alpha(color: &str) -> bool {
         .filter(|part| !part.is_empty())
         .collect::<Vec<_>>();
     if parts.len() < 4
-        || parts[..3].iter().any(|channel| {
-            channel
-                .trim_end_matches('%')
-                .parse::<f32>()
-                .map_or(true, |number| number != 0.0)
-        })
+        || parts[..3]
+            .iter()
+            .any(|channel| channel.trim_end_matches('%').parse::<f32>() != Ok(0.0))
     {
         return false;
     }
@@ -2066,10 +2062,10 @@ fn is_color_value(value: &str, js_context: bool) -> bool {
 fn color_literal_bindings(source: &str) -> BTreeSet<String> {
     let mut bindings = BTreeSet::new();
     for (_, _, statement) in statements(source) {
-        if let Some((name, value)) = assigned_identifier(statement) {
-            if is_color_value(value.trim(), true) {
-                bindings.insert(name);
-            }
+        if let Some((name, value)) = assigned_identifier(statement)
+            && is_color_value(value.trim(), true)
+        {
+            bindings.insert(name);
         }
     }
     bindings
