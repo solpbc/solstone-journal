@@ -1063,12 +1063,15 @@ tr:hover .entity-delete-btn {
 
 .entities-scope-trigger {
   border: 0;
-  padding: 0.6rem 0;
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
   min-height: 44px;
   display: inline-flex;
   align-items: center;
   color: var(--ink-soft);
-  background: transparent;
+  /* it sits on the sun arc, so it carries its own container (spec § 8): ink-soft on the
+     bare ground over the sun measures 3.70:1 light and 3.05:1 dark; on --panel it clears AA */
+  background: var(--panel);
   font: inherit;
   font-weight: 600;
   cursor: pointer;
