@@ -19,13 +19,11 @@ impl LedgerRemoveVisitor {
         if attr.path().is_ident("test") {
             return true;
         }
-        if let syn::Meta::List(meta_list) = &attr.meta {
-            if meta_list.path.is_ident("cfg") {
-                let tokens = meta_list.tokens.to_string();
-                if tokens.contains("test") {
-                    return true;
-                }
-            }
+        if let syn::Meta::List(meta_list) = &attr.meta
+            && meta_list.path.is_ident("cfg")
+            && meta_list.tokens.to_string().contains("test")
+        {
+            return true;
         }
         false
     }
@@ -80,12 +78,11 @@ impl<'ast> Visit<'ast> for LedgerRemoveVisitor {
     }
 
     fn visit_local(&mut self, local: &'ast syn::Local) {
-        if let Some(init) = &local.init {
-            if Self::expr_is_authorization_ledger(&init.expr) {
-                if let syn::Pat::Ident(pat_ident) = &local.pat {
-                    self.ledger_bindings.push(pat_ident.ident.to_string());
-                }
-            }
+        if let Some(init) = &local.init
+            && Self::expr_is_authorization_ledger(&init.expr)
+            && let syn::Pat::Ident(pat_ident) = &local.pat
+        {
+            self.ledger_bindings.push(pat_ident.ident.to_string());
         }
         syn::visit::visit_local(self, local);
     }
