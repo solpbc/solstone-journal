@@ -25,7 +25,7 @@ use crate::JournalRoot;
 use crate::assets;
 
 pub const SERVICE: &str = "sme";
-const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
+pub(crate) const DEFAULT_PORTAL_URL: &str = "https://services.solstone.app";
 const BUSY_ERROR: &str = "a request to turn on solstone.me is already open. finish it or wait for it to end, then try again.";
 const BUSY_DETAIL: &str = "operation already running";
 

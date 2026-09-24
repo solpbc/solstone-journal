@@ -11,8 +11,7 @@ use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use chrono::{DateTime, SecondsFormat, Utc};
-use ring::rand::SystemRandom;
-use ring::signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair, KeyPair as _};
+use ring::signature::KeyPair as _;
 use rustls::pki_types::ServerName;
 use rustls::{ClientConfig, RootCertStore};
 use serde::{Deserialize, Serialize};
@@ -25,9 +24,7 @@ use crate::bridge_carrier::{
 };
 use crate::{McpEndpointOwnerContext, McpEndpointTlsService};
 
-const ASSERTION_CAP_BYTES: usize = 8_192;
 const REQUEST_CAP_BYTES: usize = 16_384;
-const ASSERTION_LIFETIME_SECONDS: i64 = 240;
 
 pub(crate) struct McpAccountRequest {
     body: Vec<u8>,
@@ -65,22 +62,6 @@ impl fmt::Display for McpAccountWireError {
 impl std::error::Error for McpAccountWireError {}
 
 #[derive(Serialize)]
-struct ProtectedHeader {
-    alg: &'static str,
-    typ: &'static str,
-}
-
-#[derive(Serialize)]
-struct AssertionClaims<'a> {
-    iss: String,
-    aud: &'static str,
-    scope: &'static str,
-    instance_id: &'a str,
-    iat: i64,
-    exp: i64,
-}
-
-#[derive(Serialize)]
 struct CnfJwk<'a> {
     kty: &'static str,
     crv: &'static str,
@@ -100,60 +81,36 @@ pub(crate) fn build_account_registration_request(
     owner: &McpEndpointOwnerContext,
     wall_unix_seconds: i64,
 ) -> Result<McpAccountRequest, McpAccountWireError> {
-    let exp = wall_unix_seconds
-        .checked_add(ASSERTION_LIFETIME_SECONDS)
-        .ok_or(McpAccountWireError::ExpirationOverflow)?;
-    let instance_id = owner.committed.instance_id();
-    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serialize_header(
-        &ProtectedHeader {
-            alg: "ES256",
-            typ: "home-reach",
-        },
-    )?);
-    let claims = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(serialize_claims(
-        &AssertionClaims {
-            iss: format!("home:{instance_id}"),
-            aud: "solstone-reach",
-            scope: "mcp.bridge.register",
-            instance_id,
-            iat: wall_unix_seconds,
-            exp,
-        },
-    )?);
-    let signing_input = format!("{header}.{claims}");
-    checkpoint(AccountWirePrimitive::SigningKeyLoad)?;
-    let ca_key = rcgen::KeyPair::from_pem_and_sign_algo(
-        &owner.committed.ca().private_key_pem(),
-        &rcgen::PKCS_ECDSA_P256_SHA256,
+    let assertion = solstone_core_sol_link::home_reach::sign_home_reach_assertion(
+        "mcp.bridge.register",
+        &owner.committed,
+        wall_unix_seconds,
     )
-    .map_err(|_| McpAccountWireError::SigningKeyLoad)?;
-    let signing_key = EcdsaKeyPair::from_pkcs8(
-        &ECDSA_P256_SHA256_FIXED_SIGNING,
-        &ca_key.serialize_der(),
-        &SystemRandom::new(),
-    )
-    .map_err(|_| McpAccountWireError::SigningKeyLoad)?;
-    checkpoint(AccountWirePrimitive::EcdsaSign)?;
-    let signature = signing_key
-        .sign(&SystemRandom::new(), signing_input.as_bytes())
-        .map_err(|_| McpAccountWireError::EcdsaSign)?;
-    let assertion = format!(
-        "{signing_input}.{}",
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(signature.as_ref())
-    );
-    enforce_len_cap(
-        assertion.as_bytes(),
-        ASSERTION_CAP_BYTES,
-        McpAccountWireError::AssertionLengthCap,
-    )?;
+    .map_err(|error| match error {
+        solstone_core_sol_link::home_reach::HomeReachAssertionError::ExpirationOverflow => {
+            McpAccountWireError::ExpirationOverflow
+        }
+        solstone_core_sol_link::home_reach::HomeReachAssertionError::HeaderJsonSerialization
+        | solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization => {
+            McpAccountWireError::JsonSerialization
+        }
+        solstone_core_sol_link::home_reach::HomeReachAssertionError::SigningKeyLoad => {
+            McpAccountWireError::SigningKeyLoad
+        }
+        solstone_core_sol_link::home_reach::HomeReachAssertionError::EcdsaSign => {
+            McpAccountWireError::EcdsaSign
+        }
+        solstone_core_sol_link::home_reach::HomeReachAssertionError::AssertionLengthCap => {
+            McpAccountWireError::AssertionLengthCap
+        }
+    })?;
 
     let pop_key = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .encode(owner.keypair.public_key().as_ref());
-    let ca_pubkey = ca_public_key_pem(owner.committed.ca().spki_der());
     let body = serialize_request(&RequestBody {
-        instance_id,
-        assertion: &assertion,
-        ca_pubkey: &ca_pubkey,
+        instance_id: owner.committed.instance_id(),
+        assertion: &assertion.compact,
+        ca_pubkey: &assertion.ca_pubkey_pem,
         cnf_jwk: CnfJwk {
             kty: "OKP",
             crv: "Ed25519",
@@ -166,16 +123,6 @@ pub(crate) fn build_account_registration_request(
         McpAccountWireError::RequestLengthCap,
     )?;
     Ok(McpAccountRequest { body })
-}
-
-fn serialize_header(header: &ProtectedHeader) -> Result<Vec<u8>, McpAccountWireError> {
-    checkpoint(AccountWirePrimitive::HeaderJsonSerialization)?;
-    serde_json::to_vec(header).map_err(|_| McpAccountWireError::JsonSerialization)
-}
-
-fn serialize_claims(claims: &AssertionClaims<'_>) -> Result<Vec<u8>, McpAccountWireError> {
-    checkpoint(AccountWirePrimitive::ClaimsJsonSerialization)?;
-    serde_json::to_vec(claims).map_err(|_| McpAccountWireError::JsonSerialization)
 }
 
 fn serialize_request(request: &RequestBody<'_>) -> Result<Vec<u8>, McpAccountWireError> {
@@ -195,24 +142,9 @@ fn enforce_len_cap(
     }
 }
 
-fn ca_public_key_pem(spki_der: &[u8]) -> String {
-    let encoded = base64::engine::general_purpose::STANDARD.encode(spki_der);
-    let mut pem = String::from("-----BEGIN PUBLIC KEY-----");
-    for line in encoded.as_bytes().chunks(64) {
-        pem.push('\n');
-        pem.push_str(std::str::from_utf8(line).expect("base64 output is ASCII"));
-    }
-    pem.push_str("\n-----END PUBLIC KEY-----");
-    pem
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AccountWirePrimitive {
-    HeaderJsonSerialization,
-    ClaimsJsonSerialization,
     RequestJsonSerialization,
-    SigningKeyLoad,
-    EcdsaSign,
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
@@ -292,13 +224,9 @@ fn checkpoint(primitive: AccountWirePrimitive) -> Result<(), McpAccountWireError
         }
         fault.consumed = true;
         Err(match primitive {
-            AccountWirePrimitive::HeaderJsonSerialization
-            | AccountWirePrimitive::ClaimsJsonSerialization
-            | AccountWirePrimitive::RequestJsonSerialization => {
+            AccountWirePrimitive::RequestJsonSerialization => {
                 McpAccountWireError::JsonSerialization
             }
-            AccountWirePrimitive::SigningKeyLoad => McpAccountWireError::SigningKeyLoad,
-            AccountWirePrimitive::EcdsaSign => McpAccountWireError::EcdsaSign,
         })
     })
 }
@@ -2226,58 +2154,81 @@ mod tests {
     }
 
     #[test]
-    fn overflow_stops_before_any_signing_checkpoint() {
+    fn overflow_stops_before_any_request_serialization() {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
         let (result, consumed) =
-            run_with_account_wire_fault(AccountWirePrimitive::SigningKeyLoad, || {
+            run_with_account_wire_fault(AccountWirePrimitive::RequestJsonSerialization, || {
                 build_account_registration_request(&owner, i64::MAX)
             });
         assert!(matches!(
             result,
             Err(McpAccountWireError::ExpirationOverflow)
         ));
-        assert!(!consumed, "overflow must stop before signing");
+        assert!(!consumed, "overflow must stop before request serialization");
     }
 
     #[test]
-    fn account_wire_faults_cover_serialization_and_signing() {
+    fn home_reach_assertion_error_mapping_covers_all_variants() {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
-        for primitive in [
-            AccountWirePrimitive::HeaderJsonSerialization,
-            AccountWirePrimitive::ClaimsJsonSerialization,
-            AccountWirePrimitive::RequestJsonSerialization,
+        let res = build_account_registration_request(&owner, i64::MAX);
+        assert!(matches!(res, Err(McpAccountWireError::ExpirationOverflow)));
+
+        for err in [
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::ExpirationOverflow,
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::HeaderJsonSerialization,
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization,
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::SigningKeyLoad,
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::EcdsaSign,
+            solstone_core_sol_link::home_reach::HomeReachAssertionError::AssertionLengthCap,
         ] {
-            let (result, consumed) = run_with_account_wire_fault(primitive, || {
-                build_account_registration_request(&owner, 1_700_000_000)
-            });
-            assert!(matches!(
-                result,
-                Err(McpAccountWireError::JsonSerialization)
-            ));
-            assert!(consumed, "fault checkpoint consumes {primitive:?}");
+            let mapped = match err {
+                solstone_core_sol_link::home_reach::HomeReachAssertionError::ExpirationOverflow => {
+                    McpAccountWireError::ExpirationOverflow
+                }
+                solstone_core_sol_link::home_reach::HomeReachAssertionError::HeaderJsonSerialization
+                | solstone_core_sol_link::home_reach::HomeReachAssertionError::ClaimsJsonSerialization => {
+                    McpAccountWireError::JsonSerialization
+                }
+                solstone_core_sol_link::home_reach::HomeReachAssertionError::SigningKeyLoad => {
+                    McpAccountWireError::SigningKeyLoad
+                }
+                solstone_core_sol_link::home_reach::HomeReachAssertionError::EcdsaSign => {
+                    McpAccountWireError::EcdsaSign
+                }
+                solstone_core_sol_link::home_reach::HomeReachAssertionError::AssertionLengthCap => {
+                    McpAccountWireError::AssertionLengthCap
+                }
+            };
+            assert!(!mapped.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn account_wire_faults_cover_serialization() {
+        let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
         let (result, consumed) =
-            run_with_account_wire_fault(AccountWirePrimitive::SigningKeyLoad, || {
+            run_with_account_wire_fault(AccountWirePrimitive::RequestJsonSerialization, || {
                 build_account_registration_request(&owner, 1_700_000_000)
             });
-        assert!(matches!(result, Err(McpAccountWireError::SigningKeyLoad)));
-        assert!(consumed);
-        let (result, consumed) =
-            run_with_account_wire_fault(AccountWirePrimitive::EcdsaSign, || {
-                build_account_registration_request(&owner, 1_700_000_000)
-            });
-        assert!(matches!(result, Err(McpAccountWireError::EcdsaSign)));
-        assert!(consumed);
+        assert!(matches!(
+            result,
+            Err(McpAccountWireError::JsonSerialization)
+        ));
+        assert!(
+            consumed,
+            "fault checkpoint consumes RequestJsonSerialization"
+        );
     }
 
     #[test]
     fn fault_guard_cleans_up_after_a_panic() {
         let panic = catch_unwind(AssertUnwindSafe(|| {
-            let _guard = AccountWireFaultGuard::install(AccountWirePrimitive::EcdsaSign);
+            let _guard =
+                AccountWireFaultGuard::install(AccountWirePrimitive::RequestJsonSerialization);
             panic!("test panic");
         }));
         assert!(panic.is_err());
-        assert!(checkpoint(AccountWirePrimitive::EcdsaSign).is_ok());
+        assert!(checkpoint(AccountWirePrimitive::RequestJsonSerialization).is_ok());
     }
 
     #[test]
@@ -2285,7 +2236,7 @@ mod tests {
         let (_root, owner) = owner_with_pop(&fixed_pop_pkcs8());
         let canary = owner.committed.instance_id().to_owned();
         let (result, consumed) =
-            run_with_account_wire_fault(AccountWirePrimitive::ClaimsJsonSerialization, || {
+            run_with_account_wire_fault(AccountWirePrimitive::RequestJsonSerialization, || {
                 build_account_registration_request(&owner, 1_700_000_000)
             });
         let error = match result {

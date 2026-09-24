@@ -161,6 +161,15 @@ impl SealedEnvelope {
     }
 }
 
+impl Serialize for SealedEnvelope {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.as_base64url())
+    }
+}
+
 /// Errors returned when sealing or opening a push envelope.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SealError {

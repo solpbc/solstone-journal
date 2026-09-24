@@ -8,6 +8,7 @@ use log::{Level, LevelFilter, Log, Metadata, Record};
 
 static INIT: Once = Once::new();
 static RECORDS: Mutex<Vec<(ThreadId, Level, String)>> = Mutex::new(Vec::new());
+static PROCESS_RECORDS: Mutex<Vec<(Level, String)>> = Mutex::new(Vec::new());
 
 struct TestLogger;
 
@@ -17,10 +18,13 @@ impl Log for TestLogger {
     }
 
     fn log(&self, record: &Record<'_>) {
-        if self.enabled(record.metadata())
-            && let Ok(mut records) = RECORDS.lock()
-        {
-            records.push((current().id(), record.level(), record.args().to_string()));
+        if self.enabled(record.metadata()) {
+            if let Ok(mut records) = PROCESS_RECORDS.lock() {
+                records.push((record.level(), record.args().to_string()));
+            }
+            if let Ok(mut records) = RECORDS.lock() {
+                records.push((current().id(), record.level(), record.args().to_string()));
+            }
         }
     }
 
@@ -33,6 +37,25 @@ pub(crate) fn init() {
     INIT.call_once(|| {
         let _ = log::set_logger(&LOGGER).map(|()| log::set_max_level(LevelFilter::Info));
     });
+}
+
+pub(crate) fn clear() {
+    init();
+    if let Ok(mut records) = PROCESS_RECORDS.lock() {
+        records.clear();
+    }
+    if let Ok(mut records) = RECORDS.lock() {
+        records.clear();
+    }
+}
+
+pub(crate) fn records() -> Vec<(Level, String)> {
+    init();
+    if let Ok(records) = PROCESS_RECORDS.lock() {
+        records.clone()
+    } else {
+        Vec::new()
+    }
 }
 
 pub(crate) fn clear_current_thread() {

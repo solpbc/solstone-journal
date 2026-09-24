@@ -996,5 +996,5 @@ Journal and devices are **one secure environment**. No per-plate privacy trackin
 
 **Blind by construction, therefore not egress:** relay transit · push notifications · encrypted backups.
 
-🔴 **Push is only reimplemented in an end-to-end encrypted form** — the journal encrypting and the receiving device decrypting with the link cryptographic identities. ⛔ The current plaintext path, which carries journal-derived chat content to a push service and which unpairing does not revoke, does **not** come across.
+🔴 **Push is only reimplemented in an end-to-end encrypted form** — the journal encrypting and the receiving device decrypting with a per-device push key delivered over the device's link session; the journal stops sending to a device once it is unpaired. ⛔ The current plaintext path, which carries journal-derived chat content to a push service and which unpairing does not revoke, does **not** come across.
 <!-- historical; push paused, chat trigger retired — future payload is journal state / device check-in -->

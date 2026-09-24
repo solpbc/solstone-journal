@@ -24,7 +24,7 @@ const OWNER_ONLY_MODE: u32 = 0o600;
 
 #[cfg(test)]
 thread_local! {
-    static TEST_CLOCK: std::cell::RefCell<Option<OffsetDateTime>> = const { std::cell::RefCell::new(None) };
+    pub(crate) static TEST_CLOCK: std::cell::RefCell<Option<OffsetDateTime>> = const { std::cell::RefCell::new(None) };
 }
 
 #[cfg(test)]
@@ -220,6 +220,49 @@ impl PushRegistry {
         Ok(removed)
     }
 
+    pub(crate) fn remove_cid(&self, cid: &str) -> Result<bool, PushStoreError> {
+        let _lock = hold_lock(
+            &self.path,
+            LockOptions {
+                mode: Some(OWNER_ONLY_MODE),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(PushStoreError::Lock)?;
+
+        let loaded = self.read_registry()?;
+        let mut devices = loaded.registry.devices;
+
+        let initial_len = devices.len();
+        devices.retain(|d| match d {
+            StoredDevice::Ios { cid: row_cid, .. } => row_cid != cid,
+        });
+
+        let removed = devices.len() != initial_len;
+        if removed {
+            let registry = RegistryV2 {
+                version: 2,
+                devices,
+            };
+            self.write_registry(&registry)?;
+        }
+        Ok(removed)
+    }
+
+    pub(crate) fn read_devices_locked(&self) -> Result<Vec<StoredDevice>, PushStoreError> {
+        let _lock = hold_lock(
+            &self.path,
+            LockOptions {
+                mode: Some(OWNER_ONLY_MODE),
+                ..LockOptions::default()
+            },
+        )
+        .map_err(PushStoreError::Lock)?;
+
+        let loaded = self.read_registry()?;
+        Ok(loaded.registry.devices)
+    }
+
     pub(crate) fn status(&self) -> Result<(Vec<PushDeviceItem>, usize), PushStoreError> {
         let loaded = self.read_registry()?;
         let mut items = loaded
@@ -271,6 +314,7 @@ impl PushRegistry {
         Ok((result_items, total))
     }
 
+    #[cfg(test)]
     pub(crate) fn device_count(&self) -> Result<usize, PushStoreError> {
         Ok(self.read_registry()?.registry.devices.len())
     }
@@ -362,8 +406,15 @@ fn check_v1_shape(val: &serde_json::Value) -> Option<usize> {
     Some(devices_obj.len())
 }
 
+/// Remove all registered push devices associated with the specified linked device CID.
+pub fn remove_cid_registrations(journal_root: &Path, cid: &str) -> Result<(), PushStoreError> {
+    let registry = PushRegistry::new(journal_root);
+    registry.remove_cid(cid)?;
+    Ok(())
+}
+
 #[derive(Debug)]
-pub(crate) enum PushStoreError {
+pub enum PushStoreError {
     Lock(LockError),
     Read { path: PathBuf, source: io::Error },
     Parse { path: PathBuf },
@@ -499,7 +550,7 @@ fn now_rfc3339_utc() -> Result<String, PushStoreError> {
     now.format(&Rfc3339).map_err(|_| PushStoreError::Clock)
 }
 
-fn parse_registered_at(value: &str) -> Option<OffsetDateTime> {
+pub(crate) fn parse_registered_at(value: &str) -> Option<OffsetDateTime> {
     value
         .ends_with('Z')
         .then(|| OffsetDateTime::parse(value, &Rfc3339).ok())
@@ -519,6 +570,7 @@ mod tests {
     use super::*;
 
     const CID_A: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const CID_B: &str = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
     const TOKEN_1: &str = "0123456789abcdef";
     const TOKEN_2: &str = "fedcba9876543210";
     const VALID_KEY: [u8; 32] = [42u8; 32];
@@ -533,6 +585,62 @@ mod tests {
 
     fn key() -> PushKey {
         PushKey::from_bytes(VALID_KEY)
+    }
+
+    #[test]
+    fn remove_cid_registrations_removes_all_tokens_for_cid_and_preserves_others() {
+        let root = TempDir::new_in("/var/tmp").expect("journal root");
+        set_test_clock(None);
+        let reg = registry(&root);
+        let key_b = PushKey::from_bytes([99u8; 32]);
+        reg.register(
+            &cid(CID_A),
+            TOKEN_1.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key(),
+        )
+        .unwrap();
+        reg.register(
+            &cid(CID_A),
+            TOKEN_2.to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key(),
+        )
+        .unwrap();
+        reg.register(
+            &cid(CID_B),
+            "1122334455667788".to_owned(),
+            "org.example".to_owned(),
+            PushEnvironment::Development,
+            PushPlatform::Ios,
+            key_b,
+        )
+        .unwrap();
+        assert_eq!(reg.device_count().unwrap(), 3);
+
+        remove_cid_registrations(root.path(), CID_A).unwrap();
+        assert_eq!(reg.device_count().unwrap(), 1);
+
+        let devices = reg.read_devices_locked().unwrap();
+        assert_eq!(devices.len(), 1);
+        match &devices[0] {
+            StoredDevice::Ios { cid, push_key, .. } => {
+                assert_eq!(cid, CID_B);
+                assert_eq!(push_key, &key_b);
+            }
+        }
+
+        // Idempotent / missing CID does not error
+        remove_cid_registrations(
+            root.path(),
+            "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        )
+        .unwrap();
+        assert_eq!(reg.device_count().unwrap(), 1);
     }
 
     #[test]

@@ -1,18 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Linked-device push registration routes, durable registry, and notification sealing.
+//! Linked-device push registration routes, durable registry, notification sealing, and test delivery.
 //!
-//! This crate records linked-device push registrations and seals notification
-//! envelopes. It does not send notifications.
+//! This crate records linked-device push registrations, seals notification
+//! envelopes, and executes hosted push test deliveries to registered devices
+//! through the hosted relay.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
 pub mod envelope;
 mod model;
+mod relay;
 mod router;
 mod store;
 #[cfg(test)]
 mod test_log;
 
 pub use router::api_router;
+pub use store::{PushStoreError, remove_cid_registrations};

@@ -24,8 +24,8 @@ use solstone_core_handoff_nonce::mint_nonce;
 use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::{JournalConfigMutation, mutate_journal_config};
 use solstone_core_sol_link::ledger::{
-    AuthorizationLedger, AuthorizedClientsRead, ClientActivity, ClientEntry, DeviceActivityRead,
-    SourceRecord, read_authorized_clients, read_device_activity,
+    AuthorizedClientsRead, ClientActivity, ClientEntry, DeviceActivityRead, SourceRecord,
+    read_authorized_clients, read_device_activity,
 };
 use solstone_core_sol_link::pairing::addresses::{is_allowed_direct_ipv4, is_usable_ipv4};
 use solstone_core_sol_link::service_identity::{ServiceIdentity, load_or_create_service_identity};
@@ -727,11 +727,14 @@ async fn forget_device(
         .find(|entry| entry.fingerprint == fingerprint)
         .cloned()
     else {
-        return refusal(
-            "paired_device_not_found",
-            "paired device not found",
-            StatusCode::NOT_FOUND,
-        );
+        return match crate::paired_device::remove_paired_device(&journal.0, &fingerprint) {
+            Ok(_) => refusal(
+                "paired_device_not_found",
+                "paired device not found",
+                StatusCode::NOT_FOUND,
+            ),
+            Err(error) => unpair_mutation_refusal(error),
+        };
     };
 
     if is_this_host(&entry, &host_label) {
@@ -772,7 +775,7 @@ async fn forget_device(
         stored_descs.get(&fingerprint),
     );
 
-    match AuthorizationLedger::new(&journal.0).remove(&fingerprint) {
+    match crate::paired_device::remove_paired_device(&journal.0, &fingerprint) {
         Ok(outcome) if outcome.authorized_removed => Json(json!({"forgotten": {
             "fingerprint": entry.fingerprint,
             "display_label": display_label,

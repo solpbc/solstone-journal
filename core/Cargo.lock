@@ -4799,10 +4799,12 @@ dependencies = [
  "serde_json",
  "solstone-core-convey-http",
  "solstone-core-journal-io",
+ "solstone-core-sol-link",
  "tempfile",
  "time",
  "tokio",
  "tower",
+ "ureq",
 ]
 
 [[package]]

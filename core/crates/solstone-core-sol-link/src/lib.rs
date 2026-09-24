@@ -30,6 +30,8 @@ pub mod door;
 #[cfg(feature = "host")]
 pub mod establish;
 #[cfg(feature = "host")]
+pub mod home_reach;
+#[cfg(feature = "host")]
 pub mod http;
 #[cfg(feature = "host")]
 pub mod ledger;

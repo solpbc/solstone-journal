@@ -9,6 +9,9 @@ pub mod release_manifest;
 pub mod windows_crosscheck;
 
 #[cfg(test)]
+#[path = "contracts/authorization_ledger_remove_bounded.rs"]
+mod authorization_ledger_remove_bounded;
+#[cfg(test)]
 #[path = "contracts/backup_admission_caller_purity.rs"]
 mod backup_admission_caller_purity;
 #[cfg(test)]

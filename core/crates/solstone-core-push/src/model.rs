@@ -9,6 +9,7 @@ pub enum ReasonCode {
     LinkedDeviceRequired,
     PushRequestInvalid,
     PushRegistryUnavailable,
+    PushLedgerUnavailable,
     FeatureUnavailable,
 }
 
@@ -18,6 +19,7 @@ impl ReasonCode {
             Self::LinkedDeviceRequired => "linked_device_required",
             Self::PushRequestInvalid => "push_request_invalid",
             Self::PushRegistryUnavailable => "push_registry_unavailable",
+            Self::PushLedgerUnavailable => "push_ledger_unavailable",
             Self::FeatureUnavailable => "feature_unavailable",
         }
     }
@@ -71,6 +73,22 @@ pub(crate) fn mask_target(token: &str) -> String {
     format!("...{suffix}")
 }
 
+/// Sanitize an upstream error reason code to ensure no tokens or sensitive data leak.
+pub(crate) fn sanitize_reason(reason: &str, batch_tokens: &[&str]) -> String {
+    if !reason.is_empty()
+        && reason.len() <= 64
+        && reason
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !(reason.len() >= 16 && reason.chars().all(|c| c.is_ascii_hexdigit()))
+        && !batch_tokens.contains(&reason)
+    {
+        reason.to_string()
+    } else {
+        "unspecified".to_string()
+    }
+}
+
 /// The public status representation of one registered device.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub(crate) struct PushDeviceItem {
@@ -87,7 +105,15 @@ pub(crate) struct StatusResponse {
     pub cursor: Option<String>,
 }
 
-#[derive(Serialize)]
-pub(crate) struct TestResponse {
-    pub device_count: usize,
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TestItem {
+    pub target: String,
+    pub outcome: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TestResponse {
+    pub items: Vec<TestItem>,
 }

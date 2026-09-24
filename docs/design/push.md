@@ -3,10 +3,10 @@
 ## Summary
 
 `solstone-core-push` owns the local push-device registry, the native
-`/api/push/*` routes, and notification envelope sealing. The registry records
-where a future delivery system may reach a linked device; this repository does
-not implement hosted relay or notification delivery. This crate does not send
-notifications.
+`/api/push/*` routes, notification envelope sealing, and hosted push test
+delivery. The registry records where push notifications may reach a linked
+device. Convey shell routes unpair mutations to purge push registrations for
+unpaired devices.
 
 ## Domain ownership
 
@@ -33,9 +33,13 @@ The registry is one JSON document containing an array of registered devices:
 }
 ```
 
-Rows accumulate as tokens rotate until a sender prunes them. A token can belong
-to only one CID, so registering an already-held token removes its previous row
-on another CID while retaining other tokens for the registering device.
+Lifetime behavior:
+- Re-register of the same `(cid, device_token)` replaces that row.
+- Registering a token another CID holds moves the row.
+- Unpair deletes every row for that CID.
+- A failed delete or a race can leave a row. That row is never sent to, because the CID is no longer authorized. Unpairing that CID again removes it.
+- Sending never deletes a row. Status lists every row, including rows that are not recipients. A `revoked` relay outcome is not stored.
+
 The store holds one sidecar lock across every read-modify-atomic-write
 mutation (`0o600` mode). Existing malformed registry data is unavailable (`503
 push_registry_unavailable`), not silently treated as an empty registry.
@@ -48,8 +52,7 @@ When a new registration triggers a write to a journal with a non-empty v1
 registry, the discarded count is logged and the file is atomically rewritten as
 v2. A journal build from before this format cannot read v2 and returns `503
 push_registry_unavailable` on push routes. An app build that predates `push_key`
-gets `400` on register and on DELETE. Nothing sends notifications before such an
-app is updated.
+gets `400` on register and on DELETE.
 
 ## Routes
 
@@ -109,13 +112,28 @@ registration first:
 
 ### `POST /api/push/test`
 
-Unauthenticated round-trip device check. With 0 devices (or an unmigrated v1
-file) it returns `503 feature_unavailable` with detail `no devices to reach`.
-With one or more devices it returns:
+Unauthenticated round-trip device test.
+
+- Registry read error is `503 push_registry_unavailable` before anything else, including a bad ledger.
+- An empty registry, including a v1 document read as empty, is `503 feature_unavailable` (`no devices to reach`) even when the ledger is malformed. The ledger is not read.
+- Ledger `Unreadable`, `Malformed`, or `DuplicateCid` is `503 push_ledger_unavailable`.
+- A missing ledger file is no authorized CIDs. A non-empty registry with no recipient is `503 feature_unavailable`, not `push_ledger_unavailable`.
+- A recipient is an authorized CID of any role, including `""`, whose `registered_at` is no more than 30 days before the send, or after it. Walk the stored `devices` array. Exactly 30 days is in. 31 days is out.
+- Otherwise HTTP 200, one item per recipient: `target` (masked), `outcome` (`sent`, `revoked`, or `failed`), optional `reason`.
+- Enrollment is `POST {SERVICES_PORTAL_URL}/reach/push/relay-token` with keys `assertion`, `ca_pubkey`, `instance_id`. Dispatch is `POST {SERVICES_PORTAL_URL}/push/dispatch` with `Authorization: Bearer` and `devices[]` keys `envelope`, `environment`, `token`. `development` maps to `sandbox`. `production` maps to `production`. Batches of 16. The production timeout is 60 seconds.
+- The shell reads `SERVICES_PORTAL_URL`, default `https://services.solstone.app`, and strips a trailing slash. Push does not read the variable.
+- An app build that predates `push_key` gets `400` on register and DELETE, so it never becomes a recipient.
+
+With eligible devices, it returns:
 
 ```json
 {
-  "device_count": 1
+  "items": [
+    {
+      "target": "...cdef",
+      "outcome": "sent"
+    }
+  ]
 }
 ```
 

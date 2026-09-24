@@ -28,7 +28,6 @@ use solstone_core_sol_link::client_status::{
     ClientLedgerUnavailable, ClientReach, ConnectionFreshness, ConnectionGroup, ConnectionState,
     SourceDelivery, inspect_clients_at,
 };
-use solstone_core_sol_link::ledger::AuthorizationLedger;
 
 use crate::JournalRoot;
 
@@ -325,7 +324,7 @@ async fn delete_client(
     Extension(root): Extension<Arc<JournalRoot>>,
     Path(cid): Path<String>,
 ) -> Response {
-    match AuthorizationLedger::new(&root.0).remove(&cid) {
+    match crate::paired_device::remove_paired_device(&root.0, &cid) {
         Ok(outcome) if outcome.authorized_removed => Json(json!({"unpaired": cid})).into_response(),
         Ok(_) => crate::network::refusal(
             "paired_device_not_found",
@@ -1464,5 +1463,235 @@ mod tests {
             )
             .expect("test store");
         }
+    }
+
+    struct TestLogger;
+    static LOGGER: TestLogger = TestLogger;
+    static LOGGER_INIT: std::sync::Once = std::sync::Once::new();
+    static LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> = std::sync::OnceLock::new();
+
+    impl log::Log for TestLogger {
+        fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+            metadata.level() <= log::Level::Error
+        }
+
+        fn log(&self, record: &log::Record<'_>) {
+            if self.enabled(record.metadata()) {
+                LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+                    .lock()
+                    .expect("logs lock")
+                    .push(record.args().to_string());
+            }
+        }
+
+        fn flush(&self) {}
+    }
+
+    fn install_logger() {
+        LOGGER_INIT.call_once(|| {
+            let _ = log::set_logger(&LOGGER);
+            log::set_max_level(log::LevelFilter::Error);
+        });
+        if let Some(logs) = LOGS.get() {
+            logs.lock().expect("lock").clear();
+        }
+    }
+
+    fn error_logs() -> Vec<String> {
+        LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+            .lock()
+            .expect("lock")
+            .clone()
+    }
+
+    #[tokio::test]
+    async fn delete_client_removes_paired_device_push_tokens_and_preserves_other_devices() {
+        let cid_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let cid_b = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid_a, "phone"), client(cid_b, "laptop"),]));
+        fs::write(
+            journal.0.path().join("config/push-registry.json"),
+            json!({
+                "version": 2,
+                "devices": [
+                    {
+                        "platform": "ios",
+                        "cid": cid_a,
+                        "device_token": "0000000000000001",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    },
+                    {
+                        "platform": "ios",
+                        "cid": cid_b,
+                        "device_token": "0000000000000002",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "S2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2k",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    },
+                    {
+                        "platform": "ios",
+                        "cid": cid_a,
+                        "device_token": "0000000000000003",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("push registry");
+
+        let app = crate::router(journal.0.path().to_path_buf());
+        let (status, body) = request(
+            app,
+            Request::delete(format!("/app/network/api/clients/{cid_a}"))
+                .body(Body::empty())
+                .expect("delete request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": cid_a}));
+
+        let registry: Value = serde_json::from_slice(
+            &fs::read(journal.0.path().join("config/push-registry.json")).expect("registry file"),
+        )
+        .expect("registry json");
+        let devices = registry["devices"].as_array().expect("devices array");
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0]["cid"], cid_b);
+        assert_eq!(devices[0]["device_token"], "0000000000000002");
+        assert_eq!(
+            devices[0]["push_key"],
+            "S2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2k"
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_client_with_corrupt_push_registry_removes_ledger_and_logs_error() {
+        install_logger();
+        let cid_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let journal = EstablishedJournal::new();
+        journal.write_ledger(json!([client(cid_a, "phone")]));
+        let registry_path = journal.0.path().join("config/push-registry.json");
+        let corrupt_canary = b"{\"corrupt_canary_push_secret\":\"CANARY_12345\"";
+        fs::write(&registry_path, corrupt_canary).expect("corrupt registry");
+
+        let app = crate::router(journal.0.path().to_path_buf());
+        let (status, body) = request(
+            app,
+            Request::delete(format!("/app/network/api/clients/{cid_a}"))
+                .body(Body::empty())
+                .expect("delete request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": cid_a}));
+
+        // Ledger row is gone
+        let ledger: Value = serde_json::from_slice(
+            &fs::read(journal.0.path().join("link/authorized_clients.json")).expect("ledger"),
+        )
+        .expect("ledger json");
+        assert_eq!(ledger.as_array().unwrap().len(), 0);
+
+        // Raw registry bytes unchanged
+        assert_eq!(fs::read(&registry_path).expect("read"), corrupt_canary);
+
+        // Exactly one error line and it is "push registrations for an unpaired device could not be removed"
+        let logs = error_logs();
+        assert_eq!(logs.len(), 1);
+        assert_eq!(
+            logs[0],
+            "push registrations for an unpaired device could not be removed"
+        );
+        assert!(!logs[0].contains("CANARY_12345"));
+    }
+
+    #[tokio::test]
+    async fn delete_client_with_malformed_ledger_returns_error_and_preserves_registry() {
+        let cid_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let journal = EstablishedJournal::new();
+        let registry_path = journal.0.path().join("config/push-registry.json");
+        let initial_registry = json!({
+            "version": 2,
+            "devices": [{
+                "platform": "ios",
+                "cid": cid_a,
+                "device_token": "0000000000000001",
+                "bundle_id": "org.example.app",
+                "environment": "development",
+                "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                "registered_at": "2026-08-13T00:00:00Z"
+            }]
+        })
+        .to_string();
+        fs::write(&registry_path, &initial_registry).expect("registry write");
+        fs::create_dir_all(journal.0.path().join("link")).expect("link directory");
+        fs::write(journal.0.path().join("link/authorized_clients.json"), b"{")
+            .expect("malformed ledger");
+
+        let app = crate::router(journal.0.path().to_path_buf());
+        let (status, body) = request(
+            app,
+            Request::delete(format!("/app/network/api/clients/{cid_a}"))
+                .body(Body::empty())
+                .expect("delete request"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "authorization_ledger_malformed");
+        assert_eq!(
+            fs::read_to_string(&registry_path).expect("registry read"),
+            initial_registry
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_client_removes_leftover_push_rows_when_cid_absent_from_ledger() {
+        let cid_unknown = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+        let journal = EstablishedJournal::new();
+        let registry_path = journal.0.path().join("config/push-registry.json");
+        fs::write(
+            &registry_path,
+            json!({
+                "version": 2,
+                "devices": [
+                    {
+                        "platform": "ios",
+                        "cid": cid_unknown,
+                        "device_token": "0000000000000001",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("push registry");
+
+        let app = crate::router(journal.0.path().to_path_buf());
+        let (status, body) = request(
+            app,
+            Request::delete(format!("/app/network/api/clients/{cid_unknown}"))
+                .body(Body::empty())
+                .expect("delete req"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+
+        let registry: Value =
+            serde_json::from_slice(&fs::read(&registry_path).expect("read")).expect("json");
+        let devices = registry["devices"].as_array().expect("devices");
+        assert_eq!(devices.len(), 0);
     }
 }

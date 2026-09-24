@@ -368,7 +368,7 @@ pub(crate) async fn unpair(Extension(root): Extension<Arc<JournalRoot>>, body: B
             );
         }
     };
-    match AuthorizationLedger::new(&root.0).remove(&target) {
+    match crate::paired_device::remove_paired_device(&root.0, &target) {
         Ok(outcome) if outcome.authorized_removed => {
             Json(json!({"unpaired": target})).into_response()
         }
@@ -2016,5 +2016,380 @@ mod tests {
             assert_eq!(body["present"], true, "{prefix}");
             assert_eq!(body["used"], false, "{prefix}");
         }
+    }
+
+    #[tokio::test]
+    async fn unpair_removes_paired_device_push_tokens_and_preserves_other_devices() {
+        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let client_b = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(
+            temporary.path(),
+            json!([
+                {
+                    "fingerprint": client_a,
+                    "device_label": "phone",
+                    "paired_at": "2026-08-13T00:00:00Z",
+                    "instance_id": "a",
+                    "kind": "cert",
+                },
+                {
+                    "fingerprint": client_b,
+                    "device_label": "laptop",
+                    "paired_at": "2026-08-13T00:00:01Z",
+                    "instance_id": "b",
+                    "kind": "cert",
+                }
+            ]),
+        );
+        fs::write(
+            temporary.path().join("config/push-registry.json"),
+            json!({
+                "version": 2,
+                "devices": [
+                    {
+                        "platform": "ios",
+                        "cid": client_a,
+                        "device_token": "0000000000000001",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    },
+                    {
+                        "platform": "ios",
+                        "cid": client_b,
+                        "device_token": "0000000000000002",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "S2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2k",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    },
+                    {
+                        "platform": "ios",
+                        "cid": client_a,
+                        "device_token": "0000000000000003",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("push registry");
+
+        let app = crate::router(temporary.path().to_path_buf());
+        let (status, body) =
+            post_json(app, "/app/network/unpair", json!({"fingerprint": client_a})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": client_a}));
+        assert_eq!(ledger_fingerprints(temporary.path()), [client_b]);
+
+        let registry: Value = serde_json::from_slice(
+            &fs::read(temporary.path().join("config/push-registry.json")).expect("registry file"),
+        )
+        .expect("registry json");
+        let devices = registry["devices"].as_array().expect("devices array");
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0]["cid"], client_b);
+        assert_eq!(devices[0]["device_token"], "0000000000000002");
+        assert_eq!(
+            devices[0]["push_key"],
+            "S2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2lvS2k"
+        );
+    }
+
+    #[tokio::test]
+    async fn unpair_with_corrupt_push_registry_removes_ledger_and_logs_error() {
+        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(temporary.path(), one_client());
+        let registry_path = temporary.path().join("config/push-registry.json");
+        fs::write(&registry_path, b"{\"corrupt\":").expect("corrupt registry");
+
+        let app = crate::router(temporary.path().to_path_buf());
+        let (status, body) =
+            post_json(app, "/app/network/unpair", json!({"fingerprint": client_a})).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body, json!({"unpaired": client_a}));
+        assert_eq!(ledger_fingerprints(temporary.path()), Vec::<String>::new());
+        assert_eq!(
+            fs::read(&registry_path).expect("registry read"),
+            b"{\"corrupt\":"
+        );
+    }
+
+    #[tokio::test]
+    async fn unpair_with_malformed_ledger_returns_error_and_preserves_registry() {
+        let client_a = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        let registry_path = temporary.path().join("config/push-registry.json");
+        let initial_registry = json!({
+            "version": 2,
+            "devices": [{
+                "platform": "ios",
+                "cid": client_a,
+                "device_token": "0000000000000001",
+                "bundle_id": "org.example.app",
+                "environment": "development",
+                "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                "registered_at": "2026-08-13T00:00:00Z"
+            }]
+        })
+        .to_string();
+        fs::write(&registry_path, &initial_registry).expect("registry write");
+        fs::create_dir_all(temporary.path().join("link")).expect("link directory");
+        fs::write(temporary.path().join("link/authorized_clients.json"), b"{")
+            .expect("malformed ledger");
+
+        let app = crate::router(temporary.path().to_path_buf());
+        let (status, body) =
+            post_json(app, "/app/network/unpair", json!({"fingerprint": client_a})).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body["reason_code"], "authorization_ledger_malformed");
+        assert_eq!(
+            fs::read_to_string(&registry_path).expect("registry read"),
+            initial_registry
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_cid_cleans_up_leftover_push_rows_across_unpair_and_delete_and_forget() {
+        let client_u1 = "sha256:1111111111111111111111111111111111111111111111111111111111111111";
+        let client_u2 = "sha256:2222222222222222222222222222222222222222222222222222222222222222";
+        let client_u3 = "sha256:3333333333333333333333333333333333333333333333333333333333333333";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        let registry_path = temporary.path().join("config/push-registry.json");
+        fs::write(
+            &registry_path,
+            json!({
+                "version": 2,
+                "devices": [
+                    {
+                        "platform": "ios",
+                        "cid": client_u1,
+                        "device_token": "0000000000000001",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    },
+                    {
+                        "platform": "ios",
+                        "cid": client_u2,
+                        "device_token": "0000000000000002",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    },
+                    {
+                        "platform": "ios",
+                        "cid": client_u3,
+                        "device_token": "0000000000000003",
+                        "bundle_id": "org.example.app",
+                        "environment": "development",
+                        "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                        "registered_at": "2026-08-13T00:00:00Z"
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .expect("push registry");
+
+        let app = crate::router(temporary.path().to_path_buf());
+
+        // unpair -> 400 paired_device_not_found, u1 removed
+        let (status, body) = post_json(
+            app.clone(),
+            "/app/network/unpair",
+            json!({"fingerprint": client_u1}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["reason_code"], "paired_device_not_found");
+
+        let registry: Value =
+            serde_json::from_slice(&fs::read(&registry_path).expect("read")).expect("json");
+        let devices = registry["devices"].as_array().expect("devices");
+        assert_eq!(devices.len(), 2);
+        assert!(!devices.iter().any(|d| d["cid"] == client_u1));
+
+        // delete_client -> 404 paired_device_not_found, u2 removed
+        let req = Request::delete(format!("/app/network/api/clients/{client_u2}"))
+            .body(Body::empty())
+            .expect("delete req");
+        let resp = app.clone().oneshot(req).await.expect("resp");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let resp_body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.expect("bytes"))
+                .expect("json");
+        assert_eq!(resp_body["reason_code"], "paired_device_not_found");
+
+        let registry: Value =
+            serde_json::from_slice(&fs::read(&registry_path).expect("read")).expect("json");
+        let devices = registry["devices"].as_array().expect("devices");
+        assert_eq!(devices.len(), 1);
+        assert!(!devices.iter().any(|d| d["cid"] == client_u2));
+
+        // forget_device -> 404 paired_device_not_found, u3 removed
+        let req = Request::post(format!("/app/network/api/devices/{client_u3}/forget"))
+            .body(Body::empty())
+            .expect("forget req");
+        let resp = app.clone().oneshot(req).await.expect("resp");
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        let resp_body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.expect("bytes"))
+                .expect("json");
+        assert_eq!(resp_body["reason_code"], "paired_device_not_found");
+
+        let registry: Value =
+            serde_json::from_slice(&fs::read(&registry_path).expect("read")).expect("json");
+        let devices = registry["devices"].as_array().expect("devices");
+        assert_eq!(devices.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn forget_device_refusal_cases_preserve_push_registry() {
+        let client_host = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let client_delivered =
+            "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+        let temporary = TempDir::new();
+        established_journal(temporary.path());
+        write_authorized_clients(
+            temporary.path(),
+            json!([
+                {
+                    "fingerprint": client_host,
+                    "device_label": "this-machine",
+                    "client_label": "this-machine",
+                    "paired_at": "2026-08-13T00:00:00Z",
+                    "instance_id": "a",
+                    "kind": "cert",
+                },
+                {
+                    "fingerprint": client_delivered,
+                    "device_label": "delivered-phone",
+                    "client_label": "delivered-phone",
+                    "paired_at": "2026-08-13T00:00:01Z",
+                    "instance_id": "b",
+                    "kind": "cert",
+                }
+            ]),
+        );
+        fs::write(
+            temporary.path().join("link/devices.json"),
+            json!({
+                client_delivered: {
+                    "last_seen_at": "2026-08-13T00:02:00Z",
+                    "last_accepted_ingest_at": "2026-08-13T00:02:00Z"
+                }
+            })
+            .to_string(),
+        )
+        .expect("devices activity");
+
+        let initial_registry = json!({
+            "version": 2,
+            "devices": [
+                {
+                    "platform": "ios",
+                    "cid": client_host,
+                    "device_token": "0000000000000001",
+                    "bundle_id": "org.example.app",
+                    "environment": "development",
+                    "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                    "registered_at": "2026-08-13T00:00:00Z"
+                },
+                {
+                    "platform": "ios",
+                    "cid": client_delivered,
+                    "device_token": "0000000000000002",
+                    "bundle_id": "org.example.app",
+                    "environment": "development",
+                    "push_key": "KioqKioqKioqKioqKioqKioqKioqKioqKioqKioqKio",
+                    "registered_at": "2026-08-13T00:00:00Z"
+                }
+            ]
+        })
+        .to_string();
+        let registry_path = temporary.path().join("config/push-registry.json");
+        fs::write(&registry_path, &initial_registry).expect("push registry");
+
+        let app = crate::router(temporary.path().to_path_buf()).layer(Extension(
+            crate::network_writes::HostLabelOverride("this-machine".to_owned()),
+        ));
+
+        // 1. Refuse this-host -> 409 device_is_this_host
+        let req = Request::post(format!("/app/network/api/devices/{client_host}/forget"))
+            .body(Body::empty())
+            .expect("req");
+        let resp = app.clone().oneshot(req).await.expect("resp");
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let resp_body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.expect("bytes"))
+                .expect("json");
+        assert_eq!(resp_body["reason_code"], "device_is_this_host");
+        assert_eq!(
+            fs::read_to_string(&registry_path).expect("read"),
+            initial_registry
+        );
+
+        // 2. Refuse delivered -> 409 device_has_delivered
+        let req = Request::post(format!(
+            "/app/network/api/devices/{client_delivered}/forget"
+        ))
+        .body(Body::empty())
+        .expect("req");
+        let resp = app.clone().oneshot(req).await.expect("resp");
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+        let resp_body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.expect("bytes"))
+                .expect("json");
+        assert_eq!(resp_body["reason_code"], "device_has_delivered");
+        assert_eq!(
+            fs::read_to_string(&registry_path).expect("read"),
+            initial_registry
+        );
+
+        // 3. Refuse empty fingerprint -> 400 missing_required_field
+        let req = Request::post("/app/network/api/devices/%20/forget")
+            .body(Body::empty())
+            .expect("req");
+        let resp = app.clone().oneshot(req).await.expect("resp");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let resp_body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.expect("bytes"))
+                .expect("json");
+        assert_eq!(resp_body["reason_code"], "missing_required_field");
+        assert_eq!(
+            fs::read_to_string(&registry_path).expect("read"),
+            initial_registry
+        );
+
+        // 4. Bad ledger -> 503 authorization_ledger_malformed
+        fs::write(temporary.path().join("link/authorized_clients.json"), b"{").expect("bad ledger");
+        let req = Request::post(format!(
+            "/app/network/api/devices/{client_delivered}/forget"
+        ))
+        .body(Body::empty())
+        .expect("req");
+        let resp = app.clone().oneshot(req).await.expect("resp");
+        assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+        let resp_body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.expect("bytes"))
+                .expect("json");
+        assert_eq!(resp_body["reason_code"], "authorization_ledger_malformed");
+        assert_eq!(
+            fs::read_to_string(&registry_path).expect("read"),
+            initial_registry
+        );
     }
 }

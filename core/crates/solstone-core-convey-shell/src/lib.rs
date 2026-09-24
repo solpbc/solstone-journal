@@ -129,6 +129,8 @@ mod network_status;
 mod network_writes;
 #[cfg(feature = "host")]
 mod pair_window_manager;
+#[cfg(feature = "host")]
+mod paired_device;
 pub mod refusal;
 pub mod registry;
 mod relay_access;
@@ -767,7 +769,13 @@ fn router_with_hosted_parent(
         ))
         .merge(agents_routes.unwrap_or_default())
         .merge(solstone_core_ingest::api_router(journal_root.clone()))
-        .merge(solstone_core_push::api_router(journal_root.clone()))
+        .merge({
+            let push_portal = std::env::var("SERVICES_PORTAL_URL")
+                .unwrap_or_else(|_| agents_enable::DEFAULT_PORTAL_URL.to_owned())
+                .trim_end_matches('/')
+                .to_owned();
+            solstone_core_push::api_router(journal_root.clone(), push_portal)
+        })
         .merge(solstone_core_clients_web::router(journal_root.clone()))
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))

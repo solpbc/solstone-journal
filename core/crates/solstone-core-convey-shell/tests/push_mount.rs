@@ -121,8 +121,9 @@ async fn all_push_routes_resolve_through_the_composed_shell_router() {
     assert!(body["cursor"].is_null());
 
     let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), Some(basis())).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body, json!({"device_count": 1}));
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["reason_code"], "feature_unavailable");
+    assert_eq!(body["detail"], "no devices to reach");
 
     let (status, body_bytes) = call_raw(
         &app,
@@ -134,6 +135,30 @@ async fn all_push_routes_resolve_through_the_composed_shell_router() {
     .await;
     assert_eq!(status, StatusCode::NO_CONTENT);
     assert!(body_bytes.is_empty());
+}
+
+#[tokio::test]
+async fn malformed_ledger_with_recipient_returns_push_ledger_unavailable() {
+    let journal = established_journal();
+    let app = router(journal.path().to_path_buf());
+
+    let (status, _) = call(
+        &app,
+        "POST",
+        "/api/push/register",
+        registration(),
+        Some(basis()),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    fs::create_dir_all(journal.path().join("link")).expect("link directory");
+    fs::write(journal.path().join("link/authorized_clients.json"), b"{}")
+        .expect("malformed ledger");
+
+    let (status, body) = call(&app, "POST", "/api/push/test", Body::empty(), Some(basis())).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["reason_code"], "push_ledger_unavailable");
 }
 
 #[tokio::test]

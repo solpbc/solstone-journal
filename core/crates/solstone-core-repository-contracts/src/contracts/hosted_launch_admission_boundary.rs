@@ -336,6 +336,11 @@ const SCANNED_MODULE_SOURCES: &[(&str, &str, &str)] = &[
     ),
     (
         "convey",
+        "paired_device",
+        include_str!("../../../solstone-core-convey-shell/src/paired_device.rs"),
+    ),
+    (
+        "convey",
         "refusal",
         include_str!("../../../solstone-core-convey-shell/src/refusal.rs"),
     ),
