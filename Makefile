@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint check-rust-classified-full-tests-setup check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-setup check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-io-access check-journal-io-mechanic check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint check-rust-classified-full-tests-setup check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-setup check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-api-conventions check-journal-config-owner check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -1396,16 +1396,8 @@ install-checks: .installed
 	@echo "=== Running ruff ==="
 	@$(RUFF) check . || { echo "Run 'make format' to auto-fix"; exit 1; }
 	@echo ""
-	@echo "=== Running layer-hygiene check ==="
-	@echo ""
 	@echo "=== Running API-conventions check ==="
 	@$(MAKE) check-api-conventions
-	@echo ""
-	@echo "=== Running journal-io access check ==="
-	@$(MAKE) check-journal-io-access
-	@echo ""
-	@echo "=== Running journal-io mechanic check ==="
-	@$(MAKE) check-journal-io-mechanic
 	@echo ""
 	@echo "=== Running journal-config owner check ==="
 	@$(MAKE) check-journal-config-owner
@@ -1630,14 +1622,6 @@ pre-commit: .installed
 # HTTP API conventions check (see docs/CONVEY.md § HTTP API conventions)
 check-api-conventions: .installed
 	$(VENV_BIN)/python scripts/check_api_conventions.py
-
-# Journal-io write-primitive access check (see AGENTS.md §7 L2)
-check-journal-io-access: .installed
-	$(VENV_BIN)/python scripts/check_journal_io_access.py
-
-# Journal raw-mechanic check (see AGENTS.md §7 L2)
-check-journal-io-mechanic: .installed
-	$(VENV_BIN)/python scripts/check_journal_io_mechanic.py
 
 # Journal config owner transaction boundary gate
 check-journal-config-owner: .installed

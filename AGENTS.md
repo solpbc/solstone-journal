@@ -221,7 +221,7 @@ Full depth: `docs/testing.md`.
 
 **Why this lives here.** Infrastructure modules must not write domain state, CLI read-verbs must not mutate, and get-prefixed functions must not create records on miss. These invariants keep those layer violations out of the Rust crates. They're inlined here because a one-click-away invariant is a routinely-skipped invariant.
 
-⚠ **L1/L2 domain-boundary discipline has no automated grep check today.** The old low-bar checker, `scripts/check_layer_hygiene.py`, read the Python tree the conversion deleted; it was removed rather than left passing vacuously. L1/L2 are held by review and by Rust module/crate boundaries, not by a gate. **L8 is the exception** — see below.
+⚠ **L1/L2 domain-boundary discipline has no automated grep check today.** The old low-bar checkers, `scripts/check_layer_hygiene.py`, `scripts/check_journal_io_access.py` and `scripts/check_journal_io_mechanic.py`, read the Python tree the conversion deleted; they were removed rather than left passing vacuously. L1/L2 are held by review and by Rust module/crate boundaries, not by a gate. **L8 is the exception** — see below.
 
 ### L1 — Layer boundaries are load-bearing
 
