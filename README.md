@@ -278,7 +278,7 @@ The complete Make table, the layer-hygiene rules every change must respect, and 
 | body data imports (Apple Health, Oura) | [docs/health_imports.md](docs/health_imports.md) |
 | workspace rules, portability canaries, the architectural map | [docs/PORTING.md](docs/PORTING.md), [docs/conversion/](docs/conversion/README.md) |
 | tests, environment, logging, coding standards | [docs/testing.md](docs/testing.md), [docs/environment.md](docs/environment.md), [docs/LOGGING.md](docs/LOGGING.md), [docs/coding-standards.md](docs/coding-standards.md) |
-| releases: evidence ledger, channel adapters, distribution | [docs/release-evidence-contract.md](docs/release-evidence-contract.md), [docs/CHANNEL_ADAPTERS.md](docs/CHANNEL_ADAPTERS.md), [core/distribution/](core/distribution/) |
+| releases: evidence ledger, distribution | [docs/release-evidence-contract.md](docs/release-evidence-contract.md), [core/distribution/](core/distribution/) |
 
 ## Feedback
 

@@ -149,7 +149,7 @@ List items for a day.
 
 4. **Run `make skills`** to regenerate the checked-in router references with `scripts/build_skill_references.py` and refresh the installed `solstone` + `journal` router skill symlinks.
 
-5. **Run `make check-skill-references`** before committing, or rely on `make install-checks`. The check invokes `scripts/build_skill_references.py --check` and fails when generated router references are stale.
+5. **Run `make check-skill-references`** before committing. The check invokes `scripts/build_skill_references.py --check` and fails when generated router references are stale. No automated gate runs it.
 
 ### Local-only think tools
 
@@ -465,4 +465,4 @@ When you add or change a `solstone call` command, update both the native authori
 - Behavior notes (edge cases, defaults, validation)
 - Examples showing common usage patterns
 
-Then run `make skills`. `make check-skill-references` invokes `scripts/build_skill_references.py --check`; `make install-checks` runs the same check and fails when generated references are stale.
+Then run `make skills`. `make check-skill-references` invokes `scripts/build_skill_references.py --check` and fails when generated references are stale.

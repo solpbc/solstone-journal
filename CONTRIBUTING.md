@@ -149,7 +149,7 @@ After changing a router skill or an app command fragment, run:
 make skills
 ```
 
-That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `solstone` + `journal` router skill symlinks inside the journal. Run `make check-skill-references` directly, or use `make install-checks`, to catch stale generated references.
+That target first runs `scripts/build_skill_references.py` to regenerate the checked-in references, then refreshes the `solstone` + `journal` router skill symlinks inside the journal. Run `make check-skill-references` to catch stale generated references; no automated gate runs it.
 
 ## Migrating from a source install to a tree install
 

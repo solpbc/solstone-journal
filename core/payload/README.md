@@ -11,7 +11,8 @@ one set of relative paths describes both. So this directory is the checkout's
 stand-in for the installed `share/` prefix, not a copy of the Python package of
 the same name.
 
-Everything here ships. Nothing here is source for anything else. Two files are
+Everything here ships. Nothing here is source for anything else. Three files are
 generated rather than hand-written — `solstone/talent/journal/contract/bundle.json`
 by `solstone-core contract build`, and the two `references/commands.md` by
-`scripts/build_skill_references.py` — and both are checked in CI.
+`scripts/build_skill_references.py`. `make ci-full` checks the contract bundle;
+only `make check-skill-references`, which no gate runs, checks the references.

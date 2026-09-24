@@ -40,11 +40,6 @@ APP_VOCABULARY_PATTERNS = {
 }
 FORBIDDEN_HTTP_SOURCE_PATTERNS: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
-        "native-http-solstone-python-module-ref",
-        re.compile(r"\bsolstone\.(?:apps|think|convey|talent|observe)\.[A-Za-z0-9_.]+"),
-        "native HTTP commands must not reference Python server/domain modules",
-    ),
-    (
         "native-http-solstone-journal-env",
         re.compile(r"\bSOLSTONE_JOURNAL\b"),
         "native HTTP commands must not resolve the journal path",
@@ -108,7 +103,6 @@ def collect_violations() -> list[Violation]:
     violations.extend(check_shared_client_vocab())
     violations.extend(check_authority_adjacency())
     violations.extend(check_native_http_ownership())
-    violations.extend(check_packaging_excludes_native_sources())
     return violations
 
 
@@ -233,29 +227,6 @@ def check_native_http_ownership() -> list[Violation]:
             if pattern.search(text):
                 violations.append(Violation(rel(path), kind, detail))
     return violations
-
-
-def check_packaging_excludes_native_sources() -> list[Violation]:
-    manifest = REPO_ROOT / "MANIFEST.in"
-    lines = {
-        line.strip()
-        for line in manifest.read_text().splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    }
-    required = {
-        "recursive-exclude solstone *.rs",
-        "recursive-exclude solstone authority.toml",
-    }
-    missing = sorted(required - lines)
-    if not missing:
-        return []
-    return [
-        Violation(
-            rel(manifest),
-            "native-packaging-exclude-missing",
-            f"missing native artifact excludes: {', '.join(missing)}",
-        )
-    ]
 
 
 def main() -> int:

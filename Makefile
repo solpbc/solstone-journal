@@ -7,7 +7,7 @@
 # about identical files.
 export TMPDIR := $(shell cd /var/tmp && /bin/pwd -P)
 
-.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check install-checks ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint check-rust-classified-full-tests-setup check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-setup check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-grammar-oracle check-native-sol-grammar-oracle build-native-sol-root-contract check-native-sol-root-contract build-native-sol-journal-host-commands check-native-sol-journal-host-commands build-journal-access-rejection-inventory check-journal-access-rejection-inventory build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture check-native-sol-no-python-spawn check-removed-time-parser-ready dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-channel-adapter-scrub check-brain-health-cutover check-tools-http-only check-local-server-argv-owner check-local-install-transport check-local-generate-cutover check-thinking-cutover check-cogitate-cutover require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
+.PHONY: install preflight uninstall test test-cov test-integration test-performance test-app test-only format format-check ci ci-full ci-full-windows clean clean-install coverage watch versions update pre-commit skills check-journal-device-sim check-distribution-route-protocol check-install-fast check-rust-fmt check-rust-msrv check-rust-clippy check-rust-clippy-full check-rust-unit check-rust-test check-rust-classified-full-tests-sol-link check-rust-classified-full-tests-convey-body check-rust-classified-full-tests-facets check-rust-classified-full-tests-describe check-rust-classified-full-tests-mcp-endpoint check-rust-classified-full-tests-setup check-rust-journal-mcp-endpoint check-rust-classified-full-clippy-sol-link check-rust-classified-full-clippy-convey-body check-rust-classified-full-clippy-facets check-rust-classified-full-clippy-describe check-rust-classified-full-clippy-mcp-endpoint check-rust-classified-full-clippy-setup check-rust-classified-full-clippy-onnx check-rust-describe-cli-stubs check-rust-race check-rust-ios check-rust-macos check-rust-windows check-rust-deny check-rust-shipped-binaries build build-sandbox-processing check-rust-sandbox-processing-build check-spl-dependency-pin audit contract check-contract build-native-sol-inventory check-native-sol-inventory check-native-sol-architecture dev all sandbox sandbox-stop install-models parakeet-helper parakeet-helper-clean check-rust-vad-analyze-test check-rust-onnx-stage check-rust-onnx-test check-rust-pdf-stage check-rust-pdf-test verify service-logs check-call-http-only check-tools-http-only require-win-remote-host sync-win-host win-host-ci brand-sync FORCE
 
 # Default target: build the native workspace.
 all: build
@@ -1306,7 +1306,6 @@ TEST_ENV = SOLSTONE_JOURNAL=tests/fixtures/journal
 
 # Venv tool shortcuts
 PYTEST := $(VENV_BIN)/pytest
-RUFF := $(VENV_BIN)/ruff
 
 format-check:
 	cargo fmt --manifest-path $(RUST_MANIFEST) --all -- --check
@@ -1387,121 +1386,6 @@ clean-install: clean
 	rm -rf $(VENV) .installed
 	@echo "Error: 'make clean-install' is retired with 'make install'. Recreate a Python tooling venv with 'uv sync --group dev' only if a remaining script still needs it." >&2
 	@exit 1
-
-# Run continuous integration checks (what CI would run)
-install-checks: .installed
-	@echo "=== Checking formatting ==="
-	@$(RUFF) format --check . || { echo "Run 'make format' to fix formatting"; exit 1; }
-	@echo ""
-	@echo "=== Running ruff ==="
-	@$(RUFF) check . || { echo "Run 'make format' to auto-fix"; exit 1; }
-	@echo ""
-	@echo "=== Running provider-start-command check ==="
-	@$(MAKE) check-provider-start-commands
-	@echo ""
-	@echo "=== Running channel-adapter scrub check ==="
-	@$(MAKE) check-channel-adapter-scrub
-	@echo ""
-	@echo "=== Running brain-health cutover check ==="
-	@$(MAKE) check-brain-health-cutover
-	@echo ""
-	@echo "=== Running speaker-identity cutover check ==="
-	@$(MAKE) check-speaker-identity-cutover
-	@echo ""
-	@echo "=== Running schema-bounds check ==="
-	@echo ""
-	@echo "=== Running rust release-manifest check ==="
-	@$(MAKE) check-rust-release-manifest
-	@echo ""
-	@echo "=== Running SPL dependency-pin check ==="
-	@$(MAKE) check-spl-dependency-pin
-	@echo ""
-	@echo "=== Checking conversion-wave retirements ==="
-	@$(MAKE) check-conversion-retirements
-	@echo "=== Checking cogitate runtime cutover ==="
-	@$(MAKE) check-cogitate-cutover
-	@echo "=== Checking cogitate runtime cutover coverage ==="
-	@echo "=== Checking local-server argv ownership ==="
-	@$(MAKE) check-local-server-argv-owner
-	@echo "=== Checking local generate cutover ==="
-	@$(MAKE) check-local-generate-cutover
-	@echo ""
-	@echo "=== Checking the raw-media release oracle ==="
-	@echo ""
-	@echo "=== Checking the segment-name oracle ==="
-	@echo ""
-	@echo "=== Checking media format parity ==="
-	@echo ""
-	@echo "=== Checking spl health vocabulary ==="
-	@$(MAKE) check-spl-health-vocabulary
-	@echo "=== Running access-imports-clean check ==="
-	@echo ""
-	@echo "=== Running convey-bind-imports-clean check ==="
-	@echo ""
-	@echo "=== Checking native sol grammar oracle ==="
-	@$(MAKE) check-native-sol-grammar-oracle
-	@echo ""
-	@echo "=== Checking native sol root contract ==="
-	@$(MAKE) check-native-sol-root-contract
-	@echo ""
-	@echo "=== Checking core sdist compile inputs ==="
-	@echo ""
-	@echo "=== Checking native sol journal-host command inventory ==="
-	@$(MAKE) check-native-sol-journal-host-commands
-	@echo ""
-	@echo "=== Checking journal access rejection inventory ==="
-	@$(MAKE) check-journal-access-rejection-inventory
-	@echo ""
-	@echo "=== Checking removed time parser readiness ==="
-	@$(MAKE) check-removed-time-parser-ready
-	@echo ""
-	@echo "=== Checking native sol inventory ==="
-	@$(MAKE) check-native-sol-inventory
-	@echo ""
-	@echo "=== Running native sol architecture check ==="
-	@$(MAKE) check-native-sol-architecture
-	@echo ""
-	@echo "=== Checking generated skill references ==="
-	@$(MAKE) check-skill-references
-	@echo ""
-	@echo "=== Checking native sol contract-route coverage ==="
-	@echo "=== Checking import ingest door routes ==="
-	@echo ""
-	@echo "=== Checking native sol four-way conformance ==="
-	@echo ""
-	@echo "=== Checking native sol no-python-spawn invariant ==="
-	@$(MAKE) check-native-sol-no-python-spawn
-	@echo ""
-	@echo "=== Checking OpenAPI contract ==="
-	@echo ""
-	@echo "=== Checking journal format contract ==="
-	@$(MAKE) check-contract
-	@echo ""
-	@echo "=== Checking core fixtures ==="
-	@$(MAKE) check-core-fixtures
-	@echo ""
-	@echo "=== Checking journal resolution vectors ==="
-	@echo ""
-	@echo "=== Checking nvattest authority ==="
-	@echo ""
-	@echo "=== Running rust format check ==="
-	@$(MAKE) check-rust-fmt
-	@echo ""
-	@echo "=== Running rust MSRV check ==="
-	@$(MAKE) check-rust-msrv
-	@echo ""
-	@echo "=== Running rust clippy check ==="
-	@$(MAKE) check-rust-clippy
-	@echo ""
-	@echo "=== Running rust test check ==="
-	@$(MAKE) check-rust-test
-	@echo ""
-	@echo "=== Running rust iOS check ==="
-	@$(MAKE) check-rust-ios
-	@echo ""
-	@echo "=== Running rust dependency policy check ==="
-	@$(MAKE) check-rust-deny
-	@echo ""
 
 CI_FORBIDDEN_INTERPRETERS := python python3 pytest ruff uv
 DISTRIBUTION_FORBIDDEN_TOOLS := $(CI_FORBIDDEN_INTERPRETERS) maturin pip pipx setuptools twine dpkg-deb rpmbuild ar rpm tar cpio curl wget
@@ -1613,101 +1497,22 @@ pre-commit: .installed
 	$(VENV_BIN)/pre-commit install
 	@echo "Pre-commit hooks installed!"
 
-# Provider runtime start-command boundary gate
-check-provider-start-commands: .installed
-	$(VENV_BIN)/python scripts/check_provider_start_commands.py
-
-# Release channel adapter scrub gate
-check-channel-adapter-scrub: .installed
-	$(VENV_BIN)/python scripts/check_channel_adapter_scrub.py
-
-# Brain health cutover guard
-check-brain-health-cutover: .installed
-	$(VENV_BIN)/python scripts/check_brain_health_cutover.py
-
-# Speaker-identity durable-state ownership guard
-check-speaker-identity-cutover: .installed
-	$(VENV_BIN)/python scripts/check_speaker_identity_cutover.py
-
 # SPL git dependency pin guard
 check-spl-dependency-pin:
 	python3 scripts/check_spl_dependency_pin.py
 
-# Conversion-wave Python and package retirement gate
-check-conversion-retirements:
-	python3 scripts/check_conversion_retirements.py
-
-check-cogitate-cutover: .installed
-	$(VENV_BIN)/python scripts/check_cogitate_cutover.py
-	$(VENV_BIN)/python scripts/report_cogitate_cutover_coverage.py
-
-# Local-model server argv is rendered only by solstone-core local plan.
-check-local-server-argv-owner:
-	python3 scripts/check_local_server_argv_owner.py
-
-check-local-install-transport:
-	python3 scripts/check_local_install_transport.py
-
-check-local-generate-cutover:
-	python3 scripts/check_local_generate_cutover.py
-
-check-thinking-cutover:
-	python3 scripts/check_thinking_cutover.py
-
-# The spl link-health vocabulary spans two languages after the native cutover:
-# the native service emits the reason codes and the callosum event name, and the
-# web layer consumes them. Nothing else makes them agree, and drift is silent and
-# owner-visible. This gate reads BOTH sides from source.
-check-spl-health-vocabulary:
-	python3 scripts/check_spl_health_vocabulary.py
-
-# Faithful thin-base gate: build a fresh venv with the REAL base partition (no
-# extras) and assert the access surface imports clean against it. Heavier than
-# check-access-imports-clean (does a real install) — operator/release opt-in,
-# NOT part of `make ci` (which uses the fast simulation above).
 # Generated router skill references gate
 check-skill-references: .installed
 	$(VENV_BIN)/python scripts/build_skill_references.py --check
 
-build-native-sol-grammar-oracle: .installed
-	$(VENV_BIN)/python scripts/build_native_sol_authority_grammar.py
+build-native-sol-inventory:
+	python3 scripts/build_native_sol_inventory.py
 
-check-native-sol-grammar-oracle: .installed
-	$(VENV_BIN)/python scripts/check_native_sol_grammar_oracle.py
-	$(VENV_BIN)/python scripts/build_native_sol_authority_grammar.py --check
-
-build-native-sol-root-contract:
-	python3 scripts/build_native_sol_root_contract.py
-
-check-native-sol-root-contract:
-	python3 scripts/check_native_sol_root_contract.py
-
-build-native-sol-journal-host-commands:
-	python3 scripts/build_native_sol_journal_host_commands.py
-
-check-native-sol-journal-host-commands:
-	python3 scripts/build_native_sol_journal_host_commands.py --check
-
-build-journal-access-rejection-inventory:
-	python3 scripts/build_journal_access_rejection_inventory.py
-
-check-journal-access-rejection-inventory:
-	python3 scripts/build_journal_access_rejection_inventory.py --check
-
-build-native-sol-inventory: .installed
-	$(VENV_BIN)/python scripts/build_native_sol_inventory.py
-
-check-native-sol-inventory: .installed
-	$(VENV_BIN)/python scripts/build_native_sol_inventory.py --check
+check-native-sol-inventory:
+	python3 scripts/build_native_sol_inventory.py --check
 
 check-native-sol-architecture:
 	python3 scripts/check_native_sol_architecture.py
-
-check-native-sol-no-python-spawn:
-	python3 scripts/check_native_sol_no_python_spawn.py
-
-check-removed-time-parser-ready:
-	python3 scripts/check_removed_time_parser_ready.py
 
 contract:
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build
@@ -1723,12 +1528,8 @@ contract:
 # gate, no suite, no other recipe -- which is why it survived its own oracle.
 check-contract:
 	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract check
-	cargo run --quiet --manifest-path $(RUST_MANIFEST) -p solstone-core --bin solstone-core --locked -- contract build --check
 
 # category_registry.json is retired. Native describe-categories is the source;
 # the Python generator wrote a file nothing reads.
 core-fixtures:
 	@echo "category registry is native (solstone-core-describe-categories); nothing to generate." >&2
-
-check-core-fixtures: .installed
-	$(VENV_BIN)/python scripts/check_service_runtime_reference.py

@@ -767,17 +767,6 @@ impl Clock for FakeClock {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct FailingProcessSpawner;
-
-impl ProcessSpawner for FailingProcessSpawner {
-    fn run(&self, program: &str, args: &[String]) -> IoResult<ProcessOutput> {
-        Err(Error::other(format!(
-            "process spawning is disabled in native client tests: {program} {args:?}"
-        )))
-    }
-}
-
 #[derive(Debug, Clone, Default)]
 pub struct FakeBuildIdentityProvider {
     value: Option<serde_json::Value>,

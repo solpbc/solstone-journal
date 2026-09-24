@@ -18,7 +18,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parent.parent
 
 APPROVED_SOURCE_URL = "https://github.com/solpbc/spl-rust"
-SPL_PACKAGES = ("spl-core", "spl-transport")
+SPL_PACKAGES = ("spl-core", "spl-home", "spl-transport")
 SPL_PACKAGE_SET = set(SPL_PACKAGES)
 
 DEPENDENCY_KINDS = ("dependencies", "dev-dependencies", "build-dependencies")
@@ -58,13 +58,13 @@ W005_WORKSPACE_TAG_EMPTY = (
     "repair by setting the shared non-empty SPL tag in core/Cargo.toml."
 )
 W006_WORKSPACE_TAGS_SPLIT = (
-    "spl-pin W006 workspace SPL tags split: spl-core and spl-transport use "
-    "different tags; repair by setting both workspace entries to the same tag."
+    "spl-pin W006 workspace SPL tags split: spl-core, spl-home and spl-transport "
+    "use different tags; repair by setting every workspace entry to the same tag."
 )
 W007_WORKSPACE_ALIAS = (
     "spl-pin W007 workspace dependency alias touches SPL package: {dependency} "
     "resolves to {package}; repair by declaring SPL packages only under "
-    "canonical keys spl-core and spl-transport without package aliases."
+    "canonical keys spl-core, spl-home and spl-transport without package aliases."
 )
 
 M001_MEMBER_OVERRIDE = (
@@ -112,9 +112,9 @@ L008_LOCK_COMMIT_INVALID = (
     "in a 40-character lowercase hex commit."
 )
 L009_LOCK_COMMITS_SPLIT = (
-    "spl-pin L009 lockfile SPL commits split: spl-core and spl-transport "
-    "resolve to different commits; repair by regenerating core/Cargo.lock so "
-    "both packages resolve to the same spl-rust commit."
+    "spl-pin L009 lockfile SPL commits split: spl-core, spl-home and "
+    "spl-transport resolve to different commits; repair by regenerating "
+    "core/Cargo.lock so every SPL package resolves to the same spl-rust commit."
 )
 
 R001_WORKSPACE_PATCH_SOURCE = (
