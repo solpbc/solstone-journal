@@ -4,7 +4,7 @@ All notable changes to solstone will be documented in this file.
 
 Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.0.17] - 2026-09-24
 
 ### Added
 
