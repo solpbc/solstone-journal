@@ -22,7 +22,7 @@ use tokio::sync::{Semaphore, oneshot, watch};
 
 use crate::McpServiceError;
 use crate::oauth::OAuthRuntime;
-use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
+use crate::permits::try_acquire_connection_permit;
 use crate::server::{RequestGuard, serve_stream};
 use crate::session::SessionTable;
 
@@ -197,7 +197,7 @@ pub async fn run_local_door_loop(
 ) -> Result<(), McpServiceError> {
     let mut active_listener: Option<ActiveListener> = None;
     let sessions = Arc::new(SessionTable::new());
-    let permits = connection_permit_pool();
+    let permits = Arc::new(Semaphore::new(run.connection_permits));
     let journal_root_arc = Arc::new(journal_root.to_path_buf());
 
     let mut last_readable_config: Option<LocalDoorConfig> = None;
