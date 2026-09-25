@@ -44,6 +44,10 @@ impl HttpRequest {
         Ok(value)
     }
 
+    pub(crate) fn headers(&self) -> &[(String, String)] {
+        &self.headers
+    }
+
     #[cfg(all(test, not(feature = "full-tests")))]
     pub(crate) fn from_test_parts(
         method: HttpMethod,
@@ -124,6 +128,18 @@ impl HttpResponse {
             body: body.into_bytes(),
             session_id: None,
             close: false,
+            extra_headers: Vec::new(),
+        }
+    }
+
+    pub(crate) fn text(status: u16, reason: &'static str, body: &'static str) -> Self {
+        Self {
+            status,
+            reason,
+            content_type: Some("text/plain"),
+            body: body.as_bytes().to_vec(),
+            session_id: None,
+            close: true,
             extra_headers: Vec::new(),
         }
     }

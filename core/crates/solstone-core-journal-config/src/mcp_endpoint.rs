@@ -50,6 +50,46 @@ pub enum McpEndpointForceStagingRenewalError {
 /// Loopback port reserved for the journal-local MCP endpoint.
 pub const MCP_ENDPOINT_LOOPBACK_PORT: u16 = 7658;
 
+/// Loopback port reserved for the direct local agent door.
+pub const MCP_LOCAL_DOOR_PORT: u16 = 7659;
+
+/// Loopback origin for the direct local agent door.
+pub const MCP_LOCAL_DOOR_ORIGIN: &str = "http://127.0.0.1:7659";
+
+/// Loopback MCP resource URI for the direct local agent door.
+pub const MCP_LOCAL_DOOR_RESOURCE: &str = "http://127.0.0.1:7659/mcp";
+
+/// Configuration status of the direct local agent door.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalDoorConfig {
+    On,
+    Off,
+    Invalid,
+}
+
+/// Return the local door configuration from an already-loaded journal config.
+pub fn local_door_config(read: &JournalConfigRead) -> LocalDoorConfig {
+    let Some(config) = read.config.as_ref() else {
+        return LocalDoorConfig::On;
+    };
+    let Some(endpoint) = config.get("mcp_endpoint") else {
+        return LocalDoorConfig::On;
+    };
+    let Some(endpoint) = endpoint.as_object() else {
+        return LocalDoorConfig::Invalid;
+    };
+    match endpoint.get("local_door") {
+        None | Some(Value::Bool(true)) => LocalDoorConfig::On,
+        Some(Value::Bool(false)) => LocalDoorConfig::Off,
+        Some(_) => LocalDoorConfig::Invalid,
+    }
+}
+
+/// Return whether the local door is enabled (true only when `LocalDoorConfig::On`).
+pub fn local_door_enabled(read: &JournalConfigRead) -> bool {
+    matches!(local_door_config(read), LocalDoorConfig::On)
+}
+
 /// Return the MCP endpoint capability from an already-loaded journal config.
 pub fn mcp_endpoint_capability(
     read: &JournalConfigRead,
@@ -366,5 +406,54 @@ mod tests {
                 Err(McpEndpointForceStagingRenewalError::ForceStagingRenewalMustBeBoolean)
             );
         }
+    }
+
+    #[test]
+    fn local_door_config_matrix() {
+        // Missing file
+        let missing_file = read(None);
+        assert_eq!(local_door_config(&missing_file), LocalDoorConfig::On);
+        assert!(local_door_enabled(&missing_file));
+
+        // Missing mcp_endpoint key
+        let missing_endpoint = read(Some(Map::new()));
+        assert_eq!(local_door_config(&missing_endpoint), LocalDoorConfig::On);
+        assert!(local_door_enabled(&missing_endpoint));
+
+        // Missing local_door key inside mcp_endpoint
+        let missing_key = read(Some(config_with_endpoint(json!({}))));
+        assert_eq!(local_door_config(&missing_key), LocalDoorConfig::On);
+        assert!(local_door_enabled(&missing_key));
+
+        // Explicit true
+        let explicit_true = read(Some(config_with_endpoint(json!({"local_door": true}))));
+        assert_eq!(local_door_config(&explicit_true), LocalDoorConfig::On);
+        assert!(local_door_enabled(&explicit_true));
+
+        // Explicit false
+        let explicit_false = read(Some(config_with_endpoint(json!({"local_door": false}))));
+        assert_eq!(local_door_config(&explicit_false), LocalDoorConfig::Off);
+        assert!(!local_door_enabled(&explicit_false));
+
+        // Invalid values
+        for invalid_val in [
+            json!(null),
+            json!(1),
+            json!("true"),
+            json!("on"),
+            json!([]),
+            json!({}),
+        ] {
+            let invalid_read = read(Some(config_with_endpoint(
+                json!({"local_door": invalid_val}),
+            )));
+            assert_eq!(local_door_config(&invalid_read), LocalDoorConfig::Invalid);
+            assert!(!local_door_enabled(&invalid_read));
+        }
+
+        // Non-object mcp_endpoint
+        let non_object = read(Some(config_with_endpoint(json!(false))));
+        assert_eq!(local_door_config(&non_object), LocalDoorConfig::Invalid);
+        assert!(!local_door_enabled(&non_object));
     }
 }

@@ -162,6 +162,7 @@ pub mod envelope;
 pub mod gate;
 pub mod identity;
 pub mod listener;
+pub mod loopback_guard;
 pub mod owner_read;
 pub mod refusal;
 pub mod serve;

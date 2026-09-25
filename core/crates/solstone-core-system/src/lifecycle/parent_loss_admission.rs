@@ -394,6 +394,7 @@ pub fn service_name(service: HostedServiceKind) -> &'static str {
         HostedServiceKind::Cortex => "cortex",
         HostedServiceKind::Spl => "spl",
         HostedServiceKind::Mcp => "mcp",
+        HostedServiceKind::McpLocalDoor => "mcp_local_door",
     }
 }
 

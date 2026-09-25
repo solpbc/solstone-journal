@@ -72,6 +72,7 @@ pub enum HostedServiceKind {
     Cortex,
     Spl,
     Mcp,
+    McpLocalDoor,
 }
 
 #[cfg(unix)]

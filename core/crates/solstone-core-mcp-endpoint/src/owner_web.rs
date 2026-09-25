@@ -84,7 +84,7 @@ async fn state(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     }
 }
 
-fn state_value(root: &std::path::Path) -> Result<Value, String> {
+pub(crate) fn state_value(root: &std::path::Path) -> Result<Value, String> {
     let config = read_journal_config(root).map_err(|error| error.to_string())?;
     let enabled = matches!(
         mcp_endpoint_capability(&config),
@@ -115,6 +115,7 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
             "kind": "bearer", "id": token.id, "key": key, "name": token.label,
             "auth_method": "bearer token", "created_at": token.created_at,
             "permission": by_key.get(&key),
+            "door": Value::Null,
             "requests_this_week": activity.map_or(0, |(count, _)| *count),
             "last_request_at": activity.and_then(|(_, last)| *last),
             "activity_complete": activity_complete,
@@ -123,12 +124,20 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
     for grant in grants {
         let key = format!("oauth:{}", grant.id);
         let activity = activity_by_connection.get(&key);
+        let door = match grant.resource.as_deref() {
+            Some(solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE) => {
+                Value::String("local".to_owned())
+            }
+            None => Value::String("relay".to_owned()),
+            _ => Value::Null,
+        };
         connections.push(json!({
             "kind": "oauth", "id": grant.id, "key": key,
             "name": grant.client_name.as_deref().unwrap_or(&grant.client_id),
             "client_id": grant.client_id, "auth_method": "OAuth",
             "created_at": grant.created_at, "access_expires_at": grant.access_expires_at,
             "permission": by_key.get(&key),
+            "door": door,
             "requests_this_week": activity.map_or(0, |(count, _)| *count),
             "last_request_at": activity.and_then(|(_, last)| *last),
             "activity_complete": activity_complete,
@@ -181,9 +190,47 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
             .as_ref()
             .map_or("turning_on", |state| state.status.as_str())
     };
+    let local_door_enabled_flag = solstone_core_journal_config::local_door_enabled(&config);
+    let (listening, reason) = match crate::local_door::read_local_door_state(root) {
+        Some(state) => {
+            let now = Utc::now();
+            let age = now.signed_duration_since(state.observed_at);
+            #[cfg(test)]
+            let window_valid = if let Some(custom) = *TEST_READER_WINDOW.lock().unwrap() {
+                age >= custom.0 && age <= custom.1
+            } else {
+                age >= Duration::seconds(-5) && age <= Duration::seconds(35)
+            };
+            #[cfg(not(test))]
+            let window_valid = age >= Duration::seconds(-5) && age <= Duration::seconds(35);
+
+            if window_valid {
+                if state.listening {
+                    (true, None)
+                } else {
+                    (
+                        false,
+                        state.reason.or_else(|| Some("not_running".to_string())),
+                    )
+                }
+            } else {
+                (false, Some("not_running".to_string()))
+            }
+        }
+        None => (false, Some("not_running".to_string())),
+    };
+    let mut local_door = json!({
+        "address": solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE,
+        "enabled": local_door_enabled_flag,
+        "listening": listening,
+    });
+    if let Some(reason) = reason {
+        local_door["reason"] = Value::String(reason);
+    }
     let mut response = json!({
         "enabled": enabled,
         "status": status,
+        "local_door": local_door,
         "owner_state": owner_state,
         "certificate": certificate,
         "connections": connections,
@@ -195,6 +242,14 @@ fn state_value(root: &std::path::Path) -> Result<Value, String> {
     }
     Ok(response)
 }
+
+#[cfg(test)]
+pub(crate) static TEST_READER_WINDOW: std::sync::Mutex<Option<(Duration, Duration)>> =
+    std::sync::Mutex::new(None);
+#[cfg(test)]
+pub(crate) static TEST_PUT_POLL_BOUNDS: std::sync::Mutex<
+    Option<(std::time::Duration, std::time::Duration)>,
+> = std::sync::Mutex::new(None);
 
 fn portal_origin() -> String {
     std::env::var("SERVICES_PORTAL_URL")
@@ -277,7 +332,70 @@ async fn set_local_door(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
-    write_endpoint_switch(&journal, "local_door", body.enabled)
+    let start_utc = Utc::now();
+    let result = mutate_journal_config(&journal, LockOptions::default(), |config| {
+        let endpoint = config
+            .entry("mcp_endpoint".to_owned())
+            .or_insert_with(|| json!({}));
+        let endpoint_obj = if let Some(obj) = endpoint.as_object_mut() {
+            obj
+        } else {
+            *endpoint = json!({});
+            endpoint.as_object_mut().unwrap()
+        };
+        let changed = endpoint_obj.get("local_door") != Some(&Value::Bool(body.enabled));
+        endpoint_obj.insert("local_door".to_owned(), Value::Bool(body.enabled));
+        JournalConfigMutation {
+            changed,
+            value: Ok::<(), &'static str>(()),
+        }
+    });
+
+    match result {
+        Ok(transaction) => match transaction.value {
+            Ok(()) => {
+                if !transaction.changed {
+                    return Json(json!({"enabled": body.enabled, "changed": false}))
+                        .into_response();
+                }
+                #[cfg(test)]
+                let (bound, poll_interval) = TEST_PUT_POLL_BOUNDS.lock().unwrap().unwrap_or((
+                    std::time::Duration::from_secs(3),
+                    std::time::Duration::from_millis(50),
+                ));
+                #[cfg(not(test))]
+                let (bound, poll_interval) = (
+                    std::time::Duration::from_secs(3),
+                    std::time::Duration::from_millis(50),
+                );
+
+                let deadline = tokio::time::Instant::now() + bound;
+                while tokio::time::Instant::now() < deadline {
+                    if let Some(state) = crate::local_door::read_local_door_state(&journal) {
+                        if !body.enabled {
+                            if !state.listening && state.reason.as_deref() == Some("disabled") {
+                                break;
+                            }
+                        } else if state.observed_at >= start_utc {
+                            let reason = state.reason.as_deref();
+                            if reason != Some("disabled") && reason != Some("config_invalid") {
+                                break;
+                            }
+                        }
+                    }
+                    tokio::time::sleep(poll_interval).await;
+                }
+                Json(json!({"enabled": body.enabled, "changed": transaction.changed}))
+                    .into_response()
+            }
+            Err(detail) => refusal("agents_config_invalid", detail, StatusCode::CONFLICT),
+        },
+        Err(error) => refusal(
+            "agents_config_write_failed",
+            error,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
 }
 
 fn write_endpoint_switch(journal: &std::path::Path, key: &str, enabled: bool) -> Response {
@@ -737,5 +855,121 @@ mod tests {
             .unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(body["enabled"], true);
+    }
+
+    #[tokio::test]
+    async fn state_projects_local_door_posture_and_connection_door_origin() {
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+
+        // 1. Unset config -> default is on, but no local-door-state.json -> not_running
+        let value = state_value(journal_root).unwrap();
+        assert_eq!(
+            value["local_door"]["address"],
+            solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE
+        );
+        assert_eq!(value["local_door"]["enabled"], true);
+        assert_eq!(value["local_door"]["listening"], false);
+        assert_eq!(value["local_door"]["reason"], "not_running");
+
+        // 2. Explicitly disabled config -> disabled
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"local_door":false}}"#,
+        )
+        .unwrap();
+        crate::local_door::write_local_door_state(journal_root, false, Some("disabled"));
+        let value = state_value(journal_root).unwrap();
+        assert_eq!(value["local_door"]["enabled"], false);
+        assert_eq!(value["local_door"]["listening"], false);
+        assert_eq!(value["local_door"]["reason"], "disabled");
+
+        // 3. Write fresh local door state
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"local_door":true}}"#,
+        )
+        .unwrap();
+        crate::local_door::write_local_door_state(journal_root, true, None);
+        let value = state_value(journal_root).unwrap();
+        assert_eq!(value["local_door"]["enabled"], true);
+        assert_eq!(value["local_door"]["listening"], true);
+        assert!(value["local_door"]["reason"].is_null());
+    }
+
+    #[tokio::test]
+    async fn reader_window_and_reason_passthrough_and_bound_canonical() {
+        use crate::oauth::OAuthRuntime;
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+
+        let runtime = OAuthRuntime::new_bound(
+            journal_root,
+            solstone_core_journal_config::MCP_LOCAL_DOOR_ORIGIN.to_string(),
+        );
+        let binding = runtime.binding();
+        assert_eq!(
+            binding.canonical(),
+            solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE
+        );
+
+        let value = state_value(journal_root).unwrap();
+        assert_eq!(value["local_door"]["address"], binding.canonical());
+        assert_eq!(value["local_door"]["listening"], false);
+        assert_eq!(value["local_door"]["reason"], "not_running");
+
+        // Helper to write arbitrary LocalDoorState
+        let write_custom_state =
+            |listening: bool, observed_at: chrono::DateTime<Utc>, reason: Option<&str>| {
+                let state = crate::local_door::LocalDoorState {
+                    listening,
+                    observed_at,
+                    reason: reason.map(str::to_owned),
+                };
+                let path = journal_root.join(crate::local_door::LOCAL_DOOR_STATE_PATH);
+                std::fs::write(path, serde_json::to_vec_pretty(&state).unwrap()).unwrap();
+            };
+
+        // 36s old -> not_running
+        write_custom_state(true, Utc::now() - Duration::seconds(36), None);
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["local_door"]["listening"], false);
+        assert_eq!(val["local_door"]["reason"], "not_running");
+
+        // 6s future -> not_running
+        write_custom_state(true, Utc::now() + Duration::seconds(6), None);
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["local_door"]["listening"], false);
+        assert_eq!(val["local_door"]["reason"], "not_running");
+
+        // 34s old -> valid record
+        write_custom_state(true, Utc::now() - Duration::seconds(34), None);
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["local_door"]["listening"], true);
+        assert!(val["local_door"]["reason"].is_null());
+
+        // 4s future -> valid record
+        write_custom_state(true, Utc::now() + Duration::seconds(4), None);
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["local_door"]["listening"], true);
+        assert!(val["local_door"]["reason"].is_null());
+
+        // Test every reason pass-through
+        for reason in [
+            "disabled",
+            "port_in_use",
+            "config_invalid",
+            "config_unreadable",
+            "not_running",
+        ] {
+            write_custom_state(false, Utc::now(), Some(reason));
+            let val = state_value(journal_root).unwrap();
+            assert_eq!(val["local_door"]["listening"], false);
+            assert_eq!(val["local_door"]["reason"], reason);
+        }
     }
 }

@@ -348,17 +348,20 @@ pub(crate) enum AppService {
     Spl,
     #[cfg_attr(not(all(unix, feature = "journal-mcp-endpoint")), allow(dead_code))]
     Mcp,
+    #[cfg_attr(not(all(unix, feature = "journal-mcp-endpoint")), allow(dead_code))]
+    McpLocalDoor,
 }
 
 impl AppService {
     /// Every hosted app service the supervisor can own; the public stop
     /// deadline is derived from this count.
-    pub(crate) const ALL: [Self; 5] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::Convey,
         Self::Sense,
         Self::Cortex,
         Self::Spl,
         Self::Mcp,
+        Self::McpLocalDoor,
     ];
 
     pub(crate) const fn as_str(self) -> &'static str {
@@ -368,6 +371,7 @@ impl AppService {
             Self::Cortex => "cortex",
             Self::Spl => "spl",
             Self::Mcp => "mcp",
+            Self::McpLocalDoor => "mcp_local_door",
         }
     }
 
@@ -378,6 +382,7 @@ impl AppService {
             Self::Cortex => HostedServiceKind::Cortex,
             Self::Spl => HostedServiceKind::Spl,
             Self::Mcp => HostedServiceKind::Mcp,
+            Self::McpLocalDoor => HostedServiceKind::McpLocalDoor,
         }
     }
 
@@ -393,6 +398,7 @@ impl AppService {
             Self::Cortex => argv.push("cortex".to_owned()),
             Self::Spl => argv.push("spl".to_owned()),
             Self::Mcp => argv.extend(["mcp".to_owned(), "service".to_owned()]),
+            Self::McpLocalDoor => argv.extend(["mcp".to_owned(), "local-door".to_owned()]),
         }
         argv
     }
@@ -1193,6 +1199,7 @@ fn app_service_enablement(options: &SupervisorOptions) -> Vec<(AppService, bool)
     let services = {
         let mut services = services;
         services.push((AppService::Mcp, true));
+        services.push((AppService::McpLocalDoor, true));
         services
     };
     services
@@ -1437,6 +1444,12 @@ async fn start_app_stack(
             .any(|app| app.service == AppService::Mcp)
         {
             services.push(AppService::Mcp);
+        }
+        if app_processes
+            .iter()
+            .any(|app| app.service == AppService::McpLocalDoor)
+        {
+            services.push(AppService::McpLocalDoor);
         }
         services
     };
@@ -2341,6 +2354,22 @@ mod tests {
         assert_eq!(
             shutdown_regime_for(&SupervisorStopReason::Sync(SyncTickOutcome::Healthy)),
             ShutdownRegime::Standard
+        );
+    }
+
+    #[test]
+    fn mcp_local_door_is_hosted_with_the_local_door_argv() {
+        assert!(super::AppService::ALL.contains(&super::AppService::McpLocalDoor));
+        assert_eq!(super::AppService::McpLocalDoor.as_str(), "mcp_local_door");
+        assert_eq!(
+            super::AppService::McpLocalDoor.hosted_service_kind(),
+            solstone_core_system::lifecycle::HostedServiceKind::McpLocalDoor
+        );
+        let argv =
+            super::AppService::McpLocalDoor.production_argv(std::path::Path::new("journal"), 5015);
+        assert_eq!(
+            &argv[1..],
+            ["mcp".to_owned(), "local-door".to_owned()].as_slice()
         );
     }
 

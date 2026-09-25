@@ -644,18 +644,18 @@ pub const SPL_HELP: &str = concat!(
 );
 
 /// The parse-error usage for `journal mcp`.
-pub const MCP_USAGE: &str =
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,activity,probe} ...\n";
+pub const MCP_USAGE: &str = "usage: journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...\n";
 
 /// `journal mcp --help`.
 pub const MCP_HELP: &str = concat!(
-    "usage: journal mcp [-h] {service,status,token,pairing,oauth,permission,activity,probe} ...\n",
+    "usage: journal mcp [-h] {service,local-door,status,token,pairing,oauth,permission,activity,probe} ...\n",
     "\n",
     "options:\n",
     "  -h, --help            show this help message and exit\n",
     "\n",
     "subcommands:\n",
     "  service               Run the MCP endpoint\n",
+    "  local-door            Run the direct local door\n",
     "  status                Show MCP endpoint status\n",
     "  token                 Manage MCP bearer tokens\n",
     "  pairing               Manage the agent pairing code\n",
@@ -1232,6 +1232,7 @@ pub enum SplCommand {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpCommand {
     Service,
+    LocalDoor,
     Status,
     Token(McpTokenCommand),
     Pairing(McpPairingCommand),
@@ -3779,12 +3780,13 @@ fn parse_spl(args: &[OsString]) -> Result<SplCommand, SplUsageError> {
 fn parse_mcp(args: &[OsString]) -> Result<McpCommand, McpUsageError> {
     let [command, rest @ ..] = args else {
         return Err(McpUsageError(
-            "the following arguments are required: service, status, token, pairing, oauth, permission, activity, probe"
+            "the following arguments are required: service, local-door, status, token, pairing, oauth, permission, activity, probe"
                 .to_owned(),
         ));
     };
     match command.to_str() {
         Some("service") if rest.is_empty() => Ok(McpCommand::Service),
+        Some("local-door") if rest.is_empty() => Ok(McpCommand::LocalDoor),
         Some("status") if rest.is_empty() => Ok(McpCommand::Status),
         Some("token") => parse_mcp_token(rest).map(McpCommand::Token),
         Some("pairing") => parse_mcp_pairing(rest).map(McpCommand::Pairing),
@@ -9098,6 +9100,10 @@ mod tests {
             Ok(Command::Mcp(McpCommand::Service))
         );
         assert_eq!(
+            evaluate_args(&args(&["mcp", "local-door"])),
+            Ok(Command::Mcp(McpCommand::LocalDoor))
+        );
+        assert_eq!(
             evaluate_args(&args(&["mcp", "status"])),
             Ok(Command::Mcp(McpCommand::Status))
         );
@@ -9222,7 +9228,7 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["mcp"])),
             Ok(Command::McpUsage(McpUsageError(
-                "the following arguments are required: service, status, token, pairing, oauth, permission, activity, probe"
+                "the following arguments are required: service, local-door, status, token, pairing, oauth, permission, activity, probe"
                     .to_owned()
             )))
         );

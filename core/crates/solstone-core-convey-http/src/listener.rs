@@ -43,6 +43,14 @@ impl LoopbackListeners {
             result = self.ipv6.accept() => result.map(|(stream, _)| (stream, AccessBasis::Localhost)),
         }
     }
+
+    /// Accept a loopback connection and return the stream and peer socket address.
+    pub async fn accept_peer(&self) -> io::Result<(TcpStream, SocketAddr)> {
+        tokio::select! {
+            result = self.ipv4.accept() => result,
+            result = self.ipv6.accept() => result,
+        }
+    }
 }
 
 #[cfg(test)]

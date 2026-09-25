@@ -226,6 +226,7 @@ const fn kind_name(kind: HostedServiceKind) -> &'static str {
         HostedServiceKind::Cortex => "cortex",
         HostedServiceKind::Spl => "spl",
         HostedServiceKind::Mcp => "mcp",
+        HostedServiceKind::McpLocalDoor => "mcp_local_door",
     }
 }
 
@@ -5165,6 +5166,10 @@ fn run_mcp_process(
             #[cfg(windows)]
             admitted,
         ),
+        McpCommand::LocalDoor => run_mcp_local_door(
+            #[cfg(windows)]
+            admitted,
+        ),
         McpCommand::Status => run_mcp_status(),
         McpCommand::Token(command) => run_mcp_token(command),
         McpCommand::Pairing(command) => run_mcp_pairing(command),
@@ -5214,6 +5219,44 @@ fn run_mcp_service(
 }
 
 #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+fn run_mcp_local_door(
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
+    let journal = match resolve_process_journal_path() {
+        Ok(journal) => journal,
+        Err(error) => {
+            eprint_journal_path_error(error);
+            return ExitCode::from(EXIT_TEMPFAIL);
+        }
+    };
+    let service_journal = journal.path.clone();
+    run_hosted_service(
+        &journal.path,
+        HostedServiceKind::McpLocalDoor,
+        #[cfg(windows)]
+        admitted,
+        move |parent| match solstone_core::run_local_door_with_hosted_parent(
+            service_journal,
+            parent,
+        ) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("mcp local-door failed: {}", error.class());
+                ExitCode::from(EXIT_TEMPFAIL)
+            }
+        },
+    )
+}
+
+#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+fn run_mcp_local_door(
+    #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
+) -> ExitCode {
+    eprintln!("journal mcp local-door is not compiled into this build");
+    ExitCode::from(EXIT_UNAVAILABLE)
+}
+
+#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
 fn run_mcp_status() -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5224,8 +5267,9 @@ fn run_mcp_status() -> ExitCode {
     };
 
     let mut exit = ExitCode::SUCCESS;
-    let capability = match read_journal_config(&journal.path) {
-        Ok(read) => match mcp_endpoint_capability(&read) {
+    let config_read = read_journal_config(&journal.path);
+    let capability = match &config_read {
+        Ok(read) => match mcp_endpoint_capability(read) {
             Ok(McpEndpointCapability::Enabled) => "enabled".to_owned(),
             Ok(McpEndpointCapability::Disabled) => "disabled".to_owned(),
             Err(error) => {
@@ -5241,6 +5285,26 @@ fn run_mcp_status() -> ExitCode {
         }
     };
 
+    let local_door_status = match &config_read {
+        Ok(read) => {
+            if solstone_core_journal_config::local_door_enabled(read) {
+                format!(
+                    "enabled at {}",
+                    solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE
+                )
+            } else {
+                format!(
+                    "not enabled at {}",
+                    solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE
+                )
+            }
+        }
+        Err(_) => format!(
+            "not enabled at {}",
+            solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE
+        ),
+    };
+
     let token_count = match TokenStore::open(&journal.path).list() {
         Ok(tokens) => tokens.len().to_string(),
         Err(error) => {
@@ -5253,6 +5317,7 @@ fn run_mcp_status() -> ExitCode {
     println!("MCP capability/config status only; this does not report service liveness.");
     println!("capability compiled in: true");
     println!("capability: {capability}");
+    println!("local door: {local_door_status}");
     println!("token count: {token_count}");
     exit
 }

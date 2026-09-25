@@ -419,6 +419,14 @@ impl ParentLossLedger {
         // prove anything. It is taken because an unbootable journal is the worse
         // failure, and because the supervisor's own singleton guards sit above
         // this ledger.
+        //
+        // A hosted-service name in `enabled` that this binary does not know
+        // makes the active pointer unreadable, so it is set aside like any
+        // other damaged pointer. A production start, which closes abandoned
+        // generations, leaves a completed, expected-retired, or cancelled
+        // generation as it is, and seals an open generation unresolved because
+        // its supervisor and coordinator had exited. A start without that
+        // closing authority does not seal an open generation it cannot read.
         let pointer =
             match solstone_core_journal_io::durability::read_json_durable::<ActiveGeneration>(
                 solstone_core_journal_io::durability::ArtifactId::ParentLossActive,
@@ -1160,6 +1168,7 @@ fn service_filename(service: HostedServiceKind) -> &'static str {
         HostedServiceKind::Cortex => "cortex",
         HostedServiceKind::Spl => "spl",
         HostedServiceKind::Mcp => "mcp",
+        HostedServiceKind::McpLocalDoor => "mcp_local_door",
     }
 }
 

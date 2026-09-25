@@ -48,6 +48,8 @@ mod http1;
 #[cfg(unix)]
 mod jsonrpc;
 #[cfg(unix)]
+pub mod local_door;
+#[cfg(unix)]
 mod oauth;
 #[cfg(unix)]
 mod owner_state;
@@ -93,6 +95,11 @@ pub use bridge_carrier::McpBridgeCarrierError;
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
 pub use dispatch::{McpProbeError, run_mcp_probe};
+#[cfg(unix)]
+pub use local_door::{
+    LocalDoorRun, LocalDoorState, read_local_door_state, run_local_door_async,
+    run_local_door_with_hosted_parent, write_local_door_state,
+};
 #[cfg(unix)]
 pub use oauth::store::{
     CreatedPairingCode, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,

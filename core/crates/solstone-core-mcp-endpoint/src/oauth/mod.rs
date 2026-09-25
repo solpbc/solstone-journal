@@ -109,8 +109,6 @@ impl OAuthRuntime {
     }
 
     /// Issues grants that verify only at `{origin}/mcp`.
-    #[cfg(test)]
-    #[cfg_attr(feature = "full-tests", allow(dead_code))]
     pub(crate) fn new_bound(journal_root: &Path, resource_origin: String) -> Self {
         let mut runtime = Self::new(journal_root, resource_origin);
         runtime.binds_grants = true;

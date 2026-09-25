@@ -111,6 +111,7 @@ pub struct OAuthGrantSummary {
     pub client_name: Option<String>,
     pub created_at: DateTime<Utc>,
     pub access_expires_at: DateTime<Utc>,
+    pub resource: Option<String>,
 }
 
 /// Failure while operating the OAuth ledger.
@@ -1011,6 +1012,7 @@ impl OAuthStore {
                 client_name,
                 created_at: grant.created_at,
                 access_expires_at: grant.access_expires_at,
+                resource: grant.resource.clone(),
             });
         }
         Ok(summaries)

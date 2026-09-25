@@ -21,10 +21,12 @@ pub use direct_port::{
     direct_door_port_from_config, read_direct_door_port,
 };
 pub use mcp_endpoint::{
-    MCP_ENDPOINT_LOOPBACK_PORT, McpEndpointCapability, McpEndpointCapabilityError,
+    LocalDoorConfig, MCP_ENDPOINT_LOOPBACK_PORT, MCP_LOCAL_DOOR_ORIGIN, MCP_LOCAL_DOOR_PORT,
+    MCP_LOCAL_DOOR_RESOURCE, McpEndpointCapability, McpEndpointCapabilityError,
     McpEndpointCertificateEnvironment, McpEndpointCertificateEnvironmentError,
-    McpEndpointForceStagingRenewalError, mcp_endpoint_capability,
-    mcp_endpoint_certificate_environment, mcp_endpoint_force_staging_renewal,
+    McpEndpointForceStagingRenewalError, local_door_config, local_door_enabled,
+    mcp_endpoint_capability, mcp_endpoint_certificate_environment,
+    mcp_endpoint_force_staging_renewal,
 };
 pub use name::is_path_shaped_name;
 pub use notification_labels::{

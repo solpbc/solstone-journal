@@ -122,7 +122,7 @@ async fn handle_connection(
     journal_root: Arc<PathBuf>,
     oauth: Arc<OAuthRuntime>,
     sessions: Arc<SessionTable>,
-    mut shutdown: watch::Receiver<bool>,
+    shutdown: watch::Receiver<bool>,
 ) -> Result<(), ConnectionError> {
     let preface = timeout(PROXY_PREFACE_DEADLINE, parse_preface(&mut socket))
         .await
@@ -139,8 +139,29 @@ async fn handle_connection(
     .map_err(|_| ConnectionError::TlsTimeout)?
     .map_err(|_| ConnectionError::Tls)?;
 
+    serve_stream(
+        tls_stream,
+        journal_root,
+        oauth,
+        sessions,
+        source,
+        shutdown,
+        false,
+    )
+    .await
+}
+
+pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
+    stream: S,
+    journal_root: Arc<PathBuf>,
+    oauth: Arc<OAuthRuntime>,
+    sessions: Arc<SessionTable>,
+    source: IpAddr,
+    mut shutdown: watch::Receiver<bool>,
+    enforce_loopback_guard: bool,
+) -> Result<(), ConnectionError> {
     let token_store = TokenStore::open(journal_root.as_path());
-    let mut http = Http1Connection::new(tls_stream);
+    let mut http = Http1Connection::new(stream);
     let mut waiting_for_next_request = false;
     loop {
         let request = tokio::select! {
@@ -158,6 +179,59 @@ async fn handle_connection(
                 return Ok(());
             }
         };
+        if enforce_loopback_guard {
+            let method = match request.method {
+                HttpMethod::Get => axum::http::Method::GET,
+                HttpMethod::Post => axum::http::Method::POST,
+                HttpMethod::Delete => axum::http::Method::DELETE,
+            };
+            let Ok(uri) = request.target.parse::<axum::http::Uri>() else {
+                let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                let _ = http.write_response(&response).await;
+                return Ok(());
+            };
+            let mut header_map = axum::http::HeaderMap::new();
+            let mut headers_ok = true;
+            for (k, v) in request.headers() {
+                match (
+                    axum::http::HeaderName::from_bytes(k.as_bytes()),
+                    v.parse::<axum::http::HeaderValue>(),
+                ) {
+                    (Ok(name), Ok(value)) => {
+                        header_map.append(name, value);
+                    }
+                    _ => {
+                        headers_ok = false;
+                        break;
+                    }
+                }
+            }
+            if !headers_ok {
+                let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                let _ = http.write_response(&response).await;
+                return Ok(());
+            }
+            if let Some(refusal) =
+                solstone_core_convey_http::loopback_guard::evaluate_loopback_request(
+                    &method,
+                    &uri,
+                    &header_map,
+                )
+            {
+                let reason_code = match refusal {
+                    solstone_core_convey_http::loopback_guard::LoopbackRefusal::HostNotAllowed => {
+                        "host_not_allowed"
+                    }
+                    solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossSite
+                    | solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossOrigin => {
+                        "cross_origin_blocked"
+                    }
+                };
+                let response = HttpResponse::text(403, "Forbidden", reason_code);
+                let _ = http.write_response(&response).await;
+                return Ok(());
+            }
+        }
         let response = process_request(
             &request,
             &token_store,
@@ -179,7 +253,7 @@ async fn handle_connection(
 }
 
 #[derive(Debug)]
-enum ConnectionError {
+pub(crate) enum ConnectionError {
     PrefaceTimeout,
     Preface,
     TlsTimeout,
@@ -290,7 +364,7 @@ fn authenticate(
         ));
     }
     match token_store.verify(token) {
-        // Static bearer keys are minted by the owner and accepted by every listener.
+        // the pairing code is journal-wide. A static bearer is accepted by every listener, and the activity record does not say which door served it.
         Ok(verified) => Ok(verified),
         Err(TokenStoreError::InvalidToken) => match oauth_store.verify_access_token(token, binding)
         {
