@@ -427,7 +427,7 @@ fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
     // That restriction was a historical artifact and adds no real security
     // value: a pair link's trust anchor is the embedded CA-fingerprint pin,
     // checked at TLS handshake time, not the network locality of the address
-    // it dials. Removed 2026-09-18 (founder + CSO ruling, `req_xhwmvxvn`).
+    // it dials. Removed 2026-09-18 by operator approval.
     match entry.address {
         // 198.18.0.0/15 on an overlay is the fake-IP block of proxy TUN modes;
         // no device can reach it.

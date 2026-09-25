@@ -1531,8 +1531,8 @@ mod tests {
     #[test]
     fn snapshot_mint_keeps_every_ipv4_candidate_including_public_and_drops_only_ipv6() {
         // Public IPv4 addresses are as valid a direct-pairing candidate as a
-        // private one — no LAN-only allow-list (removed 2026-09-18, founder
-        // + CSO ruling, `req_xhwmvxvn`). The only structural exclusion left
+        // private one — no LAN-only allow-list (removed 2026-09-18 by
+        // operator approval). The only structural exclusion left
         // is type: a direct pair link is IPv4-only, so the ULA (IPv6)
         // endpoint is still dropped for that reason alone.
         let temporary = TempDir::new();
