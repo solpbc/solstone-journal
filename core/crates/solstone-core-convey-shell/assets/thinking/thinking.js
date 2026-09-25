@@ -784,16 +784,24 @@
   }
 
   async function api(path, options = {}) {
-    const response = await fetch(path, {
-      ...options,
-      headers: {
-        ...(options.body ? {'Content-Type': 'application/json'} : {}),
-        ...(options.headers || {}),
-      },
-    });
-    const payload = await response.json();
-    if (!response.ok || payload.error) {
-      throw new Error(payload.detail || payload.error || 'request failed');
+    let payload;
+    try {
+      payload = await window.apiJson(path, {
+        ...options,
+        noAuthRedirect: true,
+        headers: {
+          ...(options.body ? {'Content-Type': 'application/json'} : {}),
+          ...(options.headers || {}),
+        },
+      });
+    } catch (err) {
+      if (err?.payload?.detail || err?.payload?.error) {
+        throw new Error(err.payload.detail || err.payload.error);
+      }
+      throw err;
+    }
+    if (payload?.error) {
+      throw new Error(payload.detail || payload.error);
     }
     return payload;
   }

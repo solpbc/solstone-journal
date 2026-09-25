@@ -188,6 +188,15 @@
     el.insertAdjacentHTML('afterend', html);
   }
 
+  function isSetupUrl(value) {
+    try {
+      const path = new URL(value, window.location.href).pathname;
+      return path === '/init' || path.startsWith('/init/');
+    } catch (_) {
+      return false;
+    }
+  }
+
   async function apiJson(url, opts) {
     const { fetchOptions, noAuthRedirect } = normalizeRequestOptions(opts);
     const response = await fetch(url, fetchOptions);
@@ -205,6 +214,23 @@
         timestamp
       });
       pushApiErrorToConsole(apiError, url, fetchOptions);
+      throw apiError;
+    }
+
+    // The session gate answers every app route with a redirect to /init until
+    // setup finishes; fetch follows it and gets the setup page, not JSON.
+    if (response.redirected && isSetupUrl(response.url)) {
+      const apiError = new ApiError({
+        status: response.status,
+        statusText: response.statusText,
+        serverMessage: window.CONVEY_COPY?.CONSOLE_SUMMARY_REQUEST_FAILED || "couldn't finish that request.",
+        url: url,
+        cause: 'setup_required',
+        correlationId: response.headers.get('X-Solstone-Request-Id') || '',
+        timestamp: Date.now()
+      });
+      pushApiErrorToConsole(apiError, url, fetchOptions);
+      window.location.href = response.url;
       throw apiError;
     }
 

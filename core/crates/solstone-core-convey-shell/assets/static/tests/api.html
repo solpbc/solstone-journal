@@ -30,10 +30,12 @@
     }
   }
 
-  function response({ status = 200, statusText = 'OK', body = '', headers = null }) {
+  function response({ status = 200, statusText = 'OK', body = '', headers = null, redirected = false, url = '' }) {
     return {
       status,
       statusText,
+      redirected,
+      url,
       ok: status >= 200 && status < 300,
       text: async () => body,
       headers: headers || { get: () => null }
@@ -63,6 +65,11 @@
     await withFetch(async () => response({ body: '{"ok":true}' }), async () => {
       const payload = await window.apiJson('/ok');
       assert('2xx json', payload.ok === true);
+    });
+
+    await withFetch(async () => response({ body: '{"ok":true}', redirected: true, url: '/app/thinking/' }), async () => {
+      const payload = await window.apiJson('/app/thinking');
+      assert('redirect outside setup parses normally', payload.ok === true);
     });
 
     await withFetch(async () => response({ body: '' }), async () => {
