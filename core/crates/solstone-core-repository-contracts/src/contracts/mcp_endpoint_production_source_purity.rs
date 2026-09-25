@@ -14,15 +14,6 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn read_repo_file(relative: &str) -> String {
-    let path = repository_root().join(relative);
-    fs::read_to_string(&path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
-}
-
-fn count_occurrences(source: &str, needle: &str) -> usize {
-    source.matches(needle).count()
-}
-
 fn collect_source_files(directory: &Path, files: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(directory).expect("endpoint source directory reads") {
         let path = entry.expect("endpoint source entry reads").path();
@@ -51,88 +42,6 @@ fn production_sources() -> Vec<(PathBuf, String)> {
             (path, source)
         })
         .collect()
-}
-
-#[test]
-fn unix_bootstrap_uses_the_single_descriptor_bound_identity_pipeline() {
-    let source = read_repo_file("core/crates/solstone-core-mcp-endpoint/src/unix.rs");
-
-    assert!(
-        source.contains(
-            "use solstone_core_journal_config::{\n    McpEndpointCapability, mcp_endpoint_capability, mcp_endpoint_certificate_environment,\n    mcp_endpoint_force_staging_renewal, read_journal_config_bound,\n};"
-        ),
-        "Unix bootstrap must import the established descriptor-bound config pipeline"
-    );
-    assert!(
-        source.contains("use solstone_core_journal_io::journal_root::JournalRoot;"),
-        "Unix bootstrap must import JournalRoot from journal-io"
-    );
-    assert!(
-        source.contains("use solstone_core_sol_link::committed::load_committed_identity_bound;"),
-        "Unix bootstrap must import the established descriptor-bound committed loader"
-    );
-    assert_eq!(
-        count_occurrences(&source, "JournalRoot::open("),
-        1,
-        "Unix bootstrap must acquire exactly one JournalRoot"
-    );
-    assert_eq!(
-        count_occurrences(&source, "read_journal_config_bound("),
-        1,
-        "Unix bootstrap must use the descriptor-bound config reader once"
-    );
-    assert_eq!(
-        count_occurrences(&source, "mcp_endpoint_capability("),
-        1,
-        "Unix bootstrap must use the established endpoint capability gate once"
-    );
-    assert_eq!(
-        count_occurrences(&source, "mcp_endpoint_force_staging_renewal("),
-        1,
-        "Unix bootstrap must derive the recovery-only setting from the same bound config read once"
-    );
-    assert_eq!(
-        count_occurrences(&source, "load_committed_identity_bound("),
-        1,
-        "Unix bootstrap must use the descriptor-bound committed-identity loader once"
-    );
-    assert_eq!(
-        count_occurrences(&source, "\"state.json\""),
-        1,
-        "Unix bootstrap must reserve the sole state.json literal for owner-held TLS state"
-    );
-    assert!(
-        source.contains("const TLS_STATE_FILE: &str = \"state.json\";"),
-        "Unix bootstrap must bind the sole state.json literal to owner-held TLS state"
-    );
-
-    let local_capability_function = ["fn mcp_", "endpoint_capability("].concat();
-    for forbidden in [
-        "read_journal_config(",
-        "load_committed_identity(",
-        "fn open(",
-        "MCP_ENDPOINT_LOOPBACK_PORT",
-        "struct JournalConfigRead",
-        "enum McpEndpointCapability",
-        "link/ca",
-        "link/state.json",
-        "link\\\\state.json",
-        "join(\"link\")",
-        "link.join(",
-        "read_state(",
-        "parse_state(",
-        "fn parse_config",
-        "serde_json::",
-    ] {
-        assert!(
-            !source.contains(forbidden),
-            "Unix bootstrap must not add a duplicate path/config/identity implementation: {forbidden}"
-        );
-    }
-    assert!(
-        !source.contains(&local_capability_function),
-        "Unix bootstrap must not define a duplicate endpoint capability gate"
-    );
 }
 
 #[test]

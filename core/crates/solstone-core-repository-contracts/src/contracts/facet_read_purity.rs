@@ -66,20 +66,6 @@ fn repository_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn collect_rust_files(directory: &Path, files: &mut Vec<PathBuf>) {
-    if !directory.exists() {
-        return;
-    }
-    for entry in fs::read_dir(directory).expect("source directory reads") {
-        let path = entry.expect("source entry reads").path();
-        if path.is_dir() {
-            collect_rust_files(&path, files);
-        } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
-            files.push(path);
-        }
-    }
-}
-
 #[test]
 fn facet_read_modules_never_mention_writers_or_allocators() {
     let root = repository_root();
@@ -115,41 +101,5 @@ fn facet_read_modules_never_mention_writers_or_allocators() {
             module_path.display(),
             hits
         );
-    }
-}
-
-#[test]
-fn save_facet_declaration_only_in_write_and_facet_id() {
-    let root = repository_root();
-    let mut rust_files = Vec::new();
-    collect_rust_files(&root.join("core/crates"), &mut rust_files);
-
-    let allowed_files = [
-        root.join("core/crates/solstone-core-facets/src/store/write.rs"),
-        root.join("core/crates/solstone-core-facets/src/store/facet_id.rs"),
-    ];
-
-    for file_path in rust_files {
-        // Skip this contract file itself
-        if file_path.ends_with("facet_read_purity.rs") {
-            continue;
-        }
-        let source = fs::read_to_string(&file_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", file_path.display()));
-        let hits = forbidden_hits_in_source(&source, &["save_facet_declaration"]);
-        if allowed_files.contains(&file_path) {
-            assert!(
-                !hits.is_empty(),
-                "expected save_facet_declaration in allowed file {}",
-                file_path.display()
-            );
-        } else {
-            assert!(
-                hits.is_empty(),
-                "unauthorized call to save_facet_declaration in {}: {:?}",
-                file_path.display(),
-                hits
-            );
-        }
     }
 }

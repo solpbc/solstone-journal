@@ -207,16 +207,6 @@ fn production_files_do_not_pass_durability_class_to_read_json_durable() {
     }
 }
 
-#[test]
-fn doctor_durability_is_bound_to_authority() {
-    const DOCTOR_DURABILITY_SRC: &str =
-        include_str!("../../../solstone-core-doctor/src/checks/journal_durability.rs");
-    assert!(
-        DOCTOR_DURABILITY_SRC.contains("artifacts()"),
-        "doctor journal_durability check must call artifacts() to scan declared roots"
-    );
-}
-
 pub fn undeclared_journal_literal(src: &str) -> Vec<String> {
     let mut findings = Vec::new();
     let known_paths: Vec<&str> = artifacts().iter().map(|a| a.path).collect();

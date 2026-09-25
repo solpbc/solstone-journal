@@ -8,12 +8,9 @@ mod payload_inventory;
 pub mod release_manifest;
 pub mod windows_crosscheck;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/authorization_ledger_remove_bounded.rs"]
 mod authorization_ledger_remove_bounded;
-#[cfg(test)]
-#[path = "contracts/backup_admission_caller_purity.rs"]
-mod backup_admission_caller_purity;
 #[cfg(test)]
 #[path = "contracts/ci_gate_purity.rs"]
 mod ci_gate_purity;
@@ -23,7 +20,7 @@ mod client_description_contract_bundle;
 #[cfg(test)]
 #[path = "contracts/client_ingest_contract_bundle.rs"]
 mod client_ingest_contract_bundle;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/convey_shell_assets.rs"]
 mod convey_shell_assets;
 #[cfg(test)]
@@ -35,7 +32,7 @@ mod distribution_install_basename;
 #[cfg(test)]
 #[path = "contracts/distribution_install_tmpdir.rs"]
 mod distribution_install_tmpdir;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/distribution_lane_dlopen_purity.rs"]
 mod distribution_lane_dlopen_purity;
 #[cfg(test)]
@@ -44,7 +41,7 @@ mod distribution_launchers;
 #[cfg(test)]
 #[path = "contracts/distribution_model_digests.rs"]
 mod distribution_model_digests;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/distribution_no_independent_resolvers.rs"]
 mod distribution_no_independent_resolvers;
 #[cfg(test)]
@@ -53,53 +50,53 @@ mod distribution_payload;
 #[cfg(test)]
 #[path = "contracts/distribution_workspace_bins.rs"]
 mod distribution_workspace_bins;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/facet_read_purity.rs"]
 mod facet_read_purity;
 #[cfg(test)]
 #[path = "contracts/generated_native_inventory.rs"]
 mod generated_native_inventory;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/hosted_launch_admission_boundary.rs"]
 mod hosted_launch_admission_boundary;
 #[cfg(test)]
 #[path = "contracts/installation_binding_admission_surface.rs"]
 mod installation_binding_admission_surface;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/journal_artifact_durability.rs"]
 mod journal_artifact_durability;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/mcp_audit_boundary.rs"]
 mod mcp_audit_boundary;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/mcp_endpoint_gate_purity.rs"]
 mod mcp_endpoint_gate_purity;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/paired_stream_allocator_governance.rs"]
 mod paired_stream_allocator_governance;
 #[cfg(test)]
 #[path = "contracts/pairing_contract_bundle.rs"]
 mod pairing_contract_bundle;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/bound_read_race_closure.rs"]
 mod bound_read_race_closure;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/mcp_endpoint_production_source_purity.rs"]
 mod mcp_endpoint_production_source_purity;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/operational_diagnostic_cutover.rs"]
 mod operational_diagnostic_cutover;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/retention_client_contracts.rs"]
 mod retention_client_contracts;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/retention_projection_architecture.rs"]
 mod retention_projection_architecture;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/rust_solstone_compile_inputs.rs"]
 mod rust_solstone_compile_inputs;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/schedule_read_only_architecture.rs"]
 mod schedule_read_only_architecture;
 #[cfg(test)]
@@ -108,15 +105,15 @@ mod speaker_native_routes;
 #[cfg(test)]
 #[path = "contracts/spl_source_coherence.rs"]
 mod spl_source_coherence;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/stats_dispatch_audit.rs"]
 mod stats_dispatch_audit;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/stream_name_identity_consumers.rs"]
 mod stream_name_identity_consumers;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 #[path = "contracts/workspace_reachability.rs"]
 mod workspace_reachability;

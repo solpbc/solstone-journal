@@ -403,11 +403,12 @@ fn check_between_publish_cut(journal: &Path, candidate_idx: usize) -> bool {
         .canonicalize()
         .unwrap_or_else(|_| journal.to_path_buf());
     let mut guard = BETWEEN_PUBLISH_CUT_ARMED.lock().unwrap();
-    if let Some((ref armed_journal, target_idx)) = *guard {
-        if armed_journal == &key && candidate_idx == target_idx {
-            *guard = None;
-            return true;
-        }
+    if let Some((ref armed_journal, target_idx)) = *guard
+        && armed_journal == &key
+        && candidate_idx == target_idx
+    {
+        *guard = None;
+        return true;
     }
     false
 }

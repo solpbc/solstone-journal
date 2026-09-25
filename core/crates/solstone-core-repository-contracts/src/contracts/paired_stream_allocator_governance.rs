@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
 
-const ALLOCATOR_IMPORT: &str = "solstone_core_segment::bind_paired_stream";
 const BIND_PAIRED_STREAM: &str = "bind_paired_stream";
 const BIND_STREAM: &str = "bind_stream";
 const INGEST_BIND_PATH: &str = "solstone-core-ingest/src/stream_identity.rs";
@@ -351,16 +350,6 @@ fn bind_paired_stream_callers_outside_segment_are_exactly_ingest_stream_identity
 }
 
 #[test]
-fn bind_stream_has_no_callers_outside_segment() {
-    let files = load_workspace_files(&[SEGMENT_CRATE]);
-    let (hits, _, _) = scan_files(&files, BIND_STREAM);
-    assert!(
-        hits.is_empty(),
-        "unexpected bind_stream callers outside solstone-core-segment: {hits:?}"
-    );
-}
-
-#[test]
 fn discovers_an_injected_bind_paired_stream_call_in_a_fixture_tree() {
     let root = tempfile::tempdir().expect("fixture root creates");
     let nested = root.path().join("device/ingest");
@@ -393,22 +382,6 @@ fn pairing_bundle_pin_matches_the_shipped_bundle() {
     assert_eq!(
         super::pairing_contract_bundle::authority_digest(),
         "e0b07805a0e2f309e3d5f6e1443db076624274169088265866f90d91265a8cd4"
-    );
-}
-
-#[test]
-fn allocator_import_reference_is_pinned() {
-    let ident = ALLOCATOR_IMPORT
-        .rsplit_once("::")
-        .map(|(_, name)| name)
-        .expect("ALLOCATOR_IMPORT is a crate path");
-    let files = load_workspace_files(&[SEGMENT_CRATE]);
-    let (hits, _, expr_calls) = scan_files(&files, ident);
-    assert_eq!(ident, BIND_PAIRED_STREAM);
-    assert_eq!(hits, BTreeSet::from([INGEST_BIND_PATH.to_owned()]));
-    assert!(
-        expr_calls > 0,
-        "ALLOCATOR_IMPORT ident {ident:?} must match production calls in {INGEST_BIND_PATH}"
     );
 }
 

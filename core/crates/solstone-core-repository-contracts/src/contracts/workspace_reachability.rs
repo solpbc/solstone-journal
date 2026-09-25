@@ -7,22 +7,15 @@
 //! `make ci` — that gate is Rust-only.
 
 use std::collections::{BTreeMap, BTreeSet};
-#[cfg(all(test, feature = "full-tests"))]
 use std::fs;
-#[cfg(all(test, feature = "full-tests"))]
 use std::path::{Path, PathBuf};
-#[cfg(all(test, feature = "full-tests"))]
 use std::process::Command;
 
-#[cfg(all(test, feature = "full-tests"))]
 use serde::Deserialize;
 
-#[cfg(all(test, feature = "full-tests"))]
 const WORKSPACE: &str = "core/Cargo.toml";
-#[cfg(all(test, feature = "full-tests"))]
 const ALLOWLIST: &str = "core/reachability-allow.toml";
 
-#[cfg(all(test, feature = "full-tests"))]
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -39,7 +32,6 @@ struct Findings {
 }
 
 impl Findings {
-    #[cfg(all(test, feature = "full-tests"))]
     fn is_clean(&self) -> bool {
         self.forgotten.is_empty() && self.stale.is_empty() && self.absent.is_empty()
     }
@@ -119,7 +111,6 @@ fn evaluate(
     })
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct Metadata {
     packages: Vec<Package>,
@@ -127,7 +118,6 @@ struct Metadata {
     workspace_members: Vec<String>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct Package {
     id: String,
@@ -135,39 +125,33 @@ struct Package {
     targets: Vec<Target>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct Target {
     kind: Vec<String>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct Resolve {
     nodes: Vec<Node>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct Node {
     id: String,
     deps: Vec<Dep>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct Dep {
     pkg: String,
     dep_kinds: Vec<DepKind>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[derive(Deserialize)]
 struct DepKind {
     kind: Option<String>,
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 fn graph_from_metadata(
     metadata: &Metadata,
 ) -> (
@@ -225,7 +209,6 @@ fn graph_from_metadata(
     (member_names, bin_roots, prod)
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 fn cargo_metadata(manifest: &Path) -> Result<Metadata, String> {
     let output = Command::new("cargo")
         .args([
@@ -250,7 +233,6 @@ fn cargo_metadata(manifest: &Path) -> Result<Metadata, String> {
         .map_err(|error| format!("cargo metadata JSON did not parse: {error}"))
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 fn format_named_list(label: &str, names: &BTreeSet<String>) -> String {
     let mut lines = vec![format!("{label}:")];
     for name in names {
@@ -308,7 +290,6 @@ fn dev_edges_do_not_confer_reachability() {
     assert!(findings.forgotten.contains("test-only"));
 }
 
-#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn live_workspace_matches_the_committed_allowlist() {
     let root = repository_root();

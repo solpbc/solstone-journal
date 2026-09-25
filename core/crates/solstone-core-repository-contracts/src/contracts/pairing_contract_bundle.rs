@@ -97,10 +97,12 @@ fn sha256(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn bundle_semver() -> &'static str {
     BUNDLE_SEMVER
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 pub(crate) fn authority_digest() -> String {
     sha256(PAIRING_CONTRACT_AUTHORITY.as_bytes())
 }

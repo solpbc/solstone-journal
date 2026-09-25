@@ -26,3 +26,6 @@ socket2 = "0.6.5"
 [[test]]
 name = "segment_supervisor_loopback"
 path = "tests/segment_supervisor_loopback.rs"
+
+[features]
+test-hooks = []

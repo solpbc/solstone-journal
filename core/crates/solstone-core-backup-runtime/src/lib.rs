@@ -49,9 +49,10 @@ pub use engine::{
     BACKUP_EXCLUDES, BackupResult, BackupServices, Clock, ClosedToolError, JournalMaintenance,
     JournalMaintenanceError, NativeJournalMaintenance, NativeRestoreRecorder, PruneResult,
     RestoreRecorder, UnreadableSources, VerificationResult, archive_read_session,
-    check_archive_snapshot_files, prepare, record_backup_error, run_archive_backup, run_backup,
-    run_prune, run_verification,
+    check_archive_snapshot_files, prepare, run_archive_backup, run_prune, run_verification,
 };
+// The legacy direct entry points: production goes through admission, so only
+// test builds can reach these.
 #[cfg(feature = "test-hooks")]
 #[doc(hidden)]
 pub use engine::{
@@ -62,6 +63,8 @@ pub use engine::{
     reset_backup_journal_resolved_hook, reset_backup_path_resolution_attempts,
     reset_backup_record_failure_hook, reset_backup_tool_resolution_started_hook,
 };
+#[cfg(any(feature = "test-hooks", feature = "test-support"))]
+pub use engine::{record_backup_error, run_backup};
 pub use hosted_runtime::{
     BROKER_TIMEOUT_SECONDS, HostedCredentials, HostedCredsUnavailable, HostedResticSession,
     HttpRequest, HttpResponse, HttpTransport, UreqHttpTransport, fetch_hosted_credentials,

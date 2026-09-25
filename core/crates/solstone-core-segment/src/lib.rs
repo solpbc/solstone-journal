@@ -74,9 +74,13 @@ pub use stream_record::{
     StreamAllocationBase, StreamAllocationCollision, StreamBindingRecord, StreamBindingState,
     StreamCollisionScheme, StreamHints, StreamRecord, UnboundStreamAdvanceError,
     advance_bound_stream, advance_unbound_stream, bind_named_stream, bind_paired_stream,
-    bind_stream, delete_stream_record, has_unattributed_stream_record, list_stream_bindings,
-    lookup_stream, lookup_stream_state, resolve_stream, retry_bound_stream,
+    delete_stream_record, has_unattributed_stream_record, list_stream_bindings, lookup_stream,
+    lookup_stream_state, resolve_stream, retry_bound_stream,
 };
+// Stream identity is allocated inside this crate; other crates reach the
+// unpaired binder only from tests.
+#[cfg(feature = "test-hooks")]
+pub use stream_record::bind_stream;
 pub use stream_repair::{
     MarkerTail, RepairOutcome, StreamBackfillReport, StreamBackfillSignal, StreamClassification,
     StreamRepairError, TolerantStreamRecords, UnchangedReason, backfill_stream_records,
