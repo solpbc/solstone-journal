@@ -6,6 +6,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.18] - 2026-09-25
+
 ### Added
 
 - agents on the same computer as your journal can now connect to it directly, at `http://127.0.0.1:7659/mcp`, without solstone.me. it's on unless you turn it off in the agents app, and each agent still needs your pairing code, or a key you created, and gets only what you let it see.

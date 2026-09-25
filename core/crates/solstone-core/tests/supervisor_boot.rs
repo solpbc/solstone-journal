@@ -696,6 +696,9 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
         nix::sys::signal::Signal::SIGKILL,
     )
     .expect("kill launcher parent");
+    launcher
+        .wait()
+        .expect("launcher parent exits before releasing child");
     fs::write(format!("{}.go", marker.display()), b"go\n").expect("release final parent check");
     let result = wait_for_outcome(&outcome, &nonce);
     assert!(matches!(
@@ -706,7 +709,6 @@ fn ac4_parent_loss_before_readiness_aborts_the_pre_ready_lifecycle() {
     ));
     assert!(!journal.0.join("health/supervisor.pid").exists());
     assert!(!journal.0.join("health/supervisor.ready").exists());
-    let _ = launcher.wait();
 }
 
 #[test]
