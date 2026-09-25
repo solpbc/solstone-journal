@@ -16,6 +16,7 @@ use crate::{
     EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NETWORK_EVIDENCE_LIMIT_MAX,
     NETWORK_NEIGHBOR_LIMIT_MAX, NetworkOverviewRequest, NetworkRequest, load_edge_evidence,
     load_entity_network, load_network_overview, network_bound_detail, open_edges_reader,
+    read_edge_repair_state,
 };
 
 const ATTENDANCE: &[&str] = &["attended-with", "co-present", "scheduled-with"];
@@ -1155,49 +1156,67 @@ fn edge_repair_state_reader_and_query_behavior() {
     fs::create_dir_all(&jobs_dir).unwrap();
     fs::write(jobs_dir.join("merge-m1.json"), b"{}").unwrap();
 
-    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
-    assert_eq!(net.total_neighbors, 0);
-    assert_eq!(net.neighbors.len(), 0);
-    assert_eq!(net.edge_repair_state.as_deref(), Some("pending"));
-    assert!(json_keys(&net).contains("edge_repair_state"));
-
-    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
-    assert_eq!(ev.total, 0);
-    assert_eq!(ev.evidence.len(), 0);
-    assert_eq!(ev.edge_repair_state.as_deref(), Some("pending"));
-
-    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
-    assert_eq!(ov.totals.edges, 0);
-    assert_eq!(ov.entities.len(), 0);
-    assert_eq!(ov.edge_repair_state.as_deref(), Some("pending"));
+    for error in [
+        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE)
+            .unwrap_err()
+            .to_string(),
+        load_edge_evidence(&root, "alice", "bob", &ev_req)
+            .unwrap_err()
+            .to_string(),
+        load_network_overview(&root, &ov_req, ATTENDANCE, &no_type)
+            .unwrap_err()
+            .to_string(),
+    ] {
+        assert!(error.contains("Connections aren't available right now"));
+    }
 
     // 3. Interrupted job (progress file exists)
     let prog_dir = root.join("health/entity-edge-repair/progress");
     fs::create_dir_all(&prog_dir).unwrap();
     fs::write(prog_dir.join("merge-m1.json"), b"{}").unwrap();
 
-    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
-    assert_eq!(net.edge_repair_state.as_deref(), Some("interrupted"));
-
-    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
-    assert_eq!(ev.edge_repair_state.as_deref(), Some("interrupted"));
-
-    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
-    assert_eq!(ov.edge_repair_state.as_deref(), Some("interrupted"));
+    assert!(
+        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE)
+            .unwrap_err()
+            .to_string()
+            .contains("Connections aren't available right now")
+    );
+    assert!(
+        load_edge_evidence(&root, "alice", "bob", &ev_req)
+            .unwrap_err()
+            .to_string()
+            .contains("Connections aren't available right now")
+    );
+    assert!(
+        load_network_overview(&root, &ov_req, ATTENDANCE, &no_type)
+            .unwrap_err()
+            .to_string()
+            .contains("Connections aren't available right now")
+    );
 
     // 4. Failed job (failure file exists)
     let fail_dir = root.join("health/entity-edge-repair/failures");
     fs::create_dir_all(&fail_dir).unwrap();
     fs::write(fail_dir.join("merge-m1.json"), b"error").unwrap();
 
-    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
-    assert_eq!(net.edge_repair_state.as_deref(), Some("failed"));
-
-    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
-    assert_eq!(ev.edge_repair_state.as_deref(), Some("failed"));
-
-    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
-    assert_eq!(ov.edge_repair_state.as_deref(), Some("failed"));
+    assert!(
+        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE)
+            .unwrap_err()
+            .to_string()
+            .contains("Connections aren't available right now")
+    );
+    assert!(
+        load_edge_evidence(&root, "alice", "bob", &ev_req)
+            .unwrap_err()
+            .to_string()
+            .contains("Connections aren't available right now")
+    );
+    assert!(
+        load_network_overview(&root, &ov_req, ATTENDANCE, &no_type)
+            .unwrap_err()
+            .to_string()
+            .contains("Connections aren't available right now")
+    );
 
     // 5. Completion exists -> healthy again
     let comp_dir = root.join("health/entity-edge-repair/completions");
@@ -1207,6 +1226,14 @@ fn edge_repair_state_reader_and_query_behavior() {
     let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
     assert_eq!(net.total_neighbors, 1);
     assert!(net.edge_repair_state.is_none());
+
+    fs::remove_dir_all(&jobs_dir).unwrap();
+    fs::write(&jobs_dir, b"not a directory").unwrap();
+    assert_eq!(read_edge_repair_state(&root).as_deref(), Some("unreadable"));
+    assert!(matches!(
+        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE),
+        Err(EdgeQueryError::EdgeIndexUnavailable { .. })
+    ));
 
     cleanup(root);
 }

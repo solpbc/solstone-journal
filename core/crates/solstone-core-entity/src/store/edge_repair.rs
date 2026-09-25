@@ -261,7 +261,14 @@ pub fn attach_edge_repair_completion(journal: &Path, event: &mut serde_json::Val
         if let Some(rows) = completion.affected_rows {
             object.insert("affected_rows".to_owned(), serde_json::json!(rows));
         }
-        object.remove("edge_repair_state");
+        if completion.published {
+            object.remove("edge_repair_state");
+        } else {
+            object.insert(
+                "edge_repair_state".to_owned(),
+                serde_json::json!("superseded"),
+            );
+        }
         return;
     }
 
@@ -487,8 +494,17 @@ pub fn drive_entity_edge_repair(journal: &Path) -> Result<usize, EntityEdgeRepai
         }
         let _ = atomic_replace_detailed(&prog_path, b"{}", 0o600);
 
-        let plan = solstone_core_indexer_store::plan_edge_repair(journal)
-            .map_err(EntityEdgeRepairError::Store)?;
+        let plan = match solstone_core_indexer_store::plan_edge_repair(journal) {
+            Ok(plan) => plan,
+            Err(err) => {
+                let fail_path = resolve_journal_path(journal, &format!("{FAILURES_DIR}/{name}"))?;
+                if let Some(parent) = fail_path.parent() {
+                    let _ = ensure_directory(parent);
+                }
+                let _ = atomic_replace_detailed(&fail_path, err.to_string().as_bytes(), 0o600);
+                return Err(EntityEdgeRepairError::Store(err));
+            }
+        };
 
         if is_job_paused(&job.operation, &job.merge_id) {
             continue;
@@ -552,9 +568,10 @@ pub fn drive_entity_edge_repair(journal: &Path) -> Result<usize, EntityEdgeRepai
             match outcome {
                 Ok(solstone_core_indexer_store::CandidatePublishOutcome::Republished {
                     inserted,
+                    deleted,
                 }) => {
                     published_any = true;
-                    total_affected += inserted;
+                    total_affected += inserted + deleted;
                     if check_between_publish_cut(journal, idx) {
                         return Err(EntityEdgeRepairError::Message(
                             "between-publish cut triggered".to_string(),

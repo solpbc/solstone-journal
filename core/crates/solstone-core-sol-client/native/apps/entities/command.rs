@@ -9,7 +9,7 @@ use crate::error::{ClientError, MALFORMED_RESPONSE_MESSAGE, SERVICE_DOWN_MESSAGE
 use crate::json_format::{json_pretty_ascii, json_pretty_utf8};
 use crate::transport::{ApiRequest, HttpMethod, QueryParam, TimeoutPolicy};
 
-const EDGE_INDEX_UNAVAILABLE_MESSAGE: &str = "your connections couldn't be read because the index hasn't been built yet. run `journal indexer --rebuild-edges` to build it.";
+const EDGE_INDEX_UNAVAILABLE_MESSAGE: &str = "Connections aren't available right now.";
 const ENTITY_BUSY_MESSAGE: &str =
     "that entity couldn't be updated right now because it was busy. try again in a moment.";
 const ENTITY_SEARCH_ACTIVITY_UNAVAILABLE_MESSAGE: &str = "Detected entity activity is unreadable. Run `journal doctor`, repair the reported record, and try again.";

@@ -3144,6 +3144,7 @@ fn deferred_edge_repair_out_of_order_snapshot_separation() {
     assert_eq!(ev1.get("published"), None);
     assert_eq!(ev1.get("rebuilt"), None);
     assert_eq!(ev1.get("affected_rows"), None);
+    assert_eq!(ev1["edge_repair_state"], "superseded");
 
     let mut ev2 = json!({"kind":"merge","operation":{"merge_id":merge2.merge_id}});
     crate::store::edge_repair::attach_edge_repair_completion(&journal, &mut ev2);

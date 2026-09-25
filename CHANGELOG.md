@@ -8,6 +8,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- merging or undoing entities no longer waits for connections to update. while they update, connections say they're unavailable instead of appearing empty, and your journal keeps processing.
+- when you accept a merge suggestion, it now stays marked accepted if the request disconnects after acceptance begins. other open suggestions for the merged-away entity are resolved.
+- merge previews now distinguish alias and email additions from other changes they can't show.
+- descriptions missing from profiles after an entity merge can appear again.
 - if `journal setup` can't tell which installation its command-line tools or background support belong to, the error now asks you to leave them in place and include the details in a support request.
 - agents you connect can now read what was said in recorded audio segments when you grant transcript access.
 

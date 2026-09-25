@@ -535,7 +535,7 @@ pub enum EdgeRepairCandidate {
 pub enum CandidatePublishOutcome {
     Superseded,
     Unchanged,
-    Republished { inserted: usize },
+    Republished { inserted: usize, deleted: usize },
     Deleted { deleted: usize },
 }
 
@@ -683,6 +683,11 @@ pub fn plan_edge_repair(journal: &Path) -> Result<Vec<EdgeRepairCandidate>, Stor
     Ok(candidates)
 }
 
+fn same_edge_source(path: &Path, previous: &fs::Metadata) -> Result<bool, StoreError> {
+    let current = fs::metadata(path)?;
+    Ok(current.len() == previous.len() && current.modified()? == previous.modified()?)
+}
+
 pub fn apply_edge_repair_candidate(
     journal: &Path,
     candidate: &EdgeRepairCandidate,
@@ -713,12 +718,18 @@ pub fn apply_edge_repair_candidate(
             if !generation_ok()? {
                 return Ok(CandidatePublishOutcome::Superseded);
             }
-            let mut conn = open_index(journal)?;
-            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let source_identity = fs::metadata(path)?;
             let mtime = file_mtime_secs(path)?;
             let mut resolver = EdgeResolver::new(journal);
             resolver.begin_file();
             let extracted = extract_file_edges(journal, rel, path, &mut resolver)?;
+            if !same_edge_source(path, &source_identity)? {
+                return Err(StoreError::Io(std::io::Error::other(
+                    "edge source changed during extraction",
+                )));
+            }
+            let mut conn = open_index(journal)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             if let Some(_segment) = extracted.invalid_segment {
                 let count = tx.query_row("SELECT COUNT(*) FROM edges WHERE path=?", [rel], |r| {
                     r.get::<_, i64>(0)
@@ -727,6 +738,11 @@ pub fn apply_edge_repair_candidate(
                 if !generation_ok()? {
                     tx.rollback()?;
                     return Ok(CandidatePublishOutcome::Superseded);
+                }
+                if !same_edge_source(path, &source_identity)? {
+                    return Err(StoreError::Io(std::io::Error::other(
+                        "edge source changed before publication",
+                    )));
                 }
                 tx.commit()?;
                 return Ok(CandidatePublishOutcome::Deleted { deleted: count });
@@ -750,11 +766,16 @@ pub fn apply_edge_repair_candidate(
                 .optional()?;
 
             if new_canonical == committed && mtime_in_db == Some(mtime) {
+                if !same_edge_source(path, &source_identity)? {
+                    return Err(StoreError::Io(std::io::Error::other(
+                        "edge source changed before publication",
+                    )));
+                }
                 tx.rollback()?;
                 return Ok(CandidatePublishOutcome::Unchanged);
             }
 
-            delete_edges_for_path(&tx, rel)?;
+            let deleted = delete_edges_for_path(&tx, rel)?;
             let inserted = insert_normalized_edges(&tx, &extracted.rows)?;
             replace_edge_file_mtime(&tx, rel, mtime)?;
 
@@ -762,8 +783,13 @@ pub fn apply_edge_repair_candidate(
                 tx.rollback()?;
                 return Ok(CandidatePublishOutcome::Superseded);
             }
+            if !same_edge_source(path, &source_identity)? {
+                return Err(StoreError::Io(std::io::Error::other(
+                    "edge source changed before publication",
+                )));
+            }
             tx.commit()?;
-            Ok(CandidatePublishOutcome::Republished { inserted })
+            Ok(CandidatePublishOutcome::Republished { inserted, deleted })
         }
         EdgeRepairCandidate::Delete { rel } => {
             let path = journal.join(rel);
@@ -771,12 +797,18 @@ pub fn apply_edge_repair_candidate(
                 if !generation_ok()? {
                     return Ok(CandidatePublishOutcome::Superseded);
                 }
-                let mut conn = open_index(journal)?;
-                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let source_identity = fs::metadata(&path)?;
                 let mtime = file_mtime_secs(&path)?;
                 let mut resolver = EdgeResolver::new(journal);
                 resolver.begin_file();
                 let extracted = extract_file_edges(journal, rel, &path, &mut resolver)?;
+                if !same_edge_source(&path, &source_identity)? {
+                    return Err(StoreError::Io(std::io::Error::other(
+                        "edge source changed during extraction",
+                    )));
+                }
+                let mut conn = open_index(journal)?;
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
                 if let Some(_segment) = extracted.invalid_segment {
                     let count =
                         tx.query_row("SELECT COUNT(*) FROM edges WHERE path=?", [rel], |r| {
@@ -786,6 +818,11 @@ pub fn apply_edge_repair_candidate(
                     if !generation_ok()? {
                         tx.rollback()?;
                         return Ok(CandidatePublishOutcome::Superseded);
+                    }
+                    if !same_edge_source(&path, &source_identity)? {
+                        return Err(StoreError::Io(std::io::Error::other(
+                            "edge source changed before publication",
+                        )));
                     }
                     tx.commit()?;
                     return Ok(CandidatePublishOutcome::Deleted { deleted: count });
@@ -809,11 +846,16 @@ pub fn apply_edge_repair_candidate(
                     .optional()?;
 
                 if new_canonical == committed && mtime_in_db == Some(mtime) {
+                    if !same_edge_source(&path, &source_identity)? {
+                        return Err(StoreError::Io(std::io::Error::other(
+                            "edge source changed before publication",
+                        )));
+                    }
                     tx.rollback()?;
                     return Ok(CandidatePublishOutcome::Unchanged);
                 }
 
-                delete_edges_for_path(&tx, rel)?;
+                let deleted = delete_edges_for_path(&tx, rel)?;
                 let inserted = insert_normalized_edges(&tx, &extracted.rows)?;
                 replace_edge_file_mtime(&tx, rel, mtime)?;
 
@@ -821,8 +863,13 @@ pub fn apply_edge_repair_candidate(
                     tx.rollback()?;
                     return Ok(CandidatePublishOutcome::Superseded);
                 }
+                if !same_edge_source(&path, &source_identity)? {
+                    return Err(StoreError::Io(std::io::Error::other(
+                        "edge source changed before publication",
+                    )));
+                }
                 tx.commit()?;
-                return Ok(CandidatePublishOutcome::Republished { inserted });
+                return Ok(CandidatePublishOutcome::Republished { inserted, deleted });
             }
             if !generation_ok()? {
                 return Ok(CandidatePublishOutcome::Superseded);

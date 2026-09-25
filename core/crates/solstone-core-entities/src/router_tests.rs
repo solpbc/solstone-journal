@@ -1096,6 +1096,37 @@ async fn index_plate_missing_index_is_edge_index_unavailable() {
 }
 
 #[tokio::test]
+async fn index_plate_repair_does_not_report_empty_connections() {
+    let journal = Journal::new();
+    save_person(journal.path(), "person-ada", "Ada Lovelace");
+    save_person(journal.path(), "person-bob", "Bob");
+    seed_edge_rows(
+        journal.path(),
+        &[(
+            "person-ada",
+            "person-bob",
+            "works-with",
+            Some("20260501"),
+            "a",
+        )],
+    );
+    write(
+        journal.path(),
+        "health/entity-edge-repair/jobs/merge-m1.json",
+        json!({"operation":"merge","merge_id":"m1","generation":1,"enqueued_at":1}),
+    );
+    for route in [
+        "/app/entities/api/network?entity=person-ada",
+        "/app/entities/api/history?entity=person-ada&peer=person-bob",
+        "/app/entities/api/overview",
+    ] {
+        let (status, body) = call(journal.path(), route).await;
+        assert_eq!(status, 503, "{route}");
+        assert_eq!(body["reason_code"], "edge_index_unavailable", "{route}");
+    }
+}
+
+#[tokio::test]
 async fn index_plate_network_resolves_a_unique_name_to_the_directory() {
     let journal = Journal::new();
     save_person(journal.path(), "person-ada", "Ada Lovelace");

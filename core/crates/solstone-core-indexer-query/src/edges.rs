@@ -298,7 +298,11 @@ fn consider_neighbor(retained: &mut Vec<NetworkNeighbor>, neighbor: NetworkNeigh
 /// Check for in-flight or failed entity edge repair jobs in the journal.
 pub fn read_edge_repair_state(journal: &Path) -> Option<String> {
     let jobs_dir = journal.join("health/entity-edge-repair/jobs");
-    let entries = std::fs::read_dir(&jobs_dir).ok()?;
+    let entries = match std::fs::read_dir(&jobs_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(_) => return Some("unreadable".to_string()),
+    };
     let completions_dir = journal.join("health/entity-edge-repair/completions");
     let progress_dir = journal.join("health/entity-edge-repair/progress");
     let failures_dir = journal.join("health/entity-edge-repair/failures");
@@ -307,7 +311,10 @@ pub fn read_edge_repair_state(journal: &Path) -> Option<String> {
     let mut has_interrupted = false;
     let mut has_failed = false;
 
-    for entry in entries.flatten() {
+    for entry in entries {
+        let Ok(entry) = entry else {
+            return Some("unreadable".to_string());
+        };
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
         if !name_str.ends_with(".json") {
@@ -340,6 +347,10 @@ pub fn read_edge_repair_state(journal: &Path) -> Option<String> {
     }
 }
 
+fn edge_repair_unavailable_detail(_state: &str) -> String {
+    "Connections aren't available right now.".to_string()
+}
+
 /// Load one-hop neighbors. The caller supplies principal identity and attendance policy.
 pub fn load_entity_network(
     journal: &Path,
@@ -363,15 +374,9 @@ pub fn load_entity_network(
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
     if let Some(state) = read_edge_repair_state(journal) {
-        return Ok(NetworkResponse {
-            entity_id: entity_id.to_string(),
-            reference_day,
-            filters: NetworkFilters::from((&filter, request.include_principal)),
-            limit: request.limit,
-            evidence_limit: request.evidence_limit,
-            total_neighbors: 0,
-            neighbors: Vec::new(),
-            edge_repair_state: Some(state),
+        return Err(EdgeQueryError::EdgeIndexUnavailable {
+            path: solstone_core_indexer_store::db::db_path(journal),
+            detail: edge_repair_unavailable_detail(&state),
         });
     }
     let reference = parse_reference_day(&reference_day)?;
@@ -476,16 +481,9 @@ pub fn load_edge_evidence(
     validate_nonnegative("offset", request.offset)?;
     let filter = build_filters(&request.filters)?;
     if let Some(state) = read_edge_repair_state(journal) {
-        return Ok(EdgeEvidenceResponse {
-            entity_id: entity_id.to_string(),
-            peer_id: peer_id.to_string(),
-            peer_name: None,
-            filters: EdgeFiltersPayload::from(&filter),
-            total: 0,
-            limit: request.limit,
-            offset: request.offset,
-            evidence: Vec::new(),
-            edge_repair_state: Some(state),
+        return Err(EdgeQueryError::EdgeIndexUnavailable {
+            path: solstone_core_indexer_store::db::db_path(journal),
+            detail: edge_repair_unavailable_detail(&state),
         });
     }
     let connection = open_edges_reader(journal)?;
@@ -530,17 +528,9 @@ pub fn load_network_overview(
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
     if let Some(state) = read_edge_repair_state(journal) {
-        return Ok(NetworkOverviewResponse {
-            reference_day,
-            filters: EdgeFiltersPayload::from(&filter),
-            limit: request.limit,
-            totals: OverviewTotals {
-                edges: 0,
-                entities: 0,
-            },
-            kinds: BTreeMap::new(),
-            entities: Vec::new(),
-            edge_repair_state: Some(state),
+        return Err(EdgeQueryError::EdgeIndexUnavailable {
+            path: solstone_core_indexer_store::db::db_path(journal),
+            detail: edge_repair_unavailable_detail(&state),
         });
     }
     let reference = parse_reference_day(&reference_day)?;
