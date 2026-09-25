@@ -6,16 +6,20 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- agents on the same computer as your journal can now connect to it directly, at `http://127.0.0.1:7659/mcp`, without solstone.me. it's on unless you turn it off in the agents app, and each agent still needs your pairing code, or a key you created, and gets only what you let it see.
+
 ### Changed
 
-- the agents app is laid out like network and backup now, and connect an agent walks you through the address, your journal's mark and a pairing code. the agents app works with your own route or with solstone.me; solstone.me is the address, `agents` is where you manage what connects. the switch for agents on this computer comes in a later version.
+- the agents app is laid out like network and backup now, and connect an agent walks you through the address, your journal's mark and a pairing code. the agents app works with your own route or with solstone.me; solstone.me is the address, `agents` is where you manage what connects.
 - when an agent's search finds nothing, it now gets a plain-words note saying so, so it can tell you instead of reading through your journal one piece at a time.
 
 ### Fixed
 
 - security fix: the page your browser opens to finish connecting an agent showed an empty circle where your journal's mark belongs, with the words only on hover, so a page pretending to be your journal to collect your pairing code, and use it to connect an agent to your journal, looked the same as the real one. it now shows the mark in full, both icons and both words, and agents › connect an agent shows the same mark beside the pairing code, so you can check they match before you enter the code.
 - in Chrome and possibly other browsers, connecting an agent stopped after you entered the pairing code and never finished. it now finishes and returns you to the agent.
-- your journal marks every tool it offers agents as read-only again. agents that look for that mark can see that these tools only read.
+- your journal labels every tool it offers agents as read-only again. agents that look for that label can see that these tools only read.
 - in a journal with no transcripts yet, an agent that asks for transcripts now gets an empty list instead of an error.
 
 ## [2.0.17] - 2026-09-24
