@@ -97,7 +97,7 @@ pub(crate) async fn get_authorize(
         Ok(client) => client,
         Err(_) => return local_error("authorization request could not be started"),
     };
-    finish_authorize_get(&pairs, client, source, oauth)
+    finish_authorize_get(request, &pairs, client, source, oauth)
 }
 
 /// GET `/authorize` with injected CIMD I/O.
@@ -121,7 +121,7 @@ pub(crate) async fn get_authorize_with_io<IO: CimdAttemptIo>(
             Ok(client) => client,
             Err(_) => return local_error("authorization request could not be started"),
         };
-    finish_authorize_get(&pairs, client, source, oauth)
+    finish_authorize_get(request, &pairs, client, source, oauth)
 }
 
 fn parse_get_pairs(request: &HttpRequest) -> Option<Vec<(String, String)>> {
@@ -133,6 +133,7 @@ fn parse_get_pairs(request: &HttpRequest) -> Option<Vec<(String, String)>> {
 }
 
 fn finish_authorize_get(
+    request: &HttpRequest,
     pairs: &[(String, String)],
     client: RegisteredClient,
     source: IpAddr,
@@ -145,7 +146,14 @@ fn finish_authorize_get(
         return local_error("authorization request could not be started");
     }
     let state = field(pairs, "state");
-    let expected_resource = canonical_resource(oauth);
+    let issuer = match oauth.published_origin(request) {
+        Ok(issuer) => issuer,
+        Err(response) => return response,
+    };
+    let expected_resource = match &oauth.resource_origin {
+        super::ResourceOrigin::Fixed(_) => canonical_resource(oauth),
+        super::ResourceOrigin::Request => format!("{issuer}/mcp"),
+    };
     if field(pairs, "response_type") != Some("code")
         || field(pairs, "code_challenge_method") != Some("S256")
         || field(pairs, "code_challenge").is_none_or(|value| value.is_empty())
@@ -154,11 +162,12 @@ fn finish_authorize_get(
         return error_redirect(redirect_uri, "invalid_request", state);
     }
     let code_challenge = field(pairs, "code_challenge").expect("challenge present");
+    let stored_resource = canonical_resource(oauth);
     match oauth.store.create_transaction(
         &client.id,
         redirect_uri,
-        field(pairs, "resource").expect("resource present"),
-        &oauth.resource_origin,
+        &stored_resource,
+        &issuer,
         code_challenge,
         "S256",
         state,

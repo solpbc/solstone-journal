@@ -28,7 +28,7 @@ base64 = "0.22.1"
 chrono = { workspace = true, features = ["serde"] }
 futures = "0.3.31"
 log.workspace = true
-nix = { workspace = true, features = ["dir", "fs", "user"] }
+nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 pem = "3.0.6"
 rcgen.workspace = true
 ring.workspace = true

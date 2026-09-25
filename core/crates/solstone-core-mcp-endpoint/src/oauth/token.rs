@@ -31,13 +31,17 @@ pub(crate) fn token(request: &HttpRequest, oauth: &OAuthRuntime) -> HttpResponse
         return oauth_error("invalid_request");
     };
     match field(&pairs, "grant_type") {
-        Some("authorization_code") => authorization_code(&pairs, oauth),
-        Some("refresh_token") => refresh_token(&pairs, oauth),
+        Some("authorization_code") => authorization_code(&pairs, request, oauth),
+        Some("refresh_token") => refresh_token(&pairs, request, oauth),
         _ => oauth_error("unsupported_grant_type"),
     }
 }
 
-fn authorization_code(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpResponse {
+fn authorization_code(
+    pairs: &[(String, String)],
+    request: &HttpRequest,
+    oauth: &OAuthRuntime,
+) -> HttpResponse {
     let Some(code) = required(pairs, "code", MAX_CODE_BYTES) else {
         return oauth_error("invalid_request");
     };
@@ -56,11 +60,25 @@ fn authorization_code(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpR
     if !valid_code_verifier(code_verifier) {
         return oauth_error("invalid_request");
     }
+    let binding = oauth.binding();
+    let store_resource = match &oauth.resource_origin {
+        super::ResourceOrigin::Fixed(_) => resource,
+        super::ResourceOrigin::Request => {
+            let origin = match oauth.published_origin(request) {
+                Ok(origin) => origin,
+                Err(_) => return oauth_error("invalid_request"),
+            };
+            if resource != format!("{origin}/mcp") {
+                return oauth_error("invalid_request");
+            }
+            binding.canonical()
+        }
+    };
     match oauth.store.redeem_authorization_code(
         code,
         client_id,
         redirect_uri,
-        resource,
+        store_resource,
         code_verifier,
         &oauth.binding(),
     ) {
@@ -78,18 +96,39 @@ fn authorization_code(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpR
     }
 }
 
-fn refresh_token(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpResponse {
+fn refresh_token(
+    pairs: &[(String, String)],
+    request: &HttpRequest,
+    oauth: &OAuthRuntime,
+) -> HttpResponse {
     let Some(refresh) = required(pairs, "refresh_token", MAX_CODE_BYTES) else {
         return oauth_error("invalid_request");
     };
     let Some(client_id) = required(pairs, "client_id", MAX_CLIENT_ID_BYTES) else {
         return oauth_error("invalid_request");
     };
-    if let Some(resource) = field(pairs, "resource")
-        && (resource.len() > MAX_CLIENT_ID_BYTES
-            || resource != format!("{}/mcp", oauth.resource_origin))
-    {
-        return oauth_error("invalid_request");
+    match &oauth.resource_origin {
+        super::ResourceOrigin::Fixed(_) => {
+            if let Some(resource) = field(pairs, "resource")
+                && (resource.len() > MAX_CLIENT_ID_BYTES || resource != oauth.binding().canonical())
+            {
+                return oauth_error("invalid_request");
+            }
+        }
+        super::ResourceOrigin::Request => {
+            if let Some(resource) = field(pairs, "resource") {
+                if resource.len() > MAX_CLIENT_ID_BYTES {
+                    return oauth_error("invalid_request");
+                }
+                let origin = match oauth.published_origin(request) {
+                    Ok(origin) => origin,
+                    Err(_) => return oauth_error("invalid_request"),
+                };
+                if resource != format!("{origin}/mcp") {
+                    return oauth_error("invalid_request");
+                }
+            }
+        }
     }
     match oauth
         .store

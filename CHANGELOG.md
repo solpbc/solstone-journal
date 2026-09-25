@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - agents on the same computer as your journal can now connect to it directly, at `http://127.0.0.1:7659/mcp`, without solstone.me. it's on unless you turn it off in the agents app, and each agent still needs your pairing code, or a key you created, and gets only what you let it see.
+- agents on other computers on the same wi-fi or VPN as your journal can now reach it too, at its addresses on that network. it's off until you turn it on in the agents app. each agent still needs a pairing code made for network connections and gets only what you let it see; don't give it a key you created, which won't work there. your journal makes its own certificate for these addresses, so the browser on the other computer warns that the connection isn't private; check the page shows your journal's mark before you enter the code.
 
 ### Changed
 

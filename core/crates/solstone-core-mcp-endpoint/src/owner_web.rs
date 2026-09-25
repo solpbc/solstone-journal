@@ -36,6 +36,7 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
         .route("/app/agents/api/state", get(state))
         .route("/app/agents/api/capability", put(set_capability))
         .route("/app/agents/api/local-door", put(set_local_door))
+        .route("/app/agents/api/lan-door", put(set_lan_door))
         .route(
             "/app/agents/api/pairing",
             post(generate_pairing).delete(revoke_pairing),
@@ -85,6 +86,16 @@ async fn state(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
 }
 
 pub(crate) fn state_value(root: &std::path::Path) -> Result<Value, String> {
+    state_value_with_iface(
+        root,
+        &solstone_core_sol_link::pairing::addresses::SystemInterfaceSource,
+    )
+}
+
+pub(crate) fn state_value_with_iface(
+    root: &std::path::Path,
+    iface_source: &dyn solstone_core_sol_link::pairing::addresses::RawInterfaceSource,
+) -> Result<Value, String> {
     let config = read_journal_config(root).map_err(|error| error.to_string())?;
     let enabled = matches!(
         mcp_endpoint_capability(&config),
@@ -127,6 +138,9 @@ pub(crate) fn state_value(root: &std::path::Path) -> Result<Value, String> {
         let door = match grant.resource.as_deref() {
             Some(solstone_core_journal_config::MCP_LOCAL_DOOR_RESOURCE) => {
                 Value::String("local".to_owned())
+            }
+            Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE) => {
+                Value::String("lan".to_owned())
             }
             None => Value::String("relay".to_owned()),
             _ => Value::Null,
@@ -227,15 +241,146 @@ pub(crate) fn state_value(root: &std::path::Path) -> Result<Value, String> {
     if let Some(reason) = reason {
         local_door["reason"] = Value::String(reason);
     }
+
+    let lan_door_enabled_flag = solstone_core_journal_config::lan_door_enabled(&config);
+    let (lan_listening, lan_reason, lan_fingerprint, fresh_state) =
+        match crate::lan_door::read_lan_door_state(root) {
+            Some(state) => {
+                let now = Utc::now();
+                let age = now.signed_duration_since(state.observed_at);
+                #[cfg(test)]
+                let window_valid = if let Some(custom) = *TEST_READER_WINDOW.lock().unwrap() {
+                    age >= custom.0 && age <= custom.1
+                } else {
+                    age >= Duration::seconds(-5) && age <= Duration::seconds(35)
+                };
+                #[cfg(not(test))]
+                let window_valid = age >= Duration::seconds(-5) && age <= Duration::seconds(35);
+
+                if window_valid {
+                    if state.listening {
+                        (true, None, state.fingerprint.clone(), Some(state))
+                    } else {
+                        (
+                            false,
+                            state
+                                .reason
+                                .clone()
+                                .or_else(|| Some("not_running".to_string())),
+                            None,
+                            Some(state),
+                        )
+                    }
+                } else if !lan_door_enabled_flag {
+                    (false, Some("disabled".to_string()), None, None)
+                } else {
+                    (false, Some("not_running".to_string()), None, None)
+                }
+            }
+            None => {
+                if !lan_door_enabled_flag {
+                    (false, Some("disabled".to_string()), None, None)
+                } else {
+                    (false, Some("not_running".to_string()), None, None)
+                }
+            }
+        };
+
+    let iface_endpoints = iface_source
+        .enumerate()
+        .map(|raw| solstone_core_sol_link::pairing::addresses::classify_interface_addresses(&raw))
+        .unwrap_or_default();
+    let mut admitted_ips: Vec<std::net::IpAddr> = Vec::new();
+    for ep in iface_endpoints {
+        if crate::lan_door::is_admitted_lan_bind_endpoint(&ep) && !admitted_ips.contains(&ep.ip) {
+            admitted_ips.push(ep.ip);
+        }
+    }
+
+    let mut addresses_json = Vec::new();
+    let mut urls = Vec::new();
+    for ip in admitted_ips {
+        let addr_str = ip.to_string();
+        let url_str = match ip {
+            std::net::IpAddr::V4(v4) => {
+                format!(
+                    "https://{v4}:{}/mcp",
+                    solstone_core_journal_config::MCP_LAN_DOOR_PORT
+                )
+            }
+            std::net::IpAddr::V6(v6) => {
+                format!(
+                    "https://[{v6}]:{}/mcp",
+                    solstone_core_journal_config::MCP_LAN_DOOR_PORT
+                )
+            }
+        };
+        let (addr_listening, addr_reason) = if let Some(fresh) = &fresh_state {
+            if let Some(entry) = fresh
+                .addresses
+                .as_ref()
+                .and_then(|addrs| addrs.iter().find(|a| a.address == addr_str))
+            {
+                (entry.listening, entry.reason.clone())
+            } else {
+                (
+                    false,
+                    fresh
+                        .reason
+                        .clone()
+                        .or_else(|| Some("not_running".to_string())),
+                )
+            }
+        } else {
+            (false, lan_reason.clone())
+        };
+
+        let mut addr_obj = json!({
+            "address": addr_str,
+            "url": url_str.clone(),
+            "listening": addr_listening,
+        });
+        if !addr_listening && let Some(reason) = addr_reason {
+            addr_obj["reason"] = Value::String(reason);
+        }
+        addresses_json.push(addr_obj);
+        urls.push(url_str);
+    }
+
+    let mut lan_door = json!({
+        "enabled": lan_door_enabled_flag,
+        "listening": lan_listening,
+        "port": solstone_core_journal_config::MCP_LAN_DOOR_PORT,
+        "addresses": addresses_json,
+        "urls": urls,
+    });
+    if let Some(reason) = lan_reason {
+        lan_door["reason"] = Value::String(reason);
+    }
+    if let Some(fingerprint) = lan_fingerprint {
+        lan_door["fingerprint"] = Value::String(fingerprint);
+    }
+
     let mut response = json!({
         "enabled": enabled,
         "status": status,
         "local_door": local_door,
+        "lan_door": lan_door,
         "owner_state": owner_state,
         "certificate": certificate,
         "connections": connections,
         "facets": facets,
-        "pairing": pairing.map(|value| json!({"expires_at": value.expires_at, "generation": value.generation, "locked": value.locked})),
+        "pairing": pairing.map(|value| {
+            let mut pairing_obj = json!({
+                "expires_at": value.expires_at,
+                "generation": value.generation,
+                "locked": value.locked,
+            });
+            if let Some(door) = value.door {
+                pairing_obj["door"] = Value::String(door);
+            }
+            pairing_obj
+        }),
     });
     if status == "needs_subscription" {
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
@@ -398,6 +543,77 @@ async fn set_local_door(
     }
 }
 
+/// Turn the LAN agent door on or off. It is off unless the owner turns it on.
+async fn set_lan_door(
+    Extension(journal): Extension<Arc<PathBuf>>,
+    Json(body): Json<CapabilityBody>,
+) -> Response {
+    let start_utc = Utc::now();
+    let result = mutate_journal_config(&journal, LockOptions::default(), |config| {
+        let endpoint = config
+            .entry("mcp_endpoint".to_owned())
+            .or_insert_with(|| json!({}));
+        let endpoint_obj = if let Some(obj) = endpoint.as_object_mut() {
+            obj
+        } else {
+            *endpoint = json!({});
+            endpoint.as_object_mut().unwrap()
+        };
+        let changed = endpoint_obj.get("lan_door") != Some(&Value::Bool(body.enabled));
+        endpoint_obj.insert("lan_door".to_owned(), Value::Bool(body.enabled));
+        JournalConfigMutation {
+            changed,
+            value: Ok::<(), &'static str>(()),
+        }
+    });
+
+    match result {
+        Ok(transaction) => match transaction.value {
+            Ok(()) => {
+                if !transaction.changed {
+                    return Json(json!({"enabled": body.enabled, "changed": false}))
+                        .into_response();
+                }
+                #[cfg(test)]
+                let (bound, poll_interval) = TEST_PUT_POLL_BOUNDS.lock().unwrap().unwrap_or((
+                    std::time::Duration::from_secs(3),
+                    std::time::Duration::from_millis(50),
+                ));
+                #[cfg(not(test))]
+                let (bound, poll_interval) = (
+                    std::time::Duration::from_secs(3),
+                    std::time::Duration::from_millis(50),
+                );
+
+                let deadline = tokio::time::Instant::now() + bound;
+                while tokio::time::Instant::now() < deadline {
+                    if let Some(state) = crate::lan_door::read_lan_door_state(&journal) {
+                        if !body.enabled {
+                            if !state.listening && state.reason.as_deref() == Some("disabled") {
+                                break;
+                            }
+                        } else if state.observed_at >= start_utc {
+                            let reason = state.reason.as_deref();
+                            if reason != Some("disabled") && reason != Some("config_invalid") {
+                                break;
+                            }
+                        }
+                    }
+                    tokio::time::sleep(poll_interval).await;
+                }
+                Json(json!({"enabled": body.enabled, "changed": transaction.changed}))
+                    .into_response()
+            }
+            Err(detail) => refusal("agents_config_invalid", detail, StatusCode::CONFLICT),
+        },
+        Err(error) => refusal(
+            "agents_config_write_failed",
+            error,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
+    }
+}
+
 fn write_endpoint_switch(journal: &std::path::Path, key: &str, enabled: bool) -> Response {
     let result = mutate_journal_config(journal, LockOptions::default(), |config| {
         let endpoint = config
@@ -431,8 +647,46 @@ fn write_endpoint_switch(journal: &std::path::Path, key: &str, enabled: bool) ->
     }
 }
 
-async fn generate_pairing(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
-    match OAuthStore::open(&journal).generate_pairing_code() {
+async fn generate_pairing(
+    Extension(journal): Extension<Arc<PathBuf>>,
+    body: axum::body::Bytes,
+) -> Response {
+    let trimmed = body.trim_ascii();
+    let door = if trimmed.is_empty() {
+        None
+    } else {
+        match serde_json::from_slice::<Value>(&body) {
+            Ok(Value::Object(map)) => match map.get("door") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(door_str)) => {
+                    if door_str == "lan" {
+                        Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_string())
+                    } else {
+                        return refusal(
+                            "pairing_create_failed",
+                            "unsupported door",
+                            StatusCode::BAD_REQUEST,
+                        );
+                    }
+                }
+                _ => {
+                    return refusal(
+                        "pairing_create_failed",
+                        "invalid door field",
+                        StatusCode::BAD_REQUEST,
+                    );
+                }
+            },
+            _ => {
+                return refusal(
+                    "pairing_create_failed",
+                    "invalid request body",
+                    StatusCode::BAD_REQUEST,
+                );
+            }
+        }
+    };
+    match OAuthStore::open(&journal).generate_pairing_code_with_door(door.as_deref()) {
         Ok(created) => Json(json!({"code": created.code, "expires_at": created.expires_at, "generation": created.generation})).into_response(),
         Err(error) => refusal("pairing_create_failed", error, StatusCode::INTERNAL_SERVER_ERROR),
     }
@@ -971,5 +1225,139 @@ mod tests {
             assert_eq!(val["local_door"]["listening"], false);
             assert_eq!(val["local_door"]["reason"], reason);
         }
+    }
+
+    struct MockRawInterfaceSource {
+        addrs: Vec<solstone_core_sol_link::pairing::addresses::RawInterfaceAddress>,
+    }
+
+    impl solstone_core_sol_link::pairing::addresses::RawInterfaceSource for MockRawInterfaceSource {
+        fn enumerate(
+            &self,
+        ) -> Result<
+            Vec<solstone_core_sol_link::pairing::addresses::RawInterfaceAddress>,
+            solstone_core_sol_link::pairing::addresses::AddressError,
+        > {
+            Ok(self.addrs.clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn state_projects_lan_door_posture_addresses_and_urls() {
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+
+        // 1. No config key + no state file -> enabled: false, listening: false, reason: "disabled", port: 7660, no fingerprint.
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["lan_door"]["enabled"], false);
+        assert_eq!(val["lan_door"]["listening"], false);
+        assert_eq!(val["lan_door"]["reason"], "disabled");
+        assert_eq!(val["lan_door"]["port"], 7660);
+        assert!(val["lan_door"].get("fingerprint").is_none());
+
+        // 2 & 3. Injected enumerator with:
+        // - private Lan IPv4 (192.168.1.50 on eth0)
+        // - ULA IPv6 (fd00::1 on eth0)
+        // - CGNAT Vpn IPv4 (100.64.0.1 on tun0)
+        // - public Lan IPv4 (8.8.8.8 on eth0)
+        // - public Vpn IPv4 (8.8.4.4 on tun0)
+        let mock_iface = MockRawInterfaceSource {
+            addrs: vec![
+                solstone_core_sol_link::pairing::addresses::RawInterfaceAddress {
+                    interface: "eth0".to_string(),
+                    address: "192.168.1.50".parse().unwrap(),
+                },
+                solstone_core_sol_link::pairing::addresses::RawInterfaceAddress {
+                    interface: "eth0".to_string(),
+                    address: "fd00::1".parse().unwrap(),
+                },
+                solstone_core_sol_link::pairing::addresses::RawInterfaceAddress {
+                    interface: "tun0".to_string(),
+                    address: "100.64.0.1".parse().unwrap(),
+                },
+                solstone_core_sol_link::pairing::addresses::RawInterfaceAddress {
+                    interface: "eth0".to_string(),
+                    address: "8.8.8.8".parse().unwrap(),
+                },
+                solstone_core_sol_link::pairing::addresses::RawInterfaceAddress {
+                    interface: "tun0".to_string(),
+                    address: "8.8.4.4".parse().unwrap(),
+                },
+            ],
+        };
+
+        // Turn on lan_door in config
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"lan_door":true}}"#,
+        )
+        .unwrap();
+
+        // Fresh record with 1 listening address and 1 port_in_use address
+        let addr_states = vec![
+            crate::lan_door::LanAddressState {
+                address: "192.168.1.50".to_string(),
+                listening: true,
+                reason: None,
+            },
+            crate::lan_door::LanAddressState {
+                address: "fd00::1".to_string(),
+                listening: false,
+                reason: Some("port_in_use".to_string()),
+            },
+        ];
+        crate::lan_door::write_lan_door_state(
+            journal_root,
+            true,
+            None,
+            Some("sha256:0123456789abcdef"),
+            Some(addr_states),
+        );
+
+        let val = state_value_with_iface(journal_root, &mock_iface).unwrap();
+        assert_eq!(val["lan_door"]["enabled"], true);
+        assert_eq!(val["lan_door"]["listening"], true);
+        assert!(val["lan_door"]["reason"].is_null());
+        assert_eq!(val["lan_door"]["fingerprint"], "sha256:0123456789abcdef");
+
+        // Check addresses:
+        let addresses = val["lan_door"]["addresses"].as_array().unwrap();
+        assert_eq!(addresses.len(), 3);
+
+        // Address 1: 192.168.1.50 (listening: true, reason omitted)
+        assert_eq!(addresses[0]["address"], "192.168.1.50");
+        assert_eq!(addresses[0]["url"], "https://192.168.1.50:7660/mcp");
+        assert_eq!(addresses[0]["listening"], true);
+        assert!(addresses[0].get("reason").is_none());
+
+        // Address 2: fd00::1 (listening: false, reason: "port_in_use")
+        // IPv6 spelled same in address and inside [brackets] of url
+        assert_eq!(addresses[1]["address"], "fd00::1");
+        assert_eq!(addresses[1]["url"], "https://[fd00::1]:7660/mcp");
+        assert_eq!(addresses[1]["listening"], false);
+        assert_eq!(addresses[1]["reason"], "port_in_use");
+
+        // Address 3: 100.64.0.1
+        assert_eq!(addresses[2]["address"], "100.64.0.1");
+        assert_eq!(addresses[2]["url"], "https://100.64.0.1:7660/mcp");
+        assert_eq!(addresses[2]["listening"], false);
+
+        // Check URLs in order (yields first 3 URLs in that order and omits both public addresses)
+        let urls: Vec<&str> = val["lan_door"]["urls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            urls,
+            vec![
+                "https://192.168.1.50:7660/mcp",
+                "https://[fd00::1]:7660/mcp",
+                "https://100.64.0.1:7660/mcp",
+            ]
+        );
     }
 }
