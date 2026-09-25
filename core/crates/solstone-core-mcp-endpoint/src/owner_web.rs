@@ -35,6 +35,7 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
     Router::new()
         .route("/app/agents/api/state", get(state))
         .route("/app/agents/api/capability", put(set_capability))
+        .route("/app/agents/api/local-door", put(set_local_door))
         .route(
             "/app/agents/api/pairing",
             post(generate_pairing).delete(revoke_pairing),
@@ -268,7 +269,19 @@ async fn set_capability(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
-    let result = mutate_journal_config(&journal, LockOptions::default(), |config| {
+    write_endpoint_switch(&journal, "enabled", body.enabled)
+}
+
+/// Turn the loopback agent door on or off. It is on unless the owner turns it off.
+async fn set_local_door(
+    Extension(journal): Extension<Arc<PathBuf>>,
+    Json(body): Json<CapabilityBody>,
+) -> Response {
+    write_endpoint_switch(&journal, "local_door", body.enabled)
+}
+
+fn write_endpoint_switch(journal: &std::path::Path, key: &str, enabled: bool) -> Response {
+    let result = mutate_journal_config(journal, LockOptions::default(), |config| {
         let endpoint = config
             .entry("mcp_endpoint".to_owned())
             .or_insert_with(|| json!({}));
@@ -278,8 +291,8 @@ async fn set_capability(
                 value: Err("mcp_endpoint setting is not an object"),
             };
         };
-        let changed = endpoint.get("enabled") != Some(&Value::Bool(body.enabled));
-        endpoint.insert("enabled".to_owned(), Value::Bool(body.enabled));
+        let changed = endpoint.get(key) != Some(&Value::Bool(enabled));
+        endpoint.insert(key.to_owned(), Value::Bool(enabled));
         JournalConfigMutation {
             changed,
             value: Ok(()),
@@ -287,8 +300,9 @@ async fn set_capability(
     });
     match result {
         Ok(transaction) => match transaction.value {
-            Ok(()) => Json(json!({"enabled": body.enabled, "changed": transaction.changed}))
-                .into_response(),
+            Ok(()) => {
+                Json(json!({"enabled": enabled, "changed": transaction.changed})).into_response()
+            }
             Err(detail) => refusal("agents_config_invalid", detail, StatusCode::CONFLICT),
         },
         Err(error) => refusal(
@@ -609,6 +623,47 @@ mod tests {
         ] {
             assert!(workspace.contains(copy), "missing approved copy: {copy}");
         }
+    }
+
+    #[tokio::test]
+    async fn local_door_switch_writes_its_own_key_and_repairs_an_invalid_value() {
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"enabled":true,"local_door":"yes"}}"#,
+        )
+        .unwrap();
+        let put = |enabled: bool| {
+            let mut request = Request::builder()
+                .method(axum::http::Method::PUT)
+                .uri("/app/agents/api/local-door")
+                .header("content-type", "application/json")
+                .body(Body::from(format!(r#"{{"enabled":{enabled}}}"#)))
+                .unwrap();
+            request.extensions_mut().insert(AccessBasis::Localhost);
+            owner_routes(journal_root.to_path_buf()).oneshot(request)
+        };
+        let config = || {
+            serde_json::from_slice::<Value>(
+                &std::fs::read(journal_root.join("config/journal.json")).unwrap(),
+            )
+            .unwrap()
+        };
+
+        let off = put(false).await.unwrap();
+        assert_eq!(off.status(), StatusCode::OK);
+        assert_eq!(config()["mcp_endpoint"]["local_door"], false);
+        assert_eq!(
+            config()["mcp_endpoint"]["enabled"],
+            true,
+            "the local door switch must not touch the solstone.me capability"
+        );
+
+        let on = put(true).await.unwrap();
+        assert_eq!(on.status(), StatusCode::OK);
+        assert_eq!(config()["mcp_endpoint"]["local_door"], true);
     }
 
     #[tokio::test]

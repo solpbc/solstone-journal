@@ -30,7 +30,7 @@ const AUTHORIZE_CSP: &str = "default-src 'none'; style-src 'self' 'unsafe-inline
 const AUTHORIZE_CSS: &str = r#"@font-face{font-family:Comfortaa;src:url('/authorize/assets/Comfortaa-Variable.woff2') format('woff2');font-display:swap;font-weight:300 700}
 :root{color-scheme:light dark;--paper:#FCF3E4;--surface:#FEFCF8;--ink:#1A1A1A;--on-ink:#FEFCF8;--muted:#6E6453;--line:#E2D7BF;--field:#6E6453;--danger:#9F2D2D;--danger-wash:#F8E9E6;--accent:#B06A1A}
 @media(prefers-color-scheme:dark){:root{--paper:#221C19;--surface:#2B231C;--ink:#FCF3E4;--on-ink:#1A1A1A;--muted:#B0A699;--line:#514840;--field:#B0A699;--danger:#D7998C;--danger-wash:#3F271F;--accent:#F2A451}}
-body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.mark{width:68px;height:68px;border:2px solid var(--ink);border-radius:50%;display:flex;align-items:center;justify-content:center;gap:3px;overflow:hidden}.mark svg{width:30px;height:30px}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}input[type=checkbox]{accent-color:var(--accent)}.check{display:block;padding:5px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:var(--ink)}button{background:var(--ink);color:var(--on-ink);border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:var(--danger-wash);border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.mark{display:table;margin:0 auto 10px;background:#fffdf9;border:1px solid #e7d8c6;border-radius:12px;padding:1.15rem 1.4rem;text-align:center}.mark-chips{display:flex;gap:11px;justify-content:center}.mark-chip{width:48px;height:48px;box-sizing:border-box;border:2px solid;border-radius:12px;display:flex;align-items:center;justify-content:center}.mark-chip svg{width:28px;height:28px;display:block}.mark-generic{width:48px;height:48px}.mark-generic svg{display:block}.mark-words{margin-top:.55em;font:400 1.1rem/1.2 Comfortaa,system-ui,sans-serif;color:#1A1A1A}.mark-words .sep{color:#6E6453;margin:0 .5em}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}input[type=checkbox]{accent-color:var(--accent)}.check{display:block;padding:5px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:var(--ink)}button{background:var(--ink);color:var(--on-ink);border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:var(--danger-wash);border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
 "#;
 
 struct ConsentSelection {
@@ -483,10 +483,7 @@ fn consent_page_named(
             solstone_core_sol_link::mark::mark_from_jid(&identity.instance_id).ok()
         })
         .map(|mark| mark.to_render_spec());
-    let mark_html = mark.map_or_else(
-        || "<div class=\"mark\">◉</div>".to_owned(),
-        |mark| format!("<div class=\"mark\" title=\"{} {}\"><span style=\"color:{}\">{}</span><span style=\"color:{}\">{}</span></div>", html_escape(&mark.words[0]), html_escape(&mark.words[1]), html_escape(&mark.icon1.color.hex), mark.icon1.svg, html_escape(&mark.icon2.color.hex), mark.icon2.svg),
-    );
+    let mark_html = mark_html(mark.as_ref());
     let wrong = if wrong_code {
         "<p class=\"error\" role=\"alert\">that code didn't match. codes expire after 10 minutes; get a new one in your journal if this one is old.</p>"
     } else {
@@ -516,6 +513,47 @@ fn consent_page_named(
             category_facets_checked =
                 checked(selection.categories.iter().any(|value| value == "facets")),
         ),
+    )
+}
+
+/// The journal mark as the owner sees it in their journal: two tinted chips above two words,
+/// spoken as one unit. The owner compares it before entering a pairing code, so it must be the
+/// same mark the journal shows elsewhere. A journal with no identity yet gets the generic mark.
+fn mark_html(mark: Option<&solstone_core_sol_link::mark::MarkRenderSpec>) -> String {
+    let Some(mark) = mark else {
+        let generic = |color: &str, rotate: &str| {
+            format!(
+                "<div class=\"mark-generic\"{rotate}><svg viewBox=\"0 0 48 48\" width=\"48\" height=\"48\" aria-hidden=\"true\"><rect x=\"1\" y=\"1\" width=\"46\" height=\"46\" rx=\"12\" ry=\"12\" fill=\"{color}\" fill-opacity=\"0.07\" stroke=\"{color}\" stroke-width=\"2\" stroke-dasharray=\"5.7 4.3\"/></svg></div>"
+            )
+        };
+        return format!(
+            "<div class=\"mark\" role=\"img\" aria-label=\"your journal, not set up yet\"><div class=\"mark-chips\">{}{}</div><div class=\"mark-words\">your<span class=\"sep\">·</span>journal</div></div>",
+            generic("#E8913A", ""),
+            generic("#FFCC33", " style=\"transform:rotate(45deg)\""),
+        );
+    };
+    let chip = |icon: &solstone_core_sol_link::mark::MarkIconSpec| {
+        let hex = html_escape(&icon.color.hex);
+        let rotate = if icon.rot == 45 {
+            ";transform:rotate(45deg)"
+        } else {
+            ""
+        };
+        format!(
+            "<div class=\"mark-chip\" style=\"border-color:{hex};background:{hex}1f{rotate}\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"{hex}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">{}</svg></div>",
+            icon.svg
+        )
+    };
+    format!(
+        "<div class=\"mark\" role=\"img\" aria-label=\"{}, {} · {} {}\"><div class=\"mark-chips\">{}{}</div><div class=\"mark-words\">{}<span class=\"sep\">·</span>{}</div></div>",
+        html_escape(&mark.icon1.color.name),
+        html_escape(&mark.icon2.color.name),
+        html_escape(&mark.words[0]),
+        html_escape(&mark.words[1]),
+        chip(&mark.icon1),
+        chip(&mark.icon2),
+        html_escape(&mark.words[0]),
+        html_escape(&mark.words[1]),
     )
 }
 
@@ -787,6 +825,31 @@ mod tests {
         assert_eq!(header(&response, "X-Frame-Options"), Some("DENY"));
         let csp = header(&response, "Content-Security-Policy").unwrap();
         assert!(csp.contains("frame-ancestors 'none'"));
+    }
+
+    #[test]
+    fn consent_mark_draws_both_glyphs_and_speaks_the_whole_mark() {
+        use super::mark_html;
+        let spec =
+            solstone_core_sol_link::mark::mark_from_jid("0f8fad5b-d9cb-469f-a165-70867728950e")
+                .unwrap()
+                .to_render_spec();
+        let html = mark_html(Some(&spec));
+        // The glyphs are bare SVG elements; outside an <svg> element they draw nothing.
+        assert_eq!(html.matches("<svg viewBox=\"0 0 24 24\"").count(), 2);
+        assert!(html.contains(&spec.icon1.svg) && html.contains(&spec.icon2.svg));
+        assert!(html.contains(&format!(
+            "aria-label=\"{}, {} · {} {}\"",
+            spec.icon1.color.name, spec.icon2.color.name, spec.words[0], spec.words[1]
+        )));
+        assert!(html.contains(&format!(
+            "{}<span class=\"sep\">·</span>{}",
+            spec.words[0], spec.words[1]
+        )));
+
+        let generic = mark_html(None);
+        assert!(generic.contains("your<span class=\"sep\">·</span>journal"));
+        assert!(generic.contains("aria-label=\"your journal, not set up yet\""));
     }
 
     #[test]

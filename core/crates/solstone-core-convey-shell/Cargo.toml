@@ -69,6 +69,10 @@ name = "thinking_runs_dom"
 path = "tests/thinking_runs_dom.rs"
 
 [[test]]
+name = "agents_workspace_dom"
+path = "tests/agents_workspace_dom.rs"
+
+[[test]]
 name = "entities_workspace_dom"
 path = "tests/entities_workspace_dom.rs"
 
