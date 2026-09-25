@@ -75,7 +75,7 @@
   function frame(title, lead, body) { return `<h1>${esc(title)}</h1>${lead ? `<p class="lead">${lead}</p>` : ''}${body}`; }
   function errorPage(message) { view.innerHTML = frame('agents could not open.', `<span class="error notice">${esc(message)}</span>`, `<button class="btn" data-action="reload">try again</button>`); }
   function laneChip(connection) {
-    if (connection.kind !== 'oauth') return '';
+    if (connection.kind !== 'oauth' || connection.door === 'byo') return '';
     const label = connection.door === 'lan' ? 'your network' : connection.door === 'local' ? 'this computer' : connection.door === 'relay' || !hasDoor() ? 'solstone.me' : '';
     return label ? `<span class="chip">${label}</span>` : '';
   }
@@ -288,7 +288,7 @@
     if (lanWay && !otherOn) connectWay = 'lan';
     if (!lanWay) connectWay = 'other';
     const wantLan = connectWay === 'lan';
-    const codeMatches = code => (code?.door === 'lan') === wantLan;
+    const codeMatches = code => code?.door !== 'byo' && (code?.door === 'lan') === wantLan;
     const choice = lanWay && otherOn ? `<div class="mstep" style="display:block"><p><strong>where is this agent?</strong></p><div class="seg2" role="radiogroup" aria-label="where is this agent">${[['other', 'on this computer, or anywhere through solstone.me'], ['lan', 'on another computer on your wifi or VPN']].map(([id, name]) => `<button class="seg${connectWay === id ? ' is' : ''}" role="radio" aria-checked="${connectWay === id}" data-way="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${name}</span></span></button>`).join('')}</div></div>` : '';
     const mark = markUnit();
     const close = `<button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2>`;

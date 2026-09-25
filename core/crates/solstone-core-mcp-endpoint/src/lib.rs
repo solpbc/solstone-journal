@@ -42,6 +42,10 @@ mod bridge_pop;
 #[cfg(unix)]
 mod bridge_session;
 #[cfg(unix)]
+pub mod byo_dns;
+#[cfg(unix)]
+pub mod byo_door;
+#[cfg(unix)]
 mod dispatch;
 #[cfg(unix)]
 mod http1;

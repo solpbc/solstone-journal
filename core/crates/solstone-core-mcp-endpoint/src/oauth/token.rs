@@ -62,7 +62,7 @@ fn authorization_code(
     }
     let binding = oauth.binding();
     let store_resource = match &oauth.resource_origin {
-        super::ResourceOrigin::Fixed(_) => resource,
+        super::ResourceOrigin::Fixed(_) | super::ResourceOrigin::Byo { .. } => resource,
         super::ResourceOrigin::Request => {
             let origin = match oauth.published_origin(request) {
                 Ok(origin) => origin,
@@ -108,7 +108,7 @@ fn refresh_token(
         return oauth_error("invalid_request");
     };
     match &oauth.resource_origin {
-        super::ResourceOrigin::Fixed(_) => {
+        super::ResourceOrigin::Fixed(_) | super::ResourceOrigin::Byo { .. } => {
             if let Some(resource) = field(pairs, "resource")
                 && (resource.len() > MAX_CLIENT_ID_BYTES || resource != oauth.binding().canonical())
             {

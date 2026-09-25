@@ -158,6 +158,7 @@
 //! a deliberate regression and observed red result before the correct code is
 //! restored.
 
+pub mod byo_guard;
 pub mod envelope;
 pub mod gate;
 pub mod identity;

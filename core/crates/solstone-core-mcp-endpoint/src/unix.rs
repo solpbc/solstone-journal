@@ -246,6 +246,262 @@ pub(crate) fn persist_tls_state_bytes(
     )
 }
 
+pub(crate) const BYO_DIRECTORY: &str = "byo";
+pub(crate) const BYO_INGRESS_SOCKET: &str = "ingress.sock";
+pub(crate) const BYO_CUTOVER_SOCKET: &str = "cutover.sock";
+pub(crate) const BYO_ACCOUNTS_DIR: &str = "accounts";
+pub(crate) const BYO_CERTS_DIR: &str = "certs";
+pub(crate) const BYO_ACCOUNT_KEY_FILE: &str = "account.pk8";
+pub(crate) const BYO_ACCOUNT_URI_FILE: &str = "account.uri";
+
+pub(crate) struct ByoDirectory {
+    pub(crate) file: File,
+    pub(crate) owner: u32,
+}
+
+pub(crate) fn open_byo_directory(root: &JournalRoot) -> io::Result<ByoDirectory> {
+    let owner = geteuid().as_raw();
+    revalidate_root_binding(root)?;
+    let endpoint = create_or_open_endpoint_directory(root, owner)?;
+    let file =
+        create_or_open_owned_child_directory(&endpoint.file, OsStr::new(BYO_DIRECTORY), owner)?;
+    revalidate_root_binding(root)?;
+    Ok(ByoDirectory { file, owner })
+}
+
+pub(crate) fn open_byo_account_directory(
+    byo_dir: &ByoDirectory,
+    hostname: &str,
+) -> io::Result<TlsStateDirectory> {
+    let accounts_dir = create_or_open_owned_child_directory(
+        &byo_dir.file,
+        OsStr::new(BYO_ACCOUNTS_DIR),
+        byo_dir.owner,
+    )?;
+    let host_dir =
+        create_or_open_owned_child_directory(&accounts_dir, OsStr::new(hostname), byo_dir.owner)?;
+    Ok(TlsStateDirectory {
+        file: host_dir,
+        owner: byo_dir.owner,
+    })
+}
+
+pub(crate) fn open_byo_cert_directory(
+    byo_dir: &ByoDirectory,
+    hostname: &str,
+    generation: u64,
+) -> io::Result<TlsStateDirectory> {
+    let certs_dir = create_or_open_owned_child_directory(
+        &byo_dir.file,
+        OsStr::new(BYO_CERTS_DIR),
+        byo_dir.owner,
+    )?;
+    let host_dir =
+        create_or_open_owned_child_directory(&certs_dir, OsStr::new(hostname), byo_dir.owner)?;
+    let gen_str = generation.to_string();
+    let gen_dir =
+        create_or_open_owned_child_directory(&host_dir, OsStr::new(&gen_str), byo_dir.owner)?;
+    Ok(TlsStateDirectory {
+        file: gen_dir,
+        owner: byo_dir.owner,
+    })
+}
+
+pub(crate) fn read_byo_account_key(dir: &TlsStateDirectory) -> io::Result<Option<Vec<u8>>> {
+    read_tls_named_bytes(
+        dir,
+        OsStr::new(BYO_ACCOUNT_KEY_FILE),
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+pub(crate) fn persist_byo_account_key(dir: &TlsStateDirectory, bytes: &[u8]) -> io::Result<()> {
+    persist_tls_named_bytes(
+        dir,
+        OsStr::new(BYO_ACCOUNT_KEY_FILE),
+        bytes,
+        MAX_TLS_ACME_ACCOUNT_BYTES,
+    )
+}
+
+pub(crate) fn read_byo_account_uri(dir: &TlsStateDirectory) -> io::Result<Option<String>> {
+    let bytes = read_tls_named_bytes(dir, OsStr::new(BYO_ACCOUNT_URI_FILE), 2048)?;
+    match bytes {
+        Some(b) => {
+            let s = String::from_utf8(b).map_err(|_| invalid_entry())?;
+            Ok(Some(s.trim().to_string()))
+        }
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn persist_byo_account_uri(dir: &TlsStateDirectory, uri: &str) -> io::Result<()> {
+    persist_tls_named_bytes(dir, OsStr::new(BYO_ACCOUNT_URI_FILE), uri.as_bytes(), 2048)
+}
+
+pub(crate) fn delete_byo_account_pair(dir: &TlsStateDirectory) -> io::Result<()> {
+    let _ = nix::unistd::unlinkat(
+        &dir.file,
+        OsStr::new(BYO_ACCOUNT_KEY_FILE),
+        nix::unistd::UnlinkatFlags::NoRemoveDir,
+    );
+    let _ = nix::unistd::unlinkat(
+        &dir.file,
+        OsStr::new(BYO_ACCOUNT_URI_FILE),
+        nix::unistd::UnlinkatFlags::NoRemoveDir,
+    );
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ByoSocketBlocker {
+    LiveSocket,
+    Symlink,
+    RegularFile,
+    InodeReplaced,
+    PathTooLong,
+}
+
+pub(crate) fn bind_byo_socket(
+    byo_dir: &ByoDirectory,
+    socket_name: &str,
+    socket_path: &Path,
+) -> Result<(std::os::unix::net::UnixListener, u64), (io::Error, Option<ByoSocketBlocker>)> {
+    use std::os::unix::ffi::OsStrExt;
+    let path_bytes = socket_path.as_os_str().as_bytes();
+    if path_bytes.len() + 1 > 108 {
+        return Err((
+            io::Error::other("path length exceeds 108 bytes"),
+            Some(ByoSocketBlocker::PathTooLong),
+        ));
+    }
+
+    let dir_stat = fstat(&byo_dir.file).map_err(|e| (errno_error(e), None))?;
+    if !is_exact_directory(&dir_stat, byo_dir.owner, DIRECTORY_MODE) {
+        return Err((invalid_entry(), None));
+    }
+
+    let name = OsStr::new(socket_name);
+    match fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => {
+            let file_type = stat.st_mode & 0o170000;
+            if file_type == 0o120000 {
+                return Err((
+                    io::Error::other("symlink blocker"),
+                    Some(ByoSocketBlocker::Symlink),
+                ));
+            }
+            if file_type == 0o100000 {
+                return Err((
+                    io::Error::other("regular file blocker"),
+                    Some(ByoSocketBlocker::RegularFile),
+                ));
+            }
+            if file_type == 0o140000 {
+                // Test if socket is live
+                if std::os::unix::net::UnixStream::connect(socket_path).is_ok() {
+                    return Err((
+                        io::Error::other("live socket blocker"),
+                        Some(ByoSocketBlocker::LiveSocket),
+                    ));
+                }
+                // Second fstatat to check inode stability
+                let second = fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+                    .map_err(|e| (errno_error(e), None))?;
+                if identity(&stat) != identity(&second) {
+                    return Err((
+                        io::Error::other("inode replaced blocker"),
+                        Some(ByoSocketBlocker::InodeReplaced),
+                    ));
+                }
+                nix::unistd::unlinkat(&byo_dir.file, name, nix::unistd::UnlinkatFlags::NoRemoveDir)
+                    .map_err(|e| (errno_error(e), None))?;
+            } else {
+                return Err((invalid_entry(), None));
+            }
+        }
+        Err(Errno::ENOENT) => {}
+        Err(e) => return Err((errno_error(e), None)),
+    }
+
+    let listener = std::os::unix::net::UnixListener::bind(socket_path).map_err(|e| (e, None))?;
+
+    let post_stat = fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .map_err(|e| (errno_error(e), None))?;
+    let sock_stat = fstat(&listener).map_err(|e| (errno_error(e), None))?;
+
+    if identity(&post_stat) != identity(&sock_stat)
+        || (post_stat.st_mode & 0o777) != FILE_MODE
+        || post_stat.st_uid != byo_dir.owner
+    {
+        let _ = nix::sys::stat::fchmodat(
+            &byo_dir.file,
+            name,
+            mode(FILE_MODE),
+            nix::sys::stat::FchmodatFlags::NoFollowSymlink,
+        );
+    }
+    let bound_inode = post_stat.st_ino;
+    Ok((listener, bound_inode))
+}
+
+pub(crate) fn unlink_byo_socket_if_inode_matches(
+    byo_dir: &ByoDirectory,
+    socket_name: &str,
+    bound_inode: u64,
+) {
+    let name = OsStr::new(socket_name);
+    if let Ok(stat) = fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        && stat.st_ino == bound_inode
+    {
+        let _ = nix::unistd::unlinkat(&byo_dir.file, name, nix::unistd::UnlinkatFlags::NoRemoveDir);
+    }
+}
+
+pub(crate) fn reclaim_stale_byo_socket_if_inactive(
+    byo_dir: &ByoDirectory,
+    socket_name: &str,
+    socket_path: &Path,
+) -> Result<(), Option<ByoSocketBlocker>> {
+    let dir_stat = fstat(&byo_dir.file).map_err(|_| None)?;
+    if !is_exact_directory(&dir_stat, byo_dir.owner, DIRECTORY_MODE) {
+        return Err(None);
+    }
+
+    let name = OsStr::new(socket_name);
+    match fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW) {
+        Ok(stat) => {
+            let file_type = stat.st_mode & 0o170000;
+            if file_type == 0o120000 {
+                return Err(Some(ByoSocketBlocker::Symlink));
+            }
+            if file_type == 0o100000 {
+                return Err(Some(ByoSocketBlocker::RegularFile));
+            }
+            if file_type == 0o140000 {
+                // Test if socket is live
+                if std::os::unix::net::UnixStream::connect(socket_path).is_ok() {
+                    return Err(Some(ByoSocketBlocker::LiveSocket));
+                }
+                // Second fstatat to check inode stability
+                let second =
+                    fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW).map_err(|_| None)?;
+                if identity(&stat) != identity(&second) {
+                    return Err(Some(ByoSocketBlocker::InodeReplaced));
+                }
+                nix::unistd::unlinkat(&byo_dir.file, name, nix::unistd::UnlinkatFlags::NoRemoveDir)
+                    .map_err(|_| None)?;
+                Ok(())
+            } else {
+                Err(None)
+            }
+        }
+        Err(Errno::ENOENT) => Ok(()),
+        Err(_) => Err(None),
+    }
+}
+
 /// Persist one ACME account key under its fixed environment-specific name.
 /// Both the account and certificate state remain descriptor-bound and
 /// owner-only; callers cannot select a path.

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+#![cfg(all(test, feature = "full-tests"))]
+
 //! Purpose-built MCP read-boundary fixtures. These never use the development
 //! journal fixture because each case needs isolated, adversarial journal state.
 

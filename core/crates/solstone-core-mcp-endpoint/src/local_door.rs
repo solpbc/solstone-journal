@@ -133,8 +133,15 @@ pub async fn run_local_door_async(
         let _ = crate::lan_door::run_lan_door_async(lan_root, lan_oauth, lan_shutdown).await;
     });
 
+    let byo_root = journal_root.clone();
+    let byo_shutdown = shutdown_receive.clone();
+    let byo_task = tokio::spawn(async move {
+        let _ = crate::byo_door::run_byo_door_async(byo_root, byo_shutdown).await;
+    });
+
     let result = run_local_door_loop(&journal_root, run, shutdown_receive).await;
     let _ = lan_task.await;
+    let _ = byo_task.await;
     let service_stopped = result.is_ok();
     signal_task.abort();
     let _ = signal_task.await;
@@ -144,6 +151,24 @@ pub async fn run_local_door_async(
     }
     write_local_door_state(&journal_root, false, Some("not_running"));
     crate::lan_door::write_lan_door_state(&journal_root, false, Some("not_running"), None, None);
+    crate::byo_door::write_byo_door_state(
+        &journal_root,
+        &crate::byo_door::ByoDoorState {
+            hostname: None,
+            enabled: false,
+            generation: 0,
+            account_uri: None,
+            caa: None,
+            dns_verdict: None,
+            dns_observed_at: None,
+            socket_listening: false,
+            certificate_active: false,
+            socket_path: None,
+            socket_blocker: None,
+            next_action: None,
+            observed_at: chrono::Utc::now(),
+        },
+    );
     if let Some(parent) = hosted_parent {
         let reason = parent_loss_receive.try_recv().ok().or_else(|| {
             parent

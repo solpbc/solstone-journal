@@ -269,6 +269,13 @@ access token ([MCP OAuth](MCP_OAUTH.md)). The normal flow is `initialize`, retai
 that header. Advertised tools are the closed registry intersected with the
 connection's current enforceable permission.
 
+For an owner-operated custom domain (`mcp_endpoint.byo_hostname`), TLS
+terminates directly inside the journal process using automated ACME issuance
+over the `tls-alpn-01` challenge. Raw public TCP forwarding targets
+`<journal>/mcp-endpoint/byo/ingress.sock`, not `127.0.0.1:7658`. The process
+that copies those bytes can read them.
+Clients connect to `https://<hostname>/mcp`.
+
 The Journal MCP endpoint is listed in the [current command inventory](#current-command-inventory).
 
 ## Journal Doctor

@@ -13,7 +13,7 @@ use tokio::sync::watch;
 use super::cimd::CimdAttemptIo;
 #[cfg(any(test, feature = "full-tests"))]
 use super::cimd::fetch_cimd_with_io;
-use super::cimd::{CimdDocument, canonicalize_ip, fetch_cimd};
+use super::cimd::{CimdDocument, fetch_cimd};
 use super::redirect::parse_redirect_uri;
 use super::store::{OAuthStoreError, RegisteredClient};
 use super::urlparse::validate_cimd_url;
@@ -223,7 +223,6 @@ pub(crate) async fn resolve_or_register_cimd_client(
     shutdown: &mut watch::Receiver<bool>,
 ) -> Result<ResolvedCimdClient, CimdRegistrationError> {
     if let Some(existing) = oauth
-        .store
         .lookup_client_by_cimd_url(client_id)
         .map_err(CimdRegistrationError::Store)?
     {
@@ -272,7 +271,6 @@ pub(crate) async fn resolve_or_register_cimd_client_with_io<IO: CimdAttemptIo>(
     random: &dyn RandomSource,
 ) -> Result<ResolvedCimdClient, CimdRegistrationError> {
     if let Some(existing) = oauth
-        .store
         .lookup_client_by_cimd_url(client_id)
         .map_err(CimdRegistrationError::Store)?
     {
@@ -322,7 +320,6 @@ fn complete_cimd_document(
         other => other,
     };
     let existing = oauth
-        .store
         .lookup_client_by_cimd_url(client_id)
         .map_err(CimdRegistrationError::Store)?;
     if let Some(existing) = existing {
@@ -335,7 +332,7 @@ fn complete_cimd_document(
         client_id,
         redirect_uris,
         client_name,
-        &source_text(source),
+        &oauth.source_cohort(source),
         random,
     ) {
         Ok(created) => Ok(ResolvedCimdClient {
@@ -385,7 +382,7 @@ fn complete_classic(
         &client_id,
         redirect_uris,
         client_name,
-        &source_text(source),
+        &oauth.source_cohort(source),
         random,
     ) {
         Ok(created) => registration_response(201, "Created", &created),
@@ -444,10 +441,6 @@ fn is_exactly_code(value: &serde_json::Value) -> bool {
         value.as_array(),
         Some(items) if items.len() == 1 && items[0].as_str() == Some("code")
     )
-}
-
-fn source_text(source: IpAddr) -> String {
-    canonicalize_ip(source).to_string()
 }
 
 fn registration_response(

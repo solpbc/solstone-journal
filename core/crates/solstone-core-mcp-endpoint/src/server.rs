@@ -116,11 +116,12 @@ async fn serve_with_permit_pool(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum RequestGuard {
     None,
     Loopback,
     IpLiteral { port: u16 },
+    ByoHostname { canonical_hostname: Arc<str> },
 }
 
 async fn handle_connection(
@@ -295,6 +296,62 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
                     return Ok(());
                 }
             }
+            RequestGuard::ByoHostname {
+                ref canonical_hostname,
+            } => {
+                let method = match request.method {
+                    HttpMethod::Get => axum::http::Method::GET,
+                    HttpMethod::Post => axum::http::Method::POST,
+                    HttpMethod::Delete => axum::http::Method::DELETE,
+                };
+                let Ok(uri) = request.target.parse::<axum::http::Uri>() else {
+                    let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                };
+                let mut header_map = axum::http::HeaderMap::new();
+                let mut headers_ok = true;
+                for (k, v) in request.headers() {
+                    match (
+                        axum::http::HeaderName::from_bytes(k.as_bytes()),
+                        v.parse::<axum::http::HeaderValue>(),
+                    ) {
+                        (Ok(name), Ok(value)) => {
+                            header_map.append(name, value);
+                        }
+                        _ => {
+                            headers_ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !headers_ok {
+                    let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                }
+                if let Some(refusal) =
+                    solstone_core_convey_http::byo_guard::evaluate_byo_hostname_request(
+                        &method,
+                        &uri,
+                        &header_map,
+                        canonical_hostname,
+                    )
+                {
+                    let reason_code = match refusal {
+                        solstone_core_convey_http::loopback_guard::LoopbackRefusal::HostNotAllowed => {
+                            "host_not_allowed"
+                        }
+                        solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossSite
+                        | solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossOrigin => {
+                            "cross_origin_blocked"
+                        }
+                    };
+                    let response = HttpResponse::text(403, "Forbidden", reason_code);
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                }
+            }
         }
         let response = process_request(
             &request,
@@ -304,7 +361,7 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
             source,
             oauth.as_ref(),
             &mut shutdown,
-            request_guard,
+            request_guard.clone(),
         )
         .await;
         http.write_response(&response)
@@ -453,7 +510,10 @@ fn authenticate(
         ));
     }
     // a static key sent here is exposed before the 401 and is not burned.
-    if !matches!(request_guard, RequestGuard::IpLiteral { .. }) {
+    if !matches!(
+        request_guard,
+        RequestGuard::IpLiteral { .. } | RequestGuard::ByoHostname { .. }
+    ) {
         match token_store.verify(token) {
             Ok(verified) => return Ok(verified),
             Err(TokenStoreError::InvalidToken) => {}

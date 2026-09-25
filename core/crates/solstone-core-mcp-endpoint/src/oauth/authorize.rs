@@ -9,7 +9,6 @@ use tokio::sync::watch;
 
 #[cfg(all(test, not(feature = "full-tests")))]
 use super::cimd::CimdAttemptIo;
-use super::cimd::canonicalize_ip;
 #[cfg(all(test, not(feature = "full-tests")))]
 use super::dcr::resolve_or_register_cimd_client_with_io;
 use super::dcr::{CimdRegistrationError, resolve_or_register_cimd_client};
@@ -151,7 +150,9 @@ fn finish_authorize_get(
         Err(response) => return response,
     };
     let expected_resource = match &oauth.resource_origin {
-        super::ResourceOrigin::Fixed(_) => canonical_resource(oauth),
+        super::ResourceOrigin::Fixed(_) | super::ResourceOrigin::Byo { .. } => {
+            canonical_resource(oauth)
+        }
         super::ResourceOrigin::Request => format!("{issuer}/mcp"),
     };
     if field(pairs, "response_type") != Some("code")
@@ -163,7 +164,8 @@ fn finish_authorize_get(
     }
     let code_challenge = field(pairs, "code_challenge").expect("challenge present");
     let stored_resource = canonical_resource(oauth);
-    match oauth.store.create_transaction(
+    let generation = oauth.binding().stored_grant_generation();
+    match oauth.store.create_transaction_with_generation(
         &client.id,
         redirect_uri,
         &stored_resource,
@@ -171,7 +173,8 @@ fn finish_authorize_get(
         code_challenge,
         "S256",
         state,
-        &canonicalize_ip(source).to_string(),
+        &oauth.source_cohort(source),
+        generation,
     ) {
         Ok(transaction_id) => consent_page(
             &client,
@@ -332,7 +335,7 @@ async fn resolve_authorize_client<IO: CimdAttemptIo>(
         .await
         .map(|resolved| resolved.client)
     } else {
-        match oauth.store.lookup_client_by_cimd_url(client_id) {
+        match oauth.lookup_client_by_cimd_url(client_id) {
             Ok(Some(client)) => Ok(client),
             Ok(None) => Err(CimdRegistrationError::Fetch),
             Err(error) => Err(CimdRegistrationError::Store(error)),
@@ -351,7 +354,7 @@ async fn resolve_live(
             .await
             .map(|resolved| resolved.client)
     } else {
-        match oauth.store.lookup_client_by_cimd_url(client_id) {
+        match oauth.lookup_client_by_cimd_url(client_id) {
             Ok(Some(client)) => Ok(client),
             Ok(None) => Err(CimdRegistrationError::Fetch),
             Err(error) => Err(CimdRegistrationError::Store(error)),

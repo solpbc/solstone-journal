@@ -45,6 +45,7 @@ struct SessionRecord {
     /// appearing afterwards leaves it holding exactly the stale schema directive
     /// 3 exists to remove.
     advertised_generation: Option<Option<u64>>,
+    generation: Option<u64>,
 }
 
 /// A reason session creation or ownership validation was rejected.
@@ -81,12 +82,30 @@ impl SessionTable {
 
     /// Create one session bound to a durable opaque bearer-token identifier.
     pub(crate) fn create(&self, token_id: &str) -> Result<String, SessionError> {
-        self.create_with_random(token_id, &SystemRandomSource)
+        self.create_with_generation(token_id, None)
     }
 
+    pub(crate) fn create_with_generation(
+        &self,
+        token_id: &str,
+        generation: Option<u64>,
+    ) -> Result<String, SessionError> {
+        self.create_with_random_and_generation(token_id, generation, &SystemRandomSource)
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn create_with_random(
         &self,
         token_id: &str,
+        random: &dyn RandomSource,
+    ) -> Result<String, SessionError> {
+        self.create_with_random_and_generation(token_id, None, random)
+    }
+
+    pub(crate) fn create_with_random_and_generation(
+        &self,
+        token_id: &str,
+        generation: Option<u64>,
         random: &dyn RandomSource,
     ) -> Result<String, SessionError> {
         let session_id = complete_session_id(random)?;
@@ -117,6 +136,7 @@ impl SessionTable {
                 created_at: now,
                 last_used: now,
                 advertised_generation: None,
+                generation,
             },
         );
         Ok(session_id)
@@ -124,6 +144,15 @@ impl SessionTable {
 
     /// Verify that a supplied session remains live and belongs to this request's bearer token.
     pub(crate) fn validate(&self, session_id: &str, token_id: &str) -> Result<(), SessionError> {
+        self.validate_with_generation(session_id, token_id, None)
+    }
+
+    pub(crate) fn validate_with_generation(
+        &self,
+        session_id: &str,
+        token_id: &str,
+        expected_generation: Option<u64>,
+    ) -> Result<(), SessionError> {
         let now = Instant::now();
         let mut sessions = self
             .sessions
@@ -133,6 +162,9 @@ impl SessionTable {
         let session = sessions.get_mut(session_id).ok_or(SessionError::NotFound)?;
         if session.token_id != token_id {
             return Err(SessionError::Foreign);
+        }
+        if expected_generation.is_some() && session.generation != expected_generation {
+            return Err(SessionError::NotFound);
         }
         debug_assert!(session.created_at <= now);
         session.last_used = now;
@@ -185,6 +217,14 @@ impl SessionTable {
         }
         sessions.remove(session_id);
         Ok(())
+    }
+
+    /// Clear all active sessions (e.g. on cutover).
+    #[allow(dead_code)]
+    pub(crate) fn clear(&self) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            sessions.clear();
+        }
     }
 
     #[cfg(all(test, not(feature = "full-tests")))]

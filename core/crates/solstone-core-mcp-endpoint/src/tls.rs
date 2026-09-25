@@ -13,7 +13,7 @@ use std::io;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration as StdDuration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration as StdDuration, Instant};
 
 use arc_swap::ArcSwapOption;
 use base64::Engine as _;
@@ -75,6 +75,31 @@ struct McpEndpointCertificateResolver {
 struct ActiveOrdinaryCertificate {
     key: Arc<CertifiedKey>,
     expires_at: Instant,
+    not_after: i64,
+}
+
+#[cfg(test)]
+pub static TEST_NOW_OVERRIDE: std::sync::RwLock<Option<time::OffsetDateTime>> =
+    std::sync::RwLock::new(None);
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn set_test_now_override(timestamp: Option<i64>) {
+    if let Ok(mut guard) = TEST_NOW_OVERRIDE.write() {
+        *guard = timestamp.and_then(|ts| time::OffsetDateTime::from_unix_timestamp(ts).ok());
+    }
+}
+
+pub(crate) fn current_epoch_seconds() -> i64 {
+    #[cfg(test)]
+    {
+        if let Ok(guard) = TEST_NOW_OVERRIDE.read()
+            && let Some(now) = *guard
+        {
+            return now.unix_timestamp();
+        }
+    }
+    time::OffsetDateTime::now_utc().unix_timestamp()
 }
 
 struct ActiveChallengeCertificate {
@@ -134,7 +159,14 @@ impl fmt::Debug for McpEndpointCertificateResolver {
 
 impl McpEndpointTlsService {
     pub(crate) fn ordinary_certificate_is_active(&self) -> bool {
-        self.resolver.ordinary.load().is_some()
+        let now_ts = current_epoch_seconds();
+        self.resolver
+            .ordinary
+            .load_full()
+            .as_deref()
+            .is_some_and(|ordinary| {
+                now_ts < ordinary.not_after && Instant::now() < ordinary.expires_at
+            })
     }
     pub(crate) fn authorized_hostname(&self) -> &str {
         &self.resolver.hostname
@@ -165,6 +197,38 @@ impl McpEndpointTlsService {
             unix::read_tls_state_bytes(&store.directory).map_err(|_| McpEndpointTlsError::State)?
         {
             match classify_stored_state(&bytes, &service.resolver.hostname, environment)? {
+                StoredCertificateClassification::Same(decoded) => {
+                    if certificate_is_current(&decoded)? {
+                        let active = activate_decoded_stored_state(decoded)?;
+                        service.resolver.ordinary.store(Some(Arc::new(active)));
+                    }
+                }
+                StoredCertificateClassification::Foreign => {}
+            }
+        }
+        Ok(service)
+    }
+
+    pub(crate) fn for_byo_cert_directory(
+        cert_directory: unix::TlsStateDirectory,
+        hostname: String,
+    ) -> Result<Self, McpEndpointTlsError> {
+        if !is_exact_authorized_hostname(&hostname, &hostname) {
+            return Err(McpEndpointTlsError::State);
+        }
+        let store = Arc::new(CertificateStateStore {
+            directory: cert_directory,
+            environment: McpEndpointCertificateEnvironment::Production,
+        });
+        let service = Self::empty(hostname, Some(Arc::clone(&store)), false);
+        if let Some(bytes) =
+            unix::read_tls_state_bytes(&store.directory).map_err(|_| McpEndpointTlsError::State)?
+        {
+            match classify_stored_state(
+                &bytes,
+                &service.resolver.hostname,
+                McpEndpointCertificateEnvironment::Production,
+            )? {
                 StoredCertificateClassification::Same(decoded) => {
                     if certificate_is_current(&decoded)? {
                         let active = activate_decoded_stored_state(decoded)?;
@@ -353,6 +417,56 @@ impl McpEndpointTlsService {
         }
     }
 
+    pub(crate) async fn run_byo_acme_renewal(
+        &self,
+        account_dir: unix::TlsStateDirectory,
+        shutdown: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), McpEndpointCertificateLifecycleError> {
+        if *shutdown.borrow() || shutdown.has_changed().is_err() {
+            return Ok(());
+        }
+        let _store = self
+            .store
+            .as_ref()
+            .ok_or(McpEndpointCertificateLifecycleError::State)?;
+        let cache = ByoAccountCache {
+            account_dir,
+            service: self.lifecycle_copy(),
+        };
+        let mut state = AcmeConfig::new([self.resolver.hostname.as_str()])
+            .cache(cache)
+            .directory_lets_encrypt(true)
+            .state();
+        let _resolver_guard = McpEndpointAcmeResolverGuard {
+            resolver: Arc::clone(&self.resolver),
+            installed: state.resolver(),
+        };
+        self.resolver
+            .acme
+            .store(Some(Arc::clone(&_resolver_guard.installed)));
+
+        let mut retry_count = 0_u32;
+        loop {
+            tokio::select! {
+                changed = shutdown.changed() => {
+                    if changed.is_err() || *shutdown.borrow_and_update() {
+                        return Ok(());
+                    }
+                }
+                event = state.next() => match event {
+                    Some(Ok(_)) => { retry_count = 0; },
+                    Some(Err(error)) if persistent_acme_state_error(&error) => {
+                        return Err(McpEndpointCertificateLifecycleError::State);
+                    }
+                    Some(Err(_)) => {
+                        retry_count = retry_count.saturating_add(1);
+                    },
+                    None => return Err(McpEndpointCertificateLifecycleError::State),
+                }
+            }
+        }
+    }
+
     fn lifecycle_copy(&self) -> Self {
         Self {
             resolver: Arc::clone(&self.resolver),
@@ -373,6 +487,7 @@ impl McpEndpointTlsService {
             .store(Some(Arc::new(ActiveOrdinaryCertificate {
                 key,
                 expires_at: Instant::now() + StdDuration::from_secs(3600),
+                not_after: time::OffsetDateTime::now_utc().unix_timestamp() + 3600,
             })));
     }
 }
@@ -499,6 +614,95 @@ impl AccountCache for McpEndpointAcmeCache {
     }
 }
 
+pub(crate) struct ByoAccountCache {
+    pub(crate) account_dir: unix::TlsStateDirectory,
+    pub(crate) service: McpEndpointTlsService,
+}
+
+#[async_trait::async_trait]
+impl CertCache for ByoAccountCache {
+    type EC = io::Error;
+
+    async fn load_cert(
+        &self,
+        _domains: &[String],
+        _directory_url: &str,
+    ) -> Result<Option<Vec<u8>>, Self::EC> {
+        let store = self
+            .service
+            .store
+            .as_ref()
+            .ok_or_else(|| io::Error::other("MCP endpoint TLS state is unavailable"))?;
+        let Some(bytes) = unix::read_tls_state_bytes(&store.directory)? else {
+            return Ok(None);
+        };
+        match classify_stored_state(
+            &bytes,
+            &self.service.resolver.hostname,
+            McpEndpointCertificateEnvironment::Production,
+        )
+        .map_err(|_| io::Error::other("MCP endpoint certificate state is invalid"))?
+        {
+            StoredCertificateClassification::Same(decoded) => {
+                Ok(Some(stored_state_to_pem(decoded)))
+            }
+            StoredCertificateClassification::Foreign => Ok(None),
+        }
+    }
+
+    async fn store_cert(
+        &self,
+        _domains: &[String],
+        _directory_url: &str,
+        certificate: &[u8],
+    ) -> Result<(), Self::EC> {
+        let issued = issued_pem_parts(certificate)
+            .map_err(|_| io::Error::other("ACME returned an invalid certificate bundle"))?;
+        self.service
+            .install_ordinary_certificate(
+                issued.certificate_chain,
+                issued.private_key,
+                issued.not_before,
+                issued.not_after,
+            )
+            .map_err(|_| io::Error::other("ACME certificate state could not be activated"))
+    }
+}
+
+#[async_trait::async_trait]
+impl AccountCache for ByoAccountCache {
+    type EA = io::Error;
+
+    async fn load_account(
+        &self,
+        _contact: &[String],
+        _directory_url: &str,
+    ) -> Result<Option<Vec<u8>>, Self::EA> {
+        let uri = unix::read_byo_account_uri(&self.account_dir)?;
+        if uri.is_none() {
+            return Err(io::Error::other("account not registered"));
+        }
+        let account = unix::read_byo_account_key(&self.account_dir)?;
+        let Some(account_bytes) = account else {
+            return Err(io::Error::other("account key missing"));
+        };
+        validate_acme_account_key(&account_bytes)
+            .map_err(|_| io::Error::other("MCP endpoint ACME account key is invalid"))?;
+        Ok(Some(account_bytes))
+    }
+
+    async fn store_account(
+        &self,
+        _contact: &[String],
+        _directory_url: &str,
+        account: &[u8],
+    ) -> Result<(), Self::EA> {
+        validate_acme_account_key(account)
+            .map_err(|_| io::Error::other("ACME returned an invalid account key"))?;
+        unix::persist_byo_account_key(&self.account_dir, account)
+    }
+}
+
 impl Drop for McpEndpointChallengeGuard {
     fn drop(&mut self) {
         let current = self.resolver.challenge.load_full();
@@ -552,10 +756,11 @@ impl ResolvesServerCert for McpEndpointCertificateResolver {
                 .filter(|challenge| challenge.generation != 0)
                 .map(|challenge| Arc::clone(&challenge.key));
         }
+        let now_ts = current_epoch_seconds();
         self.ordinary
             .load_full()
             .as_deref()
-            .filter(|ordinary| Instant::now() < ordinary.expires_at)
+            .filter(|ordinary| now_ts < ordinary.not_after && Instant::now() < ordinary.expires_at)
             .map(|ordinary| Arc::clone(&ordinary.key))
     }
 }
@@ -818,6 +1023,7 @@ fn activate_decoded_stored_state(
     Ok(ActiveOrdinaryCertificate {
         key: Arc::new(CertifiedKey::new(certificate_chain, signing_key)),
         expires_at,
+        not_after,
     })
 }
 
@@ -864,7 +1070,7 @@ fn issued_pem_parts(certificate: &[u8]) -> Result<IssuedCertificate, McpEndpoint
     })
 }
 
-fn validate_acme_account_key(bytes: &[u8]) -> Result<(), McpEndpointTlsError> {
+pub(crate) fn validate_acme_account_key(bytes: &[u8]) -> Result<(), McpEndpointTlsError> {
     if bytes.is_empty() || bytes.len() > unix::MAX_TLS_ACME_ACCOUNT_BYTES {
         return Err(McpEndpointTlsError::State);
     }
@@ -931,12 +1137,7 @@ fn decode_base64_exact(value: &str) -> Result<Vec<u8>, McpEndpointTlsError> {
 }
 
 fn now_unix_seconds() -> Result<i64, McpEndpointTlsError> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|_| McpEndpointTlsError::State)
-        .and_then(|duration| {
-            i64::try_from(duration.as_secs()).map_err(|_| McpEndpointTlsError::State)
-        })
+    Ok(current_epoch_seconds())
 }
 
 fn environment_name(environment: McpEndpointCertificateEnvironment) -> &'static str {

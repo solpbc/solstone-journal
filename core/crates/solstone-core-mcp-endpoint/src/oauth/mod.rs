@@ -22,7 +22,7 @@ use crate::http1::{HttpRequest, HttpResponse};
 
 use self::bulkhead::CimdBulkhead;
 use self::rate_limit::PairingRateLimiter;
-use self::store::OAuthStore;
+use self::store::{OAuthStore, OAuthStoreError, RegisteredClient};
 
 #[cfg(feature = "full-tests")]
 use rustls::pki_types::ServerName;
@@ -48,19 +48,33 @@ const MAX_URLENCODED_PAIRS: usize = 32;
 pub(crate) enum RuntimeBinding {
     Unbound { canonical: String },
     Bound { canonical: String },
+    Byo { canonical: String, generation: u64 },
 }
 
 impl RuntimeBinding {
     pub(crate) fn canonical(&self) -> &str {
         match self {
-            Self::Unbound { canonical } | Self::Bound { canonical } => canonical,
+            Self::Unbound { canonical }
+            | Self::Bound { canonical }
+            | Self::Byo { canonical, .. } => canonical,
         }
     }
 
-    pub(crate) fn grant_matches(&self, stored: &Option<String>) -> bool {
-        match (self, stored) {
+    pub(crate) fn grant_matches(
+        &self,
+        stored_resource: &Option<String>,
+        stored_generation: Option<u64>,
+    ) -> bool {
+        match (self, stored_resource) {
             (Self::Unbound { .. }, None) => true,
             (Self::Bound { canonical }, Some(stored)) => stored == canonical,
+            (
+                Self::Byo {
+                    canonical,
+                    generation,
+                },
+                Some(stored),
+            ) => stored == canonical && stored_generation == Some(*generation),
             _ => false,
         }
     }
@@ -74,6 +88,7 @@ impl RuntimeBinding {
                 Some("lan")
             }
             Self::Bound { .. } => Some("local"),
+            Self::Byo { .. } => Some("byo"),
             Self::Unbound { .. } => None,
         }
     }
@@ -81,7 +96,14 @@ impl RuntimeBinding {
     pub(crate) fn stored_grant_resource(&self) -> Option<String> {
         match self {
             Self::Unbound { .. } => None,
-            Self::Bound { canonical } => Some(canonical.clone()),
+            Self::Bound { canonical } | Self::Byo { canonical, .. } => Some(canonical.clone()),
+        }
+    }
+
+    pub(crate) fn stored_grant_generation(&self) -> Option<u64> {
+        match self {
+            Self::Byo { generation, .. } => Some(*generation),
+            _ => None,
         }
     }
 }
@@ -94,6 +116,10 @@ pub(crate) enum ResourceOrigin {
     /// LAN door. Published origin is `https://` plus the admitted Host, unchanged.
     /// Grant canonical is `MCP_LAN_DOOR_RESOURCE` (`urn:solstone:mcp-door:lan`).
     Request,
+    Byo {
+        origin: String,
+        generation: u64,
+    },
 }
 
 /// Process-local OAuth helpers bound to one journal root.
@@ -135,6 +161,10 @@ impl OAuthRuntime {
             ResourceOrigin::Request => RuntimeBinding::Bound {
                 canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
             },
+            ResourceOrigin::Byo { origin, generation } => RuntimeBinding::Byo {
+                canonical: format!("{origin}/mcp"),
+                generation: *generation,
+            },
         }
     }
 
@@ -159,9 +189,47 @@ impl OAuthRuntime {
         }
     }
 
+    pub(crate) fn new_byo(journal_root: &Path, canonical_hostname: &str, generation: u64) -> Self {
+        let origin = format!("https://{canonical_hostname}");
+        Self {
+            journal_root: journal_root.to_path_buf(),
+            store: OAuthStore::open(journal_root),
+            pairing_limiter: PairingRateLimiter::new(),
+            cimd_bulkhead: CimdBulkhead::new(),
+            resource_origin: ResourceOrigin::Byo { origin, generation },
+            binds_grants: true,
+            #[cfg(feature = "full-tests")]
+            cimd_fetch_override: None,
+        }
+    }
+
+    pub(crate) fn is_byo(&self) -> bool {
+        matches!(self.resource_origin, ResourceOrigin::Byo { .. })
+    }
+
+    pub(crate) fn lookup_client_by_cimd_url(
+        &self,
+        client_id: &str,
+    ) -> Result<Option<RegisteredClient>, OAuthStoreError> {
+        self.store
+            .lookup_client_by_cimd_url_in_cohort(client_id, self.is_byo())
+    }
+
+    pub(crate) fn source_cohort(&self, source: std::net::IpAddr) -> String {
+        match &self.resource_origin {
+            ResourceOrigin::Byo { origin, .. } => {
+                let canonical = format!("{origin}/mcp");
+                format!("byo:{canonical}")
+            }
+            _ => cimd::canonicalize_ip(source).to_string(),
+        }
+    }
+
     pub(crate) fn published_origin(&self, request: &HttpRequest) -> Result<String, HttpResponse> {
         match &self.resource_origin {
-            ResourceOrigin::Fixed(origin) => Ok(origin.clone()),
+            ResourceOrigin::Fixed(origin) | ResourceOrigin::Byo { origin, .. } => {
+                Ok(origin.clone())
+            }
             ResourceOrigin::Request => {
                 let host = request
                     .header("host")
@@ -175,7 +243,7 @@ impl OAuthRuntime {
     #[cfg(test)]
     pub(crate) fn fixed_resource_origin(&self) -> &str {
         match &self.resource_origin {
-            ResourceOrigin::Fixed(origin) => origin.as_str(),
+            ResourceOrigin::Fixed(origin) | ResourceOrigin::Byo { origin, .. } => origin.as_str(),
             ResourceOrigin::Request => panic!("not a fixed resource origin"),
         }
     }

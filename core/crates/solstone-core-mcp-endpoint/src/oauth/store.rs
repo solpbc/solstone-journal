@@ -235,6 +235,8 @@ struct StoredGrant {
     /// Once any grant carries a resource, an older binary rejects the whole oauth file as malformed, so every OAuth call on every listener fails and the agents app's view of connections fails until a binary that knows the field reads that journal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     resource: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generation: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,6 +258,8 @@ struct StoredPending {
     code_expires_at: Option<DateTime<Utc>>,
     #[serde(default)]
     permission: Option<ReadPermission>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    generation: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,6 +272,8 @@ struct StoredPairing {
     /// Once a pairing code carries a door, an older binary rejects the whole oauth file as malformed, so every OAuth call on every listener fails and the agents app's view of connections fails until a binary that knows the field reads that journal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     door: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    config_generation: Option<u64>,
 }
 
 impl OAuthStore {
@@ -296,11 +302,36 @@ impl OAuthStore {
         random: &dyn RandomSource,
         door: Option<&str>,
     ) -> Result<CreatedPairingCode, OAuthStoreError> {
+        let mut config_generation = None;
+        let door_stored = if let Some(door_str) = door {
+            if door_str == "byo" || door_str.starts_with("https://") {
+                let config = solstone_core_journal_config::read_journal_config(&self.root)
+                    .map_err(|_| OAuthStoreError::BindingMismatch)?;
+                let byo = solstone_core_journal_config::byo_hostname_config(&config);
+                let solstone_core_journal_config::ByoHostnameConfigStatus::Configured(byo_cfg) =
+                    byo
+                else {
+                    return Err(OAuthStoreError::BindingMismatch);
+                };
+                let Some(hostname) = byo_cfg.hostname else {
+                    return Err(OAuthStoreError::BindingMismatch);
+                };
+                config_generation = Some(byo_cfg.generation);
+                Some(format!("https://{hostname}/mcp"))
+            } else if door_str == "lan"
+                || door_str == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+            {
+                Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_string())
+            } else {
+                Some(door_str.to_owned())
+            }
+        } else {
+            None
+        };
         let mut code_bytes = [0_u8; PAIRING_CODE_BYTES];
         fill_exact(random, &mut code_bytes)?;
         let code = encode_pairing_code(&code_bytes);
         let verifier = sha256_b64(code.as_bytes());
-        let door = door.map(str::to_owned);
         self.mutate(|store, now| {
             store.pairing_generation = store.pairing_generation.saturating_add(1).max(1);
             let expires_at = now + Duration::seconds(PAIRING_TTL_SECS);
@@ -310,7 +341,8 @@ impl OAuthStore {
                 expires_at,
                 generation,
                 locked: false,
-                door,
+                door: door_stored,
+                config_generation,
             });
             Ok(CreatedPairingCode {
                 code,
@@ -343,6 +375,8 @@ impl OAuthStore {
                 door: pairing.door.as_deref().and_then(|d| {
                     if d == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE {
                         Some("lan".to_string())
+                    } else if d == "byo" || d.starts_with("https://") {
+                        Some("byo".to_string())
                     } else {
                         None
                     }
@@ -402,7 +436,7 @@ impl OAuthStore {
                 if grant.revocation_generation != client.revocation_generation {
                     continue;
                 }
-                if !binding.grant_matches(&grant.resource) {
+                if !binding.grant_matches(&grant.resource, grant.generation) {
                     continue;
                 }
                 verified = Some(VerifiedToken {
@@ -415,7 +449,7 @@ impl OAuthStore {
     }
 
     /// Persist one GET /authorize transaction bound to a registered client.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, dead_code)]
     pub(crate) fn create_transaction(
         &self,
         client_record_id: &str,
@@ -436,6 +470,34 @@ impl OAuthStore {
             pkce_method,
             state,
             source,
+            None,
+            &SystemRandomSource,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn create_transaction_with_generation(
+        &self,
+        client_record_id: &str,
+        redirect_uri: &str,
+        resource: &str,
+        issuer: &str,
+        pkce_s256: &str,
+        pkce_method: &str,
+        state: Option<&str>,
+        source: &str,
+        generation: Option<u64>,
+    ) -> Result<String, OAuthStoreError> {
+        self.create_transaction_with_random(
+            client_record_id,
+            redirect_uri,
+            resource,
+            issuer,
+            pkce_s256,
+            pkce_method,
+            state,
+            source,
+            generation,
             &SystemRandomSource,
         )
     }
@@ -451,6 +513,7 @@ impl OAuthStore {
         pkce_method: &str,
         state: Option<&str>,
         source: &str,
+        generation: Option<u64>,
         random: &dyn RandomSource,
     ) -> Result<String, OAuthStoreError> {
         let transaction_id = random_b64(random)?;
@@ -496,6 +559,7 @@ impl OAuthStore {
                 authorization_code_verifier: None,
                 code_expires_at: None,
                 permission: None,
+                generation,
             });
             Ok(transaction_id)
         })
@@ -550,7 +614,9 @@ impl OAuthStore {
                 .iter()
                 .position(|pending| pending.transaction_id == transaction_id)
                 .ok_or(OAuthStoreError::TransactionNotFound)?;
-            if store.pending[index].resource != binding.canonical() {
+            if store.pending[index].resource != binding.canonical()
+                || store.pending[index].generation != binding.stored_grant_generation()
+            {
                 return Err(OAuthStoreError::TransactionNotFound);
             }
             if store.pending[index].authorization_code_verifier.is_none()
@@ -577,8 +643,40 @@ impl OAuthStore {
                     path: PathBuf::from(OAUTH_FILE),
                 })?;
             let door_matches = match pairing.door.as_deref() {
-                None => binding.canonical() != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE,
-                Some(required) => binding.canonical() == required,
+                None => match binding {
+                    super::RuntimeBinding::Unbound { .. } => true,
+                    super::RuntimeBinding::Bound { canonical } => {
+                        canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                    }
+                    super::RuntimeBinding::Byo { .. } => false,
+                },
+                Some(required) => match binding {
+                    super::RuntimeBinding::Byo {
+                        canonical,
+                        generation,
+                    } => {
+                        (required == "byo" || canonical == required)
+                            && pairing.config_generation == Some(*generation)
+                    }
+                    super::RuntimeBinding::Bound { canonical } => {
+                        if required == "lan"
+                            || required == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                        {
+                            canonical == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                        } else if required == "local" {
+                            canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                        } else {
+                            canonical == required
+                        }
+                    }
+                    super::RuntimeBinding::Unbound { canonical } => {
+                        if required == "local" {
+                            true
+                        } else {
+                            canonical == required
+                        }
+                    }
+                },
             };
             let matches = presented_digest
                 .is_some_and(|digest| bool::from(digest.ct_eq(&verifier)))
@@ -676,6 +774,7 @@ impl OAuthStore {
                 || pending.redirect_uri != redirect_uri
                 || pending.resource != resource
                 || pending.resource != binding.canonical()
+                || pending.generation != binding.stored_grant_generation()
                 || pending.pkce_method != "S256"
                 || stored_challenge
                     .is_none_or(|challenge| !bool::from(pkce_digest.ct_eq(&challenge)))
@@ -701,6 +800,7 @@ impl OAuthStore {
                 refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
                 created_at: now,
                 resource: binding.stored_grant_resource(),
+                generation: pending.generation,
             });
             if let Some(client) = store
                 .clients
@@ -770,7 +870,10 @@ impl OAuthStore {
             if store.grants[index].client_id != client_id
                 || store.grants[index].refresh_expires_at <= now
                 || store.grants[index].revocation_generation != client.revocation_generation
-                || !binding.grant_matches(&store.grants[index].resource)
+                || !binding.grant_matches(
+                    &store.grants[index].resource,
+                    store.grants[index].generation,
+                )
             {
                 return Err(OAuthStoreError::InvalidToken);
             }
@@ -819,11 +922,10 @@ impl OAuthStore {
         let source = source.to_owned();
         let mut evicted_grant_ids = Vec::new();
         let registered = self.mutate(|store, now| {
-            if let Some(existing) = store
-                .clients
-                .iter()
-                .find(|client| client.client_id == client_id_owned)
-            {
+            let is_byo = source.starts_with("byo:");
+            if let Some(existing) = store.clients.iter().find(|client| {
+                client.client_id == client_id_owned && (client.source.starts_with("byo:") == is_byo)
+            }) {
                 return Ok(registered_from(existing));
             }
 
@@ -850,12 +952,29 @@ impl OAuthStore {
                 true
             };
 
-            // (a) a client is idle from DCR registration until GET /authorize creates a pending, and a returning CIMD client is idle between lookup and create_transaction, so a concurrent registration from the same source at the cap can evict it and that sign-in fails;
-            // (b) a source with 16 live clients is refused until one refresh expires (at most 30 days, because refresh_expires_at is never extended) or the owner revokes that connection in the agents app. Both are no worse than today.
             let source_count = store.clients.iter().filter(|c| c.source == source).count();
             let mut evicted_target = None;
 
-            if source_count >= MAX_CLIENTS_PER_SOURCE {
+            if is_byo {
+                let byo_count = store
+                    .clients
+                    .iter()
+                    .filter(|c| c.source.starts_with("byo:"))
+                    .count();
+                if byo_count >= MAX_CLIENTS {
+                    let oldest_byo_idle = store
+                        .clients
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, c)| c.source.starts_with("byo:") && is_idle(c, store))
+                        .min_by_key(|(index, c)| (c.created_at, *index))
+                        .map(|(_, c)| c.id.clone());
+                    let Some(target_id) = oldest_byo_idle else {
+                        return Err(OAuthStoreError::Quota);
+                    };
+                    evicted_target = Some(target_id);
+                }
+            } else if source_count >= MAX_CLIENTS_PER_SOURCE {
                 let oldest_source_idle = store
                     .clients
                     .iter()
@@ -867,18 +986,25 @@ impl OAuthStore {
                     return Err(OAuthStoreError::Quota);
                 };
                 evicted_target = Some(target_id);
-            } else if store.clients.len() >= MAX_CLIENTS {
-                let oldest_global_idle = store
+            } else {
+                let local_count = store
                     .clients
                     .iter()
-                    .enumerate()
-                    .filter(|(_, c)| is_idle(c, store))
-                    .min_by_key(|(index, c)| (c.created_at, *index))
-                    .map(|(_, c)| c.id.clone());
-                let Some(target_id) = oldest_global_idle else {
-                    return Err(OAuthStoreError::Quota);
-                };
-                evicted_target = Some(target_id);
+                    .filter(|c| !c.source.starts_with("byo:"))
+                    .count();
+                if local_count >= MAX_CLIENTS {
+                    let oldest_local_idle = store
+                        .clients
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, c)| !c.source.starts_with("byo:") && is_idle(c, store))
+                        .min_by_key(|(index, c)| (c.created_at, *index))
+                        .map(|(_, c)| c.id.clone());
+                    let Some(target_id) = oldest_local_idle else {
+                        return Err(OAuthStoreError::Quota);
+                    };
+                    evicted_target = Some(target_id);
+                }
             }
 
             if let Some(target_id) = evicted_target {
@@ -940,15 +1066,26 @@ impl OAuthStore {
     }
 
     /// Look up a registered client by CIMD URL.
+    #[allow(dead_code)]
     pub(crate) fn lookup_client_by_cimd_url(
         &self,
         client_id: &str,
+    ) -> Result<Option<RegisteredClient>, OAuthStoreError> {
+        self.lookup_client_by_cimd_url_in_cohort(client_id, false)
+    }
+
+    pub(crate) fn lookup_client_by_cimd_url_in_cohort(
+        &self,
+        client_id: &str,
+        is_byo: bool,
     ) -> Result<Option<RegisteredClient>, OAuthStoreError> {
         Ok(self
             .read_store()?
             .clients
             .into_iter()
-            .find(|client| client.client_id == client_id)
+            .find(|client| {
+                client.client_id == client_id && (client.source.starts_with("byo:") == is_byo)
+            })
             .map(|client| registered_from(&client)))
     }
 
@@ -1941,6 +2078,7 @@ mod tests {
                 refresh_expires_at: now,
                 created_at: now,
                 resource: None,
+                generation: None,
             })
             .collect();
         fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
@@ -3039,6 +3177,7 @@ mod tests {
                 refresh_expires_at: base_now + Duration::seconds(30 * 86400),
                 created_at: base_now,
                 resource: None,
+                generation: None,
             });
         }
         fs::write(&path, serde_json::to_vec(&all_live_file).unwrap()).unwrap();
@@ -3090,6 +3229,7 @@ mod tests {
                 refresh_expires_at: base_now + Duration::seconds(30 * 86400),
                 created_at: base_now,
                 resource: None,
+                generation: None,
             });
         }
         file.clients.push(StoredClient {
@@ -3123,5 +3263,187 @@ mod tests {
                 .is_some(),
             "B's idle client is still present"
         );
+    }
+
+    #[test]
+    fn byo_pairing_code_requires_matching_generation() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let byo_binding_gen1 = RuntimeBinding::Byo {
+            canonical: "https://mcp.example.com/mcp".to_owned(),
+            generation: 1,
+        };
+        let byo_binding_gen2 = RuntimeBinding::Byo {
+            canonical: "https://mcp.example.com/mcp".to_owned(),
+            generation: 2,
+        };
+        let local_binding = RuntimeBinding::Bound {
+            canonical: "https://local.example.com/mcp".to_owned(),
+        };
+        let lan_binding = RuntimeBinding::Bound {
+            canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+        };
+
+        // Write journal config with byo_hostname enabled
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_string(&serde_json::json!({
+                "mcp_endpoint": {
+                    "byo_hostname": {
+                        "hostname": "mcp.example.com",
+                        "enabled": true,
+                        "generation": 1
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let client = store
+            .register_client(
+                "https://client.example/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "byo:https://mcp.example.com/mcp",
+            )
+            .unwrap();
+
+        let challenge = sha256_b64(b"pkce-verifier");
+        let tx_id = store
+            .create_transaction_with_random(
+                &client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.example.com/mcp",
+                "https://mcp.example.com",
+                &challenge,
+                "S256",
+                None,
+                "byo:127.0.0.1",
+                Some(1),
+                &crate::tokens::SystemRandomSource,
+            )
+            .unwrap();
+
+        // 1. Pairing code with door="byo" and generation=1
+        let created_pairing = store.generate_pairing_code_with_door(Some("byo")).unwrap();
+
+        // Completing on local_binding or lan_binding fails
+        assert!(matches!(
+            store.complete_pairing(&tx_id, &created_pairing.code, &local_binding),
+            Err(OAuthStoreError::PairingMismatch
+                | OAuthStoreError::BindingMismatch
+                | OAuthStoreError::TransactionNotFound)
+        ));
+        assert!(matches!(
+            store.complete_pairing(&tx_id, &created_pairing.code, &lan_binding),
+            Err(OAuthStoreError::PairingMismatch
+                | OAuthStoreError::BindingMismatch
+                | OAuthStoreError::TransactionNotFound)
+        ));
+
+        // Completing on byo_binding_gen2 fails
+        assert!(matches!(
+            store.complete_pairing(&tx_id, &created_pairing.code, &byo_binding_gen2),
+            Err(OAuthStoreError::PairingMismatch
+                | OAuthStoreError::BindingMismatch
+                | OAuthStoreError::TransactionNotFound)
+        ));
+
+        // Completing on byo_binding_gen1 succeeds
+        let auth = store
+            .complete_pairing(&tx_id, &created_pairing.code, &byo_binding_gen1)
+            .expect("matching generation completes pairing");
+
+        assert_eq!(auth.redirect_uri, "http://127.0.0.1/callback");
+
+        // 2. Unbound pairing code fails on BYO binding
+        let tx_id2 = store
+            .create_transaction_with_random(
+                &client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.example.com/mcp",
+                "https://mcp.example.com",
+                &challenge,
+                "S256",
+                None,
+                "byo:127.0.0.1",
+                Some(1),
+                &crate::tokens::SystemRandomSource,
+            )
+            .unwrap();
+
+        let unbound_pairing = store.generate_pairing_code().unwrap();
+
+        assert!(matches!(
+            store.complete_pairing(&tx_id2, &unbound_pairing.code, &byo_binding_gen1),
+            Err(OAuthStoreError::PairingMismatch
+                | OAuthStoreError::BindingMismatch
+                | OAuthStoreError::TransactionNotFound)
+        ));
+    }
+
+    #[test]
+    fn byo_cohort_isolation() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let base_now = Utc::now();
+        let path = journal.path().join("mcp-endpoint").join("oauth.json");
+        let mut file = OAuthStoreFile::default();
+
+        // Populate local cohort with 1024 idle clients
+        for i in 0..1024 {
+            file.clients.push(StoredClient {
+                id: format!("local-client-{i}"),
+                client_id: format!("https://client.example/local_{i}.json"),
+                redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
+                client_name: None,
+                source: format!("127.0.0.{}", (i % 200) + 1),
+                created_at: base_now - Duration::seconds(1000 - i as i64),
+                last_used_at: None,
+                revocation_generation: 0,
+            });
+        }
+        fs::create_dir_all(journal.path().join("mcp-endpoint")).unwrap();
+        fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+
+        // 1 BYO registration succeeds without evicting any local clients
+        let byo_client = store
+            .register_client(
+                "https://client.example/byo_1.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "byo:https://mcp.example.com/mcp",
+            )
+            .expect("byo registration succeeds under full local cohort");
+
+        assert_eq!(byo_client.client_id, "https://client.example/byo_1.json");
+        let read = store.read_store().unwrap();
+        assert_eq!(read.clients.len(), 1025);
+
+        // Same client_id in other cohort is a different row
+        let same_id = "https://client.example/shared_id.json";
+        let local_reg = store
+            .register_client(
+                same_id,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "127.0.0.1",
+            )
+            .expect("local registration of same_id succeeds with eviction of oldest local idle");
+
+        let byo_reg = store
+            .register_client(
+                same_id,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "byo:https://mcp.example.com/mcp",
+            )
+            .expect("byo registration of same_id succeeds");
+
+        assert_ne!(local_reg.id, byo_reg.id);
+        assert_eq!(local_reg.client_id, byo_reg.client_id);
     }
 }
