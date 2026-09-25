@@ -686,7 +686,7 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
     fs::create_dir(&shims).expect("create Clippy shim directory");
     write_executable(
         &shims.join("cargo"),
-        "#!/bin/sh\nset -eu\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CLIPPY_LOG\"\ncase \"$*\" in\n  *'--workspace'*) exit 23 ;;\n  *'-p solstone-core-sol-link '*) exit 24 ;;\nesac\n",
+        "#!/bin/sh\nset -eu\ncase \"$*\" in\n  *' classified') printf '%s\\n' 'solstone-core-sol-link full-tests,test-hooks none' 'solstone-core-facets full-tests none'; exit 0 ;;\nesac\nprintf '%s\\n' \"$*\" >> \"$SOLSTONE_CLIPPY_LOG\"\ncase \"$*\" in\n  *'--workspace'*) exit 23 ;;\n  *'-p solstone-core-sol-link '*) exit 24 ;;\nesac\n",
     );
     let log = temp.path.join("clippy.log");
     let output = Command::new("make")
@@ -704,25 +704,22 @@ fn full_clippy_runs_every_classified_scope_and_aggregates_failure() {
     let calls = calls.lines().collect::<Vec<_>>();
     assert_eq!(
         calls.len(),
-        8,
+        4,
         "full Clippy stopped before all scopes: {calls:?}"
     );
     assert!(calls[0].contains("--workspace"));
-    for (call, package) in calls[1..].iter().zip([
-        "solstone-core-sol-link",
-        "solstone-core-convey-body",
-        "solstone-core-facets",
-        "solstone-core-describe",
-        "solstone-core-mcp-endpoint",
-        "solstone-core-setup",
+    for (call, (package, features)) in calls[1..].iter().zip([
+        ("solstone-core-sol-link", "full-tests,test-hooks"),
+        ("solstone-core-facets", "full-tests"),
     ]) {
         assert!(
-            call.contains(&format!("-p {package}")),
-            "wrong Clippy child order: {call}"
+            call.contains(&format!("-p {package}"))
+                && call.contains(&format!("--features {features}")),
+            "wrong Clippy child order or features: {call}"
         );
         assert!(call.contains("--all-targets") && call.contains("-D warnings"));
     }
-    let native = calls[7];
+    let native = calls[3];
     for package in [
         "solstone-core-speakers-analyze",
         "solstone-core-speakers-onnx",
