@@ -805,18 +805,25 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
         if HOST_EXCLUDES.contains(&package) {
             continue;
         }
-        let src = member_root.join("src");
-        for file in rust_files(&src)? {
+        let classified_package = classified_packages.contains(package);
+        let contexts = module_contexts(&member_root, classified_package)?;
+        let mut files = rust_files(&member_root.join("src"))?;
+        for file in contexts.keys() {
+            if !files.contains(file) {
+                files.push(file.clone());
+            }
+        }
+        for file in files {
+            let context = contexts.get(&file).copied().unwrap_or_default();
+            if context.exempt {
+                continue;
+            }
             let relative = file
                 .strip_prefix(repo)
                 .map_err(|error| format!("strip {}: {error}", file.display()))?
                 .to_string_lossy()
                 .replace('\\', "/");
-            let text = fs::read_to_string(&file)
-                .map_err(|error| format!("read Rust source {}: {error}", file.display()))?;
-            let syntax = syn::parse_file(&text)
-                .map_err(|error| format!("parse Rust source {}: {error}", file.display()))?;
-            let classified_package = classified_packages.contains(package);
+            let syntax = parse_rust_file(&file)?;
             if classified_package && has_exact_classified_full_tests_cfg(&syntax.attrs) {
                 continue;
             }
@@ -829,7 +836,7 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
                 package,
                 relative: &relative,
                 classified_package,
-                test_scope: file_is_test,
+                test_scope: file_is_test || context.test,
                 module_path: Vec::new(),
                 process_command_aliases: vec![BTreeSet::new()],
                 findings: &mut findings,
@@ -840,13 +847,113 @@ pub fn scan_routine_boundaries(repo: &Path) -> Result<BTreeSet<String>, String> 
     Ok(findings)
 }
 
+/// How a source file is reached from its crate roots: whether any module
+/// declaration on the way is test-only, and whether one carries the classified
+/// full-tests cfg. Each file is parsed alone, so without this a helper in a
+/// file declared `#[cfg(test)] mod x;` would read as production code, and a file
+/// pulled in by `#[path]` from outside `src/` would never be read at all.
+#[derive(Clone, Copy, Default)]
+struct ModuleContext {
+    test: bool,
+    exempt: bool,
+}
+
+fn parse_rust_file(file: &Path) -> Result<syn::File, String> {
+    let text = fs::read_to_string(file)
+        .map_err(|error| format!("read Rust source {}: {error}", file.display()))?;
+    syn::parse_file(&text).map_err(|error| format!("parse Rust source {}: {error}", file.display()))
+}
+
+fn module_contexts(
+    member_root: &Path,
+    classified_package: bool,
+) -> Result<BTreeMap<PathBuf, ModuleContext>, String> {
+    let src = member_root.join("src");
+    let mut roots = vec![src.join("lib.rs"), src.join("main.rs")];
+    roots.extend(rust_files(&src.join("bin"))?);
+    let mut contexts = BTreeMap::new();
+    let mut pending = roots
+        .into_iter()
+        .filter(|root| root.is_file())
+        .map(|root| (root, ModuleContext::default(), true))
+        .collect::<Vec<_>>();
+    while let Some((file, context, directory_owner)) = pending.pop() {
+        if contexts.contains_key(&file) {
+            continue;
+        }
+        contexts.insert(file.clone(), context);
+        let syntax = parse_rust_file(&file)?;
+        let directory = file.parent().unwrap_or(member_root).to_path_buf();
+        let owner = directory_owner
+            || file
+                .file_name()
+                .is_some_and(|name| name == "mod.rs" || name == "lib.rs" || name == "main.rs");
+        for item in &syntax.items {
+            let syn::Item::Mod(module) = item else {
+                continue;
+            };
+            if module.content.is_some() {
+                continue;
+            }
+            let child = ModuleContext {
+                test: context.test || has_test_cfg(&module.attrs) || module.ident == "tests",
+                exempt: context.exempt
+                    || (classified_package && has_exact_classified_full_tests_cfg(&module.attrs)),
+            };
+            let name = module.ident.to_string();
+            let candidates = if let Some(path) = path_attribute(&module.attrs) {
+                vec![directory.join(path)]
+            } else {
+                let base = if owner {
+                    directory.clone()
+                } else {
+                    directory.join(file.file_stem().unwrap_or_default())
+                };
+                vec![
+                    base.join(format!("{name}.rs")),
+                    base.join(&name).join("mod.rs"),
+                ]
+            };
+            if let Some(target) = candidates.into_iter().find(|candidate| candidate.is_file()) {
+                let target_owner = target.file_name().is_some_and(|name| name == "mod.rs");
+                pending.push((target, child, target_owner));
+            }
+        }
+    }
+    Ok(contexts)
+}
+
+fn path_attribute(attrs: &[syn::Attribute]) -> Option<String> {
+    attrs.iter().find_map(|attr| {
+        if !attr.path().is_ident("path") {
+            return None;
+        }
+        let syn::Meta::NameValue(value) = &attr.meta else {
+            return None;
+        };
+        let syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(path),
+            ..
+        }) = &value.value
+        else {
+            return None;
+        };
+        Some(path.value())
+    })
+}
+
+/// Boundary findings as validation errors.
+pub fn boundary_errors(findings: &BTreeSet<String>) -> Vec<String> {
+    findings
+        .iter()
+        .map(|finding| format!("routine unit harness reaches a hard boundary: {finding}"))
+        .collect()
+}
+
 pub fn validate_boundary(repo: &Path) -> Result<(), Vec<String>> {
     match scan_routine_boundaries(repo) {
         Ok(findings) if findings.is_empty() => Ok(()),
-        Ok(findings) => Err(findings
-            .into_iter()
-            .map(|finding| format!("routine unit harness reaches a hard boundary: {finding}"))
-            .collect()),
+        Ok(findings) => Err(boundary_errors(&findings)),
         Err(error) => Err(vec![error]),
     }
 }
@@ -892,15 +999,12 @@ impl RiskVisitor<'_> {
         } else {
             format!("{}::{name}", self.module_path.join("::"))
         };
-        let tokens = block.to_token_stream().to_string();
         let calls = inspect_calls(block, &self.process_command_aliases);
-        for (category, needles) in risk_patterns() {
-            let found = match *category {
-                "network" => calls.reaches_network,
-                "process" => calls.launches_process,
-                "native" => calls.reaches_native,
-                _ => needles.iter().any(|needle| tokens.contains(needle)),
-            };
+        for (category, found) in [
+            ("network", calls.reaches_network),
+            ("process", calls.launches_process),
+            ("native", calls.reaches_native),
+        ] {
             if found {
                 self.findings.insert(format!(
                     "{}::{}::{}::{}",
@@ -950,13 +1054,23 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
         if self.classified_package && has_exact_classified_full_tests_cfg(&node.attrs) {
             return;
         }
-        let is_test = self.test_scope || has_test_attr(&node.attrs);
+        let is_test = self.test_scope || has_test_attr(&node.attrs) || has_test_cfg(&node.attrs);
         if is_test {
             self.inspect(&node.sig.ident.to_string(), &node.block);
         }
         let prior = self.test_scope;
         self.test_scope = is_test;
         visit::visit_item_fn(self, node);
+        self.test_scope = prior;
+    }
+
+    fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
+        if self.classified_package && has_exact_classified_full_tests_cfg(&node.attrs) {
+            return;
+        }
+        let prior = self.test_scope;
+        self.test_scope = prior || has_test_cfg(&node.attrs);
+        visit::visit_item_impl(self, node);
         self.test_scope = prior;
     }
 
@@ -1065,6 +1179,8 @@ fn is_network_constructor(segments: &[String]) -> bool {
     [
         ["TcpListener", "bind"],
         ["TcpStream", "connect"],
+        ["TcpStream", "connect_timeout"],
+        ["UdpSocket", "connect"],
         ["UdpSocket", "bind"],
         ["UnixListener", "bind"],
         ["UnixStream", "connect"],
@@ -1083,8 +1199,7 @@ fn is_process_constructor(
     if segments.last().map(String::as_str) != Some("new") {
         return false;
     }
-    let direct = path_ends_with(segments, &["std", "process", "Command", "new"])
-        || path_ends_with(segments, &["tokio", "process", "Command", "new"]);
+    let direct = path_ends_with(segments, &["process", "Command", "new"]);
     if direct {
         return true;
     }
@@ -1236,8 +1351,16 @@ fn has_test_attr(attrs: &[syn::Attribute]) -> bool {
 }
 
 fn has_test_cfg(attrs: &[syn::Attribute]) -> bool {
+    fn names_test(tokens: proc_macro2::TokenStream) -> bool {
+        tokens.into_iter().any(|token| match token {
+            proc_macro2::TokenTree::Ident(ident) => ident == "test",
+            proc_macro2::TokenTree::Group(group) => names_test(group.stream()),
+            _ => false,
+        })
+    }
     attrs.iter().any(|attr| {
-        attr.path().is_ident("cfg") && attr.meta.to_token_stream().to_string().contains("test")
+        attr.path().is_ident("cfg")
+            && matches!(&attr.meta, syn::Meta::List(list) if names_test(list.tokens.clone()))
     })
 }
 
@@ -1252,10 +1375,6 @@ fn has_exact_classified_full_tests_cfg(attrs: &[syn::Attribute]) -> bool {
                 .collect::<String>()
                 == "cfg(all(test,feature=\"full-tests\"))"
     })
-}
-
-fn risk_patterns() -> &'static [(&'static str, &'static [&'static str])] {
-    &[("network", &[]), ("process", &[]), ("native", &[])]
 }
 
 #[cfg(test)]
@@ -1605,6 +1724,53 @@ features = ["full-tests"]
         )
         .expect("shrink lib");
         assert_eq!(validate_boundary(temp.path()), Ok(()));
+    }
+
+    #[test]
+    fn routine_boundary_follows_module_declarations_and_path_attributes() {
+        let (temp, _registry) = fixture();
+        let crate_root = temp.path().join("core/crates/a");
+        let src = crate_root.join("src");
+        fs::write(
+            src.join("lib.rs"),
+            "#[cfg(test)]\nmod helpers;\n#[cfg(test)]\n#[path = \"../shared/probe.rs\"]\nmod probe;\n",
+        )
+        .expect("lib");
+        fs::write(
+            src.join("helpers.rs"),
+            "use std::process;\npub fn spawn() { process::Command::new(\"git\"); }\n",
+        )
+        .expect("test-only helper file");
+        fs::create_dir_all(crate_root.join("shared")).expect("shared dir");
+        fs::write(
+            crate_root.join("shared/probe.rs"),
+            "pub fn open() { let _ = std::net::TcpStream::connect(\"127.0.0.1:1\"); }\n",
+        )
+        .expect("path file outside src");
+        let findings = scan_routine_boundaries(temp.path()).expect("scan");
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.contains("helpers.rs::spawn::process")),
+            "{findings:?}"
+        );
+        assert!(
+            findings
+                .iter()
+                .any(|finding| finding.contains("shared/probe.rs::open::network")),
+            "{findings:?}"
+        );
+
+        fs::write(
+            src.join("lib.rs"),
+            "#[cfg(feature = \"full-tests\")]\nimpl Probe { fn open() { std::net::TcpStream::connect(\"127.0.0.1:1\"); } }\nstruct Probe;\n",
+        )
+        .expect("feature-only production impl");
+        assert_eq!(
+            scan_routine_boundaries(temp.path()).expect("scan"),
+            BTreeSet::new(),
+            "a full-tests feature cfg is not a test cfg"
+        );
     }
 
     #[test]

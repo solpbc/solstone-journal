@@ -7,8 +7,8 @@ use solstone_core_repository_contracts::advisory_audit::{
 };
 use solstone_core_repository_contracts::ci::{
     COVERAGE_REPORT_PATH_ENV, CoverageEntry, FULL_TESTS_FEATURE, Leg, PackageSuite, Registry,
-    Suite, load_registry, pin_ci_cargo_environment, read_coverage_report, scan_routine_boundaries,
-    validate_boundary, validate_registry,
+    Suite, boundary_errors, load_registry, pin_ci_cargo_environment, read_coverage_report,
+    scan_routine_boundaries, validate_registry,
 };
 use solstone_core_repository_contracts::release_manifest::{ManifestSelection, run_manifest_check};
 use std::collections::{BTreeMap, BTreeSet};
@@ -175,9 +175,7 @@ fn validate_all(repo: &Path, registry_path: &Path) -> Result<(), String> {
     if let Err(found) = validate_registry(repo, &registry) {
         errors.extend(found);
     }
-    if let Err(found) = validate_boundary(repo) {
-        errors.extend(found);
-    }
+    errors.extend(boundary_errors(&boundary));
     if errors.is_empty() {
         println!(
             "CI topology valid: {} Cargo integration targets, {} package scopes, {} named legs, {} hard-boundary findings",

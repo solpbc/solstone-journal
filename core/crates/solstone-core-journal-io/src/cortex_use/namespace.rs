@@ -10,6 +10,7 @@ use std::io;
 #[cfg(any(unix, windows))]
 use std::ffi::OsStr;
 #[cfg(all(test, unix))]
+#[cfg(all(test, feature = "full-tests"))]
 use std::path::Path;
 #[cfg(all(test, unix))]
 #[cfg(all(test, feature = "full-tests"))]
@@ -262,6 +263,7 @@ fn run_cortex_namespace_umask_helper(root: &Path, mask: &str) -> ExitStatus {
         .expect("run isolated umask helper")
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(all(test, unix))]
 fn create_inert_socket(path: &Path) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -283,12 +285,15 @@ mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::io;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
     use std::path::{Path, PathBuf};
 
+    #[cfg(all(test, feature = "full-tests"))]
     use nix::sys::stat::Mode;
     #[cfg(all(test, feature = "full-tests"))]
     use nix::sys::stat::umask;
+    #[cfg(all(test, feature = "full-tests"))]
     use nix::unistd::mkfifo;
 
     use super::*;
@@ -300,19 +305,23 @@ mod tests {
     #[cfg(all(test, feature = "full-tests"))]
     const UMASK_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_UMASK";
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn entry_mode(path: &Path) -> u32 {
         fs::symlink_metadata(path).unwrap().mode() & 0o7777
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn entry_identity(path: &Path) -> (u64, u64, fs::FileType) {
         let metadata = fs::symlink_metadata(path).expect("entry metadata");
         (metadata.dev(), metadata.ino(), metadata.file_type())
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn identities(paths: &[PathBuf]) -> Vec<(u64, u64, fs::FileType)> {
         paths.iter().map(|path| entry_identity(path)).collect()
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn seed_directory(root: &Path, name: &str, mode: u32) {
         let directory = root.join(name);
         fs::create_dir(&directory).unwrap();
@@ -322,6 +331,7 @@ mod tests {
         create_inert_socket(&socket);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn expect_error(
         result: Result<CortexNamespaceAuthority, CortexNamespaceError>,
     ) -> CortexNamespaceError {
@@ -354,6 +364,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn admission_preserves_existing_directories_and_siblings() {
         let temporary = tempfile::tempdir_in("/var/tmp").unwrap();
@@ -464,6 +475,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn wrong_kind_fixed_slots_are_bounded_and_unchanged() {
         for (slot, other) in [("health", "talents"), ("talents", "health")] {
@@ -572,6 +584,7 @@ mod tests {
         assert!(root.join("talents").is_dir());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn composition_failure_leaves_only_health_without_authority() {
         let temporary = tempfile::tempdir_in("/var/tmp").unwrap();

@@ -16,6 +16,7 @@ use crate::locking::{
     acquire_existing_parent_lock_bound,
 };
 #[cfg(all(test, unix))]
+#[cfg(all(test, feature = "full-tests"))]
 use std::path::Path;
 
 const CORTEX_NAMESPACE_LOCK_NAME: &str = "cortex-use.lock";
@@ -129,6 +130,7 @@ fn map_existing_parent_lock_error(error: ExistingParentLockError) -> CortexNames
     CortexNamespaceLockError::new(class)
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(all(test, unix))]
 fn create_cortex_namespace_inert_socket(path: &Path) {
     #[cfg(any(target_os = "linux", target_os = "android"))]
@@ -148,11 +150,15 @@ mod tests {
     use std::ffi::OsString;
     use std::fs;
     use std::io;
-    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+    use std::os::unix::fs::MetadataExt;
+    #[cfg(all(test, feature = "full-tests"))]
+    use std::os::unix::fs::{PermissionsExt, symlink};
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 
+    #[cfg(all(test, feature = "full-tests"))]
     use nix::sys::stat::Mode;
+    #[cfg(all(test, feature = "full-tests"))]
     use nix::unistd::mkfifo;
 
     use super::*;
@@ -385,6 +391,7 @@ mod tests {
         drop(lock_b);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn unsafe_entries_are_refused_unchanged_and_valid_entry_is_reused() {
         for kind in ["symlink", "wrong-mode", "directory", "fifo", "socket"] {
