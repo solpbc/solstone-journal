@@ -2,7 +2,7 @@
 
 These instructions are for a coding agent and human working together. solstone is a personal memory platform: the solstone app takes in what you share with it, and all of it goes into your journal. Your journal is always private, only yours. It lives on a device you own; see [what material reaches your AI provider](DATA-FLOW.md) for material that leaves it. Open source, made by sol pbc.
 
-**supported platforms:** linux, and macos 15 or later on Apple Silicon. windows is not yet supported. On mac, the journal app is the only supported way to run the journal.
+**supported platforms:** linux, macos 15 or later on Apple Silicon, and windows 11 on x64. On mac, the journal app is the only supported way to run the journal. On windows, the journal has its own installer.
 
 The latest version of these instructions is at https://solstone.app/install.
 
@@ -14,7 +14,7 @@ The latest version of these instructions is at https://solstone.app/install.
 solstone --version 2>&1 && journal service status 2>&1
 ```
 
-If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead.
+If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead. On windows, run `journal --version` in a terminal; if windows cannot find `journal`, see [install on windows](#install-on-windows).
 On linux, if both commands succeed and the second command reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 
 ### Prerequisites
@@ -121,6 +121,31 @@ Use `--components all` to install both the journal app and the solstone app. The
 
 If you have an older command-line journal installation, install the journal app and open it. The app adopts the existing journal only when it can verify the installation it is taking over. If anything is unclear, it stops and tells you what needs attention. Your journal stays where it is. See the [mac migration guidance](https://solstone.app/install#macos-migration) or [contact support](https://support.solstone.app) if you need a hand.
 
+## Install on windows
+
+windows 11 on an Intel or AMD (x64) computer. No administrator access is needed: the journal installs for you alone, under `%LOCALAPPDATA%\SolstoneJournal`, and it is separate from the solstone app for windows.
+
+1. Download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. It is about 1.1 GB, and it is signed by sol pbc.
+2. Open a new terminal window, so it picks up the `journal` command the installer added, and run:
+
+   ```powershell
+   journal setup
+   ```
+
+   This creates your journal at `%USERPROFILE%\journal`, fetches the local transcription model, and starts the journal in the background. It starts again each time you sign in.
+3. Open http://localhost:5015 in a browser and follow the first-run steps.
+
+### Verify independently on windows
+
+Each release publishes a checksum file beside the installer, at `https://updates.solstone.app/solstone-journal/release/windows/solstone-journal-<version>-windows-x86_64.sha256`. Before you run anything, compare the hash `Get-FileHash` prints with the one in that file:
+
+```powershell
+Get-FileHash .\solstone-journal-<version>-windows-x86_64-setup.exe -Algorithm SHA256
+Get-AuthenticodeSignature .\solstone-journal-<version>-windows-x86_64-setup.exe | Format-List Status, SignerCertificate
+```
+
+The status should read `Valid`, and the signer certificate's subject should start with `CN=sol pbc`. Inside the installation, every file is listed in a manifest signed with the same release key as the linux and mac releases. The journal checks its files against that manifest and refuses to use one that does not match.
+
 ## Set up on linux
 
 ```bash
@@ -145,6 +170,8 @@ Choose a provider in settings → providers. The available paths have different 
 
 - **local built-in, the default.** a capable setup needs **6 GB of GPU memory** on linux, or a **16 GB Apple Silicon mac** (the model is ~3.4 GB on disk, plus the ~1 GB transcription model). The `solstone check` command checks first and tells you what will not fit; on linux it also needs a supported hardware GPU (see [set up on linux](#set-up-on-linux)).
 - **a model you bring yourself**, if your machine cannot clear that bar or you would rather not spend its power. Configure the solstone app with Google (Gemini), OpenAI, or Anthropic using **your own developer API key**, created in that provider's developer console, *not* the consumer chat product (gemini.google.com / chatgpt.com / claude.ai). You can also configure it with your own endpoint instead of a cloud provider: a model you run yourself, on this machine or another one you control. You can switch any time in settings → providers.
+
+  On windows, the local built-in model is not available yet, so bring your own key here. Transcription still runs on your computer.
 - **confidential processing**, if you would rather not run a provider yourself. Available to approved scouts. It is off until you turn it on. While it is active, your journal verifies the service before material leaves; if it cannot verify the service, the material stays in your journal. See [what material reaches your AI provider](DATA-FLOW.md) for the full conditions and data flow.
 
 For the full picture of what is sent, to whom, and under whose terms, see [what material reaches your AI provider](DATA-FLOW.md).
@@ -184,6 +211,8 @@ When setup replaces recognized legacy launchers, it keeps durable recovery backu
 ⚠ **There is no CUDA build of the tree.** If you were on `solstone-journal-cuda`, transcription moves to the CPU runtime. It uses the same model on the CPU, so long recordings take longer to process; nothing else about them changes. The local *model* provider still uses your GPU where it can. That path is separate and is described under [set up on linux](#set-up-on-linux).
 
 ## Upgrading
+
+On windows, download and run the newer installer. It updates the journal in place, and the journal starts again afterward unless you had stopped it.
 
 On mac, each app handles its own updates. The shell installer verifies an existing app and leaves it unchanged; it does not replace or upgrade app bundles.
 
@@ -233,6 +262,10 @@ With no `--journal`, setup takes `SOLSTONE_JOURNAL`, then the `journal` key in `
 3. Remove the tree, by the route you installed it:
    - `sudo apt remove solstone-journal` or `sudo dnf remove solstone-journal`
    - Archive install: delete the prefix directory (`~/.local/solstone-journal` by default) and the PATH block `install.sh` added to `~/.profile`, marked with `# BEGIN solstone-journal PATH` and `# END solstone-journal PATH`.
+
+## Uninstall on windows
+
+Open Settings → Apps → Installed apps, find **journal**, and choose Uninstall. This removes the background task and the `journal` command from your PATH. It does not remove your journal.
 
 ## Uninstall on mac
 

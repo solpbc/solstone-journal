@@ -44,7 +44,7 @@ solstone is two parts, and you own both.
 | part | what it is | where it runs |
 |------|-----------|---------------|
 | **the solstone app** | the software you install on each device. It takes in what you share with it: your screen, your audio, the files you import. All of it goes into your journal over your private network | mac, windows, linux, iphone and ipad, android, tmux |
-| **the journal** (this repo) | the memory. Holds everything, processes it, indexes it, and serves the web interface and the API your agents use | a mac (Apple Silicon) or a linux machine you own. A native windows journal is in progress |
+| **the journal** (this repo) | the memory. Holds everything, processes it, indexes it, and serves the web interface and the API your agents use | a mac (Apple Silicon), a windows PC or a linux machine you own |
 
 Each solstone app has its own repository. Start at the [family index](https://github.com/solpbc/solstone), or go straight to [solstone-macos](https://github.com/solpbc/solstone-macos), [solstone-windows](https://github.com/solpbc/solstone-windows), [solstone-linux](https://github.com/solpbc/solstone-linux), [solstone-swift](https://github.com/solpbc/solstone-swift) (iphone, ipad, watch), [solstone-android](https://github.com/solpbc/solstone-android), or [solstone-tmux](https://github.com/solpbc/solstone-tmux). Devices reach the journal directly on your network, or through the private network relay, a blind byte relay operated by sol pbc that cannot read what passes through it ([spl](https://github.com/solpbc/spl)).
 
@@ -53,7 +53,7 @@ Each solstone app has its own repository. Start at the [family index](https://gi
 As of September 2026:
 
 - **2.x is the native line, on the release channel.** On linux, the journal is one self-contained Rust tree with no interpreter and no package manager of its own. It carries both commands, `solstone` and `journal`. On mac, the journal app owns the runtime. The Python line ended at 1.0.22, and the linux `journal setup` migrates a pip, uv or pipx install in place ([INSTALL.md](INSTALL.md#moving-from-a-pip-uv-or-pipx-install-on-linux)).
-- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), and the journal app on Apple Silicon macs running macos 15 or later. The solstone app already runs on windows; the journal does not yet.
+- **Platforms:** linux on x86_64 and aarch64 (tarball, `.deb`, `.rpm`), the journal app on Apple Silicon macs running macos 15 or later, and windows 11 on x64 with its own installer ([INSTALL.md](INSTALL.md#install-on-windows)).
 - **Chat is gone.** The 2.x line removes the chat bar, the chat page and `solstone chat`. Chats already in a journal stay on disk and are no longer shown. To ask questions of your journal, use your own agent or the command line.
 - **Releases** publish to `updates.solstone.app`, signed with minisign. The `release` lane is what `install.sh` follows. What changed, in owner terms: [CHANGELOG.md](CHANGELOG.md).
 
@@ -73,6 +73,8 @@ On linux, one command fetches the signed release, verifies it, installs it, and 
 curl -fsSL https://solstone.app/install.sh | sh
 ```
 
+On windows, download the journal installer from [solstone.app/download/journal/windows/latest](https://solstone.app/download/journal/windows/latest) and run it. Then open a new terminal window and run `journal setup`. Details are in [INSTALL.md](INSTALL.md#install-on-windows).
+
 Linux release files already on disk, the `.deb` and `.rpm`, prerequisites, and both migration paths are in [INSTALL.md](INSTALL.md). Linux setup confirms the journal directory at `~/journal`, fetches the transcription model, installs the `solstone` skill for Claude Code, Codex and Gemini CLI where they are configured, and starts a background service. Open **http://localhost:5015**. On mac, open the journal app instead. First run sets your identity and lets you choose a provider.
 
 On linux, check whether a computer is ready for the local models after the tree is on PATH:
@@ -81,7 +83,7 @@ On linux, check whether a computer is ready for the local models after the tree 
 journal check        # gpu, memory, disk, and the bundled models: a one-shot readiness verdict
 ```
 
-The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. See [choosing a provider](INSTALL.md#choosing-a-provider).
+The default local thinking model wants about 6 GB of GPU memory on linux or a 16 GB Apple Silicon mac. On windows the local thinking model is not available yet, so a windows journal uses a provider key you bring. A machine below that bar still runs the journal; it brings its own provider key, or, if you are an approved scout, turns on confidential processing instead. See [choosing a provider](INSTALL.md#choosing-a-provider).
 
 ## Two linux commands
 
