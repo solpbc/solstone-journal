@@ -298,10 +298,10 @@ fn generate_new_lan_cert_and_key() -> Result<(String, ParsedPemTls), McpServiceE
     let now = time::OffsetDateTime::now_utc();
     let mut params = CertificateParams::default();
     let mut dn = DistinguishedName::new();
-    dn.push(DnType::CommonName, "solstone lan door");
+    dn.push(DnType::CommonName, "solstone journal");
     params.distinguished_name = dn;
     params.not_before = now;
-    params.not_after = now + time::Duration::days(90);
+    params.not_after = now + time::Duration::days(825);
     let cert = params
         .self_signed(&key_pair)
         .map_err(|_| McpServiceError::Runtime)?;
@@ -1113,7 +1113,7 @@ mod tests {
         let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
         let mut params = CertificateParams::default();
         let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, "solstone lan door");
+        dn.push(DnType::CommonName, "solstone journal");
         params.distinguished_name = dn;
         params.not_before = not_before;
         params.not_after = not_after;
@@ -1193,7 +1193,7 @@ mod tests {
             .into_contents();
         let (_, x509_cert) = parse_x509_certificate(&cert_der).unwrap();
 
-        // Common Name is "solstone lan door"
+        // Common Name is "solstone journal"
         assert_eq!(
             x509_cert
                 .subject()
@@ -1202,7 +1202,7 @@ mod tests {
                 .unwrap()
                 .as_str()
                 .unwrap(),
-            "solstone lan door"
+            "solstone journal"
         );
 
         // ECDSA P-256: 1.2.840.10045.4.3.2 is ecdsa-with-SHA256
@@ -1214,10 +1214,12 @@ mod tests {
         // Zero extensions
         assert!(x509_cert.extensions().is_empty());
 
-        // Validity is ~90 days
-        let validity_secs = x509_cert.validity().not_after.timestamp()
-            - x509_cert.validity().not_before.timestamp();
-        assert_eq!(validity_secs, 90 * 86400);
+        // Valid for 825 days, so its fingerprint stays put for the life of the certificate
+        let validity = x509_cert.validity();
+        assert_eq!(
+            validity.not_after.timestamp() - validity.not_before.timestamp(),
+            825 * 86_400
+        );
 
         // File permission 0o600 (skip check if root)
         #[cfg(unix)]
