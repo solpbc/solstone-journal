@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- the agents app is laid out like network and backup now, and connect an agent walks you through the address, your journal's mark and a pairing code. the agents app works with your own route or with solstone.me; solstone.me is the address, `agents` is where you manage what connects. the switch for agents on this computer comes in a later version.
 - when an agent's search finds nothing, it now gets a plain-words note saying so, so it can tell you instead of reading through your journal one piece at a time.
 
 ### Fixed

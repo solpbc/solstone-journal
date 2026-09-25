@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-// Drives the agents app's embedded script against a stubbed journal, in each state the journal can
-// report: no local door at all, a local door that is not listening (every reason), and a listening
-// local door, each with solstone.me off and on.
+// Drives the agents app's embedded script against a stubbed journal in each state the journal can
+// report: no local door, a local door that is not listening (every reason), a listening door, and
+// solstone.me off, turning on, on and turned off. The two ways in are chosen and switched separately.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -18,43 +18,26 @@ let cases = 0;
 const ADDRESS = 'http://127.0.0.1:7659/mcp';
 const MARK = {
   committed: true,
-  instance_id: '0f8fad5b-d9cb-469f-a165-70867728950e',
   mark: {
-    icon1: {name: 'anchor', svg: '<path d="M12 6v16" />', color: {name: 'teal', hex: '#0f766e'}, rot: 0},
-    icon2: {name: 'bike', svg: '<circle cx="5" cy="5" r="3" />', color: {name: 'amber', hex: '#b45309'}, rot: 45},
+    icon1: {svg: '<path d="M12 6v16" />', color: {name: 'teal', hex: '#0f766e'}, rot: 0},
+    icon2: {svg: '<circle cx="5" cy="5" r="3" />', color: {name: 'amber', hex: '#b45309'}, rot: 45},
     words: ['afoot', 'unfixed'],
   },
 };
-
-// Copy that is only true while nothing but solstone.me can reach the journal.
-const SOLSTONE_ME_ONLY = [
-  'nothing is reachable until you turn it on',
-  'this is off until you turn it on',
-  'stay connected on paper',
-];
+const ME_ON = {enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'on'}};
+const FALSE_WITH_A_DOOR = ['nothing is reachable until you turn it on', 'this is off until you turn it on', 'stay connected on paper'];
 
 function baseState(overrides = {}) {
-  return {
-    enabled: false,
-    status: 'off',
-    owner_state: null,
-    certificate: {current: false},
-    connections: [],
-    facets: [],
-    pairing: null,
-    ...overrides,
-  };
+  return {enabled: false, status: 'off', owner_state: null, certificate: {current: false}, connections: [], facets: [], pairing: null, ...overrides};
+}
+function door(extra) { return {local_door: {enabled: true, address: ADDRESS, ...extra}}; }
+function connection(kind, id, name, doorName) {
+  return {kind, id, key: `${kind}:${id}`, name, door: doorName, created_at: '2026-09-24T12:00:00Z', permission: null, requests_this_week: 2, last_request_at: null, activity_complete: true};
 }
 
-function connection(kind, id, name, door) {
-  return {
-    kind, id, key: `${kind}:${id}`, name, door, created_at: '2026-09-24T12:00:00Z',
-    permission: null, requests_this_week: 2, last_request_at: null, activity_complete: true,
-  };
-}
-
-async function boot(state, {identity = MARK, identityFails = false} = {}) {
+async function boot(state, {identityFails = false, enable = null} = {}) {
   const calls = [];
+  const opened = [];
   const view = {
     innerHTML: '',
     listeners: {},
@@ -68,172 +51,167 @@ async function boot(state, {identity = MARK, identityFails = false} = {}) {
       const method = options.method || 'GET';
       calls.push({url, method, body: options.body ? JSON.parse(options.body) : undefined});
       if (url === '/app/agents/api/state') return JSON.parse(JSON.stringify(state));
-      if (url === '/app/network/api/identity') {
-        if (identityFails) throw new Error('unavailable');
-        return identity;
-      }
+      if (url === '/app/network/api/identity') { if (identityFails) throw new Error('unavailable'); return MARK; }
       if (url === '/app/agents/api/pairing') return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1};
-      if (url === '/app/agents/api/local-door') return {enabled: options.body && JSON.parse(options.body).enabled, changed: true};
-      if (url === '/app/agents/api/enable') return {operation: null};
+      if (url === '/app/agents/api/local-door' || url === '/app/agents/api/capability') return {enabled: JSON.parse(options.body).enabled, changed: true};
+      if (url === '/app/agents/api/enable') return method === 'POST' ? {operation: enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}} : {operation: null};
       throw new Error(`unexpected request ${method} ${url}`);
     },
     setInterval() {},
-    open() {},
+    open(url) { opened.push(url); },
   };
-  const document = {getElementById: id => (id === 'agents-view' ? view : null)};
-  const context = vm.createContext({
-    window, document, navigator: {clipboard: {writeText: async () => {}}},
-    setTimeout, clearTimeout, confirm: () => true, prompt: () => null, URLSearchParams, console,
-  });
+  const document = {getElementById: id => (id === 'agents-view' ? view : null), querySelectorAll: () => []};
+  const context = vm.createContext({window, document, navigator: {clipboard: {writeText: async () => {}}}, setTimeout: () => 0, clearTimeout() {}, confirm: () => true, prompt: () => null, URLSearchParams, console});
   vm.runInContext(script, context, {filename: 'agents-workspace.js'});
   await settle();
   const click = async dataset => {
-    const target = {dataset, textContent: '', closest() { return this; }};
+    const target = {dataset, textContent: '', tagName: 'BUTTON', closest(selector) { return selector === '.modal-card' ? {} : this; }};
     for (const listener of view.listeners.click || []) await listener({target, preventDefault() {}});
     await settle();
   };
-  return {view, calls, click};
+  return {view, calls, click, opened};
 }
-
-async function settle() {
-  for (let i = 0; i < 5; i += 1) await new Promise(resolve => setImmediate(resolve));
-}
-
-function assertNoSolstoneMeOnlyCopy(text, where) {
-  for (const copy of SOLSTONE_ME_ONLY) assert(!text.includes(copy), `${where}: false with a local door: "${copy}"`);
-}
-
+async function settle() { for (let i = 0; i < 6; i += 1) await new Promise(resolve => setImmediate(resolve)); }
+function has(view, text, why) { assert(view.innerHTML.includes(text), why || `missing: ${text}`); }
+function lacks(view, text, why) { assert(!view.innerHTML.includes(text), why || `unexpected: ${text}`); }
 async function test(name, body) {
-  await body();
+  try { await body(); } catch (error) { error.message = `${name}: ${error.message}`; throw error; }
   cases += 1;
 }
 
 (async () => {
-  await test('no local door: the solstone.me-only app is unchanged', async () => {
-    const {view} = await boot(baseState());
-    assert(view.innerHTML.includes('off by default. nothing is reachable until you turn it on'));
-    assert(!view.innerHTML.includes('same computer'));
+  await test('no local door: your own is coming later, solstone.me is the live way in', async () => {
+    const {view, click} = await boot(baseState());
+    has(view, 'coming later');
+    has(view, 'set up solstone.me →');
+    has(view, 'neither way is on right now.');
+    for (const copy of FALSE_WITH_A_DOOR) lacks(view, copy);
+    await click({lane: 'own'});
+    has(view, "this isn't available in this version of your journal yet.");
+    lacks(view, 'set up solstone.me', 'your own must not teach solstone.me');
   });
 
-  await test('no local door: connect page shows the mark beside the pairing code', async () => {
-    const {view, click, calls} = await boot(baseState({enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'on'}}));
-    assert(view.innerHTML.includes('your agents'));
-    await click({route: 'connect'});
-    assert(view.innerHTML.includes('in Claude'));
-    assert(view.innerHTML.includes('https://k7q2m9xa.solstone.me/mcp'));
-    assert(view.innerHTML.includes("enter it only on a page that shows your journal's mark"));
-    assert(view.innerHTML.includes('aria-label="teal, amber · afoot unfixed"'));
+  await test('no local door, solstone.me on: connect offers only the solstone.me address, beside the mark', async () => {
+    const {view, click, calls} = await boot(baseState({...ME_ON, connections: [connection('oauth', 'g1', 'Claude', null)]}));
+    has(view, 'agents can reach your journal through solstone.me.');
+    has(view, 'Claude<span class="chip">solstone.me</span>');
+    await click({action: 'connect'});
+    has(view, 'https://k7q2m9xa.solstone.me/mcp');
+    lacks(view, ADDRESS);
+    has(view, 'aria-label="teal, amber · afoot unfixed"');
     await click({action: 'new-code'});
     assert(calls.some(call => call.url === '/app/agents/api/pairing' && call.method === 'POST'));
-    assert(view.innerHTML.includes('K7Q2M9XA'));
+    has(view, 'K7Q2M9XA');
   });
 
   const reasons = {
-    disabled: {enabled: false, reason: 'disabled', title: 'agents on the same computer</p><h2><span class="dot wait"></span>off<', action: 'door-on'},
-    config_invalid: {enabled: false, reason: 'config_invalid', title: "off until your journal&#39;s settings are fixed", action: 'door-on'},
-    config_unreadable: {enabled: true, reason: 'config_unreadable', title: "your journal can't read its settings", action: 'refresh'},
-    not_running: {enabled: true, reason: 'not_running', title: 'not running right now', action: 'refresh'},
-    port_in_use: {enabled: true, reason: 'port_in_use', title: 'something else is using this address', action: 'refresh'},
+    disabled: {enabled: false, tag: 'off', text: "agents on this computer can't reach your journal. the ones you connected are kept", action: 'own-on'},
+    config_invalid: {enabled: false, tag: 'needs attention', text: 'turning this on replaces that value.', action: 'own-on'},
+    config_unreadable: {enabled: true, tag: 'needs attention', text: "your journal can&#39;t read its settings", alt: "your journal can't read its settings", action: 'refresh'},
+    not_running: {enabled: true, tag: 'not running', text: "the part of your journal that serves agents isn't running", action: 'refresh'},
+    port_in_use: {enabled: true, tag: 'needs attention', text: 'something else is using this address.', action: 'refresh'},
   };
   for (const [reason, expected] of Object.entries(reasons)) {
-    await test(`local door not listening (${reason}), solstone.me off`, async () => {
-      const {view, click} = await boot(baseState({local_door: {enabled: expected.enabled, address: ADDRESS, listening: false, reason}}));
-      const title = expected.title.replace('&#39;', "'");
-      assert(view.innerHTML.includes(title), `missing title for ${reason}`);
-      assert(view.innerHTML.includes(`data-action="${expected.action}"`), `missing recovery for ${reason}`);
-      assert(view.innerHTML.includes('connect an agent'), 'the pairing code must be reachable without solstone.me');
-      assertNoSolstoneMeOnlyCopy(view.innerHTML, `home (${reason})`);
-      await click({route: 'me'});
-      assertNoSolstoneMeOnlyCopy(view.innerHTML, `solstone.me page (${reason})`);
-      assert(view.innerHTML.includes('turn on solstone.me'));
+    await test(`your own not listening (${reason})`, async () => {
+      const {view} = await boot(baseState(door({enabled: expected.enabled, listening: false, reason})));
+      has(view, `<span class="tag ${reason === 'port_in_use' ? 'bad' : expected.tag === 'off' ? '' : 'warn'}">${expected.tag}</span>`);
+      assert(view.innerHTML.includes(expected.text) || (expected.alt && view.innerHTML.includes(expected.alt)), `missing panel text for ${reason}`);
+      has(view, `data-action="${expected.action}"`);
+      lacks(view, 'set up solstone.me', 'your own must not teach solstone.me');
+      for (const copy of FALSE_WITH_A_DOOR) lacks(view, copy);
     });
   }
 
-  await test('port in use: the warning carries the mark and does not reassure', async () => {
-    const {view, click} = await boot(baseState({local_door: {enabled: true, address: ADDRESS, listening: false, reason: 'port_in_use'}}));
-    assert(view.innerHTML.includes('a program pretending to be your journal'));
-    assert(view.innerHTML.includes('aria-label="teal, amber · afoot unfixed"'));
-    assert(view.innerHTML.includes("don't enter the code"));
-    await click({route: 'connect'});
-    assert(view.innerHTML.includes('something else is using this address'), 'the connect page must repeat the warning');
-    assert.strictEqual(view.innerHTML.split('class="journal-mark"').length - 1, 1, 'one screen shows the mark once');
+  await test('address taken: red status, the mark, and "or none"', async () => {
+    const {view, click} = await boot(baseState(door({listening: false, reason: 'port_in_use'})));
+    has(view, 'class="sdot r"');
+    has(view, 'a program pretending to be your journal');
+    has(view, 'aria-label="teal, amber · afoot unfixed"');
+    has(view, 'if it shows a different mark, or none, close that page.');
+    await click({action: 'connect'});
+    lacks(view, `<code>${ADDRESS}</code><button class="btn sm" data-copy="${ADDRESS}">copy</button></div></div>`, 'connect must not offer a taken address');
+    has(view, 'neither way is on right now.');
   });
 
-  await test('port in use without a readable mark still says to check it', async () => {
-    const {view} = await boot(baseState({local_door: {enabled: true, address: ADDRESS, listening: false, reason: 'port_in_use'}}), {identityFails: true});
-    assert(view.innerHTML.includes("check that the page asking for it shows your journal's mark"));
-    assert(!view.innerHTML.includes('journal-mark'));
+  await test('address taken without a readable mark still says to check it', async () => {
+    const {view} = await boot(baseState(door({listening: false, reason: 'port_in_use'})), {identityFails: true});
+    has(view, "check the page asking for it shows your journal's mark. if it doesn't, close that page.");
+    lacks(view, 'class="journal-mark"');
   });
 
-  await test('a disabled door turns back on through its own switch', async () => {
-    const {click, calls} = await boot(baseState({local_door: {enabled: false, address: ADDRESS, listening: false, reason: 'disabled'}}));
-    await click({action: 'door-on'});
-    const put = calls.find(call => call.url === '/app/agents/api/local-door');
-    assert(put && put.method === 'PUT' && put.body.enabled === true);
-  });
-
-  await test('listening, solstone.me off: address, pairing and connections by door', async () => {
-    const state = baseState({
-      local_door: {enabled: true, address: ADDRESS, listening: true},
-      connections: [connection('oauth', 'g1', 'tiles', 'local'), connection('oauth', 'g2', 'Claude', 'relay'), connection('bearer', 't1', 'my script', null)],
-    });
+  await test('your own on: address, agents by lane, turn off through a confirm', async () => {
+    const state = baseState({...door({listening: true}), connections: [connection('oauth', 'g1', 'tiles', 'local'), connection('oauth', 'g2', 'Claude', 'relay'), connection('bearer', 't1', 'my script', null)]});
     const {view, click, calls} = await boot(state);
-    assert(view.innerHTML.includes('agents on the same computer</p><h2><span class="dot "></span>open to agents'));
-    assert(view.innerHTML.includes(`data-copy="${ADDRESS}"`));
-    assertNoSolstoneMeOnlyCopy(view.innerHTML, 'home (listening)');
-    assert(view.innerHTML.includes('paired in your browser · same computer'));
-    assert(view.innerHTML.includes('paired in your browser · through solstone.me'));
-    assert(view.innerHTML.includes('a key you created · connected'));
-    await click({connection: 'oauth:g1'});
-    assert(view.innerHTML.includes('it paired from the same computer.'));
-    assert(view.innerHTML.includes('data-revoke="oauth:g1"'));
-    await click({route: 'connect'});
-    assert(view.innerHTML.includes('an agent on the same computer'));
-    assert(view.innerHTML.includes("can't reach an address on the same computer"));
-    assert(!view.innerHTML.includes('in Claude'), 'no Claude steps without an internet address');
-    await click({action: 'new-code'});
-    assert(calls.some(call => call.url === '/app/agents/api/pairing' && call.method === 'POST'));
-    assert(view.innerHTML.includes('K7Q2M9XA'));
-    await click({route: 'home'});
-    await click({route: 'door-off'});
-    assert(view.innerHTML.includes('turn off for agents on the same computer?'));
+    has(view, 'agents on this computer can reach your journal.');
+    has(view, `data-copy="${ADDRESS}"`);
+    has(view, 'tiles<span class="chip">this computer</span>');
+    has(view, 'Claude<span class="chip">solstone.me</span>');
+    has(view, '<strong>my script</strong><small>a key you created · ');
+    await click({action: 'own-off'});
+    has(view, 'turn off agents on this computer?');
     await click({action: 'door-off'});
     const put = calls.find(call => call.url === '/app/agents/api/local-door');
+    assert(put && put.method === 'PUT' && put.body.enabled === false);
+    await click({connection: 'oauth:g1'});
+    has(view, '<span class="chip">this computer</span>paired in your browser');
+    has(view, 'data-revoke="oauth:g1"');
+  });
+
+  await test('your own off turns back on through its own switch', async () => {
+    const {click, calls} = await boot(baseState(door({enabled: false, listening: false, reason: 'disabled'})));
+    await click({action: 'own-on'});
+    const put = calls.find(call => call.url === '/app/agents/api/local-door');
+    assert(put && put.body.enabled === true);
+  });
+
+  await test('solstone.me set up: the consent hand-off, then approve', async () => {
+    const {view, click, calls, opened} = await boot(baseState(door({listening: true})));
+    await click({lane: 'me'});
+    has(view, 'set up solstone.me →');
+    has(view, 'public certificate logs');
+    lacks(view, ADDRESS, 'solstone.me must not teach your own');
+    await click({action: 'turn-on'});
+    assert(calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
+    assert.deepStrictEqual(opened, ['https://services.example/consent']);
+    has(view, 'waiting for you to approve solstone.me in the services portal.');
+    has(view, '<span class="tag warn">setting up</span>');
+  });
+
+  await test('solstone.me turning on shows its three legs', async () => {
+    const {view, click} = await boot(baseState({enabled: true, status: 'turning_on', owner_state: {status: 'turning_on', address_leg: 'done', certificate_leg: 'in_progress', relay_leg: 'waiting'}, ...door({listening: true})}));
+    await click({lane: 'me'});
+    has(view, 'getting your journal its address');
+    has(view, 'connecting to the relay');
+    has(view, '<span class="tag warn">turning on</span>');
+  });
+
+  await test('both on: status names both, turning solstone.me off keeps local agents', async () => {
+    const {view, click, calls} = await boot(baseState({...ME_ON, ...door({listening: true})}));
+    has(view, 'agents on this computer, and anywhere through solstone.me, can reach your journal.');
+    await click({lane: 'me'});
+    has(view, 'https://k7q2m9xa.solstone.me/mcp');
+    has(view, "it passes the traffic along and can't read it");
+    await click({action: 'me-off'});
+    has(view, 'agents on this computer keep working.');
+    has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate');
+    await click({action: 'turn-off'});
+    const put = calls.find(call => call.url === '/app/agents/api/capability');
     assert(put && put.body.enabled === false);
+    await click({action: 'connect'});
+    has(view, `<code>${ADDRESS}</code>`);
+    has(view, 'in Claude, add it as a custom connector');
   });
 
-  await test('listening, solstone.me on: both doors and the solstone.me flow', async () => {
-    const {view, click} = await boot(baseState({
-      enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'on'},
-      local_door: {enabled: true, address: ADDRESS, listening: true},
-    }));
-    assert(view.innerHTML.includes('agents on the same computer</p><h2><span class="dot "></span>open to agents'));
-    assert(view.innerHTML.includes('agents on other computers · solstone.me</p><h2><span class="dot "></span>open to agents'));
-    await click({route: 'me'});
-    assert(view.innerHTML.includes('open to your agents'));
-    assert(view.innerHTML.includes('data-route="off"'));
-    await click({route: 'off'});
-    assert(view.innerHTML.includes('agents connected through solstone.me stop reaching your journal'));
-    assert(view.innerHTML.includes('agents on the same computer keep working.'));
-    await click({route: 'connect'});
-    assert(view.innerHTML.includes('in Claude'));
-    assert(view.innerHTML.includes('https://k7q2m9xa.solstone.me/mcp'));
-    assert(view.innerHTML.includes('an agent on the same computer'));
-  });
-
-  await test('listening, solstone.me turned off: kept address, local agents keep working', async () => {
-    const {view, click} = await boot(baseState({
-      enabled: false, status: 'off', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'off'},
-      local_door: {enabled: true, address: ADDRESS, listening: true},
-    }));
-    assert(view.innerHTML.includes('turned off'));
-    await click({route: 'me'});
-    assert(view.innerHTML.includes("agents connected through solstone.me can't reach your journal while it's off. agents on the same computer keep working."));
-    assertNoSolstoneMeOnlyCopy(view.innerHTML, 'turned-off solstone.me page');
+  await test('solstone.me turned off turns back on without a new consent', async () => {
+    const {view, click, calls} = await boot(baseState({enabled: false, status: 'off', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'off'}, ...door({listening: true})}));
+    await click({lane: 'me'});
+    has(view, "agents connected through solstone.me can't reach your journal while it's off.");
+    for (const copy of FALSE_WITH_A_DOOR) lacks(view, copy);
+    await click({action: 'turn-on'});
+    const put = calls.find(call => call.url === '/app/agents/api/capability');
+    assert(put && put.body.enabled === true);
+    assert(!calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
   });
 
   console.log(`DOM CASES: ${cases} passed`);
-})().catch(error => {
-  console.error(error);
-  process.exit(1);
-});
+})().catch(error => { console.error(error); process.exit(1); });
