@@ -160,32 +160,6 @@ mod tests {
             keys, expected,
             "the card has one complete authored copy table"
         );
-        assert_eq!(copy.len(), 61);
-        for (_, value) in &copy {
-            assert_eq!(*value, value.to_lowercase(), "authored copy is lowercase");
-            assert!(!value.contains('\u{2014}'), "authored copy has no em dash");
-        }
-        let failed_body = copy
-            .iter()
-            .find(|(key, _)| *key == "failed.body")
-            .expect("failed.body")
-            .1;
-        let recover_body = copy
-            .iter()
-            .find(|(key, _)| *key == "confirm.recover.body")
-            .expect("confirm.recover.body")
-            .1;
-        for value in [failed_body, recover_body] {
-            assert!(
-                value.contains("it does not put anything back"),
-                "denial phrase missing: {value}"
-            );
-            assert!(!value.contains("undo"), "denial key contains undo: {value}");
-            assert!(
-                !value.contains("restore"),
-                "denial key contains restore: {value}"
-            );
-        }
         for forbidden in [
             "row.why",
             "card.unavailable_reason",

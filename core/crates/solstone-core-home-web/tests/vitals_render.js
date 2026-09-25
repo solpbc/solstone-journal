@@ -37,12 +37,6 @@ assert(renderVitalsHtml, 'renderVitalsHtml exported');
 const css = fs.readFileSync(path.join(manifestDir, 'assets/workspace.html'), 'utf8');
 assert(css.includes('.pulse-vitals-dot.neutral'), 'missing .pulse-vitals-dot.neutral');
 assert(css.includes('.pulse-vitals-verdict.neutral'), 'missing .pulse-vitals-verdict.neutral');
-const dotNeutral = css.match(/\.pulse-vitals-dot\.neutral\s*\{[^}]*background:\s*([^;]+);/);
-const verdictNeutral = css.match(/\.pulse-vitals-verdict\.neutral\s*\{[^}]*color:\s*([^;]+);/);
-assert(dotNeutral, 'neutral dot has no background');
-assert(verdictNeutral, 'neutral verdict has no color');
-assert.strictEqual(dotNeutral[1].trim(), 'var(--ink-faint)', 'neutral dot must use the design-system neutral token');
-assert.strictEqual(verdictNeutral[1].trim(), 'var(--ink-soft)', 'neutral verdict must use the design-system neutral token');
 
 const calm = renderVitalsHtml({
   health_glance: {

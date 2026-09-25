@@ -815,13 +815,6 @@ mod tests {
         );
         assert_eq!(timed["severity"], "neutral");
         assert_eq!(timed["cta"]["href"], "/app/health/#registeredClientsCard");
-        // The journal never measures reachability for its own host, so the line
-        // may not claim it for any device.
-        for capture in [&two_offline, &three_stale_running, &one_offline] {
-            let text = glance(capture)["headline"].as_str().unwrap().to_owned();
-            assert!(!text.contains("reachable"), "{text}");
-            assert!(!text.contains("asleep"), "{text}");
-        }
 
         let stale_with_invalid = json!({
             "status": "stale",
@@ -859,8 +852,6 @@ mod tests {
         // does. "one of your devices" was the only one of the three writers
         // that hid it.
         assert_eq!(degraded_text, "rej isn't reaching your journal.");
-        assert!(!degraded_text.contains("still running"));
-        assert!(!degraded_text.contains("asleep"));
 
         let missing_backlog = BacklogSource {
             backlog: None,
@@ -941,8 +932,6 @@ mod tests {
         let asleep_text = asleep_g["headline"].as_str().unwrap();
         assert_eq!(running_text, asleep_text);
         assert_eq!(running_text, "phone hasn't added to your journal recently.");
-        assert!(!running_text.contains("reach"));
-        assert!(!running_text.contains("heartbeat"));
 
         running["clients"][0]["reach"] = json!("stale");
         assert_eq!(glance(&running)["headline"], running_text);

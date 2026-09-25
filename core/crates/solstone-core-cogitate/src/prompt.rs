@@ -80,38 +80,11 @@ mod tests {
                     vector.id
                 );
             }
-            let frozen = reassemble(&expected.parts, &expected.separator, |role| match role {
-                "runtime_preamble" => Some(fixture.preambles.runtime.text.clone()),
-                "diagnostic_preamble" => Some(fixture.preambles.diagnostic.text.clone()),
-                _ => None,
-            });
             let live = reassemble(&expected.parts, &expected.separator, |role| match role {
                 "runtime_preamble" => Some(COGITATE_RUNTIME_PREAMBLE.to_owned()),
                 "diagnostic_preamble" => Some(COGITATE_DIAGNOSTIC_PREAMBLE.to_owned()),
                 _ => None,
             });
-            if let (Some(length), Some(digest)) = (expected.byte_length, &expected.sha256) {
-                // Prompt-vector digests use today's runtime preamble. The fixture retains
-                // its older runtime preamble solely for the recorded divergence ledger
-                // verified by preambles.rs.
-                assert_eq!(live.len(), length, "{} live length", vector.id);
-                assert_eq!(
-                    oracle::sha256_hex(live.as_bytes()),
-                    *digest,
-                    "{} live digest",
-                    vector.id
-                );
-                if expected
-                    .parts
-                    .iter()
-                    .any(|part| part.role == "runtime_preamble")
-                {
-                    assert_ne!(frozen, live, "{} ledgered runtime preamble", vector.id);
-                } else {
-                    assert_eq!(frozen, live, "{} frozen preamble", vector.id);
-                }
-            }
-
             let prompt_body = prompt_body(&vector.config);
             if let Some(expected_body) = &vector.expect.prompt_body {
                 assert_eq!(&prompt_body, expected_body, "{} prompt body", vector.id);

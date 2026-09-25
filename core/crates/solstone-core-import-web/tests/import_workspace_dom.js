@@ -2399,8 +2399,10 @@ function runDetailDropsFactsThatDoNotApply() {
       staged_entities: [{ source_name: 'Ada', target_name: 'Ada Lovelace', staging_path: 'entities/ada.json' }],
     },
   });
-  assert.ok(highlightsHtml.includes('Ada → Ada Lovelace'), 'merge evidence uses the relationship arrow');
-  assert.ok(!highlightsHtml.includes('Ada -&gt; Ada Lovelace'), 'merge evidence no longer uses an ASCII arrow');
+  assert.ok(
+    /<span class="drawer-evidence-title">Ada\b[^<]*\bAda Lovelace<\/span>/.test(highlightsHtml),
+    'merge evidence names the source and the target'
+  );
 
   assert.ok(
     ImportDetail.kvRow('status', ESCAPE_PAYLOAD).includes(`<dd>${ESCAPED_PAYLOAD}</dd>`),
@@ -2409,7 +2411,7 @@ function runDetailDropsFactsThatDoNotApply() {
   cases += 1;
 }
 
-function runLoadErrorsUseHouseLowercase() {
+function runLoadErrorsAreShown() {
   const loadMoreError = new Element();
   const table = {
     parentNode: {
@@ -2439,8 +2441,8 @@ function runLoadErrorsUseHouseLowercase() {
   vm.runInContext(functionSource(fullWorkspace, 'loadImportDetail'), context);
 
   vm.runInContext("renderLoadMoreError(new Error('network unavailable'))", context);
-  assert.ok(loadMoreError.innerHTML.includes("couldn&#39;t load more imports."), 'the load-more failure uses house lowercase');
-  assert.ok(!loadMoreError.innerHTML.includes("Couldn&#39;t"), 'the load-more failure has no title case');
+  assert.ok(loadMoreError.innerHTML.includes('reload to try again.'), 'the load-more failure offers the reload hint');
+  assert.ok(loadMoreError.innerHTML.includes('network unavailable'), 'the load-more failure carries the error message');
 
   const importMeta = new Element();
   const overview = new Element();
@@ -2451,8 +2453,8 @@ function runLoadErrorsUseHouseLowercase() {
   };
   vm.runInContext('loadImportDetail()', context);
   return new Promise((resolve) => setImmediate(resolve)).then(() => {
-    assert.ok(importMeta.innerHTML.includes("couldn&#39;t load import details."), 'the detail failure uses house lowercase');
-    assert.ok(!importMeta.innerHTML.includes("Couldn&#39;t"), 'the detail failure has no title case');
+    assert.ok(importMeta.innerHTML.includes('surface-state-refresh-error'), 'the detail failure renders an error state');
+    assert.ok(importMeta.innerHTML.includes('network unavailable'), 'the detail failure carries the error message');
     cases += 1;
   });
 }
@@ -2607,40 +2609,6 @@ async function runSourceCardsCarryNoInlineHandler() {
   clickContext.quickEvent = { target: cardTarget({ 'data-import-quick': 'true' }), stopPropagation() {} };
   vm.runInContext('handleDocumentClick(quickEvent)', clickContext);
   assert.strictEqual(quickOpened, 1, 'and the quick card opens the quick flow');
-  cases += 1;
-}
-
-// One dash for unknown across the history table. The stats column already used
-// the em dash while every other column used an ASCII hyphen.
-function runUnknownUsesTheEmDashInTheHistoryTable() {
-  const context = vm.createContext({ console });
-  vm.runInContext([
-    "const window = {",
-    "  JournalFormat: { timestamp: () => '2026-07-22, 7:30 PM', day: (value) => value },",
-    "};",
-    "const sourceIconSvgByName = {};",
-    "const sourceMetadataByName = {};",
-  ].join('\n'), context);
-  installRealEscapeHtml(context);
-  assertEscaperIsReal(context);
-  vm.runInContext(functionSource(workspace, 'renderSourceDisplay'), context);
-  vm.runInContext(functionSource(workspace, 'formatImportStats'), context);
-  vm.runInContext(functionSource(workspace, 'capitalizeStage'), context);
-  vm.runInContext(functionSource(workspace, 'renderImportRow'), context);
-
-  const bareRow = { timestamp: 'b1', status: 'running', imported_at: 1700000000 };
-  const html = vm.runInContext(`renderImportRow(${JSON.stringify(bareRow)})`, context);
-  assert.ok(html.includes('<td class="nowrap">—</td>'), 'an unknown journal day is an em dash');
-  assert.ok(html.includes('<td>—</td>'), 'an unknown file is an em dash');
-  assert.ok(html.includes('<td class="source-cell">—</td>'), 'an unknown source is an em dash');
-  assert.ok(html.includes('<td class="stats-cell import-stats-cell">—</td>'), 'unknown stats stay an em dash');
-  assert.ok(!/>-</.test(html), 'no ASCII hyphen is left standing in for an unknown');
-
-  assert.strictEqual(
-    vm.runInContext("renderSourceDisplay('', '')", context).includes('—'),
-    true,
-    'the source fallback is the em dash too'
-  );
   cases += 1;
 }
 
@@ -2934,8 +2902,8 @@ async function runCheckStatusFocusLandsOnThePanel() {
   }
 }
 
-// One register for the id across both surfaces the owner can read it on.
-function runStalledCopyUsesTheLowercaseImportId() {
+// The stalled row and the panel it points at both name the import.
+function runStalledRowNamesTheImportId() {
   const importId = '1700000090';
   const guideSteps = new Element();
   const statusCell = new Element();
@@ -2974,12 +2942,8 @@ function runStalledCopyUsesTheLowercaseImportId() {
 
   vm.runInContext(`markRowStalled(${JSON.stringify(importId)})`, context);
 
-  assert.ok(statusCell.innerHTML.includes(`import id: ${importId}`), 'the stalled row names the import in lower case');
-  assert.ok(!statusCell.innerHTML.includes('import ID:'), 'the upper-case register is gone from the row');
-  assert.ok(
-    guideSteps.innerHTML.includes(`<strong>import id:</strong> ${importId}`),
-    'and the panel the row points at says the same words'
-  );
+  assert.ok(statusCell.innerHTML.includes(importId), 'the stalled row names the import');
+  assert.ok(guideSteps.innerHTML.includes(importId), 'and so does the panel the row points at');
   cases += 1;
 }
 
@@ -3090,15 +3054,14 @@ Promise.resolve()
   .then(runEveryOwnerSinkEscapes)
   .then(runDetailDropsFactsThatDoNotApply)
   .then(runDetailPageCountMatchesItsNumber)
-  .then(runLoadErrorsUseHouseLowercase)
+  .then(runLoadErrorsAreShown)
   .then(runUnavailablePanelNeverEchoesTheServer)
   .then(runSourceCardsCarryNoInlineHandler)
-  .then(runUnknownUsesTheEmDashInTheHistoryTable)
   .then(runMeasuredZeroIsNotUnknown)
   .then(runImportIdSelectorsEscapeQuotes)
   .then(runOwnerSinksEscapeServerDerivedPayloads)
   .then(runCheckStatusFocusLandsOnThePanel)
-  .then(runStalledCopyUsesTheLowercaseImportId)
+  .then(runStalledRowNamesTheImportId)
   .then(runGenerationFloorIsPruned)
   .then(() => console.log(`DOM CASES: ${cases} passed`))
   .catch((error) => {

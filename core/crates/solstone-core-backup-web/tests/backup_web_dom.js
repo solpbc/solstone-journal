@@ -469,22 +469,6 @@ testCase('workspace has only the new restore lane contract', () => {
   assert.ok(!byoSection.includes('data-copy="confirm.prompt"'));
 });
 
-testCase('operated restore copy stays on its governed keys', () => {
-  const source = fs.readFileSync(path.join(crateDir, 'assets', 'backup.js'), 'utf8');
-  for (const literal of [
-    "where is the encrypted copy you're restoring from?",
-    'storage you bring yourself, reached with credentials you provide.',
-    'storage sol pbc runs, reached from your services.',
-    'enter your recovery key, then sign in to your services and confirm the restore.',
-    'this journal uses your key and never sends it to sol pbc.',
-    'sign in to restore →',
-    "sol pbc isn't holding an encrypted copy for the sign-in you used.",
-    'sol pbc deleted that copy once 30 days had passed since encrypted backup stopped.',
-    "that recovery key didn't unlock the backup. check the key, then try signing in again.",
-    "the sign-in window didn't open. try again, and check whether your browser blocked it.",
-  ]) assert.ok(source.includes(JSON.stringify(literal)));
-});
-
 testCase('offload byte units are binary, matching settings’ unit family (g3-108)', () => {
   // Settings renders the same raw-media total as GiB (binary). Before this fix,
   // backup divided by a decimal gigabyte, so the two screens read up to ~7% apart

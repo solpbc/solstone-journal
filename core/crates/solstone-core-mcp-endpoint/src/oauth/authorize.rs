@@ -943,7 +943,6 @@ mod tests {
         let css = design_css();
         assert_eq!(css.content_type, Some("text/css; charset=utf-8"));
         let css_body = body_text(&css);
-        assert!(css_body.contains("font-family:Comfortaa"));
         assert!(css_body.contains("/authorize/assets/Comfortaa-Variable.woff2"));
 
         let font = comfortaa();

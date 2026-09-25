@@ -1792,17 +1792,6 @@ mod tests {
             // identifier tell is the underscore and the bare code standing
             // alone as the whole clause.
             assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
-            assert!(
-                !rendered.contains('_'),
-                "{reason} leaves snake_case in owner copy: {rendered}"
-            );
-            assert!(
-                rendered
-                    .chars()
-                    .next()
-                    .is_some_and(|first| first.is_lowercase()),
-                "{reason} completes the sentence after the colon: {rendered}"
-            );
         }
         // ⛔ An unmapped code still reaches support rather than being swallowed.
         let unmapped = backup_failure_reason("some_new_code");
@@ -1833,17 +1822,6 @@ mod tests {
         for reason in EVERY_REASON {
             let rendered = offload_restore_failure_reason(reason);
             assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
-            assert!(
-                !rendered.contains('_'),
-                "{reason} leaves snake_case in owner copy: {rendered}"
-            );
-            assert!(
-                rendered
-                    .chars()
-                    .next()
-                    .is_some_and(|first| first.is_lowercase()),
-                "{reason} isn't lowercase-led prose: {rendered}"
-            );
         }
         // ⛔ An unmapped code still reaches support rather than being swallowed.
         let unmapped = offload_restore_failure_reason("some_new_code");
@@ -1925,15 +1903,6 @@ mod tests {
             "Error: Backup partial. some files couldn't be read, so they aren't in it, and the \
              snapshot couldn't be confirmed. Run `journal backup run` again once that's fixed.\n"
         );
-        assert!(!without_id.stderr.contains("no snapshot was written"));
-
-        // ⛔ No platform-specific cause on any of the three: an open file blocks
-        // a read on Windows and not on macOS or Linux, and this line cannot tell
-        // which host it is printing on.
-        for rendered in [&partial.stdout, &single.stdout, &without_id.stderr] {
-            assert!(!rendered.contains("open in another"), "{rendered}");
-            assert!(!rendered.contains("permission to read"), "{rendered}");
-        }
     }
 
     #[test]

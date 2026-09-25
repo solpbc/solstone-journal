@@ -44,12 +44,7 @@ pub(crate) struct ToolSurfaceFixture {
 #[derive(Deserialize)]
 pub(crate) struct ToolSurfaceTool {
     pub name: String,
-    pub description: String,
-    pub action_properties: BTreeMap<String, ActionPropertyFixture>,
-}
-#[derive(Deserialize)]
-pub(crate) struct ActionPropertyFixture {
-    pub description: String,
+    pub action_properties: BTreeMap<String, serde::de::IgnoredAny>,
 }
 #[derive(Deserialize)]
 pub(crate) struct TierBindingFixture {

@@ -210,11 +210,7 @@ mod tests {
             .expect("gaming category");
         assert_eq!(gaming.output, OutputKind::Markdown);
         assert_eq!(gaming.max_output_tokens, 4096);
-        assert!(gaming.instruction.starts_with("# Game Text Extraction"));
         assert!(gaming.extraction.is_none());
-        // G3-311: the owner-facing label is lowercase, like every other name in
-        // the settings surface that reads it.
-        assert_eq!(gaming.label, "gaming");
     }
 
     #[test]

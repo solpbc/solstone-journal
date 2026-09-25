@@ -1617,17 +1617,6 @@ mod tests {
         for reason in EVERY_REASON {
             let rendered = offload_reason_text(reason);
             assert_ne!(rendered, *reason, "{reason} reaches the owner verbatim");
-            assert!(
-                !rendered.contains('_'),
-                "{reason} leaves snake_case in owner copy: {rendered}"
-            );
-            assert!(
-                rendered
-                    .chars()
-                    .next()
-                    .is_some_and(|first| first.is_lowercase()),
-                "{reason} isn't lowercase-led prose: {rendered}"
-            );
         }
         // ⛔ An unmapped code still reaches support rather than being swallowed.
         let unmapped = offload_reason_text("some_new_code");

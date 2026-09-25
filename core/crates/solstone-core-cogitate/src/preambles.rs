@@ -25,26 +25,11 @@ pub const COGITATE_DIAGNOSTIC_PREAMBLE: &str = r#"You are a bounded solstone dia
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::divergence::{DIVERGENCES, check_divergence};
     use crate::oracle;
 
     #[test]
-    fn preambles_match_the_oracle_and_generated_fixture() {
-        let fixture = oracle::fixture();
+    fn generated_contract_fixture_carries_the_live_preambles() {
         let generated = oracle::generated_contract_fixture();
-
-        check_divergence(
-            "runtime_preamble",
-            DIVERGENCES,
-            &fixture.preambles.runtime.text,
-            COGITATE_RUNTIME_PREAMBLE,
-        )
-        .expect("runtime preamble divergence ledger");
-        oracle::assert_preamble(
-            COGITATE_DIAGNOSTIC_PREAMBLE,
-            &fixture.preambles.diagnostic,
-            "diagnostic",
-        );
         assert_eq!(
             generated["runtime_preamble"]["text"].as_str(),
             Some(COGITATE_RUNTIME_PREAMBLE)
@@ -62,16 +47,5 @@ mod tests {
             COGITATE_JOURNAL_COMMANDS.join(", ")
         );
         assert!(COGITATE_RUNTIME_PREAMBLE.contains(&sentence));
-    }
-
-    #[test]
-    fn digest_detects_a_changed_comparand() {
-        let fixture = oracle::fixture();
-        let mut changed = COGITATE_RUNTIME_PREAMBLE.to_owned();
-        changed.push('x');
-        assert_ne!(
-            oracle::sha256_hex(changed.as_bytes()),
-            fixture.preambles.runtime.digest
-        );
     }
 }

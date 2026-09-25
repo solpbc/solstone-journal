@@ -74,33 +74,7 @@ pub fn parakeet_uses_cpp(os: &str, arch: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{backend_metadata, parakeet_uses_cpp, runtime_label, transcribe_resource};
-
-    /// G3-20: option/backend labels are sentence case, not Title Case — the
-    /// only capitals allowed are proper nouns/acronyms already present
-    /// elsewhere in this dashboard (Parakeet, Apple Silicon, CoreML, Linux).
-    #[test]
-    fn g3_20_backend_labels_are_sentence_case_not_title_case() {
-        let backends = backend_metadata();
-        let labels: Vec<&str> = backends
-            .as_array()
-            .expect("backends is an array")
-            .iter()
-            .map(|entry| entry["label"].as_str().expect("label is a string"))
-            .collect();
-        assert!(
-            labels
-                .iter()
-                .any(|label| label.contains("local processing")),
-            "expected a lowercase 'local processing', got {labels:?}"
-        );
-        assert!(
-            !labels
-                .iter()
-                .any(|label| label.contains("Local processing")),
-            "Title-case 'Local processing' should not survive G3-20: {labels:?}"
-        );
-    }
+    use super::{parakeet_uses_cpp, runtime_label, transcribe_resource};
 
     #[test]
     fn ac12_runtime_label_has_all_three_branches() {

@@ -28,6 +28,4 @@ pub use prompt::{cogitate_sol_tool_hint, compose_system_instruction};
 pub use read_scope::{ReadScopeConfig, ReadScopeError, resolve_read_scope};
 
 #[cfg(test)]
-mod divergence;
-#[cfg(test)]
 mod oracle;

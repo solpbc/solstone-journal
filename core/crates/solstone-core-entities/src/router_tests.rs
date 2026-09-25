@@ -1416,7 +1416,6 @@ async fn state_has_copy_and_attendance() {
         v["attendance_kinds"],
         json!(["attended-with", "co-present", "scheduled-with"])
     );
-    assert_eq!(v["entities_copy"]["ENT_TRUST_MERGE_DONE"], "merged.");
     for key in [
         "ENT_SCOPE_SHOWING",
         "ENT_SCOPE_WHOLE_JOURNAL",

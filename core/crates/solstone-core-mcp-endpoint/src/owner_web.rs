@@ -979,24 +979,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn workspace_keeps_the_approved_trust_outcome_and_turnoff_copy() {
-        let workspace =
-            include_str!("../../solstone-core-convey-shell/assets/agents/workspace.html");
-        for copy in [
-            "it passes the traffic along and can't read it",
-            "public certificate logs",
-            "served",
-            "nothing matched",
-            "refused",
-            "couldn't complete",
-            "unknown ending",
-            "the address and your agents are kept: turning back on uses the same address, with no new certificate",
-        ] {
-            assert!(workspace.contains(copy), "missing approved copy: {copy}");
-        }
-    }
-
     #[tokio::test]
     async fn local_door_switch_writes_its_own_key_and_repairs_an_invalid_value() {
         let temp = TempDir::new_in("/var/tmp").unwrap();

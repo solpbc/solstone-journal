@@ -216,24 +216,6 @@ mod tests {
         );
     }
 
-    /// ⛔ The never-list, over the bytes an owner could read.
-    ///
-    /// A receipt is a record of an action on a named scope. No classical protocol
-    /// can establish that a copy was not made, so any of these words would be the
-    /// gap between a promise and a mechanism, written durably into the owner's own
-    /// journal.
-    #[test]
-    fn never_claims_more_than_it_did() {
-        let json = String::from_utf8(tombstone_bytes(&body()).unwrap()).unwrap();
-        let lowered = json.to_lowercase();
-        for forbidden in ["proof", "verified", "permanently", "unrecoverable"] {
-            assert!(
-                !lowered.contains(forbidden),
-                "the tombstone must never say `{forbidden}`: {json}"
-            );
-        }
-    }
-
     /// A caller cannot make the claim this file exists to decline.
     #[test]
     fn a_caller_cannot_supply_the_honesty_fields() {

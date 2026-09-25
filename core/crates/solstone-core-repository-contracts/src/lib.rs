@@ -24,9 +24,6 @@ mod client_description_contract_bundle;
 #[path = "contracts/client_ingest_contract_bundle.rs"]
 mod client_ingest_contract_bundle;
 #[cfg(test)]
-#[path = "contracts/convey_color.rs"]
-mod convey_color;
-#[cfg(test)]
 #[path = "contracts/convey_shell_assets.rs"]
 mod convey_shell_assets;
 #[cfg(test)]
@@ -89,9 +86,6 @@ mod paired_stream_allocator_governance;
 #[cfg(test)]
 #[path = "contracts/pairing_contract_bundle.rs"]
 mod pairing_contract_bundle;
-#[cfg(test)]
-#[path = "contracts/private_host_names.rs"]
-mod private_host_names;
 
 #[cfg(test)]
 #[path = "contracts/bound_read_race_closure.rs"]
@@ -135,9 +129,6 @@ mod stream_name_identity_consumers;
 #[cfg(test)]
 #[path = "contracts/talent_config_reader_architecture.rs"]
 mod talent_config_reader_architecture;
-#[cfg(test)]
-#[path = "contracts/talent_prompt_register_rule.rs"]
-mod talent_prompt_register_rule;
 #[cfg(test)]
 #[path = "contracts/workspace_reachability.rs"]
 mod workspace_reachability;

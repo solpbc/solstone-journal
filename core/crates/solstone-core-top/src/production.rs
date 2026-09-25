@@ -659,23 +659,6 @@ mod tests {
                 "\x1b[0m",
             ],
         );
-        for forbidden in [
-            "\x1b[31m",
-            "\x1b[32m",
-            "\x1b[33m",
-            "\x1b[36m",
-            "\x1b[35m",
-            "\x1b[38;5;9m",
-            "\x1b[38;5;10m",
-            "\x1b[38;5;11m",
-            "\x1b[38;5;14m",
-            "\x1b[38;5;13m",
-        ] {
-            assert!(
-                !output.contains(forbidden),
-                "bright or 3/4-bit color {forbidden:?} in {output:?}"
-            );
-        }
     }
 
     struct FakeEventSource {

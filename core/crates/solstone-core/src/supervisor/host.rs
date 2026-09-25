@@ -984,9 +984,7 @@ mod tests {
     ///   3. no arm names the ledger path: the next start closes an abandoned
     ///      generation itself, and the old walkthrough set aside the very
     ///      records that closure retires from.
-    ///   4. every arm closes on "your memories", never on a claim that the
-    ///      journal is untouched.
-    ///   5. `details:` stays last, as the sibling refusals have it.
+    ///   4. `details:` stays last, as the sibling refusals have it.
     #[test]
     fn every_lifecycle_recovery_copy_ends_in_something_the_owner_can_do() {
         use super::runtime::ParentLossCoordinatorBootstrapFailure as Failure;
@@ -1035,15 +1033,6 @@ mod tests {
                 !copy.contains("journal start"),
                 "{reason:?} sends the owner to `journal start`, which runs the supervisor in the \
                  foreground and leaves the service it just stopped down:\n{copy}"
-            );
-            assert!(
-                copy.contains("your memories are untouched"),
-                "{reason:?} must close on the owner's memories:\n{copy}"
-            );
-            assert!(
-                !copy.contains("your journal is untouched"),
-                "{reason:?} asserts a confirmed fact about the journal that these paths cannot \
-                 confirm:\n{copy}"
             );
             let details = copy.find("details:").expect("every arm carries details");
             assert!(

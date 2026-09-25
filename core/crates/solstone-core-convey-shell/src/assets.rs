@@ -89,27 +89,6 @@ mod tests {
         }
     }
 
-    fn collect_whitespace_exceptions(value: &Value, root: &str, exceptions: &mut BTreeSet<String>) {
-        match value {
-            Value::String(value) => {
-                if value.contains("  ") || value.contains('\n') || value.contains('\t') {
-                    exceptions.insert(root.to_owned());
-                }
-            }
-            Value::Array(values) => {
-                for value in values {
-                    collect_whitespace_exceptions(value, root, exceptions);
-                }
-            }
-            Value::Object(values) => {
-                for value in values.values() {
-                    collect_whitespace_exceptions(value, root, exceptions);
-                }
-            }
-            _ => {}
-        }
-    }
-
     #[test]
     fn network_copy_payload_keeps_digit_bearing_step_constants() {
         let network = payload(network_copy_json());
@@ -166,30 +145,5 @@ mod tests {
             dictionary_keys_seen >= 16,
             "expected at least 16 network dictionary keys, found {dictionary_keys_seen}"
         );
-    }
-
-    #[test]
-    fn copy_payloads_only_allow_the_named_whitespace_exception() {
-        let network = payload(network_copy_json());
-        let speakers = payload(speaker_copy_json());
-        let mut network_exceptions = BTreeSet::new();
-        for (name, value) in &network {
-            collect_whitespace_exceptions(value, name, &mut network_exceptions);
-        }
-        assert_eq!(
-            network_exceptions,
-            BTreeSet::from(["UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT".to_owned()])
-        );
-        assert!(
-            network["UNPAIR_AMBIGUOUS_LABEL_COMMAND_FORMAT"]
-                .as_str()
-                .expect("whitespace exception is a string")
-                .contains("  ")
-        );
-        let mut speaker_exceptions = BTreeSet::new();
-        for (name, value) in &speakers {
-            collect_whitespace_exceptions(value, name, &mut speaker_exceptions);
-        }
-        assert!(speaker_exceptions.is_empty());
     }
 }

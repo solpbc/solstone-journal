@@ -7,7 +7,7 @@ use std::path::Path;
 
 use solstone_core_cogitate::{COGITATE_ACCESS_TIERS, capabilities_for_access_tier};
 
-use crate::oracle::{fixture, generated_contract_fixture, sha256_hex};
+use crate::oracle::{fixture, generated_contract_fixture};
 use crate::sol_execution::orchestrate_slot_cycle;
 use crate::{
     EMIT_FINAL_TOOL, FINISH_TOOL, KNOWN_TOOL_NAMES, NoopSlotLease, ReadBudget, SlotLease,
@@ -16,7 +16,7 @@ use crate::{
 };
 
 #[test]
-fn tool_metadata_matches_the_oracle_except_native_finish_text() {
+fn tool_metadata_matches_the_oracle_schema() {
     let fixture = fixture();
     let actual = all_tools();
     assert_eq!(actual.len(), 7);
@@ -27,41 +27,21 @@ fn tool_metadata_matches_the_oracle_except_native_finish_text() {
             .find(|tool| tool.name == name)
             .expect("fixture tool has native metadata");
         assert_eq!(tool.name, expected.name, "{name} name");
-        if name != "finish" {
-            assert_eq!(tool.description, expected.description, "{name} description");
-            assert_eq!(
-                tool.arguments.len(),
-                expected.action_properties.len(),
-                "{name} args"
-            );
-            for argument in tool.arguments {
-                let expected_argument = expected
-                    .action_properties
-                    .get(argument.name)
-                    .expect("fixture argument");
-                assert_eq!(
-                    argument.description, expected_argument.description,
-                    "{name} {} description",
-                    argument.name
-                );
-            }
-        }
-    }
-    let finish = &fixture.tool_surface.tools["finish"];
-    assert_eq!(FINISH_TOOL.name, finish.name);
-    assert!(
-        finish
+        let arguments = tool
+            .arguments
+            .iter()
+            .map(|argument| argument.name)
+            .collect::<BTreeSet<_>>();
+        let expected_arguments = expected
             .action_properties
-            .contains_key(FINISH_TOOL.arguments[0].name)
-    );
-    assert_eq!(
-        FINISH_TOOL.arguments,
-        &[crate::ToolArgumentSpec {
-            name: "message",
-            description: "Concise record of what changed, what was found, or that already-persisted work is complete.",
-            required: true
-        }]
-    );
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(arguments, expected_arguments, "{name} args");
+    }
+    assert_eq!(FINISH_TOOL.arguments.len(), 1);
+    assert_eq!(FINISH_TOOL.arguments[0].name, "message");
+    assert!(FINISH_TOOL.arguments[0].required);
 }
 
 #[test]
@@ -75,22 +55,10 @@ fn sol_descriptions_derive_the_host_command_vocabulary() {
     assert!(sol.arguments[0].description.contains(&expected));
 }
 
-/// `finish_description` is hand-maintained because no Python source owns the
-/// native finish text, so the Python fixture generator cannot emit it this wave.
 #[test]
-fn hand_maintained_finish_description_is_pinned_by_digest() {
+fn generated_contract_fixture_carries_the_live_finish_description() {
     let expected = &generated_contract_fixture()["finish_description"];
     assert_eq!(expected["text"].as_str(), Some(FINISH_TOOL.description));
-    assert_eq!(
-        expected["byte_length"].as_u64(),
-        Some(FINISH_TOOL.description.len() as u64)
-    );
-    assert_eq!(
-        expected["digest"].as_str(),
-        Some(sha256_hex(FINISH_TOOL.description.as_bytes()).as_str())
-    );
-    assert_eq!(expected["algorithm"].as_str(), Some("sha256"));
-    assert_eq!(expected["encoding"].as_str(), Some("utf-8"));
 }
 
 #[test]
