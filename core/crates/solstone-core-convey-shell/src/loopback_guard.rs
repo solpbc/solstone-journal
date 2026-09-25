@@ -25,7 +25,7 @@
 
 use axum::Router;
 use axum::body::Body;
-use axum::http::{HeaderMap, HeaderName, Method, Request, StatusCode, Uri, header};
+use axum::http::{HeaderMap, Method, Request, StatusCode, Uri};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use solstone_core_convey_http::envelope::error_envelope;
@@ -34,7 +34,6 @@ use solstone_core_convey_http::identity::AccessBasis;
 const HOST_MESSAGE: &str = "your journal's web app can only be opened at localhost, 127.0.0.1 or [::1] on the computer it runs on.";
 const SITE_MESSAGE: &str =
     "your journal's web app turned this request away because it came from another website.";
-const SEC_FETCH_SITE: HeaderName = HeaderName::from_static("sec-fetch-site");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Refusal {
@@ -95,6 +94,7 @@ mod tests {
 
     use axum::Extension;
     use axum::body::to_bytes;
+    use axum::http::HeaderName;
     use axum::routing::get;
     use serde_json::Value;
     use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};
