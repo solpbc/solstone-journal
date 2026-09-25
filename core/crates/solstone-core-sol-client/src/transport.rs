@@ -43,6 +43,7 @@ impl HttpMethod {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimeoutPolicy {
     Api,
+    EntityMutation,
     Upload,
     SseOpen,
 }
@@ -56,7 +57,7 @@ impl TimeoutPolicy {
                 read: Some(Duration::from_secs(API_READ_SECONDS)),
                 total: Some(Duration::from_secs(API_TOTAL_SECONDS)),
             },
-            TimeoutPolicy::Upload => TimeoutSpec {
+            TimeoutPolicy::EntityMutation | TimeoutPolicy::Upload => TimeoutSpec {
                 connect: Duration::from_secs(UPLOAD_CONNECT_SECONDS),
                 read: Some(Duration::from_secs(UPLOAD_READ_SECONDS)),
                 total: Some(Duration::from_secs(UPLOAD_TOTAL_SECONDS)),
@@ -73,6 +74,7 @@ impl TimeoutPolicy {
     pub fn label(self) -> &'static str {
         match self {
             TimeoutPolicy::Api => "api",
+            TimeoutPolicy::EntityMutation => "entity-mutation",
             TimeoutPolicy::Upload => "upload",
             TimeoutPolicy::SseOpen => "sse-open",
         }
@@ -224,7 +226,7 @@ impl UreqHttpTransport {
     fn agent(&self, policy: TimeoutPolicy) -> &ureq::Agent {
         match policy {
             TimeoutPolicy::Api => &self.api_agent,
-            TimeoutPolicy::Upload => &self.upload_agent,
+            TimeoutPolicy::EntityMutation | TimeoutPolicy::Upload => &self.upload_agent,
             TimeoutPolicy::SseOpen => &self.sse_agent,
         }
     }
@@ -698,6 +700,10 @@ mod tests {
     #[test]
     fn timeout_specs_are_pinned() {
         assert_eq!(TimeoutPolicy::Api.spec().connect, Duration::from_secs(2));
+        assert_eq!(
+            TimeoutPolicy::EntityMutation.spec().read,
+            Some(Duration::from_secs(120))
+        );
         assert_eq!(
             TimeoutPolicy::Upload.spec().read,
             Some(Duration::from_secs(120))

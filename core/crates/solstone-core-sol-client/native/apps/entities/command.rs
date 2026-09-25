@@ -476,7 +476,7 @@ pub fn accept_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let commit = parsed.bool_value("--commit").unwrap_or(false);
-    let result = match request_json(
+    let result = match request_json_with_policy(
         ctx,
         HttpMethod::Post,
         "/app/entities/api/accept-merge-candidate",
@@ -487,6 +487,11 @@ pub fn accept_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
             "target_slug": target_slug,
             "commit": commit,
         })),
+        if commit {
+            TimeoutPolicy::EntityMutation
+        } else {
+            TimeoutPolicy::Api
+        },
     ) {
         Ok(result) => result,
         Err(error) => return entity_error(error, None, None),
@@ -554,7 +559,7 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(target_slug) = parsed.positionals.get(1) else {
         return stderr("Error: missing argument TARGET_SLUG");
     };
-    let result = match request_json(
+    let result = match request_json_with_policy(
         ctx,
         HttpMethod::Post,
         "/app/entities/api/merge",
@@ -565,6 +570,11 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
             "commit": parsed.bool_value("--commit").unwrap_or(false),
             "keep_source_as_aka": parsed.bool_value("--keep-source-as-aka").unwrap_or(true),
         })),
+        if parsed.bool_value("--commit").unwrap_or(false) {
+            TimeoutPolicy::EntityMutation
+        } else {
+            TimeoutPolicy::Api
+        },
     ) {
         Ok(result) => result,
         Err(error) => return merge_json_error(error),
@@ -592,12 +602,13 @@ pub fn undo_merge(ctx: CommandContext<'_>) -> CommandOutput {
     if !parsed.bool_value("--yes").unwrap_or(false) {
         return stderr("Refusing to undo this merge without --yes.");
     }
-    let body = match request_json(
+    let body = match request_json_with_policy(
         ctx,
         HttpMethod::Post,
         &format!("/app/entities/api/merge/{merge_id}/undo"),
         vec![],
         Some(json!({})),
+        TimeoutPolicy::EntityMutation,
     ) {
         Ok(body) => body,
         Err(error) => return trust_error(error, parsed.bool_value("--json").unwrap_or(false)),
@@ -1458,13 +1469,24 @@ fn request_json(
     params: Vec<QueryParam>,
     json: Option<Value>,
 ) -> Result<Value, ClientError> {
+    request_json_with_policy(ctx, method, path, params, json, TimeoutPolicy::Api)
+}
+
+fn request_json_with_policy(
+    ctx: CommandContext<'_>,
+    method: HttpMethod,
+    path: &str,
+    params: Vec<QueryParam>,
+    json: Option<Value>,
+    policy: TimeoutPolicy,
+) -> Result<Value, ClientError> {
     let response = ctx.transport.request(ApiRequest {
         method,
         path: path.to_string(),
         params,
         json,
         headers: vec![],
-        policy: TimeoutPolicy::Api,
+        policy,
     })?;
     decode_response(&response)
 }
