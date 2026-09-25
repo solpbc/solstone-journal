@@ -1010,29 +1010,38 @@ mod tests {
         let admitted = JournalRoot::open(temp.path()).unwrap();
         let identity = admitted.identity();
 
-        let req = StartBackfillRequest {
-            operation_id: Some(op_id.to_owned()),
-            commit: true,
-            reattribute: false,
-            accumulation: false,
-            now_ms: 1,
-        };
-        start_backfill(temp.path(), &req).unwrap();
-
-        // Clear active token simulating process restart
+        // A process that died right after accepting: the accepted event is in
+        // the ledger, and no worker was ever spawned. Writing it directly makes
+        // that state exact; calling start_backfill would race its own worker.
+        let ledger_path = backfill_operations_path(admitted.canonical_path());
+        fs::create_dir_all(ledger_path.parent().unwrap()).unwrap();
         {
-            let mut registry = ACTIVE_TOKENS.lock().unwrap();
-            registry.remove(&(identity, op_id.to_owned()));
+            let _ledger_lock = hold_lock(&ledger_path, LockOptions::default()).unwrap();
+            crate::backfill_operations::append_backfill_event_locked(
+                &ledger_path,
+                &BackfillOperationEvent {
+                    schema_version: BACKFILL_OPERATION_SCHEMA_VERSION,
+                    event_id: format!("{op_id}:accepted"),
+                    operation_id: op_id.to_owned(),
+                    ts: Utc::now().to_rfc3339(),
+                    payload: BackfillOperationPayload::Accepted {
+                        commit: true,
+                        reattribute: false,
+                        accumulation: false,
+                    },
+                },
+            )
+            .unwrap();
         }
+        assert!(
+            !ACTIVE_TOKENS
+                .lock()
+                .unwrap()
+                .contains_key(&(identity, op_id.to_owned()))
+        );
 
         let s = backfill_status(temp.path(), op_id).unwrap().unwrap();
-        // Without token, accepted before started is InactiveAccepted
-        if s.status != BackfillStatusKind::Done {
-            assert!(
-                s.status == BackfillStatusKind::InactiveAccepted
-                    || s.status == BackfillStatusKind::ActivePreparing
-            );
-        }
+        assert_eq!(s.status, BackfillStatusKind::InactiveAccepted);
 
         // Resume creates attempt and completes
         let _ = resume_backfill(temp.path(), op_id, 2);
