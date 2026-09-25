@@ -116,6 +116,13 @@ async fn serve_with_permit_pool(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RequestGuard {
+    None,
+    Loopback,
+    IpLiteral { port: u16 },
+}
+
 async fn handle_connection(
     mut socket: TcpStream,
     tls_config: Arc<rustls::ServerConfig>,
@@ -146,7 +153,7 @@ async fn handle_connection(
         sessions,
         source,
         shutdown,
-        false,
+        RequestGuard::None,
     )
     .await
 }
@@ -158,7 +165,7 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
     sessions: Arc<SessionTable>,
     source: IpAddr,
     mut shutdown: watch::Receiver<bool>,
-    enforce_loopback_guard: bool,
+    request_guard: RequestGuard,
 ) -> Result<(), ConnectionError> {
     let token_store = TokenStore::open(journal_root.as_path());
     let mut http = Http1Connection::new(stream);
@@ -179,57 +186,114 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
                 return Ok(());
             }
         };
-        if enforce_loopback_guard {
-            let method = match request.method {
-                HttpMethod::Get => axum::http::Method::GET,
-                HttpMethod::Post => axum::http::Method::POST,
-                HttpMethod::Delete => axum::http::Method::DELETE,
-            };
-            let Ok(uri) = request.target.parse::<axum::http::Uri>() else {
-                let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
-                let _ = http.write_response(&response).await;
-                return Ok(());
-            };
-            let mut header_map = axum::http::HeaderMap::new();
-            let mut headers_ok = true;
-            for (k, v) in request.headers() {
-                match (
-                    axum::http::HeaderName::from_bytes(k.as_bytes()),
-                    v.parse::<axum::http::HeaderValue>(),
-                ) {
-                    (Ok(name), Ok(value)) => {
-                        header_map.append(name, value);
-                    }
-                    _ => {
-                        headers_ok = false;
-                        break;
+        match request_guard {
+            RequestGuard::None => {}
+            RequestGuard::Loopback => {
+                let method = match request.method {
+                    HttpMethod::Get => axum::http::Method::GET,
+                    HttpMethod::Post => axum::http::Method::POST,
+                    HttpMethod::Delete => axum::http::Method::DELETE,
+                };
+                let Ok(uri) = request.target.parse::<axum::http::Uri>() else {
+                    let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                };
+                let mut header_map = axum::http::HeaderMap::new();
+                let mut headers_ok = true;
+                for (k, v) in request.headers() {
+                    match (
+                        axum::http::HeaderName::from_bytes(k.as_bytes()),
+                        v.parse::<axum::http::HeaderValue>(),
+                    ) {
+                        (Ok(name), Ok(value)) => {
+                            header_map.append(name, value);
+                        }
+                        _ => {
+                            headers_ok = false;
+                            break;
+                        }
                     }
                 }
+                if !headers_ok {
+                    let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                }
+                if let Some(refusal) =
+                    solstone_core_convey_http::loopback_guard::evaluate_loopback_request(
+                        &method,
+                        &uri,
+                        &header_map,
+                    )
+                {
+                    let reason_code = match refusal {
+                        solstone_core_convey_http::loopback_guard::LoopbackRefusal::HostNotAllowed => {
+                            "host_not_allowed"
+                        }
+                        solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossSite
+                        | solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossOrigin => {
+                            "cross_origin_blocked"
+                        }
+                    };
+                    let response = HttpResponse::text(403, "Forbidden", reason_code);
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                }
             }
-            if !headers_ok {
-                let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
-                let _ = http.write_response(&response).await;
-                return Ok(());
-            }
-            if let Some(refusal) =
-                solstone_core_convey_http::loopback_guard::evaluate_loopback_request(
-                    &method,
-                    &uri,
-                    &header_map,
-                )
-            {
-                let reason_code = match refusal {
-                    solstone_core_convey_http::loopback_guard::LoopbackRefusal::HostNotAllowed => {
-                        "host_not_allowed"
-                    }
-                    solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossSite
-                    | solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossOrigin => {
-                        "cross_origin_blocked"
-                    }
+            RequestGuard::IpLiteral { port } => {
+                let method = match request.method {
+                    HttpMethod::Get => axum::http::Method::GET,
+                    HttpMethod::Post => axum::http::Method::POST,
+                    HttpMethod::Delete => axum::http::Method::DELETE,
                 };
-                let response = HttpResponse::text(403, "Forbidden", reason_code);
-                let _ = http.write_response(&response).await;
-                return Ok(());
+                let Ok(uri) = request.target.parse::<axum::http::Uri>() else {
+                    let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                };
+                let mut header_map = axum::http::HeaderMap::new();
+                let mut headers_ok = true;
+                for (k, v) in request.headers() {
+                    match (
+                        axum::http::HeaderName::from_bytes(k.as_bytes()),
+                        v.parse::<axum::http::HeaderValue>(),
+                    ) {
+                        (Ok(name), Ok(value)) => {
+                            header_map.append(name, value);
+                        }
+                        _ => {
+                            headers_ok = false;
+                            break;
+                        }
+                    }
+                }
+                if !headers_ok {
+                    let response = HttpResponse::text(403, "Forbidden", "host_not_allowed");
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                }
+                if let Some(refusal) =
+                    solstone_core_convey_http::ip_literal_guard::evaluate_ip_literal_request(
+                        &method,
+                        &uri,
+                        &header_map,
+                        port,
+                    )
+                {
+                    let reason_code = match refusal {
+                        solstone_core_convey_http::loopback_guard::LoopbackRefusal::HostNotAllowed => {
+                            "host_not_allowed"
+                        }
+                        solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossSite
+                        | solstone_core_convey_http::loopback_guard::LoopbackRefusal::CrossOrigin => {
+                            "cross_origin_blocked"
+                        }
+                    };
+                    let response = HttpResponse::text(403, "Forbidden", reason_code);
+                    let _ = http.write_response(&response).await;
+                    return Ok(());
+                }
             }
         }
         let response = process_request(
@@ -240,6 +304,7 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
             source,
             oauth.as_ref(),
             &mut shutdown,
+            request_guard,
         )
         .await;
         http.write_response(&response)
@@ -261,6 +326,7 @@ pub(crate) enum ConnectionError {
     HttpWrite,
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_request(
     request: &HttpRequest,
     token_store: &TokenStore,
@@ -269,14 +335,23 @@ async fn process_request(
     source: IpAddr,
     oauth: &OAuthRuntime,
     shutdown: &mut watch::Receiver<bool>,
+    request_guard: RequestGuard,
 ) -> HttpResponse {
     let path = request_path(&request.target);
     match (request.method, path) {
         (HttpMethod::Get, "/.well-known/oauth-protected-resource") => {
-            crate::oauth::metadata::protected_resource(&oauth.resource_origin)
+            let origin = match oauth.published_origin(request) {
+                Ok(origin) => origin,
+                Err(response) => return response,
+            };
+            crate::oauth::metadata::protected_resource(&origin)
         }
         (HttpMethod::Get, "/.well-known/oauth-authorization-server") => {
-            crate::oauth::metadata::authorization_server(&oauth.resource_origin)
+            let origin = match oauth.published_origin(request) {
+                Ok(origin) => origin,
+                Err(response) => return response,
+            };
+            crate::oauth::metadata::authorization_server(&origin)
         }
         (HttpMethod::Post, "/register") => {
             crate::oauth::dcr::register(request, source, oauth, shutdown).await
@@ -292,7 +367,14 @@ async fn process_request(
             crate::oauth::authorize::post_authorize(request, source, oauth)
         }
         (HttpMethod::Post, "/token") => crate::oauth::token::token(request, oauth),
-        (_, "/mcp") => handle_mcp(request, token_store, sessions, journal_root, oauth),
+        (_, "/mcp") => handle_mcp(
+            request,
+            token_store,
+            sessions,
+            journal_root,
+            oauth,
+            request_guard,
+        ),
         (
             HttpMethod::Post | HttpMethod::Delete,
             "/.well-known/oauth-protected-resource" | "/.well-known/oauth-authorization-server",
@@ -310,13 +392,19 @@ fn handle_mcp(
     sessions: &SessionTable,
     journal_root: &Path,
     oauth: &OAuthRuntime,
+    request_guard: RequestGuard,
 ) -> HttpResponse {
+    let origin = match oauth.published_origin(request) {
+        Ok(origin) => origin,
+        Err(response) => return response,
+    };
     let verified = match authenticate(
         request,
         token_store,
         &oauth.store,
         &oauth.binding(),
-        &oauth.resource_origin,
+        &origin,
+        request_guard,
     ) {
         Ok(verified) => verified,
         Err(response) => return response,
@@ -346,6 +434,7 @@ fn authenticate(
     oauth_store: &OAuthStore,
     binding: &crate::oauth::RuntimeBinding,
     resource_origin: &str,
+    request_guard: RequestGuard,
 ) -> Result<VerifiedToken, HttpResponse> {
     let authorization = request
         .header("authorization")
@@ -363,22 +452,26 @@ fn authenticate(
             "Bearer authorization is malformed",
         ));
     }
-    match token_store.verify(token) {
-        // the pairing code is journal-wide. A static bearer is accepted by every listener, and the activity record does not say which door served it.
+    // a static key sent here is exposed before the 401 and is not burned.
+    if !matches!(request_guard, RequestGuard::IpLiteral { .. }) {
+        match token_store.verify(token) {
+            Ok(verified) => return Ok(verified),
+            Err(TokenStoreError::InvalidToken) => {}
+            Err(_) => {
+                return Err(HttpResponse::error(
+                    503,
+                    "Service Unavailable",
+                    "Bearer token verification is unavailable",
+                ));
+            }
+        }
+    }
+    match oauth_store.verify_access_token(token, binding) {
         Ok(verified) => Ok(verified),
-        Err(TokenStoreError::InvalidToken) => match oauth_store.verify_access_token(token, binding)
-        {
-            Ok(verified) => Ok(verified),
-            Err(crate::oauth::store::OAuthStoreError::InvalidToken) => Err(mcp_unauthorized(
-                resource_origin,
-                "Bearer token is invalid or revoked",
-            )),
-            Err(_) => Err(HttpResponse::error(
-                503,
-                "Service Unavailable",
-                "Bearer token verification is unavailable",
-            )),
-        },
+        Err(crate::oauth::store::OAuthStoreError::InvalidToken) => Err(mcp_unauthorized(
+            resource_origin,
+            "Bearer token is invalid or revoked",
+        )),
         Err(_) => Err(HttpResponse::error(
             503,
             "Service Unavailable",
@@ -2081,7 +2174,7 @@ mod tests {
     async fn oauth_discovery_and_unauthenticated_mcp_use_the_connection_pool() {
         let (server_config, client_config) = tls_configs();
         let server = ServerHarness::start(server_config).await;
-        let origin = server.oauth.resource_origin.clone();
+        let origin = server.oauth.fixed_resource_origin().to_string();
         let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
 
         let (status, body, _) = exchange_http(
@@ -2272,7 +2365,7 @@ mod tests {
             Some((cimd_addr, cimd_client)),
         )
         .await;
-        let origin = server.oauth.resource_origin.clone();
+        let origin = server.oauth.fixed_resource_origin().to_string();
         let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
 
         let (status, body, _) = exchange_http(
@@ -2662,7 +2755,7 @@ mod tests {
             .to_owned();
         let pairing = server.oauth.store.generate_pairing_code().unwrap();
         let challenge = pkce_challenge();
-        let origin = server.oauth.resource_origin.clone();
+        let origin = server.oauth.fixed_resource_origin().to_string();
         let query = format!(
             "client_id={}&redirect_uri={}&response_type=code&code_challenge={}&code_challenge_method=S256&resource={origin}/mcp",
             crate::oauth::urlparse::query_value_encode(&classic_id),
@@ -2865,7 +2958,7 @@ mod unit_tests {
     use sha2::{Digest, Sha256};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
-    use super::PrefixedStream;
+    use super::{PrefixedStream, RequestGuard};
     use crate::http1::{HttpMethod, HttpRequest};
     use crate::oauth::OAuthRuntime;
     use crate::session::SessionTable;
@@ -2998,6 +3091,7 @@ mod unit_tests {
             &sessions,
             journal.path(),
             &unbound,
+            RequestGuard::None,
         );
         let resp_unknown = super::handle_mcp(
             &req_unknown_to_unbound,
@@ -3005,6 +3099,7 @@ mod unit_tests {
             &sessions,
             journal.path(),
             &unbound,
+            RequestGuard::None,
         );
 
         assert_eq!(
@@ -3043,6 +3138,7 @@ mod unit_tests {
             &sessions,
             journal.path(),
             &bound,
+            RequestGuard::None,
         );
         let resp_unknown_b = super::handle_mcp(
             &req_unknown_to_bound,
@@ -3050,6 +3146,7 @@ mod unit_tests {
             &sessions,
             journal.path(),
             &bound,
+            RequestGuard::None,
         );
 
         assert_eq!(
@@ -3088,7 +3185,8 @@ mod unit_tests {
             &token_store,
             &unbound.store,
             &unbound.binding(),
-            &unbound.resource_origin,
+            unbound.fixed_resource_origin(),
+            RequestGuard::None,
         );
         assert!(unbound_res.is_ok());
 
@@ -3097,7 +3195,8 @@ mod unit_tests {
             &token_store,
             &bound.store,
             &bound.binding(),
-            &bound.resource_origin,
+            bound.fixed_resource_origin(),
+            RequestGuard::None,
         );
         assert!(bound_res.is_ok());
     }

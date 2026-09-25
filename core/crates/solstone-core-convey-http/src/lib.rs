@@ -161,6 +161,7 @@
 pub mod envelope;
 pub mod gate;
 pub mod identity;
+pub mod ip_literal_guard;
 pub mod listener;
 pub mod loopback_guard;
 pub mod owner_read;

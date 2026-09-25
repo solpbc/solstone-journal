@@ -1296,7 +1296,7 @@ pub enum McpTokenCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum McpPairingCommand {
-    Generate,
+    Generate { door: Option<String> },
     Revoke,
 }
 
@@ -4149,7 +4149,24 @@ fn parse_mcp_pairing(args: &[OsString]) -> Result<McpPairingCommand, McpUsageErr
         ));
     };
     match command.to_str() {
-        Some("generate") if rest.is_empty() => Ok(McpPairingCommand::Generate),
+        Some("generate") => {
+            if rest.is_empty() {
+                Ok(McpPairingCommand::Generate { door: None })
+            } else if let [flag, door] = rest {
+                if flag != OsStr::new("--door") || door != OsStr::new("lan") {
+                    return Err(McpUsageError(
+                        "expected optional `--door lan` argument".to_owned(),
+                    ));
+                }
+                Ok(McpPairingCommand::Generate {
+                    door: Some("lan".to_owned()),
+                })
+            } else {
+                Err(McpUsageError(
+                    "expected optional `--door lan` argument".to_owned(),
+                ))
+            }
+        }
         Some("revoke") if rest.is_empty() => Ok(McpPairingCommand::Revoke),
         _ => Err(McpUsageError(format!(
             "invalid MCP pairing command: {}",
@@ -9144,7 +9161,15 @@ mod tests {
         assert_eq!(
             evaluate_args(&args(&["mcp", "pairing", "generate"])),
             Ok(Command::Mcp(McpCommand::Pairing(
-                McpPairingCommand::Generate
+                McpPairingCommand::Generate { door: None }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "pairing", "generate", "--door", "lan"])),
+            Ok(Command::Mcp(McpCommand::Pairing(
+                McpPairingCommand::Generate {
+                    door: Some("lan".to_owned())
+                }
             )))
         );
         assert_eq!(

@@ -65,6 +65,19 @@ impl RuntimeBinding {
         }
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn door_name(&self) -> Option<&str> {
+        match self {
+            Self::Bound { canonical }
+                if canonical == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE =>
+            {
+                Some("lan")
+            }
+            Self::Bound { .. } => Some("local"),
+            Self::Unbound { .. } => None,
+        }
+    }
+
     pub(crate) fn stored_grant_resource(&self) -> Option<String> {
         match self {
             Self::Unbound { .. } => None,
@@ -73,13 +86,23 @@ impl RuntimeBinding {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum ResourceOrigin {
+    /// solstone.me (`new`) and the local door (`new_bound`).
+    /// Published origin is this string. Grant canonical is `{published}/mcp`.
+    Fixed(String),
+    /// LAN door. Published origin is `https://` plus the admitted Host, unchanged.
+    /// Grant canonical is `MCP_LAN_DOOR_RESOURCE` (`urn:solstone:mcp-door:lan`).
+    Request,
+}
+
 /// Process-local OAuth helpers bound to one journal root.
 pub(crate) struct OAuthRuntime {
     pub(crate) journal_root: std::path::PathBuf,
     pub(crate) store: OAuthStore,
     pub(crate) pairing_limiter: PairingRateLimiter,
     pub(crate) cimd_bulkhead: Arc<CimdBulkhead>,
-    pub(crate) resource_origin: String,
+    pub(crate) resource_origin: ResourceOrigin,
     binds_grants: bool,
     #[cfg(feature = "full-tests")]
     pub(crate) cimd_fetch_override: Option<(SocketAddr, Arc<rustls::ClientConfig>)>,
@@ -92,7 +115,7 @@ impl OAuthRuntime {
             store: OAuthStore::open(journal_root),
             pairing_limiter: PairingRateLimiter::new(),
             cimd_bulkhead: CimdBulkhead::new(),
-            resource_origin,
+            resource_origin: ResourceOrigin::Fixed(resource_origin),
             binds_grants: false,
             #[cfg(feature = "full-tests")]
             cimd_fetch_override: None,
@@ -100,11 +123,18 @@ impl OAuthRuntime {
     }
 
     pub(crate) fn binding(&self) -> RuntimeBinding {
-        let canonical = format!("{}/mcp", self.resource_origin);
-        if self.binds_grants {
-            RuntimeBinding::Bound { canonical }
-        } else {
-            RuntimeBinding::Unbound { canonical }
+        match &self.resource_origin {
+            ResourceOrigin::Fixed(origin) => {
+                let canonical = format!("{origin}/mcp");
+                if self.binds_grants {
+                    RuntimeBinding::Bound { canonical }
+                } else {
+                    RuntimeBinding::Unbound { canonical }
+                }
+            }
+            ResourceOrigin::Request => RuntimeBinding::Bound {
+                canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+            },
         }
     }
 
@@ -113,6 +143,41 @@ impl OAuthRuntime {
         let mut runtime = Self::new(journal_root, resource_origin);
         runtime.binds_grants = true;
         runtime
+    }
+
+    /// Construct a LAN-door runtime where the published origin is derived from each request's Host header.
+    pub(crate) fn new_lan_door(journal_root: &Path) -> Self {
+        Self {
+            journal_root: journal_root.to_path_buf(),
+            store: OAuthStore::open(journal_root),
+            pairing_limiter: PairingRateLimiter::new(),
+            cimd_bulkhead: CimdBulkhead::new(),
+            resource_origin: ResourceOrigin::Request,
+            binds_grants: true,
+            #[cfg(feature = "full-tests")]
+            cimd_fetch_override: None,
+        }
+    }
+
+    pub(crate) fn published_origin(&self, request: &HttpRequest) -> Result<String, HttpResponse> {
+        match &self.resource_origin {
+            ResourceOrigin::Fixed(origin) => Ok(origin.clone()),
+            ResourceOrigin::Request => {
+                let host = request
+                    .header("host")
+                    .map_err(|_| HttpResponse::text(403, "Forbidden", "host_not_allowed"))?
+                    .ok_or_else(|| HttpResponse::text(403, "Forbidden", "host_not_allowed"))?;
+                Ok(format!("https://{host}"))
+            }
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixed_resource_origin(&self) -> &str {
+        match &self.resource_origin {
+            ResourceOrigin::Fixed(origin) => origin.as_str(),
+            ResourceOrigin::Request => panic!("not a fixed resource origin"),
+        }
     }
 
     #[cfg(all(test, feature = "full-tests"))]

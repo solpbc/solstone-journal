@@ -48,6 +48,8 @@ mod http1;
 #[cfg(unix)]
 mod jsonrpc;
 #[cfg(unix)]
+pub mod lan_door;
+#[cfg(unix)]
 pub mod local_door;
 #[cfg(unix)]
 mod oauth;
@@ -65,6 +67,8 @@ mod proxy_preface;
 mod references;
 #[cfg(unix)]
 mod registry;
+#[cfg(unix)]
+mod rlimit;
 #[cfg(unix)]
 mod server;
 #[cfg(unix)]
@@ -95,6 +99,8 @@ pub use bridge_carrier::McpBridgeCarrierError;
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
 #[cfg(unix)]
 pub use dispatch::{McpProbeError, run_mcp_probe};
+#[cfg(unix)]
+pub use lan_door::{LanDoorRun, LanDoorState, read_lan_door_state, write_lan_door_state};
 #[cfg(unix)]
 pub use local_door::{
     LocalDoorRun, LocalDoorState, read_local_door_state, run_local_door_async,

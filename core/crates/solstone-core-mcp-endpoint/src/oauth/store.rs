@@ -61,6 +61,7 @@ pub struct PairingCodeSummary {
     pub expires_at: DateTime<Utc>,
     pub generation: u64,
     pub locked: bool,
+    pub door: Option<String>,
 }
 
 /// Authorization code plus the GET-bound redirect fields.
@@ -264,6 +265,9 @@ struct StoredPairing {
     expires_at: DateTime<Utc>,
     generation: u64,
     locked: bool,
+    /// Once a pairing code carries a door, an older binary rejects the whole oauth file as malformed, so every OAuth call on every listener fails and the agents app's view of connections fails until a binary that knows the field reads that journal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    door: Option<String>,
 }
 
 impl OAuthStore {
@@ -277,17 +281,26 @@ impl OAuthStore {
 
     /// Generate one pairing code, replacing any previous code.
     pub fn generate_pairing_code(&self) -> Result<CreatedPairingCode, OAuthStoreError> {
-        self.generate_pairing_code_with_random(&SystemRandomSource)
+        self.generate_pairing_code_with_random_and_door(&SystemRandomSource, None)
     }
 
-    pub(crate) fn generate_pairing_code_with_random(
+    pub fn generate_pairing_code_with_door(
+        &self,
+        door: Option<&str>,
+    ) -> Result<CreatedPairingCode, OAuthStoreError> {
+        self.generate_pairing_code_with_random_and_door(&SystemRandomSource, door)
+    }
+
+    pub(crate) fn generate_pairing_code_with_random_and_door(
         &self,
         random: &dyn RandomSource,
+        door: Option<&str>,
     ) -> Result<CreatedPairingCode, OAuthStoreError> {
         let mut code_bytes = [0_u8; PAIRING_CODE_BYTES];
         fill_exact(random, &mut code_bytes)?;
         let code = encode_pairing_code(&code_bytes);
         let verifier = sha256_b64(code.as_bytes());
+        let door = door.map(str::to_owned);
         self.mutate(|store, now| {
             store.pairing_generation = store.pairing_generation.saturating_add(1).max(1);
             let expires_at = now + Duration::seconds(PAIRING_TTL_SECS);
@@ -297,6 +310,7 @@ impl OAuthStore {
                 expires_at,
                 generation,
                 locked: false,
+                door,
             });
             Ok(CreatedPairingCode {
                 code,
@@ -326,6 +340,13 @@ impl OAuthStore {
                 expires_at: pairing.expires_at,
                 generation: pairing.generation,
                 locked: pairing.locked,
+                door: pairing.door.as_deref().and_then(|d| {
+                    if d == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE {
+                        Some("lan".to_string())
+                    } else {
+                        None
+                    }
+                }),
             })
         }))
     }
@@ -481,7 +502,8 @@ impl OAuthStore {
     }
 
     /// Consume the pairing code and issue a bound authorization code.
-    #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn complete_pairing(
         &self,
         transaction_id: &str,
@@ -554,8 +576,13 @@ impl OAuthStore {
                 decode_b64_32(&pairing.verifier).ok_or_else(|| OAuthStoreError::Malformed {
                     path: PathBuf::from(OAUTH_FILE),
                 })?;
-            let matches =
-                presented_digest.is_some_and(|digest| bool::from(digest.ct_eq(&verifier)));
+            let door_matches = match pairing.door.as_deref() {
+                None => binding.canonical() != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE,
+                Some(required) => binding.canonical() == required,
+            };
+            let matches = presented_digest
+                .is_some_and(|digest| bool::from(digest.ct_eq(&verifier)))
+                && door_matches;
             if !matches {
                 store.pending[index].failure_count += 1;
                 if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
@@ -762,7 +789,7 @@ impl OAuthStore {
     }
 
     /// Register a CIMD client, returning the existing record when the URL matches.
-    #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg(test)]
     pub(crate) fn register_client(
         &self,
         client_id: &str,
@@ -926,7 +953,8 @@ impl OAuthStore {
     }
 
     /// Invalidate outstanding tokens for one client without deleting its record.
-    #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn revoke_client(&self, client_record_id: &str) -> Result<(), OAuthStoreError> {
         let mut grant_ids = Vec::new();
         self.mutate(|store, _now| {
@@ -1652,7 +1680,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         assert!(matches!(
-            store.generate_pairing_code_with_random(&ShortRandom),
+            store.generate_pairing_code_with_random_and_door(&ShortRandom, None),
             Err(OAuthStoreError::Randomness)
         ));
         assert!(!journal.path().join("mcp-endpoint/oauth.json").exists());

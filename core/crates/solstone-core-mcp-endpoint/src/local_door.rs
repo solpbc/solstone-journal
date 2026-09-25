@@ -23,7 +23,7 @@ use tokio::sync::{Semaphore, oneshot, watch};
 use crate::McpServiceError;
 use crate::oauth::OAuthRuntime;
 use crate::permits::{connection_permit_pool, try_acquire_connection_permit};
-use crate::server::serve_stream;
+use crate::server::{RequestGuard, serve_stream};
 use crate::session::SessionTable;
 
 pub(crate) const LOCAL_DOOR_STATE_PATH: &str = "mcp-endpoint/local-door-state.json";
@@ -36,6 +36,7 @@ pub struct LocalDoorRun {
     pub config_interval: Duration,
     pub rewrite_interval: Duration,
     pub bind_retry_interval: Duration,
+    pub connection_permits: usize,
     #[cfg(test)]
     pub fail_accept_flag: Option<Arc<std::sync::atomic::AtomicBool>>,
 }
@@ -48,6 +49,7 @@ impl LocalDoorRun {
             config_interval: Duration::from_secs(1),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_secs(2),
+            connection_permits: 256,
             #[cfg(test)]
             fail_accept_flag: None,
         }
@@ -112,6 +114,7 @@ pub async fn run_local_door_async(
     run: LocalDoorRun,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), McpServiceError> {
+    crate::rlimit::apply_soft_nofile_limit();
     let (shutdown_send, shutdown_receive) = watch::channel(false);
     let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send.clone()));
     let (parent_loss_send, mut parent_loss_receive) = oneshot::channel();
@@ -123,7 +126,15 @@ pub async fn run_local_door_async(
         ))
     });
 
+    let lan_oauth = Arc::new(OAuthRuntime::new_lan_door(&journal_root));
+    let lan_root = journal_root.clone();
+    let lan_shutdown = shutdown_receive.clone();
+    let lan_task = tokio::spawn(async move {
+        let _ = crate::lan_door::run_lan_door_async(lan_root, lan_oauth, lan_shutdown).await;
+    });
+
     let result = run_local_door_loop(&journal_root, run, shutdown_receive).await;
+    let _ = lan_task.await;
     let service_stopped = result.is_ok();
     signal_task.abort();
     let _ = signal_task.await;
@@ -132,6 +143,7 @@ pub async fn run_local_door_async(
         let _ = parent_task.await;
     }
     write_local_door_state(&journal_root, false, Some("not_running"));
+    crate::lan_door::write_lan_door_state(&journal_root, false, Some("not_running"), None, None);
     if let Some(parent) = hosted_parent {
         let reason = parent_loss_receive.try_recv().ok().or_else(|| {
             parent
@@ -441,7 +453,7 @@ async fn run_accept_loop(
                         connection_sessions,
                         source,
                         connection_shutdown,
-                        true,
+                        RequestGuard::Loopback,
                     )
                     .await;
                 });
@@ -605,6 +617,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
 
@@ -894,6 +907,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_millis(50),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: Some(Arc::clone(&fail_flag)),
         };
 
@@ -1010,6 +1024,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
 
@@ -1119,6 +1134,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
 
@@ -1175,7 +1191,7 @@ mod full_tests {
                 &client.id,
                 redirect_uri,
                 resource,
-                &runtime.resource_origin,
+                runtime.fixed_resource_origin(),
                 &challenge,
                 "S256",
                 None,
@@ -1234,6 +1250,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
         let (shutdown_send, shutdown_receive) = watch::channel(false);
@@ -1307,6 +1324,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
 
@@ -1436,6 +1454,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
         let (shutdown_send, shutdown_receive) = watch::channel(false);
@@ -1521,6 +1540,7 @@ mod full_tests {
             config_interval: Duration::from_millis(50),
             rewrite_interval: Duration::from_secs(10),
             bind_retry_interval: Duration::from_millis(100),
+            connection_permits: 256,
             fail_accept_flag: None,
         };
 

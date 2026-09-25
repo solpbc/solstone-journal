@@ -53,11 +53,17 @@ pub const MCP_ENDPOINT_LOOPBACK_PORT: u16 = 7658;
 /// Loopback port reserved for the direct local agent door.
 pub const MCP_LOCAL_DOOR_PORT: u16 = 7659;
 
+/// Dedicated LAN port reserved for the direct local agent door.
+pub const MCP_LAN_DOOR_PORT: u16 = 7660;
+
 /// Loopback origin for the direct local agent door.
 pub const MCP_LOCAL_DOOR_ORIGIN: &str = "http://127.0.0.1:7659";
 
 /// Loopback MCP resource URI for the direct local agent door.
 pub const MCP_LOCAL_DOOR_RESOURCE: &str = "http://127.0.0.1:7659/mcp";
+
+/// URN resource identifier for LAN-door OAuth grants and pairing codes.
+pub const MCP_LAN_DOOR_RESOURCE: &str = "urn:solstone:mcp-door:lan";
 
 /// Configuration status of the direct local agent door.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +94,29 @@ pub fn local_door_config(read: &JournalConfigRead) -> LocalDoorConfig {
 /// Return whether the local door is enabled (true only when `LocalDoorConfig::On`).
 pub fn local_door_enabled(read: &JournalConfigRead) -> bool {
     matches!(local_door_config(read), LocalDoorConfig::On)
+}
+
+/// Return the LAN door configuration from an already-loaded journal config.
+pub fn lan_door_config(read: &JournalConfigRead) -> LocalDoorConfig {
+    let Some(config) = read.config.as_ref() else {
+        return LocalDoorConfig::Off;
+    };
+    let Some(endpoint) = config.get("mcp_endpoint") else {
+        return LocalDoorConfig::Off;
+    };
+    let Some(endpoint) = endpoint.as_object() else {
+        return LocalDoorConfig::Invalid;
+    };
+    match endpoint.get("lan_door") {
+        None | Some(Value::Bool(false)) => LocalDoorConfig::Off,
+        Some(Value::Bool(true)) => LocalDoorConfig::On,
+        Some(_) => LocalDoorConfig::Invalid,
+    }
+}
+
+/// Return whether the LAN door is enabled (true only when `LocalDoorConfig::On`).
+pub fn lan_door_enabled(read: &JournalConfigRead) -> bool {
+    matches!(lan_door_config(read), LocalDoorConfig::On)
 }
 
 /// Return the MCP endpoint capability from an already-loaded journal config.
@@ -455,5 +484,52 @@ mod tests {
         let non_object = read(Some(config_with_endpoint(json!(false))));
         assert_eq!(local_door_config(&non_object), LocalDoorConfig::Invalid);
         assert!(!local_door_enabled(&non_object));
+    }
+
+    #[test]
+    fn lan_door_config_matrix() {
+        // Missing file -> Off
+        let missing_file = read(None);
+        assert_eq!(lan_door_config(&missing_file), LocalDoorConfig::Off);
+        assert!(!lan_door_enabled(&missing_file));
+
+        // Missing mcp_endpoint key -> Off
+        let missing_endpoint = read(Some(Map::new()));
+        assert_eq!(lan_door_config(&missing_endpoint), LocalDoorConfig::Off);
+        assert!(!lan_door_enabled(&missing_endpoint));
+
+        // Missing lan_door key inside mcp_endpoint -> Off
+        let missing_key = read(Some(config_with_endpoint(json!({}))));
+        assert_eq!(lan_door_config(&missing_key), LocalDoorConfig::Off);
+        assert!(!lan_door_enabled(&missing_key));
+
+        // Explicit false -> Off
+        let explicit_false = read(Some(config_with_endpoint(json!({"lan_door": false}))));
+        assert_eq!(lan_door_config(&explicit_false), LocalDoorConfig::Off);
+        assert!(!lan_door_enabled(&explicit_false));
+
+        // Explicit true -> On
+        let explicit_true = read(Some(config_with_endpoint(json!({"lan_door": true}))));
+        assert_eq!(lan_door_config(&explicit_true), LocalDoorConfig::On);
+        assert!(lan_door_enabled(&explicit_true));
+
+        // Invalid values (null, number, string, array, object) -> Invalid
+        for invalid_val in [
+            json!(null),
+            json!(1),
+            json!("true"),
+            json!("on"),
+            json!([]),
+            json!({}),
+        ] {
+            let invalid_read = read(Some(config_with_endpoint(json!({"lan_door": invalid_val}))));
+            assert_eq!(lan_door_config(&invalid_read), LocalDoorConfig::Invalid);
+            assert!(!lan_door_enabled(&invalid_read));
+        }
+
+        // Non-object mcp_endpoint -> Invalid
+        let non_object = read(Some(config_with_endpoint(json!(false))));
+        assert_eq!(lan_door_config(&non_object), LocalDoorConfig::Invalid);
+        assert!(!lan_door_enabled(&non_object));
     }
 }

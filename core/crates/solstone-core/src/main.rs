@@ -5305,6 +5305,26 @@ fn run_mcp_status() -> ExitCode {
         ),
     };
 
+    let lan_door_status = match &config_read {
+        Ok(read) => {
+            if solstone_core_journal_config::lan_door_enabled(read) {
+                format!(
+                    "enabled at port {}",
+                    solstone_core_journal_config::MCP_LAN_DOOR_PORT
+                )
+            } else {
+                format!(
+                    "off at port {}",
+                    solstone_core_journal_config::MCP_LAN_DOOR_PORT
+                )
+            }
+        }
+        Err(_) => format!(
+            "off at port {}",
+            solstone_core_journal_config::MCP_LAN_DOOR_PORT
+        ),
+    };
+
     let token_count = match TokenStore::open(&journal.path).list() {
         Ok(tokens) => tokens.len().to_string(),
         Err(error) => {
@@ -5318,6 +5338,7 @@ fn run_mcp_status() -> ExitCode {
     println!("capability compiled in: true");
     println!("capability: {capability}");
     println!("local door: {local_door_status}");
+    println!("lan door: {lan_door_status}");
     println!("token count: {token_count}");
     exit
 }
@@ -5387,16 +5408,22 @@ fn run_mcp_pairing(command: McpPairingCommand) -> ExitCode {
     };
     let store = OAuthStore::open(&journal.path);
     match command {
-        McpPairingCommand::Generate => match store.generate_pairing_code() {
-            Ok(created) => {
-                println!("Generated a pairing code, valid for 10 minutes and one use.");
-                println!("Save this now. It will not be shown again and cannot be recovered:");
-                println!("{}", created.code);
-                println!("Expires at {}.", created.expires_at.to_rfc3339());
-                ExitCode::SUCCESS
+        McpPairingCommand::Generate { door } => {
+            let door_resource = door.as_deref().map(|d| match d {
+                "lan" => solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE,
+                _ => d,
+            });
+            match store.generate_pairing_code_with_door(door_resource) {
+                Ok(created) => {
+                    println!("Generated a pairing code, valid for 10 minutes and one use.");
+                    println!("Save this now. It will not be shown again and cannot be recovered:");
+                    println!("{}", created.code);
+                    println!("Expires at {}.", created.expires_at.to_rfc3339());
+                    ExitCode::SUCCESS
+                }
+                Err(error) => render_oauth_store_error("pairing", "generate", &error),
             }
-            Err(error) => render_oauth_store_error("pairing", "generate", &error),
-        },
+        }
         McpPairingCommand::Revoke => match store.revoke_pairing_code() {
             Ok(()) => {
                 println!("Revoked the active pairing code.");
