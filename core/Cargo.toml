@@ -420,9 +420,13 @@ lzma-rs = "0.3"
 [profile.dev]
 debug = "line-tables-only"
 
-# "*" matches dependencies only, never workspace members.
+# "*" matches dependencies only, never workspace members. Dependencies are
+# optimized because the test suite spends much of its time inside them
+# (hashing, key derivation, parsing, SQLite); workspace crates stay unoptimized
+# so an edit rebuilds quickly.
 [profile.dev.package."*"]
 debug = false
+opt-level = 2
 
 [patch.crates-io]
 ffmpeg-sys-next = { path = "vendor/ffmpeg-sys-next" }
