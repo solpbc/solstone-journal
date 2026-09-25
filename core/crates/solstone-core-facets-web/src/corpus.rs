@@ -287,6 +287,9 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             if let Some(dismiss) = copy.remove("CUR_AMBIGUITY_DISMISS_ACTION") {
                 assert_eq!(dismiss, Value::String("none of these".to_owned()));
             }
+            if let Some(partial) = copy.remove("CUR_PREVIEW_PARTIAL") {
+                assert_eq!(partial, Value::String("this preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.".to_owned()));
+            }
             if let Some(restore) = copy.remove("CUR_REVIEW_RESTORE_ACTION") {
                 assert_eq!(restore, Value::String("restore to review".to_owned()));
             }

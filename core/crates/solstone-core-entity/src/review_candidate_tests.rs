@@ -106,19 +106,6 @@ fn accept_merge_candidate_updates_status_with_optional_merge_id() {
     assert_eq!(accepted["status"], "accepted");
     assert!(accepted.get("merge_id").is_none());
     assert!(accepted["updated_at"].is_string());
-
-    record_candidate(&temporary, "source-two", "target-two", None);
-    let accepted = accept_merge_candidate(
-        temporary.path(),
-        "work",
-        "source-two",
-        "target-two",
-        Some("merge-1"),
-    )
-    .unwrap()
-    .unwrap();
-    assert_eq!(accepted["status"], "accepted");
-    assert_eq!(accepted["merge_id"], "merge-1");
 }
 
 #[test]

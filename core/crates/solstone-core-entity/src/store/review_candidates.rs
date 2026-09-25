@@ -20,6 +20,8 @@ use solstone_core_journal_io::{MalformedPolicy, read_jsonl};
 use crate::{EntityTrustLockError, hold_entity_trust_lock};
 
 use super::error::EntityStoreError;
+use super::lifecycle::resolve_entity_dir;
+use super::merge_payload::{list_entity_merge_payload_ids, load_entity_merge_payload};
 use super::paths::review_candidates_path;
 
 const DEFAULT_BASIS: &str = "name-variant";
@@ -31,6 +33,7 @@ pub enum EntityReviewCandidateError {
     Store(EntityStoreError),
     Lock(LockError),
     Write(AtomicWriteError),
+    RecordedMerge(String),
 }
 
 impl fmt::Display for EntityReviewCandidateError {
@@ -40,6 +43,7 @@ impl fmt::Display for EntityReviewCandidateError {
             Self::Store(error) => error.fmt(formatter),
             Self::Lock(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
+            Self::RecordedMerge(error) => formatter.write_str(error),
         }
     }
 }
@@ -51,6 +55,7 @@ impl Error for EntityReviewCandidateError {
             Self::Store(error) => Some(error),
             Self::Lock(error) => Some(error),
             Self::Write(error) => Some(error),
+            Self::RecordedMerge(_) => None,
         }
     }
 }
@@ -183,7 +188,7 @@ pub fn prepare_merge_proposals(
         {
             if matches!(
                 existing.get("status").and_then(Value::as_str),
-                Some("accepted" | "dismissed")
+                Some("accepted" | "dismissed" | "resolved")
             ) {
                 continue;
             }
@@ -247,6 +252,45 @@ pub fn publish_merge_proposals(
 }
 
 /// Mark one entity merge-review candidate accepted, when it exists.
+pub fn find_active_recorded_merge(
+    journal_root: &Path,
+    source_slug: &str,
+    target_slug: &str,
+) -> Result<Option<String>, EntityReviewCandidateError> {
+    let target_dir = resolve_entity_dir(journal_root, target_slug)
+        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
+    let ids = list_entity_merge_payload_ids(journal_root, &target_dir)
+        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
+    let mut matching = None;
+    for id in ids {
+        let payload = load_entity_merge_payload(journal_root, &target_dir, &id)
+            .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
+        if payload["source_id"] == source_slug && payload["target_id"] == target_slug {
+            if matching.is_some() {
+                return Err(EntityReviewCandidateError::RecordedMerge(
+                    "multiple active merges match the candidate".to_owned(),
+                ));
+            }
+            matching = Some(id);
+        }
+    }
+    Ok(matching)
+}
+
+fn recorded_merge_matches(
+    journal_root: &Path,
+    source_slug: &str,
+    target_slug: &str,
+    merge_id: &str,
+) -> Result<bool, EntityReviewCandidateError> {
+    let target_dir = resolve_entity_dir(journal_root, target_slug)
+        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
+    let payload = load_entity_merge_payload(journal_root, &target_dir, merge_id)
+        .map_err(|error| EntityReviewCandidateError::RecordedMerge(error.to_string()))?;
+    Ok(payload["source_id"] == source_slug && payload["target_id"] == target_slug)
+}
+
+/// Reconcile every open suggestion whose source identity was merged.
 pub fn accept_merge_candidate(
     journal_root: &Path,
     facet: &str,
@@ -256,23 +300,53 @@ pub fn accept_merge_candidate(
 ) -> Result<Option<Value>, EntityReviewCandidateError> {
     let _trust =
         hold_entity_trust_lock(journal_root).map_err(EntityReviewCandidateError::TrustLock)?;
+    if let Some(merge_id) = merge_id
+        && !recorded_merge_matches(journal_root, source_slug, target_slug, merge_id)?
+    {
+        return Err(EntityReviewCandidateError::RecordedMerge(
+            "candidate merge has no matching active record".to_owned(),
+        ));
+    }
     let key = candidate_key(facet, source_slug, target_slug);
     mutate_candidates(journal_root, |rows| {
-        let Some(existing) = rows
-            .iter_mut()
-            .find(|row| candidate_key_for_row(row) == key)
-        else {
+        if !rows.iter().any(|row| candidate_key_for_row(row) == key) {
             return Ok(None);
-        };
-        let object = existing
-            .as_object_mut()
-            .expect("candidate reader returns objects");
-        object.insert("status".to_owned(), Value::String("accepted".to_owned()));
-        if let Some(merge_id) = merge_id.filter(|merge_id| !merge_id.is_empty()) {
-            object.insert("merge_id".to_owned(), Value::String(merge_id.to_owned()));
         }
-        object.insert("updated_at".to_owned(), Value::String(candidate_now_iso()));
-        Ok(Some(existing.clone()))
+        let now = candidate_now_iso();
+        for row in rows.iter_mut() {
+            if merge_id.is_some() && row.get("status").and_then(Value::as_str) != Some("open") {
+                continue;
+            }
+            let source = row.get("source_slug").and_then(Value::as_str);
+            let target = row.get("target_slug").and_then(Value::as_str);
+            let same_pair = source == Some(source_slug) && target == Some(target_slug);
+            if !same_pair
+                && (merge_id.is_none()
+                    || (source != Some(source_slug) && target != Some(source_slug)))
+            {
+                continue;
+            }
+            let object = row
+                .as_object_mut()
+                .expect("candidate reader returns objects");
+            object.insert("updated_at".to_owned(), Value::String(now.clone()));
+            if same_pair {
+                object.insert("status".to_owned(), Value::String("accepted".to_owned()));
+                if let Some(merge_id) = merge_id.filter(|merge_id| !merge_id.is_empty()) {
+                    object.insert("merge_id".to_owned(), Value::String(merge_id.to_owned()));
+                }
+            } else {
+                object.insert("status".to_owned(), Value::String("resolved".to_owned()));
+                object.insert(
+                    "resolved_by_merge_id".to_owned(),
+                    Value::String(merge_id.expect("checked above").to_owned()),
+                );
+            }
+        }
+        Ok(rows
+            .iter()
+            .find(|row| candidate_key_for_row(row) == key)
+            .cloned())
     })
 }
 

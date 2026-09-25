@@ -3,16 +3,18 @@
 
 //! Read models derived from day-scoped detected-entity records.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use chrono::{Local, NaiveDate, TimeDelta};
 use serde_json::{Map, Value};
+#[cfg(all(test, not(feature = "full-tests")))]
+use solstone_core_entity_matching::EntityNameMatchOutcome;
 #[cfg(all(test, feature = "full-tests"))]
 use solstone_core_entity_matching::MatchTier;
-use solstone_core_entity_matching::{
-    EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
-};
+use solstone_core_entity_matching::{EntityNameCandidate, entity_slug, normalize_resolution_query};
+#[cfg(all(test, feature = "full-tests"))]
+use solstone_core_entity_matching::{EntityNameMatchOutcome, find_matching_entity_detailed};
 use solstone_core_journal_io::{DirEntryKind, contained_path, list_dir_entries};
 
 use super::detected_entities::{read_detected_entities, read_detected_entities_strict};
@@ -20,6 +22,7 @@ use super::error::{FacetEntityWriteError, FacetStoreError};
 use super::facet_entities::list_scoped_facet_entities;
 use super::relationship_scans::enrich_relationship_with_journal;
 
+#[cfg(all(test, feature = "full-tests"))]
 const FUZZY_THRESHOLD: f64 = 90.0;
 
 /// Whether an attached-entity match is confident enough to drop a detection from
@@ -40,11 +43,76 @@ const FUZZY_THRESHOLD: f64 = 90.0;
 /// the mistake. Suppression is invisible by construction — unlike a false merge,
 /// it leaves no wrong record to find. Measured at 9.5% of distinct detection
 /// names in a 30-day window before this changed.
+#[cfg(all(test, not(feature = "full-tests")))]
 fn suppresses_detection(outcome: &EntityNameMatchOutcome) -> bool {
     match outcome {
         EntityNameMatchOutcome::Matched { tier, .. }
         | EntityNameMatchOutcome::Ambiguous { tier, .. } => tier.is_high_confidence(),
         EntityNameMatchOutcome::NoMatch => false,
+    }
+}
+
+/// The review list only suppresses tiers 1-4. Index those keys once rather
+/// than rebuilding every matcher tier for every distinct detected name.
+struct ExclusionKeys {
+    exact: HashSet<String>,
+    normalized: HashSet<String>,
+    email: HashSet<String>,
+    slug: HashSet<String>,
+}
+
+impl ExclusionKeys {
+    fn from_candidates(candidates: &[EntityNameCandidate]) -> Self {
+        let mut keys = Self {
+            exact: HashSet::new(),
+            normalized: HashSet::new(),
+            email: HashSet::new(),
+            slug: HashSet::new(),
+        };
+        for candidate in candidates {
+            if candidate.name.is_empty() {
+                continue;
+            }
+            keys.add_exact(&candidate.name);
+            for alias in &candidate.aka {
+                if !alias.is_empty() {
+                    keys.add_exact(alias);
+                }
+            }
+            match candidate.id.as_deref().filter(|id| !id.is_empty()) {
+                Some(id) => {
+                    keys.add_exact(id);
+                    keys.slug.insert(id.to_owned());
+                }
+                None => {
+                    let slug = entity_slug(&candidate.name);
+                    if !slug.is_empty() {
+                        keys.slug.insert(slug);
+                    }
+                }
+            }
+            for email in &candidate.emails {
+                if !email.is_empty() {
+                    keys.email.insert(normalize_resolution_query(email));
+                }
+            }
+        }
+        keys
+    }
+
+    fn add_exact(&mut self, value: &str) {
+        self.exact.insert(value.to_owned());
+        self.normalized.insert(normalize_resolution_query(value));
+    }
+
+    fn contains(&self, name: &str) -> bool {
+        if self.exact.contains(name) {
+            return true;
+        }
+        let normalized = normalize_resolution_query(name);
+        self.normalized.contains(&normalized)
+            || (name.contains('@') && self.email.contains(&normalized))
+            || self.slug.contains(&entity_slug(name))
     }
 }
 
@@ -54,10 +122,11 @@ pub fn load_detected_entities_recent(
     facet_dir: &str,
     days: i64,
 ) -> Result<Vec<Value>, FacetEntityWriteError> {
-    let candidates = exclusion_candidates(journal_root, facet_dir)?;
+    let keys = ExclusionKeys::from_candidates(&exclusion_candidates(journal_root, facet_dir)?);
     let cutoff = cutoff_day(Local::now().date_naive(), days);
     let mut exclusion_cache = HashMap::new();
-    let mut detected = Vec::new();
+    let mut detected: Vec<Value> = Vec::new();
+    let mut detected_indices: HashMap<(String, String), usize> = HashMap::new();
 
     for day in detected_days(journal_root, facet_dir)?.into_iter().rev() {
         if day < cutoff {
@@ -69,13 +138,9 @@ pub fn load_detected_entities_recent(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_owned();
-            let excluded = *exclusion_cache.entry(name.clone()).or_insert_with(|| {
-                suppresses_detection(&find_matching_entity_detailed(
-                    &name,
-                    &candidates,
-                    FUZZY_THRESHOLD,
-                ))
-            });
+            let excluded = *exclusion_cache
+                .entry(name.clone())
+                .or_insert_with(|| keys.contains(&name));
             if excluded {
                 continue;
             }
@@ -83,10 +148,8 @@ pub fn load_detected_entities_recent(
                 .get("type")
                 .and_then(Value::as_str)
                 .unwrap_or_default();
-            if let Some(existing) = detected.iter_mut().find(|existing: &&mut Value| {
-                existing.get("type").and_then(Value::as_str) == Some(entity_type)
-                    && existing.get("name").and_then(Value::as_str) == Some(name.as_str())
-            }) {
+            if let Some(&index) = detected_indices.get(&(entity_type.to_owned(), name.clone())) {
+                let existing = &mut detected[index];
                 let count = existing
                     .get("count")
                     .and_then(Value::as_u64)
@@ -94,6 +157,7 @@ pub fn load_detected_entities_recent(
                 existing["count"] = Value::from(count + 1);
                 continue;
             }
+            detected_indices.insert((entity_type.to_owned(), name.clone()), detected.len());
             detected.push(Value::Object(Map::from_iter([
                 ("type".to_owned(), Value::String(entity_type.to_owned())),
                 ("name".to_owned(), Value::String(name)),
@@ -300,8 +364,46 @@ fn string_values(value: Option<&Value>) -> Vec<String> {
 // is what an owner sees, and it should not wait for `ci-full` to be checked.
 #[cfg(all(test, not(feature = "full-tests")))]
 mod suppression_tests {
-    use super::suppresses_detection;
-    use solstone_core_entity_matching::{EntityNameMatchOutcome, MatchTier};
+    use super::{ExclusionKeys, suppresses_detection};
+    use solstone_core_entity_matching::{
+        EntityNameCandidate, EntityNameMatchOutcome, MatchTier, find_matching_entity_detailed,
+    };
+
+    #[test]
+    fn indexed_exclusion_agrees_with_matcher_tiers() {
+        let candidates = vec![
+            EntityNameCandidate {
+                id: Some("sunstone-app".into()),
+                name: "Sunstone App".into(),
+                aka: vec!["Sunstone".into()],
+                emails: vec!["Team@Solpbc.Org".into()],
+            },
+            EntityNameCandidate {
+                id: None,
+                name: "Solstone".into(),
+                aka: vec!["Sunstone".into()],
+                emails: vec![],
+            },
+        ];
+        let keys = ExclusionKeys::from_candidates(&candidates);
+        for name in [
+            "Sunstone App",
+            "sunstone app",
+            "Sunstone",
+            "sunstone-app",
+            "Team@Solpbc.Org",
+            "team@solpbc.org",
+            "Solstone",
+            "solstone",
+            "Sunston",
+            "Unrelated Person",
+            "",
+        ] {
+            let expected =
+                suppresses_detection(&find_matching_entity_detailed(name, &candidates, 90.0));
+            assert_eq!(keys.contains(name), expected, "{name}");
+        }
+    }
 
     fn matched(tier: MatchTier) -> EntityNameMatchOutcome {
         EntityNameMatchOutcome::Matched {

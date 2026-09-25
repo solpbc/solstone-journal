@@ -598,10 +598,10 @@ async fn entity_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             ),
         );
     }
-    // Native previews currently compute only identity additions. The remaining
-    // response fields retain the Flask shape until core entity exposes them.
+    // The plan computes identity additions only. Keep unmeasured changes
+    // distinct from a measured zero.
     match preview_entity_merge(&root, &source, &target, EntityMergeOptions::default()) {
-        Ok(preview) => Json(json!({"status":"preview","kind":"entity_merge","key":entity_key(&facet,&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"facet_moved_count":0,"facet_merged_count":0,"observations_appended":0,"labels_rewritten":0,"corrections_rewritten":0,"segment_errors":[],"voiceprints_added":0,"voiceprints_target_total":0}})).into_response(),
+        Ok(preview) => Json(json!({"status":"preview","kind":"entity_merge","key":entity_key(&facet,&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"other_changes_not_previewed":true}})).into_response(),
         Err(error) => result_error("entity_merge", entity_key(&facet, &source, &target), &error.to_string()),
     }
 }
@@ -858,9 +858,9 @@ async fn speaker_preview(State(root): State<PathBuf>, body: Bytes) -> Response {
             ),
         );
     }
-    // Native previews currently compute only identity additions. The remaining
-    // response fields retain the Flask shape until core entity exposes them.
-    match preview_entity_merge(&root,&source,&target,EntityMergeOptions { keep_source_as_aka: true }) { Ok(preview) => Json(json!({"status":"preview","kind":"speaker_name_variant","key":speaker_key(&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"facet_moved_count":0,"facet_merged_count":0,"observations_appended":0,"labels_rewritten":0,"corrections_rewritten":0,"segment_errors":[],"voiceprints_added":0,"voiceprints_target_total":0}})).into_response(), Err(error) => result_error("speaker_name_variant",speaker_key(&source,&target),&error.to_string()) }
+    // The plan computes identity additions only. Keep unmeasured changes
+    // distinct from a measured zero.
+    match preview_entity_merge(&root,&source,&target,EntityMergeOptions { keep_source_as_aka: true }) { Ok(preview) => Json(json!({"status":"preview","kind":"speaker_name_variant","key":speaker_key(&source,&target),"merge":{"would_identity":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added}},"preview":{"akas_added":preview.aliases_added,"emails_added_count":preview.emails_added,"other_changes_not_previewed":true}})).into_response(), Err(error) => result_error("speaker_name_variant",speaker_key(&source,&target),&error.to_string()) }
 }
 
 async fn speaker_accept(State(root): State<PathBuf>, body: Bytes) -> Response {
@@ -1580,7 +1580,7 @@ mod tests {
         );
         assert_eq!(response["failed"], 0);
         assert_eq!(response["results"][0]["status"], "accepted");
-        assert_eq!(response["results"][1]["status"], "accepted");
+        assert_eq!(response["results"][1]["status"], "already_accepted");
         let first_merge_id = response["results"][0]["merge_id"].clone();
         assert!(first_merge_id.is_string());
         assert_eq!(

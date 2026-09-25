@@ -591,7 +591,7 @@ pub fn apply_merge_candidate_review_policy(
     now: &str,
 ) {
     let status = row.get("status").and_then(Value::as_str).unwrap_or("open");
-    if status == "accepted" || status == "dismissed" {
+    if status == "accepted" || status == "dismissed" || status == "resolved" {
         return;
     }
 
@@ -1192,6 +1192,9 @@ pub fn restore_review(
                 super::review_candidates::EntityReviewCandidateError::Write(e) => {
                     EntityWriteError::AmbiguityWrite(e)
                 }
+                super::review_candidates::EntityReviewCandidateError::RecordedMerge(detail) => {
+                    EntityWriteError::InvalidOperationContext { detail }
+                }
             })?;
             if res.is_null() {
                 Ok(None)
@@ -1266,6 +1269,9 @@ pub fn sweep_entity_review_policy(journal_root: &Path) -> Result<(), EntityWrite
         }
         super::review_candidates::EntityReviewCandidateError::Write(e) => {
             EntityWriteError::AmbiguityWrite(e)
+        }
+        super::review_candidates::EntityReviewCandidateError::RecordedMerge(detail) => {
+            EntityWriteError::InvalidOperationContext { detail }
         }
     })?;
 

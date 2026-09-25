@@ -8,7 +8,8 @@ use std::path::Path;
 
 use serde_json::Value;
 use solstone_core_facets::{
-    enrich_relationship_with_journal, list_declared_facet_names, read_facet_entity_link,
+    enrich_relationship_with_journal, list_declared_facet_names, list_facet_entity_directories,
+    read_facet_entity_link,
 };
 
 use crate::error::{ProfileError, ProfileResult};
@@ -33,8 +34,38 @@ pub(crate) fn load_facet_descriptions(
     let facets = list_declared_facet_names(journal_root).map_err(ProfileError::internal)?;
     let mut descriptions = BTreeMap::new();
     for facet in facets {
-        let relationship = read_facet_entity_link(journal_root, &facet, &target.entity_id)
+        let direct = read_facet_entity_link(journal_root, &facet, &target.entity_id)
             .map_err(ProfileError::internal)?;
+        let relationship = if direct
+            .as_ref()
+            .is_some_and(|link| link.entity_id() == target.entity_id)
+        {
+            direct
+        } else {
+            let mut found = None;
+            for entity_dir in list_facet_entity_directories(journal_root, &facet)
+                .map_err(ProfileError::internal)?
+            {
+                if entity_dir == target.entity_id {
+                    continue;
+                }
+                let link = read_facet_entity_link(journal_root, &facet, &entity_dir)
+                    .map_err(ProfileError::internal)?;
+                if link
+                    .as_ref()
+                    .is_some_and(|link| link.entity_id() == target.entity_id)
+                {
+                    if found.is_some() {
+                        return Err(ProfileError::internal(format!(
+                            "multiple facet relationships refer to {} in {facet}",
+                            target.entity_id
+                        )));
+                    }
+                    found = link;
+                }
+            }
+            found
+        };
         let Some(relationship) = relationship else {
             continue;
         };
@@ -192,6 +223,40 @@ mod tests {
         assert_eq!(detached_facets(&descriptions), vec!["personal".to_owned()]);
         // but the unlabelled summary does not silently assert the relationship
         assert_eq!(description_for(&descriptions, Some(&requested)), None);
+    }
+
+    #[test]
+    fn relationship_uses_written_identity_when_merge_keeps_the_old_directory_name() {
+        let temporary = journal();
+        write_json(
+            temporary.path(),
+            "entities/solstone/entity.json",
+            json!({"id":"solstone","name":"Solstone"}),
+        );
+        write_json(
+            temporary.path(),
+            "facets/kognova/facet.json",
+            json!({"name":"kognova"}),
+        );
+        write_json(
+            temporary.path(),
+            "facets/kognova/entities/sunstone/entity.json",
+            json!({"entity_id":"solstone","description":"Project context"}),
+        );
+        write_json(
+            temporary.path(),
+            "facets/kognova/entities/solstone/observations.jsonl",
+            json!({}),
+        );
+        let target = resolve_target(temporary.path(), "solstone")
+            .expect("resolution")
+            .expect("target");
+        let descriptions =
+            load_facet_descriptions(temporary.path(), &target).expect("descriptions");
+        assert_eq!(
+            description_for(&descriptions, None),
+            Some("Project context".to_owned())
+        );
     }
 
     #[test]

@@ -92,8 +92,8 @@ pub use repair::{
 };
 pub use review_candidates::{
     EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,
-    dismiss_merge_candidate, load_merge_candidates, prepare_merge_proposals,
-    publish_merge_proposals, record_merge_candidate,
+    dismiss_merge_candidate, find_active_recorded_merge, load_merge_candidates,
+    prepare_merge_proposals, publish_merge_proposals, record_merge_candidate,
 };
 pub use review_policy::{
     AmbiguityGroupResolveRequest, ENTITY_REVIEW_POLICY_VERSION, PREFIX_CUTOFF,

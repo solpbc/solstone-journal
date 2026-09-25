@@ -1747,25 +1747,29 @@ fn render_merge_preview(fields: &Value) -> CommandOutput {
         "  emails added: {}",
         display_value(fields.get("emails_added_count"))
     ));
-    lines.push(format!(
-        "  facet links: {} moved, {} merged",
-        display_value(fields.get("facet_moved_count")),
-        display_value(fields.get("facet_merged_count"))
-    ));
-    lines.push(format!(
-        "  observations moved: {}",
-        display_value(fields.get("observations_appended"))
-    ));
-    lines.push(format!(
-        "  speaker labels updated: {} labels, {} corrections",
-        display_value(fields.get("labels_rewritten")),
-        display_value(fields.get("corrections_rewritten"))
-    ));
-    lines.push(format!(
-        "  voice samples moved: {} added, {} total",
-        display_value(fields.get("voiceprints_added")),
-        display_value(fields.get("voiceprints_target_total"))
-    ));
+    if fields.get("other_changes_not_previewed") == Some(&Value::Bool(true)) {
+        lines.push("  This preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.".to_owned());
+    } else {
+        lines.push(format!(
+            "  facet links: {} moved, {} merged",
+            display_value(fields.get("facet_moved_count")),
+            display_value(fields.get("facet_merged_count"))
+        ));
+        lines.push(format!(
+            "  observations moved: {}",
+            display_value(fields.get("observations_appended"))
+        ));
+        lines.push(format!(
+            "  speaker labels updated: {} labels, {} corrections",
+            display_value(fields.get("labels_rewritten")),
+            display_value(fields.get("corrections_rewritten"))
+        ));
+        lines.push(format!(
+            "  voice samples moved: {} added, {} total",
+            display_value(fields.get("voiceprints_added")),
+            display_value(fields.get("voiceprints_target_total"))
+        ));
+    }
     let errors = array_field(fields, "segment_errors");
     if !errors.is_empty() {
         lines.push(format!("  segment update errors: {}", errors.len()));

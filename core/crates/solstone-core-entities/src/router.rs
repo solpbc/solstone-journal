@@ -55,6 +55,16 @@ fn unresolved_voiceprint_encoder() -> solstone_core_entity::EncoderIdentity {
     }
 }
 
+fn has_voiceprint_in_entity_dir(journal_root: &Path, entity_dir: &str) -> bool {
+    // Scoped facet rows already resolved the effective ID to this durable
+    // directory. Resolving it again for each row rewalks every identity.
+    journal_root
+        .join("entities")
+        .join(entity_dir)
+        .join("voiceprints.npz")
+        .exists()
+}
+
 impl Deref for RouterState {
     type Target = PathBuf;
 
@@ -1026,10 +1036,7 @@ async fn facet_route(
                     Ok(count) => json!(count),
                     Err(_) => Value::Null,
                 };
-            let voiceprint =
-                solstone_core_entity::entity_memory_path(&root, &entity.entity_id, false)
-                    .map(|path| path.join("voiceprints.npz").exists())
-                    .unwrap_or(false);
+            let voiceprint = has_voiceprint_in_entity_dir(&root, &entity.entity_dir);
             let object = value
                 .as_object_mut()
                 .expect("identity reader returns objects");
@@ -1588,9 +1595,8 @@ async fn accept_merge_candidate_route(
         })
         .await;
         return match preview {
-            // `EntityMergePreview` does not expose Python's facet, segment, or
-            // voiceprint statistics, so those response fields are zero-filled
-            // rather than fabricated.
+            // The plan computes identity additions only. Keep unmeasured
+            // changes distinct from a measured zero.
             Ok(Ok(preview)) => Json(json!({
                 "status": "preview",
                 "kind": "entity_merge",
@@ -1598,14 +1604,7 @@ async fn accept_merge_candidate_route(
                 "fields": {
                     "akas_added": preview.aliases_added,
                     "emails_added_count": preview.emails_added,
-                    "facet_moved_count": 0,
-                    "facet_merged_count": 0,
-                    "observations_appended": 0,
-                    "labels_rewritten": 0,
-                    "corrections_rewritten": 0,
-                    "segment_errors": [],
-                    "voiceprints_added": 0,
-                    "voiceprints_target_total": 0,
+                    "other_changes_not_previewed": true,
                 },
             }))
             .into_response(),
@@ -1639,61 +1638,81 @@ async fn accept_merge_candidate_route(
         );
     }
 
-    let report = match solstone_core_serving::seam::run_blocking({
-        let root = Arc::clone(&root);
-        let source_slug = source_slug.clone();
-        let target_slug = target_slug.clone();
-        move || {
-            let fallback_encoder = unresolved_voiceprint_encoder();
-            solstone_core_entity::commit_entity_merge(
-                &root,
-                &source_slug,
-                &target_slug,
-                solstone_core_entity::EntityMergeOptions::default(),
-                &fallback_encoder,
-            )
-        }
-    })
-    .await
-    {
-        Ok(Ok(report)) => report,
-        Ok(Err(error)) if merge_error_is_busy(&error) => {
-            return refusal(ReasonCode::EntityBusy, "entity busy");
-        }
-        Ok(Err(error)) => return entity_merge_candidate_error(&key, error.to_string()),
-        Err(_) => return refusal(ReasonCode::EntityOperationFailed, "merge commit failed"),
-    };
-    let merge_id = report.merge_id.clone();
-    let report_value = merge_report_value(&report);
-    let merge_id_for_candidate = merge_id.clone();
+    // One blocking task owns both steps. Dropping the HTTP future after a
+    // client timeout cannot cancel candidate bookkeeping after source commit.
+    enum AcceptError {
+        Merge(solstone_core_entity::EntityMergeError),
+        Candidate(solstone_core_entity::EntityReviewCandidateError),
+    }
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::accept_merge_candidate(
+        let source_exists = solstone_core_entity::read_entity_identity(&root, &source_slug)
+            .map_err(|error| {
+                AcceptError::Candidate(
+                    solstone_core_entity::EntityReviewCandidateError::RecordedMerge(
+                        error.to_string(),
+                    ),
+                )
+            })?
+            .is_some();
+        let existing = if source_exists {
+            None
+        } else {
+            solstone_core_entity::find_active_recorded_merge(&root, &source_slug, &target_slug)
+                .map_err(AcceptError::Candidate)?
+        };
+        let report = if existing.is_none() {
+            let fallback_encoder = unresolved_voiceprint_encoder();
+            Some(
+                solstone_core_entity::commit_entity_merge(
+                    &root,
+                    &source_slug,
+                    &target_slug,
+                    solstone_core_entity::EntityMergeOptions::default(),
+                    &fallback_encoder,
+                )
+                .map_err(AcceptError::Merge)?,
+            )
+        } else {
+            None
+        };
+        let merge_id = existing.unwrap_or_else(|| {
+            report
+                .as_ref()
+                .expect("new merge has a report")
+                .merge_id
+                .clone()
+        });
+        let candidate = solstone_core_entity::accept_merge_candidate(
             &root,
             &facet,
             &source_slug,
             &target_slug,
-            Some(&merge_id_for_candidate),
+            Some(&merge_id),
         )
+        .map_err(AcceptError::Candidate)?;
+        Ok::<_, AcceptError>((report, candidate, merge_id))
     })
     .await
     {
-        Ok(Ok(candidate)) => Json(json!({
+        Ok(Ok((report, Some(candidate), merge_id))) => Json(json!({
             "status": "accepted",
             "kind": "entity_merge",
             "key": key,
-            "merge": report_value,
+            "merge": report.as_ref().map(merge_report_value),
             "candidate": candidate,
             "merge_id": merge_id,
             "undo": entity_merge_undo(Some(&merge_id)),
         }))
         .into_response(),
-        Ok(Err(error)) => {
+        Ok(Ok((_, None, _))) => entity_merge_candidate_error(&key, "candidate not found"),
+        Ok(Err(AcceptError::Merge(error))) if merge_error_is_busy(&error) => {
+            refusal(ReasonCode::EntityBusy, "entity busy")
+        }
+        Ok(Err(AcceptError::Merge(error))) => entity_merge_candidate_error(&key, error.to_string()),
+        Ok(Err(AcceptError::Candidate(error))) => {
             entity_review_candidate_error_response(error, "merge candidate accept failed")
         }
-        _ => refusal(
-            ReasonCode::EntityOperationFailed,
-            "merge candidate accept failed",
-        ),
+        Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge commit failed"),
     }
 }
 
@@ -4424,9 +4443,7 @@ async fn entity_detail_route(
                 },
             );
             let mut entity = row.identity;
-            let voiceprint = solstone_core_entity::entity_memory_path(&root, &row.entity_id, false)
-                .map(|path| path.join("voiceprints.npz").exists())
-                .unwrap_or(false);
+            let voiceprint = has_voiceprint_in_entity_dir(&root, &row.entity_dir);
             let object = entity.as_object_mut().expect("identity reader returns objects");
             match obs_result {
                 Ok(page) => {

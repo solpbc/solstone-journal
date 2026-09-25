@@ -1451,6 +1451,28 @@ async fn facet_lists_attached() {
     assert!(v["attached"][0].get("observation_count").is_some());
 }
 #[tokio::test]
+async fn facet_list_checks_voiceprint_in_resolved_entity_directory() {
+    let j = Journal::new();
+    write(
+        j.path(),
+        "entities/old_directory/entity.json",
+        json!({"id":"effective_id","name":"Alice","type":"Person"}),
+    );
+    write(
+        j.path(),
+        "facets/work/entities/old_directory/entity.json",
+        json!({"entity_id":"effective_id"}),
+    );
+    write_raw(
+        j.path(),
+        "entities/old_directory/voiceprints.npz",
+        b"native",
+    );
+    let (_, listed) = call(j.path(), "/app/entities/api/work").await;
+    assert_eq!(listed["attached"][0]["id"], "effective_id");
+    assert_eq!(listed["attached"][0]["has_voiceprint"], true);
+}
+#[tokio::test]
 async fn detected_has_total() {
     let j = Journal::new();
     write(
@@ -3629,8 +3651,9 @@ async fn accept_merge_candidate_previews_open_candidate() {
     assert_eq!(response["key"], "work|source|target");
     assert_eq!(response["fields"]["akas_added"], 0);
     assert_eq!(response["fields"]["emails_added_count"], 0);
-    assert_eq!(response["fields"]["facet_moved_count"], 0);
-    assert_eq!(response["fields"]["segment_errors"], json!([]));
+    assert_eq!(response["fields"]["other_changes_not_previewed"], true);
+    assert!(response["fields"].get("facet_moved_count").is_none());
+    assert!(response["fields"].get("observations_appended").is_none());
 }
 
 #[tokio::test]
@@ -3668,6 +3691,85 @@ async fn accept_merge_candidate_commits_and_marks_candidate_accepted() {
     let (_, candidates) = call(j.path(), "/app/entities/api/merge-candidates?facet=work").await;
     assert_eq!(candidates["items"][0]["status"], "accepted");
     assert_eq!(candidates["items"][0]["merge_id"], response["merge_id"]);
+}
+
+#[tokio::test]
+async fn accept_merge_candidate_reconciles_a_recorded_merge_without_remerging() {
+    let j = Journal::new();
+    seed_entity(j.path(), "source", "Source");
+    seed_entity(j.path(), "target", "Target");
+    seed_entity(j.path(), "other", "Other");
+    seed_open_merge_candidate(j.path()).await;
+    for (facet, source, target) in [
+        ("personal", "Source", "Target"),
+        ("work", "Other", "Source"),
+    ] {
+        let (status, _) = post(
+            j.path(),
+            "/app/entities/api/record-merge-candidate",
+            json!({"facet":facet,"day":"20260101","source":source,"target":target,"evidence":"matching evidence"}),
+        )
+        .await;
+        assert_eq!(status, 200);
+    }
+    let (status, merged) = post(
+        j.path(),
+        "/app/entities/api/merge",
+        json!({"source_slug":"source","target_slug":"target","commit":true}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, accepted) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(accepted["status"], "accepted");
+    assert_eq!(accepted["merge_id"], merged["merge_id"]);
+    let rows = solstone_core_entity::load_merge_candidates(j.path(), None, None).unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows.iter().filter(|row| row["source_slug"] == "source") {
+        assert_eq!(row["status"], "accepted");
+        assert_eq!(row["merge_id"], merged["merge_id"]);
+    }
+    let dangling = rows
+        .iter()
+        .find(|row| row["source_slug"] == "other")
+        .unwrap();
+    assert_eq!(dangling["status"], "resolved");
+    assert_eq!(dangling["resolved_by_merge_id"], merged["merge_id"]);
+}
+
+#[tokio::test]
+async fn accept_merge_candidate_does_not_adopt_an_older_merge_after_source_reappears() {
+    let j = Journal::new();
+    seed_entity(j.path(), "source", "Source");
+    seed_entity(j.path(), "target", "Target");
+    seed_open_merge_candidate(j.path()).await;
+    let (status, first) = post(
+        j.path(),
+        "/app/entities/api/merge",
+        json!({"source_slug":"source","target_slug":"target","commit":true}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    seed_entity(j.path(), "source", "Source Again");
+    let (status, accepted) = post(
+        j.path(),
+        "/app/entities/api/accept-merge-candidate",
+        merge_candidate_request(true),
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(accepted["status"], "accepted");
+    assert_ne!(accepted["merge_id"], first["merge_id"]);
+    assert!(
+        solstone_core_entity::read_entity_identity(j.path(), "source")
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]

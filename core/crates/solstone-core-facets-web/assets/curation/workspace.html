@@ -1133,6 +1133,9 @@ window.CUR_COPY = CUR_COPY;
     if (preview.voiceprints_added || preview.voiceprints_target_total) {
       rows.push(`${CUR_COPY.CUR_PREVIEW_VOICEPRINTS_LABEL}: ${preview.voiceprints_added || 0} added, ${preview.voiceprints_target_total || 0} total`);
     }
+    if (preview.other_changes_not_previewed) {
+      rows.push(CUR_COPY.CUR_PREVIEW_PARTIAL);
+    }
     return rows;
   }
 
