@@ -114,6 +114,8 @@ fn comparable_journal_tree(journal: &std::path::Path, target_id: &str) -> Vec<(S
             || relative.starts_with(&format!("entities/{target_id}/history/"))
             || relative == "logs/entity-merges.jsonl"
             || relative == "awareness/discovery_clusters.json"
+            || relative == "health/"
+            || relative.starts_with("health/")
     }
 
     fn collect(
@@ -503,6 +505,7 @@ fn undo_restores_byte_identical_journal_outside_excluded_paths() {
     let merge =
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     undo_entity_merge(&journal, &merge.merge_id, Value::Null).unwrap();
+    crate::drive_entity_edge_repair(&journal).unwrap();
 
     assert_eq!(comparable_journal_tree(&journal, "target"), tree_before);
     assert_eq!(
@@ -1501,4 +1504,188 @@ fn older_payload_allows_voiceprint_restoration_only_when_it_is_a_noop() {
         );
         fs::remove_dir_all(journal).unwrap();
     }
+}
+
+#[test]
+fn deferred_edge_repair_advances_generation_and_drains_jobs_on_undo() {
+    let journal = undo_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let obs_dir = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&obs_dir).unwrap();
+    fs::write(obs_dir.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        obs_dir.join("observations.jsonl"),
+        json!({"id":1,"content":"worked with other","ts":100,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":100,"updated_at":100,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let report =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    crate::drive_entity_edge_repair(&journal).unwrap();
+
+    let undo_report = undo_entity_merge(&journal, &report.merge_id, Value::Null).unwrap();
+    assert_eq!(
+        crate::store::edge_repair::read_generation(&journal).unwrap(),
+        2
+    );
+    assert!(
+        journal
+            .join(format!(
+                "health/entity-edge-repair/jobs/undo-{}.json",
+                undo_report.merge_id
+            ))
+            .exists()
+    );
+
+    let drained = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained, 1);
+    assert!(
+        !journal
+            .join(format!(
+                "health/entity-edge-repair/jobs/undo-{}.json",
+                undo_report.merge_id
+            ))
+            .exists()
+    );
+
+    let completion =
+        crate::read_entity_edge_repair_completion(&journal, "undo", &undo_report.merge_id)
+            .unwrap()
+            .expect("completion exists");
+    assert!(completion.published);
+    assert_eq!(completion.rebuilt, Some(true));
+    assert!(completion.rows_folded.is_some());
+
+    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
+    let source_edges: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM edges WHERE src = 'source'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(source_edges, 1);
+    drop(connection);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_undo() {
+    let journal = undo_journal();
+    for (id, name, aka) in [
+        ("source", "Source", vec!["source_alias"]),
+        ("target", "Target", vec!["target_alias"]),
+        ("other", "Other", vec![]),
+        ("unrelated", "Unrelated", vec![]),
+    ] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":name,"aka":aka,"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+
+    let src_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&src_facet).unwrap();
+    fs::write(src_facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        src_facet.join("observations.jsonl"),
+        format!(
+            "{}\n{}\n",
+            json!({"id":1,"content":"source works at other","ts":100,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":100,"updated_at":100,"source":"manual"}),
+            json!({"id":2,"content":"source works with target","ts":101,"relation":{"kind":"works-with","target_entity_id":"target"},"created_at":101,"updated_at":101,"source":"manual"}),
+        ),
+    )
+    .unwrap();
+
+    let tgt_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&tgt_facet).unwrap();
+    fs::write(tgt_facet.join("entity.json"), br#"{"entity_id":"target"}"#).unwrap();
+    fs::write(
+        tgt_facet.join("observations.jsonl"),
+        json!({"id":10,"content":"target works at other","ts":200,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":200,"updated_at":200,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+
+    let unrel_facet = journal.join("facets/work/entities/unrelated");
+    fs::create_dir_all(&unrel_facet).unwrap();
+    fs::write(
+        unrel_facet.join("entity.json"),
+        br#"{"entity_id":"unrelated"}"#,
+    )
+    .unwrap();
+    fs::write(
+        unrel_facet.join("observations.jsonl"),
+        json!({"id":20,"content":"unrelated works at other","ts":300,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":300,"updated_at":300,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+
+    let act_path = journal.join("facets/work/activities/20260102.jsonl");
+    fs::create_dir_all(act_path.parent().unwrap()).unwrap();
+    fs::write(
+        &act_path,
+        format!(
+            "{}\n{}\n",
+            json!({"id":"act1","active_entities":["source","unrelated"],"ts":100}),
+            json!({"id":"act2","active_entities":["unrelated"],"ts":200}),
+        ),
+    )
+    .unwrap();
+
+    let labels_path = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
+    fs::create_dir_all(labels_path.parent().unwrap()).unwrap();
+    fs::write(
+        &labels_path,
+        json!({"labels":[{"speaker":"source"}]}).to_string(),
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+
+    let drained = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained, 1);
+
+    let _undo = crate::undo_entity_merge(&journal, &merge.merge_id, json!("test")).unwrap();
+    let lock_res_undo = crate::hold_entity_trust_lock(&journal);
+    assert!(
+        lock_res_undo.is_ok(),
+        "entity trust lock must be free before drive after undo"
+    );
+    drop(lock_res_undo);
+
+    let drained_undo = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained_undo, 1);
+
+    let fp_after_undo =
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let fp_fresh_post_undo =
+        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    assert_eq!(
+        fp_after_undo, fp_fresh_post_undo,
+        "edges after undo drive must match fresh rebuild of restored sources"
+    );
+
+    fs::remove_dir_all(journal).unwrap();
 }

@@ -462,16 +462,22 @@ pub fn rescan_file(journal: &Path, input: &Path) -> Result<RescanFileStatus, Sto
     Ok(RescanFileStatus::Indexed { warnings })
 }
 
-pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
+pub fn rebuild_edges_guarded<F>(
+    journal: &Path,
+    before_commit: F,
+) -> Result<Option<EdgeRebuildReport>, StoreError>
+where
+    F: FnOnce() -> Result<bool, StoreError>,
+{
     let mut conn = open_index(journal)?;
     let mut resolver = EdgeResolver::new(journal);
     let mut report = EdgeRebuildReport::default();
-    let tx = conn.transaction()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     if let Err(error) = resolver.preflight_owner_timezone() {
         report.failed = 1;
         report.warnings.push(error.to_string());
         tx.rollback()?;
-        return Ok(report);
+        return Ok(Some(report));
     }
     tx.execute("DELETE FROM edges", [])?;
     tx.execute("DELETE FROM edge_files", [])?;
@@ -505,10 +511,18 @@ pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
     }
     if report.failed > 0 {
         tx.rollback()?;
-        return Ok(report);
+        return Ok(Some(report));
+    }
+    if !before_commit()? {
+        tx.rollback()?;
+        return Ok(None);
     }
     tx.commit()?;
-    Ok(report)
+    Ok(Some(report))
+}
+
+pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
+    rebuild_edges_guarded(journal, || Ok(true)).map(|opt| opt.expect("closure returned true"))
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

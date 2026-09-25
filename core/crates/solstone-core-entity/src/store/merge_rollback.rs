@@ -213,7 +213,7 @@ pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
         return Ok(None);
     }
     let entries = recovery_entries(&root)?;
-    let mut state: Value = read_record(journal, &root.join("state.json"), Value::Null)?;
+    let state: Value = read_record(journal, &root.join("state.json"), Value::Null)?;
     if state.is_null() {
         if entries.is_empty() {
             remove_dir_all(journal, RECOVERY).map_err(SnapshotError::Path)?;
@@ -235,12 +235,21 @@ pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
         return Ok((state.get("source_committed") == Some(&Value::Bool(true))).then_some(state));
     }
     if state.get("source_committed") == Some(&Value::Bool(true)) {
-        repair_index(journal, &mut state).map_err(|error| {
-            failure(
-                &root,
-                format!("entity source change committed; index repair pending: {error}"),
-            )
-        })?;
+        let op = state["operation"]
+            .as_str()
+            .ok_or_else(|| failure(&root, "missing committed entity operation"))?;
+        let merge_id = state["report"]["merge_id"]
+            .as_str()
+            .ok_or_else(|| failure(&root, "missing committed entity merge_id"))?;
+        let completion =
+            super::edge_repair::read_entity_edge_repair_completion(journal, op, merge_id)
+                .map_err(|e| failure(&root, e.to_string()))?;
+        if completion.is_none() && !super::edge_repair::job_exists(journal, op, merge_id) {
+            let generation = super::edge_repair::bump_generation(journal)
+                .map_err(|e| failure(&root, e.to_string()))?;
+            super::edge_repair::enqueue_edge_repair_job(journal, op, merge_id, generation)
+                .map_err(|e| failure(&root, e.to_string()))?;
+        }
         finish(journal)?;
         return Ok(Some(state));
     }
@@ -322,35 +331,6 @@ pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
     }
     rollback.restore(journal)?;
     Ok(None)
-}
-
-pub(super) fn repair_index(journal: &Path, state: &mut Value) -> Result<(), String> {
-    remove_file(journal, "awareness/discovery_clusters.json").map_err(|error| error.to_string())?;
-    let report = &state["report"];
-    match state["operation"].as_str() {
-        Some("merge") => {
-            let source = report["source_id"]
-                .as_str()
-                .ok_or("missing source entity")?;
-            let target = report["target_id"]
-                .as_str()
-                .ok_or("missing target entity")?;
-            let folded = solstone_core_indexer_store::merge::fold_entity_edges_for_recorded_merge(
-                journal, source, target,
-            )
-            .map_err(|error| error.to_string())?;
-            state["report"]["counts"]["edges"] = json!({"rows_folded":folded.rows_folded,"self_edges_dropped":folded.self_edges_dropped,"error":null});
-            if let Some(phases) = state["report"]["completed_phases"].as_array_mut() {
-                phases.push(json!("edges"));
-            }
-        }
-        Some("undo") => {
-            solstone_core_indexer_store::merge::rebuild_edges_for_recorded_merge_undo(journal)
-                .map_err(|error| error.to_string())?;
-        }
-        _ => return Err("invalid committed entity operation".to_owned()),
-    }
-    Ok(())
 }
 
 fn snapshot_path(snapshot: &JournalSnapshot) -> &str {

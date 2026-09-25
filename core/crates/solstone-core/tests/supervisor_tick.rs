@@ -3,6 +3,7 @@
 
 #![cfg(unix)]
 
+use std::collections::BTreeSet;
 use std::fs;
 use std::future::Future;
 use std::io::Read;
@@ -1200,4 +1201,207 @@ async fn cortex_finish_resets_wedge_failures_before_the_threshold() {
             .expect("retry token existence"),
         "finish must clear the first two failures before the third error"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn supervisor_tick_drains_entity_edge_repair_jobs() {
+    let journal = TempJournal::new();
+    let mut child = start(&journal, None, &[]);
+    let socket = journal.0.join("health/callosum.sock");
+    wait_for_socket(&mut child, &socket);
+
+    let repair_dir = journal.0.join("health/entity-edge-repair");
+    fs::create_dir_all(repair_dir.join("jobs")).unwrap();
+    fs::write(repair_dir.join("generation"), b"1\n").unwrap();
+    let job = json!({
+        "operation": "merge",
+        "merge_id": "test-merge-1",
+        "generation": 1,
+        "enqueued_at": 100
+    });
+    fs::write(
+        repair_dir.join("jobs/merge-test-merge-1.json"),
+        serde_json::to_vec(&job).unwrap(),
+    )
+    .unwrap();
+
+    let completion_path = repair_dir.join("completions/merge-test-merge-1.json");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if completion_path.exists() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(
+        completion_path.exists(),
+        "supervisor tick should drain edge repair job and publish completion"
+    );
+    assert!(
+        !repair_dir.join("jobs/merge-test-merge-1.json").exists(),
+        "drained job should be removed"
+    );
+}
+
+#[test]
+fn catchup_selector_with_merge_rewritten_speaker_labels() {
+    let journal = TempJournal::new();
+    fs::write(
+        journal.0.join("config/journal.json"),
+        br#"{"identity":{"timezone":"UTC"},"setup":{"completed_at":1}}"#,
+    )
+    .unwrap();
+
+    let p25 = journal.0.join("chronicle/20260425/080000_300");
+    fs::create_dir_all(&p25).unwrap();
+    fs::write(p25.join("audio.json"), b"audio-20260425").unwrap();
+    let fp25 =
+        solstone_core_system::catchup::read_raw_input_fingerprint(&journal.0, "20260425").unwrap();
+    let h25 = journal.0.join("chronicle/20260425/health");
+    fs::create_dir_all(&h25).unwrap();
+    fs::write(
+        h25.join("daily.updated"),
+        format!(r#"{{"version":1,"generation":1,"fingerprint":"{fp25}"}}"#),
+    )
+    .unwrap();
+    fs::write(
+        h25.join("stream.updated"),
+        r#"{"version":1,"generation":1,"fingerprint":null}"#,
+    )
+    .unwrap();
+
+    let p26 = journal.0.join("chronicle/20260426/080000_300");
+    fs::create_dir_all(p26.join("talents")).unwrap();
+    fs::write(p26.join("audio.json"), b"audio-20260426").unwrap();
+    fs::write(
+        p26.join("talents/speaker_labels.json"),
+        br#"{"labels":[{"speaker":"source"}]}"#,
+    )
+    .unwrap();
+    let fp26 =
+        solstone_core_system::catchup::read_raw_input_fingerprint(&journal.0, "20260426").unwrap();
+    let h26 = journal.0.join("chronicle/20260426/health");
+    fs::create_dir_all(&h26).unwrap();
+    fs::write(
+        h26.join("daily.updated"),
+        format!(r#"{{"version":1,"generation":1,"fingerprint":"{fp26}"}}"#),
+    )
+    .unwrap();
+    fs::write(
+        h26.join("stream.updated"),
+        r#"{"version":1,"generation":1,"fingerprint":null}"#,
+    )
+    .unwrap();
+
+    let p27 = journal.0.join("chronicle/20260427/080000_300");
+    fs::create_dir_all(&p27).unwrap();
+    fs::write(p27.join("audio.json"), b"audio-20260427").unwrap();
+    let fp27 =
+        solstone_core_system::catchup::read_raw_input_fingerprint(&journal.0, "20260427").unwrap();
+    let h27 = journal.0.join("chronicle/20260427/health");
+    fs::create_dir_all(&h27).unwrap();
+    fs::write(
+        h27.join("daily.updated"),
+        format!(r#"{{"version":1,"generation":1,"fingerprint":"{fp27}"}}"#),
+    )
+    .unwrap();
+    fs::write(
+        h27.join("stream.updated"),
+        r#"{"version":1,"generation":2,"fingerprint":null}"#,
+    )
+    .unwrap();
+
+    solstone_core_entity::save_entity_identity(
+        &journal.0,
+        "source",
+        &json!({"id": "source", "name": "Source"}),
+        None,
+    )
+    .unwrap();
+    solstone_core_entity::save_entity_identity(
+        &journal.0,
+        "target",
+        &json!({"id": "target", "name": "Target"}),
+        None,
+    )
+    .unwrap();
+
+    let encoder = solstone_core_entity::EncoderIdentity {
+        id: "test-encoder".to_string(),
+        sha256: "test-sha".to_string(),
+        width: 256,
+    };
+    solstone_core_entity::commit_entity_merge(
+        &journal.0,
+        "source",
+        "target",
+        solstone_core_entity::EntityMergeOptions::default(),
+        &encoder,
+    )
+    .unwrap();
+
+    let labels: Value =
+        serde_json::from_slice(&fs::read(p26.join("talents/speaker_labels.json")).unwrap())
+            .unwrap();
+    assert_eq!(labels["labels"][0]["speaker"], "target");
+    assert_eq!(
+        solstone_core_system::catchup::read_raw_input_fingerprint(&journal.0, "20260426").unwrap(),
+        fp26
+    );
+
+    let adoption = json!({
+        "version": 1,
+        "first_closed_day": "20260425",
+        "cursor": null,
+        "adopted": ["20260425", "20260426", "20260427"],
+        "pending": ["20260425", "20260426", "20260427"]
+    });
+    fs::write(
+        journal.0.join("health/daily-adoption.json"),
+        serde_json::to_vec(&adoption).unwrap(),
+    )
+    .unwrap();
+
+    let future_ts = 2_000_000_000.0;
+    let state = json!({
+        "version": 1,
+        "entries": {
+            "20260425:daily-catchup": {
+                "day": "20260425",
+                "command_kind": "daily-catchup",
+                "last_outcome": "completed",
+                "fingerprint": fp25,
+                "next_retry_at": future_ts
+            },
+            "20260426:daily-catchup": {
+                "day": "20260426",
+                "command_kind": "daily-catchup",
+                "last_outcome": "completed",
+                "fingerprint": fp26,
+                "next_retry_at": future_ts
+            },
+            "20260427:daily-catchup": {
+                "day": "20260427",
+                "command_kind": "daily-catchup",
+                "last_outcome": "completed",
+                "fingerprint": fp27
+            }
+        }
+    });
+    fs::write(
+        journal.0.join("health/catchup-state.json"),
+        serde_json::to_vec(&state).unwrap(),
+    )
+    .unwrap();
+
+    let now = UNIX_EPOCH + Duration::from_secs(1_777_420_800); // 2026-04-28
+    let eligible = solstone_core_system::catchup::eligible_catchup_days(
+        &journal.0,
+        &[],
+        &BTreeSet::new(),
+        now,
+    )
+    .unwrap();
+
+    assert_eq!(eligible, vec!["20260427".to_string()]);
 }

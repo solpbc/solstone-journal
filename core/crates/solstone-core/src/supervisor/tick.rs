@@ -1799,6 +1799,7 @@ fn message_truthy(message: &CallosumEnvelope, key: &str) -> bool {
 }
 
 fn sync_tick(state: &mut SupervisorState, lifecycle: &mut SupervisorLifecycle) -> SyncTickOutcome {
+    solstone_core_entity::spawn_entity_edge_repair(&state.journal);
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0.0, |value| value.as_secs_f64());

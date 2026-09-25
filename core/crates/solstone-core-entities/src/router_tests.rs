@@ -2746,6 +2746,37 @@ async fn history_empty_and_missing() {
 }
 
 #[tokio::test]
+async fn history_attaches_edge_repair_completion_data() {
+    let j = Journal::new();
+    seed_entity(j.path(), "a", "Alice");
+    write(
+        j.path(),
+        "entities/a/history/events/0001-merge.json",
+        json!({"seq":1,"kind":"merge","operation":{"merge_id":"m1"}}),
+    );
+    let (_, v_before) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
+    assert_eq!(v_before["items"][0].get("rows_folded"), None);
+    assert_eq!(v_before["items"][0].get("rebuilt"), None);
+
+    write(
+        j.path(),
+        "health/entity-edge-repair/completions/merge-m1.json",
+        json!({
+            "operation": "merge",
+            "merge_id": "m1",
+            "generation": 1,
+            "published": true,
+            "rows_folded": 5,
+            "rebuilt": true,
+            "completed_at": 100
+        }),
+    );
+    let (_, v_after) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
+    assert_eq!(v_after["items"][0]["rows_folded"], 5);
+    assert_eq!(v_after["items"][0]["rebuilt"], true);
+}
+
+#[tokio::test]
 async fn attach_creates_entity() {
     let j = Journal::new();
     let (status, created) = post(

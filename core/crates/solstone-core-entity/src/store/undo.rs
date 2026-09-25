@@ -235,23 +235,32 @@ pub(crate) fn undo_entity_merge_with_injector(
             rollback_error: rollback_error.or_else(|| Some(error.to_string())),
         });
     }
-    let mut committed = serde_json::json!({"operation":"undo", "report":report});
+    let committed = serde_json::json!({"operation":"undo", "report":report});
     rollback.commit_source(journal, "undo", &committed["report"])?;
     if injector.is_some_and(|injector| injector("edges", 0)) {
         return Err(EntityUndoError::Refused(
             "entity merge undo committed; index repair pending: injected failure".to_owned(),
         ));
     }
-    super::merge_rollback::repair_index(journal, &mut committed).map_err(|error| {
+    let generation = super::edge_repair::bump_generation(journal).map_err(|error| {
         EntityUndoError::Refused(format!(
-            "entity merge undo committed; index repair pending: {error}"
+            "entity merge undo committed; edge generation bump failed: {error}"
         ))
     })?;
+    super::edge_repair::enqueue_edge_repair_job(journal, "undo", merge_id, generation).map_err(
+        |error| {
+            EntityUndoError::Refused(format!(
+                "entity merge undo committed; edge job enqueue failed: {error}"
+            ))
+        },
+    )?;
     rollback.finish(journal).map_err(|error| {
         EntityUndoError::Refused(format!(
             "entity merge undo committed; recovery cleanup pending: {error}"
         ))
     })?;
+    drop(_trust);
+    super::edge_repair::spawn_entity_edge_repair(journal);
     Ok(report)
 }
 

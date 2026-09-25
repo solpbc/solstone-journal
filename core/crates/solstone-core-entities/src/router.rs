@@ -4605,13 +4605,16 @@ async fn history_route(
                 );
                 object.insert(
                     "merge_state".to_owned(),
-                    json!(if merge_id.is_some_and(|id| undone_ids.contains(&id)) {
-                        "undone"
-                    } else {
-                        "open"
-                    }),
+                    json!(
+                        if merge_id.as_ref().is_some_and(|id| undone_ids.contains(id)) {
+                            "undone"
+                        } else {
+                            "open"
+                        }
+                    ),
                 );
             }
+            solstone_core_entity::attach_edge_repair_completion(&root, event);
         }
         Ok(Some((id, items)))
     })

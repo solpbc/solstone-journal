@@ -7,6 +7,7 @@ mod ambiguity;
 mod census;
 mod create;
 mod derived;
+pub(crate) mod edge_repair;
 mod entity_paths;
 mod error;
 mod history;
@@ -39,6 +40,16 @@ pub use create::create_journal_entity;
 pub use derived::{
     DEFAULT_ACTIVITY_TS, entity_last_active_day, entity_last_active_ts,
     entity_matches_identity_name, is_valid_entity_type, last_active_day_for_ts,
+};
+pub use edge_repair::{
+    EntityEdgeRepairCompletion, EntityEdgeRepairError, EntityEdgeRepairJob,
+    attach_edge_repair_completion, drive_entity_edge_repair, read_entity_edge_repair_completion,
+    spawn_entity_edge_repair,
+};
+#[cfg(any(test, feature = "test-hooks"))]
+pub use edge_repair::{
+    arm_entity_edge_repair_evidence_cut, disarm_entity_edge_repair_evidence_cut,
+    pause_entity_edge_repair, release_entity_edge_repair,
 };
 pub use entity_paths::{entity_memory_path, entity_path};
 pub use error::EntityStoreError;

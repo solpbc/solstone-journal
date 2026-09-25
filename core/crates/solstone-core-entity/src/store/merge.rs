@@ -479,25 +479,33 @@ pub(crate) fn commit_entity_merge_with_injector(
     );
     // Index changes are derived work. Once this marker is durable, neither
     // an index lock refusal nor a restart may roll source state back.
-    let mut committed = json!({"operation":"merge", "report":report});
+    let committed = json!({"operation":"merge", "report":report});
     rollback.commit_source(journal, "merge", &committed["report"])?;
     if injector.is_some_and(|injector| injector("edges", 0)) {
         return Err(EntityMergeError::Refused(
             "entity merge committed; index repair pending: injected failure".to_owned(),
         ));
     }
-    super::merge_rollback::repair_index(journal, &mut committed).map_err(|error| {
+    let generation = super::edge_repair::bump_generation(journal).map_err(|error| {
         EntityMergeError::Refused(format!(
-            "entity merge committed; index repair pending: {error}"
+            "entity merge committed; edge generation bump failed: {error}"
         ))
     })?;
+    super::edge_repair::enqueue_edge_repair_job(journal, "merge", &merge_id, generation).map_err(
+        |error| {
+            EntityMergeError::Refused(format!(
+                "entity merge committed; edge job enqueue failed: {error}"
+            ))
+        },
+    )?;
     rollback.finish(journal).map_err(|error| {
         EntityMergeError::Refused(format!(
             "entity merge committed; recovery cleanup pending: {error}"
         ))
     })?;
-    serde_json::from_value(committed["report"].clone())
-        .map_err(|error| EntityMergeError::Refused(error.to_string()))
+    drop(_trust);
+    super::edge_repair::spawn_entity_edge_repair(journal);
+    Ok(report)
 }
 
 fn capture_undo_expected(
