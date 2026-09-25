@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- agents you connect can now read what was said in recorded audio segments when you grant transcript access.
+
 ## [2.0.18] - 2026-09-25
 
 ### Added

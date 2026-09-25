@@ -792,6 +792,29 @@ fn ac24_get_transcript_pages_a_huge_segment_without_returning_the_whole_file() {
 }
 
 #[test]
+fn get_transcript_reads_recorded_speech_from_audio_jsonl() {
+    let journal = fixture();
+    let segment = journal
+        .path()
+        .join("chronicle")
+        .join(DAY)
+        .join(STREAM)
+        .join(SEGMENT);
+    fs::remove_file(segment.join("meeting_transcript.md")).unwrap();
+    fs::write(
+        segment.join("audio.jsonl"),
+        "{\"source\":\"recording\"}\n{\"start\":\"00:00:02\",\"text\":\"spoken words\"}\n",
+    )
+    .unwrap();
+
+    let listed = probe(&journal, "list_transcripts", json!({})).unwrap();
+    let reference = listed["transcripts"][0]["reference"].as_str().unwrap();
+    let page = probe(&journal, "get_transcript", json!({"reference": reference})).unwrap();
+    assert_eq!(page["entries"], json!(["[00:00:02] spoken words"]));
+    assert!(page["next_cursor"].is_null());
+}
+
+#[test]
 fn ac7_ac21_ac22_entities_are_scoped_stable_and_omit_forbidden_fields() {
     let journal = fixture();
     PermissionStore::open(journal.path())
