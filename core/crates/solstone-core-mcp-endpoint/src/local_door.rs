@@ -398,10 +398,10 @@ async fn run_accept_loop(
 ) {
     loop {
         #[cfg(test)]
-        if let Some(flag) = &fail_accept_flag {
-            if flag.load(std::sync::atomic::Ordering::SeqCst) {
-                return;
-            }
+        if let Some(flag) = &fail_accept_flag
+            && flag.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
         }
         if *period_shutdown.borrow() {
             return;
@@ -413,11 +413,10 @@ async fn run_accept_loop(
             }
             accepted = listeners.accept_peer() => {
                 #[cfg(test)]
-                if let Some(flag) = &fail_accept_flag {
-                    if flag.load(std::sync::atomic::Ordering::SeqCst) {
+                if let Some(flag) = &fail_accept_flag
+                    && flag.load(std::sync::atomic::Ordering::SeqCst) {
                         return;
                     }
-                }
                 let Ok((socket, peer_addr)) = accepted else {
                     // Accept error: leave loop, drop listeners, record not_running
                     return;
@@ -617,10 +616,10 @@ mod full_tests {
 
         // Wait for door to start listening
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -907,12 +906,12 @@ mod full_tests {
         // 1. Check three rewrite intervals with strictly later observed_at and reason port_in_use
         let mut observed_timestamps = Vec::new();
         for _ in 0..15 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if !state.listening && state.reason.as_deref() == Some("port_in_use") {
-                    if !observed_timestamps.contains(&state.observed_at) {
-                        observed_timestamps.push(state.observed_at);
-                    }
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && !state.listening
+                && state.reason.as_deref() == Some("port_in_use")
+                && !observed_timestamps.contains(&state.observed_at)
+            {
+                observed_timestamps.push(state.observed_at);
             }
             if observed_timestamps.len() >= 3 {
                 break;
@@ -941,11 +940,12 @@ mod full_tests {
         // Within retry interval, door binds dual-stack and writes listening: true
         let mut listening_bound = false;
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening && state.reason.is_none() {
-                    listening_bound = true;
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+                && state.reason.is_none()
+            {
+                listening_bound = true;
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -964,11 +964,11 @@ mod full_tests {
         let start_time = tokio::time::Instant::now();
         let mut noticed_drop = false;
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if !state.listening {
-                    noticed_drop = true;
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && !state.listening
+            {
+                noticed_drop = true;
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -979,10 +979,10 @@ mod full_tests {
 
         // Wait for rebind
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1020,10 +1020,10 @@ mod full_tests {
         });
 
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1129,10 +1129,10 @@ mod full_tests {
         });
 
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1243,10 +1243,10 @@ mod full_tests {
         });
 
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1318,10 +1318,11 @@ mod full_tests {
 
         // Verify state is disabled
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if !state.listening && state.reason.as_deref() == Some("disabled") {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && !state.listening
+                && state.reason.as_deref() == Some("disabled")
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1355,10 +1356,10 @@ mod full_tests {
         )
         .unwrap();
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1380,10 +1381,10 @@ mod full_tests {
         )
         .unwrap();
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if !state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && !state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1444,10 +1445,10 @@ mod full_tests {
         });
 
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
@@ -1530,10 +1531,10 @@ mod full_tests {
         });
 
         for _ in 0..50 {
-            if let Some(state) = read_local_door_state(&journal_root) {
-                if state.listening {
-                    break;
-                }
+            if let Some(state) = read_local_door_state(&journal_root)
+                && state.listening
+            {
+                break;
             }
             tokio::time::sleep(Duration::from_millis(20)).await;
         }
