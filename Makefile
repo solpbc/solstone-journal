@@ -1403,6 +1403,11 @@ define run-rust-gate-under-poison
 		$(MAKE) CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 $(1)
 endef
 
+# Test scratch space inside the contained Linux gate is memory-backed: the unit
+# suite's temporary journals exercise durable-write paths, and fsync to a shared
+# disk was most of its runtime. The build tree stays on disk (it is bound from
+# RUST_TARGET_DIR below), so only test scratch files count against this cap.
+CI_TMPFS_BYTES ?= 4294967296
 .PHONY: ci ci-contained ci-under-poison ci-full ci-full-under-poison
 ci: ci-prep-ffmpeg
 ifeq ($(HOST_SYSTEM),Linux)
@@ -1411,11 +1416,11 @@ ifeq ($(HOST_SYSTEM),Linux)
 	mkdir -p "$(RUST_TARGET_DIR)"; \
 	sandbox_root=$$(mktemp -d /var/tmp/solstone-ci-XXXXXX); \
 	trap 'rm -rf -- "$$sandbox_root"' 0 1 2 15; \
-	mkdir -p "$$sandbox_root/tmp" "$$sandbox_root/empty" "$$sandbox_root/var-tmp/home"; \
+	mkdir -p "$$sandbox_root/empty"; \
 	bwrap --die-with-parent --new-session --unshare-net --unshare-pid --unshare-ipc --unshare-uts \
 		--ro-bind / / --proc /proc --dev /dev \
-		--bind "$$sandbox_root/tmp" /tmp --ro-bind "$$sandbox_root/empty" /run \
-		--bind "$$sandbox_root/var-tmp" /var/tmp \
+		--size $(CI_TMPFS_BYTES) --tmpfs /tmp --ro-bind "$$sandbox_root/empty" /run \
+		--size $(CI_TMPFS_BYTES) --tmpfs /var/tmp --dir /var/tmp/home \
 		--ro-bind "$(CURDIR)" "$(CURDIR)" --bind "$(RUST_TARGET_DIR)" "$(RUST_TARGET_DIR)" \
 		--chdir "$(CURDIR)" --setenv HOME /var/tmp/home --setenv TMPDIR /var/tmp \
 		--setenv CARGO_HOME "$(CI_CARGO_HOME)" --setenv RUSTUP_HOME "$(CI_RUSTUP_HOME)" \
