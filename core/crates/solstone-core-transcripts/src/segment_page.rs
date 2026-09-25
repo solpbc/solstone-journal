@@ -12,6 +12,7 @@ use std::hash::{Hash, Hasher};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
+use solstone_core_format::content::{RawPerceptFamily, produce_raw_percept_chunks};
 use solstone_core_journal_io::paths::Segment;
 
 /// Largest source-byte window parsed for one transcript page.
@@ -157,7 +158,10 @@ fn transcript_files(segment: &Path) -> Result<Vec<PathBuf>, SegmentTranscriptRea
 }
 
 fn is_transcript_name(name: &str) -> bool {
-    name.ends_with("_transcript.jsonl") || name == "imported.md" || name.ends_with("_transcript.md")
+    name == "audio.jsonl"
+        || name.ends_with("_transcript.jsonl")
+        || name == "imported.md"
+        || name.ends_with("_transcript.md")
 }
 
 fn source_version(
@@ -235,7 +239,15 @@ fn complete_lines(bytes: &[u8]) -> Result<Vec<(&str, usize)>, SegmentTranscriptR
     Ok(lines)
 }
 
-fn project_line(_name: &str, line: &str) -> String {
+fn project_line(name: &str, line: &str) -> String {
+    if name == "audio.jsonl" {
+        return produce_raw_percept_chunks(RawPerceptFamily::Audio, "", line)
+            .chunks
+            .into_iter()
+            .map(|chunk| chunk.content)
+            .collect::<Vec<_>>()
+            .join("\n");
+    }
     line.to_owned()
 }
 
@@ -277,7 +289,7 @@ mod tests {
     }
 
     #[test]
-    fn transcript_page_excludes_percept_media_browser_and_talent_sources() {
+    fn transcript_page_projects_recorded_speech_without_other_sources() {
         let root = tempfile::tempdir().unwrap();
         let segment = root.path().join("chronicle/20260914/default/090000_300");
         fs::create_dir_all(segment.join("talents")).unwrap();
@@ -286,7 +298,11 @@ mod tests {
             "approved transcript line\n",
         )
         .unwrap();
-        fs::write(segment.join("audio.jsonl"), "audio percept\n").unwrap();
+        fs::write(
+            segment.join("audio.jsonl"),
+            "{\"recording\":\"metadata only\"}\n{\"start\":\"00:00:01\",\"text\":\"what was said\",\"raw\":\"secret audio metadata\"}\n",
+        )
+        .unwrap();
         fs::write(segment.join("screen.jsonl"), "screen percept\n").unwrap();
         fs::write(segment.join("browser_history.jsonl"), "browser percept\n").unwrap();
         fs::write(segment.join("talents/brief.md"), "secret talent\n").unwrap();
@@ -299,9 +315,14 @@ mod tests {
         let page = read_segment_transcript_page(&segment, None).unwrap();
         assert_eq!(
             page.entries,
-            vec![super::SegmentTranscriptEntry {
-                text: "approved transcript line".to_owned(),
-            }]
+            vec![
+                super::SegmentTranscriptEntry {
+                    text: "[00:00:01] what was said".to_owned(),
+                },
+                super::SegmentTranscriptEntry {
+                    text: "approved transcript line".to_owned(),
+                },
+            ]
         );
     }
 
