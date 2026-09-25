@@ -636,11 +636,11 @@ check-rust-clippy-full:
 	@$(REQUIRE_CARGO)
 	@status=0; \
 	if cargo clippy --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --all-targets --locked -- -D warnings; then :; else status=$$?; fi; \
-	classified=$$($(SOLSTONE_CI_RUNNER) classified) || exit $$?; \
-	for entry in $$(printf '%s\n' "$$classified" | tr ' ' '='); do \
-		package=$${entry%%=*}; features=$${entry#*=}; \
+	classified=$$(mktemp); trap 'rm -f "$$classified"' 0; \
+	$(SOLSTONE_CI_RUNNER) classified > "$$classified" || exit $$?; \
+	while read -r package features runtime; do \
 		if cargo clippy --manifest-path $(RUST_MANIFEST) -p "$$package" --features "$$features" --all-targets --locked -- -D warnings; then :; else child_status=$$?; [ "$$status" -ne 0 ] || status=$$child_status; fi; \
-	done; \
+	done < "$$classified"; \
 	if make --no-print-directory check-rust-classified-full-clippy-onnx; then :; else child_status=$$?; [ "$$status" -ne 0 ] || status=$$child_status; fi; \
 	exit "$$status"
 
@@ -829,10 +829,11 @@ check-rust-registry-package:
 check-rust-test:
 	@$(REQUIRE_CARGO)
 	cargo test --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked -- --test-threads=1
-	@set -eu; classified=$$($(SOLSTONE_CI_RUNNER) classified); \
-	for entry in $$(printf '%s\n' "$$classified" | tr ' ' '='); do \
-		$(MAKE) --no-print-directory check-rust-registry-package CI_PACKAGE="$${entry%%=*}" CI_FEATURES="$${entry#*=}"; \
-	done
+	@set -eu; classified=$$(mktemp); trap 'rm -f "$$classified"' 0; \
+	$(SOLSTONE_CI_RUNNER) classified > "$$classified"; \
+	while read -r package features runtime; do \
+		$(MAKE) --no-print-directory check-rust-registry-package CI_PACKAGE="$$package" CI_FEATURES="$$features" CI_RUNTIME="$$runtime"; \
+	done < "$$classified"
 
 
 

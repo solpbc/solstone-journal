@@ -81,7 +81,12 @@ fn run() -> Result<i32, String> {
                     .iter()
                     .any(|feature| feature == FULL_TESTS_FEATURE)
                 {
-                    println!("{} {}", suite.package, suite.features.join(","));
+                    println!(
+                        "{} {} {}",
+                        suite.package,
+                        suite.features.join(","),
+                        suite.runtime
+                    );
                 }
             }
             Ok(0)
