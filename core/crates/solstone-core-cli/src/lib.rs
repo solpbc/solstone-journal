@@ -4407,6 +4407,9 @@ pub const SERVICE_USAGE: &str = concat!(
 /// The hidden service verb the Windows post-update hook runs.
 #[doc(hidden)]
 pub const SERVICE_RESUME_AFTER_UPDATE: &str = "__resume-after-update";
+/// The hidden service verb run inside Velopack's before-uninstall hook.
+#[doc(hidden)]
+pub const SERVICE_BEFORE_UNINSTALL: &str = "__before-uninstall";
 
 /// A parsed service lifecycle action. This pure grammar is not executable.
 #[doc(hidden)]
@@ -4435,6 +4438,8 @@ pub enum ServiceAction {
     /// Hidden: started by the Windows build's post-update and post-install
     /// hook to put back the resident an update took down. Never in usage text.
     ResumeAfterUpdate,
+    /// Hidden: remove the task before Velopack sweeps its executable.
+    BeforeUninstall,
 }
 
 /// The hidden identity fields carried from `journal setup` to service rendering.
@@ -4760,6 +4765,8 @@ pub fn parse_service_args(args: &[OsString]) -> ServiceParseOutcome {
         Some(ServiceAction::Down)
     } else if command == OsStr::new(SERVICE_RESUME_AFTER_UPDATE) && rest.is_empty() {
         Some(ServiceAction::ResumeAfterUpdate)
+    } else if command == OsStr::new(SERVICE_BEFORE_UNINSTALL) && rest.is_empty() {
+        Some(ServiceAction::BeforeUninstall)
     } else {
         None
     };
@@ -5943,7 +5950,16 @@ mod tests {
             parse_service_args(&args(&["__resume-after-update", "extra"])),
             ServiceParseOutcome::Exit { code: 1, .. }
         ));
+        assert_eq!(
+            parse_service_args(&args(&["__before-uninstall"])),
+            ServiceParseOutcome::Dispatch(ServiceAction::BeforeUninstall)
+        );
+        assert!(matches!(
+            parse_service_args(&args(&["__before-uninstall", "extra"])),
+            ServiceParseOutcome::Exit { code: 1, .. }
+        ));
         assert!(!SERVICE_USAGE.contains(SERVICE_RESUME_AFTER_UPDATE));
+        assert!(!SERVICE_USAGE.contains(SERVICE_BEFORE_UNINSTALL));
         let ServiceParseOutcome::Exit {
             code,
             stdout,

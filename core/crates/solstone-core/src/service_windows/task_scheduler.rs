@@ -74,6 +74,10 @@ pub(super) enum Operation<'a> {
     Delete {
         before: &'a Snapshot,
     },
+    /// Velopack kills the install-root process tree after this hook returns.
+    DeleteBeforeUninstall {
+        before: &'a Snapshot,
+    },
     /// Record the owner's run intent on the registration itself.
     SetEnabled {
         before: &'a Snapshot,
@@ -114,6 +118,7 @@ pub(super) fn execute_until(
         Operation::Update { before, xml } => ("update", Some(before), Some(xml)),
         Operation::Run { before } => ("run", Some(before), None),
         Operation::Delete { before } => ("delete", Some(before), None),
+        Operation::DeleteBeforeUninstall { before } => ("uninstall-delete", Some(before), None),
         Operation::SetEnabled {
             before,
             enabled: true,

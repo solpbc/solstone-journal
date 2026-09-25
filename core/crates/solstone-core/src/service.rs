@@ -136,6 +136,7 @@ fn run_inner(action: ServiceAction) -> Result<ExitCode, String> {
         ServiceAction::Up => up(platform, &home),
         // Only the Windows installer's update hook runs this.
         ServiceAction::ResumeAfterUpdate => Ok(ExitCode::SUCCESS),
+        ServiceAction::BeforeUninstall => Ok(ExitCode::SUCCESS),
         ServiceAction::Logs { .. } => unreachable!("logs dispatch is handled by main"),
     }
 }

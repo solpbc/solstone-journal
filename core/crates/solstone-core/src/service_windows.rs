@@ -12,8 +12,8 @@ use std::time::{Duration, Instant};
 
 use solstone_core_cli::{ServiceAction, ServiceInstallationGuardArguments};
 use solstone_core_installation_identity::{
-    GuardFields, OwnerBase, journal_token_from_path, load_installation_binding, owner_base,
-    parse_service_guard_environment, root_token_from_path,
+    GuardFields, IdentityError, OwnerBase, journal_token_from_path, load_installation_binding,
+    owner_base, parse_service_guard_environment, root_token_from_path,
 };
 use solstone_core_journal::resolve_identity_root_from_executable_dir;
 use solstone_core_service_unit::{
@@ -23,6 +23,7 @@ use solstone_core_service_unit::{
 };
 use solstone_core_system::lifecycle::wait_ready;
 mod native_process;
+mod sign_in_resume;
 mod task_scheduler;
 use task_scheduler::{Operation, Snapshot, TaskInstance};
 
@@ -62,6 +63,7 @@ pub(crate) fn run(action: ServiceAction) -> ExitCode {
         ServiceAction::Up => run_up(),
         ServiceAction::Down => run_down(),
         ServiceAction::ResumeAfterUpdate => run_resume_after_update(),
+        ServiceAction::BeforeUninstall => run_before_uninstall(),
         ServiceAction::Logs { .. } => unreachable!("logs handled by service_logs"),
     }
 }
@@ -529,6 +531,7 @@ fn start_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
         _ => return Err(task_error("cannot identify one running service task")),
     };
     let _run = retain_task_run(ctx, &before, &selected_guid, deadline)?;
+    sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()).map_err(task_error)?;
     println!("your journal is ready");
     Ok(())
 }
@@ -541,9 +544,8 @@ fn stop_task(ctx: &ServiceContext) -> Result<(), ExitCode> {
             "service task is absent and its forwarder cleanup cannot be verified",
         ));
     }
-    // Disable first. The stop is the owner saying "stay stopped": recorded on
-    // the registration, no trigger (sign-in or the recovery repetition)
-    // starts it again until `service start`, and none can race the stop below.
+    // Disable first, so the five-minute recovery trigger cannot race the stop.
+    // A public stop arms a separate hidden sign-in resume before reaching here.
     let before = if validate_task(ctx, &before)?.enabled {
         set_task_enabled(ctx, &before, false, deadline)?
     } else {
@@ -707,7 +709,9 @@ fn run_uninstall_action() -> ExitCode {
     if let Err(code) = stop_task(&ctx) {
         return code;
     }
-    match delete_task(&ctx) {
+    match delete_task(&ctx).and_then(|()| {
+        sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()).map_err(task_error)
+    }) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
     }
@@ -729,6 +733,11 @@ fn run_stop_action() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(error) =
+        sign_in_resume::arm(&ctx.owner.path(), &ctx.guard.id.as_hex(), &ctx.task_path)
+    {
+        return task_error(error);
+    }
     match stop_task(&ctx) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
@@ -788,6 +797,11 @@ fn run_down() -> ExitCode {
         Ok(ctx) => ctx,
         Err(code) => return code,
     };
+    if let Err(error) =
+        sign_in_resume::arm(&ctx.owner.path(), &ctx.guard.id.as_hex(), &ctx.task_path)
+    {
+        return task_error(error);
+    }
     match stop_task(&ctx) {
         Ok(()) => ExitCode::SUCCESS,
         Err(code) => code,
@@ -823,9 +837,67 @@ fn run_status() -> ExitCode {
     ExitCode::SUCCESS
 }
 
-/// The one status line a stopped service adds: after `service stop` it stays
-/// stopped through sign-ins and restarts, so the owner is told how it resumes.
-const STOPPED_STATUS_COPY: &str = "Stopped: your journal stays off until you start it again.";
+/// The one status line a stopped service adds until the next sign-in.
+const STOPPED_STATUS_COPY: &str =
+    "Stopped: background support for your journal starts again when you next sign in.";
+
+/// Velopack's before-uninstall hook has 30 seconds. Deleting a registration
+/// leaves an already-running instance alone; Velopack then sweeps the install
+/// root and stops that process itself. This removes the recovery trigger before
+/// the files it points at disappear, without waiting for a full service stop.
+fn run_before_uninstall() -> ExitCode {
+    match uninstall_binding_absent() {
+        Ok(true) => return ExitCode::SUCCESS,
+        Ok(false) => {}
+        Err(code) => return code,
+    }
+    let ctx = match resolve_context() {
+        Ok(ctx) => ctx,
+        Err(code) => return code,
+    };
+    let deadline = Instant::now() + Duration::from_secs(20);
+    let before = match inspect_task(&ctx, deadline) {
+        Ok(before) => before,
+        Err(code) => return code,
+    };
+    if before.present {
+        if let Err(code) = validate_task(&ctx, &before) {
+            return code;
+        }
+        let after = match task_scheduler::execute_until(
+            &ctx.sid,
+            &ctx.guard.id.as_hex(),
+            Operation::DeleteBeforeUninstall { before: &before },
+            deadline,
+        ) {
+            Ok(after) => after,
+            Err(error) => return task_error(error),
+        };
+        if after.present {
+            return task_error("service task remained registered during uninstall");
+        }
+    }
+    match sign_in_resume::clear(&ctx.owner.path(), &ctx.guard.id.as_hex()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => task_error(error),
+    }
+}
+
+fn uninstall_binding_absent() -> Result<bool, ExitCode> {
+    let owner = owner_base().map_err(task_error)?;
+    let exe = std::env::current_exe().map_err(task_error)?;
+    let root =
+        resolve_identity_root_from_executable_dir(exe.parent().unwrap_or_else(|| Path::new(".")))
+            .ok_or_else(|| task_error("could not resolve uninstall root"))?;
+    let token = root_token_from_path(&root).map_err(task_error)?;
+    match load_installation_binding(&owner, &token) {
+        Ok(_) => Ok(false),
+        Err(IdentityError::Io { source, .. }) if source.kind() == std::io::ErrorKind::NotFound => {
+            Ok(true)
+        }
+        Err(error) => Err(task_error(error)),
+    }
+}
 
 /// The step an update or reinstall owes the resident it took down.
 ///

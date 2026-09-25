@@ -160,7 +160,7 @@ try {
     $folderPath = '\solstone-' + $ownerSid
     $name = [string]$request.installation_id
     $operation = [string]$request.operation
-    if ($operation -cnotin @('inspect', 'create', 'update', 'run', 'delete', 'enable', 'disable')) { throw 'task-request-operation' }
+    if ($operation -cnotin @('inspect', 'create', 'update', 'run', 'delete', 'uninstall-delete', 'enable', 'disable')) { throw 'task-request-operation' }
     $service = New-Object -ComObject 'Schedule.Service'
     $service.Connect()
     try { $folder = $service.GetFolder($folderPath) }
@@ -204,10 +204,15 @@ try {
         } elseif ($operation -ceq 'delete') {
             if ($before.instances.Count -ne 0 -or ($before.state -ne 3 -and $before.state -ne 1)) { throw 'task-not-idle-before-delete' }
             $folder.DeleteTask($name, 0)
+        } elseif ($operation -ceq 'uninstall-delete') {
+            # Velopack terminates install-root processes after the hook returns.
+            # Delete the registration now, including its five-minute trigger;
+            # deleting a running task does not terminate its existing instance.
+            $folder.DeleteTask($name, 0)
         }
     }
     $after = Read-Snapshot $folder $name $ownerSid
-    if ($operation -ceq 'delete' -and $after.present) { throw 'task-delete-not-observed' }
+    if (($operation -ceq 'delete' -or $operation -ceq 'uninstall-delete') -and $after.present) { throw 'task-delete-not-observed' }
     if (($operation -cin @('create', 'update', 'run', 'enable', 'disable')) -and !$after.present) { throw 'task-mutation-not-observed' }
     # A disabled task that still has a running instance reads as Running (4),
     # so the intent is read from the registration, not from the state.
