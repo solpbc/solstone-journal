@@ -289,7 +289,7 @@
     }
     html += '<a class="pulse-vitals-health-link" href="/app/health/#registeredClientsCard">health →</a>';
     // Not yet, and that's fine: a calm row on any verdict, never a chip and
-    // never in the count (req_nqxybwmk).
+    // never in the count (the day-0 rule).
     const note = isPlainObject(g.note) ? g.note : null;
     if (note && note.text) {
       html += '<a class="pulse-vitals-note" href="' + esc(note.href || '/app/health/') + '">'
@@ -833,7 +833,7 @@
   }
 
   // Before the nightly run has had its first chance, say when the first
-  // briefing is due rather than calling it late or missing (req_nqxybwmk).
+  // briefing is due rather than calling it late or missing.
   const BRIEFING_NOT_YET = Object.assign(Object.create(null), {
     awaiting_engine: 'morning briefings start once processing is set up.',
     first_night: "your first briefing is due by 10 am, after your journal's first night.",

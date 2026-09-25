@@ -129,7 +129,7 @@
 
   /* ── sunarc (decorative background) — locked 2026-09-19, amended 2026-09-23
    * (the day in both appearances), values verbatim from
-   * cmo/brand/sbis/patterns/sun-arc/index.md and vpx/design-system/tokens.md.
+   * the sun-arc pattern spec and the design-system token table.
    * The owner's appearance picks the ground row; the clock picks which of its
    * three grounds shows. Retired 09-23: glow-night-alpha, glow-night-floor,
    * appearance-flip-l. ─────────────────────────────────────────────────── */

@@ -208,7 +208,7 @@ async fn folds_started(role: OwnerReadRole, count: usize, within: Duration) -> u
 /// Hold both of the door's async workers inside one device-sync fold and assert
 /// the carrier still answers.
 ///
-/// This is the root-cause measurement for `req_7yqrbmow`. Before the folds moved
+/// This is the root-cause measurement for the reported device-sync stall. Before the folds moved
 /// to the blocking pool it failed exactly as reported: both async workers sat
 /// inside `day_listing`, `run_driver` was never polled, and no PONG came back at
 /// all — which is what tore down the reporter's uploads.

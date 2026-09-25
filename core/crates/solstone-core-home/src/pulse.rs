@@ -353,7 +353,7 @@ pub fn pulse_payload(context: &HomeContext) -> Value {
 }
 
 /// Before the nightly run has had its first chance, no briefing is late or
-/// missing: say when the first one is due instead (req_nqxybwmk).
+/// missing: say when the first one is due instead (the day-0 rule).
 fn briefing_not_yet_phase(
     briefing_exists: bool,
     not_yet: Option<solstone_core_system_health::NotYet>,
@@ -636,7 +636,7 @@ mod tests {
 
     /// The loader wiring, end to end: a journal with a way to think whose first
     /// night is ahead reads calm with a note; once the window closes with no
-    /// summary it is the counted amber again (req_nqxybwmk).
+    /// summary it is the counted amber again.
     #[test]
     fn first_night_reaches_the_payload_and_ends_on_the_clock() {
         let root = TempDir::new().unwrap();
@@ -811,7 +811,7 @@ mod tests {
     fn empty_journal_phase_tracks_the_injected_hour() {
         let root = TempDir::new().unwrap();
         // A way to think is chosen and the first night is long past, so the
-        // briefing clock alone decides the phase (req_nqxybwmk owns day 0).
+        // briefing clock alone decides the phase (day 0 is briefing_not_yet_phase's).
         engine_chosen_and_first_night_past(root.path());
         for hour in 0..24 {
             let context = utc_context(

@@ -337,7 +337,7 @@ async fn host_address_rejects_malformed_input_and_substitutes_port_copy() {
     // addresses (loopback, link-local) are refused. There is no
     // private/public range restriction: a direct pair link's trust anchor
     // is the embedded CA-fingerprint pin, not the address's network
-    // locality (removed 2026-09-18, founder + CSO ruling, `req_xhwmvxvn`).
+    // locality (removed 2026-09-18 by operator approval).
     for refused_ip in ["127.0.0.1", "169.254.1.1"] {
         let (status, rej) = post(
             &root,

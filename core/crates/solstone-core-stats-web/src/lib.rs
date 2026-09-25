@@ -216,7 +216,7 @@ async fn stats_data(root: PathBuf, clock: Clock) -> axum::response::Response {
             .get("generated_at")
             .and_then(Value::as_str);
         let bl_obj = response["stats"].get("backlog").and_then(Value::as_object);
-        // One rule with home and /app/health (req_nqxybwmk). This clock is already local.
+        // One day-0 rule with home and /app/health. This clock is already local.
         let not_yet = solstone_core_system_health::summary_not_yet(&root, clock.now());
         let eval = match not_yet {
             Some(not_yet) => solstone_core_system_health::not_yet_evaluation(not_yet),

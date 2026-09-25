@@ -1097,7 +1097,7 @@ mod tests {
     }
 
     /// Day 0: the missing summary is a note on every verdict, never an issue,
-    /// and never lets a delivering device turn home green (req_nqxybwmk).
+    /// and never lets a delivering device turn home green.
     #[test]
     fn first_night_is_a_calm_note_never_a_count_and_never_green() {
         use solstone_core_system_health::{NOT_YET_ENGINE, NOT_YET_FIRST_NIGHT, NotYet};

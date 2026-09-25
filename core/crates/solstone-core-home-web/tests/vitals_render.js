@@ -98,7 +98,7 @@ assert(red.includes('pulse-vitals-verdict red'), red);
 assert(red.includes('pulse-vitals-chip red'), red);
 
 // Not yet, and that's fine: the note rides any verdict as a calm row, never a
-// chip and never in the count (req_nqxybwmk).
+// chip and never in the count (the day-0 rule).
 const noted = renderVitalsHtml({
   health_glance: {
     verdict: 'attention',

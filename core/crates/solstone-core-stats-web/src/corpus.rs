@@ -155,7 +155,7 @@ async fn assert_case(router: axum::Router, case: &Value, phase: &str, root: &tem
         }
     }
 
-    // req_nqxybwmk: the captured corpus predates the not-yet split. No corpus
+    // Day 0: the captured corpus predates the not-yet split. No corpus
     // phase chooses a way to think, so with no summary file the stats page reads
     // the awaiting-engine verdict.
     if expected["status"] == 200

@@ -91,7 +91,7 @@ async fn state(root: PathBuf, clock: Clock) -> Response {
         let now = clock.now();
         let (generated_at, backlog) = backlog::load(&root);
         // One rule with home and stats: before the nightly run's first chance,
-        // a summary that doesn't exist yet is calm, not unclear (req_nqxybwmk).
+        // a summary that doesn't exist yet is calm, not unclear.
         let not_yet = solstone_core_system_health::summary_not_yet(
             &root,
             now.with_timezone(&chrono::Local).naive_local(),

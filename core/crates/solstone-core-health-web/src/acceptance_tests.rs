@@ -340,7 +340,7 @@ mod tests {
             })
     }
 
-    /// Day 0 on /app/health says what home says, from the same rule (req_nqxybwmk).
+    /// Day 0 on /app/health says what home says, from the same day-0 rule.
     #[test]
     fn a_summary_that_has_not_come_up_yet_is_calm_on_health() {
         let temp = TempDir::new().unwrap();
@@ -704,7 +704,7 @@ mod tests {
 
             // Delete stats.json -> unclear whether the journal is caught up,
             // once a way to think is chosen and the first night has passed
-            // (before that it is not yet due: req_nqxybwmk).
+            // (before that it is not yet due: the day-0 rule).
             fs::remove_file(&stats_path).unwrap();
             fs::create_dir_all(root.join("config")).unwrap();
             fs::write(

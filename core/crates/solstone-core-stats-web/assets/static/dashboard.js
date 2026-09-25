@@ -1029,7 +1029,7 @@ const Dashboard = (function() {
     if (missingFields.length > 0) {
       clearDashboardSections();
       // Before the nightly run's first chance there is nothing to wait a moment
-      // for: the verdict above already says when stats arrive (req_nqxybwmk).
+      // for: the verdict above already says when stats arrive.
       if ((stats.journal_status || {}).not_yet) return;
       document.getElementById('notice').appendChild(
         el('div', {className: 'alert alert-warning'}, [

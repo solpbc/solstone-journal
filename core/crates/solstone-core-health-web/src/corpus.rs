@@ -135,7 +135,7 @@ fn ac3_replays_all_captured_health_cases_through_the_shell() {
                                 replace_text(&mut wanted, legacy, current);
                             }
                         }
-                        // req_nqxybwmk: the captured corpus predates the not-yet split.
+                        // Day 0: the captured corpus predates the not-yet split.
                         // No corpus phase chooses a way to think, so a phase with no
                         // summary file reads the awaiting-engine verdict (search makes
                         // no claim); a phase with one carries `not_yet: null`.
@@ -423,7 +423,7 @@ async fn ac6_absent_and_unparseable_stats_share_the_unknown_backlog() {
             .clone()
     }
     let absent = backlog("stats_absent").await;
-    // req_nqxybwmk: with no way to think chosen the nightly run is off, so an
+    // Day 0: with no way to think chosen the nightly run is off, so an
     // absent summary is not yet due; an unreadable one stays unclear.
     assert_eq!(absent["not_yet"], "awaiting_engine");
     let unparseable = backlog("stats_unparseable").await;

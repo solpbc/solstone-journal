@@ -1224,7 +1224,7 @@ fn spawn_inprocess_import(
                     Duration::from_secs(90),
                 );
                 // 🔴 The web import lifecycle has NO Windows PDF worker, and this arm has
-                // never compiled. It arrived in 9937954cd, the stopped lode's round-3
+                // never compiled. It arrived in 9937954cd, a stopped build's round-3
                 // snapshot whose own commit message says "base for direct fixes, not for
                 // main", and it named
                 // `solstone_core_import_sources::document::WindowsPdfWorker`, which does

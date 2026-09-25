@@ -69,7 +69,7 @@ assert.strictEqual(/\bI\b|I'm|\bmy\b/.test(late), false, late);
 
 // A briefing that was never prepared says so instead of disappearing. X-04.
 // Before the nightly run's first chance, the card says when, never "late" or
-// "wasn't prepared" (req_nqxybwmk).
+// "wasn't prepared" (the day-0 rule).
 for (const [phase, text] of [
   ['awaiting_engine', 'morning briefings start once processing is set up.'],
   ['first_night', 'your first briefing is due by 10 am, after your journal&#39;s first night.'],
