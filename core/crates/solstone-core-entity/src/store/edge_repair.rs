@@ -460,6 +460,18 @@ pub fn spawn_entity_edge_repair(journal: &Path) {
     }
     #[cfg(not(test))]
     {
+        // cfg(test) is set only while compiling this crate's own tests. Other
+        // crates' test binaries link the library without it, and Cargo places
+        // those binaries in `deps/`. Starting the driver there holds the index
+        // writer across the caller's rescan. Service binaries are not in `deps/`,
+        // including the supervisor a tick test launches.
+        if std::env::current_exe().ok().is_some_and(|path| {
+            path.parent()
+                .and_then(|parent| parent.file_name())
+                .is_some_and(|name| name == "deps")
+        }) {
+            return;
+        }
         if DRIVER_ACTIVE
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
