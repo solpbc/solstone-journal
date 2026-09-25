@@ -191,7 +191,9 @@ fn delete_entry(id: &str) -> Result<(), String> {
 pub(super) fn arm(owner_base: &Path, id: &str, task_path: &str) -> Result<(), String> {
     let script_path = script_path(owner_base, id)?;
     let windows = std::env::var_os("SystemRoot").ok_or("SystemRoot is unavailable")?;
-    let wscript = Path::new(&windows).join("System32/wscript.exe");
+    // Explorer's HKCU Run launcher does not resolve a forward slash in the
+    // executable path, even though direct process launches do on Windows.
+    let wscript = Path::new(&windows).join("System32").join("wscript.exe");
     let command = format!(
         "\"{}\" //B //Nologo \"{}\"",
         wscript.display(),
