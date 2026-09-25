@@ -7,20 +7,22 @@ use std::fmt;
 use std::path::Path;
 #[cfg(any(test, feature = "test-hooks"))]
 use std::sync::Mutex;
-#[cfg(not(test))]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{
-    AtomicWriteOptions, DetailedAtomicOutcome, PathError, ReadError, atomic_replace_detailed,
-    ensure_directory, list_dir_entries, path_lexists, read_bytes, read_text, remove_file,
-    resolve_journal_path, write_bytes_exclusive,
+    AtomicWriteOptions, DetailedAtomicOutcome, LockOptions, PathError, ReadError,
+    atomic_replace_detailed, ensure_directory, hold_lock, list_dir_entries, path_lexists,
+    read_bytes, read_text, remove_file, resolve_journal_path, write_bytes_exclusive,
 };
 
 const GENERATION_PATH: &str = "health/entity-edge-repair/generation";
 const JOBS_DIR: &str = "health/entity-edge-repair/jobs";
 const COMPLETIONS_DIR: &str = "health/entity-edge-repair/completions";
+const PROGRESS_DIR: &str = "health/entity-edge-repair/progress";
+const FAILURES_DIR: &str = "health/entity-edge-repair/failures";
+const PUBLISH_LOCK: &str = "health/entity-edge-repair/publish.lock";
 
 #[derive(Debug)]
 pub enum EntityEdgeRepairError {
@@ -94,7 +96,7 @@ pub struct EntityEdgeRepairCompletion {
     pub generation: u64,
     pub published: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rows_folded: Option<usize>,
+    pub affected_rows: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rebuilt: Option<bool>,
     pub completed_at: u64,
@@ -118,6 +120,13 @@ pub(crate) fn read_generation(journal: &Path) -> Result<u64, EntityEdgeRepairErr
 }
 
 pub(crate) fn bump_generation(journal: &Path) -> Result<u64, EntityEdgeRepairError> {
+    let lock_path = resolve_journal_path(journal, PUBLISH_LOCK)?;
+    if let Some(parent) = lock_path.parent() {
+        ensure_directory(parent).map_err(|e| EntityEdgeRepairError::Message(e.to_string()))?;
+    }
+    let _lock = hold_lock(&lock_path, LockOptions::default())
+        .map_err(|e| EntityEdgeRepairError::Message(e.to_string()))?;
+
     let current = read_generation(journal)?;
     let next = current + 1;
     let path = resolve_journal_path(journal, GENERATION_PATH)?;
@@ -222,44 +231,53 @@ pub fn attach_edge_repair_completion(journal: &Path, event: &mut serde_json::Val
         .get("kind")
         .and_then(serde_json::Value::as_str)
         .unwrap_or("");
-    let completion = if kind == "merge" {
-        let merge_id = object
+    let (op, merge_id) = if kind == "merge" {
+        let mid = object
             .get("operation")
             .and_then(serde_json::Value::as_object)
             .and_then(|op| op.get("merge_id"))
             .and_then(serde_json::Value::as_str)
             .or_else(|| object.get("merge_id").and_then(serde_json::Value::as_str));
-        if let Some(mid) = merge_id {
-            read_entity_edge_repair_completion(journal, "merge", mid)
-                .ok()
-                .flatten()
-        } else {
-            None
-        }
+        ("merge", mid)
     } else if kind == "merge_undo" {
-        let undo_of = object
+        let mid = object
             .get("operation")
             .and_then(serde_json::Value::as_object)
             .and_then(|op| op.get("undo_of"))
             .and_then(serde_json::Value::as_str);
-        if let Some(mid) = undo_of {
-            read_entity_edge_repair_completion(journal, "undo", mid)
-                .ok()
-                .flatten()
-        } else {
-            None
-        }
+        ("undo", mid)
     } else {
-        None
+        ("", None)
     };
 
-    if let Some(completion) = completion
-        && completion.published
-    {
-        if let Some(rows) = completion.rows_folded {
-            object.insert("rows_folded".to_owned(), serde_json::json!(rows));
+    let Some(mid) = merge_id else {
+        return;
+    };
+
+    if let Ok(Some(completion)) = read_entity_edge_repair_completion(journal, op, mid) {
+        if let Some(rebuilt) = completion.rebuilt {
+            object.insert("rebuilt".to_owned(), serde_json::json!(rebuilt));
         }
-        object.insert("rebuilt".to_owned(), serde_json::json!(true));
+        if let Some(rows) = completion.affected_rows {
+            object.insert("affected_rows".to_owned(), serde_json::json!(rows));
+        }
+        object.remove("edge_repair_state");
+        return;
+    }
+
+    let filename = format!("{op}-{mid}.json");
+    let job_path = resolve_journal_path(journal, &format!("{JOBS_DIR}/{filename}")).ok();
+    if job_path.is_some_and(|p| path_lexists(&p).unwrap_or(false)) {
+        let fail_path = resolve_journal_path(journal, &format!("{FAILURES_DIR}/{filename}")).ok();
+        let prog_path = resolve_journal_path(journal, &format!("{PROGRESS_DIR}/{filename}")).ok();
+        let state = if fail_path.is_some_and(|p| path_lexists(&p).unwrap_or(false)) {
+            "failed"
+        } else if prog_path.is_some_and(|p| path_lexists(&p).unwrap_or(false)) {
+            "interrupted"
+        } else {
+            "pending"
+        };
+        object.insert("edge_repair_state".to_owned(), serde_json::json!(state));
     }
 }
 
@@ -267,6 +285,10 @@ pub fn attach_edge_repair_completion(journal: &Path, event: &mut serde_json::Val
 static PAUSED_JOBS: Mutex<Option<BTreeSet<String>>> = Mutex::new(None);
 #[cfg(any(test, feature = "test-hooks"))]
 static EVIDENCE_CUT_ARMED: Mutex<BTreeSet<std::path::PathBuf>> = Mutex::new(BTreeSet::new());
+#[cfg(any(test, feature = "test-hooks"))]
+static BETWEEN_PUBLISH_CUT_ARMED: Mutex<Option<(std::path::PathBuf, usize)>> = Mutex::new(None);
+#[cfg(any(test, feature = "test-hooks"))]
+static INJECT_SPAWN_FAILURE: AtomicBool = AtomicBool::new(false);
 
 #[cfg(any(test, feature = "test-hooks"))]
 pub fn pause_entity_edge_repair(operation: &str, merge_id: &str) {
@@ -306,6 +328,44 @@ pub fn disarm_entity_edge_repair_evidence_cut(journal: &Path) {
 }
 
 #[cfg(any(test, feature = "test-hooks"))]
+pub fn arm_entity_edge_repair_between_publish_cut(journal: &Path, after_candidate_idx: usize) {
+    let key = journal
+        .canonicalize()
+        .unwrap_or_else(|_| journal.to_path_buf());
+    *BETWEEN_PUBLISH_CUT_ARMED.lock().unwrap() = Some((key, after_candidate_idx));
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn disarm_entity_edge_repair_between_publish_cut() {
+    *BETWEEN_PUBLISH_CUT_ARMED.lock().unwrap() = None;
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+static INJECT_APPLY_FAILURE: AtomicBool = AtomicBool::new(false);
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn inject_spawn_failure_once() {
+    INJECT_SPAWN_FAILURE.store(true, Ordering::SeqCst);
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn inject_apply_failure_once() {
+    INJECT_APPLY_FAILURE.store(true, Ordering::SeqCst);
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
+pub fn is_edge_repair_driver_active() -> bool {
+    #[cfg(test)]
+    {
+        false
+    }
+    #[cfg(not(test))]
+    {
+        DRIVER_ACTIVE.load(Ordering::SeqCst)
+    }
+}
+
+#[cfg(any(test, feature = "test-hooks"))]
 fn is_job_paused(operation: &str, merge_id: &str) -> bool {
     let key = format!("{operation}-{merge_id}");
     let guard = PAUSED_JOBS.lock().unwrap();
@@ -330,6 +390,31 @@ fn check_evidence_cut(_journal: &Path) -> bool {
     false
 }
 
+#[cfg(any(test, feature = "test-hooks"))]
+fn check_between_publish_cut(journal: &Path, candidate_idx: usize) -> bool {
+    let key = journal
+        .canonicalize()
+        .unwrap_or_else(|_| journal.to_path_buf());
+    let mut guard = BETWEEN_PUBLISH_CUT_ARMED.lock().unwrap();
+    if let Some((ref armed_journal, target_idx)) = *guard {
+        if armed_journal == &key && candidate_idx == target_idx {
+            *guard = None;
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(not(any(test, feature = "test-hooks")))]
+fn check_between_publish_cut(_journal: &Path, _candidate_idx: usize) -> bool {
+    false
+}
+
+/// Drive entity edge repair jobs.
+///
+/// Extract and diff run outside the index write lock; each publish is one immediate
+/// transaction for one changed path; generation is re-checked under publish.lock;
+/// unaffected paths are not rewritten.
 pub fn drive_entity_edge_repair(journal: &Path) -> Result<usize, EntityEdgeRepairError> {
     let jobs_dir = resolve_journal_path(journal, JOBS_DIR)?;
     if !path_lexists(&jobs_dir).unwrap_or(false) {
@@ -356,14 +441,23 @@ pub fn drive_entity_edge_repair(journal: &Path) -> Result<usize, EntityEdgeRepai
 
     let mut completed_count = 0;
     for (name, _path, job) in jobs {
-        if is_job_paused(&job.operation, &job.merge_id) {
-            continue;
-        }
-
         let existing_completion =
             read_entity_edge_repair_completion(journal, &job.operation, &job.merge_id)?;
         if existing_completion.is_some() {
             let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{PROGRESS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{FAILURES_DIR}/{name}"));
+            continue;
+        }
+
+        if is_job_paused(&job.operation, &job.merge_id) {
+            let prog_path = resolve_journal_path(journal, &format!("{PROGRESS_DIR}/{name}"))?;
+            if let Some(parent) = prog_path.parent() {
+                let _ = ensure_directory(parent);
+            }
+            let _ = atomic_replace_detailed(&prog_path, b"{}", 0o600);
+            let _ = solstone_core_indexer_store::plan_edge_repair(journal)
+                .map_err(EntityEdgeRepairError::Store)?;
             continue;
         }
 
@@ -374,75 +468,211 @@ pub fn drive_entity_edge_repair(journal: &Path) -> Result<usize, EntityEdgeRepai
                 merge_id: job.merge_id.clone(),
                 generation: job.generation,
                 published: false,
-                rows_folded: None,
+                affected_rows: None,
                 rebuilt: None,
                 completed_at: now_ms(),
             };
             write_completion_exclusive(journal, &completion)?;
             let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{PROGRESS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{FAILURES_DIR}/{name}"));
             completed_count += 1;
             continue;
         }
 
-        let target_generation = job.generation;
-        let guarded_result =
-            solstone_core_indexer_store::scan::rebuild_edges_guarded(journal, || {
-                let gen_now = read_generation(journal).map_err(|e| {
-                    solstone_core_indexer_store::StoreError::Io(std::io::Error::other(
-                        e.to_string(),
-                    ))
-                })?;
-                if gen_now == target_generation {
-                    let _ = remove_file(journal, "awareness/discovery_clusters.json");
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            });
+        // Write progress marker before plan_edge_repair
+        let prog_path = resolve_journal_path(journal, &format!("{PROGRESS_DIR}/{name}"))?;
+        if let Some(parent) = prog_path.parent() {
+            let _ = ensure_directory(parent);
+        }
+        let _ = atomic_replace_detailed(&prog_path, b"{}", 0o600);
 
-        match guarded_result {
-            Ok(Some(report)) => {
-                if report.failed > 0 {
-                    return Err(EntityEdgeRepairError::Message(format!(
-                        "edge rebuild failed: {:?}",
-                        report.warnings
-                    )));
+        let plan = solstone_core_indexer_store::plan_edge_repair(journal)
+            .map_err(EntityEdgeRepairError::Store)?;
+
+        if is_job_paused(&job.operation, &job.merge_id) {
+            continue;
+        }
+
+        let current_gen = read_generation(journal)?;
+        if job.generation < current_gen {
+            let completion = EntityEdgeRepairCompletion {
+                operation: job.operation.clone(),
+                merge_id: job.merge_id.clone(),
+                generation: job.generation,
+                published: false,
+                affected_rows: None,
+                rebuilt: None,
+                completed_at: now_ms(),
+            };
+            write_completion_exclusive(journal, &completion)?;
+            let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{PROGRESS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{FAILURES_DIR}/{name}"));
+            completed_count += 1;
+            continue;
+        }
+
+        let lock_path = resolve_journal_path(journal, PUBLISH_LOCK)?;
+        if let Some(parent) = lock_path.parent() {
+            ensure_directory(parent).map_err(|e| EntityEdgeRepairError::Message(e.to_string()))?;
+        }
+
+        let mut published_any = false;
+        let mut total_affected = 0;
+        let mut superseded = false;
+        let target_generation = job.generation;
+
+        for (idx, candidate) in plan.iter().enumerate() {
+            let lock_guard = hold_lock(&lock_path, LockOptions::default())
+                .map_err(|e| EntityEdgeRepairError::Message(e.to_string()))?;
+
+            #[cfg(any(test, feature = "test-hooks"))]
+            let injected_err = INJECT_APPLY_FAILURE.swap(false, Ordering::SeqCst);
+            #[cfg(not(any(test, feature = "test-hooks")))]
+            let injected_err = false;
+
+            let outcome = if injected_err {
+                Err(solstone_core_indexer_store::StoreError::Io(
+                    std::io::Error::other("injected store apply failure"),
+                ))
+            } else {
+                solstone_core_indexer_store::apply_edge_repair_candidate(journal, candidate, || {
+                    let gen_now = read_generation(journal).map_err(|e| {
+                        solstone_core_indexer_store::StoreError::Io(std::io::Error::other(
+                            e.to_string(),
+                        ))
+                    })?;
+                    Ok(gen_now == target_generation)
+                })
+            };
+
+            drop(lock_guard);
+
+            match outcome {
+                Ok(solstone_core_indexer_store::CandidatePublishOutcome::Republished {
+                    inserted,
+                }) => {
+                    published_any = true;
+                    total_affected += inserted;
+                    if check_between_publish_cut(journal, idx) {
+                        return Err(EntityEdgeRepairError::Message(
+                            "between-publish cut triggered".to_string(),
+                        ));
+                    }
                 }
-                if check_evidence_cut(journal) {
-                    return Err(EntityEdgeRepairError::Message(
-                        "evidence cut triggered".to_string(),
-                    ));
+                Ok(solstone_core_indexer_store::CandidatePublishOutcome::Deleted { deleted }) => {
+                    published_any = true;
+                    total_affected += deleted;
+                    if check_between_publish_cut(journal, idx) {
+                        return Err(EntityEdgeRepairError::Message(
+                            "between-publish cut triggered".to_string(),
+                        ));
+                    }
                 }
-                let completion = EntityEdgeRepairCompletion {
-                    operation: job.operation.clone(),
-                    merge_id: job.merge_id.clone(),
-                    generation: job.generation,
-                    published: true,
-                    rows_folded: Some(report.rows),
-                    rebuilt: Some(true),
-                    completed_at: now_ms(),
-                };
-                write_completion_exclusive(journal, &completion)?;
-                let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
-                completed_count += 1;
+                Ok(solstone_core_indexer_store::CandidatePublishOutcome::Unchanged) => {}
+                Ok(solstone_core_indexer_store::CandidatePublishOutcome::Superseded) => {
+                    superseded = true;
+                    break;
+                }
+                Err(err) => {
+                    let fail_path =
+                        resolve_journal_path(journal, &format!("{FAILURES_DIR}/{name}"))?;
+                    if let Some(parent) = fail_path.parent() {
+                        let _ = ensure_directory(parent);
+                    }
+                    let err_str = err.to_string();
+                    let _ = atomic_replace_detailed(&fail_path, err_str.as_bytes(), 0o600);
+                    return Err(EntityEdgeRepairError::Store(err));
+                }
             }
-            Ok(None) => {
-                // Superseded during guarded rebuild
+        }
+
+        if superseded {
+            if published_any {
                 let completion = EntityEdgeRepairCompletion {
                     operation: job.operation.clone(),
                     merge_id: job.merge_id.clone(),
                     generation: job.generation,
                     published: false,
-                    rows_folded: None,
+                    affected_rows: None,
+                    rebuilt: Some(false),
+                    completed_at: now_ms(),
+                };
+                write_completion_exclusive(journal, &completion)?;
+            } else {
+                let completion = EntityEdgeRepairCompletion {
+                    operation: job.operation.clone(),
+                    merge_id: job.merge_id.clone(),
+                    generation: job.generation,
+                    published: false,
+                    affected_rows: None,
                     rebuilt: None,
                     completed_at: now_ms(),
                 };
                 write_completion_exclusive(journal, &completion)?;
-                let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
-                completed_count += 1;
             }
-            Err(e) => {
-                return Err(EntityEdgeRepairError::Store(e));
+            let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{PROGRESS_DIR}/{name}"));
+            let _ = remove_file(journal, &format!("{FAILURES_DIR}/{name}"));
+            completed_count += 1;
+        } else {
+            let lock_guard = hold_lock(&lock_path, LockOptions::default())
+                .map_err(|e| EntityEdgeRepairError::Message(e.to_string()))?;
+            let gen_now = read_generation(journal)?;
+            if gen_now != target_generation {
+                drop(lock_guard);
+                if published_any {
+                    let completion = EntityEdgeRepairCompletion {
+                        operation: job.operation.clone(),
+                        merge_id: job.merge_id.clone(),
+                        generation: job.generation,
+                        published: false,
+                        affected_rows: None,
+                        rebuilt: Some(false),
+                        completed_at: now_ms(),
+                    };
+                    write_completion_exclusive(journal, &completion)?;
+                } else {
+                    let completion = EntityEdgeRepairCompletion {
+                        operation: job.operation.clone(),
+                        merge_id: job.merge_id.clone(),
+                        generation: job.generation,
+                        published: false,
+                        affected_rows: None,
+                        rebuilt: None,
+                        completed_at: now_ms(),
+                    };
+                    write_completion_exclusive(journal, &completion)?;
+                }
+                let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
+                let _ = remove_file(journal, &format!("{PROGRESS_DIR}/{name}"));
+                let _ = remove_file(journal, &format!("{FAILURES_DIR}/{name}"));
+                completed_count += 1;
+            } else {
+                let _ = remove_file(journal, "awareness/discovery_clusters.json");
+                drop(lock_guard);
+
+                if check_evidence_cut(journal) {
+                    return Err(EntityEdgeRepairError::Message(
+                        "evidence cut triggered".to_string(),
+                    ));
+                }
+
+                let completion = EntityEdgeRepairCompletion {
+                    operation: job.operation.clone(),
+                    merge_id: job.merge_id.clone(),
+                    generation: job.generation,
+                    published: true,
+                    affected_rows: Some(total_affected),
+                    rebuilt: Some(false),
+                    completed_at: now_ms(),
+                };
+                write_completion_exclusive(journal, &completion)?;
+                let _ = remove_file(journal, &format!("{JOBS_DIR}/{name}"));
+                let _ = remove_file(journal, &format!("{PROGRESS_DIR}/{name}"));
+                let _ = remove_file(journal, &format!("{FAILURES_DIR}/{name}"));
+                completed_count += 1;
             }
         }
     }
@@ -460,18 +690,11 @@ pub fn spawn_entity_edge_repair(journal: &Path) {
     }
     #[cfg(not(test))]
     {
-        // cfg(test) is set only while compiling this crate's own tests. Other
-        // crates' test binaries link the library without it, and Cargo places
-        // those binaries in `deps/`. Starting the driver there holds the index
-        // writer across the caller's rescan. Service binaries are not in `deps/`,
-        // including the supervisor a tick test launches.
-        if std::env::current_exe().ok().is_some_and(|path| {
-            path.parent()
-                .and_then(|parent| parent.file_name())
-                .is_some_and(|name| name == "deps")
-        }) {
+        #[cfg(feature = "test-hooks")]
+        if INJECT_SPAWN_FAILURE.swap(false, Ordering::SeqCst) {
             return;
         }
+
         if DRIVER_ACTIVE
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
@@ -479,7 +702,7 @@ pub fn spawn_entity_edge_repair(journal: &Path) {
             return;
         }
         let journal_path = journal.to_path_buf();
-        let _ = std::thread::Builder::new()
+        let spawn_res = std::thread::Builder::new()
             .name("entity-edge-repair".to_string())
             .spawn(move || {
                 struct DriverGuard;
@@ -496,5 +719,8 @@ pub fn spawn_entity_edge_repair(journal: &Path) {
                     }
                 }
             });
+        if spawn_res.is_err() {
+            DRIVER_ACTIVE.store(false, Ordering::SeqCst);
+        }
     }
 }

@@ -2399,8 +2399,8 @@ fn deferred_edge_repair_advances_generation_and_drains_jobs() {
         .unwrap()
         .expect("completion exists");
     assert!(completion.published);
-    assert_eq!(completion.rebuilt, Some(true));
-    assert!(completion.rows_folded.is_some());
+    assert_eq!(completion.rebuilt, Some(false));
+    assert!(completion.affected_rows.is_some());
 
     let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
     let target_edges: i64 = connection
@@ -2436,15 +2436,15 @@ fn deferred_edge_repair_superseded_older_generation_job_writes_unrebuilt_complet
     let completion = crate::read_entity_edge_repair_completion(&journal, "merge", "m1")
         .unwrap()
         .expect("completion exists");
-    assert_eq!(completion.published, false);
+    assert!(!completion.published);
     assert_eq!(completion.rebuilt, None);
-    assert_eq!(completion.rows_folded, None);
+    assert_eq!(completion.affected_rows, None);
     assert_eq!(completion.generation, 1);
 
     let raw_json =
         fs::read_to_string(journal.join("health/entity-edge-repair/completions/merge-m1.json"))
             .unwrap();
-    assert!(!raw_json.contains("rows_folded"));
+    assert!(!raw_json.contains("affected_rows"));
     assert!(!raw_json.contains("rebuilt"));
 
     fs::remove_dir_all(journal).unwrap();
@@ -2501,6 +2501,18 @@ fn deferred_edge_repair_pause_and_fence_with_interleaving_undo_and_scan() {
     .unwrap();
     crate::store::edge_repair::pause_entity_edge_repair("merge", &merge2.merge_id);
 
+    let paused_drive = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(paused_drive, 0, "paused job returns without publishing");
+    assert!(
+        journal
+            .join(format!(
+                "health/entity-edge-repair/progress/merge-{}.json",
+                merge2.merge_id
+            ))
+            .exists(),
+        "progress file exists for paused job"
+    );
+
     let undo1 = crate::undo_entity_merge(&journal, &merge1.merge_id, json!("test")).unwrap();
     let scan_report = solstone_core_indexer_store::scan::scan_journal(&journal, false).unwrap();
     assert_eq!(scan_report.failed, 0);
@@ -2511,7 +2523,7 @@ fn deferred_edge_repair_pause_and_fence_with_interleaving_undo_and_scan() {
         .unwrap()
         .unwrap();
     assert!(comp_undo.published);
-    assert_eq!(comp_undo.rebuilt, Some(true));
+    assert_eq!(comp_undo.rebuilt, Some(false));
 
     assert!(
         journal
@@ -2538,16 +2550,16 @@ fn deferred_edge_repair_pause_and_fence_with_interleaving_undo_and_scan() {
         crate::read_entity_edge_repair_completion(&journal, "merge", &merge2.merge_id)
             .unwrap()
             .unwrap();
-    assert_eq!(comp_merge2.published, false);
+    assert!(!comp_merge2.published);
     assert_eq!(comp_merge2.rebuilt, None);
-    assert_eq!(comp_merge2.rows_folded, None);
+    assert_eq!(comp_merge2.affected_rows, None);
 
     let raw_merge2 = fs::read_to_string(journal.join(format!(
         "health/entity-edge-repair/completions/merge-{}.json",
         merge2.merge_id
     )))
     .unwrap();
-    assert!(!raw_merge2.contains("rows_folded"));
+    assert!(!raw_merge2.contains("affected_rows"));
     assert!(!raw_merge2.contains("rebuilt"));
 
     let fp_actual = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
@@ -2636,8 +2648,8 @@ fn deferred_edge_repair_evidence_cut() {
         .unwrap()
         .unwrap();
     assert!(completion.published);
-    assert_eq!(completion.rebuilt, Some(true));
-    assert!(completion.rows_folded.is_some());
+    assert_eq!(completion.rebuilt, Some(false));
+    assert!(completion.affected_rows.is_some());
 
     assert_eq!(fs::read(&event_files[0]).unwrap(), event_bytes);
     assert_eq!(fs::read(&merges_log_path).unwrap(), merges_log_bytes);
@@ -2698,6 +2710,19 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_merge() {
     )
     .unwrap();
 
+    let shared_facet = journal.join("facets/work/entities/shared_holder");
+    fs::create_dir_all(&shared_facet).unwrap();
+    fs::write(
+        shared_facet.join("entity.json"),
+        br#"{"entity_id":"shared_holder"}"#,
+    )
+    .unwrap();
+    fs::write(
+        shared_facet.join("observations.jsonl"),
+        json!({"id":50,"content":"shared works with source","ts":150,"relation":{"kind":"works-with","target_entity_id":"source"},"created_at":150,"updated_at":150,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+
     let act_path = journal.join("facets/work/activities/20260102.jsonl");
     fs::create_dir_all(act_path.parent().unwrap()).unwrap();
     fs::write(
@@ -2710,6 +2735,13 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_merge() {
     )
     .unwrap();
 
+    let copresence_path = journal.join("facets/work/entities/copresence_team.jsonl");
+    fs::write(
+        &copresence_path,
+        json!({"id":"cp1","names":["Source","Unrelated"],"ts":600}).to_string() + "\n",
+    )
+    .unwrap();
+
     let labels_path = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
     fs::create_dir_all(labels_path.parent().unwrap()).unwrap();
     fs::write(
@@ -2719,6 +2751,14 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_merge() {
     .unwrap();
 
     solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let unindexed_act = journal.join("facets/work/activities/20260105.jsonl");
+    fs::write(
+        &unindexed_act,
+        json!({"id":"act_unindexed","active_entities":["source","other"],"ts":500}).to_string()
+            + "\n",
+    )
+    .unwrap();
 
     let merge =
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
@@ -2763,6 +2803,488 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_merge() {
         fp_after_undo, fp_fresh_post_undo,
         "edges after undo drive must match fresh rebuild of restored sources"
     );
+
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_interruption_between_candidates_retries_safely() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let src_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&src_facet).unwrap();
+    fs::write(src_facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        src_facet.join("observations.jsonl"),
+        json!({"id":1,"content":"worked with other","ts":100,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":100,"updated_at":100,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+
+    let act_path = journal.join("facets/work/activities/20260102.jsonl");
+    fs::create_dir_all(act_path.parent().unwrap()).unwrap();
+    fs::write(
+        &act_path,
+        json!({"id":"act1","active_entities":["source","other"],"ts":100}).to_string() + "\n",
+    )
+    .unwrap();
+
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let report =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+
+    crate::store::edge_repair::arm_entity_edge_repair_between_publish_cut(&journal, 0);
+    let cut_res = crate::drive_entity_edge_repair(&journal);
+    assert!(cut_res.is_err());
+
+    let merges_log_path = journal.join("logs/entity-merges.jsonl");
+    let merges_log_bytes = fs::read(&merges_log_path).unwrap();
+
+    assert!(
+        !journal
+            .join(format!(
+                "health/entity-edge-repair/completions/merge-{}.json",
+                report.merge_id
+            ))
+            .exists()
+    );
+    assert!(
+        journal
+            .join(format!(
+                "health/entity-edge-repair/jobs/merge-{}.json",
+                report.merge_id
+            ))
+            .exists()
+    );
+    assert!(
+        journal
+            .join(format!(
+                "health/entity-edge-repair/progress/merge-{}.json",
+                report.merge_id
+            ))
+            .exists()
+    );
+
+    let drained = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained, 1);
+    assert_eq!(fs::read(&merges_log_path).unwrap(), merges_log_bytes);
+
+    let comp = crate::read_entity_edge_repair_completion(&journal, "merge", &report.merge_id)
+        .unwrap()
+        .unwrap();
+    assert!(comp.published);
+    assert_eq!(comp.rebuilt, Some(false));
+
+    let fp_after = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let fp_fresh = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    assert_eq!(fp_after, fp_fresh);
+
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_publish_failure_writes_failure_file_and_recovers() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let src_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&src_facet).unwrap();
+    fs::write(src_facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        src_facet.join("observations.jsonl"),
+        json!({"id":1,"content":"worked with other","ts":100,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":100,"updated_at":100,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let cache_dir = journal.join("awareness");
+    fs::create_dir_all(&cache_dir).unwrap();
+    fs::write(
+        cache_dir.join("discovery_clusters.json"),
+        b"{\"cached\":true}",
+    )
+    .unwrap();
+
+    let report =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+
+    crate::store::edge_repair::inject_apply_failure_once();
+    let res = crate::drive_entity_edge_repair(&journal);
+    assert!(res.is_err());
+
+    assert!(
+        journal
+            .join(format!(
+                "health/entity-edge-repair/failures/merge-{}.json",
+                report.merge_id
+            ))
+            .exists()
+    );
+    assert!(
+        crate::read_entity_edge_repair_completion(&journal, "merge", &report.merge_id)
+            .unwrap()
+            .is_none()
+    );
+    assert!(cache_dir.join("discovery_clusters.json").exists());
+
+    let drained = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained, 1);
+
+    assert!(
+        !journal
+            .join(format!(
+                "health/entity-edge-repair/failures/merge-{}.json",
+                report.merge_id
+            ))
+            .exists()
+    );
+    assert!(!cache_dir.join("discovery_clusters.json").exists());
+    let comp = crate::read_entity_edge_repair_completion(&journal, "merge", &report.merge_id)
+        .unwrap()
+        .unwrap();
+    assert!(comp.published);
+    assert_eq!(comp.rebuilt, Some(false));
+
+    let fp_after = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let fp_fresh = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    assert_eq!(fp_after, fp_fresh);
+
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_cache_delete_on_success_and_preserved_on_superseded() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let src_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&src_facet).unwrap();
+    fs::write(src_facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        src_facet.join("observations.jsonl"),
+        json!({"id":1,"content":"observation","ts":100}).to_string() + "\n",
+    )
+    .unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let cache_dir = journal.join("awareness");
+    fs::create_dir_all(&cache_dir).unwrap();
+    fs::write(
+        cache_dir.join("discovery_clusters.json"),
+        b"{\"cached\":true}",
+    )
+    .unwrap();
+
+    let gen1 = crate::store::edge_repair::bump_generation(&journal).unwrap();
+    crate::store::edge_repair::enqueue_edge_repair_job(&journal, "merge", "superseded_merge", gen1)
+        .unwrap();
+    let _gen2 = crate::store::edge_repair::bump_generation(&journal).unwrap();
+
+    let drained = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained, 1);
+    assert!(
+        cache_dir.join("discovery_clusters.json").exists(),
+        "superseded no-publish run leaves discovery cache"
+    );
+
+    let _merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let drained2 = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained2, 1);
+    assert!(
+        !cache_dir.join("discovery_clusters.json").exists(),
+        "successful current-generation publish deletes discovery cache"
+    );
+
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_out_of_order_snapshot_separation() {
+    let journal = voiceprint_journal();
+    for id in ["source1", "target1", "source2", "target2"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+        let facet = journal.join(format!("facets/work/entities/{id}"));
+        fs::create_dir_all(&facet).unwrap();
+        fs::write(
+            facet.join("entity.json"),
+            format!(r#"{{"entity_id":"{id}"}}"#),
+        )
+        .unwrap();
+        fs::write(
+            facet.join("observations.jsonl"),
+            json!({"id":1,"content":"obs","ts":100}).to_string() + "\n",
+        )
+        .unwrap();
+    }
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let merge1 = commit_entity_merge(
+        &journal,
+        "source1",
+        "target1",
+        EntityMergeOptions::default(),
+    )
+    .unwrap();
+    crate::store::edge_repair::pause_entity_edge_repair("merge", &merge1.merge_id);
+
+    let d1 = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(d1, 0);
+    assert!(
+        journal
+            .join(format!(
+                "health/entity-edge-repair/progress/merge-{}.json",
+                merge1.merge_id
+            ))
+            .exists()
+    );
+    assert!(
+        crate::read_entity_edge_repair_completion(&journal, "merge", &merge1.merge_id)
+            .unwrap()
+            .is_none()
+    );
+
+    let merge2 = commit_entity_merge(
+        &journal,
+        "source2",
+        "target2",
+        EntityMergeOptions::default(),
+    )
+    .unwrap();
+    let d2 = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(d2, 1);
+    let comp2 = crate::read_entity_edge_repair_completion(&journal, "merge", &merge2.merge_id)
+        .unwrap()
+        .unwrap();
+    assert!(comp2.published);
+    assert_eq!(comp2.rebuilt, Some(false));
+    assert!(comp2.affected_rows.is_some());
+
+    let comp2_bytes = fs::read(journal.join(format!(
+        "health/entity-edge-repair/completions/merge-{}.json",
+        merge2.merge_id
+    )))
+    .unwrap();
+
+    crate::store::edge_repair::release_entity_edge_repair("merge", &merge1.merge_id);
+    let d3 = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(d3, 1);
+
+    let comp1 = crate::read_entity_edge_repair_completion(&journal, "merge", &merge1.merge_id)
+        .unwrap()
+        .unwrap();
+    assert!(!comp1.published);
+    assert_eq!(comp1.rebuilt, None);
+    assert_eq!(comp1.affected_rows, None);
+
+    assert_eq!(
+        fs::read(journal.join(format!(
+            "health/entity-edge-repair/completions/merge-{}.json",
+            merge2.merge_id
+        )))
+        .unwrap(),
+        comp2_bytes
+    );
+
+    let mut ev1 = json!({"kind":"merge","operation":{"merge_id":merge1.merge_id}});
+    crate::store::edge_repair::attach_edge_repair_completion(&journal, &mut ev1);
+    assert_eq!(ev1.get("published"), None);
+    assert_eq!(ev1.get("rebuilt"), None);
+    assert_eq!(ev1.get("affected_rows"), None);
+
+    let mut ev2 = json!({"kind":"merge","operation":{"merge_id":merge2.merge_id}});
+    crate::store::edge_repair::attach_edge_repair_completion(&journal, &mut ev2);
+    assert_eq!(ev2["rebuilt"], false);
+    assert_eq!(ev2["affected_rows"], comp2.affected_rows.unwrap());
+
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_writer_bound_large_unaffected_population() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let src_facet = journal.join("facets/work/entities/source");
+    fs::create_dir_all(&src_facet).unwrap();
+    fs::write(src_facet.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    fs::write(
+        src_facet.join("observations.jsonl"),
+        json!({"id":1,"content":"worked with other","ts":100,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":100,"updated_at":100,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+
+    let act_dir = journal.join("facets/work/activities");
+    fs::create_dir_all(&act_dir).unwrap();
+    for i in 0..1000 {
+        let path = act_dir.join(format!("2026{i:04}.jsonl"));
+        fs::write(
+            &path,
+            format!("{{\"id\":\"act_{i}\",\"active_entities\":[\"other\"],\"ts\":{i}}}\n"),
+        )
+        .unwrap();
+    }
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let _report =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+
+    crate::store::edge_repair::arm_entity_edge_repair_between_publish_cut(&journal, 0);
+    let cut_res = crate::drive_entity_edge_repair(&journal);
+    assert!(cut_res.is_err());
+
+    let scan_res = solstone_core_indexer_store::scan::scan_journal(&journal, false);
+    assert!(scan_res.is_ok());
+
+    let rescan_res = solstone_core_indexer_store::scan::rescan_file(
+        &journal,
+        Path::new("facets/work/activities/20260001.jsonl"),
+    );
+    assert!(rescan_res.is_ok());
+
+    let drained = crate::drive_entity_edge_repair(&journal).unwrap();
+    assert_eq!(drained, 1);
+
+    let fp_after = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let fp_fresh = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    assert_eq!(fp_after, fp_fresh);
+
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn deferred_edge_repair_same_second_rescan_overlap() {
+    let journal = voiceprint_journal();
+    for id in ["source", "target", "other"] {
+        save_entity_identity(
+            &journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+    let holder_facet = journal.join("facets/work/entities/holder");
+    fs::create_dir_all(&holder_facet).unwrap();
+    fs::write(
+        holder_facet.join("entity.json"),
+        br#"{"entity_id":"holder"}"#,
+    )
+    .unwrap();
+    let obs_path = holder_facet.join("observations.jsonl");
+    fs::write(
+        &obs_path,
+        json!({"id":1,"content":"worked with source","ts":100,"relation":{"kind":"works-at","target_entity_id":"source"},"created_at":100,"updated_at":100,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+    let target_facet = journal.join("facets/work/entities/target");
+    fs::create_dir_all(&target_facet).unwrap();
+    fs::write(
+        target_facet.join("entity.json"),
+        br#"{"entity_id":"target"}"#,
+    )
+    .unwrap();
+
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let _merge =
+        commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+
+    let plan = solstone_core_indexer_store::plan_edge_repair(&journal).unwrap();
+    assert!(!plan.is_empty());
+
+    fs::write(
+        &obs_path,
+        json!({"id":2,"content":"updated in same second","ts":200,"relation":{"kind":"works-at","target_entity_id":"target"},"created_at":200,"updated_at":200,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+    solstone_core_indexer_store::scan::rescan_file(
+        &journal,
+        Path::new("facets/work/entities/holder/observations.jsonl"),
+    )
+    .unwrap();
+
+    for candidate in &plan {
+        let _ =
+            solstone_core_indexer_store::apply_edge_repair_candidate(&journal, candidate, || {
+                Ok(true)
+            })
+            .unwrap();
+    }
+
+    let fp_after = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+    let fp_fresh = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
+    assert_eq!(fp_after, fp_fresh);
 
     fs::remove_dir_all(journal).unwrap();
 }

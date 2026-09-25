@@ -83,7 +83,9 @@ pub use trust_lock::{
 #[allow(unused_imports)]
 #[cfg(any(test, feature = "test-hooks"))]
 pub use store::{
-    arm_entity_edge_repair_evidence_cut, disarm_entity_edge_repair_evidence_cut,
+    arm_entity_edge_repair_between_publish_cut, arm_entity_edge_repair_evidence_cut,
+    disarm_entity_edge_repair_between_publish_cut, disarm_entity_edge_repair_evidence_cut,
+    inject_apply_failure_once, inject_spawn_failure_once, is_edge_repair_driver_active,
     pause_entity_edge_repair, release_entity_edge_repair,
 };
 
@@ -120,12 +122,6 @@ mod voiceprint_tests;
 #[cfg(feature = "test-hooks")]
 pub type MergeFailureInjectorForTest = dyn Fn(&str, usize) -> bool;
 
-#[cfg(feature = "test-hooks")]
-pub use store::{
-    arm_entity_edge_repair_evidence_cut, disarm_entity_edge_repair_evidence_cut,
-    pause_entity_edge_repair, release_entity_edge_repair,
-};
-
 /// Exercise merge interruption boundaries from the component test harness.
 #[cfg(feature = "test-hooks")]
 pub fn commit_entity_merge_with_injector_for_test(
@@ -150,13 +146,9 @@ pub fn commit_entity_merge_with_injector_for_test(
 #[cfg(feature = "test-hooks")]
 pub fn undo_entity_merge_with_injector_for_test(
     journal: &std::path::Path,
-    source_id: &str,
-    target_id: &str,
     merge_id: &str,
     caller: serde_json::Value,
     injector: Option<&MergeFailureInjectorForTest>,
 ) -> Result<EntityUndoReport, EntityUndoError> {
-    store::undo::undo_entity_merge_with_injector(
-        journal, source_id, target_id, merge_id, caller, injector,
-    )
+    store::undo::undo_entity_merge_with_injector(journal, merge_id, caller, injector)
 }

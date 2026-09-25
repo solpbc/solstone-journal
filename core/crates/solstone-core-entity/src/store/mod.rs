@@ -26,7 +26,7 @@ mod reconcile;
 mod repair;
 pub(crate) mod review_candidates;
 pub mod review_policy;
-mod undo;
+pub(crate) mod undo;
 pub(crate) mod voiceprints;
 mod write;
 
@@ -48,7 +48,9 @@ pub use edge_repair::{
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use edge_repair::{
-    arm_entity_edge_repair_evidence_cut, disarm_entity_edge_repair_evidence_cut,
+    arm_entity_edge_repair_between_publish_cut, arm_entity_edge_repair_evidence_cut,
+    disarm_entity_edge_repair_between_publish_cut, disarm_entity_edge_repair_evidence_cut,
+    inject_apply_failure_once, inject_spawn_failure_once, is_edge_repair_driver_active,
     pause_entity_edge_repair, release_entity_edge_repair,
 };
 pub use entity_paths::{entity_memory_path, entity_path};

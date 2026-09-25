@@ -206,6 +206,8 @@ pub struct NetworkResponse {
     pub evidence_limit: i64,
     pub total_neighbors: usize,
     pub neighbors: Vec<NetworkNeighbor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_repair_state: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct EdgeEvidenceResponse {
@@ -217,6 +219,8 @@ pub struct EdgeEvidenceResponse {
     pub limit: i64,
     pub offset: i64,
     pub evidence: Vec<EvidenceRow>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_repair_state: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OverviewTotals {
@@ -243,6 +247,8 @@ pub struct NetworkOverviewResponse {
     pub totals: OverviewTotals,
     pub kinds: BTreeMap<String, KindSummary>,
     pub entities: Vec<OverviewEntity>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edge_repair_state: Option<String>,
 }
 
 /// Open the edge index without creating, migrating, or otherwise mutating it.
@@ -289,6 +295,51 @@ fn consider_neighbor(retained: &mut Vec<NetworkNeighbor>, neighbor: NetworkNeigh
     }
 }
 
+/// Check for in-flight or failed entity edge repair jobs in the journal.
+pub fn read_edge_repair_state(journal: &Path) -> Option<String> {
+    let jobs_dir = journal.join("health/entity-edge-repair/jobs");
+    let entries = std::fs::read_dir(&jobs_dir).ok()?;
+    let completions_dir = journal.join("health/entity-edge-repair/completions");
+    let progress_dir = journal.join("health/entity-edge-repair/progress");
+    let failures_dir = journal.join("health/entity-edge-repair/failures");
+
+    let mut has_unfinished = false;
+    let mut has_interrupted = false;
+    let mut has_failed = false;
+
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if !name_str.ends_with(".json") {
+            continue;
+        }
+        let completion_path = completions_dir.join(&name);
+        if completion_path.is_file() {
+            continue;
+        }
+        has_unfinished = true;
+        let failure_path = failures_dir.join(&name);
+        if failure_path.is_file() {
+            has_failed = true;
+            break;
+        }
+        let progress_path = progress_dir.join(&name);
+        if progress_path.is_file() {
+            has_interrupted = true;
+        }
+    }
+
+    if has_failed {
+        Some("failed".to_string())
+    } else if has_interrupted {
+        Some("interrupted".to_string())
+    } else if has_unfinished {
+        Some("pending".to_string())
+    } else {
+        None
+    }
+}
+
 /// Load one-hop neighbors. The caller supplies principal identity and attendance policy.
 pub fn load_entity_network(
     journal: &Path,
@@ -311,6 +362,18 @@ pub fn load_entity_network(
     }
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
+    if let Some(state) = read_edge_repair_state(journal) {
+        return Ok(NetworkResponse {
+            entity_id: entity_id.to_string(),
+            reference_day,
+            filters: NetworkFilters::from((&filter, request.include_principal)),
+            limit: request.limit,
+            evidence_limit: request.evidence_limit,
+            total_neighbors: 0,
+            neighbors: Vec::new(),
+            edge_repair_state: Some(state),
+        });
+    }
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
@@ -398,6 +461,7 @@ pub fn load_entity_network(
         evidence_limit: request.evidence_limit,
         total_neighbors,
         neighbors: retained,
+        edge_repair_state: None,
     })
 }
 
@@ -411,6 +475,19 @@ pub fn load_edge_evidence(
     validate_nonnegative("limit", request.limit)?;
     validate_nonnegative("offset", request.offset)?;
     let filter = build_filters(&request.filters)?;
+    if let Some(state) = read_edge_repair_state(journal) {
+        return Ok(EdgeEvidenceResponse {
+            entity_id: entity_id.to_string(),
+            peer_id: peer_id.to_string(),
+            peer_name: None,
+            filters: EdgeFiltersPayload::from(&filter),
+            total: 0,
+            limit: request.limit,
+            offset: request.offset,
+            evidence: Vec::new(),
+            edge_repair_state: Some(state),
+        });
+    }
     let connection = open_edges_reader(journal)?;
     let pair = pair_where();
     let mut params = pair_params(entity_id, peer_id);
@@ -438,6 +515,7 @@ pub fn load_edge_evidence(
             request.limit,
             request.offset,
         )?,
+        edge_repair_state: None,
     })
 }
 
@@ -451,6 +529,20 @@ pub fn load_network_overview(
     validate_nonnegative("limit", request.limit)?;
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
+    if let Some(state) = read_edge_repair_state(journal) {
+        return Ok(NetworkOverviewResponse {
+            reference_day,
+            filters: EdgeFiltersPayload::from(&filter),
+            limit: request.limit,
+            totals: OverviewTotals {
+                edges: 0,
+                entities: 0,
+            },
+            kinds: BTreeMap::new(),
+            entities: Vec::new(),
+            edge_repair_state: Some(state),
+        });
+    }
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
@@ -556,6 +648,7 @@ pub fn load_network_overview(
         },
         kinds: global_kinds,
         entities: ordered,
+        edge_repair_state: None,
     })
 }
 

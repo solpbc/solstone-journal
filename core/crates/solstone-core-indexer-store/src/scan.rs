@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use rusqlite::types::Value as SqlValue;
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
 use solstone_core_format::content::{
     ContentResolution, Family, classify, produce_chunks, resolve_content_shape,
 };
@@ -20,6 +20,7 @@ use solstone_core_indexer::edges::candidates::EdgeResolver;
 use solstone_core_indexer::edges::discovery::discover_edge_files;
 use solstone_core_indexer::edges::registry::edge_source_for_rel;
 use solstone_core_indexer::edges::{EdgeValue, NormalizedEdge, extract_file_edges};
+use solstone_core_indexer::entity_search::EntitySearchBuild;
 use solstone_core_indexer::entity_search::{
     ENTITY_SEARCH_WATERMARK_COUNT_PATH, ENTITY_SEARCH_WATERMARK_MTIME_PATH, EntitySearchRow,
     build_entity_search,
@@ -265,24 +266,23 @@ pub fn scan_journal(journal: &Path, full: bool) -> Result<ScanReport, StoreError
         .warnings
         .extend(migrate_segment_aggregates(&mut conn, journal)?);
 
-    let tx = conn.transaction()?;
-    index_entity_search(&tx, journal, full)?;
+    let search_build = build_entity_search(journal)?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    index_entity_search_build(&tx, journal, &search_build, full)?;
     tx.commit()?;
 
     report
         .warnings
         .extend(migrate_chunk_classifications(&mut conn, journal)?);
 
-    let tx = conn.transaction()?;
-    let edge_report = reconcile_edges(&tx, journal, full)?;
-    tx.commit()?;
+    let edge_report = reconcile_edges(&mut conn, journal, full)?;
     report.edges_indexed = edge_report.indexed;
     report.edges_removed = edge_report.removed;
     report.edge_rows_inserted = edge_report.rows_inserted;
     report.failed += edge_report.failed;
     report.warnings.extend(edge_report.warnings);
     if full && report.failed == 0 && report.warnings.is_empty() {
-        let tx = conn.transaction()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let files_count = tx.query_row("SELECT count(*) FROM files", [], |row| row.get(0))?;
         let chunks_count = tx.query_row("SELECT count(*) FROM chunks", [], |row| row.get(0))?;
         mark_index_build_complete(&tx, files_count, chunks_count)?;
@@ -322,7 +322,7 @@ fn migrate_chunk_classifications(
         Err(error) => {
             state.stalled = true;
             state.stalled_path = Some(state.cursor.clone());
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             write_chunk_classification_backfill(&tx, &state)?;
             tx.commit()?;
             return Ok(vec![format!(
@@ -337,7 +337,7 @@ fn migrate_chunk_classifications(
             state.completed = true;
             state.stalled = false;
             state.stalled_path = None;
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             write_chunk_classification_backfill(&tx, &state)?;
             tx.commit()?;
             break;
@@ -352,7 +352,7 @@ fn migrate_chunk_classifications(
                 .optional()?;
             let classification =
                 classify_source(journal, &path, stream.flatten().as_deref(), &declarations);
-            let tx = conn.transaction()?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             replace_chunk_classification(&tx, &classification)?;
             state.cursor = path;
             state.stalled = false;
@@ -365,7 +365,7 @@ fn migrate_chunk_classifications(
 }
 
 fn run_bounded_merge(conn: &mut Connection) -> (usize, Option<String>) {
-    let tx = match conn.transaction() {
+    let tx = match conn.transaction_with_behavior(TransactionBehavior::Immediate) {
         Ok(tx) => tx,
         Err(error) => {
             return (
@@ -525,6 +525,324 @@ pub fn rebuild_edges(journal: &Path) -> Result<EdgeRebuildReport, StoreError> {
     rebuild_edges_guarded(journal, || Ok(true)).map(|opt| opt.expect("closure returned true"))
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EdgeRepairCandidate {
+    Republish { rel: String, path: PathBuf },
+    Delete { rel: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CandidatePublishOutcome {
+    Superseded,
+    Unchanged,
+    Republished { inserted: usize },
+    Deleted { deleted: usize },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct CanonicalEdgeRow {
+    src: String,
+    dst: String,
+    kind: String,
+    directed: i64,
+    src_name: Option<String>,
+    dst_name: Option<String>,
+    day: Option<String>,
+    facet: Option<String>,
+    source: String,
+    path: String,
+    anchor: Option<String>,
+    label: Option<String>,
+    ts: Option<i64>,
+    weight: i64,
+}
+
+impl From<&NormalizedEdge> for CanonicalEdgeRow {
+    fn from(edge: &NormalizedEdge) -> Self {
+        Self {
+            src: edge.src.clone(),
+            dst: edge.dst.clone(),
+            kind: edge.kind.clone(),
+            directed: edge.directed,
+            src_name: match &edge.src_name {
+                EdgeValue::Text(s) => Some(s.clone()),
+                _ => None,
+            },
+            dst_name: match &edge.dst_name {
+                EdgeValue::Text(s) => Some(s.clone()),
+                _ => None,
+            },
+            day: edge.day.clone(),
+            facet: edge.facet.clone(),
+            source: edge.source.clone(),
+            path: edge.path.clone(),
+            anchor: edge.anchor.clone(),
+            label: match &edge.label {
+                EdgeValue::Text(s) => Some(s.clone()),
+                _ => None,
+            },
+            ts: match &edge.ts {
+                EdgeValue::Int(i) => Some(*i),
+                _ => None,
+            },
+            weight: edge.weight,
+        }
+    }
+}
+
+fn read_canonical_edge_row(row: &Row<'_>) -> rusqlite::Result<CanonicalEdgeRow> {
+    Ok(CanonicalEdgeRow {
+        src: row.get(0)?,
+        dst: row.get(1)?,
+        kind: row.get(2)?,
+        directed: row.get(3)?,
+        src_name: row.get(4)?,
+        dst_name: row.get(5)?,
+        day: row.get(6)?,
+        facet: row.get(7)?,
+        source: row.get(8)?,
+        path: row.get(9)?,
+        anchor: row.get(10)?,
+        label: row.get(11)?,
+        ts: row.get(12)?,
+        weight: row.get(13)?,
+    })
+}
+
+pub fn plan_edge_repair(journal: &Path) -> Result<Vec<EdgeRepairCandidate>, StoreError> {
+    let conn = open_index(journal)?;
+    let db_mtimes = edge_file_mtimes(&conn)?;
+    let mut stmt = conn.prepare(
+        "SELECT src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight FROM edges ORDER BY path, src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight",
+    )?;
+    let mut committed_by_path: BTreeMap<String, Vec<CanonicalEdgeRow>> = BTreeMap::new();
+    let rows = stmt.query_map([], read_canonical_edge_row)?;
+    for r in rows {
+        let row = r?;
+        committed_by_path
+            .entry(row.path.clone())
+            .or_default()
+            .push(row);
+    }
+    drop(stmt);
+    drop(conn);
+
+    let discovered = discover_edge_files(journal)?;
+    let mut candidates = Vec::new();
+    let mut resolver = EdgeResolver::new(journal);
+
+    for (rel, path) in &discovered {
+        let Some(_db_mtime) = db_mtimes.get(rel) else {
+            candidates.push(EdgeRepairCandidate::Republish {
+                rel: rel.clone(),
+                path: path.clone(),
+            });
+            continue;
+        };
+
+        resolver.begin_file();
+        let extracted = extract_file_edges(journal, rel, path, &mut resolver);
+        match extracted {
+            Ok(extracted) => {
+                if extracted.invalid_segment.is_some() {
+                    let committed = committed_by_path.get(rel);
+                    if committed.is_some_and(|rows| !rows.is_empty()) {
+                        candidates.push(EdgeRepairCandidate::Republish {
+                            rel: rel.clone(),
+                            path: path.clone(),
+                        });
+                    }
+                    continue;
+                }
+                let mut new_canonical: Vec<CanonicalEdgeRow> =
+                    extracted.rows.iter().map(CanonicalEdgeRow::from).collect();
+                new_canonical.sort();
+                let committed = committed_by_path.get(rel).cloned().unwrap_or_default();
+                if new_canonical != committed {
+                    candidates.push(EdgeRepairCandidate::Republish {
+                        rel: rel.clone(),
+                        path: path.clone(),
+                    });
+                }
+            }
+            Err(_) => {
+                candidates.push(EdgeRepairCandidate::Republish {
+                    rel: rel.clone(),
+                    path: path.clone(),
+                });
+            }
+        }
+    }
+
+    for rel in db_mtimes.keys() {
+        if rel != EDGES_SCHEMA_PATH && !discovered.contains_key(rel) {
+            candidates.push(EdgeRepairCandidate::Delete { rel: rel.clone() });
+        }
+    }
+
+    Ok(candidates)
+}
+
+pub fn apply_edge_repair_candidate(
+    journal: &Path,
+    candidate: &EdgeRepairCandidate,
+    generation_ok: impl Fn() -> Result<bool, StoreError>,
+) -> Result<CandidatePublishOutcome, StoreError> {
+    if !generation_ok()? {
+        return Ok(CandidatePublishOutcome::Superseded);
+    }
+    match candidate {
+        EdgeRepairCandidate::Republish { rel, path } => {
+            if !path.is_file() {
+                if !generation_ok()? {
+                    return Ok(CandidatePublishOutcome::Superseded);
+                }
+                let mut conn = open_index(journal)?;
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let count = tx.query_row("SELECT COUNT(*) FROM edges WHERE path=?", [rel], |r| {
+                    r.get::<_, i64>(0)
+                })? as usize;
+                delete_edges_for_path(&tx, rel)?;
+                if !generation_ok()? {
+                    tx.rollback()?;
+                    return Ok(CandidatePublishOutcome::Superseded);
+                }
+                tx.commit()?;
+                return Ok(CandidatePublishOutcome::Deleted { deleted: count });
+            }
+            if !generation_ok()? {
+                return Ok(CandidatePublishOutcome::Superseded);
+            }
+            let mut conn = open_index(journal)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let mtime = file_mtime_secs(path)?;
+            let mut resolver = EdgeResolver::new(journal);
+            resolver.begin_file();
+            let extracted = extract_file_edges(journal, rel, path, &mut resolver)?;
+            if let Some(_segment) = extracted.invalid_segment {
+                let count = tx.query_row("SELECT COUNT(*) FROM edges WHERE path=?", [rel], |r| {
+                    r.get::<_, i64>(0)
+                })? as usize;
+                delete_edges_for_path(&tx, rel)?;
+                if !generation_ok()? {
+                    tx.rollback()?;
+                    return Ok(CandidatePublishOutcome::Superseded);
+                }
+                tx.commit()?;
+                return Ok(CandidatePublishOutcome::Deleted { deleted: count });
+            }
+            let mut new_canonical: Vec<CanonicalEdgeRow> =
+                extracted.rows.iter().map(CanonicalEdgeRow::from).collect();
+            new_canonical.sort();
+
+            let mut stmt = tx.prepare(
+                "SELECT src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight FROM edges WHERE path=? ORDER BY src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight",
+            )?;
+            let committed: Vec<CanonicalEdgeRow> = stmt
+                .query_map([rel], read_canonical_edge_row)?
+                .collect::<Result<Vec<_>, _>>()?;
+            drop(stmt);
+
+            let mtime_in_db: Option<i64> = tx
+                .query_row("SELECT mtime FROM edge_files WHERE path=?", [rel], |r| {
+                    r.get(0)
+                })
+                .optional()?;
+
+            if new_canonical == committed && mtime_in_db == Some(mtime) {
+                tx.rollback()?;
+                return Ok(CandidatePublishOutcome::Unchanged);
+            }
+
+            delete_edges_for_path(&tx, rel)?;
+            let inserted = insert_normalized_edges(&tx, &extracted.rows)?;
+            replace_edge_file_mtime(&tx, rel, mtime)?;
+
+            if !generation_ok()? {
+                tx.rollback()?;
+                return Ok(CandidatePublishOutcome::Superseded);
+            }
+            tx.commit()?;
+            Ok(CandidatePublishOutcome::Republished { inserted })
+        }
+        EdgeRepairCandidate::Delete { rel } => {
+            let path = journal.join(rel);
+            if path.is_file() {
+                if !generation_ok()? {
+                    return Ok(CandidatePublishOutcome::Superseded);
+                }
+                let mut conn = open_index(journal)?;
+                let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+                let mtime = file_mtime_secs(&path)?;
+                let mut resolver = EdgeResolver::new(journal);
+                resolver.begin_file();
+                let extracted = extract_file_edges(journal, rel, &path, &mut resolver)?;
+                if let Some(_segment) = extracted.invalid_segment {
+                    let count =
+                        tx.query_row("SELECT COUNT(*) FROM edges WHERE path=?", [rel], |r| {
+                            r.get::<_, i64>(0)
+                        })? as usize;
+                    delete_edges_for_path(&tx, rel)?;
+                    if !generation_ok()? {
+                        tx.rollback()?;
+                        return Ok(CandidatePublishOutcome::Superseded);
+                    }
+                    tx.commit()?;
+                    return Ok(CandidatePublishOutcome::Deleted { deleted: count });
+                }
+                let mut new_canonical: Vec<CanonicalEdgeRow> =
+                    extracted.rows.iter().map(CanonicalEdgeRow::from).collect();
+                new_canonical.sort();
+
+                let mut stmt = tx.prepare(
+                    "SELECT src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight FROM edges WHERE path=? ORDER BY src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight",
+                )?;
+                let committed: Vec<CanonicalEdgeRow> = stmt
+                    .query_map([rel], read_canonical_edge_row)?
+                    .collect::<Result<Vec<_>, _>>()?;
+                drop(stmt);
+
+                let mtime_in_db: Option<i64> = tx
+                    .query_row("SELECT mtime FROM edge_files WHERE path=?", [rel], |r| {
+                        r.get(0)
+                    })
+                    .optional()?;
+
+                if new_canonical == committed && mtime_in_db == Some(mtime) {
+                    tx.rollback()?;
+                    return Ok(CandidatePublishOutcome::Unchanged);
+                }
+
+                delete_edges_for_path(&tx, rel)?;
+                let inserted = insert_normalized_edges(&tx, &extracted.rows)?;
+                replace_edge_file_mtime(&tx, rel, mtime)?;
+
+                if !generation_ok()? {
+                    tx.rollback()?;
+                    return Ok(CandidatePublishOutcome::Superseded);
+                }
+                tx.commit()?;
+                return Ok(CandidatePublishOutcome::Republished { inserted });
+            }
+            if !generation_ok()? {
+                return Ok(CandidatePublishOutcome::Superseded);
+            }
+            let mut conn = open_index(journal)?;
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let count = tx.query_row("SELECT COUNT(*) FROM edges WHERE path=?", [rel], |r| {
+                r.get::<_, i64>(0)
+            })? as usize;
+            delete_edges_for_path(&tx, rel)?;
+            if !generation_ok()? {
+                tx.rollback()?;
+                return Ok(CandidatePublishOutcome::Superseded);
+            }
+            tx.commit()?;
+            Ok(CandidatePublishOutcome::Deleted { deleted: count })
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 struct EdgeProcessResult {
     rows_inserted: usize,
@@ -535,7 +853,7 @@ struct EdgeProcessResult {
 }
 
 fn reconcile_edges(
-    conn: &Connection,
+    conn: &mut Connection,
     journal: &Path,
     full: bool,
 ) -> Result<EdgeScanReport, StoreError> {
@@ -566,12 +884,11 @@ fn reconcile_edges(
             .map(|(day, count)| retained_day_warning(&day, count)),
     );
     for (rel, path, mtime) in &to_index {
-        begin_edge_file_savepoint(conn)?;
-        let result = match replace_edge_file_edges(conn, journal, rel, path, *mtime, &mut resolver)
-        {
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let result = match replace_edge_file_edges(&tx, journal, rel, path, *mtime, &mut resolver) {
             Ok(result) => result,
             Err(error) => {
-                rollback_edge_file_savepoint(conn)?;
+                tx.rollback()?;
                 report.indexed += 1;
                 report.failed += 1;
                 report
@@ -582,17 +899,19 @@ fn reconcile_edges(
         };
         report.indexed += 1;
         if result.failed {
-            rollback_edge_file_savepoint(conn)?;
+            tx.rollback()?;
             report.failed += 1;
             report.warnings.extend(result.warnings);
             continue;
         }
-        release_edge_file_savepoint(conn)?;
+        tx.commit()?;
         report.rows_inserted += result.rows_inserted;
         report.warnings.extend(result.warnings);
     }
     for rel in &removed {
-        delete_edges_for_path(conn, rel)?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        delete_edges_for_path(&tx, rel)?;
+        tx.commit()?;
     }
     report.removed = removed.len();
     Ok(report)
@@ -612,25 +931,6 @@ fn replace_edge_file_edges(
         replace_edge_file_mtime(conn, rel, mtime)?;
     }
     Ok(result)
-}
-
-fn begin_edge_file_savepoint(conn: &Connection) -> Result<(), StoreError> {
-    conn.execute("SAVEPOINT edge_file_replacement", [])?;
-    Ok(())
-}
-
-fn release_edge_file_savepoint(conn: &Connection) -> Result<(), StoreError> {
-    conn.execute("RELEASE SAVEPOINT edge_file_replacement", [])?;
-    Ok(())
-}
-
-fn rollback_edge_file_savepoint(conn: &Connection) -> Result<(), StoreError> {
-    let rollback = conn.execute("ROLLBACK TO SAVEPOINT edge_file_replacement", []);
-    let release = conn.execute("RELEASE SAVEPOINT edge_file_replacement", []);
-    match (rollback, release) {
-        (Ok(_), Ok(_)) => Ok(()),
-        (Err(error), _) | (_, Err(error)) => Err(StoreError::Sql(error)),
-    }
 }
 
 fn process_edge_file(
@@ -861,7 +1161,7 @@ fn migrate_segment_aggregate(
     journal: &Path,
     rel_segment: &str,
 ) -> Result<SegmentMigrationOutcome, StoreError> {
-    let tx = conn.transaction()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let talent_files = match discover_segment_talent_markdown_files(journal, rel_segment) {
         Ok(files) => files,
         Err(error) => {
@@ -930,12 +1230,22 @@ fn migrate_segment_aggregate(
     Ok(SegmentMigrationOutcome::Complete(warnings))
 }
 
+#[cfg(test)]
 fn index_entity_search(
     conn: &Transaction<'_>,
     journal: &Path,
     force: bool,
 ) -> Result<(), StoreError> {
     let build = build_entity_search(journal)?;
+    index_entity_search_build(conn, journal, &build, force)
+}
+
+fn index_entity_search_build(
+    conn: &Transaction<'_>,
+    journal: &Path,
+    build: &EntitySearchBuild,
+    force: bool,
+) -> Result<(), StoreError> {
     let watermark = read_entity_search_watermark(conn)?;
     let (stored_mtime, stored_count, migrating) = match watermark {
         Some(watermark) => (watermark.mtime, watermark.count, false),
@@ -5902,6 +6212,185 @@ not json
             );
             fs::remove_dir_all(root).expect("cleanup unusable scan");
         }
+    }
+
+    #[test]
+    fn per_file_reconcile_matches_rebuild_edges_fingerprint() {
+        use crate::merge::fingerprint_edge_rows;
+
+        let root = temp_root("per-file-reconcile");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+        seed_edge_entity(&root, "carol", "Carol Edge");
+
+        // 1. Initial files
+        write(
+            &root,
+            "facets/work/entities/20260304.jsonl",
+            r#"{"name":"Alice Edge","segments":["s1"]}
+{"name":"Bob Edge","segments":["s1"]}
+"#,
+        );
+        write(
+            &root,
+            "facets/work/entities/20260305.jsonl",
+            r#"{"name":"Bob Edge","segments":["s2"]}
+{"name":"Carol Edge","segments":["s2"]}
+"#,
+        );
+        write(
+            &root,
+            "facets/work/entities/20260306.jsonl",
+            r#"{"name":"Alice Edge","segments":["s3"]}
+{"name":"Carol Edge","segments":["s3"]}
+"#,
+        );
+
+        scan_journal(&root, true).expect("initial full scan");
+
+        // 2. Modify one file, remove one file, leave one file unchanged
+        // Modify 20260304:
+        write(
+            &root,
+            "facets/work/entities/20260304.jsonl",
+            r#"{"name":"Alice Edge","segments":["s1"]}
+{"name":"Carol Edge","segments":["s1"]}
+"#,
+        );
+        let conn = open_index(&root).expect("open index");
+        conn.execute(
+            "UPDATE edge_files SET mtime=0 WHERE path='facets/work/entities/20260304.jsonl'",
+            [],
+        )
+        .expect("invalidate mtime");
+        drop(conn);
+        // Remove 20260306:
+        let _ = fs::remove_file(root.join("facets/work/entities/20260306.jsonl"));
+
+        // Incremental scan using per-file reconcile
+        scan_journal(&root, false).expect("incremental scan");
+        let fp_incremental = fingerprint_edge_rows(&root).expect("incremental fingerprint");
+
+        // Full rebuild
+        rebuild_edges(&root).expect("rebuild edges");
+        let fp_rebuild = fingerprint_edge_rows(&root).expect("rebuild fingerprint");
+
+        assert_eq!(fp_incremental, fp_rebuild);
+        fs::remove_dir_all(root).expect("cleanup reconcile test root");
+    }
+
+    #[test]
+    fn edge_repair_plan_and_apply_republishes_changed_and_deletes_removed() {
+        use crate::merge::fingerprint_edge_rows;
+
+        let root = temp_root("edge-repair-plan-apply");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+
+        write(
+            &root,
+            "facets/work/entities/20260304.jsonl",
+            r#"{"name":"Alice Edge","segments":["s1"]}
+{"name":"Bob Edge","segments":["s1"]}
+"#,
+        );
+        write(
+            &root,
+            "facets/work/entities/20260305.jsonl",
+            r#"{"name":"Alice Edge","segments":["s2"]}
+{"name":"Bob Edge","segments":["s2"]}
+"#,
+        );
+
+        rebuild_edges(&root).expect("initial rebuild");
+
+        // Modify 20260304, remove 20260305
+        write(
+            &root,
+            "facets/work/entities/20260304.jsonl",
+            r#"{"name":"Alice Edge","segments":["s1"]}
+"#,
+        );
+        let _ = fs::remove_file(root.join("facets/work/entities/20260305.jsonl"));
+
+        let plan = plan_edge_repair(&root).expect("plan repair");
+        assert_eq!(plan.len(), 2);
+
+        for candidate in &plan {
+            let outcome = apply_edge_repair_candidate(&root, candidate, || Ok(true))
+                .expect("apply candidate");
+            match candidate {
+                EdgeRepairCandidate::Republish { .. } => {
+                    assert!(matches!(
+                        outcome,
+                        CandidatePublishOutcome::Republished { .. }
+                            | CandidatePublishOutcome::Unchanged
+                    ));
+                }
+                EdgeRepairCandidate::Delete { .. } => {
+                    assert!(matches!(outcome, CandidatePublishOutcome::Deleted { .. }));
+                }
+            }
+        }
+
+        let fp_repaired = fingerprint_edge_rows(&root).expect("repaired fingerprint");
+        rebuild_edges(&root).expect("fresh rebuild");
+        let fp_rebuilt = fingerprint_edge_rows(&root).expect("rebuilt fingerprint");
+        assert_eq!(fp_repaired, fp_rebuilt);
+
+        fs::remove_dir_all(root).expect("cleanup repair plan test root");
+    }
+
+    #[test]
+    fn scan_journal_reconcile_handles_concurrent_write_without_busy_snapshot() {
+        let root = temp_root("concurrent-reconcile");
+        seed_edge_entity(&root, "alice", "Alice Edge");
+        seed_edge_entity(&root, "bob", "Bob Edge");
+
+        for i in 0..10 {
+            write(
+                &root,
+                &format!("facets/work/entities/202603{i:02}.jsonl"),
+                &format!(
+                    "{{\"name\":\"Alice Edge\",\"segments\":[\"s{i}\"]}}\n{{\"name\":\"Bob Edge\",\"segments\":[\"s{i}\"]}}\n"
+                ),
+            );
+        }
+
+        scan_journal(&root, true).expect("initial full scan");
+
+        // Now modify multiple files
+        for i in 0..10 {
+            write(
+                &root,
+                &format!("facets/work/entities/202603{i:02}.jsonl"),
+                &format!("{{\"name\":\"Alice Edge\",\"segments\":[\"s{i}_updated\"]}}\n"),
+            );
+        }
+
+        let mut conn2 = open_index(&root).expect("open index for concurrent write");
+        let write_handle = std::thread::spawn(move || {
+            for _ in 0..5 {
+                let tx = conn2.transaction_with_behavior(TransactionBehavior::Immediate);
+                if let Ok(tx) = tx {
+                    let _ = tx.execute(
+                        "UPDATE index_build_state SET files_count = files_count + 0 WHERE id=1",
+                        [],
+                    );
+                    let _ = tx.commit();
+                }
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+        });
+
+        let res = scan_journal(&root, false);
+        write_handle.join().unwrap();
+        assert!(
+            res.is_ok(),
+            "scan_journal must succeed under concurrent writes without SQLITE_BUSY_SNAPSHOT"
+        );
+
+        fs::remove_dir_all(root).expect("cleanup concurrent test root");
     }
 
     fn chunk_contents_contain(conn: &Connection, needle: &str) -> bool {

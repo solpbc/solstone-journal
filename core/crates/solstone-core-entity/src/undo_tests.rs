@@ -1569,8 +1569,8 @@ fn deferred_edge_repair_advances_generation_and_drains_jobs_on_undo() {
             .unwrap()
             .expect("completion exists");
     assert!(completion.published);
-    assert_eq!(completion.rebuilt, Some(true));
-    assert!(completion.rows_folded.is_some());
+    assert_eq!(completion.rebuilt, Some(false));
+    assert!(completion.affected_rows.is_some());
 
     let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
     let source_edges: i64 = connection
@@ -1638,6 +1638,19 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_undo() {
     )
     .unwrap();
 
+    let shared_facet = journal.join("facets/work/entities/shared_holder");
+    fs::create_dir_all(&shared_facet).unwrap();
+    fs::write(
+        shared_facet.join("entity.json"),
+        br#"{"entity_id":"shared_holder"}"#,
+    )
+    .unwrap();
+    fs::write(
+        shared_facet.join("observations.jsonl"),
+        json!({"id":50,"content":"shared works with source","ts":150,"relation":{"kind":"works-with","target_entity_id":"source"},"created_at":150,"updated_at":150,"source":"manual"}).to_string() + "\n",
+    )
+    .unwrap();
+
     let act_path = journal.join("facets/work/activities/20260102.jsonl");
     fs::create_dir_all(act_path.parent().unwrap()).unwrap();
     fs::write(
@@ -1650,6 +1663,13 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_undo() {
     )
     .unwrap();
 
+    let copresence_path = journal.join("facets/work/entities/copresence_team.jsonl");
+    fs::write(
+        &copresence_path,
+        json!({"id":"cp1","names":["Source","Unrelated"],"ts":600}).to_string() + "\n",
+    )
+    .unwrap();
+
     let labels_path = journal.join("chronicle/20260102/080000_300/talents/speaker_labels.json");
     fs::create_dir_all(labels_path.parent().unwrap()).unwrap();
     fs::write(
@@ -1659,6 +1679,14 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_undo() {
     .unwrap();
 
     solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
+
+    let unindexed_act = journal.join("facets/work/activities/20260105.jsonl");
+    fs::write(
+        &unindexed_act,
+        json!({"id":"act_unindexed","active_entities":["source","other"],"ts":500}).to_string()
+            + "\n",
+    )
+    .unwrap();
 
     let merge =
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();

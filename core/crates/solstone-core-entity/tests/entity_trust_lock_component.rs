@@ -489,4 +489,62 @@ mod merge_recovery {
             fs::remove_dir_all(journal).unwrap();
         }
     }
+
+    #[test]
+    fn spawn_failure_leaves_driver_inactive_and_job_pending_until_direct_drive() {
+        let journal = recovery_fixture();
+        solstone_core_entity::inject_spawn_failure_once();
+        let merge =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap();
+
+        assert!(
+            !solstone_core_entity::is_edge_repair_driver_active(),
+            "failed spawn leaves DRIVER_ACTIVE false"
+        );
+
+        let failures_dir = journal.join("health/entity-edge-repair/failures");
+        assert!(
+            !failures_dir.exists() || fs::read_dir(&failures_dir).unwrap().next().is_none(),
+            "no failure file written on failed spawn"
+        );
+
+        let jobs_dir = journal.join("health/entity-edge-repair/jobs");
+        assert!(
+            jobs_dir.exists() && fs::read_dir(&jobs_dir).unwrap().next().is_some(),
+            "job file queued on merge"
+        );
+        let progress_dir = journal.join("health/entity-edge-repair/progress");
+        assert!(
+            !progress_dir.exists() || fs::read_dir(&progress_dir).unwrap().next().is_none(),
+            "no progress file before drive"
+        );
+        assert!(
+            solstone_core_entity::read_entity_edge_repair_completion(
+                &journal,
+                "merge",
+                &merge.merge_id,
+            )
+            .unwrap()
+            .is_none(),
+            "no completion before drive"
+        );
+
+        let drained = solstone_core_entity::drive_entity_edge_repair(&journal).unwrap();
+        assert_eq!(drained, 1);
+
+        assert!(
+            !jobs_dir.exists() || fs::read_dir(&jobs_dir).unwrap().next().is_none(),
+            "job file removed after drive completes"
+        );
+        let completion = solstone_core_entity::read_entity_edge_repair_completion(
+            &journal,
+            "merge",
+            &merge.merge_id,
+        )
+        .unwrap();
+        assert!(completion.is_some());
+
+        fs::remove_dir_all(journal).unwrap();
+    }
 }

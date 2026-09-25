@@ -1115,3 +1115,98 @@ fn network_preview_rank_filters_and_evidence_follow_the_request() {
         cleanup(root);
     }
 }
+
+#[test]
+fn edge_repair_state_reader_and_query_behavior() {
+    let root = seed(
+        "repair-state",
+        &[SeedEdge::new(
+            "alice",
+            "bob",
+            "works-with",
+            Some("20260101"),
+            "seed",
+        )],
+    );
+
+    let net_req = default_network("20260102");
+    let ev_req = EdgeEvidenceRequest::default();
+    let ov_req = default_overview("20260102");
+    let no_type = |_: &str| None;
+
+    // 1. Healthy populated
+    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
+    assert_eq!(net.total_neighbors, 1);
+    assert!(net.edge_repair_state.is_none());
+    assert!(!json_keys(&net).contains("edge_repair_state"));
+
+    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
+    assert_eq!(ev.total, 1);
+    assert!(ev.edge_repair_state.is_none());
+    assert!(!json_keys(&ev).contains("edge_repair_state"));
+
+    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
+    assert_eq!(ov.totals.edges, 1);
+    assert!(ov.edge_repair_state.is_none());
+    assert!(!json_keys(&ov).contains("edge_repair_state"));
+
+    // 2. Pending job
+    let jobs_dir = root.join("health/entity-edge-repair/jobs");
+    fs::create_dir_all(&jobs_dir).unwrap();
+    fs::write(jobs_dir.join("merge-m1.json"), b"{}").unwrap();
+
+    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
+    assert_eq!(net.total_neighbors, 0);
+    assert_eq!(net.neighbors.len(), 0);
+    assert_eq!(net.edge_repair_state.as_deref(), Some("pending"));
+    assert!(json_keys(&net).contains("edge_repair_state"));
+
+    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
+    assert_eq!(ev.total, 0);
+    assert_eq!(ev.evidence.len(), 0);
+    assert_eq!(ev.edge_repair_state.as_deref(), Some("pending"));
+
+    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
+    assert_eq!(ov.totals.edges, 0);
+    assert_eq!(ov.entities.len(), 0);
+    assert_eq!(ov.edge_repair_state.as_deref(), Some("pending"));
+
+    // 3. Interrupted job (progress file exists)
+    let prog_dir = root.join("health/entity-edge-repair/progress");
+    fs::create_dir_all(&prog_dir).unwrap();
+    fs::write(prog_dir.join("merge-m1.json"), b"{}").unwrap();
+
+    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
+    assert_eq!(net.edge_repair_state.as_deref(), Some("interrupted"));
+
+    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
+    assert_eq!(ev.edge_repair_state.as_deref(), Some("interrupted"));
+
+    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
+    assert_eq!(ov.edge_repair_state.as_deref(), Some("interrupted"));
+
+    // 4. Failed job (failure file exists)
+    let fail_dir = root.join("health/entity-edge-repair/failures");
+    fs::create_dir_all(&fail_dir).unwrap();
+    fs::write(fail_dir.join("merge-m1.json"), b"error").unwrap();
+
+    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
+    assert_eq!(net.edge_repair_state.as_deref(), Some("failed"));
+
+    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
+    assert_eq!(ev.edge_repair_state.as_deref(), Some("failed"));
+
+    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
+    assert_eq!(ov.edge_repair_state.as_deref(), Some("failed"));
+
+    // 5. Completion exists -> healthy again
+    let comp_dir = root.join("health/entity-edge-repair/completions");
+    fs::create_dir_all(&comp_dir).unwrap();
+    fs::write(comp_dir.join("merge-m1.json"), b"{}").unwrap();
+
+    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
+    assert_eq!(net.total_neighbors, 1);
+    assert!(net.edge_repair_state.is_none());
+
+    cleanup(root);
+}

@@ -314,7 +314,7 @@ pub fn prune_authored_chat_paths(journal: &Path) -> Result<Option<StreamPruneCou
     }
     let mut conn = Connection::open(&path)?;
     conn.execute_batch("PRAGMA busy_timeout=5000;")?;
-    let tx = conn.transaction()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let chunks = tx.execute(
         &format!("DELETE FROM chunks WHERE {AUTHORED_CHAT_PATH_PREDICATE}"),
         [],

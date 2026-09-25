@@ -2776,8 +2776,41 @@ async fn history_attaches_edge_repair_completion_data() {
         json!({"seq":1,"kind":"merge","operation":{"merge_id":"m1"}}),
     );
     let (_, v_before) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_before["items"][0].get("rows_folded"), None);
+    assert_eq!(v_before["items"][0].get("affected_rows"), None);
     assert_eq!(v_before["items"][0].get("rebuilt"), None);
+    assert_eq!(v_before["items"][0].get("edge_repair_state"), None);
+
+    // With a pending job (no completion)
+    write(
+        j.path(),
+        "health/entity-edge-repair/jobs/merge-m1.json",
+        json!({
+            "operation": "merge",
+            "merge_id": "m1",
+            "generation": 1,
+            "enqueued_at": 100
+        }),
+    );
+    let (_, v_pending) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
+    assert_eq!(v_pending["items"][0]["edge_repair_state"], "pending");
+    assert_eq!(v_pending["items"][0].get("affected_rows"), None);
+    assert_eq!(v_pending["items"][0].get("rebuilt"), None);
+
+    // With job + failure file (no completion) -> failed
+    write(
+        j.path(),
+        "health/entity-edge-repair/failures/merge-m1.json",
+        json!({"error": "injected failure"}),
+    );
+    let (_, v_failed) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
+    assert_eq!(v_failed["items"][0]["edge_repair_state"], "failed");
+    assert_eq!(v_failed["items"][0].get("affected_rows"), None);
+    assert_eq!(v_failed["items"][0].get("rebuilt"), None);
+    fs::remove_file(
+        j.path()
+            .join("health/entity-edge-repair/failures/merge-m1.json"),
+    )
+    .unwrap();
 
     write(
         j.path(),
@@ -2787,14 +2820,34 @@ async fn history_attaches_edge_repair_completion_data() {
             "merge_id": "m1",
             "generation": 1,
             "published": true,
-            "rows_folded": 5,
-            "rebuilt": true,
+            "affected_rows": 5,
+            "rebuilt": false,
             "completed_at": 100
         }),
     );
     let (_, v_after) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_after["items"][0]["rows_folded"], 5);
-    assert_eq!(v_after["items"][0]["rebuilt"], true);
+    assert_eq!(v_after["items"][0]["affected_rows"], 5);
+    assert_eq!(v_after["items"][0]["rebuilt"], false);
+    assert_eq!(v_after["items"][0].get("edge_repair_state"), None);
+
+    // With stored rebuilt: true
+    write(
+        j.path(),
+        "health/entity-edge-repair/completions/merge-m1.json",
+        json!({
+            "operation": "merge",
+            "merge_id": "m1",
+            "generation": 1,
+            "published": true,
+            "affected_rows": 12,
+            "rebuilt": true,
+            "completed_at": 100
+        }),
+    );
+    let (_, v_rebuilt) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
+    assert_eq!(v_rebuilt["items"][0]["affected_rows"], 12);
+    assert_eq!(v_rebuilt["items"][0]["rebuilt"], true);
+    assert_eq!(v_rebuilt["items"][0].get("edge_repair_state"), None);
 }
 
 #[tokio::test]
