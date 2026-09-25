@@ -43,7 +43,7 @@ use manifest::{legacy_manifest_evidence, manifest_path};
 use solstone_core_installation_identity::{
     ArtifactBindingEvidence, CleanUninstallRequest, CleanUninstallSession,
     FOREIGN_ARTIFACTS_REFUSAL, IdentityError, JournalToken, OwnerBase, PlatformTag, SetupAdmission,
-    SetupAdmissionRequest, admit_clean_uninstall, admit_setup,
+    SetupAdmissionRequest, UNCERTAIN_ARTIFACTS_REFUSAL, admit_clean_uninstall, admit_setup,
     admit_setup_with_effective_journal_validator, journal_token_from_path,
     load_installation_binding, namespace_name, root_token_from_path,
 };
@@ -331,13 +331,17 @@ fn report_identity_failure<W: Write>(
     namespace: Option<&str>,
 ) -> ExitCode {
     let code = identity_error_code(error);
-    // Another installation's working tools and service are not this one's to
-    // clear: the standard steps below would delete them.
+    // A foreign guard or uncertain ownership cannot justify the standard
+    // cleanup: those paths may be another installation's working artifacts.
     let foreign = matches!(
         error,
         IdentityError::AdmissionRefused(reason) if *reason == FOREIGN_ARTIFACTS_REFUSAL
     );
-    let (recovery, recovery_error) = if foreign {
+    let uncertain = matches!(
+        error,
+        IdentityError::AdmissionRefused(reason) if *reason == UNCERTAIN_ARTIFACTS_REFUSAL
+    );
+    let (recovery, recovery_error) = if foreign || uncertain {
         (Vec::new(), None)
     } else {
         match identity_recovery_paths(home_dir, namespace) {
@@ -377,6 +381,10 @@ fn report_identity_failure<W: Write>(
     if foreign {
         message = format!(
             "this installation couldn't be verified.\n\ndetails: {error}\n\nthe command-line tools or background support on this computer were set up by a different solstone installation, so nothing was changed."
+        );
+    } else if uncertain {
+        message = format!(
+            "this installation couldn't be verified.\n\ndetails: {error}\n\nsetup couldn't tell which installation the command-line tools or background support belong to. leave them in place and include these details in a support request."
         );
     } else if cfg!(windows) {
         let commands = recovery
@@ -1905,6 +1913,101 @@ mod tests {
         );
     }
 
+    #[test]
+    fn conflicting_wrapper_guards_refuse_without_cleanup_instructions() {
+        let root = root("identity-conflicting-guards");
+        let home = root.join("home");
+        let executable_dir = root.join("bin");
+        let journal = root.join("journal");
+        fs::create_dir_all(home.join(".local/bin")).unwrap();
+        fs::create_dir_all(&executable_dir).unwrap();
+
+        let foreign_root = root.join("another-installation");
+        fs::create_dir_all(&foreign_root).unwrap();
+        let local_namespace = namespace_name(
+            PlatformTag::current(),
+            &root_token_from_path(&root).unwrap(),
+        );
+        let foreign_namespace = namespace_name(
+            PlatformTag::current(),
+            &root_token_from_path(&foreign_root).unwrap(),
+        );
+        let guard_for = |namespace| GuardFields {
+            namespace,
+            id: solstone_core_installation_identity::InstallationId::parse(
+                "00112233445566778899aabbccddeeff",
+            )
+            .unwrap(),
+            generation: solstone_core_installation_identity::Generation::new(1).unwrap(),
+            journal_token: journal_token_from_path(&journal).unwrap(),
+        };
+        let wrappers = [
+            (
+                crate::wrapper::WrapperCommand::Solstone,
+                "solstone",
+                guard_for(local_namespace),
+            ),
+            (
+                crate::wrapper::WrapperCommand::Journal,
+                "journal",
+                guard_for(foreign_namespace),
+            ),
+        ]
+        .map(|(command, name, guard)| {
+            let path = home.join(".local/bin").join(name);
+            let contents = crate::wrapper::render_wrapper(
+                command,
+                &journal,
+                &executable_dir.join(name),
+                &guard,
+            )
+            .unwrap();
+            fs::write(&path, &contents).unwrap();
+            (path, contents)
+        });
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let args = parsed(
+            &[
+                "--yes".into(),
+                "--journal".into(),
+                journal.display().to_string(),
+            ],
+            &root,
+        );
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let exit = run_owner_setup_with_io(
+            args,
+            home,
+            executable_dir,
+            root.to_path_buf(),
+            false,
+            false,
+            Seams {
+                runner: Box::new(CountingRunner(calls.clone())),
+                service_ops: Box::new(Service),
+                check_report_builder: Box::new(Check),
+                already_keeps_journal_probe: no_probe,
+                prompt: Box::new(Prompt),
+                confirm_clean_uninstall: Box::new(|| true),
+            },
+            &mut stdout,
+            &mut stderr,
+        );
+        assert_eq!(exit, ExitCode::from(2));
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        assert!(stdout.is_empty());
+        let stderr = String::from_utf8(stderr).unwrap();
+        assert!(stderr.contains(UNCERTAIN_ARTIFACTS_REFUSAL), "{stderr}");
+        assert!(stderr.contains("leave them in place"), "{stderr}");
+        for command in ["rm ", "launchctl", "systemctl", "Remove-Item"] {
+            assert!(!stderr.contains(command), "found {command:?}: {stderr}");
+        }
+        for (path, contents) in wrappers {
+            assert_eq!(fs::read_to_string(path).unwrap(), contents);
+        }
+    }
+
     /// The same refusal reached by a root that setup already admitted: it must not
     /// print the standard steps either, because they would delete the other
     /// installation's wrappers.
@@ -2017,6 +2120,33 @@ mod tests {
             !failed["error"]["message"].as_str().unwrap().contains("rm "),
             "{failed}"
         );
+    }
+
+    #[test]
+    fn uncertain_artifact_refusal_lists_no_remedy_paths_in_jsonl() {
+        let home = std::env::temp_dir().join("setup uncertain owner");
+        let namespace = "c".repeat(64);
+        let (mut stdout, mut stderr) = (Vec::new(), Vec::new());
+        let exit = report_identity_failure(
+            true,
+            &mut stdout,
+            &mut stderr,
+            &IdentityError::AdmissionRefused(UNCERTAIN_ARTIFACTS_REFUSAL),
+            &home,
+            Some(namespace.as_str()),
+        );
+        assert_eq!(exit, ExitCode::from(2));
+        let failed: serde_json::Value = String::from_utf8(stdout)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|event| event["event"] == "step.failed")
+            .expect("a step.failed event");
+        assert_eq!(failed["error"]["remedy"], serde_json::json!([]));
+        let message = failed["error"]["message"].as_str().unwrap();
+        assert!(message.contains("leave them in place"), "{message}");
+        assert!(!message.contains("rm "), "{message}");
+        assert!(stderr.is_empty());
     }
 
     /// The printed steps are pasted into a shell. An unquoted path with a space in
@@ -2138,7 +2268,7 @@ mod tests {
             false,
             &mut stdout,
             &mut stderr,
-            &IdentityError::AdmissionRefused("artifact binding is malformed or ambiguous"),
+            &IdentityError::AdmissionRefused("existing artifacts have no valid bootstrap evidence"),
             &home,
             None,
         );

@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- if `journal setup` can't tell which installation its command-line tools or background support belong to, the error now asks you to leave them in place and include the details in a support request.
+
 ## [2.0.18] - 2026-09-25
 
 ### Added

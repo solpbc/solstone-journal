@@ -561,6 +561,10 @@ struct NamespaceLease {
 pub const FOREIGN_ARTIFACTS_REFUSAL: &str =
     "existing wrapper or service artifacts are bound to a different installation";
 
+/// The refusal when artifact ownership cannot be established from the local evidence.
+/// Callers must not suggest removing artifacts on this branch.
+pub const UNCERTAIN_ARTIFACTS_REFUSAL: &str = "artifact binding is malformed or ambiguous";
+
 /// Provider failures, including unsafe storage states that require repair.
 #[derive(Debug)]
 pub enum IdentityError {
@@ -1213,9 +1217,7 @@ pub fn admit_clean_uninstall(
         request.artifacts,
         ArtifactBindingEvidence::Malformed | ArtifactBindingEvidence::Ambiguous
     ) {
-        return Err(IdentityError::AdmissionRefused(
-            "artifact binding is malformed or ambiguous",
-        ));
+        return Err(IdentityError::AdmissionRefused(UNCERTAIN_ARTIFACTS_REFUSAL));
     }
     let namespace_name = namespace_name(request.owner.platform, &request.root_token);
     #[cfg(target_os = "linux")]
@@ -2118,9 +2120,7 @@ fn validate_setup_evidence(
         artifacts,
         ArtifactBindingEvidence::Malformed | ArtifactBindingEvidence::Ambiguous
     ) {
-        return Err(IdentityError::AdmissionRefused(
-            "artifact binding is malformed or ambiguous",
-        ));
+        return Err(IdentityError::AdmissionRefused(UNCERTAIN_ARTIFACTS_REFUSAL));
     }
     if matches!(
         legacy,
@@ -2178,9 +2178,9 @@ fn validate_existing_evidence(
         ArtifactBindingEvidence::Foreign => {
             Err(IdentityError::AdmissionRefused(FOREIGN_ARTIFACTS_REFUSAL))
         }
-        ArtifactBindingEvidence::Malformed | ArtifactBindingEvidence::Ambiguous => Err(
-            IdentityError::AdmissionRefused("artifact binding is malformed or ambiguous"),
-        ),
+        ArtifactBindingEvidence::Malformed | ArtifactBindingEvidence::Ambiguous => {
+            Err(IdentityError::AdmissionRefused(UNCERTAIN_ARTIFACTS_REFUSAL))
+        }
     }
 }
 
