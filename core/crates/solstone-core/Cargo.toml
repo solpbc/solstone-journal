@@ -209,7 +209,7 @@ nix = { workspace = true, features = ["fs", "process", "signal", "user"] }
 tokio = { workspace = true, features = ["process", "macros"] }
 base64 = "0.22.1"
 solstone-core-win-owner-rail = { workspace = true }
-windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Registry", "Win32_System_Threading", "Win32_System_SystemInformation"] }
+windows-sys = { workspace = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Console", "Win32_System_Pipes", "Win32_System_Threading", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
 futures-util = { version = "0.3.33", default-features = false, features = ["sink", "std"] }

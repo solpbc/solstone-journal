@@ -5,23 +5,16 @@
 //! HKCU Run works for standard users; RunOnce does not. The entry exists only
 //! while stopped, and wscript runs the Scheduler controls without a console.
 
-use std::ffi::OsStr;
 use std::fs;
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::ptr;
+use std::process::Command;
 
-use windows_sys::Win32::Foundation::ERROR_FILE_NOT_FOUND;
-use windows_sys::Win32::System::Registry::{
-    HKEY, HKEY_CURRENT_USER, KEY_QUERY_VALUE, KEY_SET_VALUE, REG_SZ, RegCloseKey, RegCreateKeyExW,
-    RegDeleteValueW, RegOpenKeyExW, RegQueryValueExW, RegSetValueExW,
-};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-
-fn wide(value: &OsStr) -> Vec<u16> {
-    value.encode_wide().chain(std::iter::once(0)).collect()
-}
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 fn value_name(id: &str) -> String {
     format!("SolstoneJournalResume-{id}")
@@ -81,107 +74,78 @@ fn script(task_path: &str, value_name: &str) -> String {
     .join("\r\n")
 }
 
-fn registry_error(action: &str, code: u32) -> String {
-    format!("Windows sign-in resume {action} failed (Windows error {code})")
-}
-
-fn open_run_key(create: bool) -> Result<Option<HKEY>, String> {
-    let mut key = ptr::null_mut();
-    let path = wide(OsStr::new(RUN_KEY));
-    let code = if create {
-        // SAFETY: all pointers refer to live, terminated buffers or output storage.
-        unsafe {
-            RegCreateKeyExW(
-                HKEY_CURRENT_USER,
-                path.as_ptr(),
-                0,
-                ptr::null(),
-                0,
-                KEY_QUERY_VALUE | KEY_SET_VALUE,
-                ptr::null(),
-                &mut key,
-                ptr::null_mut(),
-            )
-        }
+fn registry_command(action: &str, id: &str, value: Option<&str>) -> Result<(), String> {
+    let windows = std::env::var_os("SystemRoot").ok_or("SystemRoot is unavailable")?;
+    let powershell = Path::new(&windows).join("System32/WindowsPowerShell/v1.0/powershell.exe");
+    // The payloads are UTF-8/base64 literals, so owner paths never become
+    // PowerShell source text. The .NET registry API provides a safe readback.
+    let name = STANDARD.encode(value_name(id).as_bytes());
+    let value = STANDARD.encode(value.unwrap_or_default().as_bytes());
+    let operation = if action == "write" {
+        format!(
+            r#"$key=[Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('{RUN_KEY}', $true)
+if($null -eq $key){{throw 'Run key unavailable'}}
+try {{
+  $key.SetValue($name,$value,[Microsoft.Win32.RegistryValueKind]::String)
+  if($key.GetValueKind($name) -ne [Microsoft.Win32.RegistryValueKind]::String -or
+     ![string]::Equals([string]$key.GetValue($name),$value,[StringComparison]::Ordinal)){{throw 'Run value readback differed'}}
+}} finally {{$key.Close()}}"#
+        )
     } else {
-        // SAFETY: the path is terminated and key points to output storage.
-        unsafe {
-            RegOpenKeyExW(
-                HKEY_CURRENT_USER,
-                path.as_ptr(),
-                0,
-                KEY_QUERY_VALUE | KEY_SET_VALUE,
-                &mut key,
-            )
-        }
+        format!(
+            r#"$key=[Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('{RUN_KEY}', $true)
+if($null -ne $key){{
+  try {{
+    $key.DeleteValue($name,$false)
+    if($null -ne $key.GetValue($name,$null,[Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)){{throw 'Run value remained'}}
+  }} finally {{$key.Close()}}
+}}"#
+        )
     };
-    if code == ERROR_FILE_NOT_FOUND && !create {
-        return Ok(None);
+    let script = format!(
+        r#"$ErrorActionPreference='Stop'
+try {{
+  $name=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{name}'))
+  $value=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{value}'))
+  {operation}
+}} catch {{
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}}"#
+    );
+    let encoded = STANDARD.encode(
+        script
+            .encode_utf16()
+            .flat_map(u16::to_le_bytes)
+            .collect::<Vec<_>>(),
+    );
+    let output = Command::new(powershell)
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-EncodedCommand",
+            &encoded,
+        ])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|error| format!("Windows sign-in resume {action} could not start: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "Windows sign-in resume {action} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
     }
-    if code != 0 {
-        return Err(registry_error("open", code));
-    }
-    Ok(Some(key))
-}
-
-fn close_key(key: HKEY) {
-    // SAFETY: key was returned by RegOpenKeyExW or RegCreateKeyExW above.
-    unsafe { RegCloseKey(key) };
+    Ok(())
 }
 
 fn set_entry(id: &str, command: &str) -> Result<(), String> {
-    let key = open_run_key(true)?.ok_or("Windows Run key was not opened")?;
-    let name = wide(OsStr::new(&value_name(id)));
-    let value = wide(OsStr::new(command));
-    let bytes: Vec<u8> = value.into_iter().flat_map(u16::to_le_bytes).collect();
-    // SAFETY: pointers refer to live name and value buffers for this call.
-    let code = unsafe {
-        RegSetValueExW(
-            key,
-            name.as_ptr(),
-            0,
-            REG_SZ,
-            bytes.as_ptr(),
-            bytes.len() as u32,
-        )
-    };
-    if code != 0 {
-        close_key(key);
-        return Err(registry_error("write", code));
-    }
-    let mut kind = 0;
-    let mut readback = vec![0_u8; bytes.len() + 2];
-    let mut length = readback.len() as u32;
-    // SAFETY: the readback buffer has length bytes and length points to its size.
-    let code = unsafe {
-        RegQueryValueExW(
-            key,
-            name.as_ptr(),
-            ptr::null(),
-            &mut kind,
-            readback.as_mut_ptr(),
-            &mut length,
-        )
-    };
-    close_key(key);
-    if code != 0 || kind != REG_SZ || readback[..length as usize] != bytes {
-        return Err("Windows sign-in resume registry readback differed".to_owned());
-    }
-    Ok(())
+    registry_command("write", id, Some(command))
 }
 
 fn delete_entry(id: &str) -> Result<(), String> {
-    let Some(key) = open_run_key(false)? else {
-        return Ok(());
-    };
-    let name = wide(OsStr::new(&value_name(id)));
-    // SAFETY: key is open and name is a terminated buffer.
-    let code = unsafe { RegDeleteValueW(key, name.as_ptr()) };
-    close_key(key);
-    if code != 0 && code != ERROR_FILE_NOT_FOUND {
-        return Err(registry_error("delete", code));
-    }
-    Ok(())
+    registry_command("delete", id, None)
 }
 
 pub(super) fn arm(owner_base: &Path, id: &str, task_path: &str) -> Result<(), String> {
