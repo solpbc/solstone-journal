@@ -402,6 +402,33 @@ fn html_escape(value: &str) -> String {
 }
 
 fn html_status(status: u16, reason: &'static str, body: &str) -> HttpResponse {
+    html_status_with_csp(status, reason, body, AUTHORIZE_CSP.to_owned())
+}
+
+/// The consent page's policy also admits the origin its form finally lands on.
+///
+/// A successful consent answers the form POST with a redirect to the client's
+/// callback, which is on another origin. Browsers apply `form-action` to every
+/// hop of that redirect, so a policy of `'self'` alone makes the browser refuse
+/// the redirect and the sign-in never completes. The callback origin comes from
+/// the closed redirect grammar, so it can never widen the policy past that one
+/// admitted origin.
+fn consent_csp(callback_origin: Option<&str>) -> String {
+    match callback_origin {
+        Some(origin) => AUTHORIZE_CSP.replace(
+            "form-action 'self'",
+            &format!("form-action 'self' {origin}"),
+        ),
+        None => AUTHORIZE_CSP.to_owned(),
+    }
+}
+
+fn html_status_with_csp(
+    status: u16,
+    reason: &'static str,
+    body: &str,
+    csp: String,
+) -> HttpResponse {
     HttpResponse::html(
         status,
         reason,
@@ -410,7 +437,7 @@ fn html_status(status: u16, reason: &'static str, body: &str) -> HttpResponse {
         ),
     )
     .with_header("Cache-Control", "no-store".to_owned())
-    .with_header("Content-Security-Policy", AUTHORIZE_CSP.to_owned())
+    .with_header("Content-Security-Policy", csp)
     .with_header("X-Frame-Options", "DENY".to_owned())
 }
 
@@ -430,9 +457,12 @@ fn consent_page(
     wrong_code: bool,
     selection: &ConsentSelection,
 ) -> HttpResponse {
-    let host = parse_redirect_uri(redirect_uri)
-        .map(|parsed| redirect_host_label(&parsed))
-        .unwrap_or_else(|_| "unknown".to_owned());
+    let parsed = parse_redirect_uri(redirect_uri).ok();
+    let host = parsed
+        .as_ref()
+        .map(redirect_host_label)
+        .unwrap_or_else(|| "unknown".to_owned());
+    let callback_origin = parsed.as_ref().map(redirect_origin);
     let client_label = client
         .client_name
         .as_deref()
@@ -440,6 +470,7 @@ fn consent_page(
     consent_page_named(
         client_label,
         &host,
+        callback_origin.as_deref(),
         transaction_id,
         oauth,
         wrong_code,
@@ -450,6 +481,7 @@ fn consent_page(
 fn consent_page_named(
     client_label: &str,
     return_host: &str,
+    callback_origin: Option<&str>,
     transaction_id: &str,
     oauth: &OAuthRuntime,
     wrong_code: bool,
@@ -490,7 +522,7 @@ fn consent_page_named(
     } else {
         ""
     };
-    html_status(
+    html_status_with_csp(
         200,
         "OK",
         &format!(
@@ -514,6 +546,7 @@ fn consent_page_named(
             category_facets_checked =
                 checked(selection.categories.iter().any(|value| value == "facets")),
         ),
+        consent_csp(callback_origin),
     )
 }
 
@@ -568,6 +601,14 @@ fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
         Some(port) => format!("{host}:{port}"),
         None => host.to_owned(),
     }
+}
+
+fn redirect_origin(parsed: &super::redirect::ParsedRedirectUri) -> String {
+    let scheme = match parsed.scheme {
+        super::redirect::RedirectScheme::Http => "http",
+        super::redirect::RedirectScheme::Https => "https",
+    };
+    format!("{scheme}://{}", redirect_host_label(parsed))
 }
 
 fn error_redirect(redirect_uri: &str, error: &str, state: Option<&str>) -> HttpResponse {
@@ -827,6 +868,40 @@ mod tests {
         assert_eq!(header(&response, "X-Frame-Options"), Some("DENY"));
         let csp = header(&response, "Content-Security-Policy").unwrap();
         assert!(csp.contains("frame-ancestors 'none'"));
+        // The consent form's redirect lands on the client's callback origin, and
+        // browsers refuse that hop unless form-action admits it.
+        assert!(
+            csp.contains("form-action 'self' http://127.0.0.1;"),
+            "{csp}"
+        );
+    }
+
+    #[test]
+    fn consent_csp_admits_exactly_the_callback_origin_and_other_pages_do_not() {
+        use super::super::redirect::parse_redirect_uri;
+        use super::{AUTHORIZE_CSP, consent_csp, local_error, redirect_origin};
+        let origin = |uri: &str| redirect_origin(&parse_redirect_uri(uri).unwrap());
+        assert_eq!(
+            origin("http://localhost:19876/callback"),
+            "http://localhost:19876"
+        );
+        assert_eq!(origin("http://127.0.0.1/callback"), "http://127.0.0.1");
+        assert_eq!(
+            origin("https://claude.ai/api/mcp/auth_callback"),
+            "https://claude.ai"
+        );
+        let csp = consent_csp(Some("http://localhost:19876"));
+        assert!(
+            csp.contains("form-action 'self' http://localhost:19876;"),
+            "{csp}"
+        );
+        assert_eq!(csp.matches("form-action").count(), 1);
+        assert_eq!(consent_csp(None), AUTHORIZE_CSP);
+        let error = local_error("authorization request could not be started");
+        assert_eq!(
+            header(&error, "Content-Security-Policy"),
+            Some(AUTHORIZE_CSP)
+        );
     }
 
     #[test]

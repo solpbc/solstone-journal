@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: the page your browser opens to finish connecting an agent showed an empty circle where your journal's mark belongs, with the words only on hover, so a page pretending to be your journal to collect your pairing code, and use it to connect an agent to your journal, looked the same as the real one. it now shows the mark in full, both icons and both words, and agents › connect an agent shows the same mark beside the pairing code, so you can check they match before you enter the code.
+- in Chrome and possibly other browsers, connecting an agent stopped after you entered the pairing code and never finished. it now finishes and returns you to the agent.
 - your journal marks every tool it offers agents as read-only again. agents that look for that mark can see that these tools only read.
 - in a journal with no transcripts yet, an agent that asks for transcripts now gets an empty list instead of an error.
 
