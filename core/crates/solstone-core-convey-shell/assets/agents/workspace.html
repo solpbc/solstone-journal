@@ -28,6 +28,7 @@
   .agents .modal-card h2{font-family:var(--font-display);font-size:1.35rem;margin:0 0 4px}
   .agents .check small{display:block}
   .agents .outcome.empty{padding:4px 8px;text-align:left}.agents .activity-row .outcome{flex:none;align-self:flex-start}
+  .agents .door-lan{margin-top:16px;border-top:1px solid var(--hairline)}.agents .fp{font-size:.8rem;line-height:1.55;word-spacing:.12em;overflow-wrap:anywhere}.agents .addr-preview code{color:var(--muted)}
   @media(max-width:640px){.agents h1{font-size:2rem}.agents .activity-row time{flex-basis:100%}.agents .seg2{grid-template-columns:1fr}.agents .lane-row{grid-template-columns:1fr;gap:4px}}
 </style>
 
@@ -51,6 +52,7 @@
   let dialog = null;
   let activity = null;
   let pairingCode = null;
+  let connectWay = null;
   let identity = null;
 
   async function api(path, options) { return window.apiJson(path, options); }
@@ -60,6 +62,12 @@
   // A journal that serves agents on this computer reports local_door; one that doesn't, doesn't.
   function hasDoor() { return Boolean(state?.local_door); }
   function doorAddress() { return state?.local_door?.address || LOCAL_DOOR_ADDRESS; }
+  // A journal that serves agents on your network reports lan_door; one that doesn't, doesn't.
+  function hasLan() { return Boolean(state?.lan_door); }
+  function lanAddresses() { return Array.isArray(state?.lan_door?.addresses) ? state.lan_door.addresses : []; }
+  function lanOpen() { return lanAddresses().filter(address => address.listening); }
+  function lanTaken() { return lanAddresses().filter(address => address.reason === 'port_in_use'); }
+  function fingerprint() { return String(state?.lan_door?.fingerprint || '').replaceAll(':', ' '); }
   function meAddress() { return state?.owner_state?.address || state?.certificate?.hostname || ''; }
   function meEndpoint() { return `https://${meAddress()}/mcp`; }
   function pending() { return Boolean(enableOp && (enableOp.phase === 'waiting' || enableOp.phase === 'starting')); }
@@ -68,7 +76,7 @@
   function errorPage(message) { view.innerHTML = frame('agents could not open.', `<span class="error notice">${esc(message)}</span>`, `<button class="btn" data-action="reload">try again</button>`); }
   function laneChip(connection) {
     if (connection.kind !== 'oauth') return '';
-    const label = connection.door === 'local' ? 'this computer' : connection.door === 'relay' || !hasDoor() ? 'solstone.me' : '';
+    const label = connection.door === 'lan' ? 'your network' : connection.door === 'local' ? 'this computer' : connection.door === 'relay' || !hasDoor() ? 'solstone.me' : '';
     return label ? `<span class="chip">${label}</span>` : '';
   }
   function permissionLine(permission) {
@@ -110,22 +118,89 @@
     if (door.reason === 'config_unreadable') return 'unreadable';
     return 'down';
   }
-  function ownTag() {
+  function localTag() {
     return {on:['on','on'], off:['','off'], invalid:['warn','needs attention'], port:['bad','needs attention'], unreadable:['warn','needs attention'], down:['warn','not running'], soon:['','coming later']}[ownState()];
+  }
+  function ownTag() {
+    if (!hasLan()) return localTag();
+    const own = ownState(), lan = lanState();
+    if (own === 'port' || lan === 'port' || lanTaken().length) return ['bad','needs attention'];
+    if (['invalid','unreadable','tls','bindfail','enum'].includes(lan)) return ['warn','needs attention'];
+    const local = localTag();
+    if (local[1] === 'needs attention') return local;
+    if (own === 'on' || ['on','noaddr','retrying'].includes(lan)) return ['on','on'];
+    if (own === 'down' || lan === 'down') return ['warn','not running'];
+    return ['','off'];
   }
   function sw(on, label, action) { return `<button class="sw${on ? '' : ' off'}" role="switch" aria-checked="${on}" aria-label="${label}" data-action="${action}"><i></i></button>`; }
   function ownBody() {
     const own = ownState();
-    if (own === 'soon') return `<div class="lane-body"><p class="note">this isn't available in this version of your journal yet.</p></div>`;
+    const body = inner => `<div class="lane-body">${inner}${hasLan() ? lanBlock() : ''}</div>`;
+    if (own === 'soon') return body(`<p class="note">this isn't available in this version of your journal yet.</p>`);
     const address = `<dl class="lane-row"><dt>address</dt><dd><code>${esc(doorAddress())}</code><button class="btn sm" data-copy="${esc(doorAddress())}">copy</button></dd></dl>`;
     const row = (sub, on) => `<div class="onoff"><div><p class="onlab">agents on this computer</p><p class="onsub">${sub}</p></div>${sw(on, 'agents on this computer', on ? 'own-off' : 'own-on')}</div>`;
     const check = '<div class="hand"><button class="btn" data-action="refresh">check again</button></div>';
-    if (own === 'off') return `<div class="lane-body">${row('off', false)}<p class="note">agents on this computer can't reach your journal. the ones you connected are kept, with what each may see, for when you turn this back on.</p></div>`;
-    if (own === 'invalid') return `<div class="lane-body">${row("off until your journal's settings are fixed", false)}<p class="note">your journal's settings file has a value for this that it doesn't understand, so it keeps agents on this computer out. turning this on replaces that value.</p></div>`;
-    if (own === 'unreadable') return `<div class="lane-body">${row("your journal can't read its settings", true)}<div class="notice"><p>until it can, this stays as it was, and right now agents on this computer can't reach your journal. your connected agents and what each may see don't change.</p></div>${check}</div>`;
-    if (own === 'port') { const mark = markUnit(); return `<div class="lane-body">${row('on, but something else has the address', true)}${address}<div class="notice error"><p><strong>something else is using this address.</strong> an agent that uses it reaches whatever is there, not your journal. that may be a journal under another login on this computer, or a program pretending to be your journal.</p>${mark ? `<p>before you enter a pairing code, check the page asking for it shows your journal's mark:</p>${mark}<p>if it shows a different mark, or none, close that page.</p>` : `<p>before you enter a pairing code, check the page asking for it shows your journal's mark. if it doesn't, close that page.</p>`}</div>${check}</div>`; }
-    if (own === 'down') return `<div class="lane-body">${row('on, not running right now', true)}${address}<div class="notice"><p>the part of your journal that serves agents isn't running, so agents on this computer can't reach it.</p></div>${check}</div>`;
-    return `<div class="lane-body">${row('on', true)}${address}<p class="note">any agent running on this computer can use this address. it reads nothing until you connect it with a pairing code and choose what it may see.</p></div>`;
+    if (own === 'off') return body(`${row('off', false)}<p class="note">agents on this computer can't reach your journal. the ones you connected are kept, with what each may see, for when you turn this back on.</p>`);
+    if (own === 'invalid') return body(`${row("off until your journal's settings are fixed", false)}<p class="note">your journal's settings file has a value for this that it doesn't understand, so it keeps agents on this computer out. turning this on replaces that value.</p>`);
+    if (own === 'unreadable') return body(`${row("your journal can't read its settings", true)}<div class="notice"><p>until it can, this stays as it was, and right now agents on this computer can't reach your journal. your connected agents and what each may see don't change.</p></div>${check}`);
+    if (own === 'port') { const mark = markUnit(); return body(`${row('on, but something else has the address', true)}${address}<div class="notice error"><p><strong>something else is using this address.</strong> an agent that uses it reaches whatever is there, not your journal. that may be a journal under another login on this computer, or a program pretending to be your journal.</p>${mark ? `<p>before you enter a pairing code, check the page asking for it shows your journal's mark:</p>${mark}<p>if it shows a different mark, or none, close that page.</p>` : `<p>before you enter a pairing code, check the page asking for it shows your journal's mark. if it doesn't, close that page.</p>`}</div>${check}`); }
+    if (own === 'down') return body(`${row('on, not running right now', true)}${address}<div class="notice"><p>the part of your journal that serves agents isn't running, so agents on this computer can't reach it.</p></div>${check}`);
+    return body(`${row('on', true)}${address}<p class="note">any agent running on this computer can use this address. it reads nothing until you connect it with a pairing code and choose what it may see.</p>`);
+  }
+
+  // ---- your own: agents on your network ----------------------------------------------------------
+  function lanState() {
+    const door = state.lan_door;
+    if (door.listening) return 'on';
+    if (door.reason === 'config_invalid') return 'invalid';
+    if (door.reason === 'config_unreadable') return 'unreadable';
+    if (door.enabled === false) return 'off';
+    return {no_address:'noaddr', enumeration_failed:'enum', tls_unavailable:'tls', port_in_use:'port', bind_failed:'bindfail', retrying:'retrying'}[door.reason] || 'down';
+  }
+  function lanBlock() {
+    const lan = lanState();
+    const row = (sub, on) => `<div class="onoff"><div><p class="onlab">agents on your network</p><p class="onsub">${sub}</p></div>${sw(on, 'agents on your network', on ? 'lan-off' : 'lan-on')}</div>`;
+    const check = '<div class="hand"><button class="btn" data-action="refresh">check again</button></div>';
+    const addrTag = {port_in_use:['bad','something else is using it'], bind_failed:['warn',"couldn't open"], tls_unavailable:['warn',"couldn't open"], retrying:['warn','reopening']};
+    const addrRow = address => {
+      if (address.listening) return `<dl class="lane-row"><dt>address</dt><dd><code>${esc(address.url)}</code><button class="btn sm" data-copy="${esc(address.url)}">copy</button></dd></dl>`;
+      const [cls, text] = addrTag[address.reason] || ['', 'opening'];
+      return `<dl class="lane-row"><dt>address</dt><dd><code>${esc(address.url)}</code><span class="tag ${cls}">${text}</span></dd></dl>`;
+    };
+    const addresses = lanAddresses().map(addrRow).join('');
+    const taken = lanTaken().map(address => address.url);
+    const takenNotice = taken.length === 1 && lan === 'on'
+      ? `<div class="notice error"><p>something else on this computer is using ${esc(taken[0])}. an agent that uses that address reaches whatever is there, not your journal. that may be a journal under another login on this computer, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through ${esc(taken[0])}, and close any that is open.</p></div>`
+      : taken.length ? `<div class="notice error"><p>something else on this computer is using ${taken.length === 1 ? 'this address' : 'these addresses'}. an agent that uses one reaches whatever is there, not your journal. that may be a journal under another login on this computer, or a program pretending to be your journal. until this clears, don't enter a pairing code on a page opened through ${taken.map(esc).join(' or ')}. if one is open, close it.</p></div>` : '';
+    const fp = fingerprint() ? `<details><summary>certificate fingerprint</summary><p>your journal made the certificate for these addresses itself, so the browser on another computer warns that the connection isn't private. that's expected. the certificate's SHA-256 fingerprint is:</p><p><code class="fp">${esc(fingerprint())}</code></p></details>` : '';
+    const about = `<details><summary>about these addresses</summary><p>these addresses can change when this computer joins a network again. if one does, give your agent the new one. you may need to connect it again with a new pairing code.</p><p>any device on a network this computer is on can reach them, including other people on a café's or hotel's wifi, or a VPN service's other customers, but not the wider internet.</p><p>if another computer can't reach them, check whether this computer's firewall is blocking incoming connections.</p></details>`;
+    const lanAgents = state.connections.some(connection => connection.kind === 'oauth' && connection.door === 'lan');
+    let inner;
+    if (lan === 'off') {
+      const preview = lanAddresses().length ? `<p class="note">when it's on, agents use one of these addresses:</p><div class="addr-preview">${lanAddresses().map(address => `<dl class="lane-row"><dt>address</dt><dd><code>${esc(address.url)}</code></dd></dl>`).join('')}</div>` : '';
+      inner = `${row('off', false)}<p class="note">turn this on for agents on other computers on your wifi or VPN, like Tailscale. while it's on, any device on a network this computer is on can reach its addresses, including on a café's or hotel's wifi. an agent reads nothing until you connect it with a pairing code and choose what it may see.${lanAgents ? ' the ones you connected this way are kept, with what each may see, for when you turn this back on.' : ''}</p>${preview}`;
+    } else if (lan === 'on') {
+      inner = `${row('on', true)}${addresses}${takenNotice}<p class="note">agents on other computers on your wifi or VPN can use these addresses. use the one on the same network as that computer. an agent reads nothing until you connect it with a pairing code and choose what it may see.</p><p class="note">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>${fp}${about}`;
+    } else if (lan === 'invalid') {
+      inner = `${row("off until your journal's settings are fixed", false)}<p class="note">your journal's settings file has a value for this that it doesn't understand, so it keeps this off. turning this on replaces that value.</p>`;
+    } else if (lan === 'unreadable') {
+      inner = `${row("your journal can't read its settings", true)}<div class="notice"><p>until it can, these addresses stay closed. your connected agents and what each may see don't change.</p></div>${check}`;
+    } else if (lan === 'noaddr') {
+      inner = `${row("on, but this computer isn't on a network your journal can use", true)}<p class="note">this computer has no local network or VPN address your journal can use right now. your journal uses local network and VPN addresses only, not public ones or a cable plugged straight between two computers. it opens its addresses on its own when this computer joins a network it can use.</p>`;
+    } else if (lan === 'enum') {
+      inner = `${row("on, but your journal can't read this computer's addresses", true)}<div class="notice"><p>your journal can't read this computer's network addresses right now, so it hasn't opened any. it keeps trying on its own.</p></div>${check}`;
+    } else if (lan === 'tls') {
+      inner = `${row("on, but your journal's certificate isn't ready", true)}${addresses}<div class="notice"><p>your journal can't read or make the certificate for these addresses, so it hasn't opened them. it keeps trying on its own.</p></div>${check}`;
+    } else if (lan === 'port') {
+      inner = `${row(`on, but something else has ${lanAddresses().length > 1 ? "one of your journal's addresses" : 'the address'}`, true)}${addresses}${takenNotice}${check}`;
+    } else if (lan === 'bindfail') {
+      inner = `${row("on, but your journal couldn't open its addresses", true)}${addresses}<div class="notice"><p>your journal couldn't open its addresses on your network. it keeps trying on its own.</p></div>${check}`;
+    } else if (lan === 'retrying') {
+      inner = `${row("on, reopening your journal's addresses", true)}${addresses}<div class="notice"><p>your journal is reopening its addresses on your network.</p></div>${check}`;
+    } else {
+      inner = `${row('on, not running right now', true)}<div class="notice"><p>the part of your journal that serves agents isn't running, so these addresses are closed.</p></div>${check}`;
+    }
+    return `<div class="door-lan">${inner}</div>`;
   }
 
   // ---- solstone.me: agents anywhere, operated by sol pbc ------------------------------------------
@@ -170,7 +245,7 @@
   }
 
   // ---- the page ----------------------------------------------------------------------------------
-  function statusLine() {
+  function baseStatusLine() {
     const own = ownState(), me = meState();
     if (own === 'port') return ['r', "something else on this computer is using your journal's address for agents."];
     const ownOn = own === 'on', meOn = me === 'on' || me === 'renewal';
@@ -179,7 +254,17 @@
     if (ownOn) return ['g', 'agents on this computer can reach your journal.'];
     if (meOn) return ['g', 'agents can reach your journal through solstone.me.'];
     if (own === 'down' || own === 'unreadable') return ['a', "agents on this computer can't reach your journal right now."];
-    return ['', 'neither way is on right now.'];
+    return ['', 'neither way is on right now.', true];
+  }
+  function statusLine() {
+    const base = baseStatusLine();
+    if (!hasLan() || ownState() === 'port') return base.slice(0, 2);
+    const lan = lanState();
+    if (lan === 'port' || lanTaken().length) return ['r', "something else on this computer is using one of your journal's addresses for agents on your network."];
+    const [tone, sentence, neither] = base;
+    if (lan === 'on') return neither ? ['g', 'agents on your network can reach your journal.'] : [tone, `${sentence} agents on your network can reach your journal too.`];
+    if (lan === 'off' || lan === 'invalid') return [tone, sentence];
+    return neither ? ['a', "your journal's addresses on your network aren't open right now."] : [tone === 'g' ? 'a' : tone, `${sentence} your journal's addresses on your network aren't open right now.`];
   }
   function segment(id, name, desc, disclosure, cls, [tagCls, tagText]) {
     return `<button class="seg${lane === id ? ' is' : ''}${id === 'own' && !hasDoor() ? ' soon' : ''}" role="radio" aria-checked="${lane === id}" data-lane="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${name}</span><span class="tag ${tagCls}">${tagText}</span></span><span class="segdesc">${desc}</span><span class="${cls}">${disclosure}</span></button>`;
@@ -192,22 +277,49 @@
   }
   function home() {
     const [tone, sentence] = statusLine();
-    const lanes = `<section class="lanes"><p class="sectlab">how your agents reach your journal</p><p class="secthint">whichever way an agent uses, it reads only what you let it see.</p><div class="seg2" role="radiogroup" aria-label="how your agents reach your journal">${segment('own', 'your own', `agents on this computer reach your journal directly.${hasDoor() ? ' the default.' : ''}`, 'sol pbc is never in the path', 'byob', ownTag())}${segment('me', 'solstone.me', 'agents anywhere, like Claude on the web, reach your journal at its own address, through a relay sol pbc runs for you.', 'operated by sol pbc', 'oper', meTag())}</div>${lane === 'own' ? ownBody() : meBody()}</section>`;
+    const lanes = `<section class="lanes"><p class="sectlab">how your agents reach your journal</p><p class="secthint">whichever way an agent uses, it reads only what you let it see.</p><div class="seg2" role="radiogroup" aria-label="how your agents reach your journal">${segment('own', 'your own', hasLan() ? 'by default, agents on this computer reach your journal directly. agents on your wifi or VPN can too, once you turn that on.' : `agents on this computer reach your journal directly.${hasDoor() ? ' the default.' : ''}`, 'sol pbc is never in the path', 'byob', ownTag())}${segment('me', 'solstone.me', 'agents anywhere, like Claude on the web, reach your journal at its own address, through a relay sol pbc runs for you.', 'operated by sol pbc', 'oper', meTag())}</div>${lane === 'own' ? ownBody() : meBody()}</section>`;
     return `<p class="brandlock"><span class="lockdot" aria-hidden="true"></span>your journal is always private, only yours.</p><h1>agents</h1><p class="status-line"><span class="sdot ${tone}" aria-hidden="true"></span>${sentence}</p>${lanes}${agentsList()}`;
   }
 
   // ---- dialogs -----------------------------------------------------------------------------------
   function connectDialog() {
-    const addresses = [];
-    if (ownState() === 'on') addresses.push(`<div class="addr"><span>an agent on this computer</span><div><code>${esc(doorAddress())}</code><button class="btn sm" data-copy="${esc(doorAddress())}">copy</button></div></div>`);
-    if (state.enabled && meAddress()) addresses.push(`<div class="addr"><span>an agent anywhere, through solstone.me · in Claude, add it as a custom connector</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></div></div>`);
-    const code = pairingCode
-      ? `<code class="copy-code">${esc(pairingCode.code)}</code><p class="meta">works once. expires at ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}.</p><button class="btn sm" data-action="new-code">make a new code</button>`
-      : `${state.pairing?.locked ? `<p class="meta">the last code was entered wrong too many times, so it no longer works.</p>` : state.pairing ? `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>` : ''}<button class="btn primary" data-action="new-code">make a pairing code</button><p class="meta">it works once and expires after 10 minutes.</p>`;
+    const lanWay = hasLan() && lanState() === 'on' && lanOpen().length > 0;
+    const otherOn = ownState() === 'on' || Boolean(state.enabled && meAddress());
+    if (lanWay && !otherOn) connectWay = 'lan';
+    if (!lanWay) connectWay = 'other';
+    const wantLan = connectWay === 'lan';
+    const codeMatches = code => (code?.door === 'lan') === wantLan;
+    const choice = lanWay && otherOn ? `<div class="mstep" style="display:block"><p><strong>where is this agent?</strong></p><div class="seg2" role="radiogroup" aria-label="where is this agent">${[['other', 'on this computer, or anywhere through solstone.me'], ['lan', 'on another computer on your wifi or VPN']].map(([id, name]) => `<button class="seg${connectWay === id ? ' is' : ''}" role="radio" aria-checked="${connectWay === id}" data-way="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${name}</span></span></button>`).join('')}</div></div>` : '';
     const mark = markUnit();
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent"><button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2><div class="mstep"><span class="n">1</span><div><p>give your agent your journal's address, where it asks for an MCP server.</p>${addresses.length ? addresses.join('') : `<p class="meta">neither way is on right now. turn one on first.</p>`}<p class="meta">if an app already opened your journal's page on its own, go to step 2.</p></div></div><div class="mstep"><span class="n">2</span><div><p>your browser opens your journal's page. check it shows ${mark ? 'this mark:' : "your journal's mark."}</p>${mark}</div></div><div class="mstep"><span class="n">3</span><div><p>enter a pairing code on that page.</p>${code}</div></div><p class="meta">a different mark, or not expecting this? close that page. nothing connects until you enter the code.</p></article></div>`;
+    const close = `<button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2>`;
+    if (!connectWay) return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent">${close}${choice}<p class="meta">pick where the agent is first. the pairing code works only for the one you pick.</p></article></div>`;
+    const addresses = [];
+    if (wantLan) {
+      for (const address of lanOpen()) addresses.push(`<div class="addr"><span>an agent on another computer on your wifi or VPN · use the address on the same network as that computer</span><div><code>${esc(address.url)}</code><button class="btn sm" data-copy="${esc(address.url)}">copy</button></div></div>`);
+    } else {
+      if (ownState() === 'on') addresses.push(`<div class="addr"><span>an agent on this computer</span><div><code>${esc(doorAddress())}</code><button class="btn sm" data-copy="${esc(doorAddress())}">copy</button></div></div>`);
+      if (state.enabled && meAddress()) addresses.push(`<div class="addr"><span>an agent anywhere, through solstone.me · in Claude, add it as a custom connector</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></div></div>`);
+    }
+    const other = wantLan ? 'this computer and solstone.me' : 'your network';
+    const shown = pairingCode && codeMatches(pairingCode) ? pairingCode : null;
+    const open = state.pairing && !shown ? (codeMatches(state.pairing) ? `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>` : hasLan() ? `<p class="meta">the open code is for ${other}. make a new one for this agent. it replaces the open one.</p>` : `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>`) : '';
+    const code = shown
+      ? `<code class="copy-code">${esc(shown.code)}</code><p class="meta">works once. expires at ${esc(new Date(shown.expires_at).toLocaleTimeString())}.${wantLan ? ' this code works only for an agent on your network.' : ''}</p><button class="btn sm" data-action="new-code">make a new code</button>`
+      : `${state.pairing?.locked && codeMatches(state.pairing) ? `<p class="meta">the last code was entered wrong too many times, so it no longer works.</p>` : open}<button class="btn primary" data-action="new-code">make a pairing code</button><p class="meta">it works once and expires after 10 minutes.</p>`;
+    const step1 = `<div class="mstep"><span class="n">1</span><div><p>give your agent your journal's address, where it asks for an MCP server.</p>${addresses.length ? addresses.join('') : `<p class="meta">neither way is on right now. turn one on first.</p>`}${wantLan ? `<p class="meta">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>` : ''}<p class="meta">if an app already opened your journal's page on its own, go to step 2.</p></div></div>`;
+    const where = `<details><summary>certificate fingerprint</summary><p>your journal's certificate for these addresses has this SHA-256 fingerprint:</p><p><code class="fp">${esc(fingerprint())}</code></p><p>your browser shows it in the certificate's details.</p></details>`;
+    const step2 = wantLan
+      ? `<div class="mstep"><span class="n">2</span><div><p>the browser on that computer opens your journal's page. first it warns that the connection isn't private. that's expected: your journal made its certificate itself. then check the page shows ${mark ? 'this mark:' : "your journal's mark."}</p>${mark}${fingerprint() ? where : ''}</div></div>`
+      : `<div class="mstep"><span class="n">2</span><div><p>your browser opens your journal's page. check it shows ${mark ? 'this mark:' : "your journal's mark."}</p>${mark}</div></div>`;
+    const step3 = `<div class="mstep"><span class="n">3</span><div><p>enter a pairing code on that page.</p>${code}</div></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent">${close}${choice}${step1}${step2}${step3}<p class="meta">a different mark, or not expecting this? close that page. nothing connects until you enter the code.</p></article></div>`;
   }
   function confirmDialog(kind) {
+    if (kind === 'lan-off') {
+      const own = ownState() === 'on', me = meState() === 'on' || meState() === 'renewal';
+      const keep = own && me ? ' agents on this computer, and through solstone.me, keep working.' : own ? ' agents on this computer keep working.' : me ? ' agents through solstone.me keep working.' : '';
+      return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="turn off agents on your network"><h2>turn off agents on your network?</h2><p>agents you connected on your network stop reaching your journal within a few seconds.${keep}</p><p>the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.</p><div class="button-row"><button class="btn danger" data-action="lan-door-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div></article></div>`;
+    }
     const body = kind === 'me-off'
       ? `<h2>turn off solstone.me?</h2><p>agents connected through solstone.me stop reaching your journal on their next request.${ownState() === 'on' ? ' agents on this computer keep working.' : ''}</p><p>the address and your agents are kept: turning back on uses the same address, with no new certificate. its public certificate record remains either way.</p><div class="button-row"><button class="btn danger" data-action="turn-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div>`
       : `<h2>turn off agents on this computer?</h2><p>agents on this computer stop reaching your journal within a few seconds.</p><p>the ones you connected are kept, with what each may see, for when you turn this back on. their activity stays in your journal.</p><div class="button-row"><button class="btn danger" data-action="door-off">turn off</button><button class="btn" data-close-modal>keep it on</button></div>`;
@@ -333,6 +445,7 @@
     if (target.closest('.modal-card') === null && target.dataset.closeModal !== undefined) return;
     const action = target.dataset.action;
     if (target.dataset.lane) { lane = target.dataset.lane; render(); return; }
+    if (target.dataset.way) { connectWay = target.dataset.way; render(); return; }
     if (target.dataset.route) { event.preventDefault(); if (target.dataset.route === 'activity') await loadActivity(); else { route = {name: target.dataset.route}; render(); } return; }
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
     if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route = {name:'connection', connection: state.connections.find(item => item.kind === kind && item.id === id)}; render(); return; }
@@ -340,13 +453,14 @@
     if (target.dataset.activityIndex) { const entry = activity.entries[Number(target.dataset.activityIndex)]; view.insertAdjacentHTML('beforeend', activityDetail(entry)); view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry)); return; }
     try {
       if (action === 'reload' || action === 'refresh') await reload(true);
-      else if (action === 'connect') { dialog = 'connect'; render(); }
-      else if (action === 'me-off' || action === 'own-off') { dialog = action; render(); }
+      else if (action === 'connect') { dialog = 'connect'; connectWay = null; render(); }
+      else if (action === 'me-off' || action === 'own-off' || action === 'lan-off') { dialog = action; render(); }
+      else if (action === 'lan-on' || action === 'lan-door-off') { await api('/app/agents/api/lan-door', jsonOptions('PUT', {enabled: action === 'lan-on'})); dialog = null; await reload(true); }
       else if (action === 'own-on' || action === 'door-off') { await api('/app/agents/api/local-door', jsonOptions('PUT', {enabled: action === 'own-on'})); dialog = null; await reload(true); }
       else if (action === 'turn-on') await turnOn();
       else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; await reload(true); }
       else if (action === 'dismiss-enable') { clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }
-      else if (action === 'new-code') { pairingCode = await api('/app/agents/api/pairing', ownerOptions('POST')); state.pairing = pairingCode; render(); }
+      else if (action === 'new-code') { const lanCode = connectWay === 'lan'; pairingCode = await api('/app/agents/api/pairing', lanCode ? jsonOptions('POST', {door:'lan'}) : ownerOptions('POST')); if (lanCode && !pairingCode.door) pairingCode.door = 'lan'; state.pairing = pairingCode; render(); }
       else if (action === 'filter-activity') { const params = new URLSearchParams(); const outcome = document.getElementById('a-outcome').value; const tool = document.getElementById('a-tool').value; const connection = document.getElementById('a-agent').value; const from = document.getElementById('a-from').value.replaceAll('-',''); const to = document.getElementById('a-to').value.replaceAll('-',''); if (outcome) params.set('outcome', outcome); if (tool) params.set('tool', tool); if (connection) params.set('connection', connection); if (from) params.set('from', from); if (to) params.set('to', to); activity = await api(`/app/agents/api/activity?${params}`); render(); }
       else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
       else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm('disconnect this agent? what it already read stays with it. its activity stays in your journal.')) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
@@ -357,7 +471,7 @@
   window.setInterval(() => {
     if (route.name !== 'home' || dialog) return;
     if (pending()) pollEnable();
-    else if ((state?.enabled && state?.status !== 'on') || (state?.local_door && !state.local_door.listening)) reload(true);
+    else if ((state?.enabled && state?.status !== 'on') || (state?.local_door && !state.local_door.listening) || state?.lan_door?.enabled) reload(true);
   }, 10000);
 })();
 </script>

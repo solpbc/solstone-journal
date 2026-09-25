@@ -3,7 +3,8 @@
 
 // Drives the agents app's embedded script against a stubbed journal in each state the journal can
 // report: no local door, a local door that is not listening (every reason), a listening door, and
-// solstone.me off, turning on, on and turned off. The two ways in are chosen and switched separately.
+// solstone.me off, turning on, on and turned off, and the network door beside the local one. The
+// two ways in are chosen and switched separately.
 
 const assert = require('assert');
 const fs = require('fs');
@@ -31,6 +32,12 @@ function baseState(overrides = {}) {
   return {enabled: false, status: 'off', owner_state: null, certificate: {current: false}, connections: [], facets: [], pairing: null, ...overrides};
 }
 function door(extra) { return {local_door: {enabled: true, address: ADDRESS, ...extra}}; }
+const LAN_A = 'https://192.168.4.47:7660/mcp';
+const LAN_B = 'https://[fd7a:115c:a1e0::5]:7660/mcp';
+const FP = 'AB:CD:EF:01';
+function lan(extra, addresses = [{url: LAN_A, listening: true}, {url: LAN_B, listening: true}]) {
+  return {lan_door: {enabled: true, listening: true, port: 7660, fingerprint: FP, addresses, ...extra}};
+}
 function connection(kind, id, name, doorName) {
   return {kind, id, key: `${kind}:${id}`, name, door: doorName, created_at: '2026-09-24T12:00:00Z', permission: null, requests_this_week: 2, last_request_at: null, activity_complete: true};
 }
@@ -53,7 +60,7 @@ async function boot(state, {identityFails = false, enable = null} = {}) {
       if (url === '/app/agents/api/state') return JSON.parse(JSON.stringify(state));
       if (url === '/app/network/api/identity') { if (identityFails) throw new Error('unavailable'); return MARK; }
       if (url === '/app/agents/api/pairing') return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1};
-      if (url === '/app/agents/api/local-door' || url === '/app/agents/api/capability') return {enabled: JSON.parse(options.body).enabled, changed: true};
+      if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability') return {enabled: JSON.parse(options.body).enabled, changed: true};
       if (url === '/app/agents/api/enable') return method === 'POST' ? {operation: enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}} : {operation: null};
       throw new Error(`unexpected request ${method} ${url}`);
     },
@@ -212,6 +219,101 @@ async function test(name, body) {
     assert(put && put.body.enabled === true);
     assert(!calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
   });
+
+  await test('network door off: a preview of its addresses and its own switch', async () => {
+    const {view, click, calls} = await boot(baseState({...door({listening: true}), ...lan({enabled: false, listening: false, reason: 'disabled', fingerprint: undefined}, [{url: LAN_A, listening: false}])}));
+    has(view, 'agents on your wifi or VPN can too, once you turn that on.');
+    has(view, '<span class="tag on">on</span>', 'the local door keeps the lane on');
+    has(view, 'agents on your network');
+    has(view, "while it's on, any device on a network this computer is on can reach its addresses");
+    has(view, `<code>${LAN_A}</code>`);
+    lacks(view, `data-copy="${LAN_A}"`, 'an address that is not open is never copyable');
+    lacks(view, 'certificate fingerprint');
+    await click({action: 'lan-on'});
+    const put = calls.find(call => call.url === '/app/agents/api/lan-door');
+    assert(put && put.method === 'PUT' && put.body.enabled === true);
+  });
+
+  await test('network door on: addresses, the fingerprint as detail, its agents, and a confirmed turn-off', async () => {
+    const state = baseState({...door({listening: true}), ...lan({}), connections: [connection('oauth', 'n1', 'tiles on the laptop', 'lan')]});
+    const {view, click, calls} = await boot(state);
+    has(view, 'agents on this computer can reach your journal. agents on your network can reach your journal too.');
+    has(view, `data-copy="${LAN_A}"`);
+    has(view, `data-copy="${LAN_B}"`);
+    has(view, '<details><summary>certificate fingerprint</summary>');
+    has(view, 'AB CD EF 01');
+    has(view, "a key you created doesn't work at these addresses");
+    has(view, 'tiles on the laptop<span class="chip">your network</span>');
+    await click({action: 'lan-off'});
+    has(view, 'turn off agents on your network?');
+    has(view, 'agents on this computer keep working.');
+    await click({action: 'lan-door-off'});
+    const put = calls.find(call => call.url === '/app/agents/api/lan-door');
+    assert(put && put.body.enabled === false);
+  });
+
+  await test('connect with both doors open: pick where the agent is, then a code for that door only', async () => {
+    const {view, click, calls} = await boot(baseState({...door({listening: true}), ...lan({})}));
+    await click({action: 'connect'});
+    has(view, 'where is this agent?');
+    has(view, 'pick where the agent is first. the pairing code works only for the one you pick.');
+    lacks(view, 'make a pairing code');
+    await click({way: 'lan'});
+    const modal = () => view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"'));
+    assert(modal().includes(`<code>${LAN_A}</code>`));
+    assert(!modal().includes(`<code>${ADDRESS}</code>`), 'the network way offers only network addresses');
+    has(view, "first it warns that the connection isn't private.");
+    has(view, 'aria-label="teal, amber · afoot unfixed"', 'the mark is the check on the network way too');
+    has(view, 'AB CD EF 01');
+    await click({action: 'new-code'});
+    const post = calls.find(call => call.url === '/app/agents/api/pairing');
+    assert(post && post.method === 'POST' && post.body.door === 'lan', 'a network code is made for the network door');
+    has(view, 'this code works only for an agent on your network.');
+    await click({way: 'other'});
+    has(view, 'the open code is for your network. make a new one for this agent.');
+    assert(modal().includes(`<code>${ADDRESS}</code>`));
+    assert(!modal().includes(`<code>${LAN_A}</code>`), 'the other way offers no network address');
+    await click({action: 'new-code'});
+    const posts = calls.filter(call => call.url === '/app/agents/api/pairing');
+    assert.strictEqual(posts[1].body, undefined, 'the other way makes an unbound code');
+  });
+
+  await test('network door alone: connect goes straight to the network way', async () => {
+    const {view, click} = await boot(baseState({...door({enabled: false, listening: false, reason: 'disabled'}), ...lan({})}));
+    has(view, 'agents on your network can reach your journal.');
+    await click({action: 'connect'});
+    lacks(view, 'where is this agent?');
+    assert(view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"')).includes(`<code>${LAN_A}</code>`));
+  });
+
+  await test('one network address taken while another serves: red status, named address, no copy for it', async () => {
+    const {view} = await boot(baseState({...door({listening: true}), ...lan({}, [{url: LAN_A, listening: true}, {url: LAN_B, listening: false, reason: 'port_in_use'}])}));
+    has(view, 'class="sdot r"');
+    has(view, "something else on this computer is using one of your journal's addresses for agents on your network.");
+    has(view, '<span class="tag bad">needs attention</span>');
+    has(view, `something else on this computer is using ${LAN_B}.`);
+    has(view, '<span class="tag bad">something else is using it</span>');
+    lacks(view, `data-copy="${LAN_B}"`);
+    has(view, `data-copy="${LAN_A}"`);
+  });
+
+  const lanReasons = {
+    no_address: "on, but this computer isn't on a network your journal can use",
+    enumeration_failed: "on, but your journal can't read this computer's addresses",
+    tls_unavailable: "on, but your journal's certificate isn't ready",
+    bind_failed: "on, but your journal couldn't open its addresses",
+    retrying: "on, reopening your journal's addresses",
+    not_running: 'on, not running right now',
+    config_invalid: "off until your journal's settings are fixed",
+  };
+  for (const [reason, sub] of Object.entries(lanReasons)) {
+    await test(`network door not listening (${reason})`, async () => {
+      const {view} = await boot(baseState({...door({listening: true}), ...lan({listening: false, reason, fingerprint: undefined, enabled: reason !== 'config_invalid'}, [])}));
+      assert(view.innerHTML.includes(sub) || view.innerHTML.includes(sub.replaceAll("'", '&#39;')), `missing: ${sub}`);
+      lacks(view, 'certificate fingerprint');
+      if (reason !== 'config_invalid' && reason !== 'no_address') has(view, "your journal's addresses on your network aren't open right now.");
+    });
+  }
 
   console.log(`DOM CASES: ${cases} passed`);
 })().catch(error => { console.error(error); process.exit(1); });
