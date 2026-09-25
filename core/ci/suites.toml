@@ -71,73 +71,6 @@ timeout = "extended"
 default_full = true
 
 [[legs]]
-id = "classified-full-tests-sol-link"
-make_target = "check-rust-classified-full-tests-sol-link"
-set = "component"
-areas = ["trust"]
-packages = ["solstone-core-sol-link"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-default_full = true
-
-[[legs]]
-id = "classified-full-tests-convey-body"
-make_target = "check-rust-classified-full-tests-convey-body"
-set = "component"
-areas = ["services"]
-packages = ["solstone-core-convey-body"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "slow"
-serial_group = "local-services"
-default_full = true
-
-[[legs]]
-id = "classified-full-tests-facets"
-make_target = "check-rust-classified-full-tests-facets"
-set = "component"
-areas = ["facets"]
-packages = ["solstone-core-facets"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-
-[[legs]]
-id = "classified-full-tests-describe"
-make_target = "check-rust-classified-full-tests-describe"
-set = "native"
-areas = ["media"]
-packages = ["solstone-core-describe"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
-timeout = "standard"
-default_full = true
-
-[[legs]]
-id = "classified-full-tests-mcp-endpoint"
-make_target = "check-rust-classified-full-tests-mcp-endpoint"
-set = "component"
-areas = ["trust"]
-packages = ["solstone-core-mcp-endpoint"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-
-[[legs]]
-id = "classified-full-tests-setup"
-make_target = "check-rust-classified-full-tests-setup"
-set = "component"
-areas = ["health"]
-packages = ["solstone-core-setup"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-default_full = true
-
-[[legs]]
 id = "journal-mcp-endpoint"
 make_target = "check-rust-journal-mcp-endpoint"
 set = "component"
@@ -524,8 +457,9 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
 serial_group = "local-services"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-convey-config"
@@ -604,8 +538,9 @@ areas = ["media"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache", "ffmpeg-toolchain"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-describe-categories"
@@ -681,8 +616,9 @@ areas = ["facets"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-facets-web"
@@ -1056,8 +992,9 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-mcp-audit"
@@ -1311,8 +1248,9 @@ areas = ["health"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-skill-state"
@@ -1377,8 +1315,9 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests", "test-hooks"]
 
 [[package_suites]]
 id = "package::solstone-core-sound-tags"

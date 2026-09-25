@@ -26,6 +26,10 @@ pub const HOST_EXCLUDES: &[&str] = &[
     "solstone-core-vad-analyze",
 ];
 
+/// The feature that keeps a package's boundary-reaching tests out of the
+/// routine gate and in the full gate.
+pub const FULL_TESTS_FEATURE: &str = "full-tests";
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Registry {
@@ -97,6 +101,11 @@ pub struct PackageSuite {
     pub serial_group: Option<String>,
     pub default_full: bool,
     pub runtime: String,
+    /// Cargo features enabled when the package's library and binary tests
+    /// run in the full gate. A package that gates tests behind `full-tests`
+    /// names it here so those tests run somewhere.
+    #[serde(default)]
+    pub features: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -367,6 +376,11 @@ pub fn validate_registry(repo: &Path, registry: &Registry) -> Result<(), Vec<Str
         validate_default_exclusion(&leg.id, &leg.set, leg.default_full, &mut errors);
     }
 
+    match workspace_package_features(repo) {
+        Ok(declared) => validate_package_features(registry, &declared, &mut errors),
+        Err(error) => errors.push(error),
+    }
+
     match discover_workspace_packages(repo) {
         Ok(packages) => {
             for package in packages.difference(&registered_packages) {
@@ -604,7 +618,48 @@ pub fn discover_integration_suites(repo: &Path) -> Result<Vec<CargoSuite>, Strin
     Ok(suites.into_iter().collect())
 }
 
-fn discover_workspace_packages(repo: &Path) -> Result<BTreeSet<String>, String> {
+fn validate_package_features(
+    registry: &Registry,
+    declared: &BTreeMap<String, BTreeSet<String>>,
+    errors: &mut Vec<String>,
+) {
+    for suite in &registry.package_suites {
+        let known = declared.get(&suite.package);
+        for feature in &suite.features {
+            if !known.is_some_and(|features| features.contains(feature)) {
+                errors.push(format!(
+                    "package suite {} enables feature {feature}, which {} does not declare",
+                    suite.id, suite.package
+                ));
+            }
+        }
+        if !suite.features.is_empty() && !suite.default_full {
+            errors.push(format!(
+                "package suite {} enables features but is not default_full, so its gated tests never run",
+                suite.id
+            ));
+        }
+    }
+    for (package, features) in declared {
+        let runs_full_tests = registry.package_suites.iter().any(|suite| {
+            &suite.package == package
+                && suite
+                    .features
+                    .iter()
+                    .any(|feature| feature == FULL_TESTS_FEATURE)
+        });
+        if features.contains(FULL_TESTS_FEATURE)
+            && !HOST_EXCLUDES.contains(&package.as_str())
+            && !runs_full_tests
+        {
+            errors.push(format!(
+                "{package} gates tests behind {FULL_TESTS_FEATURE} but no package suite enables it"
+            ));
+        }
+    }
+}
+
+fn workspace_package_features(repo: &Path) -> Result<BTreeMap<String, BTreeSet<String>>, String> {
     let workspace_path = repo.join("core/Cargo.toml");
     let workspace = parse_toml(&workspace_path)?;
     let members = workspace
@@ -617,7 +672,7 @@ fn discover_workspace_packages(repo: &Path) -> Result<BTreeSet<String>, String> 
                 workspace_path.display()
             )
         })?;
-    let mut packages = BTreeSet::new();
+    let mut packages = BTreeMap::new();
     for member in members.iter() {
         let member = member
             .as_str()
@@ -629,11 +684,20 @@ fn discover_workspace_packages(repo: &Path) -> Result<BTreeSet<String>, String> 
             .and_then(|item| item.get("name"))
             .and_then(toml_edit::Item::as_str)
             .ok_or_else(|| format!("{} has no package.name", manifest_path.display()))?;
-        if !packages.insert(package.to_owned()) {
+        let features = manifest
+            .get("features")
+            .and_then(toml_edit::Item::as_table_like)
+            .map(|table| table.iter().map(|(name, _)| name.to_owned()).collect())
+            .unwrap_or_default();
+        if packages.insert(package.to_owned(), features).is_some() {
             return Err(format!("workspace repeats package name {package}"));
         }
     }
     Ok(packages)
+}
+
+fn discover_workspace_packages(repo: &Path) -> Result<BTreeSet<String>, String> {
+    Ok(workspace_package_features(repo)?.into_keys().collect())
 }
 
 fn validate_host_excludes(repo: &Path) -> Result<(), String> {
@@ -662,28 +726,21 @@ fn validate_host_excludes(repo: &Path) -> Result<(), String> {
     }
 }
 
+/// Packages whose registry suite runs their `full-tests` feature in the full
+/// gate. Only these may keep boundary-reaching tests behind that feature.
 fn classified_full_test_packages(repo: &Path) -> Result<BTreeSet<String>, String> {
-    let makefile = fs::read_to_string(repo.join("Makefile")).map_err(|error| {
-        format!("read Makefile for RUST_CLASSIFIED_FULL_TEST_PACKAGES: {error}")
-    })?;
-    let declaration = makefile
-        .lines()
-        .find_map(|line| line.strip_prefix("RUST_CLASSIFIED_FULL_TEST_PACKAGES := "))
-        .ok_or_else(|| {
-            "Makefile has no exact RUST_CLASSIFIED_FULL_TEST_PACKAGES declaration".to_owned()
-        })?;
-    let words = declaration.split_whitespace().collect::<Vec<_>>();
-    if words.is_empty() {
-        return Err("RUST_CLASSIFIED_FULL_TEST_PACKAGES must not be empty".to_owned());
-    }
-    let packages = words
+    let registry = load_registry(&repo.join("core/ci/suites.toml"))?;
+    Ok(registry
+        .package_suites
         .iter()
-        .map(|package| (*package).to_owned())
-        .collect::<BTreeSet<_>>();
-    if packages.len() != words.len() {
-        return Err("RUST_CLASSIFIED_FULL_TEST_PACKAGES must be unique".to_owned());
-    }
-    Ok(packages)
+        .filter(|suite| {
+            suite
+                .features
+                .iter()
+                .any(|feature| feature == FULL_TESTS_FEATURE)
+        })
+        .map(|suite| suite.package.clone())
+        .collect())
 }
 
 fn parse_toml(path: &Path) -> Result<toml_edit::DocumentMut, String> {
@@ -890,6 +947,9 @@ impl<'ast> Visit<'ast> for RiskVisitor<'_> {
     }
 
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        if self.classified_package && has_exact_classified_full_tests_cfg(&node.attrs) {
+            return;
+        }
         let is_test = self.test_scope || has_test_attr(&node.attrs);
         if is_test {
             self.inspect(&node.sig.ident.to_string(), &node.block);
@@ -1214,9 +1274,36 @@ mod tests {
         .expect("workspace");
         fs::write(
             temp.path().join("Makefile"),
-            "RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze\nRUST_CLASSIFIED_FULL_TEST_PACKAGES := a\n",
+            "RUST_HOST_EXCLUDES := --exclude solstone-core-speakers-analyze --exclude solstone-core-speakers-onnx --exclude solstone-core-vad-analyze\n",
         )
         .expect("Makefile");
+        fs::create_dir_all(temp.path().join("core/ci")).expect("registry dir");
+        fs::write(
+            temp.path().join("core/ci/suites.toml"),
+            r#"version = 1
+sets = ["component"]
+areas = ["a"]
+platforms = ["linux"]
+prerequisites = []
+serial_groups = []
+runtimes = ["none"]
+
+[timeouts]
+quick = 30
+
+[[package_suites]]
+id = "package::a"
+package = "a"
+set = "component"
+areas = ["a"]
+platforms = ["linux"]
+timeout = "quick"
+default_full = true
+runtime = "none"
+features = ["full-tests"]
+"#,
+        )
+        .expect("registry");
         fs::write(
             temp.path().join("core/crates/a/Cargo.toml"),
             "[package]\nname = \"a\"\nversion = \"0.0.0\"\nedition = \"2024\"\n",
@@ -1271,10 +1358,38 @@ mod tests {
                 serial_group: None,
                 default_full: false,
                 runtime: "none".to_owned(),
+                features: Vec::new(),
             }],
             legs: Vec::new(),
         };
         (temp, registry)
+    }
+
+    #[test]
+    fn a_package_gating_tests_behind_full_tests_must_have_a_suite_that_runs_them() {
+        let (temp, mut registry) = fixture();
+        fs::write(
+            temp.path().join("core/crates/a/Cargo.toml"),
+            "[package]\nname = \"a\"\nversion = \"0.0.0\"\nedition = \"2024\"\n\n[features]\nfull-tests = []\n",
+        )
+        .expect("manifest with full-tests");
+        let errors = validate_registry(temp.path(), &registry).expect_err("orphaned feature");
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("gates tests behind full-tests"))
+        );
+
+        registry.package_suites[0].features = vec!["full-tests".to_owned()];
+        let errors = validate_registry(temp.path(), &registry).expect_err("not default full");
+        assert!(errors.iter().any(|error| error.contains("never run")));
+
+        registry.package_suites[0].default_full = true;
+        assert_eq!(validate_registry(temp.path(), &registry), Ok(()));
+
+        registry.package_suites[0].features.push("absent".to_owned());
+        let errors = validate_registry(temp.path(), &registry).expect_err("undeclared feature");
+        assert!(errors.iter().any(|error| error.contains("does not declare")));
     }
 
     #[test]

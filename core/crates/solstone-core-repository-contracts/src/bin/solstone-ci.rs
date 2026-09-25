@@ -6,9 +6,9 @@ use solstone_core_repository_contracts::advisory_audit::{
     AdvisoryAuditRequest, run_advisory_audit,
 };
 use solstone_core_repository_contracts::ci::{
-    COVERAGE_REPORT_PATH_ENV, CoverageEntry, Leg, PackageSuite, Registry, Suite, load_registry,
-    pin_ci_cargo_environment, read_coverage_report, scan_routine_boundaries, validate_boundary,
-    validate_registry,
+    COVERAGE_REPORT_PATH_ENV, CoverageEntry, FULL_TESTS_FEATURE, Leg, PackageSuite, Registry,
+    Suite, load_registry, pin_ci_cargo_environment, read_coverage_report, scan_routine_boundaries,
+    validate_boundary, validate_registry,
 };
 use solstone_core_repository_contracts::release_manifest::{ManifestSelection, run_manifest_check};
 use std::collections::{BTreeMap, BTreeSet};
@@ -70,6 +70,22 @@ fn run() -> Result<i32, String> {
             }
             execute(&repo, &registry, selectors, plan, receipt)
         }
+        "classified" => {
+            if args.next().is_some() {
+                return Err("classified does not accept arguments".to_owned());
+            }
+            let registry = load_registry(&registry_path)?;
+            for suite in &registry.package_suites {
+                if suite
+                    .features
+                    .iter()
+                    .any(|feature| feature == FULL_TESTS_FEATURE)
+                {
+                    println!("{} {}", suite.package, suite.features.join(","));
+                }
+            }
+            Ok(0)
+        }
         "boundary-snapshot" => {
             if args.next().is_some() {
                 return Err("boundary-snapshot does not accept arguments".to_owned());
@@ -86,7 +102,7 @@ fn run() -> Result<i32, String> {
         }
         "help" | "--help" | "-h" => {
             println!(
-                "usage: solstone-ci <validate|plan|run|boundary-snapshot|release-manifest-check|advisory-audit> [options]"
+                "usage: solstone-ci <validate|plan|run|classified|boundary-snapshot|release-manifest-check|advisory-audit> [options]"
             );
             println!("selectors union within a dimension and intersect across dimensions");
             Ok(0)
@@ -310,6 +326,7 @@ enum ItemKind {
     },
     Package {
         package: String,
+        features: Vec<String>,
         runtime: String,
     },
     Leg {
@@ -386,6 +403,7 @@ impl From<&PackageSuite> for PlanItem {
             default_full: package_suite.default_full,
             kind: ItemKind::Package {
                 package: package_suite.package.clone(),
+                features: package_suite.features.clone(),
                 runtime: package_suite.runtime.clone(),
             },
         }
@@ -766,11 +784,16 @@ fn item_command(item: &PlanItem) -> Vec<String> {
             format!("CI_FEATURES={}", required_features.join(",")),
             format!("CI_RUNTIME={runtime}"),
         ],
-        ItemKind::Package { package, runtime } => vec![
+        ItemKind::Package {
+            package,
+            features,
+            runtime,
+        } => vec![
             "make".to_owned(),
             "--no-print-directory".to_owned(),
             "check-rust-registry-package".to_owned(),
             format!("CI_PACKAGE={package}"),
+            format!("CI_FEATURES={}", features.join(",")),
             format!("CI_RUNTIME={runtime}"),
         ],
     }
@@ -1210,6 +1233,7 @@ mod tests {
                     serial_group: None,
                     default_full: false,
                     runtime: "none".to_owned(),
+                    features: Vec::new(),
                 },
                 PackageSuite {
                     id: "package::support".to_owned(),
@@ -1222,6 +1246,7 @@ mod tests {
                     serial_group: None,
                     default_full: false,
                     runtime: "none".to_owned(),
+                    features: Vec::new(),
                 },
             ],
             legs: vec![Leg {
@@ -1351,6 +1376,7 @@ mod tests {
                 "--no-print-directory",
                 "check-rust-registry-package",
                 "CI_PACKAGE=stats",
+                "CI_FEATURES=",
                 "CI_RUNTIME=none",
             ]
         );

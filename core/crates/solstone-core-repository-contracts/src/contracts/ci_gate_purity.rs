@@ -241,61 +241,6 @@ fn every_supervisor_race_test_is_named_in_rust_race_gate() {
     );
 }
 
-#[test]
-fn classified_same_crate_packages_are_routine_and_have_package_specific_full_routes() {
-    let makefile = makefile_text(&repo_root());
-    let classified = makefile
-        .lines()
-        .find_map(|line| line.strip_prefix("RUST_CLASSIFIED_FULL_TEST_PACKAGES := "))
-        .expect("RUST_CLASSIFIED_FULL_TEST_PACKAGES must be defined")
-        .split_whitespace()
-        .collect::<BTreeSet<_>>();
-    let registry = ci_registry(&repo_root());
-    let native = BTreeSet::from([
-        "solstone-core-speakers-analyze",
-        "solstone-core-speakers-onnx",
-        "solstone-core-vad-analyze",
-    ]);
-    for package in classified {
-        let suite = registry
-            .package_suites
-            .iter()
-            .find(|suite| suite.package == package)
-            .unwrap_or_else(|| panic!("{package} has no full package suite"));
-        assert!(
-            !suite.default_full,
-            "{package} package suite would duplicate its classified full leg"
-        );
-        let leg = if native.contains(package) {
-            registry
-                .legs
-                .iter()
-                .find(|leg| leg.make_target == "check-rust-onnx-test")
-                .expect("native packages have no aggregate full leg")
-        } else {
-            let expected_target = format!(
-                "check-rust-classified-full-tests-{}",
-                package
-                    .strip_prefix("solstone-core-")
-                    .expect("package prefix")
-            );
-            registry
-                .legs
-                .iter()
-                .find(|leg| leg.make_target == expected_target)
-                .unwrap_or_else(|| panic!("{package} has no classified full leg"))
-        };
-        assert!(
-            leg.default_full,
-            "{package} classified leg is not default full"
-        );
-        assert!(
-            leg.packages.iter().any(|candidate| candidate == package),
-            "{package} is absent from its classified full leg"
-        );
-    }
-}
-
 #[derive(Debug, Eq, PartialEq)]
 struct RuntimeSpecContract {
     digest: String,
