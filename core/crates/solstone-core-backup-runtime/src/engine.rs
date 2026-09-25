@@ -2025,6 +2025,18 @@ mod tests {
         assert!(!BACKUP_EXCLUDES.contains(&"health"));
     }
     #[test]
+    fn backup_excludes_endpoint_key_material_by_its_resolved_path() {
+        let journal = Path::new("/journal");
+        let args = backup_args(journal);
+        let endpoint = crate::restic_filesystem_path(&journal.join("mcp-endpoint"));
+        assert!(
+            args.windows(2)
+                .any(|pair| pair[0] == "--exclude" && pair[1] == endpoint),
+            "{args:?}"
+        );
+        assert!(!BACKUP_EXCLUDES.contains(&"mcp-endpoint"));
+    }
+    #[test]
     fn verification_bucket_wraps_reference_weeks() {
         assert_eq!(verification_subset_for_week(1), "1/52");
         assert_eq!(verification_subset_for_week(52), "52/52");

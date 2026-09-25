@@ -358,7 +358,7 @@ fn string_values(value: Option<&Value>) -> Vec<String> {
 
 // Classified ROUTINE, not full: `not(feature = "full-tests")` is the sanctioned
 // form in this crate for a test that must run on every `make ci` (the
-// `ci_gate_purity` contract forbids an unclassified `#[cfg(test)]` here, and
+// CI topology check forbids an unclassified `#[cfg(test)]` here, and
 // `unit_tests.rs` is the existing precedent). These are pure-logic assertions
 // with no filesystem, so they belong on the routine leg: the behaviour they pin
 // is what an owner sees, and it should not wait for `ci-full` to be checked.

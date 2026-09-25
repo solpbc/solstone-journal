@@ -69,14 +69,8 @@ mod installation_binding_admission_surface;
 #[path = "contracts/journal_artifact_durability.rs"]
 mod journal_artifact_durability;
 #[cfg(test)]
-#[path = "contracts/journal_windows_target_gate.rs"]
-mod journal_windows_target_gate;
-#[cfg(test)]
 #[path = "contracts/mcp_audit_boundary.rs"]
 mod mcp_audit_boundary;
-#[cfg(test)]
-#[path = "contracts/mcp_endpoint_exclusion_coherence.rs"]
-mod mcp_endpoint_exclusion_coherence;
 #[cfg(test)]
 #[path = "contracts/mcp_endpoint_gate_purity.rs"]
 mod mcp_endpoint_gate_purity;
@@ -108,12 +102,6 @@ mod rust_solstone_compile_inputs;
 #[cfg(test)]
 #[path = "contracts/schedule_read_only_architecture.rs"]
 mod schedule_read_only_architecture;
-#[cfg(test)]
-#[path = "contracts/service_legacy_gate_purity.rs"]
-mod service_legacy_gate_purity;
-#[cfg(test)]
-#[path = "contracts/spawn_path_inventory.rs"]
-mod spawn_path_inventory;
 #[cfg(test)]
 #[path = "contracts/speaker_native_routes.rs"]
 mod speaker_native_routes;

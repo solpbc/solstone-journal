@@ -1082,9 +1082,8 @@ build:
 	cargo build --manifest-path $(RUST_MANIFEST) --workspace $(RUST_HOST_EXCLUDES) --locked
 
 # Build is necessary but not sufficient: these are the binaries delivered by
-# maturin packaging leaves, and each must start successfully after the workspace
-# build. ci_gate_purity derives the inventory from those leaves, so adding a
-# package without adding its smoke command makes the Rust gate red.
+# the packaging leaves, and each must start successfully after the workspace
+# build.
 check-rust-shipped-binaries: build
 	@$(REQUIRE_CARGO)
 	@if [ "$$(uname -s)" = "Linux" ]; then $(REQUIRE_ONNX_HOST_RUNTIME); fi

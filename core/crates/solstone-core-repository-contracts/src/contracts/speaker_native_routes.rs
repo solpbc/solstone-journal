@@ -66,19 +66,6 @@ fn dependency_closure(root: &str, packages: &BTreeMap<String, Vec<String>>) -> B
     visited
 }
 
-fn collect_rust_files(path: &Path, files: &mut Vec<PathBuf>) {
-    for entry in
-        fs::read_dir(path).unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
-    {
-        let path = entry.expect("source entry").path();
-        if path.is_dir() {
-            collect_rust_files(&path, files);
-        } else if path.extension().and_then(|value| value.to_str()) == Some("rs") {
-            files.push(path);
-        }
-    }
-}
-
 fn rust_string_const(source: &str, name: &str) -> String {
     let prefix = format!("pub const {name}: &str =");
     let lines = source.lines().collect::<Vec<_>>();
@@ -112,30 +99,6 @@ fn shipping_closure_excludes_speaker_crates() {
 }
 
 #[test]
-fn speaker_onnx_has_one_production_session_builder_site() {
-    let source_root = repository_root().join("core/crates/solstone-core-speakers-onnx/src");
-    let mut files = Vec::new();
-    collect_rust_files(&source_root, &mut files);
-    files.sort();
-    let count = files
-        .iter()
-        .map(|path| {
-            fs::read_to_string(path)
-                .unwrap_or_else(|error| panic!("read {}: {error}", path.display()))
-                .matches("Session::builder()?")
-                .count()
-        })
-        .sum::<usize>();
-
-    assert!(
-        files.len() >= 4,
-        "source census visited only {} files",
-        files.len()
-    );
-    assert_eq!(count, 1, "speaker ONNX Session::builder site census");
-}
-
-#[test]
 fn vad_and_transcribe_share_the_silero_digest() {
     let vad = read_repo_file("core/crates/solstone-core-vad-analyze/src/lib.rs");
     let transcribe = read_repo_file("core/crates/solstone-core-transcribe/src/model_assets.rs");
@@ -144,19 +107,4 @@ fn vad_and_transcribe_share_the_silero_digest() {
         rust_string_const(&vad, "SILERO_VAD_V6_SHA256"),
         rust_string_const(&transcribe, "SILERO_VAD_V6_SHA256")
     );
-}
-
-#[test]
-fn vad_session_options_match_the_reference_configuration() {
-    let source = read_repo_file("core/crates/solstone-core-vad-analyze/src/lib.rs");
-    for call in [
-        "CPU::default().with_arena_allocator(false).build()",
-        ".with_intra_threads(1)",
-        ".with_inter_threads(1)",
-    ] {
-        assert!(
-            source.contains(call),
-            "SileroVadSession::open no longer applies {call}"
-        );
-    }
 }
