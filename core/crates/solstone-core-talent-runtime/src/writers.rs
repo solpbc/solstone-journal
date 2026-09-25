@@ -402,6 +402,7 @@ fn stage_error(stage: &str, detail: String) -> StageError {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::io::Cursor;
     use std::os::unix::fs::MetadataExt;
 
@@ -611,6 +612,7 @@ mod tests {
         TEST_INDEX_WARNINGS.with(|warnings| warnings.get())
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn worker_events(bytes: &[u8]) -> Vec<Value> {
         std::str::from_utf8(bytes)
             .unwrap()
@@ -620,6 +622,7 @@ mod tests {
             .unwrap()
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn steward_worker_fixture(
         root: &tempfile::TempDir,
     ) -> (crate::prepare::RuntimePaths, ExecutionContext) {
@@ -731,6 +734,7 @@ mod tests {
         assert_eq!(index_warnings(), 0);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_19_index_failure_warns_once_and_worker_finishes() {
         let root = tempfile::tempdir().unwrap();

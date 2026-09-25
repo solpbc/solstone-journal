@@ -392,11 +392,15 @@ fn refusal(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(test, feature = "full-tests"))]
     use std::fs;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(all(test, feature = "full-tests"))]
     use serde_json::json;
 
+    #[cfg(all(test, feature = "full-tests"))]
     use super::*;
 
     #[test]
@@ -407,6 +411,7 @@ mod tests {
         assert!(!source.contains(&command_new));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn activity_preview_contents_match_the_real_execute_provider_request() {
         let root = tempfile::tempdir().expect("root");

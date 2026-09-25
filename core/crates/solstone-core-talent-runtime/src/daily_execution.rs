@@ -351,6 +351,7 @@ mod tests {
     use solstone_core_journal_io::{load_daily_unit_record, save_daily_unit_record};
     use std::fs;
     use std::path::Path;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::time::{Duration, Instant};
 
     fn fixture(
@@ -457,6 +458,7 @@ mod tests {
         json!({"name":"entities:entity_observer", "day":"20260910", "facet":"work", "lock_token":token}).as_object().unwrap().clone()
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn invalid_frozen_observer_reference_regenerates_and_preserves_prior_acceptance() {
         let root = tempfile::tempdir().unwrap();
@@ -824,6 +826,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn retained_response_publishes_without_model_or_live_preparation() {
         let root = tempfile::tempdir().unwrap();
@@ -888,6 +891,7 @@ mod tests {
         assert!(!matches!(outcome, RuntimeOutcome::Finished { .. }));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn rejected_model_response_can_be_regenerated_before_any_owner_action() {
         let root = tempfile::tempdir().unwrap();
@@ -1009,6 +1013,7 @@ mod tests {
         assert_eq!(record.status, DailyUnitStatus::Conflicting);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn replaced_worker_finishes_generation_but_cannot_reach_owner_write() {
         let root = tempfile::tempdir().unwrap();

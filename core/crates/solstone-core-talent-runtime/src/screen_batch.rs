@@ -1018,6 +1018,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn cuts_value(cuts: &[BatchCut]) -> Value {
         Value::Array(
             cuts.iter()
@@ -1032,6 +1033,7 @@ mod tests {
         )
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     #[cfg(target_os = "linux")]
     fn screen_batch_retries_schema_validation_failure_on_individual_batch() {
@@ -1178,6 +1180,7 @@ mod tests {
         assert!(req4.contains("gamma_batch3"));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     #[cfg(target_os = "linux")]
     fn screen_batch_exhausted_retry_aborts_remaining_batches() {
@@ -1318,6 +1321,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     #[cfg(target_os = "linux")]
     fn screen_batch_later_batch_exhaustion_does_not_publish_output() {

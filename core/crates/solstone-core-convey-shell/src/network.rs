@@ -1025,6 +1025,7 @@ mod tests {
         assert_eq!(value["reason_code"], "pairing_request_invalid");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn same_machine_mint_rejects_each_forwarded_header_without_persisting_then_succeeds() {
         let temporary = TempDir::new();
@@ -1998,6 +1999,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn linked_device_pair_start_and_nonce_status_on_both_prefixes() {
         use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};

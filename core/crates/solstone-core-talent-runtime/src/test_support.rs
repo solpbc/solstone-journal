@@ -12,6 +12,7 @@ pub fn one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
     one_shot_stub_with_schema_validation(root, text, serde_json::Value::Null)
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 /// Install a stub that only accepts `cogitate --one-shot` and prints NDJSON events.
 pub fn cogitate_one_shot_stub(root: &std::path::Path, events: &[&str]) -> PathBuf {
     let path = root.join("cogitate-one-shot-stub.sh");
@@ -30,6 +31,7 @@ pub fn cogitate_one_shot_stub(root: &std::path::Path, events: &[&str]) -> PathBu
     path
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 /// Install a stub that only accepts `generate --one-shot`.
 pub fn generate_one_shot_stub(root: &std::path::Path, text: &str) -> PathBuf {
     let path = root.join("generate-one-shot-stub.sh");
@@ -77,6 +79,7 @@ pub fn one_shot_stub_with_schema_validation(
     path
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 /// Install a one-shot v2 refused-response stub and return its executable path.
 pub fn refused_one_shot_stub(
     root: &std::path::Path,
@@ -142,6 +145,7 @@ pub fn refused_response_value(
     })
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 /// Install a one-shot v2 sequenced response stub and return its executable path.
 pub fn sequenced_one_shot_stub(root: &std::path::Path, responses: &[serde_json::Value]) -> PathBuf {
     let script_path = root.join("sequenced-one-shot-stub.sh");

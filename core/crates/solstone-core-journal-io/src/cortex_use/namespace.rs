@@ -12,6 +12,7 @@ use std::ffi::OsStr;
 #[cfg(all(test, unix))]
 use std::path::Path;
 #[cfg(all(test, unix))]
+#[cfg(all(test, feature = "full-tests"))]
 use std::process::{Command, ExitStatus};
 
 use crate::errors::FlatDirectoryError;
@@ -246,7 +247,8 @@ fn cortex_namespace_composition_checkpoint() -> Result<(), CortexNamespaceError>
     Ok(())
 }
 
-#[cfg(all(test, unix))]
+#[cfg(unix)]
+#[cfg(all(test, feature = "full-tests"))]
 fn run_cortex_namespace_umask_helper(root: &Path, mask: &str) -> ExitStatus {
     Command::new(std::env::current_exe().expect("current test executable"))
         .args([
@@ -284,14 +286,18 @@ mod tests {
     use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
     use std::path::{Path, PathBuf};
 
-    use nix::sys::stat::{Mode, umask};
+    use nix::sys::stat::Mode;
+    #[cfg(all(test, feature = "full-tests"))]
+    use nix::sys::stat::umask;
     use nix::unistd::mkfifo;
 
     use super::*;
     use crate::journal_root::JournalEntryKind;
     use crate::name_admission::NameAdmissionReason;
 
+    #[cfg(all(test, feature = "full-tests"))]
     const UMASK_ROOT_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_UMASK_ROOT";
+    #[cfg(all(test, feature = "full-tests"))]
     const UMASK_ENV: &str = "JOURNAL_IO_CORTEX_NAMESPACE_UMASK";
 
     fn entry_mode(path: &Path) -> u32 {
@@ -331,14 +337,17 @@ mod tests {
         assert!(!expected.contains("controlled-secret"));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     struct UmaskRestore(Mode);
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl UmaskRestore {
         fn set(mask: u32) -> Self {
             Self(umask(Mode::from_bits_truncate(mask as nix::libc::mode_t)))
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl Drop for UmaskRestore {
         fn drop(&mut self) {
             umask(self.0);
@@ -380,6 +389,7 @@ mod tests {
         assert_eq!(identities(&sentinel_paths), sentinel_identities);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cortex_namespace_umask_helper() {
         let Some(root) = std::env::var_os(UMASK_ROOT_ENV) else {
@@ -393,6 +403,7 @@ mod tests {
         assert_eq!(entry_mode(&root.join("talents")), 0o700 & !mask);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn admission_leaves_umask_restricted_children_owner_only() {
         let temporary = tempfile::tempdir_in("/var/tmp").unwrap();

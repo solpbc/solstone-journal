@@ -13,6 +13,7 @@ autotests = false
 unsafe_code = "deny"
 
 [features]
+full-tests = []
 test-hooks = ["solstone-core-system/test-hooks"]
 journal-mcp-endpoint = ["dep:solstone-core-mcp-endpoint"]
 

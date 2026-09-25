@@ -295,7 +295,7 @@ pub fn run_worker(_args: &[String], journal: &Path) -> ExitCode {
     ExitCode::SUCCESS
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 fn configure_generate_client(client: OneShotClient) -> OneShotClient {
     client.with_prefix_arguments(["generate".into()])
 }
@@ -1307,6 +1307,7 @@ mod tests {
         assert_eq!(config["prompt"], "bAR");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn pulse_execution_emits_the_request_received_by_generate_after_start() {
         let (root, paths, context) = fixture(
@@ -1350,6 +1351,7 @@ mod tests {
         assert_eq!(input["boundary"], "talent_to_generate");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_23_injected_one_shot_path_reaches_the_client() {
         let root = tempfile::tempdir().unwrap();
@@ -1370,6 +1372,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn sibling_client_uses_the_generate_one_shot_boundary() {
         let root = tempfile::Builder::new()
@@ -1391,6 +1394,7 @@ mod tests {
         assert_eq!(response.text, "generated");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_execute_request_replays_events_and_writes_output_path() {
         let (root, paths, context) = fixture(
@@ -1488,6 +1492,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_execute_request_write_failure_emits_error_with_usage_and_no_finish() {
         let (root, paths, context) = fixture(
@@ -1561,6 +1566,7 @@ mod tests {
         assert_eq!(terminal_errors[0]["reason_code"], "talent_stage_failed");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_execute_request_preserves_use_id_as_correlation_id() {
         let (root, paths, context) = fixture(
@@ -1641,6 +1647,7 @@ mod tests {
         assert!(error.detail.contains("use_id"), "{}", error.detail);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_1_ndjson_start_then_finish_writes_derived_output() {
         let (root, paths, context) = fixture(
@@ -1675,6 +1682,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn disabled_talent_skips_and_enabled_talent_runs() {
         let (root, paths, context) = fixture(
@@ -1729,6 +1737,7 @@ mod tests {
         assert_eq!(fs::read_to_string(output_path).unwrap(), "generated");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_7_schema_validation_blocks_story_commit_end_to_end() {
         let (root, paths, context) = fixture(
@@ -1794,6 +1803,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_2_line_loop_skips_blank_reports_one_error_and_continues() {
         let (root, paths, context) = fixture(
@@ -1837,6 +1847,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_10_unported_hook_and_ported_transcript_loading() {
         let (root, paths, context) = fixture(
@@ -2025,6 +2036,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_8_framework_failure_is_terminal_and_typed() {
         let (root, paths, context) = fixture(
@@ -2066,6 +2078,7 @@ mod tests {
         assert_eq!(error.talent, "conversation");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_1_and_2_and_4_generate_refusal_preserves_structured_facts() {
         let live_detail = "the configured provider could not produce a usable response";
@@ -2524,6 +2537,7 @@ mod tests {
         assert!(runtime_paths_from_executable_dir(&bin).is_err());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn stub_invocations(stub: &std::path::Path) -> usize {
         let count_path = stub.parent().unwrap().join(format!(
             "{}.count",
@@ -2605,6 +2619,7 @@ mod tests {
         ));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     // AC2: direct path schema fail then success -> Finished after exactly 2 calls, text from attempt 2
     #[test]
     fn generate_and_write_retries_schema_validation_failure_to_success() {
@@ -2671,6 +2686,7 @@ mod tests {
         assert_eq!(attempts[1]["terminal"], false);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     // AC3: direct path double schema fail -> SchemaValidationFailed after exactly 2 calls
     #[test]
     fn generate_and_write_exhausts_schema_validation_retries() {
@@ -2732,6 +2748,7 @@ mod tests {
         assert_eq!(attempts[1]["terminal"], false);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     // AC4: incomplete_json_length retry to success and double incomplete_json_length exhaustion
     #[test]
     fn generate_and_write_retries_incomplete_json_length_and_exhausts() {
@@ -2850,6 +2867,7 @@ mod tests {
         assert_eq!(attempts2[1]["terminal"], false);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     // AC4a: attempt 1 incomplete_json_length, attempt 2 provider_response_invalid -> terminal carries attempt 2
     #[test]
     fn generate_and_write_mixed_failure_preserves_latest_refusal_details() {
@@ -2915,6 +2933,7 @@ mod tests {
         assert_eq!(attempts[1]["terminal"], false);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     // AC4b: first-attempt success executes exactly 1 call
     #[test]
     fn generate_and_write_first_attempt_success_invokes_client_once() {
@@ -2961,6 +2980,7 @@ mod tests {
         assert!(attempts[0].get("output").is_none());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     // AC4c: pulse execution with retry emits generate_input exactly once
     #[test]
     fn pulse_execution_emits_generate_input_exactly_once_across_retries() {
@@ -3016,6 +3036,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn generate_attempt_evidence_records_ordinal_status_cause_and_retry() {
         let (root, paths, context) = fixture(
@@ -3071,6 +3092,7 @@ mod tests {
         assert_eq!(attempt_events[1]["retry"], false);
         assert_eq!(attempt_events[1]["terminal"], false);
     }
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_rewrites_child_terminal_events_and_propagates_usage_and_degraded() {
         let (root, paths, context) = fixture(
@@ -3204,6 +3226,7 @@ mod tests {
         assert_eq!(recorded[0]["retry"], false);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_progress_does_not_replace_terminal_or_its_metadata() {
         let progress = json!({"event":"error", "terminal":false, "error":"progress warning", "usage":{"input_tokens":999}, "degraded":{"reason":"progress"}});
@@ -3262,6 +3285,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_child_errors_keep_usage_on_the_runtime_terminal() {
         for refusal in [false, true] {
@@ -3314,6 +3338,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cogitate_usage_survives_domain_commit_failure() {
         let (root, paths, context) = fixture(

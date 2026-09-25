@@ -318,6 +318,7 @@ fn rename_file_or_copy(src: &Path, dest: &Path) -> Result<(), PublishError> {
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(all(test, unix))]
 fn spawn_sh_install(
     args: &[impl AsRef<std::ffi::OsStr>],
@@ -335,17 +336,26 @@ fn spawn_sh_install(
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::ffi::OsString;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::digest::sha256_hex;
     use crate::promote;
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::stage::write_staged_file_mode;
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::tar::write_tar_gz;
 
+    #[cfg(all(test, feature = "full-tests"))]
     const HEX_COMMIT: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    #[cfg(all(test, feature = "full-tests"))]
     const HEX_LOCK: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+    #[cfg(all(test, feature = "full-tests"))]
     const ORIGIN: &str = "https://updates.solstone.app";
+    #[cfg(all(test, feature = "full-tests"))]
     const FAKE_CURL: &str = r#"#!/bin/sh
 set -eu
 DEST=
@@ -417,16 +427,19 @@ fi
         promote::snapshot_dir(path).expect("snapshot")
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn repo_file(relative: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../..")
             .join(relative)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn install_sh() -> PathBuf {
         repo_file("core/distribution/install.sh")
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn write_fake_curl(dir: &Path) {
         let path = dir.join("curl");
         fs::write(&path, FAKE_CURL).expect("write fake curl");
@@ -435,6 +448,7 @@ fi
         fs::set_permissions(&path, permissions).expect("chmod curl");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn write_fake_minisign(dir: &Path) {
         let path = dir.join("minisign");
         fs::write(&path, "#!/bin/sh\nexit 0\n").expect("write fake minisign");
@@ -443,6 +457,7 @@ fi
         fs::set_permissions(&path, permissions).expect("chmod minisign");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn prepend_path(dir: &Path) -> OsString {
         let mut path = dir.as_os_str().to_os_string();
         path.push(":");
@@ -450,6 +465,7 @@ fi
         path
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn plant_served(served: &Path, lane: &str, version: &str) {
         let target = "linux-x86_64";
         let base = format!("solstone-journal-{version}-{target}");
@@ -505,6 +521,7 @@ fi
         .expect("latest pointer");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn plant_origin_root_legacy(served: &Path, lane: &str, version: &str) {
         let base = format!("solstone-journal-{version}-linux-x86_64");
         let src = served.join("solstone-journal").join(lane).join(version);
@@ -520,11 +537,13 @@ fi
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn plant_served_with_origin_root(served: &Path, lane: &str, version: &str) {
         plant_served(served, lane, version);
         plant_origin_root_legacy(served, lane, version);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn assert_no_origin_root_urls(urls: &[String]) {
         for url in urls {
             let path = url
@@ -537,6 +556,7 @@ fi
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn run_install(root: &Path, served: &Path, log: &Path, extra: &[&str]) -> std::process::Output {
         let bin = root.join("bin");
         fs::create_dir_all(&bin).expect("bin dir");
@@ -570,6 +590,7 @@ fi
         )
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn recorded_urls(log: &Path) -> Vec<String> {
         if !log.exists() {
             return Vec::new();
@@ -582,6 +603,7 @@ fi
             .collect()
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn object_urls(lane: &str, version: &str) -> Vec<String> {
         let base = format!("solstone-journal-{version}-linux-x86_64");
         [
@@ -617,6 +639,7 @@ fi
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac9_omitted_version_fetches_latest_then_release_objects() {
         let root = temp();
@@ -636,6 +659,7 @@ fi
         assert_no_origin_root_urls(&urls);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac10_explicit_version_skips_latest() {
         let root = temp();
@@ -654,6 +678,7 @@ fi
         assert_no_origin_root_urls(&urls);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac11_lane_flag_selects_staging_object_urls() {
         let root = temp();
@@ -679,6 +704,7 @@ fi
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac12_lane_dev_omitted_version_records_dev_latest_then_objects() {
         let root = temp();
@@ -698,6 +724,7 @@ fi
         assert_no_origin_root_urls(&urls);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac13_bad_latest_pointer_is_latest_invalid() {
         let root = temp();
@@ -729,6 +756,7 @@ fi
         assert!(!root.path().join("prefix/versions").exists());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac14_omitted_lane_defaults_to_release() {
         let root = temp();
@@ -754,6 +782,7 @@ fi
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac15_invalid_lane_is_lane_invalid_before_any_url() {
         for lane in ["../runtimes", "release/../../assets", "Release"] {
@@ -775,6 +804,7 @@ fi
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac17_bad_origin_host_is_origin_refused_before_dest_write() {
         for origin in ["https://example.com", "http://updates.solstone.app"] {
@@ -812,6 +842,7 @@ fi
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac18_omitted_lane_with_explicit_version_uses_release() {
         let root = temp();

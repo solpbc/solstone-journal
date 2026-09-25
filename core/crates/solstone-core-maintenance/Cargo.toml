@@ -32,3 +32,6 @@ jsonschema.workspace = true
 solstone-core-backup.workspace = true
 solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", features = ["test-hooks"] }
 tempfile = "3.24.0"
+
+[features]
+full-tests = []

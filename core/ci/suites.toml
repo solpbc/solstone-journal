@@ -192,8 +192,9 @@ areas = ["core"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-artifact-download"
@@ -247,8 +248,9 @@ areas = ["backup"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-backup-runtime"
@@ -258,8 +260,9 @@ areas = ["backup"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-backup-web"
@@ -269,8 +272,9 @@ areas = ["backup"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-body-ingest"
@@ -379,8 +383,9 @@ areas = ["health"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-cli"
@@ -423,8 +428,9 @@ areas = ["cognition"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-cogitate-tools"
@@ -434,8 +440,9 @@ areas = ["cognition"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-cogitate-wire"
@@ -445,8 +452,9 @@ areas = ["cognition"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-convey-body"
@@ -494,8 +502,9 @@ platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
 serial_group = "local-services"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-cortex"
@@ -561,8 +570,9 @@ areas = ["repository"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-doctor"
@@ -572,8 +582,9 @@ areas = ["health"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-entities"
@@ -594,8 +605,9 @@ areas = ["entities"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "slow"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-entity-matching"
@@ -783,8 +795,9 @@ areas = ["import"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-indexer"
@@ -816,8 +829,9 @@ areas = ["indexing"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-ingest"
@@ -838,8 +852,9 @@ areas = ["services"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-ingest-contract"
@@ -937,8 +952,9 @@ areas = ["journal"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-journal-io"
@@ -948,8 +964,9 @@ areas = ["journal"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-journal-stats-cli"
@@ -970,8 +987,9 @@ areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-maintenance"
@@ -981,8 +999,9 @@ areas = ["backup"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-mcp-endpoint"
@@ -1127,8 +1146,9 @@ areas = ["repository"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-reprocess-cli"
@@ -1204,8 +1224,9 @@ areas = ["core"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-service-unit"
@@ -1237,8 +1258,9 @@ areas = ["home"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-setup"
@@ -1349,8 +1371,9 @@ areas = ["audio"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-speakers"
@@ -1404,8 +1427,9 @@ areas = ["trust"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-spp-ratls"
@@ -1461,8 +1485,9 @@ areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-system-health"
@@ -1505,8 +1530,9 @@ areas = ["talents"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-talents"
@@ -1527,8 +1553,9 @@ areas = ["commands"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-thinking"
@@ -1538,8 +1565,9 @@ areas = ["cognition"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-thinking-copy"
@@ -1571,8 +1599,9 @@ areas = ["audio"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = false
+default_full = true
 runtime = "none"
+features = ["full-tests"]
 
 [[package_suites]]
 id = "package::solstone-core-transcribe-cli"

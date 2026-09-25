@@ -24,3 +24,6 @@ nix.workspace = true
 # The Windows CED transport forwards the manifest pin its own child helper
 # needs to re-verify the signed payload.
 solstone-core-distribution.workspace = true
+
+[features]
+full-tests = []

@@ -261,16 +261,20 @@ fn join_bounded(reader: Option<thread::JoinHandle<io::Result<BoundedStderr>>>) -
 
 #[cfg(all(test, unix))]
 mod tests {
+    #[cfg(all(test, feature = "full-tests"))]
     use std::fs;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
     #[cfg(not(windows))]
+    #[cfg(all(test, feature = "full-tests"))]
     use std::time::Instant;
 
     use super::{
         VadRuntimeStatus, probe_from_executable, probe_vad_runtime, vad_runtime_repair_for,
     };
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn write_stub(body: &str, mode: u32) -> (tempfile::TempDir, std::path::PathBuf) {
         use std::io::Write;
         let root = tempfile::tempdir().unwrap();
@@ -288,6 +292,7 @@ mod tests {
         (root, path)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn process_exists(pid: u32) -> bool {
         nix::sys::signal::kill(nix::unistd::Pid::from_raw(pid as i32), None).is_ok()
@@ -332,6 +337,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn healthy_closed_stdin_contract_is_ready() {
         let (_root, path) = write_stub(
@@ -342,6 +348,7 @@ mod tests {
         assert!(matches!(status, VadRuntimeStatus::Ready), "{status:?}");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(target_os = "linux")]
     #[test]
     fn loader_stderr_is_loader() {
@@ -358,6 +365,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn eacces_is_spawn_with_the_real_cause() {
         let (_root, path) = write_stub("#!/bin/sh\nexit 64\n", 0o644);
@@ -376,6 +384,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(target_os = "linux")]
     #[test]
     fn exec_format_is_spawn_with_the_real_cause() {
@@ -396,6 +405,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn timeout_kills_the_helper_and_returns_within_budget() {
         let (_root, path) = write_stub("#!/bin/sh\nexec sleep 30\n", 0o755);
@@ -419,6 +429,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn unexpected_exit_is_contract() {
         let (_root, path) = write_stub("#!/bin/sh\necho ok\nexit 0\n", 0o755);

@@ -319,6 +319,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// W8-14 regression, pinned at the exact call site that shipped broken.
     ///
     /// `probe_ced_engine` builds a PROBE-schema request. The helper dispatches
@@ -536,6 +537,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// End-to-end through the real, unparameterized
     /// [`evaluate_ced_readiness_against`] and the real out-of-process
     /// plumbing (`ced_runtime::invoke_ced_analyze`,

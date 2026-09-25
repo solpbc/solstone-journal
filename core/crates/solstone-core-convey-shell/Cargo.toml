@@ -107,6 +107,7 @@ path = "tests/shell_global_facet_contract_dom.rs"
 workspace = true
 
 [features]
+full-tests = []
 default = ["host"]
 test-hooks = [
     "solstone-core-speaker-resolve/test-hooks",

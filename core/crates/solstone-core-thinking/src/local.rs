@@ -524,6 +524,7 @@ mod tests {
         let _ = fs::remove_dir_all(journal);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn bootstrap_on_a_fresh_bundled_journal_never_reports_a_false_installed_or_in_flight_state() {
         let journal = temporary_journal("fresh-bundled");

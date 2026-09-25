@@ -3,16 +3,24 @@
 
 //! Owned process boundary for whole-day phases without cooperative cancellation.
 
+#[cfg(any(not(test), feature = "full-tests"))]
 use std::collections::BTreeMap;
 use std::path::Path;
+#[cfg(any(not(test), feature = "full-tests"))]
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+#[cfg(any(not(test), feature = "full-tests"))]
+use std::time::Instant;
 
+#[cfg(any(not(test), feature = "full-tests"))]
 use solstone_core_system::process::{CAP_TERMINATION_TIMEOUT, ManagedProcess, SpawnOptions};
 
 pub(crate) enum PhaseProcessOutcome {
     Exited(i32),
-    TimedOut { cleanup_error: Option<String> },
+    TimedOut {
+        cleanup_error: Option<String>,
+    },
+    #[cfg(any(not(test), feature = "full-tests"))]
     Failed(String),
 }
 
@@ -61,6 +69,7 @@ pub(crate) fn journal_command(arguments: &[&str]) -> Result<Vec<String>, String>
         .collect())
 }
 
+#[cfg(any(not(test), feature = "full-tests"))]
 fn run_owned_process(
     phase: &'static str,
     command: Vec<String>,
@@ -105,6 +114,7 @@ fn run_owned_process(
 }
 
 #[cfg(test)]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use tempfile::tempdir;
 

@@ -15,3 +15,6 @@ x509-parser = "=0.16.0"
 
 [lints]
 workspace = true
+
+[features]
+full-tests = []

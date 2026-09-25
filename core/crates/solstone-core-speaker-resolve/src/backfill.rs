@@ -472,7 +472,9 @@ mod tests {
     use crate::evidence::{CandidateEvidence, EvidenceGap};
     use crate::layer1::Label;
     use crate::resolve::{ResolveMetadata, ResolveOutput};
-    use solstone_core_journal_io::{LockOptions, SegmentLayout};
+    #[cfg(all(test, feature = "full-tests"))]
+    use solstone_core_journal_io::LockOptions;
+    use solstone_core_journal_io::SegmentLayout;
 
     static NEXT: AtomicUsize = AtomicUsize::new(0);
 
@@ -820,6 +822,7 @@ mod tests {
         assert!(error.is_some());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn report_only_mode_only_changes_backfill_operations_ledger() {
         let temp = Temp::new();
@@ -909,6 +912,7 @@ mod tests {
         assert_eq!(vp_files_before, vp_files_after);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn entity_trust_contention_produces_member_error_and_retry_succeeds() {
         let temp = Temp::new();

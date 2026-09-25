@@ -16,3 +16,6 @@ tempfile = "3.24.0"
 
 [lints]
 workspace = true
+
+[features]
+full-tests = []

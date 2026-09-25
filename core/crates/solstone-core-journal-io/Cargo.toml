@@ -23,6 +23,7 @@ nix = { workspace = true, features = ["dir", "fs"] }
 windows-sys = { workspace = true }
 
 [features]
+full-tests = []
 test-hooks = []
 
 [dev-dependencies]

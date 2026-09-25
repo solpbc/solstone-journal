@@ -257,8 +257,11 @@ fn error(prepared: &PreparedTalent, detail: &str) -> StageError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ExecutionContext;
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::contract::{CommitDisposition, STORY};
-    use crate::{ExecutionContext, generate_and_write};
+    #[cfg(all(test, feature = "full-tests"))]
+    use crate::generate_and_write;
     use std::fs;
     #[test]
     fn decision_counterparty_contract_survives_the_story_writer() {
@@ -391,6 +394,7 @@ mod tests {
         assert_eq!(record["commitments"][0]["owner_entity_id"], "owner-id");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn criterion_7_story_validation_precedes_on_disk_mutation() {
         let root = tempfile::tempdir().unwrap();

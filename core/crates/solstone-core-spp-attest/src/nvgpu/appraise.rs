@@ -280,13 +280,9 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::{
-        fs,
-        os::unix::fs::PermissionsExt,
-        path::{Path, PathBuf},
-        sync::atomic::{AtomicU64, Ordering},
-        time::Duration,
-    };
+    use std::{fs, path::Path, path::PathBuf, sync::atomic::AtomicU64, sync::atomic::Ordering};
+    #[cfg(all(test, feature = "full-tests"))]
+    use std::{os::unix::fs::PermissionsExt, time::Duration};
 
     use super::{GpuAppraisalReason, GpuAppraiser, NvattestGpuAppraiser};
     use crate::{test_support::fixture_bytes, tlv::decode_gpu_envelope};
@@ -330,6 +326,7 @@ mod tests {
         bytes.try_into().expect("fixture nonce is 32 bytes")
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn install_script(root: &Path, script: &str) {
         fs::create_dir_all(root.join("bin")).expect("create bin");
         fs::create_dir_all(root.join("lib")).expect("create lib");
@@ -344,6 +341,7 @@ mod tests {
         fs::write(root.join("share/ca/ca-bundle.pem"), "CA").expect("write CA bundle");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn appraise(
         root: &Path,
         timeout: Duration,
@@ -352,6 +350,7 @@ mod tests {
         NvattestGpuAppraiser.appraise_with_timeout(&envelope, &owner_nonce(), root, timeout)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn appraiser_builds_a_gpu_appraisal_from_green_stdout() {
         let root = TempDir::new();
@@ -366,6 +365,7 @@ mod tests {
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn appraiser_drains_large_valid_stdout_before_waiting_for_exit() {
         let root = TempDir::new();
@@ -381,6 +381,7 @@ mod tests {
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn appraiser_drains_large_stderr_while_preserving_valid_stdout() {
         let root = TempDir::new();
@@ -403,6 +404,7 @@ mod tests {
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn appraiser_runs_nvattest_from_the_filesystem_root() {
         let root = TempDir::new();
@@ -420,6 +422,7 @@ mod tests {
         assert_eq!(appraisal.hwmodel, "GH100 A01 GSP BROM");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn appraiser_maps_malformed_stdout_to_gpu_appraisal_failed() {
         let root = TempDir::new();
@@ -431,6 +434,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn appraiser_maps_timeout_to_gpu_appraisal_failed() {
         let root = TempDir::new();

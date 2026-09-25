@@ -155,11 +155,13 @@ fn map_ureq_error(error: ureq::Error) -> RelayFault {
 mod tests {
     use super::*;
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn bind_local() -> std::io::Result<std::net::TcpListener> {
         let bind_fn = std::net::TcpListener::bind;
         bind_fn("127.0.0.1:0")
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ureq_relay_timeout_behavior() {
         let listener = bind_local().unwrap();
@@ -170,6 +172,7 @@ mod tests {
         assert_eq!(result, Err(RelayFault::Timeout));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ureq_relay_connect_failure_behavior() {
         let listener = bind_local().unwrap();
@@ -195,6 +198,7 @@ mod tests {
         assert!(!config.http_status_as_error());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn post_bytes_request_headers_and_no_user_agent() {
         use std::io::{Read, Write};
@@ -272,6 +276,7 @@ mod tests {
         handle.join().unwrap();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn post_bytes_status_404_and_410_returned_as_statuses() {
         use std::io::{Read, Write};
@@ -297,6 +302,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn post_bytes_301_with_location_returns_301_without_redirect() {
         use std::io::{Read, Write};
@@ -332,6 +338,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn post_bytes_201_huge_or_stalled_body_returns_ok_before_finish() {
         use std::io::{Read, Write};
@@ -357,6 +364,7 @@ mod tests {
         handle.join().unwrap();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn post_bytes_timeout_under_short_web_push_timeout() {
         use std::thread;

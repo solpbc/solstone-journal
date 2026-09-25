@@ -25,6 +25,7 @@ bench = false
 unsafe_code = "deny"
 
 [features]
+full-tests = []
 test-fixture-pin = []
 test-hooks = []
 

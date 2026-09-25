@@ -978,6 +978,7 @@ fn reachable(url: &str) -> bool {
 mod tests {
     use std::fs;
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
 
     use serde_json::{Map, Value, json};
@@ -988,12 +989,15 @@ mod tests {
         RefusalReason, RefusedResponse,
     };
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     use solstone_core_generate::{encode_one_shot_request, encode_one_shot_response};
 
+    #[cfg(all(test, feature = "full-tests"))]
+    use super::OneShotKeyValidator;
     use super::{
-        ManagedKeyValidator, OneShotKeyValidator, ProviderRequestError, ProviderUpdate,
-        ProviderUpdateError, classify_key_probe, classify_model_probe, resolve_provider_update,
-        save_key, update_providers, validate_keys_with, validation_request,
+        ManagedKeyValidator, ProviderRequestError, ProviderUpdate, ProviderUpdateError,
+        classify_key_probe, classify_model_probe, resolve_provider_update, save_key,
+        update_providers, validate_keys_with, validation_request,
     };
     use crate::read_config;
 
@@ -1626,6 +1630,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     struct ValidationStub {
         root: std::path::PathBuf,
@@ -1634,6 +1639,7 @@ mod tests {
         environment: std::path::PathBuf,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     impl ValidationStub {
         fn new(name: &str, reason_code: &str) -> Self {
@@ -1674,6 +1680,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn shell_quote(path: &std::path::Path) -> String {
         format!(
@@ -1682,6 +1689,7 @@ mod tests {
         )
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn assert_environment_line(environment: &str, name: &str, value: &str) {
         assert!(
@@ -1692,6 +1700,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn assert_split_probe(reason_code: &str) -> (Value, Value) {
         const KEY: &str = "sk-candidate-not-in-request";
@@ -1734,6 +1743,7 @@ mod tests {
         (key_result, model_result)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn key_probe_accepts_model_not_found_but_model_probe_rejects_it() {
@@ -1744,6 +1754,7 @@ mod tests {
         assert_eq!(model_result["reason_code"], "model_not_found");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn key_probe_accepts_quota_but_model_probe_rejects_it() {

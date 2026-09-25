@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde_json::{Value, json};
+#[cfg(all(test, feature = "full-tests"))]
 use solstone_core_cogitate_tools::{SlotLease, SlotReacquireError};
 use solstone_core_generate_wire::{
     ConverseFailure, ConverseMessage, ConverseToolCall, ConverseToolSpec, ConverseTurn,
@@ -59,10 +60,12 @@ struct ScriptedTools {
     execute_delay: Option<Duration>,
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 struct FailingLease;
 
 struct FailingSetupTools;
 
+#[cfg(all(test, feature = "full-tests"))]
 impl SlotLease for FailingLease {
     fn yield_slot(&mut self) {}
     fn reacquire(&mut self) -> Result<(), SlotReacquireError> {
@@ -875,6 +878,7 @@ fn provider_failure_error_text_prefers_detail_then_reason_code() {
     assert_eq!(outcome.error_text.as_deref(), Some("provider_unavailable"));
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn slot_reacquire_other_is_a_distinct_terminal_runtime_outcome() {
     let root = temp_journal();

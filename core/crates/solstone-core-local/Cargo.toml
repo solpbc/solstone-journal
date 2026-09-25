@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [features]
+full-tests = []
 # Narrow test driver for the loopback installer transport target.  Production
 # builds deliberately do not expose fixture-row or injected-write seams.
 test-hooks = []

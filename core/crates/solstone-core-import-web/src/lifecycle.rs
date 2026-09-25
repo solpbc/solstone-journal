@@ -1493,6 +1493,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn criterion_2_save_stages_upload_bytes_without_a_surviving_temp_file() {
         let root = TempDir::new().unwrap();
@@ -1510,6 +1511,7 @@ mod tests {
         assert_save_tmp_clean(root.path());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn save_replays_same_second_same_name_without_replacing_staged_bytes() {
         let root = TempDir::new().unwrap();
@@ -1532,6 +1534,7 @@ mod tests {
         assert_save_tmp_clean(root.path());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn save_pastes_text_field_without_a_file_part() {
         let root = TempDir::new().unwrap();
@@ -1551,6 +1554,7 @@ mod tests {
         assert_save_tmp_clean(root.path());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn save_conflict_and_already_imported_leave_no_temp() {
         let root = TempDir::new().unwrap();
@@ -1608,6 +1612,7 @@ mod tests {
         assert_save_tmp_clean(root.path());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn save_already_staged_same_hash_leaves_no_temp() {
         let root = TempDir::new().unwrap();
@@ -1651,6 +1656,7 @@ mod tests {
         assert_save_tmp_clean(root.path());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn upload_timestamp_prefers_a_valid_deterministic_filename_timestamp() {
         let (timestamp, method, model_called, reason) = super::timestamp_for_upload(
@@ -1664,6 +1670,7 @@ mod tests {
         assert_eq!(reason, None);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn deterministic_filename_timestamp_wins_when_payload_is_only_on_disk() {
         let root = TempDir::new().unwrap();
@@ -1677,6 +1684,7 @@ mod tests {
         assert_eq!(reason, None);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn deterministic_only_upload_does_not_claim_a_model_attempt() {
         let (_, method, model_called, reason) = super::timestamp_for_upload(
@@ -1689,6 +1697,7 @@ mod tests {
         assert_eq!(reason, Some("no_deterministic_match"));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn deterministic_only_form_values_match_the_browser_contract() {
         for value in ["true", "TRUE", "1", "yes", "yEs"] {

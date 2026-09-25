@@ -62,6 +62,7 @@ fn snapshot(root: &Path) -> BTreeMap<PathBuf, SnapshotEntry> {
 static NEXT: AtomicUsize = AtomicUsize::new(0);
 
 // W3C names are standards-body vocabulary, not project-phase identifiers.
+#[cfg(all(test, feature = "full-tests"))]
 const W3C_CHECK_NAMES: &[&str] = &[
     "journal_sync",
     "journal_caught_up",
@@ -86,6 +87,7 @@ const W3C_CHECK_NAMES: &[&str] = &[
     "journal_durability",
 ];
 
+#[cfg(all(test, feature = "full-tests"))]
 const BASELINE_CHECK_NAMES: &[&str] = &[
     "config_dir_readable",
     "journal_dir_writable",
@@ -98,6 +100,7 @@ const BASELINE_CHECK_NAMES: &[&str] = &[
 // None` now and so are indistinguishable from the baseline rows in the
 // registry — the classification cannot be derived after the fact and has to be
 // written down to keep the partition assertion below self-policing.
+#[cfg(all(test, feature = "full-tests"))]
 const EARLIER_CHECK_NAMES: &[&str] = &[
     "disk_space",
     "service_identity",
@@ -233,9 +236,11 @@ fn write_client_fixture(context: &CheckContext, name: &str, value: serde_json::V
     activity.insert(name.to_owned(), entry);
     fs::write(&activity_path, serde_json::to_vec(&activity).unwrap()).unwrap();
 }
+#[cfg(all(test, feature = "full-tests"))]
 const DEVICE_DAY_LISTING_CID: &str =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+#[cfg(all(test, feature = "full-tests"))]
 /// A chain-advanced device stream bound to `(cid, "")`, the shape the ingest
 /// routes read back for a linked device's manifest.
 fn write_bound_device_stream(context: &CheckContext, name: &str, cid: &str) {
@@ -260,6 +265,7 @@ fn write_bound_device_stream(context: &CheckContext, name: &str, cid: &str) {
     .unwrap();
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 /// A segment in the bound stream whose durable ingest row names a different
 /// segment than the directory it sits in: the manifest refuses the whole day.
 fn write_mismatched_device_event(context: &CheckContext, stream: &str, cid: &str) {
@@ -336,6 +342,7 @@ fn incomplete(context: &CheckContext, day: &str) {
         ))
         .unwrap();
 }
+#[cfg(all(test, feature = "full-tests"))]
 fn config_backend(context: &CheckContext, backend: &str) {
     let path = context.journal_path.join("config/journal.json");
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -391,6 +398,7 @@ fn stage_brain_checking(context: &CheckContext) -> solstone_core_brain::BrainRef
     .unwrap()
     .expect("configured cloud provider starts a refresh and holds its lease")
 }
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 fn executable(path: &std::path::Path, body: &str) {
     use std::os::unix::fs::PermissionsExt;
@@ -403,9 +411,11 @@ fn executable(path: &std::path::Path, body: &str) {
     fs::set_permissions(&staging, permissions).unwrap();
     fs::rename(&staging, path).unwrap();
 }
+#[cfg(all(test, feature = "full-tests"))]
 fn parakeet_ready_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
     Ok(())
 }
+#[cfg(all(test, feature = "full-tests"))]
 fn parakeet_unreachable_probe(_: &std::path::Path, _: Duration) -> Result<(), String> {
     Err("fixture unreachable".into())
 }
@@ -492,6 +502,7 @@ fn stage_raw_audio_pending(context: &CheckContext, modified: SystemTime) {
     incomplete(context, "20251231");
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
     config_backend(context, backend);
@@ -510,6 +521,7 @@ fn stage_parakeet_ready(context: &mut CheckContext, backend: &str) {
     context.parakeet_server_probe_override = Some(parakeet_ready_probe);
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 fn stage_vad_runtime(context: &mut CheckContext, ready: bool) {
     let stub = context.install_bin_dir.join("vad-coverage-stub");
@@ -593,12 +605,14 @@ fn task_pace_from_status(status: Option<serde_json::Value>) -> CheckResult {
     .unwrap()
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[derive(Clone, Copy)]
 enum SecondBranch {
     DifferentStatus,
     DifferentDetail,
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn staged_coverage_result(name: &str, ok: bool) -> CheckResult {
     let mut context = fixture();
     match name {
@@ -867,6 +881,7 @@ fn check_severity_table_matches_reference() {
         );
     }
 }
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn fixture_covers_ok_and_non_ok_paths() {
     let coverage = [
@@ -1715,6 +1730,7 @@ fn caught_up_native_backlog_fixture_states() {
     );
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 #[cfg(unix)]
 fn parakeet_cpp_fixture_states_are_distinct() {
@@ -1805,6 +1821,7 @@ fn parakeet_cpp_fixture_states_are_distinct() {
     );
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 #[cfg(unix)]
 fn default_stt_fixture_matrix_delegates_and_checks_coreml() {
@@ -1952,10 +1969,12 @@ thread_local! {
         const { std::cell::RefCell::new(None) };
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn vad_injected_resolver() -> crate::context::VadRuntimeProbeSeam {
     VAD_SEAM.with(|slot| slot.borrow().clone().expect("injected VAD runtime seam"))
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn inject_vad_probe(context: &mut CheckContext, binary: PathBuf, timeout: Duration) {
     VAD_SEAM.with(|slot| {
         *slot.borrow_mut() = Some(crate::context::VadRuntimeProbeSeam { binary, timeout });
@@ -1963,6 +1982,7 @@ fn inject_vad_probe(context: &mut CheckContext, binary: PathBuf, timeout: Durati
     context.vad_runtime_probe = Some(vad_injected_resolver);
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 #[cfg(unix)]
 fn vad_runtime_ready_reports_loader_failure_as_blocker() {
@@ -1980,6 +2000,7 @@ fn vad_runtime_ready_reports_loader_failure_as_blocker() {
     assert!(row.detail.contains("libonnxruntime.so.1"), "{}", row.detail);
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 #[cfg(unix)]
 fn vad_runtime_ready_accepts_closed_stdin_usage_contract() {

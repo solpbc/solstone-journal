@@ -40,3 +40,6 @@ zip = { version = "=2.4.2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(unix)'.dev-dependencies]
 nix = { workspace = true, features = ["process", "signal"] }
+
+[features]
+full-tests = []

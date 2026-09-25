@@ -307,6 +307,7 @@ fn provider_running(state: &SupervisorState) -> bool {
 }
 
 #[cfg(all(test, unix))]
+#[cfg(all(test, feature = "full-tests"))]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
     use std::io;

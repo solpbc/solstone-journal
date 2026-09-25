@@ -11,17 +11,19 @@ use super::store::merge_payload::{list_entity_merge_payload_ids, load_entity_mer
 use super::store::voiceprints::{read_voiceprints_npz, write_voiceprints_npz};
 use crate::{
     EncoderIdentity, EntityLifecycleError, EntityMergeError, EntityMergeOptions,
-    EntityTrustLockError, EntityWriteError, LockError,
     commit_entity_merge as commit_entity_merge_with_encoder, guard_restore_does_not_cross_merge,
     hold_entity_trust_lock, preview_entity_merge, read_entity_identity, read_visible_history,
     save_entity_identity,
 };
+#[cfg(all(test, feature = "full-tests"))]
+use crate::{EntityTrustLockError, EntityWriteError, LockError};
 use serde_json::json;
 use solstone_core_journal_io::{LockOptions, hold_lock};
 use std::fs;
 use std::io::{Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+#[cfg(all(test, feature = "full-tests"))]
 use std::time::Duration;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipArchive, ZipWriter};
@@ -586,6 +588,7 @@ fn seed_identity_at(journal: &Path, directory: &str, effective_id: &str) {
     fs::write(path, format!(r#"{{"id":"{effective_id}"}}"#)).unwrap();
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn short_lock_options(timeout: Duration) -> LockOptions {
     LockOptions {
         timeout,
@@ -640,6 +643,7 @@ fn merge_voiceprints_writes_remapped_target_archive() {
     fs::remove_dir_all(journal).unwrap();
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn merge_voiceprints_times_out_on_resolved_target_lock() {
     let journal = voiceprint_journal();

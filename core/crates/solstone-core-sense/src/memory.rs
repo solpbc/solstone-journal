@@ -214,6 +214,7 @@ impl Admission {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::sync::atomic::{AtomicBool, Ordering};
     struct Probe;
     impl MemoryProbe for Probe {
@@ -256,6 +257,7 @@ mod tests {
         assert!(!a.state().throttled);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn throttle_emits_one_start_and_completion_when_stop_arrives() {
         let admission = Admission::new(Arc::new(Probe));

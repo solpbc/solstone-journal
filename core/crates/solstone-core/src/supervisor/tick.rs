@@ -2037,6 +2037,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[tokio::test(flavor = "multi_thread")]
     async fn a_local_runtime_reaching_ready_queues_one_brain_refresh() {

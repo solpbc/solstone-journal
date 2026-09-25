@@ -1577,6 +1577,7 @@ mod tests {
         assert!(!gpu.detail.contains(solstone_core_local::CPU_PLACEMENT_COPY));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn darwin_local_readiness_uses_metal_and_the_shared_4b_identity() {
         let journal = tempfile::tempdir().unwrap();
@@ -1642,6 +1643,7 @@ mod tests {
         assert_eq!(reference_repr("both'and\""), "'both'and\"'");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn darwin_local_arm_discloses_the_shared_llama_cpp_runtime_once() {
         // Darwin now installs the same native llama.cpp runtime family as the

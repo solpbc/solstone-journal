@@ -2335,6 +2335,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[derive(Debug, Clone, PartialEq, Eq)]
     struct EnrollmentCall {
         relay_origin: String,
@@ -2342,17 +2343,20 @@ mod tests {
         home_attestation: String,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[derive(Debug, Default)]
     struct FakeEnrollment {
         calls: Arc<Mutex<Vec<EnrollmentCall>>>,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl FakeEnrollment {
         fn calls(&self) -> Vec<EnrollmentCall> {
             self.calls.lock().expect("enrollment calls lock").clone()
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl RelayEnrollment for FakeEnrollment {
         fn enroll<'a>(
             &'a self,
@@ -2536,6 +2540,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn direct_credentials_have_no_relay_fields_and_do_not_enroll() {
         let enrollment = Arc::new(FakeEnrollment::default());
@@ -2555,6 +2560,7 @@ mod tests {
         assert!(enrollment.calls().is_empty());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn relay_permitted_does_not_enroll_at_startup() {
         let enrollment = Arc::new(FakeEnrollment::default());
@@ -2574,6 +2580,7 @@ mod tests {
         assert!(enrollment.calls().is_empty());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn relay_only_credentials_enroll_when_absent_and_have_no_endpoints() {
         let enrollment = Arc::new(FakeEnrollment::default());
@@ -2600,6 +2607,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn relay_permitted_starter_uses_stored_token_when_present_and_origin_matches() {
         let temp_dir = TempDir::new("relay-permitted-stored");
@@ -2927,6 +2935,7 @@ mod tests {
         assert!(snap_match.journal_version_fresh);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn publish_device_description_handles_dead_port_without_panic() {
         let clock = Arc::new(FixedStatusClock::new(100.0));

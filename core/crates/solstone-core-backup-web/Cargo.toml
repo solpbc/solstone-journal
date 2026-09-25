@@ -47,3 +47,6 @@ solstone-core-backup-runtime = { path = "../solstone-core-backup-runtime", featu
 [[test]]
 name = "backup_web_callosum_transport"
 path = "tests/backup_web_callosum_transport.rs"
+
+[features]
+full-tests = []

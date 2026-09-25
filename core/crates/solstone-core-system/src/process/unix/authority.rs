@@ -901,7 +901,10 @@ fn production_confirm(pid: u32) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::collections::BTreeMap;
-    use std::fs::{self, File, OpenOptions};
+    use std::fs;
+    #[cfg(all(test, feature = "full-tests"))]
+    use std::fs::{File, OpenOptions};
+    #[cfg(all(test, feature = "full-tests"))]
     use std::io::Write;
     use std::path::PathBuf;
     use std::sync::Arc;
@@ -909,13 +912,17 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::super::super::SpawnOptions;
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::lifecycle::{
-        AdmissionAcknowledgement, AdmissionResult, AdmissionResultState, HostedServiceKind,
-        ParentLossLedger, ParentLossPhase, acknowledge_parent_loss_admission,
-        write_parent_loss_admission_result,
+        AdmissionAcknowledgement, AdmissionResult, AdmissionResultState, ParentLossPhase,
+        acknowledge_parent_loss_admission, write_parent_loss_admission_result,
     };
-    use crate::process::{InstanceVerdict, ProcessBirth, ProcessInstance};
+    use crate::lifecycle::{HostedServiceKind, ParentLossLedger};
+    #[cfg(all(test, feature = "full-tests"))]
+    use crate::process::InstanceVerdict;
+    use crate::process::{ProcessBirth, ProcessInstance};
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn process_is_gone(pid: u32) -> bool {
         let Ok(pid) = i32::try_from(pid) else {
             return true;
@@ -926,6 +933,7 @@ mod tests {
         )
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn wait_until_gone(pid: u32) {
         for _ in 0..200 {
             if process_is_gone(pid) {
@@ -976,6 +984,7 @@ mod tests {
         (ledger, active.generation, coordinator)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn admission_fixture(
         name: &str,
         launch_id: &str,
@@ -1015,6 +1024,7 @@ mod tests {
         (bed, ledger, provenance, authority, identity)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn partial_acknowledgement(
         ledger: &ParentLossLedger,
         generation: ParentLossGeneration,
@@ -1034,6 +1044,7 @@ mod tests {
         (file, path)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn complete_acknowledgement(mut file: File, identity: AdmissionIdentity) {
         let acknowledgement = AdmissionAcknowledgement {
             schema: 1,
@@ -1046,6 +1057,7 @@ mod tests {
         file.sync_all().expect("sync acknowledgement");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn wait_for_file(path: &Path) {
         let deadline = Instant::now() + Duration::from_secs(2);
         while !path.exists() {
@@ -1054,6 +1066,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn admission_result(
         ledger: &ParentLossLedger,
         generation: ParentLossGeneration,
@@ -1184,6 +1197,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn launch_managed_delegates_pid_poll_and_terminate() {
         let bed = JournalBed::new("managed");
@@ -1251,6 +1265,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn rejected_child_is_exactly_reaped_and_stale_ack_cannot_admit_it() {
         let bed = JournalBed::new("hosted-rejected-child");
@@ -1320,6 +1335,7 @@ mod tests {
         ));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn incomplete_acknowledgement_completed_before_deadline_admits_child() {
         let launch_id = "partial-acknowledgement";
@@ -1367,6 +1383,7 @@ mod tests {
         authority.cleanup();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn acknowledgement_completed_after_deadline_does_not_admit_child() {
         let launch_id = "late-acknowledgement";
@@ -1413,6 +1430,7 @@ mod tests {
         authority.cleanup();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn matching_acknowledgement_cannot_admit_after_deadline() {
         let launch_id = "expired-acknowledgement";

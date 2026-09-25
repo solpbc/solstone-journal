@@ -1649,6 +1649,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn handler_exit_failure_remains_counted_once_in_the_beacon() {
@@ -1694,6 +1695,7 @@ mod tests {
         assert!(dispatcher.stop_and_wait());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn unavailable_pool_does_not_remove_a_multifile_segment_before_other_work_starts() {

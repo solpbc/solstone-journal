@@ -160,9 +160,11 @@ fn probe_rfdetr(path: &Path) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::install::rfdetr_install::{
         EngineSpec, ModelSpec, check_rfdetr_model_with_artifacts,
     };
+    #[cfg(all(test, feature = "full-tests"))]
     use sha2::{Digest, Sha256};
 
     #[test]
@@ -340,6 +342,7 @@ mod tests {
         ));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn launch_failure_is_unrunnable_after_byte_verification() {
         let journal = tempfile::tempdir().unwrap();

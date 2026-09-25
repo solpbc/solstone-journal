@@ -4086,6 +4086,7 @@ mod tests {
         fs::remove_dir_all(root).expect("cleanup rescan root");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn rescan_file_waits_out_a_concurrent_writer_instead_of_erroring() {
         // Immediate-mode admission (not deferred) means rescan_file's own

@@ -395,6 +395,7 @@ mod tests {
         assert!(detect_gpus().is_empty());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn memoized_probe_uses_test_sibling_helper() {
@@ -423,6 +424,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn non_memoized_child_contract_distinguishes_clean_empty_from_failures() {

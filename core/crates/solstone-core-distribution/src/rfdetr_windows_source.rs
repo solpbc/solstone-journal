@@ -1115,6 +1115,7 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=/MD /O2 /Ob2 /DNDEBUG
         fs::write(bin_dir.join("rfdetr-cli.exe"), bytes).unwrap();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn commit_fixture(root: &Path, content: &str) -> String {
         fs::create_dir_all(root.join("core")).unwrap();
         fs::write(root.join("core/Cargo.lock"), content).unwrap();
@@ -1138,6 +1139,7 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=/MD /O2 /Ob2 /DNDEBUG
             .to_owned()
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn source_bundle_requires_pinned_commit_and_complete_object_closure() {
         let temp = tempfile::tempdir().unwrap();
@@ -1178,6 +1180,7 @@ CMAKE_CXX_FLAGS_RELEASE:STRING=/MD /O2 /Ob2 /DNDEBUG
         assert!(verify_bundle_commit(&incremental, &second).is_err());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn product_identity_cannot_be_restamped_over_dirty_or_other_source() {
         let temp = tempfile::tempdir().unwrap();

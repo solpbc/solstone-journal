@@ -754,6 +754,7 @@ mod tests {
     use axum::http::Request;
     use axum::routing::get;
     use serde_json::json;
+    #[cfg(all(test, feature = "full-tests"))]
     use solstone_core_sol_link::establish;
     use solstone_core_sol_link::pairing::addresses::LocalEndpoint;
     use solstone_core_spl::REASON_SERVICE_TOKEN_REJECTED;
@@ -1538,6 +1539,7 @@ mod tests {
         assert_eq!(body["enrolled"], true);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn status_reads_native_committed_link_state() {
         let temporary = TempDir::new();

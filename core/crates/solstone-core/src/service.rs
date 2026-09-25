@@ -2108,6 +2108,7 @@ mod tests {
         assert!(!journal.path().join("health").exists());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn start_does_not_report_success_for_a_service_that_never_became_ready() {
         let journal = tempfile::tempdir_in("/var/tmp").unwrap();

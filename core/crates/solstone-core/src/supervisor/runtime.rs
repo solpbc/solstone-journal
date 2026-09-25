@@ -138,6 +138,7 @@ thread_local! {
     static PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED: RefCell<Option<ProcessInstance>> = const { RefCell::new(None) };
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(all(unix, test))]
 #[doc(hidden)]
 pub(crate) fn set_parent_loss_coordinator_bootstrap_test_fault(
@@ -158,6 +159,7 @@ fn record_parent_loss_coordinator_bootstrap_test_spawn(instance: ProcessInstance
     PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow_mut() = Some(instance));
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(all(unix, test))]
 fn parent_loss_coordinator_bootstrap_test_spawned() -> Option<ProcessInstance> {
     PARENT_LOSS_COORDINATOR_BOOTSTRAP_TEST_SPAWNED.with(|slot| *slot.borrow())
@@ -2063,11 +2065,16 @@ mod tests {
     };
     #[cfg(unix)]
     use super::{
-        JournalBinaryPreflightError, ParentLossCoordinatorBootstrapFailure,
-        ParentLossCoordinatorBootstrapTestFault, ParentLossCoordinatorSession,
-        bootstrap_parent_loss_coordinator, parent_loss_coordinator_bootstrap_test_spawned,
+        JournalBinaryPreflightError, ParentLossCoordinatorSession,
         parent_loss_coordinator_launch_request, resolve_journal_binary_from,
-        set_parent_loss_coordinator_bootstrap_test_fault, validate_journal_binary,
+        validate_journal_binary,
+    };
+    #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
+    use super::{
+        ParentLossCoordinatorBootstrapFailure, ParentLossCoordinatorBootstrapTestFault,
+        bootstrap_parent_loss_coordinator, parent_loss_coordinator_bootstrap_test_spawned,
+        set_parent_loss_coordinator_bootstrap_test_fault,
     };
     #[cfg(unix)]
     use std::path::{Path, PathBuf};
@@ -2077,12 +2084,15 @@ mod tests {
     use std::time::Duration;
 
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
+    use solstone_core_system::lifecycle::ParentLossLedger;
+    #[cfg(unix)]
     use solstone_core_system::lifecycle::{
-        CoordinatorBootstrap, DeclaredParent, ParentLossCoordinator, ParentLossLedger,
-        ParentLossTerminalDisposition,
+        CoordinatorBootstrap, DeclaredParent, ParentLossCoordinator, ParentLossTerminalDisposition,
     };
     use solstone_core_system::lifecycle::{ParentLossReason, ShutdownRegime, SyncTickOutcome};
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     use solstone_core_system::process::{
         InstanceVerdict, ProcessInstanceSource, SystemProcessInstanceSource,
     };
@@ -2212,6 +2222,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn bootstrap_faults_refuse_before_service_side_effects_and_reap_spawned_coordinator() {

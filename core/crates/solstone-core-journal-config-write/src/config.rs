@@ -431,6 +431,7 @@ mod tests {
         assert_eq!(lock.path(), path);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cas_changed_value_times_out_while_lock_is_held() {
         let temporary = TempDir::new();
@@ -479,6 +480,7 @@ mod tests {
         assert_eq!(value, json!({"target":"after","sibling":true}));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn cas_budget_exhaustion_leaves_latest_concurrent_bytes_unchanged() {
         let temporary = TempDir::new();

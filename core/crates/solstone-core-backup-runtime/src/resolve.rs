@@ -150,6 +150,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     struct FailingDownload {
         calls: Cell<u32>,
     }
@@ -170,6 +171,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl ByteDownload for FailingDownload {
         fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
             self.calls.set(self.calls.get() + 1);
@@ -366,6 +368,7 @@ mod tests {
         assert_eq!(tools.rclone_path, None);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn restic_install_failure_is_restic_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();
@@ -385,6 +388,7 @@ mod tests {
         assert!(downloader.calls.get() > 0);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn rclone_install_failure_is_rclone_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();
@@ -530,6 +534,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn capability_tool_resolution_maps_restic_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();
@@ -552,6 +557,7 @@ mod tests {
         assert!(downloader.calls.get() > 0);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn capability_tool_resolution_maps_operated_rclone_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();

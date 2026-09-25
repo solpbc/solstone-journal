@@ -10,10 +10,12 @@ use solstone_core_cogitate::{COGITATE_ACCESS_TIERS, capabilities_for_access_tier
 use crate::oracle::{fixture, generated_contract_fixture};
 use crate::sol_execution::orchestrate_slot_cycle;
 use crate::{
-    EMIT_FINAL_TOOL, FINISH_TOOL, KNOWN_TOOL_NAMES, NoopSlotLease, ReadBudget, SlotLease,
-    SlotReacquireError, SolCallBudget, ToolName, ToolSpec, bound_tools, format_shell_output, glob,
-    resolve_tool_spec, run_command, run_sol_command, truncate_output,
+    EMIT_FINAL_TOOL, FINISH_TOOL, KNOWN_TOOL_NAMES, SlotLease, SlotReacquireError, SolCallBudget,
+    ToolName, ToolSpec, bound_tools, format_shell_output, resolve_tool_spec, run_command,
+    run_sol_command, truncate_output,
 };
+#[cfg(all(test, feature = "full-tests"))]
+use crate::{NoopSlotLease, ReadBudget, glob};
 
 #[test]
 fn tool_metadata_matches_the_oracle_schema() {
@@ -201,6 +203,7 @@ fn sol_execution_vectors_match_the_oracle() {
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn sol_and_raw_read_budgets_are_independent() {
     let mut sol_budget = SolCallBudget::new(1);

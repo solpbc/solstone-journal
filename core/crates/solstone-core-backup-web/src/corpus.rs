@@ -824,10 +824,12 @@ impl HttpScript {
         self.active.load(Ordering::Acquire)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn max_concurrency(&self) -> usize {
         self.max_active.load(Ordering::Acquire)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn request_count(&self) -> usize {
         self.requests.lock().unwrap().len()
     }
@@ -3198,6 +3200,7 @@ fn hosted_handoff_payload_from(
     })
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn poll_json(status: u16, body: Value) -> HttpResponse {
     HttpResponse {
         status,
@@ -3233,6 +3236,7 @@ fn poll_gets(http: &HttpScript) -> Vec<HttpRequest> {
         .collect()
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 async fn wait_poll_gets(http: &HttpScript, min: usize) -> Vec<HttpRequest> {
     for _ in 0..200 {
         let gets = poll_gets(http);
@@ -3554,6 +3558,7 @@ async fn hosted_poll_configured_portal_base_preflight_blocks_or_allows_transport
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[tokio::test]
 async fn hosted_poll_approved_enables_operated_mode() {
     let root = crate::test_support::root("healthy");
@@ -3674,6 +3679,7 @@ async fn hosted_poll_subscribe_url_and_secrets_stay_off_status() {
     assert!(done["operation"].get("subscribe_url").is_none());
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[tokio::test]
 async fn hosted_poll_response_classes_retry_or_fail() {
     struct Case {
@@ -4145,6 +4151,7 @@ async fn hosted_poll_second_local_handoff_after_poll_approval_is_rejected() {
     assert_eq!(after["hosted"]["prefix"], bound_prefix);
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[tokio::test]
 async fn hosted_poll_get_timeout_is_bounded_by_remaining_ttl() {
     let root = crate::test_support::root("healthy");
@@ -4683,6 +4690,7 @@ async fn hosted_poll_needs_subscription_matches_local_needs_subscription_contrac
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[tokio::test]
 async fn hosted_poll_second_get_is_resource_bounded_and_lease_releases_on_completion() {
     let root = crate::test_support::root("healthy");
@@ -5092,6 +5100,7 @@ async fn handoff_restore_composition_nonce_one_use_and_command_order() {
     assert_handoff_refused(status, &body);
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[tokio::test]
 async fn hosted_secrets_and_binding_mode_are_never_exposed() {
     struct Scenario {

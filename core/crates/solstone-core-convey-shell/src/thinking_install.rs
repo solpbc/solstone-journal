@@ -396,6 +396,7 @@ mod tests {
         assert!(still_live.0.lock().unwrap().is_empty());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     #[cfg(unix)]
     fn admitted_installer_is_observable_and_duplicate_start_reuses_its_attempt() {
@@ -455,6 +456,7 @@ mod tests {
         assert!(!lease::is_held(journal.path(), "local").unwrap());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     #[cfg(unix)]
     fn an_admitted_installer_outlives_the_thread_that_requested_it() {
@@ -537,6 +539,7 @@ mod tests {
         writer.join().unwrap();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     #[cfg(unix)]
     fn admission_timeout_terminates_and_reaps_the_started_installer() {

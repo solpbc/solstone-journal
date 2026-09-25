@@ -41,3 +41,6 @@ path = "tests/cogitate_oneshot_process_group.rs"
 
 [lints]
 workspace = true
+
+[features]
+full-tests = []

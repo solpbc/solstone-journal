@@ -873,6 +873,7 @@ fn proof(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(test, feature = "full-tests"))]
     use std::collections::BTreeMap;
     use std::ffi::OsStr;
     use std::sync::Mutex;
@@ -887,11 +888,12 @@ mod tests {
         write_parent_loss_admission_intent, write_parent_loss_admission_result,
         write_parent_loss_service_witness, write_sync_heartbeat,
     };
+    #[cfg(all(test, feature = "full-tests"))]
     use crate::process::{
-        Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, InstanceCensus,
-        ManagedLaunchRequest, ProcessBirth, SpawnOptions, launch_managed_hosted,
-        set_hosted_admission_test_fault,
+        Disposition, HostedAdmissionTestFault, HostedLaunchProvenance, ManagedLaunchRequest,
+        SpawnOptions, launch_managed_hosted, set_hosted_admission_test_fault,
     };
+    use crate::process::{InstanceCensus, ProcessBirth};
 
     struct MutableInspectSource {
         result: Mutex<InspectResult>,
@@ -1104,6 +1106,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn same_root_bootstrap_has_exactly_one_coordinator_authority() {
         let (journal, coordinator, declared_parent, capability) = bootstrap([]);
@@ -1850,6 +1853,7 @@ mod tests {
         assert!(coordinator._lease.is_none());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn reject_child_without_exact_reap(
         journal: &Path,
@@ -1883,6 +1887,7 @@ mod tests {
         assert!(result.is_err(), "unacknowledged child must be rejected");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn exact_reap_failure_is_durable_unresolved_and_blocks_successor() {
@@ -1915,6 +1920,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn exact_exit_proof_failure_is_durable_unresolved_and_blocks_successor() {
@@ -1941,6 +1947,7 @@ mod tests {
         assert!(coordinator._lease.is_some());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn exact_reap_failure_with_terminal_write_error_retains_nonterminal_lease() {
@@ -1968,6 +1975,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn early_exited_child_persists_rejected_and_reaped_and_seals_generation() {
@@ -2053,6 +2061,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn spawn_failure_persists_spawn_failed_result_and_seals_generation() {
@@ -2126,6 +2135,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn unverifiable_live_child_persists_spawn_failed_and_seals_generation() {

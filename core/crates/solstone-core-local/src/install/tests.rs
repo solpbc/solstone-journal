@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
+#[cfg(all(test, feature = "full-tests"))]
 use super::metal_candidate;
 use super::test_hooks::{inspect_parakeet, stage_ready_parakeet};
 use super::{
@@ -233,6 +234,7 @@ fn fixture_artifact(url: String, filename: &'static str, body: &[u8]) -> Artifac
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 fn candidate_request(root: &PathBuf) -> serde_json::Map<String, Value> {
     serde_json::from_value(json!({
@@ -309,6 +311,7 @@ fn metal_target_reuses_the_shared_4b_model_and_darwin_runtime_pin() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(unix)]
 #[test]
 fn metal_candidate_inspect_is_pure_and_reports_component_reasons_and_fit() {
@@ -1139,6 +1142,7 @@ fn canonical_fingerprint_vectors_match_fixture() {
     }
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[test]
 fn local_fingerprint_supplies_provider_and_backend_then_canonicalises() {
     // Canonicalisation itself is covered by the 18 named vectors in
@@ -1169,6 +1173,7 @@ fn local_fingerprint_supplies_provider_and_backend_then_canonicalises() {
     );
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 #[cfg(not(windows))]
 #[test]
 fn fingerprint_transport_resolves_targets_without_writing_status() {

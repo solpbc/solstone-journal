@@ -475,7 +475,7 @@ fn check_rfdetr_model_with_rows(
     Ok(RfdetrInstallRecord::Installed)
 }
 
-#[cfg(any(test, feature = "test-hooks"))]
+#[cfg(any(all(test, feature = "full-tests"), feature = "test-hooks"))]
 pub(crate) fn check_rfdetr_model_with_artifacts(
     journal: &Path,
     key: &str,

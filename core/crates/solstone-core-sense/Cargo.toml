@@ -33,6 +33,7 @@ test = false
 required-features = ["test-stubs"]
 
 [features]
+full-tests = []
 test-stubs = []
 
 [dev-dependencies]

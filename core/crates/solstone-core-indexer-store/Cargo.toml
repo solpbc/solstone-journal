@@ -16,3 +16,6 @@ sha2.workspace = true
 solstone-core-format.workspace = true
 solstone-core-indexer.workspace = true
 solstone-core-retention.workspace = true
+
+[features]
+full-tests = []

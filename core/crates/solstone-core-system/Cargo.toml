@@ -17,6 +17,7 @@ autotests = false
 unsafe_code = "deny"
 
 [features]
+full-tests = []
 test-hooks = ["solstone-core-journal-io/test-hooks", "solstone-core-installation-identity/test-hooks"]
 
 [dependencies]

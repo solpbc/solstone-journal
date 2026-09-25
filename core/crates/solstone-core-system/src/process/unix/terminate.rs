@@ -1044,11 +1044,13 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     struct ReparentedSource {
         censuses: Mutex<VecDeque<InstanceCensus>>,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     impl ProcessInstanceSource for ReparentedSource {
         fn inspect(&self, pid: u32) -> InspectResult {
@@ -1069,6 +1071,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
     fn exact_descendant_cleanup_tracks_a_reparented_child_until_it_is_gone() {

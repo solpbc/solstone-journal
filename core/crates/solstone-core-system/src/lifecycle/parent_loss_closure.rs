@@ -1074,6 +1074,7 @@ mod tests {
         ));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// 🔒 Safety over convergence: a process that survives SIGKILL within the
     /// deadline keeps this start refused, the generation open, and nothing
     /// written. The next start retries.
@@ -1201,6 +1202,7 @@ mod tests {
         assert!(record.closure.is_none());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// 🔒 A pid `inspect` cannot read is settled only by a positive owner
     /// reading: another user's pid is a reused pid; our own uid, or no
     /// answer, refuses this start rather than reading "cannot tell" as death.
@@ -1632,6 +1634,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// The lease is a real flock: a second holder cannot take it while the
     /// first is alive, and the ledger reports that as contention, not error.
     #[test]

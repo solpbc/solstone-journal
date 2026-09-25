@@ -37,18 +37,24 @@
 //! release ships.
 
 use std::collections::{BTreeMap, BTreeSet};
+#[cfg(all(test, feature = "full-tests"))]
 use std::fs;
+#[cfg(all(test, feature = "full-tests"))]
 use std::path::{Path, PathBuf};
+#[cfg(all(test, feature = "full-tests"))]
 use std::process::Command;
 
 use serde::Deserialize;
 
+#[cfg(all(test, feature = "full-tests"))]
 const INVENTORY: &str = "core/distribution/inventory.toml";
+#[cfg(all(test, feature = "full-tests"))]
 const WORKSPACE: &str = "core/Cargo.toml";
 const MUSL_STATIC_LANE: &str = "musl-static";
 /// Every runtime `dlopen` in this workspace goes through this crate.
 const RUNTIME_DLOPEN_CRATE: &str = "libloading";
 
+#[cfg(all(test, feature = "full-tests"))]
 fn repository_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
@@ -91,6 +97,7 @@ struct DepKind {
     kind: Option<String>,
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn cargo_metadata(manifest: &Path) -> Result<Metadata, String> {
     let output = Command::new("cargo")
         .args([
@@ -119,6 +126,7 @@ fn cargo_metadata(manifest: &Path) -> Result<Metadata, String> {
 /// this one is not restricted to workspace members: `libloading` is an
 /// external crate, so the walk must cross into the full resolved graph.
 struct Graph {
+    #[cfg(all(test, feature = "full-tests"))]
     id_by_name: BTreeMap<String, String>,
     name_by_id: BTreeMap<String, String>,
     /// Non-dev (normal or build) dependency edges, by package id.
@@ -126,6 +134,7 @@ struct Graph {
 }
 
 fn build_graph(metadata: &Metadata) -> Graph {
+    #[cfg(all(test, feature = "full-tests"))]
     let id_by_name = metadata
         .packages
         .iter()
@@ -161,6 +170,7 @@ fn build_graph(metadata: &Metadata) -> Graph {
         edges.insert(node.id.clone(), confers);
     }
     Graph {
+        #[cfg(all(test, feature = "full-tests"))]
         id_by_name,
         name_by_id,
         edges,
@@ -250,6 +260,7 @@ fn musl_static_bin_packages(inventory: &str) -> BTreeSet<String> {
     packages
 }
 
+#[cfg(all(test, feature = "full-tests"))]
 fn format_violations(violations: &BTreeMap<String, Vec<String>>) -> String {
     let mut lines = vec!["unexpected:".to_owned()];
     for (package, path) in violations {
@@ -266,6 +277,7 @@ mod tests {
     use super::*;
 
     fn graph_from(edges: &[(&str, &[&str])], names: &[&str]) -> Graph {
+        #[cfg(all(test, feature = "full-tests"))]
         let id_by_name = names
             .iter()
             .map(|name| (name.to_string(), name.to_string()))
@@ -284,6 +296,7 @@ mod tests {
             })
             .collect();
         Graph {
+            #[cfg(all(test, feature = "full-tests"))]
             id_by_name,
             name_by_id,
             edges,
@@ -459,6 +472,7 @@ source = "core/models/assets/x.onnx"
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn live_workspace_has_no_musl_static_binary_that_reaches_libloading() {
         let root = repository_root();

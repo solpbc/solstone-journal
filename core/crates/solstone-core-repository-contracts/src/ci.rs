@@ -1387,9 +1387,15 @@ features = ["full-tests"]
         registry.package_suites[0].default_full = true;
         assert_eq!(validate_registry(temp.path(), &registry), Ok(()));
 
-        registry.package_suites[0].features.push("absent".to_owned());
+        registry.package_suites[0]
+            .features
+            .push("absent".to_owned());
         let errors = validate_registry(temp.path(), &registry).expect_err("undeclared feature");
-        assert!(errors.iter().any(|error| error.contains("does not declare")));
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("does not declare"))
+        );
     }
 
     #[test]

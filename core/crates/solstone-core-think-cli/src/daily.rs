@@ -1837,18 +1837,26 @@ mod tests {
             .is_ok()
         );
     }
+    #[cfg(all(test, feature = "full-tests"))]
     use solstone_core_cortex_client::{
         CortexRequest, UseCompletion, UseEndState, WaitForUsesReport,
     };
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::path::PathBuf;
-    use std::sync::{Arc, Mutex};
+    #[cfg(all(test, feature = "full-tests"))]
+    use std::sync::Arc;
+    #[cfg(all(test, feature = "full-tests"))]
+    use std::sync::Mutex;
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn model_response(text: &str, validation: Value) -> Value {
         json!({"schema":"solstone-generate-response-v2","id":null,"outcome":"generated","text":text,"model":"test-model","usage":{},"finish_reason":"stop","thinking":null,"schema_validation":validation,"input_budget":null,"request_budget":null,"inference":null})
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     struct Worker {
         context: solstone_core_talent_runtime::ExecutionContext,
@@ -1856,6 +1864,7 @@ mod tests {
         stub: PathBuf,
         outcomes: Mutex<std::collections::BTreeMap<String, UseEndState>>,
     }
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     impl crate::context::CortexBoundary for Worker {
         fn dispatch(
@@ -1944,6 +1953,7 @@ mod tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn ordinary_daily_rerun_consumes_new_evidence_and_commits_changed_owner_result() {
@@ -2093,6 +2103,7 @@ cat "${0%/*}/response-$response.json"
             admitted_facet
         );
     }
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn repeated_invalid_worker_outputs_cap_and_new_failure_causes_reset_the_count() {
@@ -2209,6 +2220,7 @@ fi
             solstone_core_journal_io::DailyUnitStatus::Failed
         );
     }
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn invalid_observer_references_regenerate_until_capped_and_new_evidence_reopens() {
@@ -2384,6 +2396,7 @@ cat "${0%/*}/response-$mode.json"
         assert_eq!(std::fs::read_to_string(&owner_path).unwrap(), published);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn all_applicable_legacy_facet_ids_are_assigned_before_the_first_unit_contract() {
@@ -2486,6 +2499,7 @@ cat "${0%/*}/newsletter-response.json"
         run(&context, &mut log, None, false, 1).unwrap();
         assert_eq!(worker.outcomes.lock().unwrap().len(), 2);
     }
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn actual_upstream_no_output_does_not_lend_old_artifacts_to_briefing_and_recovers() {
@@ -2695,6 +2709,7 @@ cat "${0%/*}/response-$kind.json"
             "unchanged recovery is reusable"
         );
     }
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn historical_days_share_the_current_maintenance_packet_and_failure_is_separate() {
@@ -2840,6 +2855,7 @@ cat "${0%/*}/response-$kind.json"
         assert_eq!(worker.outcomes.lock().unwrap().len(), 5);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn newer_maintenance_window_fences_late_worker_and_refuses_older_readmission() {

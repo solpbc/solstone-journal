@@ -2863,6 +2863,8 @@ mod resolution_tests {
         record_backup_result, record_verification_result, set_mode, set_offload,
     };
     use solstone_core_backup_runtime::hosted_runtime::{HttpError, HttpRequest, HttpResponse};
+    #[cfg(all(test, feature = "full-tests"))]
+    use solstone_core_backup_runtime::install_backup_tool_resolution_started_hook;
     use solstone_core_backup_runtime::rclone_install::{
         RCLONE_SCHEMA_VERSION, RCLONE_TOOL, RCLONE_VERSION,
     };
@@ -2873,10 +2875,13 @@ mod resolution_tests {
     use solstone_core_backup_runtime::{
         HttpTransport, ToolInstallDirs, ToolOutput, ToolRequest,
         backup_journal_resolved_hook_armed, backup_path_resolution_attempts,
+        install_backup_journal_resolved_hook, reset_backup_journal_resolved_hook,
+        reset_backup_path_resolution_attempts,
+    };
+    #[cfg(all(test, feature = "full-tests"))]
+    use solstone_core_backup_runtime::{
         backup_record_failure_hook_armed, backup_record_failure_hook_consumed_target,
-        backup_tool_resolution_started_hook_armed, install_backup_journal_resolved_hook,
-        install_backup_record_failure_hook, install_backup_tool_resolution_started_hook,
-        reset_backup_journal_resolved_hook, reset_backup_path_resolution_attempts,
+        backup_tool_resolution_started_hook_armed, install_backup_record_failure_hook,
         reset_backup_record_failure_hook, reset_backup_tool_resolution_started_hook,
     };
     use std::cell::{Cell, RefCell};
@@ -2903,9 +2908,13 @@ mod resolution_tests {
     use std::fs;
     use std::io;
     #[cfg(unix)]
-    use std::os::unix::fs::{MetadataExt, symlink};
+    #[cfg(all(test, feature = "full-tests"))]
+    use std::os::unix::fs::MetadataExt;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
     use std::path::{Path, PathBuf};
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     use std::rc::Rc;
     use std::sync::{LazyLock, Mutex};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -2993,10 +3002,12 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     struct FailingDownload {
         calls: Cell<u32>,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     impl ByteDownload for FailingDownload {
         fn fetch(&self, _: &str, _: Duration) -> Result<Vec<u8>, ByteDownloadError> {
             self.calls.set(self.calls.get() + 1);
@@ -3106,6 +3117,7 @@ mod resolution_tests {
         })
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn last_backup_reason(journal: &Path) -> Option<String> {
         get_backup_config(journal)
             .unwrap()
@@ -3223,6 +3235,7 @@ mod resolution_tests {
         });
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn install_tool_resolution_alias_retarget(
         alias: PathBuf,
@@ -3239,6 +3252,7 @@ mod resolution_tests {
         });
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[derive(Debug, PartialEq, Eq)]
     struct FileMetadataSnapshot {
@@ -3250,6 +3264,7 @@ mod resolution_tests {
         mtime: i64,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[derive(Debug, PartialEq, Eq)]
     struct ConfigStateSnapshot {
@@ -3258,6 +3273,7 @@ mod resolution_tests {
         entries: Vec<(String, FileMetadataSnapshot)>,
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn file_metadata_snapshot(path: &Path) -> FileMetadataSnapshot {
         let metadata = fs::symlink_metadata(path).expect("config metadata reads");
@@ -3271,6 +3287,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     fn config_state_snapshot(journal: &Path) -> ConfigStateSnapshot {
         let config = journal.join("config");
@@ -3292,6 +3309,7 @@ mod resolution_tests {
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn assert_restic_unavailable_output(output: &CliRun) {
         assert_eq!(output.stdout, "");
         assert_eq!(
@@ -3301,6 +3319,7 @@ mod resolution_tests {
         assert_eq!(output.exit_code, 1);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn assert_rclone_unavailable_output(output: &CliRun) {
         assert_eq!(output.stdout, "");
         assert_eq!(
@@ -3310,6 +3329,7 @@ mod resolution_tests {
         assert_eq!(output.exit_code, 1);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn assert_no_backup_execution(runner: &RecordingRunner) {
         assert!(
             runner
@@ -3386,6 +3406,7 @@ mod resolution_tests {
         assert_resolved_restic(&runner.programs.borrow(), &expected, &decoy);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac3_backup_run_persists_restic_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();
@@ -3663,6 +3684,7 @@ mod resolution_tests {
         assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn backup_run_admission_records_restic_unavailable_at_resolved_alias_once() {
@@ -3727,6 +3749,7 @@ mod resolution_tests {
         assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn backup_run_admission_records_rclone_unavailable_at_resolved_alias_once() {
@@ -3793,6 +3816,7 @@ mod resolution_tests {
         assert_eq!(journal_config_bytes(journal_b.path()), replacement_before);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn backup_run_admission_restic_unavailable_ignores_record_mutation_failure() {
@@ -3881,6 +3905,7 @@ mod resolution_tests {
         reset_backup_journal_resolved_hook();
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[cfg(unix)]
     #[test]
     fn backup_run_admission_rclone_unavailable_ignores_record_mutation_failure() {
@@ -4280,6 +4305,7 @@ mod resolution_tests {
         assert_ne!(program, "rclone");
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn ac6_operated_run_persists_rclone_unavailable() {
         let restic_dir = tempfile::tempdir().unwrap();

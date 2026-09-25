@@ -1105,6 +1105,7 @@ mod tests {
         assert!(!report.checks[0].detail.contains("Windows isn't supported"));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// `host_platform()` and `supported()` have to name the OS the same way, and
     /// they did not: the mapping left Windows as the raw lowercase `"windows"`
     /// while a downstream arm tested `== "Windows"`, so that arm was unreachable

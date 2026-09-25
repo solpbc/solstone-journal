@@ -10,6 +10,7 @@ license.workspace = true
 publish = false
 
 [features]
+full-tests = []
 test-hooks = ["solstone-core-system/test-hooks"]
 test-fixture-pin = ["solstone-core-local/test-fixture-pin"]
 

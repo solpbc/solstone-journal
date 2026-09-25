@@ -319,10 +319,13 @@ impl Drop for HelperChild {
 mod tests {
     use super::*;
     #[cfg(not(windows))]
+    #[cfg(all(test, feature = "full-tests"))]
     use std::fs;
     #[cfg(unix)]
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn write_stub(body: &str) -> (tempfile::TempDir, PathBuf) {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join(HELPER);
@@ -332,6 +335,7 @@ mod tests {
         (root, path)
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn explicit(executable: PathBuf) -> CedAnalyzeProgram {
         CedAnalyzeProgram::Explicit {
             executable,
@@ -355,6 +359,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn sibling_helper_resolves_a_stub_dropped_at_the_test_base_dir() {
         let (root, _path) = write_stub(
@@ -370,6 +375,7 @@ mod tests {
         assert_eq!(response["ok"], Value::Bool(true));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn happy_path_stub_echoes_a_valid_response() {
         let (_root, path) = write_stub(
@@ -380,6 +386,7 @@ mod tests {
         assert_eq!(response["ok"], Value::Bool(true));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     /// W8-14 regression. The helper dispatches on argv: bare is CLASSIFY,
     /// `probe` is the readiness probe, and a probe-schema request sent to a
     /// bare invocation is rejected as `unknown-schema`. The readiness probe
@@ -418,6 +425,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn helper_output_larger_than_pipe_capacity_completes() {
         let (_root, path) = write_stub(
@@ -435,6 +443,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         assert_eq!(response["padding"].as_str().unwrap().len(), 1048576);
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn nonzero_exit_carries_stderr() {
         let (_root, path) = write_stub(
@@ -451,6 +460,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         }
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn malformed_stdout_is_malformed_response() {
         let (_root, path) = write_stub("#!/bin/sh\ncat >/dev/null\nprintf 'not json'\n");
@@ -463,6 +473,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         assert!(matches!(error, CedAnalyzeError::MalformedResponse { .. }));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn timeout_kills_the_helper() {
         let (_root, path) = write_stub("#!/bin/sh\ncat >/dev/null\nexec sleep 30\n");
@@ -471,6 +482,7 @@ printf '%s\\n' '{\"schema\":\"solstone-ced-error-v1\",\"reason\":\"unknown-schem
         assert!(matches!(error, CedAnalyzeError::Timeout));
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn missing_explicit_binary_is_a_spawn_error() {
         let error = invoke_ced_analyze(

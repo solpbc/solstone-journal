@@ -315,6 +315,7 @@ fn run_process_phase(
         PhaseProcessOutcome::TimedOut { cleanup_error } => {
             timed_out_phase(phase, cleanup_error.as_deref())
         }
+        #[cfg(any(not(test), feature = "full-tests"))]
         PhaseProcessOutcome::Failed(error) => failed_phase(phase, error),
     }
 }

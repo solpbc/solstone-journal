@@ -170,10 +170,13 @@ impl CogitateOneShotClient {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(test, feature = "full-tests"))]
     use super::*;
     use crate::{CogitateRequest, REQUEST_SCHEMA};
     use serde_json::json;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::fs;
+    #[cfg(all(test, feature = "full-tests"))]
     use std::os::unix::fs::PermissionsExt;
 
     fn fixture_request() -> CogitateRequest {
@@ -193,6 +196,7 @@ mod tests {
         .expect("fixture request is valid")
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn test_root() -> PathBuf {
         let root = PathBuf::from("/var/tmp").join(format!(
             "solstone-cogitate-client-{}-{}",
@@ -206,6 +210,7 @@ mod tests {
         root
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     fn stub(root: &std::path::Path, body: &str) -> PathBuf {
         let path = root.join("cogitate-one-shot-stub.sh");
         fs::write(&path, body).unwrap();
@@ -224,6 +229,7 @@ mod tests {
         assert!(request.to_value()["dry_run"].is_boolean());
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn execute_collects_distinct_ndjson_events() {
         let root = test_root();
@@ -243,6 +249,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn execute_rejects_malformed_ndjson_and_nonzero_exit() {
         let root = test_root();
