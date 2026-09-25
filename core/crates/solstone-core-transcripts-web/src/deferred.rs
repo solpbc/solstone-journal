@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! Process-lifetime deferred segment-deletion scheduling.
+//! In-process arbitration between a held segment delete and its cancel.
+//!
+//! The durable half lives in [`crate::pending`]: a process exit inside the
+//! window no longer loses a confirmed delete, because the next start resumes
+//! the record. This registry only decides, inside one process, whether the
+//! deadline or the cancel got there first. Whichever removes the entry wins.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// A process exit before the deadline intentionally loses a scheduled deletion,
-/// matching the Python reference's in-memory timer behavior.
 #[derive(Clone, Default)]
 pub(crate) struct DeferredDeleteRegistry {
-    handles: Arc<Mutex<HashMap<String, tokio::task::AbortHandle>>>,
+    handles: Arc<Mutex<HashMap<String, Option<tokio::task::AbortHandle>>>>,
 }
 
 impl DeferredDeleteRegistry {
@@ -35,6 +38,9 @@ impl DeferredDeleteRegistry {
             commit();
             return;
         }
+        // Hold the id before the task exists, so a deadline that fires at
+        // once still finds it and commits.
+        self.hold(pending_id.clone());
         let handles = Arc::clone(&self.handles);
         let task_pending_id = pending_id.clone();
         let task = tokio::spawn(async move {
@@ -47,12 +53,43 @@ impl DeferredDeleteRegistry {
             {
                 return;
             }
-            commit();
+            // Removal is blocking filesystem work; keep it off the async workers.
+            let _ = tokio::task::spawn_blocking(commit).await;
         });
+        if let Some(slot) = self
+            .handles
+            .lock()
+            .expect("deferred-delete registry mutex is not poisoned")
+            .get_mut(&pending_id)
+        {
+            *slot = Some(task.abort_handle());
+        }
+    }
+
+    /// Hold an id whose deadline a resume thread is waiting on, so a cancel
+    /// can still reach it. The waiter must [`claim`](Self::claim) it first.
+    pub(crate) fn hold(&self, pending_id: String) {
         self.handles
             .lock()
             .expect("deferred-delete registry mutex is not poisoned")
-            .insert(pending_id, task.abort_handle());
+            .insert(pending_id, None);
+    }
+
+    /// Whether this process still has a timer or a waiter for the id.
+    pub(crate) fn contains(&self, pending_id: &str) -> bool {
+        self.handles
+            .lock()
+            .expect("deferred-delete registry mutex is not poisoned")
+            .contains_key(pending_id)
+    }
+
+    /// Take a held id at its deadline. `false` means a cancel got there first.
+    pub(crate) fn claim(&self, pending_id: &str) -> bool {
+        self.handles
+            .lock()
+            .expect("deferred-delete registry mutex is not poisoned")
+            .remove(pending_id)
+            .is_some()
     }
 
     pub(crate) fn cancel(&self, pending_id: &str) -> bool {
@@ -61,11 +98,13 @@ impl DeferredDeleteRegistry {
             .lock()
             .expect("deferred-delete registry mutex is not poisoned")
             .remove(pending_id);
-        if let Some(handle) = handle {
-            handle.abort();
-            true
-        } else {
-            false
+        match handle {
+            Some(Some(handle)) => {
+                handle.abort();
+                true
+            }
+            Some(None) => true,
+            None => false,
         }
     }
 }
@@ -121,5 +160,16 @@ mod tests {
         done.notified().await;
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         assert!(!registry.cancel("b"));
+    }
+
+    #[test]
+    fn a_held_id_goes_to_whichever_of_cancel_and_claim_comes_first() {
+        let registry = DeferredDeleteRegistry::new();
+        registry.hold("d".into());
+        assert!(registry.cancel("d"));
+        assert!(!registry.claim("d"));
+        registry.hold("e".into());
+        assert!(registry.claim("e"));
+        assert!(!registry.cancel("e"));
     }
 }

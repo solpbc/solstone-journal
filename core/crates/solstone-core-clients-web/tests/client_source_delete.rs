@@ -725,8 +725,10 @@ async fn criterion_11_not_confirmed_equals_facet_and_occupied_stream_set() {
     for facet in ["work", "personal"] {
         for day in ["20260805", "20260806"] {
             bed.write_file(&format!("facets/{facet}/entities/{day}.jsonl"), b"{}\n");
-            bed.write_file(&format!("facets/{facet}/logs/{day}.jsonl"), b"{}\n");
+            bed.write_file(&format!("facets/{facet}/activities/{day}.jsonl"), b"{}\n");
             bed.write_file(&format!("facets/{facet}/news/{day}.md"), b"news\n");
+            // The facet's action log is not derived from the erased segments.
+            bed.write_file(&format!("facets/{facet}/logs/{day}.jsonl"), b"{}\n");
         }
     }
     let mut expected = BTreeSet::new();

@@ -893,6 +893,41 @@ pub fn recover(journal: &Path, deleted_at: &str, reason: RemovalReason, cid: &st
     outcome
 }
 
+/// Finish the removal of one named segment that a previous run staged and did
+/// not complete.
+///
+/// The per-segment half of [`recover`], for a caller that already knows which
+/// segment the owner asked to remove and is resuming exactly that request. Like
+/// [`recover`] it acts only on a staged directory and ⛔ never inspects a live
+/// segment. `None` means nothing is staged under that name.
+pub fn recover_segment(
+    journal: &Path,
+    target: &Target,
+    deleted_at: &str,
+    reason: RemovalReason,
+    cid: &str,
+) -> Option<TargetOutcome> {
+    let staged = format!("{}/{}", parent_rel(target), staged_name(&target.dir));
+    if !matches!(path_lexists(&journal.join(&staged)), Ok(true)) {
+        return None;
+    }
+    // Same key as the door's, derived from the LIVE name.
+    let live = segment_rel(target);
+    let Ok(_lock) = hold_lock(journal.join(&live), LockOptions::default()) else {
+        return Some(refused_staged(
+            target,
+            staged,
+            "another process is working on this segment".to_owned(),
+        ));
+    };
+    if !matches!(path_lexists(&journal.join(&staged)), Ok(true)) {
+        return None;
+    }
+    let mut row = finish_staged(journal, target, &staged, deleted_at, reason, cid);
+    dirty_removed_day(journal, &mut row);
+    Some(row)
+}
+
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
@@ -949,6 +984,52 @@ mod tests {
     fn proof(day: &str, stream: &str, dir: &str, name: &str, size: u64) -> ProvenRaw {
         let classifier: &dyn MediaClassifier = &media_only;
         ProvenRaw::for_test(classifier, day, stream, dir, name, size).unwrap()
+    }
+
+    #[test]
+    fn recover_segment_finishes_only_the_named_staged_segment() {
+        let bed = Bed::new();
+        let mine = bed.segment("20260805", "field.audio", "070000_17");
+        fs::write(mine.join("a.flac"), b"bytes").unwrap();
+        let other = bed.segment("20260805", "field.audio", "080000_17");
+        fs::write(other.join("b.flac"), b"bytes").unwrap();
+        let stream = bed.root.join("chronicle/20260805/field.audio");
+        fs::rename(&mine, stream.join(staged_name("070000_17"))).unwrap();
+        fs::rename(&other, stream.join(staged_name("080000_17"))).unwrap();
+        let target = Target {
+            day: "20260805".into(),
+            stream: "field.audio".into(),
+            dir: "070000_17".into(),
+        };
+        let row = recover_segment(
+            &bed.root,
+            &target,
+            "2026-08-05T00:00:00Z",
+            RemovalReason::OwnerSegmentDelete,
+            "cid",
+        )
+        .expect("a staged segment is finished");
+        assert!(row.not_removed.is_empty(), "{row:?}");
+        assert!(stream.join("070000_17").join(TOMBSTONE_NAME).is_file());
+        assert!(!stream.join(staged_name("070000_17")).exists());
+        assert!(
+            stream.join(staged_name("080000_17")).exists(),
+            "another staged segment is left for its own caller"
+        );
+        let untouched = Target {
+            dir: "090000_17".into(),
+            ..target
+        };
+        assert!(
+            recover_segment(
+                &bed.root,
+                &untouched,
+                "2026-08-05T00:00:00Z",
+                RemovalReason::OwnerSegmentDelete,
+                "cid",
+            )
+            .is_none()
+        );
     }
 
     #[test]

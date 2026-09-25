@@ -24,6 +24,7 @@ mod day;
 mod deferred;
 mod delete;
 mod media_removal;
+mod pending;
 mod reprocess;
 mod segment;
 mod segment_media;
@@ -82,6 +83,8 @@ fn router_with_dependencies(
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
     supervisor_liveness: SupervisorLivenessProbe,
 ) -> Router {
+    let deferred_deletes = deferred::DeferredDeleteRegistry::new();
+    delete::resume_pending(&journal_root, &deferred_deletes);
     Router::new()
         .route("/app/transcripts/", get(shell::root))
         .route("/app/transcripts/workspace", get(shell::workspace))
@@ -105,6 +108,14 @@ fn router_with_dependencies(
             post(delete::cancel_delete),
         )
         .route(
+            "/app/transcripts/api/delete-status/{pending_id}",
+            get(delete::delete_status),
+        )
+        .route(
+            "/app/transcripts/api/delete-outcomes",
+            get(delete::delete_outcomes),
+        )
+        .route(
             "/app/transcripts/api/serve_file/{day}/{*rel_path}",
             get(serve_file::serve_file),
         )
@@ -112,7 +123,7 @@ fn router_with_dependencies(
             journal_root: Arc::new(journal_root),
             clock,
             shared_shell,
-            deferred_deletes: deferred::DeferredDeleteRegistry::new(),
+            deferred_deletes,
             delete_window,
             sense_spawner,
             supervisor_liveness,

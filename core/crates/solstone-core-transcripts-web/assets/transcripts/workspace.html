@@ -6057,6 +6057,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }).observe(zoom);
 
     loadDayData();
+    reportUnfinishedDeletes();
 
     // Handle browser back/forward
     window.addEventListener('hashchange', () => {
@@ -6210,14 +6211,15 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
     deleteSegmentModalBody.innerHTML = `
       <p class="tr-delete-segment-meta"><strong>${escapeHtml(humanizeStreamName(seg.stream))}</strong> · <strong>${escapeHtml(day)}</strong> · <strong>${escapeHtml(seg.start)} - ${escapeHtml(seg.end)}</strong></p>
-      <p>You'll have about 10 seconds to undo this after confirming.</p>
-      <p>This removes:</p>
+      <p>You'll have about 10 seconds to cancel after confirming.</p>
+      <p>This deletes the segment's own:</p>
       <ul class="tr-delete-segment-list">
         <li>audio</li>
-        <li>screen recording</li>
-        <li>transcripts</li>
-        <li>derived insights</li>
+        <li>screen frames</li>
+        <li>transcript</li>
+        <li>analysis stored with it</li>
       </ul>
+      <p>Summaries made from it elsewhere in your journal aren't deleted and may still mention it.</p>
       ${sizeLine}
     `;
 
@@ -6289,7 +6291,7 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
 
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error || 'Failed to delete segment');
+        throw new Error(asSentence(data.error) || 'Failed to delete segment');
       }
 
       const data = await response.json();
@@ -6316,9 +6318,13 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         buttons: [{
           label: 'Cancel',
           dismiss: false,
-          onClick: () => cancelSegmentDelete(data.pending, seg, pendingNotificationId)
+          onClick: () => cancelSegmentDelete(data.pending, seg, day, pendingNotificationId)
         }]
       });
+      // Time the wait from this answer, not the journal's clock: a paired
+      // device's clock can be minutes off.
+      const deleteDay = day;
+      watchDeleteOutcome(data.pending, seg, deleteDay, Date.now() + (data.ttl_seconds || 10) * 1000);
 
       if (data.search_index_warning === true) {
         window.AppServices.notifications.show({
@@ -6332,6 +6338,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
 
     } catch (err) {
+      if (err instanceof TypeError) {
+        err = new Error('Your journal didn\'t answer, so the delete may still go ahead. Reload to check.');
+      }
       const notice = document.createElement('div');
       notice.className = 'tr-warning-notice visible';
       notice.style.borderColor = 'var(--danger)';
@@ -6346,7 +6355,166 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
     }
   }
 
-  async function cancelSegmentDelete(pendingId, seg, notificationId) {
+  function asSentence(text) {
+    const value = String(text || '').trim();
+    if (!value) return '';
+    const capitalized = value.charAt(0).toUpperCase() + value.slice(1);
+    return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
+  }
+
+  // Put a segment back only on the day it was deleted from; the owner may have
+  // moved on to another day, where the same key names a different segment.
+  function restoreDeletedSegment(seg, segDay) {
+    if (!seg || segDay !== day) return;
+    if (!allSegments.some(existing => existing.key === seg.key)) {
+      allSegments.push(seg);
+      sortSegmentsByKey();
+    }
+    buildZoomSegments();
+    refreshSegmentIndicators();
+  }
+
+  // Ids whose outcome this browser has already shown, so a reload does not
+  // repeat them. Holds delete ids only.
+  const REPORTED_DELETES_KEY = 'transcripts.reportedDeletes';
+  const confirmedCancels = new Set();
+  // Ids whose outcome this page has already shown, so the watcher and the
+  // cancel answer never both report one delete.
+  const shownOutcomes = new Set();
+
+  function reportedDeletes() {
+    try {
+      return JSON.parse(window.localStorage.getItem(REPORTED_DELETES_KEY) || '[]');
+    } catch (_) {
+      return [];
+    }
+  }
+
+  // Keyed by id and state: a delete reported as not finished yet is reported
+  // again once the next start settles it.
+  function markDeleteReported(pendingId, state) {
+    const key = `${pendingId}:${state}`;
+    try {
+      const ids = reportedDeletes().filter(id => id !== key);
+      ids.push(key);
+      window.localStorage.setItem(REPORTED_DELETES_KEY, JSON.stringify(ids.slice(-50)));
+    } catch (_) {
+      // Without storage a later page may show this outcome once more.
+    }
+  }
+
+  // Not deleted: the segment is still there, so it goes back on the timeline.
+  // Partly deleted: some of it may be gone, so it stays off.
+  function showDeleteOutcome(pendingId, state, reason, seg, segDay, label) {
+    if (shownOutcomes.has(pendingId)) return;
+    shownOutcomes.add(pendingId);
+    markDeleteReported(pendingId, state);
+    if (state === 'not_deleted') restoreDeletedSegment(seg, segDay);
+    const title = {
+      incomplete: 'Segment only partly deleted',
+      pending: 'Delete not finished yet'
+    }[state] || 'Segment not deleted';
+    const fallback = {
+      incomplete: 'Some of it may already be gone.',
+      pending: 'Your journal will try again the next time it starts.'
+    }[state] || 'It\'s still in your journal.';
+    const message = [label, asSentence(reason) || fallback].filter(Boolean).join(' ');
+    window.AppServices.notifications.show({
+      app: 'transcripts',
+      icon: 'triangle-alert',
+      title,
+      message,
+      dismissible: true,
+      autoDismiss: 10000
+    });
+  }
+
+  // The delete runs after its cancel window, so the answer to the DELETE is
+  // only that it was accepted. Ask what happened once the window has passed,
+  // so a refusal reaches the page and not just the journal's log.
+  async function watchDeleteOutcome(pendingId, seg, segDay, commitAtLocalMs) {
+    const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+    await wait(Math.max(0, commitAtLocalMs - Date.now()) + 500);
+    let unknown = false;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      let data = null;
+      try {
+        const response = await fetch(`/app/transcripts/api/delete-status/${pendingId}`);
+        data = await response.json().catch(() => null);
+        if (response.status === 404) {
+          unknown = true;
+          break;
+        }
+      } catch (_) {
+        data = null;
+      }
+      if (data?.state === 'cancelled') {
+        // The cancel landed even if its answer never reached this page.
+        if (!confirmedCancels.has(pendingId) && !shownOutcomes.has(pendingId)) {
+          shownOutcomes.add(pendingId);
+          restoreDeletedSegment(seg, segDay);
+          window.AppServices.notifications.show({
+            app: 'transcripts',
+            icon: 'undo-2',
+            title: 'Delete cancelled',
+            autoDismiss: 3000
+          });
+        }
+        return;
+      }
+      if (data?.state === 'deleted') {
+        if (shownOutcomes.has(pendingId)) return;
+        shownOutcomes.add(pendingId);
+        window.AppServices.notifications.show({
+          app: 'transcripts',
+          icon: 'trash-2',
+          title: 'Segment deleted',
+          autoDismiss: 3000
+        });
+        return;
+      }
+      if (data?.state === 'not_deleted' || data?.state === 'incomplete') {
+        showDeleteOutcome(pendingId, data.state, data.reason, seg, segDay, '');
+        return;
+      }
+      await wait(1000);
+    }
+    if (shownOutcomes.has(pendingId)) return;
+    shownOutcomes.add(pendingId);
+    window.AppServices.notifications.show({
+      app: 'transcripts',
+      icon: 'triangle-alert',
+      title: unknown ? 'Delete not confirmed' : 'Delete not confirmed yet',
+      message: unknown
+        ? 'Your journal has no record of this delete. Reload to see whether the segment is still there.'
+        : 'Your journal still holds this delete, even across a restart. Reload later to see whether it went through.',
+      dismissible: true,
+      autoDismiss: 10000
+    });
+  }
+
+  // A delete that ended without removing its segment while no page was
+  // watching, for example across a restart, is shown the next time one opens.
+  async function reportUnfinishedDeletes() {
+    let data = null;
+    try {
+      const response = await fetch('/app/transcripts/api/delete-outcomes');
+      data = response.ok ? await response.json() : null;
+    } catch (_) {
+      return;
+    }
+    const shown = new Set(reportedDeletes());
+    for (const outcome of data?.outcomes || []) {
+      if (shown.has(`${outcome.pending}:${outcome.state}`)) continue;
+      const key = String(outcome.segment_key || '');
+      const time = key.length >= 4 ? `${key.slice(0, 2)}:${key.slice(2, 4)}` : key;
+      const date = String(outcome.day || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3');
+      const label = `${humanizeStreamName(outcome.stream)} · ${date} ${time}.`;
+      showDeleteOutcome(outcome.pending, outcome.state, outcome.reason, null, null, label);
+    }
+  }
+
+  async function cancelSegmentDelete(pendingId, seg, segDay, notificationId) {
     try {
       const response = await fetch(`/app/transcripts/api/cancel-delete/${pendingId}`, {
         method: 'POST'
@@ -6358,12 +6526,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       }
 
       if (response.ok) {
-        if (!allSegments.some(existing => existing.key === seg.key)) {
-          allSegments.push(seg);
-          sortSegmentsByKey();
-        }
-        buildZoomSegments();
-        refreshSegmentIndicators();
+        confirmedCancels.add(pendingId);
+        shownOutcomes.add(pendingId);
+        restoreDeletedSegment(seg, segDay);
         window.AppServices.notifications.show({
           app: 'transcripts',
           icon: 'undo-2',
@@ -6373,7 +6538,9 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         return;
       }
 
-      if (response.status === 410) {
+      // Each answer names what really happened; "already deleted" only when it was.
+      if (data.reason_code === 'segment_already_deleted') {
+        shownOutcomes.add(pendingId);
         window.AppServices.notifications.show({
           app: 'transcripts',
           icon: 'timer',
@@ -6382,15 +6549,37 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
         });
         return;
       }
+      if (data.reason_code === 'segment_not_deleted' || data.reason_code === 'segment_delete_incomplete') {
+        const state = data.reason_code === 'segment_not_deleted' ? 'not_deleted' : 'incomplete';
+        showDeleteOutcome(pendingId, state, data.detail, seg, segDay, '');
+        return;
+      }
+      if (data.reason_code === 'segment_delete_in_progress') {
+        window.AppServices.notifications.show({
+          app: 'transcripts',
+          icon: 'timer',
+          title: 'Too late to cancel',
+          message: 'The delete is already under way.',
+          autoDismiss: 3000
+        });
+        return;
+      }
+      if (response.status === 410) {
+        throw new Error('Your journal has no record of this delete. Reload to see whether the segment is still there.');
+      }
 
-      throw new Error(data.error || 'Failed to cancel delete');
+      throw new Error(asSentence(data.error) || 'Failed to cancel delete');
     } catch (err) {
+      const unanswered = err instanceof TypeError;
       window.AppServices.notifications.show({
         app: 'transcripts',
         icon: 'triangle-alert',
         title: 'Couldn\'t cancel delete',
-        message: err.message || 'Please try again.',
-        autoDismiss: 3000
+        message: unanswered
+          ? 'Your journal didn\'t answer, so the cancel may not have gone through. Reload to see whether the segment is still there.'
+          : (err.message || 'Please try again.'),
+        dismissible: unanswered,
+        autoDismiss: unanswered ? 10000 : 3000
       });
     }
   }

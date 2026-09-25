@@ -28,7 +28,9 @@ pub(crate) fn collect_not_confirmed(journal: &Path, attempted: &[Target]) -> Vec
                     plain_reason: DERIVED_REASON.to_owned(),
                 });
             }
-            if artifact_exists(journal, &format!("facets/{facet}/logs/{day}.jsonl")) {
+            // `logs/` is the facet's action log, not something derived from the
+            // segments; the day's activity records are what survive the erase.
+            if artifact_exists(journal, &format!("facets/{facet}/activities/{day}.jsonl")) {
                 issues.push(Issue {
                     what: format!("{facet} {day}: activity summary"),
                     plain_reason: DERIVED_REASON.to_owned(),

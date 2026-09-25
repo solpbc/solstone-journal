@@ -14,6 +14,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - descriptions missing from profiles after an entity merge can appear again.
 - if `journal setup` can't tell which installation its command-line tools or background support belong to, the error now asks you to leave them in place and include the details in a support request.
 - agents you connect can now read what was said in recorded audio segments when you grant transcript access.
+- a segment you delete in transcripts is now deleted even if your journal stops during the 10 seconds you have to cancel. the delete finishes when your journal starts again, unless the segment changed in between.
+- if your journal can't delete a segment, transcripts now tells you and puts the segment back, instead of showing it as deleted. cancel says a segment was already deleted only when it was.
+- the delete dialog now says what it deletes: the segment's own audio, screen frames, transcript and the analysis stored with it. summaries made from it elsewhere in your journal aren't deleted and may still mention it.
+- after you erase location data, the list of what wasn't removed no longer shows an activity summary for a day that has none.
 
 ## [2.0.18] - 2026-09-25
 

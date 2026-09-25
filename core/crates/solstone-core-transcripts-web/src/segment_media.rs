@@ -160,7 +160,7 @@ pub(crate) fn markdown_files(dir: &Path) -> Vec<PathBuf> {
 fn url(day: &str, stream: &str, key: &str, raw: &str) -> String {
     format!("/app/transcripts/api/serve_file/{day}/{stream}/{key}/{raw}")
 }
-fn modality(path: &Path) -> Option<&'static str> {
+pub(crate) fn modality(path: &Path) -> Option<&'static str> {
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
     if is_audio_extension(&extension) {
         Some("audio")
