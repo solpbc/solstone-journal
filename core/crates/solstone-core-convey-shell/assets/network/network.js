@@ -59,6 +59,8 @@
       label: findById(documentRef, 'link-device-label'),
       labelRow: findById(documentRef, 'link-pairing-label-row'),
       networkLine: findById(documentRef, 'link-pairing-network-line'),
+      addresses: findById(documentRef, 'link-pairing-addresses'),
+      addressesList: findById(documentRef, 'link-pairing-addresses-list'),
       fingerprint: findById(documentRef, 'link-pairing-fingerprint'),
       linkValue: findById(documentRef, 'link-pairing-link-value'),
       qr: findById(documentRef, 'link-pairing-qr'),
@@ -181,9 +183,23 @@
         ? 'PAIR_PUBLIC_ADDRESS_LINE'
         : 'PAIR_NETWORK_LINE';
       elements.networkLine.textContent = copy(networkCopy).replace('{time}', formatExpiry(body.expires_in));
+      renderAddresses(Array.isArray(body.link_addresses) ? body.link_addresses : []);
       elements.fingerprint.textContent = body.ca_fingerprint;
       elements.linkValue.textContent = body.pair_link;
       renderCode(body.pair_link);
+    }
+
+    // Only a direct link encodes addresses; a relay link's list is empty and
+    // the line stays hidden.
+    function renderAddresses(addresses) {
+      elements.addressesList.innerHTML = '';
+      const shown = addresses.filter((address) => typeof address === 'string' && address);
+      for (const address of shown) {
+        const item = documentRef.createElement('li');
+        item.textContent = address;
+        elements.addressesList.appendChild(item);
+      }
+      elements.addresses.hidden = shown.length === 0;
     }
 
     function renderCompletion() {

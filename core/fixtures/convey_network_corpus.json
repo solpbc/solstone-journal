@@ -185,6 +185,7 @@
             "PAIR_LINK_PATH": "/p",
             "PAIR_NETWORK_LINE": "this device needs to be on your network (or your VPN) to pair. expires in {time}.",
             "PAIR_PUBLIC_ADDRESS_LINE": "this pairing link uses your public address. expires in {time}.",
+            "PAIR_LINK_ADDRESSES_LINE": "this code points your devices to:",
             "PAIR_START_FAIL_BODY": "couldn't start pairing. try again.",
             "PAIR_START_PAIRED_DEVICE_BODY": "pairing didn't start. finish pairing this device first.",
             "PRESENTATION_COMPUTER_LABEL": "computer",
@@ -223,6 +224,9 @@
             "REACH_SPL_TRUST_LINE": "the connection is end-to-end encrypted. sol pbc and Cloudflare can see that your device and home met, and nothing inside.",
             "REACH_VPN_CANDIDATE_LABEL": "VPN address",
             "REACH_VPN_USE_THIS": "use this",
+            "REACH_DEVICE_ADDRESSES_LABEL": "addresses your devices use",
+            "REACH_DEVICE_ADDRESS_LOCAL": "local network",
+            "REACH_DEVICE_ADDRESS_VPN": "VPN",
             "RECENT_NETWORK_LABEL": "on your network",
             "RECENT_NETWORK_LABEL_ANYWHERE": "from anywhere",
             "RECENT_NETWORK_LABEL_HOME": "at home",
@@ -274,6 +278,7 @@
       {
         "body": {
           "ca_fingerprint": "25bb8ab1168504d0eb25881340ead082e256432bcde98e478dfd365263eecc5c",
+          "device_addresses": [],
           "enrolled": false,
           "home_address": null,
           "home_address_unusable": null,

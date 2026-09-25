@@ -214,9 +214,29 @@ pub(crate) async fn pair_start(
             "device_label": response.device_label,
             "ca_fingerprint": response.ca_fingerprint,
             "home_address_is_public": request.configured_home.address.is_some_and(is_public_ipv4),
+            "link_addresses": pair_link_addresses(&response.pair_link),
         }))
         .into_response(),
         Err(error) => pairing_refusal(error),
+    }
+}
+
+/// The `host:port` addresses a direct pair link encodes, read back from the
+/// link itself so the list is exactly what the device stores. A relay link
+/// carries no address, so its list is empty.
+fn pair_link_addresses(pair_link: &str) -> Vec<String> {
+    match spl_core::pairlink::parse(pair_link) {
+        Ok(spl_core::pairlink::ParsedPairLink::Direct(link)) => link
+            .candidates
+            .iter()
+            .map(
+                |candidate| match candidate.host.parse::<std::net::IpAddr>() {
+                    Ok(ip) => std::net::SocketAddr::new(ip, candidate.port).to_string(),
+                    Err(_) => format!("{}:{}", candidate.host, candidate.port),
+                },
+            )
+            .collect(),
+        Ok(_) | Err(_) => Vec::new(),
     }
 }
 
@@ -1153,12 +1173,14 @@ mod tests {
                 "expires_in",
                 "device_label",
                 "ca_fingerprint",
-                "home_address_is_public"
+                "home_address_is_public",
+                "link_addresses"
             ]
         );
         assert_eq!(value["expires_in"], 300);
         assert_eq!(value["device_label"], "phone");
         assert_eq!(value["home_address_is_public"], false);
+        assert_eq!(value["link_addresses"], json!(["127.0.0.1:7657"]));
         assert!(
             NonceStore::new(temporary.path())
                 .peek(value["nonce"].as_str().expect("nonce"))
@@ -1188,6 +1210,27 @@ mod tests {
         )
         .expect("public JSON");
         assert_eq!(public_body["home_address_is_public"], true);
+    }
+
+    #[test]
+    fn pair_link_addresses_are_exactly_the_encoded_direct_candidates() {
+        use solstone_core_sol_link::pairing::addresses::{
+            encode_pair_link, encode_relay_pair_link,
+        };
+        let direct = encode_pair_link(
+            &[Ipv4Addr::new(192, 168, 1, 20), Ipv4Addr::new(10, 8, 0, 2)],
+            [1; 16],
+            [2; 16],
+            7657,
+        )
+        .expect("direct link");
+        assert_eq!(
+            pair_link_addresses(&direct),
+            ["192.168.1.20:7657", "10.8.0.2:7657"]
+        );
+        let relay =
+            encode_relay_pair_link([3; 8], [4; 16], "https://relay.example").expect("relay link");
+        assert!(pair_link_addresses(&relay).is_empty());
     }
 
     #[test]

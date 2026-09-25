@@ -93,6 +93,14 @@
             ></p>
           </dd>
         </div>
+        <div id="link-device-addresses-row" class="link-reach-detail-row" hidden>
+          <dt data-copy="REACH_DEVICE_ADDRESSES_LABEL"></dt>
+          <dd
+            id="link-device-addresses"
+            class="link-device-addresses"
+            data-copy-attr="data-local-label:REACH_DEVICE_ADDRESS_LOCAL; data-vpn-label:REACH_DEVICE_ADDRESS_VPN"
+          ></dd>
+        </div>
         <div id="link-vpn-candidates-row" class="link-reach-detail-row" hidden>
           <dt data-copy="REACH_VPN_CANDIDATE_LABEL"></dt>
           <dd
@@ -208,6 +216,10 @@
           <li data-copy="STEP_3"></li>
         </ol>
         <p id="link-pairing-network-line" class="modal-warning" data-copy="PAIR_NETWORK_LINE"></p>
+        <div id="link-pairing-addresses" class="link-pairing-addresses" hidden>
+          <p data-copy="PAIR_LINK_ADDRESSES_LINE"></p>
+          <ul id="link-pairing-addresses-list" class="link-pairing-addresses-list"></ul>
+        </div>
         <div id="link-pairing-qr" class="link-pairing-qr"></div>
         <div class="credential-label" data-copy="PAIR_LINK_FIELD_LABEL"></div>
         <div class="command-box link-pairing-link-box">
@@ -347,6 +359,8 @@
   .link-home-candidates-problem { margin: 0; color: var(--danger); font-weight: 500; }
   .link-home-candidates-problem[hidden] { display: none; }
   .link-vpn-candidates { display: flex; flex-direction: column; gap: 0.4em; }
+  .link-device-addresses { display: flex; flex-direction: column; gap: 0.4em; }
+  .link-pairing-addresses-list { margin: 0.25em 0 0; padding-left: 1.2em; }
   .link-vpn-candidate { display: flex; gap: 0.45em; align-items: baseline; flex-wrap: wrap; }
   .link-vpn-candidate-label { color: var(--ink-soft); font-weight: 500; }
   .link-vpn-candidate-use { color: var(--ink-faint); font-size: 0.85em; }
@@ -957,6 +971,8 @@
   const homeCandidatesProblem = document.getElementById('link-home-candidates-problem');
   const vpnCandidatesRow = document.getElementById('link-vpn-candidates-row');
   const vpnCandidatesEl = document.getElementById('link-vpn-candidates');
+  const deviceAddressesRow = document.getElementById('link-device-addresses-row');
+  const deviceAddressesEl = document.getElementById('link-device-addresses');
   const privateLinkSetup = document.getElementById('link-private-link-setup');
   const privateLinkEnroll = document.getElementById('link-private-link-enroll');
   const privateLinkOperation = document.getElementById('link-private-link-operation');
@@ -1144,6 +1160,27 @@
     vpnCandidatesRow.hidden = rendered === 0;
   }
 
+  function renderDeviceAddresses(addresses) {
+    deviceAddressesEl.textContent = '';
+    let rendered = 0;
+    for (const entry of addresses) {
+      const address = typeof entry?.address === 'string' ? entry.address : '';
+      if (!address) continue;
+      const label = entry.scope === 'vpn'
+        ? deviceAddressesEl.dataset.vpnLabel || ''
+        : deviceAddressesEl.dataset.localLabel || '';
+      const item = document.createElement('div');
+      item.className = 'link-device-address';
+      const code = document.createElement('code');
+      code.textContent = address;
+      item.appendChild(code);
+      item.appendChild(document.createTextNode(` · ${label}`));
+      deviceAddressesEl.appendChild(item);
+      rendered += 1;
+    }
+    deviceAddressesRow.hidden = rendered === 0;
+  }
+
   function setHomeCandidateRadiosDisabled(disabled) {
     if (!homeCandidatesList) return;
     homeCandidatesList.querySelectorAll('input[type="radio"]').forEach((radio) => {
@@ -1301,6 +1338,7 @@
 
     renderHomeAddress(data);
 
+    renderDeviceAddresses(Array.isArray(data?.device_addresses) ? data.device_addresses : []);
     const candidates = Array.isArray(data?.vpn?.candidates) ? data.vpn.candidates : [];
     renderVpnCandidates(candidates);
     renderHomeCandidates(data || {});

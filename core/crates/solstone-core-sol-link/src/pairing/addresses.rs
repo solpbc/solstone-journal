@@ -152,12 +152,18 @@ pub fn classify_interface_addresses(raw: &[RawInterfaceAddress]) -> Vec<LocalEnd
     endpoints
 }
 
-/// Port of Python's `is_usable_ipv4`.
+/// Port of Python's `is_usable_ipv4`, narrowed to what the pair-link parsers
+/// accept: they refuse a whole link when any address has a first octet of 0 or
+/// 224 and above, so `0.0.0.0/8`, `240.0.0.0/4` and the broadcast address are
+/// never usable either.
 pub fn is_usable_ipv4(address: Ipv4Addr) -> bool {
+    let first_octet = address.octets()[0];
     !(address.is_loopback()
         || address.is_unspecified()
         || address.is_link_local()
-        || address.is_multicast())
+        || address.is_multicast()
+        || first_octet == 0
+        || first_octet >= 224)
 }
 
 /// Parse the retired HTTP pairing URL into the canonical direct home address.
@@ -231,13 +237,60 @@ pub fn resolve_pair_link_candidates(
         }
     }
     let mut deduplicated = Vec::new();
-    for address in non_vpn.into_iter().chain(vpn) {
+    for address in non_vpn {
         if !deduplicated.contains(&address) {
             deduplicated.push(address);
         }
     }
+    let mut vpn_deduplicated = Vec::new();
+    for address in vpn {
+        if !deduplicated.contains(&address) && !vpn_deduplicated.contains(&address) {
+            vpn_deduplicated.push(address);
+        }
+    }
+    // A VPN address keeps one of the four slots: a device away from home can
+    // only reach the journal over the VPN, so four LAN addresses must not
+    // crowd it out.
+    if !vpn_deduplicated.is_empty() && deduplicated.len() >= 4 {
+        deduplicated.truncate(3);
+    }
+    deduplicated.extend(vpn_deduplicated);
     deduplicated.truncate(4);
     deduplicated
+}
+
+/// Candidates for a configured home: the home first, then the VPN addresses
+/// (a matching route first), de-duplicated and capped at four. A home with no
+/// usable VPN address yields the home alone.
+pub fn configured_home_candidates(
+    home: Ipv4Addr,
+    endpoints: &[LocalEndpoint],
+    route_ipv4: Option<Ipv4Addr>,
+) -> Vec<Ipv4Addr> {
+    let mut vpn = endpoints
+        .iter()
+        .filter(|endpoint| endpoint.scope == EndpointScope::Vpn)
+        .filter_map(|endpoint| match endpoint.ip {
+            IpAddr::V4(address) if is_usable_ipv4(address) && is_allowed_direct_ipv4(address) => {
+                Some(address)
+            }
+            IpAddr::V4(_) | IpAddr::V6(_) => None,
+        })
+        .collect::<Vec<_>>();
+    if let Some(route) = route_ipv4
+        && let Some(index) = vpn.iter().position(|address| *address == route)
+    {
+        vpn.remove(index);
+        vpn.insert(0, route);
+    }
+    let mut candidates = vec![home];
+    for address in vpn {
+        if !candidates.contains(&address) {
+            candidates.push(address);
+        }
+    }
+    candidates.truncate(4);
+    candidates
 }
 
 /// Encode direct candidates into the pinned SPL pair-link format.
@@ -363,7 +416,11 @@ fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
     {
         return None;
     }
-    let overlay = ["utun", "tun", "tailscale"]
+    // Overlay (VPN) interfaces. Every usable IPv4 on one is a VPN address, not
+    // only CGNAT: a VPN on `utun4` with `10.8.0.2` is how a device away from
+    // home reaches the journal. `ppp` is deliberately absent, because on Linux
+    // it carries the public WAN address. The label is best-effort.
+    let overlay = ["utun", "tun", "tailscale", "wg", "zt"]
         .iter()
         .any(|prefix| interface.starts_with(prefix));
     // Direct-pairing candidates are not restricted to private/CGNAT ranges.
@@ -372,7 +429,10 @@ fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
     // checked at TLS handshake time, not the network locality of the address
     // it dials. Removed 2026-09-18 (founder + CSO ruling, `req_xhwmvxvn`).
     match entry.address {
-        IpAddr::V4(address) if is_cgnat(address) && overlay => Some(LocalEndpoint {
+        // 198.18.0.0/15 on an overlay is the fake-IP block of proxy TUN modes;
+        // no device can reach it.
+        IpAddr::V4(address) if overlay && is_proxy_fake_ip(address) => None,
+        IpAddr::V4(address) if overlay && is_usable_ipv4(address) => Some(LocalEndpoint {
             ip: IpAddr::V4(address),
             scope: EndpointScope::Vpn,
         }),
@@ -388,8 +448,9 @@ fn classify_one(entry: &RawInterfaceAddress) -> Option<LocalEndpoint> {
     }
 }
 
-fn is_cgnat(address: Ipv4Addr) -> bool {
-    (0x6440_0000..=0x647f_ffff).contains(&u32::from(address))
+fn is_proxy_fake_ip(address: Ipv4Addr) -> bool {
+    let [first, second, _, _] = address.octets();
+    first == 198 && (second == 18 || second == 19)
 }
 
 fn is_ula(address: Ipv6Addr) -> bool {
@@ -872,13 +933,15 @@ mod tests {
             endpoint("10.0.0.3", EndpointScope::Lan),
             endpoint("100.64.0.2", EndpointScope::Vpn),
         ];
+        // Four LAN addresses plus one VPN address used to drop the VPN
+        // address; it now keeps the last of the four slots.
         assert_eq!(
             resolve_pair_link_candidates(&endpoints, Some(Ipv4Addr::new(10, 0, 0, 2))),
             vec![
                 Ipv4Addr::new(10, 0, 0, 2),
                 Ipv4Addr::new(192, 168, 1, 2),
                 Ipv4Addr::new(192, 168, 1, 3),
-                Ipv4Addr::new(10, 0, 0, 3)
+                Ipv4Addr::new(100, 64, 0, 2)
             ]
         );
         assert_eq!(
@@ -894,9 +957,133 @@ mod tests {
                 Ipv4Addr::new(192, 168, 1, 2),
                 Ipv4Addr::new(192, 168, 1, 3),
                 Ipv4Addr::new(10, 0, 0, 2),
-                Ipv4Addr::new(10, 0, 0, 3),
+                Ipv4Addr::new(100, 64, 0, 2),
             ],
             "a route absent from a non-empty snapshot is never injected"
+        );
+    }
+
+    #[test]
+    fn resolver_keeps_a_vpn_slot_only_when_a_vpn_address_exists() {
+        let lan = [
+            endpoint("192.168.1.2", EndpointScope::Lan),
+            endpoint("192.168.1.3", EndpointScope::Lan),
+            endpoint("10.0.0.2", EndpointScope::Lan),
+            endpoint("10.0.0.3", EndpointScope::Lan),
+        ];
+        assert_eq!(
+            resolve_pair_link_candidates(&lan, None),
+            vec![
+                Ipv4Addr::new(192, 168, 1, 2),
+                Ipv4Addr::new(192, 168, 1, 3),
+                Ipv4Addr::new(10, 0, 0, 2),
+                Ipv4Addr::new(10, 0, 0, 3),
+            ],
+            "four LAN addresses and no VPN stay four LAN addresses"
+        );
+        let mut with_vpn = lan.to_vec();
+        with_vpn.push(endpoint("10.8.0.2", EndpointScope::Vpn));
+        with_vpn.push(endpoint("100.64.0.9", EndpointScope::Vpn));
+        assert_eq!(
+            resolve_pair_link_candidates(&with_vpn, Some(Ipv4Addr::new(100, 64, 0, 9))),
+            vec![
+                Ipv4Addr::new(192, 168, 1, 2),
+                Ipv4Addr::new(192, 168, 1, 3),
+                Ipv4Addr::new(10, 0, 0, 2),
+                Ipv4Addr::new(100, 64, 0, 9),
+            ],
+            "a VPN route is the VPN address that keeps the slot"
+        );
+    }
+
+    #[test]
+    fn classifier_admits_every_usable_overlay_ipv4_as_vpn() {
+        let raw = [
+            ("utun4", Ipv4Addr::new(10, 8, 0, 2)),
+            ("wg0", Ipv4Addr::new(10, 0, 0, 2)),
+            ("ZT7nnig26", Ipv4Addr::new(172, 23, 0, 5)),
+            ("utun3", Ipv4Addr::new(198, 18, 0, 1)),
+            ("tun1", Ipv4Addr::new(198, 19, 255, 1)),
+            ("ppp0", Ipv4Addr::new(203, 0, 113, 50)),
+        ]
+        .into_iter()
+        .map(|(interface, address)| RawInterfaceAddress {
+            interface: interface.into(),
+            address: IpAddr::V4(address),
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            classify_interface_addresses(&raw),
+            vec![
+                endpoint("203.0.113.50", EndpointScope::Lan),
+                endpoint("10.0.0.2", EndpointScope::Vpn),
+                endpoint("10.8.0.2", EndpointScope::Vpn),
+                endpoint("172.23.0.5", EndpointScope::Vpn),
+            ]
+        );
+    }
+
+    #[test]
+    fn addresses_the_link_parsers_refuse_never_reach_a_link() {
+        let raw = [
+            ("utun2", Ipv4Addr::new(240, 0, 0, 1)),
+            ("eth0", Ipv4Addr::new(0, 1, 2, 3)),
+            ("utun5", Ipv4Addr::new(0, 1, 2, 4)),
+            ("eth1", Ipv4Addr::BROADCAST),
+            ("eth2", Ipv4Addr::new(192, 168, 1, 20)),
+        ]
+        .into_iter()
+        .map(|(interface, address)| RawInterfaceAddress {
+            interface: interface.into(),
+            address: IpAddr::V4(address),
+        })
+        .collect::<Vec<_>>();
+        assert_eq!(
+            classify_interface_addresses(&raw),
+            vec![endpoint("192.168.1.20", EndpointScope::Lan)]
+        );
+        let unclassified = [
+            endpoint("0.1.2.3", EndpointScope::Lan),
+            endpoint("240.0.0.1", EndpointScope::Vpn),
+            endpoint("192.168.1.20", EndpointScope::Lan),
+        ];
+        assert_eq!(
+            resolve_pair_link_candidates(&unclassified, Some(Ipv4Addr::new(0, 1, 2, 3))),
+            vec![Ipv4Addr::new(192, 168, 1, 20)]
+        );
+        assert_eq!(
+            resolve_pair_link_candidates(&[], Some(Ipv4Addr::new(240, 0, 0, 1))),
+            Vec::<Ipv4Addr>::new()
+        );
+        for refused in [Ipv4Addr::new(0, 1, 2, 3), Ipv4Addr::new(240, 0, 0, 1)] {
+            assert_eq!(
+                encode_pair_link(&[refused], [0; 16], [0; 16], 7657),
+                Err(PairLinkEncodeError::DisallowedAddress)
+            );
+        }
+    }
+
+    #[test]
+    fn configured_home_candidates_put_home_first_then_vpn() {
+        let home = Ipv4Addr::new(192, 168, 1, 7);
+        let lan_only = [endpoint("192.168.1.8", EndpointScope::Lan)];
+        assert_eq!(
+            configured_home_candidates(home, &lan_only, None),
+            vec![home]
+        );
+        let endpoints = [
+            endpoint("192.168.1.8", EndpointScope::Lan),
+            endpoint("10.8.0.2", EndpointScope::Vpn),
+            endpoint("10.8.0.3", EndpointScope::Vpn),
+        ];
+        assert_eq!(
+            configured_home_candidates(home, &endpoints, Some(Ipv4Addr::new(10, 8, 0, 3))),
+            vec![home, Ipv4Addr::new(10, 8, 0, 3), Ipv4Addr::new(10, 8, 0, 2)]
+        );
+        assert_eq!(
+            configured_home_candidates(Ipv4Addr::new(10, 8, 0, 2), &endpoints, None),
+            vec![Ipv4Addr::new(10, 8, 0, 2), Ipv4Addr::new(10, 8, 0, 3)],
+            "a home that is itself a VPN address appears once"
         );
     }
 

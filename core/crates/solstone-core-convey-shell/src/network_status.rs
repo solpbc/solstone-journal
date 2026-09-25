@@ -152,6 +152,13 @@ pub(crate) struct VpnCandidate {
     pub(crate) address: String,
 }
 
+/// An address paired devices store and dial, with the scope that labels it.
+#[derive(Serialize)]
+pub(crate) struct DeviceAddress {
+    pub(crate) address: String,
+    pub(crate) scope: &'static str,
+}
+
 #[derive(Serialize)]
 pub(crate) struct VpnStatus {
     pub(crate) active: Option<Value>,
@@ -161,6 +168,7 @@ pub(crate) struct VpnStatus {
 #[derive(Serialize)]
 pub(crate) struct StatusBody {
     pub(crate) ca_fingerprint: Option<String>,
+    pub(crate) device_addresses: Vec<DeviceAddress>,
     pub(crate) enrolled: bool,
     pub(crate) home_address: Option<String>,
     pub(crate) home_address_unusable: Option<&'static str>,
@@ -477,6 +485,21 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
     } else {
         None
     };
+    // The classified endpoints a device learns from `/local-endpoints`. A
+    // configured home outside this set is already shown as the home address.
+    let device_addresses = snapshot
+        .as_ref()
+        .map(|snapshot| {
+            snapshot
+                .endpoints
+                .iter()
+                .map(|endpoint| DeviceAddress {
+                    address: std::net::SocketAddr::new(endpoint.ip, direct_port).to_string(),
+                    scope: endpoint_scope_name(endpoint.scope),
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let (lan_accessible, home_candidates, home_candidates_state, home_candidates_error, vpn) =
         match snapshot {
             Ok(snapshot) => {
@@ -564,6 +587,7 @@ pub(crate) fn build_status_body(inputs: StatusInputs<'_>) -> StatusBody {
     };
     StatusBody {
         ca_fingerprint,
+        device_addresses,
         enrolled: token_present,
         home_address,
         home_address_unusable,
@@ -1343,6 +1367,115 @@ mod tests {
         assert_eq!(status_body.home_candidates.len(), 1);
         assert!(!status_body.home_candidates[0].selected);
         assert_eq!(status_body.home_candidates[0].source, "override");
+    }
+
+    #[test]
+    fn device_addresses_list_every_classified_endpoint_with_its_scope() {
+        let body = status_json(
+            None,
+            Ok(PairingSnapshot {
+                endpoints: vec![
+                    LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+                        scope: EndpointScope::Lan,
+                    },
+                    LocalEndpoint {
+                        ip: "fd00::1".parse().expect("ULA"),
+                        scope: EndpointScope::Ula,
+                    },
+                    LocalEndpoint {
+                        ip: IpAddr::V4(Ipv4Addr::new(10, 8, 0, 2)),
+                        scope: EndpointScope::Vpn,
+                    },
+                ],
+                route_ipv4: None,
+            }),
+            None,
+        );
+        assert_eq!(
+            body["device_addresses"],
+            json!([
+                {"address":"192.168.1.20:7657","scope":"lan"},
+                {"address":"[fd00::1]:7657","scope":"ula"},
+                {"address":"10.8.0.2:7657","scope":"vpn"}
+            ])
+        );
+        let failed = status_json(
+            Some("192.168.1.7:7657"),
+            Err(AddressError::Enumeration(std::io::Error::other("denied"))),
+            None,
+        );
+        assert_eq!(failed["device_addresses"], json!([]));
+    }
+
+    #[test]
+    fn device_addresses_and_the_minted_link_agree() {
+        let temporary = TempDir::new();
+        solstone_core_sol_link::establish::current_candidate(temporary.path()).expect("candidate");
+        solstone_core_sol_link::establish::lock_in(temporary.path(), Some("Native Study"))
+            .expect("lock in");
+        let lan = |last| (Ipv4Addr::new(192, 168, 1, last), EndpointScope::Lan);
+        let vpn = (Ipv4Addr::new(10, 8, 0, 2), EndpointScope::Vpn);
+        let cases = [
+            ("no home", None, snapshot(vec![lan(20), vpn])),
+            (
+                "home plus VPN",
+                Some(Ipv4Addr::new(192, 168, 1, 7)),
+                snapshot(vec![lan(20), vpn]),
+            ),
+            (
+                "four LAN plus VPN",
+                None,
+                snapshot(vec![lan(20), lan(21), lan(22), lan(23), vpn]),
+            ),
+        ];
+        for (label, home, snapshot) in cases {
+            let request = solstone_core_sol_link::pairing::MintRequest {
+                device_label: "phone".to_string(),
+                configured_home: solstone_core_sol_link::pairing::ConfiguredHomeDecision {
+                    address: home,
+                    state: solstone_core_sol_link::pairing::ConfiguredHomeState::None,
+                },
+                same_machine: Some(false),
+                role: "phone".to_string(),
+                hardened_loopback: false,
+            };
+            let minted = solstone_core_sol_link::pairing::mint_pairing_from_snapshot(
+                temporary.path(),
+                &request,
+                1,
+                &snapshot,
+            )
+            .expect(label);
+            let spl_core::pairlink::ParsedPairLink::Direct(link) =
+                spl_core::pairlink::parse(&minted.pair_link).expect("pair link parses")
+            else {
+                panic!("{label}: direct link");
+            };
+            let encoded = link
+                .candidates
+                .iter()
+                .map(|candidate| format!("{}:{}", candidate.host, candidate.port))
+                .collect::<Vec<_>>();
+            let home_address = home.map(|home| format!("{home}:7657"));
+            let body = status_json(home_address.as_deref(), Ok(snapshot), None);
+            let listed = body["device_addresses"]
+                .as_array()
+                .expect("device addresses")
+                .iter()
+                .map(|entry| entry["address"].as_str().expect("address").to_owned())
+                .collect::<Vec<_>>();
+            for address in &encoded {
+                assert!(
+                    listed.contains(address) || home_address.as_ref() == Some(address),
+                    "{label}: {address} is encoded but not shown: {listed:?}"
+                );
+            }
+            assert!(
+                encoded.contains(&"10.8.0.2:7657".to_owned()),
+                "{label}: the VPN address the page lists is in the link: {encoded:?}"
+            );
+        }
     }
 
     #[test]

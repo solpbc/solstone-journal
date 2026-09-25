@@ -17,13 +17,15 @@ const REQUIRED_COPY_KEYS = [
   'PRIVATE_LINK_RETRY_CTA',
   'EXPIRED_BUTTON', 'WINDOW_CLOSED_BUTTON', 'SUCCESS_HEADING', 'SUCCESS_SUBHEAD',
   'SUCCESS_VERIFY_NOTE', 'SUCCESS_DONE', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
-  'DEVICE_LABEL_DEFAULT_FORMAT',
+  'DEVICE_LABEL_DEFAULT_FORMAT', 'PAIR_LINK_ADDRESSES_LINE', 'REACH_DEVICE_ADDRESSES_LABEL',
+  'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
 ];
 
 const MARKUP_COPY_KEYS = REQUIRED_COPY_KEYS.filter((key) => ![
   'DEVICE_EMPTY_TITLE', 'DEVICE_EMPTY_BODY', 'PAIR_LINK_COPY_SUCCESS_TOAST', 'PAIR_LINK_COPY_FAIL_TOAST',
   'DEVICE_LABEL_DEFAULT_FORMAT',
   'PAIR_START_PAIRED_DEVICE_BODY', 'PRIVATE_LINK_TIMEOUT_BODY', 'PAIR_ERROR_BODY', 'PRIVATE_LINK_NEEDS_REPAIR',
+  'REACH_DEVICE_ADDRESS_LOCAL', 'REACH_DEVICE_ADDRESS_VPN',
 ].includes(key));
 
 function response(body, status = 200) {
@@ -316,6 +318,10 @@ function createEnvironment(manifestDir, options = {}) {
   const label = make('link-device-label', 'span');
   labelRow.appendChild(label);
   const networkLine = make('link-pairing-network-line', 'p');
+  const addresses = make('link-pairing-addresses');
+  addresses.hidden = true;
+  const addressesList = make('link-pairing-addresses-list', 'ul');
+  addresses.appendChild(addressesList);
   const fingerprint = make('link-pairing-fingerprint', 'code');
   const linkValue = make('link-pairing-link-value', 'code');
   const qr = make('link-pairing-qr');
@@ -325,7 +331,7 @@ function createEnvironment(manifestDir, options = {}) {
   check.dataset.pairingAction = 'check';
   const materialClose = make('link-pairing-material-close', 'button');
   materialClose.dataset.pairingAction = 'close';
-  material.append(labelRow, networkLine, fingerprint, linkValue, qr, copyButton, check, materialClose);
+  material.append(labelRow, networkLine, addresses, fingerprint, linkValue, qr, copyButton, check, materialClose);
   const expiredButton = make('link-pairing-expired-action', 'button');
   expiredButton.dataset.pairingAction = 'regenerate';
   expired.appendChild(expiredButton);
@@ -497,6 +503,34 @@ async function main() {
     assert.strictEqual(env.nodes.get('link-device-label').tagName, 'SPAN');
     assert.ok(workspace.includes('<span id="link-device-label"'));
     assert.strictEqual(env.requests[0].url, '/app/network/pair-start');
+  });
+
+  await testCase('a direct link lists the addresses it encodes under the dialog line', async () => {
+    const env = createEnvironment(manifestDir);
+    env.fetchQueue.push(response(material({ link_addresses: ['192.168.1.7:7657', '10.8.0.2:7657'] })));
+    env.click(env.opener);
+    await settle();
+    assert.strictEqual(env.nodes.get('link-pairing-addresses').hidden, false);
+    assert.deepStrictEqual(
+      env.nodes.get('link-pairing-addresses-list').children.map((item) => [item.tagName, item.textContent]),
+      [['LI', '192.168.1.7:7657'], ['LI', '10.8.0.2:7657']],
+    );
+    assert.ok(workspace.includes('data-copy="PAIR_LINK_ADDRESSES_LINE"'));
+  });
+
+  await testCase('a relay link, or a response without addresses, hides the dialog line', async () => {
+    for (const overrides of [{ link_addresses: [] }, {}]) {
+      const env = createEnvironment(manifestDir);
+      env.fetchQueue.push(response(material({ link_addresses: ['10.8.0.2:7657'] })));
+      env.click(env.opener);
+      await settle();
+      assert.strictEqual(env.nodes.get('link-pairing-addresses').hidden, false);
+      env.fetchQueue.push(response(material({ nonce: 'nonce-b', ...overrides })));
+      env.click(env.nodes.get('link-pairing-expired-action'));
+      await settle();
+      assert.strictEqual(env.nodes.get('link-pairing-addresses').hidden, true);
+      assert.strictEqual(env.nodes.get('link-pairing-addresses-list').children.length, 0);
+    }
   });
 
   await testCase('pair start sends a non-empty default device label', async () => {
@@ -1085,7 +1119,7 @@ async function main() {
     assert.ok(elementsEnd !== -1);
     const slice = networkJsSource.slice(initStart, elementsEnd);
     const idMatches = [...slice.matchAll(/findById\(documentRef,\s*'([^']+)'\)/g)].map((m) => m[1]);
-    assert.strictEqual(idMatches.length, 17, 'found 17 required findById ids in initPairingCeremony');
+    assert.strictEqual(idMatches.length, 19, 'found 19 required findById ids in initPairingCeremony');
     for (const id of idMatches) {
       assert.ok(workspace.includes(`id="${id}"`), `workspace.html contains id="${id}"`);
     }
@@ -1174,6 +1208,67 @@ async function main() {
       "this saved address can't be used for pairing."
     );
     assert.ok(!networkCopy.REACH_HOME_ADDRESS_UNUSABLE.includes('{port}'), 'no {port} template in copy');
+  });
+
+  await testCase('owner copy for the address rows and dialog line is the approved text', async () => {
+    const networkCopy = JSON.parse(fs.readFileSync(path.join(manifestDir, 'assets/network_copy.json'), 'utf8'));
+    assert.strictEqual(networkCopy.PAIR_LINK_ADDRESSES_LINE, 'this code points your devices to:');
+    assert.strictEqual(networkCopy.REACH_DEVICE_ADDRESSES_LABEL, 'addresses your devices use');
+    assert.strictEqual(networkCopy.REACH_DEVICE_ADDRESS_LOCAL, 'local network');
+    assert.strictEqual(networkCopy.REACH_DEVICE_ADDRESS_VPN, 'VPN');
+    assert.ok(workspace.includes('data-copy="REACH_DEVICE_ADDRESSES_LABEL"'));
+    assert.ok(workspace.includes('data-local-label:REACH_DEVICE_ADDRESS_LOCAL; data-vpn-label:REACH_DEVICE_ADDRESS_VPN'));
+  });
+
+  await testCase('renderDeviceAddresses labels lan and ula as local network and vpn as VPN', async () => {
+    const makeNode = (tagName) => ({
+      tagName,
+      className: '',
+      textContent: '',
+      children: [],
+      appendChild(child) { this.children.push(child); return child; },
+    });
+    const deviceAddressesEl = {
+      ...makeNode('DD'),
+      dataset: { localLabel: 'local network', vpnLabel: 'VPN' },
+    };
+    Object.defineProperty(deviceAddressesEl, 'textContent', {
+      get() { return ''; },
+      set() { deviceAddressesEl.children = []; },
+    });
+    const deviceAddressesRow = { hidden: true };
+    const start = workspace.indexOf('function renderDeviceAddresses(');
+    const end = workspace.indexOf('\n  function setHomeCandidateRadiosDisabled', start);
+    assert.notStrictEqual(start, -1);
+    assert.notStrictEqual(end, -1);
+    const context = vm.createContext({
+      document: {
+        createElement: makeNode,
+        createTextNode: (text) => ({ tagName: '#text', textContent: text }),
+      },
+      deviceAddressesEl,
+      deviceAddressesRow,
+    });
+    vm.runInContext(workspace.slice(start, end), context, { filename: 'workspace-device-addresses.js' });
+    const lines = () => deviceAddressesEl.children.map(
+      (item) => item.children.map((child) => child.textContent).join(''),
+    );
+
+    context.renderDeviceAddresses([
+      { address: '192.168.1.20:7657', scope: 'lan' },
+      { address: '[fd00::1]:7657', scope: 'ula' },
+      { address: '10.8.0.2:7657', scope: 'vpn' },
+    ]);
+    assert.strictEqual(deviceAddressesRow.hidden, false);
+    assert.deepStrictEqual(lines(), [
+      '192.168.1.20:7657 · local network',
+      '[fd00::1]:7657 · local network',
+      '10.8.0.2:7657 · VPN',
+    ]);
+
+    context.renderDeviceAddresses([]);
+    assert.strictEqual(deviceAddressesRow.hidden, true);
+    assert.deepStrictEqual(lines(), []);
   });
 
   await testCase('AC7: renderHomeAddress displays unusable note when present and hides when clean', async () => {

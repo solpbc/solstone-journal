@@ -24,9 +24,9 @@ use crate::pairing_identity::validate_ceremony_pairing_identity;
 use self::addresses::{
     AddressError, DiagnosticKind, DiscoveryContext, PairLinkEncodeError, PairingSnapshot,
     RawInterfaceSource, RouteIpv4Source, SystemInterfaceSource, SystemRouteIpv4Source,
-    build_pair_start_diagnostic, discover_sources, encode_configured_home_pair_link,
-    encode_pair_link, encode_relay_pair_link, is_allowed_direct_ipv4, is_usable_ipv4,
-    resolve_pair_link_candidates,
+    build_pair_start_diagnostic, configured_home_candidates, discover_sources,
+    encode_configured_home_pair_link, encode_pair_link, encode_relay_pair_link,
+    is_allowed_direct_ipv4, is_usable_ipv4, resolve_pair_link_candidates,
 };
 use self::attestation::{AttestationError, mint_home_attestation};
 use self::nonces::{NONCE_TTL_SECONDS, Nonce, NonceStore, NonceStoreError};
@@ -358,14 +358,6 @@ pub fn mint_pairing(
     request: &MintRequest,
     now: i64,
 ) -> Result<MintResponse, PairingError> {
-    if request.same_machine == Some(true)
-        || request
-            .configured_home
-            .address
-            .is_some_and(configured_home_is_direct_mintable)
-    {
-        return mint_pairing_from_snapshot(journal_root, request, now, &PairingSnapshot::default());
-    }
     mint_pairing_from_sources_detailed(
         journal_root,
         request,
@@ -410,6 +402,25 @@ pub fn mint_pairing_from_sources_detailed(
     }
     let discovery = match discover_sources(interfaces, route) {
         Ok(discovery) => discovery,
+        // A mintable configured home never depends on enumeration: without
+        // it the link is the home alone, exactly as before VPN addresses
+        // joined it.
+        Err(_)
+            if request
+                .configured_home
+                .address
+                .is_some_and(configured_home_is_direct_mintable) =>
+        {
+            return MintOutcome {
+                result: mint_pairing_from_snapshot(
+                    journal_root,
+                    request,
+                    now,
+                    &PairingSnapshot::default(),
+                ),
+                diagnostic: None,
+            };
+        }
         Err(err) => {
             // Service logger default filter is warn; this diagnostic is emitted at WARN.
             let diag = build_pair_start_diagnostic(
@@ -503,7 +514,20 @@ fn mint_pairing_from_snapshot_with_context(
             .address
             .filter(|ip| configured_home_is_direct_mintable(*ip))
         {
-            Some(home) => encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix, port),
+            // A configured home carries the host's VPN addresses too, so a
+            // device away from home can still reach it. With none, the link
+            // is the single-address home link.
+            Some(home) => {
+                let candidates =
+                    configured_home_candidates(home, &snapshot.endpoints, snapshot.route_ipv4);
+                if candidates.len() > 1 {
+                    encode_pair_link(&candidates, nonce_bytes, ca_fp_prefix, port).unwrap_or_else(
+                        |_| encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix, port),
+                    )
+                } else {
+                    encode_configured_home_pair_link(home, nonce_bytes, ca_fp_prefix, port)
+                }
+            }
             None => {
                 let candidates =
                     resolve_pair_link_candidates(&snapshot.endpoints, snapshot.route_ipv4);
@@ -1355,6 +1379,153 @@ mod tests {
                 .expect("blob");
         assert_eq!(blob[0], 0x04);
         assert_eq!(link.candidates[0].host, "10.0.0.2");
+    }
+
+    fn home_request(home: Ipv4Addr) -> MintRequest {
+        MintRequest {
+            configured_home: ConfiguredHomeDecision {
+                address: Some(home),
+                state: ConfiguredHomeState::None,
+            },
+            ..request()
+        }
+    }
+
+    fn overlay(interface: &str, address: Ipv4Addr) -> RawInterfaceAddress {
+        RawInterfaceAddress {
+            interface: interface.into(),
+            address: IpAddr::V4(address),
+        }
+    }
+
+    fn link_blob(pair_link: &str) -> Vec<u8> {
+        spl_core::crockford::decode(pair_link.split('#').nth(1).expect("fragment"))
+            .expect("pair-link bytes")
+    }
+
+    fn link_hosts(pair_link: &str) -> Vec<String> {
+        let spl_core::pairlink::ParsedPairLink::Direct(link) =
+            spl_core::pairlink::parse(pair_link).expect("pair-link parses")
+        else {
+            panic!("direct link");
+        };
+        assert!(
+            link.candidates
+                .iter()
+                .all(|candidate| candidate.port == spl_core::DEFAULT_DIRECT_PORT)
+        );
+        link.candidates
+            .into_iter()
+            .map(|candidate| candidate.host)
+            .collect()
+    }
+
+    #[test]
+    fn configured_home_mint_carries_the_hosts_vpn_addresses() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let home = Ipv4Addr::new(192, 168, 1, 7);
+
+        let (raw, raw_calls) = Raw::success(vec![
+            overlay("en0", Ipv4Addr::new(192, 168, 1, 7)),
+            overlay("utun4", Ipv4Addr::new(10, 8, 0, 2)),
+        ]);
+        let (route, _) = Route::new(None);
+        let minted =
+            mint_pairing_from_sources(temporary.path(), &home_request(home), 1, &raw, &route)
+                .expect("home plus VPN mints");
+        assert_eq!(raw_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(link_blob(&minted.pair_link)[0], 0x05);
+        assert_eq!(link_hosts(&minted.pair_link), ["192.168.1.7", "10.8.0.2"]);
+
+        let (raw, _) = Raw::success(vec![
+            overlay("utun4", Ipv4Addr::new(10, 8, 0, 2)),
+            overlay("utun5", Ipv4Addr::new(10, 9, 0, 2)),
+        ]);
+        let (route, _) = Route::new(None);
+        let minted = mint_pairing_from_sources(
+            temporary.path(),
+            &home_request(Ipv4Addr::new(10, 8, 0, 2)),
+            1,
+            &raw,
+            &route,
+        )
+        .expect("VPN home mints");
+        assert_eq!(link_hosts(&minted.pair_link), ["10.8.0.2", "10.9.0.2"]);
+
+        let (raw, _) = Raw::success(
+            (2..7)
+                .map(|last| overlay(&format!("utun{last}"), Ipv4Addr::new(10, 8, 0, last)))
+                .collect(),
+        );
+        let (route, _) = Route::new(None);
+        let minted =
+            mint_pairing_from_sources(temporary.path(), &home_request(home), 1, &raw, &route)
+                .expect("home plus five VPN addresses mints");
+        assert_eq!(
+            link_hosts(&minted.pair_link),
+            ["192.168.1.7", "10.8.0.2", "10.8.0.3", "10.8.0.4"]
+        );
+    }
+
+    #[test]
+    fn configured_home_without_vpn_or_enumeration_keeps_the_single_address_link() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let home = Ipv4Addr::new(192, 168, 1, 7);
+        let (lan_only, _) = Raw::success(vec![
+            overlay("en0", Ipv4Addr::new(192, 168, 1, 7)),
+            overlay("en1", Ipv4Addr::new(192, 168, 1, 8)),
+        ]);
+        let (failed, failed_calls) =
+            Raw::failure(AddressError::Enumeration(io::Error::other("denied")));
+        for (source, label) in [(&lan_only, "no VPN"), (&failed, "failed enumeration")] {
+            let (route, _) = Route::new(None);
+            let outcome = mint_pairing_from_sources_detailed(
+                temporary.path(),
+                &home_request(home),
+                1,
+                source,
+                &route,
+            );
+            assert!(outcome.diagnostic.is_none(), "{label}");
+            let minted = outcome.result.expect(label);
+            let blob = link_blob(&minted.pair_link);
+            assert_eq!(blob[0], 0x04, "{label}");
+            let mut nonce = [0_u8; 16];
+            nonce.copy_from_slice(&blob[8..24]);
+            let mut prefix = [0_u8; 16];
+            prefix.copy_from_slice(&blob[24..40]);
+            assert_eq!(blob.len(), 40, "{label}");
+            assert_eq!(
+                minted.pair_link,
+                encode_configured_home_pair_link(
+                    home,
+                    nonce,
+                    prefix,
+                    spl_core::DEFAULT_DIRECT_PORT
+                ),
+                "{label}: byte-identical single-address home link"
+            );
+        }
+        assert_eq!(failed_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn same_machine_mint_stays_a_single_loopback_link_with_home_and_vpn() {
+        let temporary = TempDir::new();
+        identity(temporary.path());
+        let request = MintRequest {
+            same_machine: Some(true),
+            hardened_loopback: true,
+            ..home_request(Ipv4Addr::new(192, 168, 1, 7))
+        };
+        let (raw, _) = Raw::success(vec![overlay("utun4", Ipv4Addr::new(10, 8, 0, 2))]);
+        let (route, _) = Route::new(None);
+        let minted = mint_pairing_from_sources(temporary.path(), &request, 1, &raw, &route)
+            .expect("same-machine mint");
+        assert_eq!(link_blob(&minted.pair_link)[0], 0x04);
+        assert_eq!(link_hosts(&minted.pair_link), ["127.0.0.1"]);
     }
 
     #[test]

@@ -897,6 +897,17 @@ async fn accept_loop(
     }
 }
 
+/// Names the dialing peer in carrier warnings, which land only in the owner's
+/// own journal log. A relay-bridged carrier's socket peer is the local bridge,
+/// not the device, so it is named `via-relay`.
+fn carrier_peer_label(peer: Option<SocketAddr>, relay_bridged: bool) -> String {
+    match (relay_bridged, peer) {
+        (true, _) => "via-relay".to_owned(),
+        (false, Some(address)) => address.to_string(),
+        (false, None) => "unknown".to_owned(),
+    }
+}
+
 async fn serve_carrier(
     stream: TcpStream,
     peer: Option<SocketAddr>,
@@ -914,6 +925,7 @@ async fn serve_carrier(
     let store = NonceStore::new(&config.journal_root);
     let now = unix_seconds();
     let relay_admission = peer.and_then(|address| config.relay_admissions.take(address));
+    let carrier_peer = carrier_peer_label(peer, relay_admission.is_some());
     let (pairing_admission, certless_pairing_admitted) = match relay_admission {
         Some(RelayAdmissionClaim::Current(identity))
             if relay_pairing_nonce_open(&store, identity.nonce_value(), now) =>
@@ -987,11 +999,11 @@ async fn serve_carrier(
             // warn, not debug: this is the one line that explains a client-observed
             // connection drop from the server's side, and production runs at the
             // `warn` default (main.rs `install_logger`) with no per-module override.
-            log::warn!("paired-device carrier TLS/mux failed: {error}");
+            log::warn!("paired-device carrier TLS/mux failed peer={carrier_peer}: {error}");
             return;
         }
         Err(_) => {
-            log::warn!("paired-device carrier handshake timed out");
+            log::warn!("paired-device carrier handshake timed out peer={carrier_peer}");
             return;
         }
     };
@@ -1413,6 +1425,21 @@ fn carrier_from_peer(peer: Option<SocketAddr>) -> Carrier {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn carrier_warnings_name_the_peer_the_relay_or_unknown() {
+        let v4 = SocketAddr::from(([192, 168, 1, 20], 52_000));
+        let v6 = SocketAddr::V6(std::net::SocketAddrV6::new(
+            "fe80::1".parse().expect("link-local"),
+            52_001,
+            0,
+            3,
+        ));
+        assert_eq!(carrier_peer_label(Some(v4), false), "192.168.1.20:52000");
+        assert_eq!(carrier_peer_label(Some(v6), false), "[fe80::1%3]:52001");
+        assert_eq!(carrier_peer_label(Some(v4), true), "via-relay");
+        assert_eq!(carrier_peer_label(None, false), "unknown");
+    }
 
     #[test]
     fn stream_budget_memory_bounds_match_spl_constants() {
