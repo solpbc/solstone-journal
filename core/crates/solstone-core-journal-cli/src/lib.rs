@@ -85,6 +85,11 @@ impl ProcessSpawner for RealProcessSpawner {
     }
 }
 
+#[cfg(windows)]
+pub use solstone_core_system::owner_path::{
+    add_commands_to_owner_path, remove_commands_from_owner_path,
+};
+
 /// Put back the resident that a Velopack update or reinstall took down.
 ///
 /// 🔴 Velopack stops every process under the install root to apply an update,

@@ -17,12 +17,14 @@ fn main() -> ExitCode {
         velopack::VelopackApp::build()
             .set_auto_apply_on_startup(false)
             .on_after_install_fast_callback(|_| {
+                solstone_core_journal_cli::add_commands_to_owner_path();
                 solstone_core_journal_cli::resume_service_after_update();
             })
             .on_after_update_fast_callback(|_| {
                 solstone_core_journal_cli::resume_service_after_update();
             })
             .on_before_uninstall_fast_callback(|_| {
+                solstone_core_journal_cli::remove_commands_from_owner_path();
                 remove_service_before_uninstall();
             })
             .run();

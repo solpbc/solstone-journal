@@ -12,6 +12,7 @@ pub mod error;
 pub mod lifecycle;
 pub mod memory_admission;
 pub mod operational_log_parse;
+pub mod owner_path;
 pub mod partition;
 pub mod process;
 #[cfg(any(unix, windows))]
