@@ -44,6 +44,35 @@ pub(crate) const MAX_STATE_BYTES: usize = 1024;
 pub(crate) const MAX_CODE_BYTES: usize = 512;
 const MAX_URLENCODED_PAIRS: usize = 32;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RuntimeBinding {
+    Unbound { canonical: String },
+    Bound { canonical: String },
+}
+
+impl RuntimeBinding {
+    pub(crate) fn canonical(&self) -> &str {
+        match self {
+            Self::Unbound { canonical } | Self::Bound { canonical } => canonical,
+        }
+    }
+
+    pub(crate) fn grant_matches(&self, stored: &Option<String>) -> bool {
+        match (self, stored) {
+            (Self::Unbound { .. }, None) => true,
+            (Self::Bound { canonical }, Some(stored)) => stored == canonical,
+            _ => false,
+        }
+    }
+
+    pub(crate) fn stored_grant_resource(&self) -> Option<String> {
+        match self {
+            Self::Unbound { .. } => None,
+            Self::Bound { canonical } => Some(canonical.clone()),
+        }
+    }
+}
+
 /// Process-local OAuth helpers bound to one journal root.
 pub(crate) struct OAuthRuntime {
     pub(crate) journal_root: std::path::PathBuf,
@@ -51,6 +80,7 @@ pub(crate) struct OAuthRuntime {
     pub(crate) pairing_limiter: PairingRateLimiter,
     pub(crate) cimd_bulkhead: Arc<CimdBulkhead>,
     pub(crate) resource_origin: String,
+    binds_grants: bool,
     #[cfg(feature = "full-tests")]
     pub(crate) cimd_fetch_override: Option<(SocketAddr, Arc<rustls::ClientConfig>)>,
 }
@@ -63,9 +93,28 @@ impl OAuthRuntime {
             pairing_limiter: PairingRateLimiter::new(),
             cimd_bulkhead: CimdBulkhead::new(),
             resource_origin,
+            binds_grants: false,
             #[cfg(feature = "full-tests")]
             cimd_fetch_override: None,
         }
+    }
+
+    pub(crate) fn binding(&self) -> RuntimeBinding {
+        let canonical = format!("{}/mcp", self.resource_origin);
+        if self.binds_grants {
+            RuntimeBinding::Bound { canonical }
+        } else {
+            RuntimeBinding::Unbound { canonical }
+        }
+    }
+
+    /// Issues grants that verify only at `{origin}/mcp`.
+    #[cfg(test)]
+    #[cfg_attr(feature = "full-tests", allow(dead_code))]
+    pub(crate) fn new_bound(journal_root: &Path, resource_origin: String) -> Self {
+        let mut runtime = Self::new(journal_root, resource_origin);
+        runtime.binds_grants = true;
+        runtime
     }
 
     #[cfg(all(test, feature = "full-tests"))]

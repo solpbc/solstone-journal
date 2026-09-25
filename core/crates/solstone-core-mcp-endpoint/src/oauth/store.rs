@@ -230,6 +230,9 @@ struct StoredGrant {
     access_expires_at: DateTime<Utc>,
     refresh_expires_at: DateTime<Utc>,
     created_at: DateTime<Utc>,
+    /// Once any grant carries a resource, an older binary rejects the whole oauth file as malformed, so every OAuth call on every listener fails and the agents app's view of connections fails until a binary that knows the field reads that journal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    resource: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -351,6 +354,7 @@ impl OAuthStore {
     pub(crate) fn verify_access_token(
         &self,
         presented: &str,
+        binding: &super::RuntimeBinding,
     ) -> Result<VerifiedToken, OAuthStoreError> {
         let store = self.read_store()?;
         let now = current_time();
@@ -374,6 +378,9 @@ impl OAuthStore {
                     continue;
                 };
                 if grant.revocation_generation != client.revocation_generation {
+                    continue;
+                }
+                if !binding.grant_matches(&grant.resource) {
                     continue;
                 }
                 verified = Some(VerifiedToken {
@@ -478,8 +485,9 @@ impl OAuthStore {
         &self,
         transaction_id: &str,
         pairing_code: &str,
+        binding: &super::RuntimeBinding,
     ) -> Result<IssuedAuthorization, OAuthStoreError> {
-        self.complete_pairing_with_permission(transaction_id, pairing_code, None)
+        self.complete_pairing_with_permission(transaction_id, pairing_code, None, binding)
     }
 
     pub(crate) fn complete_pairing_with_permission(
@@ -487,11 +495,13 @@ impl OAuthStore {
         transaction_id: &str,
         pairing_code: &str,
         permission: Option<ReadPermission>,
+        binding: &super::RuntimeBinding,
     ) -> Result<IssuedAuthorization, OAuthStoreError> {
         self.complete_pairing_with_random_and_permission(
             transaction_id,
             pairing_code,
             permission,
+            binding,
             &SystemRandomSource,
         )
     }
@@ -501,6 +511,7 @@ impl OAuthStore {
         transaction_id: &str,
         pairing_code: &str,
         permission: Option<ReadPermission>,
+        binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedAuthorization, OAuthStoreError> {
         let presented = canonicalize_pairing_code(pairing_code);
@@ -516,6 +527,9 @@ impl OAuthStore {
                 .iter()
                 .position(|pending| pending.transaction_id == transaction_id)
                 .ok_or(OAuthStoreError::TransactionNotFound)?;
+            if store.pending[index].resource != binding.canonical() {
+                return Err(OAuthStoreError::TransactionNotFound);
+            }
             if store.pending[index].authorization_code_verifier.is_none()
                 && store.pending[index].expires_at <= now
             {
@@ -571,6 +585,7 @@ impl OAuthStore {
         redirect_uri: &str,
         resource: &str,
         pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
     ) -> Result<IssuedTokens, OAuthStoreError> {
         self.redeem_authorization_code_with_random(
             code,
@@ -578,10 +593,12 @@ impl OAuthStore {
             redirect_uri,
             resource,
             pkce_verifier,
+            binding,
             &SystemRandomSource,
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn redeem_authorization_code_with_random(
         &self,
         code: &str,
@@ -589,6 +606,7 @@ impl OAuthStore {
         redirect_uri: &str,
         resource: &str,
         pkce_verifier: &str,
+        binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
         let presented = decode_sha256(code).ok_or(OAuthStoreError::InvalidToken)?;
@@ -629,6 +647,7 @@ impl OAuthStore {
             if client.client_id != client_id
                 || pending.redirect_uri != redirect_uri
                 || pending.resource != resource
+                || pending.resource != binding.canonical()
                 || pending.pkce_method != "S256"
                 || stored_challenge
                     .is_none_or(|challenge| !bool::from(pkce_digest.ct_eq(&challenge)))
@@ -653,6 +672,7 @@ impl OAuthStore {
                 access_expires_at: now + Duration::seconds(ACCESS_TTL_SECS),
                 refresh_expires_at: now + Duration::seconds(REFRESH_TTL_SECS),
                 created_at: now,
+                resource: binding.stored_grant_resource(),
             });
             if let Some(client) = store
                 .clients
@@ -684,14 +704,16 @@ impl OAuthStore {
         &self,
         refresh_token: &str,
         client_id: &str,
+        binding: &super::RuntimeBinding,
     ) -> Result<IssuedTokens, OAuthStoreError> {
-        self.refresh_grant_with_random(refresh_token, client_id, &SystemRandomSource)
+        self.refresh_grant_with_random(refresh_token, client_id, binding, &SystemRandomSource)
     }
 
     pub(crate) fn refresh_grant_with_random(
         &self,
         refresh_token: &str,
         client_id: &str,
+        binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedTokens, OAuthStoreError> {
         let presented = decode_sha256(refresh_token).ok_or(OAuthStoreError::InvalidToken)?;
@@ -720,6 +742,7 @@ impl OAuthStore {
             if store.grants[index].client_id != client_id
                 || store.grants[index].refresh_expires_at <= now
                 || store.grants[index].revocation_generation != client.revocation_generation
+                || !binding.grant_matches(&store.grants[index].resource)
             {
                 return Err(OAuthStoreError::InvalidToken);
             }
@@ -766,7 +789,8 @@ impl OAuthStore {
         let id = random_b64(random)?;
         let client_id_owned = client_id.to_owned();
         let source = source.to_owned();
-        self.mutate(|store, now| {
+        let mut evicted_grant_ids = Vec::new();
+        let registered = self.mutate(|store, now| {
             if let Some(existing) = store
                 .clients
                 .iter()
@@ -774,16 +798,72 @@ impl OAuthStore {
             {
                 return Ok(registered_from(existing));
             }
-            if store.clients.len() >= MAX_CLIENTS
-                || store
+
+            let is_idle = |client: &StoredClient, store: &OAuthStoreFile| -> bool {
+                let has_live_grant = store.grants.iter().any(|g| {
+                    g.client_record_id == client.id
+                        && g.refresh_expires_at > now
+                        && g.revocation_generation == client.revocation_generation
+                });
+                if has_live_grant {
+                    return false;
+                }
+                let has_live_pending = store.pending.iter().any(|p| {
+                    p.client_record_id == client.id
+                        && if p.authorization_code_verifier.is_some() {
+                            p.code_expires_at.is_some_and(|exp| exp > now)
+                        } else {
+                            p.expires_at > now
+                        }
+                });
+                if has_live_pending {
+                    return false;
+                }
+                true
+            };
+
+            // (a) a client is idle from DCR registration until GET /authorize creates a pending, and a returning CIMD client is idle between lookup and create_transaction, so a concurrent registration from the same source at the cap can evict it and that sign-in fails;
+            // (b) a source with 16 live clients is refused until one refresh expires (at most 30 days, because refresh_expires_at is never extended) or the owner revokes that connection in the agents app. Both are no worse than today.
+            let source_count = store.clients.iter().filter(|c| c.source == source).count();
+            let mut evicted_target = None;
+
+            if source_count >= MAX_CLIENTS_PER_SOURCE {
+                let oldest_source_idle = store
                     .clients
                     .iter()
-                    .filter(|client| client.source == source)
-                    .count()
-                    >= MAX_CLIENTS_PER_SOURCE
-            {
-                return Err(OAuthStoreError::Quota);
+                    .enumerate()
+                    .filter(|(_, c)| c.source == source && is_idle(c, store))
+                    .min_by_key(|(index, c)| (c.created_at, *index))
+                    .map(|(_, c)| c.id.clone());
+                let Some(target_id) = oldest_source_idle else {
+                    return Err(OAuthStoreError::Quota);
+                };
+                evicted_target = Some(target_id);
+            } else if store.clients.len() >= MAX_CLIENTS {
+                let oldest_global_idle = store
+                    .clients
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, c)| is_idle(c, store))
+                    .min_by_key(|(index, c)| (c.created_at, *index))
+                    .map(|(_, c)| c.id.clone());
+                let Some(target_id) = oldest_global_idle else {
+                    return Err(OAuthStoreError::Quota);
+                };
+                evicted_target = Some(target_id);
             }
+
+            if let Some(target_id) = evicted_target {
+                evicted_grant_ids = store
+                    .grants
+                    .iter()
+                    .filter(|g| g.client_record_id == target_id)
+                    .map(|g| g.id.clone())
+                    .collect();
+                store.grants.retain(|g| g.client_record_id != target_id);
+                store.clients.retain(|c| c.id != target_id);
+            }
+
             store.clients.push(StoredClient {
                 id: id.clone(),
                 client_id: client_id_owned,
@@ -797,7 +877,14 @@ impl OAuthStore {
             Ok(registered_from(
                 store.clients.last().expect("client inserted"),
             ))
-        })
+        })?;
+
+        let perm_store = crate::permissions::PermissionStore::open(&self.root);
+        for gid in evicted_grant_ids {
+            let _ = perm_store.remove_connection(&format!("oauth:{gid}"));
+        }
+
+        Ok(registered)
     }
 
     /// Resolve the client and return target bound to a pending authorization.
@@ -1160,17 +1247,27 @@ pub(crate) fn set_test_now(timestamp: Option<i64>) {
 #[cfg(all(test, not(feature = "full-tests")))]
 #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
 mod tests {
+    use std::collections::HashSet;
     use std::fs;
 
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-    use chrono::{TimeZone, Utc};
+    use chrono::{Duration, TimeZone, Utc};
 
     use super::{
-        AUTH_CODE_TTL_SECS, CLIENT_UNUSED_TTL_SECS, MAX_CLIENTS_PER_SOURCE, MAX_GRANTS,
-        MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE, OAuthStore, OAuthStoreError, OAuthStoreFile,
-        PENDING_TRANSACTION_TTL_SECS, StoredGrant, TEST_MAX_STATE_BYTES, TEST_NOW, sha256_b64,
+        AUTH_CODE_TTL_SECS, CLIENT_UNUSED_TTL_SECS, MAX_CLIENTS, MAX_CLIENTS_PER_SOURCE,
+        MAX_GRANTS, MAX_OAUTH_ENTRY_BYTES, MAX_PENDING_PER_SOURCE, OAuthStore, OAuthStoreError,
+        OAuthStoreFile, PENDING_TRANSACTION_TTL_SECS, StoredClient, StoredGrant,
+        TEST_MAX_STATE_BYTES, TEST_NOW, sha256_b64,
     };
+    use crate::oauth::{OAuthRuntime, RuntimeBinding};
+    use crate::permissions::{PermissionStore, ReadPermission};
     use crate::tokens::{RandomSource, RandomSourceError};
+
+    fn test_binding() -> RuntimeBinding {
+        RuntimeBinding::Unbound {
+            canonical: "https://mcp.test/mcp".to_owned(),
+        }
+    }
 
     fn journal_root() -> tempfile::TempDir {
         tempfile::Builder::new()
@@ -1255,14 +1352,16 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         assert_eq!(issued.redirect_uri, "http://127.0.0.1/callback");
         assert_eq!(issued.state.as_deref(), Some("state-1"));
         assert_eq!(issued.issuer, "https://mcp.test");
         assert_eq!(store.pairing_generation().unwrap(), 0);
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         assert!(matches!(
-            store.complete_pairing(&transaction, &pairing.code),
+            store.complete_pairing(&transaction, &pairing.code, &test_binding()),
             Err(OAuthStoreError::NoActivePairing)
         ));
     }
@@ -1276,17 +1375,17 @@ mod tests {
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         for _ in 0..5 {
             assert!(matches!(
-                store.complete_pairing(&transaction, "00000000"),
+                store.complete_pairing(&transaction, "00000000", &test_binding()),
                 Err(OAuthStoreError::PairingMismatch)
             ));
         }
         assert!(matches!(
-            store.complete_pairing(&transaction, &pairing.code),
+            store.complete_pairing(&transaction, &pairing.code, &test_binding()),
             Err(OAuthStoreError::TransactionNotFound)
         ));
         let retry = open_transaction(&store, &client, "192.0.2.1");
         store
-            .complete_pairing(&retry, &pairing.code)
+            .complete_pairing(&retry, &pairing.code, &test_binding())
             .expect("pairing remains usable on a new transaction");
     }
 
@@ -1301,7 +1400,7 @@ mod tests {
         assert_eq!(store.pairing_generation().unwrap(), generation);
         let transaction = open_transaction(&store, &client, "198.51.100.9");
         assert!(matches!(
-            store.complete_pairing(&transaction, &pairing.code),
+            store.complete_pairing(&transaction, &pairing.code, &test_binding()),
             Err(OAuthStoreError::PairingLocked)
         ));
         assert_eq!(store.pairing_generation().unwrap(), generation);
@@ -1320,7 +1419,7 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         store
-            .complete_pairing(&transaction, &second.code)
+            .complete_pairing(&transaction, &second.code, &test_binding())
             .expect("fresh code is not locked");
     }
 
@@ -1331,7 +1430,9 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         assert_eq!(issued.redirect_uri, "http://127.0.0.1/callback");
         assert_eq!(issued.issuer, "https://mcp.test");
         assert_eq!(issued.state.as_deref(), Some("state-1"));
@@ -1347,7 +1448,9 @@ mod tests {
         let client_id = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client_id, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         let tokens = store
             .redeem_authorization_code(
                 &issued.code,
@@ -1355,6 +1458,7 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             )
             .unwrap();
         assert_eq!(tokens.expires_in, 3600);
@@ -1365,6 +1469,7 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             ),
             Err(OAuthStoreError::InvalidToken)
         ));
@@ -1374,7 +1479,9 @@ mod tests {
         let still_open = open_transaction(&store, &client_id, "192.0.2.8");
         let expiring = open_transaction(&store, &client_id, "192.0.2.9");
         let late = open_transaction(&store, &client_id, "192.0.2.10");
-        let issued = store.complete_pairing(&expiring, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&expiring, &pairing.code, &test_binding())
+            .unwrap();
         set_now(start.timestamp() + AUTH_CODE_TTL_SECS + 1);
         const { assert!(AUTH_CODE_TTL_SECS + 1 < PENDING_TRANSACTION_TTL_SECS) };
         assert!(matches!(
@@ -1384,17 +1491,18 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             ),
             Err(OAuthStoreError::CodeExpired | OAuthStoreError::InvalidToken)
         ));
         let pairing = store.generate_pairing_code().unwrap();
         store
-            .complete_pairing(&still_open, &pairing.code)
+            .complete_pairing(&still_open, &pairing.code, &test_binding())
             .expect("unpaired transaction remains valid for 10 minutes");
         set_now(start.timestamp() + PENDING_TRANSACTION_TTL_SECS + 1);
         let pairing = store.generate_pairing_code().unwrap();
         assert!(matches!(
-            store.complete_pairing(&late, &pairing.code),
+            store.complete_pairing(&late, &pairing.code, &test_binding()),
             Err(OAuthStoreError::TransactionExpired | OAuthStoreError::TransactionNotFound)
         ));
     }
@@ -1406,7 +1514,9 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         assert!(matches!(
             store.redeem_authorization_code(
                 &issued.code,
@@ -1414,6 +1524,7 @@ mod tests {
                 "http://127.0.0.1/other",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             ),
             Err(OAuthStoreError::BindingMismatch)
         ));
@@ -1424,6 +1535,7 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             ),
             Err(OAuthStoreError::InvalidToken)
         ));
@@ -1453,33 +1565,49 @@ mod tests {
         ));
         open_transaction(&store, &client, "198.51.100.2");
 
-        for index in 0..MAX_CLIENTS_PER_SOURCE - 1 {
-            store
-                .register_client(
-                    &format!("https://client.example/{index}.json"),
-                    vec!["http://127.0.0.1/callback".to_owned()],
-                    None,
-                    "203.0.113.1",
-                )
-                .unwrap();
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let mut file = store.read_store().unwrap();
+        file.clients.clear();
+        for index in 0..MAX_CLIENTS_PER_SOURCE {
+            file.clients.push(StoredClient {
+                id: format!("client-{index}"),
+                client_id: format!("https://client.example/{index}.json"),
+                redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
+                client_name: None,
+                source: "203.0.113.1".to_owned(),
+                created_at: base_now + Duration::seconds(index as i64),
+                last_used_at: None,
+                revocation_generation: 0,
+            });
         }
-        store
+        fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+
+        let over = store
             .register_client(
-                "https://client.example/cap.json",
+                "https://client.example/over.json",
                 vec!["http://127.0.0.1/callback".to_owned()],
                 None,
                 "203.0.113.1",
             )
             .unwrap();
-        assert!(matches!(
-            store.register_client(
-                "https://client.example/over.json",
-                vec!["http://127.0.0.1/callback".to_owned()],
-                None,
-                "203.0.113.1",
-            ),
-            Err(OAuthStoreError::Quota)
-        ));
+        assert_eq!(over.client_id, "https://client.example/over.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/0.json")
+                .unwrap()
+                .is_none(),
+            "oldest client of source was evicted"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/1.json")
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[test]
@@ -1535,7 +1663,9 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         let mut tokens = store
             .redeem_authorization_code(
                 &issued.code,
@@ -1543,6 +1673,7 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             )
             .unwrap();
         let path = journal.path().join("mcp-endpoint/oauth.json");
@@ -1550,10 +1681,18 @@ mod tests {
         for _ in 0..5 {
             let previous = tokens.refresh_token.clone();
             tokens = store
-                .refresh_grant(&tokens.refresh_token, "https://client.example/cimd.json")
+                .refresh_grant(
+                    &tokens.refresh_token,
+                    "https://client.example/cimd.json",
+                    &test_binding(),
+                )
                 .unwrap();
             assert!(matches!(
-                store.refresh_grant(&previous, "https://client.example/cimd.json"),
+                store.refresh_grant(
+                    &previous,
+                    "https://client.example/cimd.json",
+                    &test_binding()
+                ),
                 Err(OAuthStoreError::InvalidToken)
             ));
             sizes.push(fs::read(&path).unwrap().len());
@@ -1565,7 +1704,9 @@ mod tests {
     fn redeem_access(store: &OAuthStore, client_record_id: &str, client_id: &str) -> String {
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(store, client_record_id, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         store
             .redeem_authorization_code(
                 &issued.code,
@@ -1573,6 +1714,7 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             )
             .unwrap()
             .access_token
@@ -1585,7 +1727,9 @@ mod tests {
         let cimd_id = "https://client.example/cimd.json";
         let cimd = seed_client(&store, "192.0.2.1");
         let cimd_token = redeem_access(&store, &cimd, cimd_id);
-        let cimd_verified = store.verify_access_token(&cimd_token).unwrap();
+        let cimd_verified = store
+            .verify_access_token(&cimd_token, &test_binding())
+            .unwrap();
         assert_eq!(cimd_verified.agent_identity, cimd_id);
         assert!(!cimd_verified.agent_identity.starts_with("oauth:dcr:"));
 
@@ -1599,7 +1743,9 @@ mod tests {
             )
             .unwrap();
         let classic_token = redeem_access(&store, &classic.id, minted);
-        let classic_verified = store.verify_access_token(&classic_token).unwrap();
+        let classic_verified = store
+            .verify_access_token(&classic_token, &test_binding())
+            .unwrap();
         assert_eq!(classic_verified.agent_identity, minted);
         assert!(
             !classic_verified
@@ -1617,7 +1763,9 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         let tokens = store
             .redeem_authorization_code(
                 &issued.code,
@@ -1625,12 +1773,15 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             )
             .unwrap();
-        store.verify_access_token(&tokens.access_token).unwrap();
+        store
+            .verify_access_token(&tokens.access_token, &test_binding())
+            .unwrap();
         store.revoke_client(&client).unwrap();
         assert!(matches!(
-            store.verify_access_token(&tokens.access_token),
+            store.verify_access_token(&tokens.access_token, &test_binding()),
             Err(OAuthStoreError::InvalidToken)
         ));
     }
@@ -1681,11 +1832,11 @@ mod tests {
         let classic_token = redeem_access(&store, &classic.id, minted);
         store.revoke_client_by_client_id(cimd_id).unwrap();
         assert!(matches!(
-            store.verify_access_token(&cimd_token),
+            store.verify_access_token(&cimd_token, &test_binding()),
             Err(OAuthStoreError::InvalidToken)
         ));
         store
-            .verify_access_token(&classic_token)
+            .verify_access_token(&classic_token, &test_binding())
             .expect("unrelated client remains valid");
         assert!(matches!(
             store.revoke_client_by_client_id("https://missing.example/cimd.json"),
@@ -1738,7 +1889,9 @@ mod tests {
         let client = seed_client(&store, "192.0.2.1");
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &test_binding())
+            .unwrap();
         let path = journal.path().join("mcp-endpoint/oauth.json");
         let mut file: OAuthStoreFile = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         let now = Utc.timestamp_opt(4_000_000_000, 0).unwrap();
@@ -1757,6 +1910,7 @@ mod tests {
                 access_expires_at: now,
                 refresh_expires_at: now,
                 created_at: now,
+                resource: None,
             })
             .collect();
         fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
@@ -1767,9 +1921,1177 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &test_binding(),
             ),
             Err(OAuthStoreError::Quota)
         ));
-        store.verify_access_token(&access).unwrap();
+        store.verify_access_token(&access, &test_binding()).unwrap();
+    }
+
+    #[test]
+    fn cross_runtime_grant_verification_binding_vs_unbound() {
+        let journal = journal_root();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        let unbound_client = seed_client(&unbound.store, "192.0.2.1");
+        let unbound_pairing = unbound.store.generate_pairing_code().unwrap();
+        let unbound_tx = unbound
+            .store
+            .create_transaction(
+                &unbound_client,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-unbound"),
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let unbound_auth = unbound
+            .store
+            .complete_pairing(&unbound_tx, &unbound_pairing.code, &unbound.binding())
+            .unwrap();
+        let unbound_tokens = unbound
+            .store
+            .redeem_authorization_code(
+                &unbound_auth.code,
+                "https://client.example/cimd.json",
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-unbound",
+                &unbound.binding(),
+            )
+            .unwrap();
+
+        assert!(
+            unbound
+                .store
+                .verify_access_token(&unbound_tokens.access_token, &unbound.binding())
+                .is_ok()
+        );
+        assert!(matches!(
+            bound
+                .store
+                .verify_access_token(&unbound_tokens.access_token, &bound.binding()),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+
+        let bound_pairing = bound.store.generate_pairing_code().unwrap();
+        let bound_tx = bound
+            .store
+            .create_transaction(
+                &unbound_client,
+                "http://127.0.0.1/callback",
+                "http://127.0.0.1:7659/mcp",
+                "http://127.0.0.1:7659",
+                &sha256_b64(b"pkce-bound"),
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let bound_auth = bound
+            .store
+            .complete_pairing(&bound_tx, &bound_pairing.code, &bound.binding())
+            .unwrap();
+        let bound_tokens = bound
+            .store
+            .redeem_authorization_code(
+                &bound_auth.code,
+                "https://client.example/cimd.json",
+                "http://127.0.0.1/callback",
+                "http://127.0.0.1:7659/mcp",
+                "pkce-bound",
+                &bound.binding(),
+            )
+            .unwrap();
+
+        assert!(
+            bound
+                .store
+                .verify_access_token(&bound_tokens.access_token, &bound.binding())
+                .is_ok()
+        );
+        assert!(matches!(
+            unbound
+                .store
+                .verify_access_token(&bound_tokens.access_token, &unbound.binding()),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+    }
+
+    #[test]
+    fn handwritten_json_grant_loads_and_key_allowlist_matches_after_flow() {
+        let journal = journal_root();
+        let directory = journal.path().join("mcp-endpoint");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("oauth.json");
+
+        let raw_token_bytes = [0x42_u8; 32];
+        let presented_token = URL_SAFE_NO_PAD.encode(raw_token_bytes);
+        let stored_verifier = sha256_b64(&raw_token_bytes);
+
+        let json_content = format!(
+            r#"{{
+  "schema": 1,
+  "pairing_generation": 0,
+  "clients": [
+    {{
+      "id": "test-client-rec-1",
+      "client_id": "https://client.example/handwritten.json",
+      "redirect_uris": ["http://127.0.0.1/callback"],
+      "client_name": "handwritten",
+      "source": "192.0.2.1",
+      "created_at": "2099-01-01T00:00:00Z",
+      "last_used_at": "2099-01-01T00:00:00Z",
+      "revocation_generation": 0
+    }}
+  ],
+  "grants": [
+    {{
+      "id": "test-grant-1",
+      "client_record_id": "test-client-rec-1",
+      "client_id": "https://client.example/handwritten.json",
+      "access_verifier": "{stored_verifier}",
+      "refresh_verifier": "{stored_verifier}",
+      "refresh_generation": 0,
+      "revocation_generation": 0,
+      "access_expires_at": "2099-12-31T23:59:59Z",
+      "refresh_expires_at": "2099-12-31T23:59:59Z",
+      "created_at": "2099-01-01T00:00:00Z"
+    }}
+  ],
+  "pending": [],
+  "pairing": null
+}}"#
+        );
+        fs::write(&path, json_content.as_bytes()).unwrap();
+
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        assert!(
+            unbound
+                .store
+                .verify_access_token(&presented_token, &unbound.binding())
+                .is_ok()
+        );
+        assert!(matches!(
+            bound
+                .store
+                .verify_access_token(&presented_token, &bound.binding()),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+
+        let _guard = NowGuard;
+        let base_time = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_time.timestamp());
+
+        let client = unbound
+            .store
+            .register_client(
+                "https://client.example/flow.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                Some("flow".to_owned()),
+                "192.0.2.20",
+            )
+            .unwrap();
+
+        let pairing = unbound.store.generate_pairing_code().unwrap();
+        let challenge = sha256_b64(b"flow-verifier");
+        let tx = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                Some("flow-state"),
+                "192.0.2.20",
+            )
+            .unwrap();
+        let auth = unbound
+            .store
+            .complete_pairing(&tx, &pairing.code, &unbound.binding())
+            .unwrap();
+        let tokens = unbound
+            .store
+            .redeem_authorization_code(
+                &auth.code,
+                "https://client.example/flow.json",
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "flow-verifier",
+                &unbound.binding(),
+            )
+            .unwrap();
+        let _ = unbound
+            .store
+            .refresh_grant(
+                &tokens.refresh_token,
+                "https://client.example/flow.json",
+                &unbound.binding(),
+            )
+            .unwrap();
+
+        for i in 0..MAX_CLIENTS_PER_SOURCE {
+            unbound
+                .store
+                .register_client(
+                    &format!("https://client.example/evict_{i}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.30",
+                )
+                .unwrap();
+        }
+
+        let _ = unbound.store.generate_pairing_code().unwrap();
+        let _ = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.20",
+            )
+            .unwrap();
+
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).expect("reads json");
+
+        let file_allowed: HashSet<&str> = [
+            "schema",
+            "pairing_generation",
+            "clients",
+            "grants",
+            "pending",
+            "pairing",
+        ]
+        .into_iter()
+        .collect();
+        let client_allowed: HashSet<&str> = [
+            "id",
+            "client_id",
+            "redirect_uris",
+            "client_name",
+            "source",
+            "created_at",
+            "last_used_at",
+            "revocation_generation",
+        ]
+        .into_iter()
+        .collect();
+        let grant_allowed: HashSet<&str> = [
+            "id",
+            "client_record_id",
+            "client_id",
+            "access_verifier",
+            "refresh_verifier",
+            "refresh_generation",
+            "revocation_generation",
+            "access_expires_at",
+            "refresh_expires_at",
+            "created_at",
+        ]
+        .into_iter()
+        .collect();
+        let pending_allowed: HashSet<&str> = [
+            "transaction_id",
+            "client_record_id",
+            "redirect_uri",
+            "resource",
+            "issuer",
+            "pkce_s256",
+            "pkce_method",
+            "state",
+            "source",
+            "created_at",
+            "expires_at",
+            "failure_count",
+            "authorization_code_verifier",
+            "code_expires_at",
+            "permission",
+        ]
+        .into_iter()
+        .collect();
+        let pairing_allowed: HashSet<&str> = ["verifier", "expires_at", "generation", "locked"]
+            .into_iter()
+            .collect();
+
+        for key in value.as_object().unwrap().keys() {
+            assert!(
+                file_allowed.contains(key.as_str()),
+                "unknown file key {key}"
+            );
+        }
+        for client in value["clients"].as_array().unwrap() {
+            for key in client.as_object().unwrap().keys() {
+                assert!(
+                    client_allowed.contains(key.as_str()),
+                    "unknown client key {key}"
+                );
+            }
+        }
+        for grant in value["grants"].as_array().unwrap() {
+            for key in grant.as_object().unwrap().keys() {
+                assert!(
+                    grant_allowed.contains(key.as_str()),
+                    "unknown grant key {key}"
+                );
+            }
+        }
+        for pending in value["pending"].as_array().unwrap() {
+            for key in pending.as_object().unwrap().keys() {
+                assert!(
+                    pending_allowed.contains(key.as_str()),
+                    "unknown pending key {key}"
+                );
+            }
+        }
+        if let Some(pairing) = value.get("pairing").and_then(|p| p.as_object()) {
+            for key in pairing.keys() {
+                assert!(
+                    pairing_allowed.contains(key.as_str()),
+                    "unknown pairing key {key}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn per_source_cap_evicts_oldest_idle_client_after_grant_revocation() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let mut client_records = Vec::new();
+        for index in 0..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            let client = store
+                .register_client(
+                    &format!("https://client.example/revoked_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.50",
+                )
+                .unwrap();
+            let pairing = store.generate_pairing_code().unwrap();
+            let tx = store
+                .create_transaction(
+                    &client.id,
+                    "http://127.0.0.1/callback",
+                    "https://mcp.test/mcp",
+                    "https://mcp.test",
+                    &sha256_b64(b"pkce-verifier"),
+                    "S256",
+                    None,
+                    "192.0.2.50",
+                )
+                .unwrap();
+            let auth = store
+                .complete_pairing(&tx, &pairing.code, &test_binding())
+                .unwrap();
+            let tokens = store
+                .redeem_authorization_code(
+                    &auth.code,
+                    &client.client_id,
+                    "http://127.0.0.1/callback",
+                    "https://mcp.test/mcp",
+                    "pkce-verifier",
+                    &test_binding(),
+                )
+                .unwrap();
+            let _ = store.revoke_grant_by_id(&tokens.token_id).unwrap();
+            client_records.push(client);
+        }
+
+        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        let seventeenth = store
+            .register_client(
+                "https://client.example/seventeenth.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.50",
+            )
+            .unwrap();
+        assert_eq!(
+            seventeenth.client_id,
+            "https://client.example/seventeenth.json"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&client_records[0].client_id)
+                .unwrap()
+                .is_none(),
+            "oldest client was evicted"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&client_records[1].client_id)
+                .unwrap()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn client_with_expired_access_and_valid_refresh_survives_eviction() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let oldest_client = store
+            .register_client(
+                "https://client.example/oldest_live.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.60",
+            )
+            .unwrap();
+        let pairing = store.generate_pairing_code().unwrap();
+        let tx = store
+            .create_transaction(
+                &oldest_client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-verifier"),
+                "S256",
+                None,
+                "192.0.2.60",
+            )
+            .unwrap();
+        let auth = store
+            .complete_pairing(&tx, &pairing.code, &test_binding())
+            .unwrap();
+        let tokens = store
+            .redeem_authorization_code(
+                &auth.code,
+                &oldest_client.client_id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &test_binding(),
+            )
+            .unwrap();
+
+        for index in 1..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            store
+                .register_client(
+                    &format!("https://client.example/idle_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.60",
+                )
+                .unwrap();
+        }
+
+        set_now(base_now.timestamp() + 3600 + 10);
+
+        let over = store
+            .register_client(
+                "https://client.example/over.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.60",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/over.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&oldest_client.client_id)
+                .unwrap()
+                .is_some(),
+            "oldest client with live refresh must survive"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/idle_1.json")
+                .unwrap()
+                .is_none(),
+            "newer idle client was evicted"
+        );
+
+        assert!(
+            store
+                .refresh_grant(
+                    &tokens.refresh_token,
+                    &oldest_client.client_id,
+                    &test_binding()
+                )
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn client_with_pending_transaction_or_issued_code_survives_eviction() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let pending_client = store
+            .register_client(
+                "https://client.example/pending_client.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.70",
+            )
+            .unwrap();
+        let _tx = store
+            .create_transaction(
+                &pending_client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-verifier"),
+                "S256",
+                None,
+                "192.0.2.70",
+            )
+            .unwrap();
+
+        for index in 1..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            store
+                .register_client(
+                    &format!("https://client.example/idle_p_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.70",
+                )
+                .unwrap();
+        }
+
+        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        let over = store
+            .register_client(
+                "https://client.example/over_p.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.70",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/over_p.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&pending_client.client_id)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/idle_p_1.json")
+                .unwrap()
+                .is_none()
+        );
+
+        let t = 1_800_000_000;
+        set_now(t);
+        let code_client = store
+            .register_client(
+                "https://client.example/code_client.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.71",
+            )
+            .unwrap();
+        let tx = store
+            .create_transaction(
+                &code_client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-verifier"),
+                "S256",
+                None,
+                "192.0.2.71",
+            )
+            .unwrap();
+        let pairing = store.generate_pairing_code().unwrap();
+        set_now(t + 400);
+        let _auth = store
+            .complete_pairing(&tx, &pairing.code, &test_binding())
+            .unwrap();
+
+        for index in 1..MAX_CLIENTS_PER_SOURCE {
+            set_now(t + 400 + index as i64);
+            store
+                .register_client(
+                    &format!("https://client.example/idle_c_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.71",
+                )
+                .unwrap();
+        }
+
+        set_now(t + 650);
+        let over_c = store
+            .register_client(
+                "https://client.example/over_c.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.71",
+            )
+            .unwrap();
+        assert_eq!(over_c.client_id, "https://client.example/over_c.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&code_client.client_id)
+                .unwrap()
+                .is_some(),
+            "client with active authorization code must survive"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/idle_c_1.json")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn client_with_unbound_grant_survives_eviction_under_bound_runtime() {
+        let journal = journal_root();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let client = unbound
+            .store
+            .register_client(
+                "https://client.example/unbound_holder.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.80",
+            )
+            .unwrap();
+        let pairing = unbound.store.generate_pairing_code().unwrap();
+        let tx = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-verifier"),
+                "S256",
+                None,
+                "192.0.2.80",
+            )
+            .unwrap();
+        let auth = unbound
+            .store
+            .complete_pairing(&tx, &pairing.code, &unbound.binding())
+            .unwrap();
+        let tokens = unbound
+            .store
+            .redeem_authorization_code(
+                &auth.code,
+                &client.client_id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &unbound.binding(),
+            )
+            .unwrap();
+
+        for index in 1..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            bound
+                .store
+                .register_client(
+                    &format!("https://client.example/bound_idle_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.80",
+                )
+                .unwrap();
+        }
+
+        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        let over = bound
+            .store
+            .register_client(
+                "https://client.example/bound_over.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.80",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/bound_over.json");
+        assert!(
+            bound
+                .store
+                .lookup_client_by_cimd_url(&client.client_id)
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            bound
+                .store
+                .lookup_client_by_cimd_url("https://client.example/bound_idle_1.json")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            unbound
+                .store
+                .verify_access_token(&tokens.access_token, &unbound.binding())
+                .is_ok()
+        );
+        assert!(
+            unbound
+                .store
+                .refresh_grant(&tokens.refresh_token, &client.client_id, &unbound.binding())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn revoked_client_is_idle_and_evicted_with_permissions_cleared() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let perm_store = PermissionStore::open(journal.path());
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let target_client = store
+            .register_client(
+                "https://client.example/to_be_revoked.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.90",
+            )
+            .unwrap();
+        let pairing = store.generate_pairing_code().unwrap();
+        let tx = store
+            .create_transaction(
+                &target_client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &sha256_b64(b"pkce-verifier"),
+                "S256",
+                None,
+                "192.0.2.90",
+            )
+            .unwrap();
+        let auth = store
+            .complete_pairing(&tx, &pairing.code, &test_binding())
+            .unwrap();
+        let tokens = store
+            .redeem_authorization_code(
+                &auth.code,
+                &target_client.client_id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &test_binding(),
+            )
+            .unwrap();
+
+        perm_store
+            .set_permission(
+                &format!("oauth:{}", tokens.token_id),
+                ReadPermission::default_whole_journal(),
+            )
+            .unwrap();
+        assert!(
+            perm_store
+                .get_permission(&format!("oauth:{}", tokens.token_id))
+                .unwrap()
+                .is_some()
+        );
+
+        store
+            .revoke_client_by_client_id(&target_client.client_id)
+            .unwrap();
+
+        for index in 1..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            store
+                .register_client(
+                    &format!("https://client.example/idle_rev_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.90",
+                )
+                .unwrap();
+        }
+
+        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        let over = store
+            .register_client(
+                "https://client.example/rev_over.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.90",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/rev_over.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&target_client.client_id)
+                .unwrap()
+                .is_none(),
+            "revoked client was evicted"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/idle_rev_1.json")
+                .unwrap()
+                .is_some(),
+            "newer idle client remained"
+        );
+        assert!(
+            perm_store
+                .get_permission(&format!("oauth:{}", tokens.token_id))
+                .unwrap()
+                .is_none(),
+            "permission record was removed"
+        );
+        assert!(
+            !store
+                .list_grants()
+                .unwrap()
+                .iter()
+                .any(|g| g.id == tokens.token_id)
+        );
+        assert!(matches!(
+            store.verify_access_token(&tokens.access_token, &test_binding()),
+            Err(OAuthStoreError::InvalidToken)
+        ));
+    }
+
+    #[test]
+    fn source_at_cap_evicts_its_own_idle_client_preserving_other_sources() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let client_b = store
+            .register_client(
+                "https://client.example/source_b_older.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "198.51.100.2",
+            )
+            .unwrap();
+
+        let mut a_clients = Vec::new();
+        for index in 0..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + 100 + index as i64);
+            let client = store
+                .register_client(
+                    &format!("https://client.example/source_a_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.1",
+                )
+                .unwrap();
+            a_clients.push(client);
+        }
+
+        set_now(base_now.timestamp() + 100 + MAX_CLIENTS_PER_SOURCE as i64);
+        let over = store
+            .register_client(
+                "https://client.example/source_a_over.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/source_a_over.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&a_clients[0].client_id)
+                .unwrap()
+                .is_none(),
+            "A's idle client was evicted"
+        );
+        assert!(
+            store
+                .lookup_client_by_cimd_url(&client_b.client_id)
+                .unwrap()
+                .is_some(),
+            "B's older idle client was preserved"
+        );
+    }
+
+    #[test]
+    fn quota_refusal_when_all_clients_live_and_reregistration_survives() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let mut tokens_list = Vec::new();
+        let mut clients = Vec::new();
+        for index in 0..MAX_CLIENTS_PER_SOURCE {
+            set_now(base_now.timestamp() + index as i64);
+            let client = store
+                .register_client(
+                    &format!("https://client.example/live_{index}.json"),
+                    vec!["http://127.0.0.1/callback".to_owned()],
+                    None,
+                    "192.0.2.100",
+                )
+                .unwrap();
+            let pairing = store.generate_pairing_code().unwrap();
+            let tx = store
+                .create_transaction(
+                    &client.id,
+                    "http://127.0.0.1/callback",
+                    "https://mcp.test/mcp",
+                    "https://mcp.test",
+                    &sha256_b64(b"pkce-verifier"),
+                    "S256",
+                    None,
+                    "192.0.2.100",
+                )
+                .unwrap();
+            let auth = store
+                .complete_pairing(&tx, &pairing.code, &test_binding())
+                .unwrap();
+            let tokens = store
+                .redeem_authorization_code(
+                    &auth.code,
+                    &client.client_id,
+                    "http://127.0.0.1/callback",
+                    "https://mcp.test/mcp",
+                    "pkce-verifier",
+                    &test_binding(),
+                )
+                .unwrap();
+            tokens_list.push(tokens);
+            clients.push(client);
+        }
+
+        set_now(base_now.timestamp() + MAX_CLIENTS_PER_SOURCE as i64);
+        assert!(matches!(
+            store.register_client(
+                "https://client.example/refused_17th.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.100",
+            ),
+            Err(OAuthStoreError::Quota)
+        ));
+
+        for c in &clients {
+            assert!(
+                store
+                    .lookup_client_by_cimd_url(&c.client_id)
+                    .unwrap()
+                    .is_some()
+            );
+        }
+        for t in &tokens_list {
+            assert!(
+                store
+                    .verify_access_token(&t.access_token, &test_binding())
+                    .is_ok()
+            );
+        }
+
+        let existing = store
+            .register_client(
+                &clients[0].client_id,
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.100",
+            )
+            .unwrap();
+        assert_eq!(existing.id, clients[0].id);
+    }
+
+    #[test]
+    fn global_cap_evicts_oldest_idle_client_or_returns_quota_when_all_live() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let mut file = OAuthStoreFile::default();
+        for index in 0..MAX_CLIENTS {
+            file.clients.push(StoredClient {
+                id: format!("global-client-{index}"),
+                client_id: format!("https://client.example/global_{index}.json"),
+                redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
+                client_name: None,
+                source: format!(
+                    "10.{}.{}.{}",
+                    (index / 65536) % 256,
+                    (index / 256) % 256,
+                    index % 256
+                ),
+                created_at: base_now + Duration::seconds(index as i64),
+                last_used_at: Some(base_now),
+                revocation_generation: 0,
+            });
+        }
+        file.clients[0].source = "198.51.100.99".to_owned();
+        file.clients[0].client_id = "https://client.example/b_idle.json".to_owned();
+
+        fs::create_dir_all(journal.path().join("mcp-endpoint")).unwrap();
+        fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+
+        let over = store
+            .register_client(
+                "https://client.example/new_a.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        assert_eq!(over.client_id, "https://client.example/new_a.json");
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/b_idle.json")
+                .unwrap()
+                .is_none(),
+            "B's idle client was evicted at global cap"
+        );
+
+        let mut all_live_file = OAuthStoreFile::default();
+        let verifier = sha256_b64(b"test-bytes");
+        for index in 0..MAX_CLIENTS {
+            let cid = format!("live-client-{index}");
+            all_live_file.clients.push(StoredClient {
+                id: cid.clone(),
+                client_id: format!("https://client.example/all_live_{index}.json"),
+                redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
+                client_name: None,
+                source: format!(
+                    "10.{}.{}.{}",
+                    (index / 65536) % 256,
+                    (index / 256) % 256,
+                    index % 256
+                ),
+                created_at: base_now + Duration::seconds(index as i64),
+                last_used_at: Some(base_now),
+                revocation_generation: 0,
+            });
+            all_live_file.grants.push(StoredGrant {
+                id: format!("live-grant-{index}"),
+                client_record_id: cid,
+                client_id: format!("https://client.example/all_live_{index}.json"),
+                access_verifier: verifier.clone(),
+                refresh_verifier: verifier.clone(),
+                refresh_generation: 0,
+                revocation_generation: 0,
+                access_expires_at: base_now + Duration::seconds(3600),
+                refresh_expires_at: base_now + Duration::seconds(30 * 86400),
+                created_at: base_now,
+                resource: None,
+            });
+        }
+        fs::write(&path, serde_json::to_vec(&all_live_file).unwrap()).unwrap();
+
+        assert!(matches!(
+            store.register_client(
+                "https://client.example/refused_global.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            ),
+            Err(OAuthStoreError::Quota)
+        ));
+        assert_eq!(store.list_clients().unwrap().len(), MAX_CLIENTS);
+    }
+
+    #[test]
+    fn full_source_without_idle_client_is_refused_even_when_global_idle_exists() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let _guard = NowGuard;
+        let base_now = Utc.timestamp_opt(1_700_000_000, 0).unwrap();
+        set_now(base_now.timestamp());
+
+        let mut file = OAuthStoreFile::default();
+        let verifier = sha256_b64(b"test-bytes");
+        for index in 0..MAX_CLIENTS_PER_SOURCE {
+            let cid = format!("source-a-live-{index}");
+            file.clients.push(StoredClient {
+                id: cid.clone(),
+                client_id: format!("https://client.example/source_a_{index}.json"),
+                redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
+                client_name: None,
+                source: "192.0.2.1".to_owned(),
+                created_at: base_now + Duration::seconds(index as i64),
+                last_used_at: Some(base_now),
+                revocation_generation: 0,
+            });
+            file.grants.push(StoredGrant {
+                id: format!("grant-a-{index}"),
+                client_record_id: cid,
+                client_id: format!("https://client.example/source_a_{index}.json"),
+                access_verifier: verifier.clone(),
+                refresh_verifier: verifier.clone(),
+                refresh_generation: 0,
+                revocation_generation: 0,
+                access_expires_at: base_now + Duration::seconds(3600),
+                refresh_expires_at: base_now + Duration::seconds(30 * 86400),
+                created_at: base_now,
+                resource: None,
+            });
+        }
+        file.clients.push(StoredClient {
+            id: "source-b-idle-1".to_owned(),
+            client_id: "https://client.example/source_b_idle.json".to_owned(),
+            redirect_uris: vec!["http://127.0.0.1/callback".to_owned()],
+            client_name: None,
+            source: "198.51.100.2".to_owned(),
+            created_at: base_now - Duration::seconds(100),
+            last_used_at: Some(base_now),
+            revocation_generation: 0,
+        });
+
+        fs::create_dir_all(journal.path().join("mcp-endpoint")).unwrap();
+        fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+
+        assert!(matches!(
+            store.register_client(
+                "https://client.example/source_a_refused.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            ),
+            Err(OAuthStoreError::Quota)
+        ));
+
+        assert!(
+            store
+                .lookup_client_by_cimd_url("https://client.example/source_b_idle.json")
+                .unwrap()
+                .is_some(),
+            "B's idle client is still present"
+        );
     }
 }

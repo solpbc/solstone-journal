@@ -62,6 +62,7 @@ fn authorization_code(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpR
         redirect_uri,
         resource,
         code_verifier,
+        &oauth.binding(),
     ) {
         Ok(tokens) => token_response(tokens),
         Err(
@@ -90,7 +91,10 @@ fn refresh_token(pairs: &[(String, String)], oauth: &OAuthRuntime) -> HttpRespon
     {
         return oauth_error("invalid_request");
     }
-    match oauth.store.refresh_grant(refresh, client_id) {
+    match oauth
+        .store
+        .refresh_grant(refresh, client_id, &oauth.binding())
+    {
         Ok(tokens) => token_response(tokens),
         Err(
             OAuthStoreError::InvalidToken
@@ -224,7 +228,7 @@ mod tests {
             .unwrap();
         oauth
             .store
-            .complete_pairing(&transaction, &pairing.code)
+            .complete_pairing(&transaction, &pairing.code, &oauth.binding())
             .unwrap()
             .code
     }
@@ -247,8 +251,14 @@ mod tests {
         let access = body["access_token"].as_str().unwrap();
         let refresh = body["refresh_token"].as_str().unwrap();
         assert_eq!(body["token_type"], "Bearer");
-        oauth.store.verify_access_token(access).unwrap();
-        oauth.store.refresh_grant(refresh, CIMD_URL).unwrap();
+        oauth
+            .store
+            .verify_access_token(access, &oauth.binding())
+            .unwrap();
+        oauth
+            .store
+            .refresh_grant(refresh, CIMD_URL, &oauth.binding())
+            .unwrap();
     }
 
     #[test]
@@ -275,7 +285,8 @@ mod tests {
                     CIMD_URL,
                     REDIRECT,
                     "https://mcp.test/mcp",
-                    short
+                    short,
+                    &oauth.binding(),
                 )
                 .is_ok(),
             "store hash would have accepted the short verifier"
@@ -295,6 +306,7 @@ mod tests {
                 REDIRECT,
                 "https://mcp.test/mcp",
                 VERIFIER,
+                &oauth.binding(),
             )
             .unwrap();
         let bad = super::token(
@@ -349,5 +361,173 @@ mod tests {
         assert_eq!(encoded.status, 400);
         assert_eq!(header(&encoded, "Cache-Control"), Some("no-store"));
         assert!(!journal.path().join("mcp-endpoint/oauth.json").exists());
+    }
+
+    #[test]
+    fn refresh_without_resource_fails_across_runtimes_and_survives_on_issuer() {
+        let journal = journal_root();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        // Direction 1: Unbound -> Bound
+        let code_u = issue_code(&unbound, VERIFIER);
+        let resp_u = super::token(
+            &form_request(&format!(
+                "grant_type=authorization_code&code={code_u}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={CIMD_URL}&resource=https://mcp.test/mcp"
+            )),
+            &unbound,
+        );
+        assert_eq!(resp_u.status, 200);
+        let refresh_u = json_body(&resp_u)["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let fail_bound = super::token(
+            &form_request(&format!(
+                "grant_type=refresh_token&refresh_token={refresh_u}&client_id={CIMD_URL}"
+            )),
+            &bound,
+        );
+        assert_eq!(
+            fail_bound.status, 400,
+            "actual cross-runtime refresh status on bound is {}",
+            fail_bound.status
+        );
+        assert_eq!(json_body(&fail_bound)["error"], "invalid_grant");
+
+        let ok_unbound = super::token(
+            &form_request(&format!(
+                "grant_type=refresh_token&refresh_token={refresh_u}&client_id={CIMD_URL}"
+            )),
+            &unbound,
+        );
+        assert_eq!(ok_unbound.status, 200);
+
+        // Direction 2: Bound -> Unbound
+        let code_b = issue_code_bound(&bound, VERIFIER);
+        let resp_b = super::token(
+            &form_request(&format!(
+                "grant_type=authorization_code&code={code_b}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={CIMD_URL}&resource=http://127.0.0.1:7659/mcp"
+            )),
+            &bound,
+        );
+        assert_eq!(resp_b.status, 200);
+        let refresh_b = json_body(&resp_b)["refresh_token"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+
+        let fail_unbound = super::token(
+            &form_request(&format!(
+                "grant_type=refresh_token&refresh_token={refresh_b}&client_id={CIMD_URL}"
+            )),
+            &unbound,
+        );
+        assert_eq!(
+            fail_unbound.status, 400,
+            "actual cross-runtime refresh status on unbound is {}",
+            fail_unbound.status
+        );
+        assert_eq!(json_body(&fail_unbound)["error"], "invalid_grant");
+
+        let ok_bound = super::token(
+            &form_request(&format!(
+                "grant_type=refresh_token&refresh_token={refresh_b}&client_id={CIMD_URL}"
+            )),
+            &bound,
+        );
+        assert_eq!(ok_bound.status, 200);
+    }
+
+    #[test]
+    fn code_redeem_with_issuer_resource_fails_across_runtimes_and_burns_code() {
+        let journal = journal_root();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        // Direction 1: issued on unbound (A), redeemed on bound (B) with resource = A's resource
+        let code_a = issue_code(&unbound, VERIFIER);
+        let cross_b = super::token(
+            &form_request(&format!(
+                "grant_type=authorization_code&code={code_a}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={CIMD_URL}&resource=https://mcp.test/mcp"
+            )),
+            &bound,
+        );
+        assert_eq!(
+            cross_b.status, 400,
+            "actual redeem status across runtimes on bound is {}",
+            cross_b.status
+        );
+        assert_eq!(json_body(&cross_b)["error"], "invalid_grant");
+
+        let retry_a = super::token(
+            &form_request(&format!(
+                "grant_type=authorization_code&code={code_a}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={CIMD_URL}&resource=https://mcp.test/mcp"
+            )),
+            &unbound,
+        );
+        assert_eq!(
+            retry_a.status, 400,
+            "second redeem on issuing runtime should fail because code is burned, got {}",
+            retry_a.status
+        );
+        assert_eq!(json_body(&retry_a)["error"], "invalid_grant");
+
+        // Direction 2: issued on bound (B), redeemed on unbound (A) with resource = B's resource
+        let code_b = issue_code_bound(&bound, VERIFIER);
+        let cross_a = super::token(
+            &form_request(&format!(
+                "grant_type=authorization_code&code={code_b}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={CIMD_URL}&resource=http://127.0.0.1:7659/mcp"
+            )),
+            &unbound,
+        );
+        assert_eq!(
+            cross_a.status, 400,
+            "actual redeem status across runtimes on unbound is {}",
+            cross_a.status
+        );
+        assert_eq!(json_body(&cross_a)["error"], "invalid_grant");
+
+        let retry_b = super::token(
+            &form_request(&format!(
+                "grant_type=authorization_code&code={code_b}&redirect_uri={REDIRECT}&code_verifier={VERIFIER}&client_id={CIMD_URL}&resource=http://127.0.0.1:7659/mcp"
+            )),
+            &bound,
+        );
+        assert_eq!(
+            retry_b.status, 400,
+            "second redeem on issuing runtime should fail because code is burned, got {}",
+            retry_b.status
+        );
+        assert_eq!(json_body(&retry_b)["error"], "invalid_grant");
+    }
+
+    fn issue_code_bound(oauth: &OAuthRuntime, verifier: &str) -> String {
+        let client_id = oauth
+            .store
+            .register_client(CIMD_URL, vec![REDIRECT.to_owned()], None, "198.51.100.10")
+            .unwrap()
+            .id;
+        let challenge = pkce_challenge(verifier);
+        let transaction = oauth
+            .store
+            .create_transaction(
+                &client_id,
+                REDIRECT,
+                "http://127.0.0.1:7659/mcp",
+                "http://127.0.0.1:7659",
+                &challenge,
+                "S256",
+                None,
+                "198.51.100.10",
+            )
+            .unwrap();
+        let pairing = oauth.store.generate_pairing_code().unwrap();
+        oauth
+            .store
+            .complete_pairing(&transaction, &pairing.code, &oauth.binding())
+            .unwrap()
+            .code
     }
 }

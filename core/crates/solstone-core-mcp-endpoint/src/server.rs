@@ -237,7 +237,13 @@ fn handle_mcp(
     journal_root: &Path,
     oauth: &OAuthRuntime,
 ) -> HttpResponse {
-    let verified = match authenticate(request, token_store, &oauth.store, &oauth.resource_origin) {
+    let verified = match authenticate(
+        request,
+        token_store,
+        &oauth.store,
+        &oauth.binding(),
+        &oauth.resource_origin,
+    ) {
         Ok(verified) => verified,
         Err(response) => return response,
     };
@@ -264,6 +270,7 @@ fn authenticate(
     request: &HttpRequest,
     token_store: &TokenStore,
     oauth_store: &OAuthStore,
+    binding: &crate::oauth::RuntimeBinding,
     resource_origin: &str,
 ) -> Result<VerifiedToken, HttpResponse> {
     let authorization = request
@@ -283,8 +290,10 @@ fn authenticate(
         ));
     }
     match token_store.verify(token) {
+        // Static bearer keys are minted by the owner and accepted by every listener.
         Ok(verified) => Ok(verified),
-        Err(TokenStoreError::InvalidToken) => match oauth_store.verify_access_token(token) {
+        Err(TokenStoreError::InvalidToken) => match oauth_store.verify_access_token(token, binding)
+        {
             Ok(verified) => Ok(verified),
             Err(crate::oauth::store::OAuthStoreError::InvalidToken) => Err(mcp_unauthorized(
                 resource_origin,
@@ -2316,7 +2325,7 @@ mod tests {
         let verified_oauth = server
             .oauth
             .store
-            .verify_access_token(&access)
+            .verify_access_token(&access, &server.oauth.binding())
             .expect("verifies oauth access token");
         server.grant_permission(&verified_oauth.id);
 
@@ -2778,9 +2787,15 @@ mod tests {
 
 #[cfg(all(test, not(feature = "full-tests")))]
 mod unit_tests {
+    use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sha2::{Digest, Sha256};
     use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
     use super::PrefixedStream;
+    use crate::http1::{HttpMethod, HttpRequest};
+    use crate::oauth::OAuthRuntime;
+    use crate::session::SessionTable;
+    use crate::tokens::TokenStore;
 
     #[tokio::test]
     async fn prefixed_stream_replays_previously_read_bytes_before_the_socket() {
@@ -2798,5 +2813,218 @@ mod unit_tests {
             .await
             .expect("prefixed stream reads");
         assert_eq!(bytes, b"preface-tailsocket-bytes");
+    }
+
+    #[test]
+    fn handle_mcp_cross_runtime_and_unknown_bearer_auth_matches() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-server-test-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        let unbound_client = unbound
+            .store
+            .register_client(
+                "https://client.example/cimd.json",
+                vec!["http://127.0.0.1/callback".to_owned()],
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"pkce-verifier"));
+        let unbound_tx = unbound
+            .store
+            .create_transaction(
+                &unbound_client.id,
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let unbound_pairing = unbound.store.generate_pairing_code().unwrap();
+        let unbound_auth = unbound
+            .store
+            .complete_pairing(&unbound_tx, &unbound_pairing.code, &unbound.binding())
+            .unwrap();
+        let unbound_tokens = unbound
+            .store
+            .redeem_authorization_code(
+                &unbound_auth.code,
+                "https://client.example/cimd.json",
+                "http://127.0.0.1/callback",
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &unbound.binding(),
+            )
+            .unwrap();
+
+        let bound_pairing = bound.store.generate_pairing_code().unwrap();
+        let bound_tx = bound
+            .store
+            .create_transaction(
+                &unbound_client.id,
+                "http://127.0.0.1/callback",
+                "http://127.0.0.1:7659/mcp",
+                "http://127.0.0.1:7659",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let bound_auth = bound
+            .store
+            .complete_pairing(&bound_tx, &bound_pairing.code, &bound.binding())
+            .unwrap();
+        let bound_tokens = bound
+            .store
+            .redeem_authorization_code(
+                &bound_auth.code,
+                "https://client.example/cimd.json",
+                "http://127.0.0.1/callback",
+                "http://127.0.0.1:7659/mcp",
+                "pkce-verifier",
+                &bound.binding(),
+            )
+            .unwrap();
+
+        let token_store = TokenStore::open(journal.path());
+        let sessions = SessionTable::new();
+
+        // 1. Unbound runtime evaluates bound token vs random unknown bearer
+        let mut req_cross_to_unbound = HttpRequest::from_test_parts(
+            HttpMethod::Post,
+            vec![(
+                "authorization".to_owned(),
+                format!("Bearer {}", bound_tokens.access_token),
+            )],
+            Vec::new(),
+        );
+        req_cross_to_unbound.target = "/mcp".to_owned();
+
+        let mut req_unknown_to_unbound = HttpRequest::from_test_parts(
+            HttpMethod::Post,
+            vec![(
+                "authorization".to_owned(),
+                "Bearer random-unknown-bearer-1".to_owned(),
+            )],
+            Vec::new(),
+        );
+        req_unknown_to_unbound.target = "/mcp".to_owned();
+
+        let resp_cross = super::handle_mcp(
+            &req_cross_to_unbound,
+            &token_store,
+            &sessions,
+            journal.path(),
+            &unbound,
+        );
+        let resp_unknown = super::handle_mcp(
+            &req_unknown_to_unbound,
+            &token_store,
+            &sessions,
+            journal.path(),
+            &unbound,
+        );
+
+        assert_eq!(
+            resp_cross.status, 401,
+            "actual cross-runtime status on unbound runtime is {}",
+            resp_cross.status
+        );
+        assert_eq!(resp_cross.status, resp_unknown.status);
+        assert_eq!(resp_cross.body, resp_unknown.body);
+        assert_eq!(resp_cross.extra_headers, resp_unknown.extra_headers);
+
+        // 2. Bound runtime evaluates unbound token vs random unknown bearer
+        let mut req_cross_to_bound = HttpRequest::from_test_parts(
+            HttpMethod::Post,
+            vec![(
+                "authorization".to_owned(),
+                format!("Bearer {}", unbound_tokens.access_token),
+            )],
+            Vec::new(),
+        );
+        req_cross_to_bound.target = "/mcp".to_owned();
+
+        let mut req_unknown_to_bound = HttpRequest::from_test_parts(
+            HttpMethod::Post,
+            vec![(
+                "authorization".to_owned(),
+                "Bearer random-unknown-bearer-2".to_owned(),
+            )],
+            Vec::new(),
+        );
+        req_unknown_to_bound.target = "/mcp".to_owned();
+
+        let resp_cross_b = super::handle_mcp(
+            &req_cross_to_bound,
+            &token_store,
+            &sessions,
+            journal.path(),
+            &bound,
+        );
+        let resp_unknown_b = super::handle_mcp(
+            &req_unknown_to_bound,
+            &token_store,
+            &sessions,
+            journal.path(),
+            &bound,
+        );
+
+        assert_eq!(
+            resp_cross_b.status, 401,
+            "actual cross-runtime status on bound runtime is {}",
+            resp_cross_b.status
+        );
+        assert_eq!(resp_cross_b.status, resp_unknown_b.status);
+        assert_eq!(resp_cross_b.body, resp_unknown_b.body);
+        assert_eq!(resp_cross_b.extra_headers, resp_unknown_b.extra_headers);
+    }
+
+    #[test]
+    fn static_bearer_key_accepted_on_both_binding_and_unbound_runtimes() {
+        let journal = tempfile::Builder::new()
+            .prefix("solstone-server-test-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        let token_store = TokenStore::open(journal.path());
+        let minted = token_store.create("test-bearer").unwrap();
+
+        let req = HttpRequest::from_test_parts(
+            HttpMethod::Post,
+            vec![(
+                "authorization".to_owned(),
+                format!("Bearer {}", minted.token),
+            )],
+            Vec::new(),
+        );
+
+        let unbound_res = super::authenticate(
+            &req,
+            &token_store,
+            &unbound.store,
+            &unbound.binding(),
+            &unbound.resource_origin,
+        );
+        assert!(unbound_res.is_ok());
+
+        let bound_res = super::authenticate(
+            &req,
+            &token_store,
+            &bound.store,
+            &bound.binding(),
+            &bound.resource_origin,
+        );
+        assert!(bound_res.is_ok());
     }
 }

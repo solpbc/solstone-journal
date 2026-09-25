@@ -266,6 +266,7 @@ pub(crate) fn post_authorize(
         transaction_id,
         pairing_code,
         Some(permission),
+        &oauth.binding(),
     ) {
         Ok(issued) => success_redirect(&issued),
         Err(OAuthStoreError::PairingMismatch) => {
@@ -382,7 +383,7 @@ fn query_from_target(target: &str) -> &str {
 }
 
 fn canonical_resource(oauth: &OAuthRuntime) -> String {
-    format!("{}/mcp", oauth.resource_origin)
+    oauth.binding().canonical().to_owned()
 }
 
 fn html_escape(value: &str) -> String {
@@ -618,6 +619,7 @@ mod tests {
     use super::{comfortaa, design_css, get_authorize_with_io, post_authorize};
     use crate::http1::{HttpMethod, HttpRequest, HttpResponse};
     use crate::oauth::cimd::CimdAttemptIo;
+    use crate::oauth::rate_limit::PairingFailureRecord;
     use crate::oauth::urlparse::query_value_encode;
     use crate::oauth::{AUTHORIZE_MAX_BODY_BYTES, OAuthRuntime};
     use crate::tokens::SystemRandomSource;
@@ -1037,6 +1039,7 @@ mod tests {
                 REDIRECT,
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &oauth.binding(),
             )
             .unwrap();
         assert!(!tokens.access_token.is_empty());
@@ -1156,7 +1159,9 @@ mod tests {
             )
             .unwrap();
         assert!(matches!(
-            oauth.store.complete_pairing(&transaction, &pairing.code),
+            oauth
+                .store
+                .complete_pairing(&transaction, &pairing.code, &oauth.binding()),
             Err(crate::oauth::store::OAuthStoreError::PairingLocked)
         ));
     }
@@ -1246,5 +1251,232 @@ mod tests {
         assert!(!oauth.pairing_limiter.is_limited(overflow, old_generation));
         let fresh = IpAddr::V4(Ipv4Addr::new(203, 0, 113, 9));
         assert!(!oauth.pairing_limiter.is_limited(fresh, new_generation));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn post_authorize_on_wrong_runtime_matches_unknown_transaction_without_mutating_state() {
+        let journal = journal_root();
+        let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
+        let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
+
+        let client = unbound
+            .store
+            .register_client(CIMD_URL, vec![REDIRECT.to_owned()], None, "192.0.2.1")
+            .unwrap();
+        let challenge = pkce_challenge();
+        let tx = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+
+        let pairing = unbound.store.generate_pairing_code().unwrap();
+
+        let unknown_resp = post_authorize(
+            &post_request(
+                "transaction_id=unknown-id&pairing_code=00000000&scope=whole_journal&category=transcripts",
+            ),
+            SOURCE,
+            &bound,
+        );
+
+        // 1. Right code on wrong runtime matches unknown transaction
+        let resp_right = post_authorize(
+            &post_request(&format!(
+                "transaction_id={tx}&pairing_code={}&scope=whole_journal&category=transcripts",
+                pairing.code
+            )),
+            SOURCE,
+            &bound,
+        );
+        assert_eq!(resp_right.status, unknown_resp.status);
+        assert_eq!(resp_right.body, unknown_resp.body);
+        assert_eq!(resp_right.extra_headers, unknown_resp.extra_headers);
+
+        // 2. Wrong code on wrong runtime matches unknown transaction
+        let resp_wrong = post_authorize(
+            &post_request(&format!(
+                "transaction_id={tx}&pairing_code=00000000&scope=whole_journal&category=transcripts"
+            )),
+            SOURCE,
+            &bound,
+        );
+        assert_eq!(resp_wrong.status, unknown_resp.status);
+        assert_eq!(resp_wrong.body, unknown_resp.body);
+        assert_eq!(resp_wrong.extra_headers, unknown_resp.extra_headers);
+
+        // failure_count stays 0 and pairing is not locked on bound
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+        let file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let pending = file["pending"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["transaction_id"] == tx)
+            .unwrap();
+        assert_eq!(pending["failure_count"], 0);
+        assert_eq!(file["pairing"]["locked"], false);
+
+        // record_failure 20 times on bound's limiter; 20th is JustTripped
+        let generation = bound.store.pairing_generation().unwrap();
+        for _ in 0..19 {
+            assert_eq!(
+                bound.pairing_limiter.record_failure(SOURCE, generation),
+                PairingFailureRecord::Counted
+            );
+        }
+        assert_eq!(
+            bound.pairing_limiter.record_failure(SOURCE, generation),
+            PairingFailureRecord::JustTripped
+        );
+
+        // Transaction completes on unbound
+        let auth = unbound
+            .store
+            .complete_pairing(&tx, &pairing.code, &unbound.binding())
+            .unwrap();
+
+        // 3. Already-issued code on wrong runtime returns unknown transaction page
+        let resp_already = post_authorize(
+            &post_request(&format!(
+                "transaction_id={tx}&pairing_code={}&scope=whole_journal&category=transcripts",
+                pairing.code
+            )),
+            SOURCE,
+            &bound,
+        );
+        assert_eq!(resp_already.status, unknown_resp.status);
+        assert_eq!(resp_already.body, unknown_resp.body);
+        assert_eq!(resp_already.extra_headers, unknown_resp.extra_headers);
+
+        // Still redeems on unbound
+        let tokens = unbound
+            .store
+            .redeem_authorization_code(
+                &auth.code,
+                CIMD_URL,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "pkce-verifier",
+                &unbound.binding(),
+            )
+            .unwrap();
+        assert!(!tokens.access_token.is_empty());
+
+        // 4. No active pairing on wrong runtime: matches unknown transaction page
+        let tx2 = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        assert!(bound.store.current_pairing_code().unwrap().is_none());
+        let resp_no_pairing = post_authorize(
+            &post_request(&format!(
+                "transaction_id={tx2}&pairing_code=00000000&scope=whole_journal&category=transcripts"
+            )),
+            SOURCE,
+            &bound,
+        );
+        assert_eq!(resp_no_pairing.status, unknown_resp.status);
+        assert_eq!(resp_no_pairing.body, unknown_resp.body);
+        assert_eq!(resp_no_pairing.extra_headers, unknown_resp.extra_headers);
+
+        let unbound_p2 = unbound.store.generate_pairing_code().unwrap();
+        assert!(
+            unbound
+                .store
+                .complete_pairing(&tx2, &unbound_p2.code, &unbound.binding())
+                .is_ok()
+        );
+
+        // 5. Pairing locked on wrong runtime: matches unknown transaction page, not locked page
+        let tx3 = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let _bound_p3 = bound.store.generate_pairing_code().unwrap();
+        bound.store.lock_pairing_code().unwrap();
+        assert!(bound.store.current_pairing_code().unwrap().unwrap().locked);
+
+        let resp_locked = post_authorize(
+            &post_request(&format!(
+                "transaction_id={tx3}&pairing_code=00000000&scope=whole_journal&category=transcripts"
+            )),
+            SOURCE,
+            &bound,
+        );
+        assert_eq!(resp_locked.status, unknown_resp.status);
+        assert_eq!(resp_locked.body, unknown_resp.body);
+        assert_eq!(resp_locked.extra_headers, unknown_resp.extra_headers);
+        assert!(bound.store.current_pairing_code().unwrap().unwrap().locked);
+
+        // 6. failure_count written to 5 directly in oauth.json, posted to wrong runtime -> row still present
+        let tx4 = unbound
+            .store
+            .create_transaction(
+                &client.id,
+                REDIRECT,
+                "https://mcp.test/mcp",
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                None,
+                "192.0.2.1",
+            )
+            .unwrap();
+        let mut file: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        let p4 = file["pending"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["transaction_id"] == tx4)
+            .unwrap();
+        p4["failure_count"] = serde_json::json!(5);
+        std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+
+        let _ = post_authorize(
+            &post_request(&format!(
+                "transaction_id={tx4}&pairing_code=00000000&scope=whole_journal&category=transcripts"
+            )),
+            SOURCE,
+            &bound,
+        );
+
+        let file_after: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert!(
+            file_after["pending"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|p| p["transaction_id"] == tx4)
+        );
     }
 }

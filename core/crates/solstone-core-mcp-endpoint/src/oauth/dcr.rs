@@ -745,6 +745,9 @@ mod tests {
     }
 
     fn redeem(store: &OAuthStore, client_record_id: &str, client_id: &str) -> String {
+        let binding = crate::oauth::RuntimeBinding::Unbound {
+            canonical: "https://mcp.test/mcp".to_owned(),
+        };
         let pairing = store.generate_pairing_code().unwrap();
         let transaction = store
             .create_transaction(
@@ -758,7 +761,9 @@ mod tests {
                 "192.0.2.1",
             )
             .unwrap();
-        let issued = store.complete_pairing(&transaction, &pairing.code).unwrap();
+        let issued = store
+            .complete_pairing(&transaction, &pairing.code, &binding)
+            .unwrap();
         store
             .redeem_authorization_code(
                 &issued.code,
@@ -766,6 +771,7 @@ mod tests {
                 "http://127.0.0.1/callback",
                 "https://mcp.test/mcp",
                 "pkce-verifier",
+                &binding,
             )
             .unwrap()
             .access_token
@@ -1092,8 +1098,14 @@ mod tests {
             .unwrap();
         let cimd_token = redeem(&oauth.store, &cimd_record.id, &cimd_id);
         let classic_token = redeem(&oauth.store, &classic_record.id, &classic_id);
-        let cimd_verified = oauth.store.verify_access_token(&cimd_token).unwrap();
-        let classic_verified = oauth.store.verify_access_token(&classic_token).unwrap();
+        let cimd_verified = oauth
+            .store
+            .verify_access_token(&cimd_token, &oauth.binding())
+            .unwrap();
+        let classic_verified = oauth
+            .store
+            .verify_access_token(&classic_token, &oauth.binding())
+            .unwrap();
         assert_eq!(cimd_verified.agent_identity, CIMD_URL);
         assert_eq!(classic_verified.agent_identity, classic_id);
         assert!(classic_verified.agent_identity.starts_with("oauth:dcr:"));
