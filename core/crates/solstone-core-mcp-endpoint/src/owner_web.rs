@@ -29,6 +29,7 @@ use solstone_core_journal_config::{
 use solstone_core_journal_config_write::{
     JournalConfigMutation, LockOptions, mutate_journal_config,
 };
+use x509_parser::prelude::parse_x509_certificate;
 
 pub fn owner_routes(journal_root: PathBuf) -> Router {
     let journal = Arc::new(journal_root);
@@ -37,6 +38,7 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
         .route("/app/agents/api/capability", put(set_capability))
         .route("/app/agents/api/local-door", put(set_local_door))
         .route("/app/agents/api/lan-door", put(set_lan_door))
+        .route("/app/agents/api/lan-door/ca.pem", get(lan_door_ca_pem))
         .route(
             "/app/agents/api/pairing",
             post(generate_pairing).delete(revoke_pairing),
@@ -205,6 +207,7 @@ pub(crate) fn state_value_with_iface(
             .map_or("turning_on", |state| state.status.as_str())
     };
     let local_door_enabled_flag = solstone_core_journal_config::local_door_enabled(&config);
+    let lan_door_enabled_flag = solstone_core_journal_config::lan_door_enabled(&config);
     let (listening, reason) = match crate::local_door::read_local_door_state(root) {
         Some(state) => {
             let now = Utc::now();
@@ -242,124 +245,236 @@ pub(crate) fn state_value_with_iface(
         local_door["reason"] = Value::String(reason);
     }
 
-    let lan_door_enabled_flag = solstone_core_journal_config::lan_door_enabled(&config);
-    let (lan_listening, lan_reason, lan_fingerprint, fresh_state) =
-        match crate::lan_door::read_lan_door_state(root) {
-            Some(state) => {
-                let now = Utc::now();
-                let age = now.signed_duration_since(state.observed_at);
-                #[cfg(test)]
-                let window_valid = if let Some(custom) = *TEST_READER_WINDOW.lock().unwrap() {
-                    age >= custom.0 && age <= custom.1
-                } else {
-                    age >= Duration::seconds(-5) && age <= Duration::seconds(35)
-                };
-                #[cfg(not(test))]
-                let window_valid = age >= Duration::seconds(-5) && age <= Duration::seconds(35);
-
-                if window_valid {
-                    if state.listening {
-                        (true, None, state.fingerprint.clone(), Some(state))
-                    } else {
-                        (
-                            false,
-                            state
-                                .reason
-                                .clone()
-                                .or_else(|| Some("not_running".to_string())),
-                            None,
-                            Some(state),
-                        )
-                    }
-                } else if !lan_door_enabled_flag {
-                    (false, Some("disabled".to_string()), None, None)
-                } else {
-                    (false, Some("not_running".to_string()), None, None)
-                }
-            }
-            None => {
-                if !lan_door_enabled_flag {
-                    (false, Some("disabled".to_string()), None, None)
-                } else {
-                    (false, Some("not_running".to_string()), None, None)
-                }
-            }
-        };
-
-    let iface_endpoints = iface_source
-        .enumerate()
-        .map(|raw| solstone_core_sol_link::pairing::addresses::classify_interface_addresses(&raw))
-        .unwrap_or_default();
-    let mut admitted_ips: Vec<std::net::IpAddr> = Vec::new();
-    for ep in iface_endpoints {
-        if crate::lan_door::is_admitted_lan_bind_endpoint(&ep) && !admitted_ips.contains(&ep.ip) {
-            admitted_ips.push(ep.ip);
-        }
-    }
-
-    let mut addresses_json = Vec::new();
-    let mut urls = Vec::new();
-    for ip in admitted_ips {
-        let addr_str = ip.to_string();
-        let url_str = match ip {
-            std::net::IpAddr::V4(v4) => {
-                format!(
-                    "https://{v4}:{}/mcp",
-                    solstone_core_journal_config::MCP_LAN_DOOR_PORT
-                )
-            }
-            std::net::IpAddr::V6(v6) => {
-                format!(
-                    "https://[{v6}]:{}/mcp",
-                    solstone_core_journal_config::MCP_LAN_DOOR_PORT
-                )
-            }
-        };
-        let (addr_listening, addr_reason) = if let Some(fresh) = &fresh_state {
-            if let Some(entry) = fresh
-                .addresses
-                .as_ref()
-                .and_then(|addrs| addrs.iter().find(|a| a.address == addr_str))
+    // Read CA fingerprint if lan-ca.pem is a valid single public cert
+    let ca_pem_path = root.join(crate::lan_door::LAN_CA_PEM_PATH);
+    let (ca_fingerprint, ca_cert_der) =
+        if let Ok(ca_content) = std::fs::read_to_string(&ca_pem_path) {
+            if !ca_content.is_empty()
+                && !ca_content.contains("PRIVATE KEY")
+                && let Ok(entries) = pem::parse_many(&ca_content)
+                && entries.len() == 1
+                && entries[0].tag() == "CERTIFICATE"
             {
-                (entry.listening, entry.reason.clone())
+                let der = entries[0].contents().to_vec();
+                if parse_x509_certificate(&der).is_ok() {
+                    let fp = crate::lan_door::compute_cert_fingerprint(&der);
+                    (Some(fp), Some(der))
+                } else {
+                    (None, None)
+                }
             } else {
-                (
-                    false,
-                    fresh
-                        .reason
-                        .clone()
-                        .or_else(|| Some("not_running".to_string())),
-                )
+                (None, None)
             }
         } else {
-            (false, lan_reason.clone())
+            (None, None)
         };
 
-        let mut addr_obj = json!({
-            "address": addr_str,
-            "url": url_str.clone(),
-            "listening": addr_listening,
-        });
-        if !addr_listening && let Some(reason) = addr_reason {
-            addr_obj["reason"] = Value::String(reason);
-        }
-        addresses_json.push(addr_obj);
-        urls.push(url_str);
-    }
+    let ca_x509_opt = ca_cert_der
+        .as_ref()
+        .and_then(|der| parse_x509_certificate(der).ok().map(|(_, x)| x));
 
-    let mut lan_door = json!({
-        "enabled": lan_door_enabled_flag,
-        "listening": lan_listening,
-        "port": solstone_core_journal_config::MCP_LAN_DOOR_PORT,
-        "addresses": addresses_json,
-        "urls": urls,
-    });
-    if let Some(reason) = lan_reason {
-        lan_door["reason"] = Value::String(reason);
-    }
-    if let Some(fingerprint) = lan_fingerprint {
-        lan_door["fingerprint"] = Value::String(fingerprint);
-    }
+    // Read Leaf fingerprint and SANs if door is enabled and leaf chains to CA
+    let (leaf_fingerprint, leaf_sans) = if lan_door_enabled_flag && ca_x509_opt.is_some() {
+        let leaf_pem_path = root.join(crate::lan_door::LAN_LEAF_PEM_PATH);
+        if let Ok(leaf_content) = std::fs::read_to_string(&leaf_pem_path) {
+            if let Ok(entries) = pem::parse_many(&leaf_content) {
+                let cert_entry = entries.iter().find(|e| e.tag() == "CERTIFICATE");
+                let key_entry = entries
+                    .iter()
+                    .find(|e| e.tag() == "PRIVATE KEY" || e.tag() == "EC PRIVATE KEY");
+                if entries.len() == 2
+                    && let (Some(cert), Some(_key)) = (cert_entry, key_entry)
+                    && let Ok((_, leaf_x509)) = parse_x509_certificate(cert.contents())
+                    && leaf_x509
+                        .verify_signature(
+                            ca_x509_opt
+                                .as_ref()
+                                .map(|ca| &ca.tbs_certificate.subject_pki),
+                        )
+                        .is_ok()
+                {
+                    let now = Utc::now().timestamp();
+                    let not_before = leaf_x509.validity().not_before.timestamp();
+                    let not_after = leaf_x509.validity().not_after.timestamp();
+                    if not_before <= now && now <= not_after {
+                        let fp = crate::lan_door::compute_cert_fingerprint(cert.contents());
+                        let sans = crate::lan_door::parse_cert_san_ips(&leaf_x509);
+                        (Some(fp), Some(sans))
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        }
+    } else {
+        (None, None)
+    };
+
+    let lan_door_state_res = crate::lan_door::read_lan_door_state(root);
+    let (_lan_listening, lan_reason, fresh_state) = match lan_door_state_res {
+        Some(state) => {
+            let now = Utc::now();
+            let age = now.signed_duration_since(state.observed_at);
+            #[cfg(test)]
+            let window_valid = if let Some(custom) = *TEST_READER_WINDOW.lock().unwrap() {
+                age >= custom.0 && age <= custom.1
+            } else {
+                age >= Duration::seconds(-5) && age <= Duration::seconds(35)
+            };
+            #[cfg(not(test))]
+            let window_valid = age >= Duration::seconds(-5) && age <= Duration::seconds(35);
+
+            if window_valid {
+                if state.listening {
+                    (true, None, Some(state))
+                } else {
+                    (
+                        false,
+                        state
+                            .reason
+                            .clone()
+                            .or_else(|| Some("not_running".to_string())),
+                        Some(state),
+                    )
+                }
+            } else if !lan_door_enabled_flag {
+                (false, Some("disabled".to_string()), None)
+            } else {
+                (false, Some("not_running".to_string()), None)
+            }
+        }
+        None => {
+            if !lan_door_enabled_flag {
+                (false, Some("disabled".to_string()), None)
+            } else {
+                (false, Some("not_running".to_string()), None)
+            }
+        }
+    };
+
+    let (admitted_ips, enum_error) = match iface_source.enumerate() {
+        Ok(raw) => {
+            let endpoints =
+                solstone_core_sol_link::pairing::addresses::classify_interface_addresses(&raw);
+            let mut ips = Vec::new();
+            for ep in endpoints {
+                if crate::lan_door::is_admitted_lan_bind_endpoint(&ep) && !ips.contains(&ep.ip) {
+                    ips.push(ep.ip);
+                }
+            }
+            (ips, false)
+        }
+        Err(_) => (Vec::new(), true),
+    };
+
+    let lan_door = if enum_error {
+        let mut obj = json!({
+            "enabled": lan_door_enabled_flag,
+            "listening": false,
+            "reason": "enumeration_failed",
+            "port": solstone_core_journal_config::MCP_LAN_DOOR_PORT,
+            "addresses": [],
+            "urls": [],
+        });
+        if let Some(ca_fp) = ca_fingerprint {
+            obj["ca_fingerprint"] = Value::String(ca_fp);
+        }
+        obj
+    } else {
+        let mut addresses_json = Vec::new();
+        let mut urls = Vec::new();
+        for ip in admitted_ips {
+            let addr_str = ip.to_string();
+            let url_str = match ip {
+                std::net::IpAddr::V4(v4) => {
+                    format!(
+                        "https://{v4}:{}/mcp",
+                        solstone_core_journal_config::MCP_LAN_DOOR_PORT
+                    )
+                }
+                std::net::IpAddr::V6(v6) => {
+                    format!(
+                        "https://[{v6}]:{}/mcp",
+                        solstone_core_journal_config::MCP_LAN_DOOR_PORT
+                    )
+                }
+            };
+            let (addr_state_listening, addr_state_reason) = if let Some(fresh) = &fresh_state {
+                if let Some(entry) = fresh
+                    .addresses
+                    .as_ref()
+                    .and_then(|addrs| addrs.iter().find(|a| a.address == addr_str))
+                {
+                    (entry.listening, entry.reason.clone())
+                } else {
+                    (
+                        false,
+                        fresh
+                            .reason
+                            .clone()
+                            .or_else(|| Some("not_running".to_string())),
+                    )
+                }
+            } else {
+                (false, lan_reason.clone())
+            };
+
+            let folded_ip = crate::lan_door::fold_ipv4_mapped(ip);
+            let addr_listening = addr_state_listening
+                && leaf_sans
+                    .as_ref()
+                    .is_some_and(|sans| sans.contains(&folded_ip));
+
+            let mut addr_obj = json!({
+                "address": addr_str,
+                "url": url_str.clone(),
+                "listening": addr_listening,
+            });
+            if !addr_listening {
+                let reason = if addr_state_listening {
+                    "tls_unavailable".to_string()
+                } else {
+                    addr_state_reason
+                        .or_else(|| lan_reason.clone())
+                        .unwrap_or_else(|| "not_running".to_string())
+                };
+                addr_obj["reason"] = Value::String(reason);
+            }
+            addresses_json.push(addr_obj);
+            urls.push(url_str);
+        }
+
+        let any_listening = addresses_json.iter().any(|a| a["listening"] == true);
+        let mut obj = json!({
+            "enabled": lan_door_enabled_flag,
+            "listening": any_listening,
+            "port": solstone_core_journal_config::MCP_LAN_DOOR_PORT,
+            "addresses": addresses_json,
+            "urls": urls,
+        });
+        if any_listening {
+            if let Some(fp) = leaf_fingerprint {
+                obj["fingerprint"] = Value::String(fp);
+            }
+        } else {
+            let top_reason = if !lan_door_enabled_flag {
+                "disabled".to_string()
+            } else {
+                lan_reason.unwrap_or_else(|| "not_running".to_string())
+            };
+            obj["reason"] = Value::String(top_reason);
+        }
+        if let Some(ca_fp) = ca_fingerprint {
+            obj["ca_fingerprint"] = Value::String(ca_fp);
+        }
+        obj
+    };
 
     let mut response = json!({
         "enabled": enabled,
@@ -612,6 +727,35 @@ async fn set_lan_door(
             StatusCode::INTERNAL_SERVER_ERROR,
         ),
     }
+}
+
+async fn lan_door_ca_pem(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
+    let path = journal.join(crate::lan_door::LAN_CA_PEM_PATH);
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if content.is_empty() || content.contains("PRIVATE KEY") {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    let Ok(entries) = pem::parse_many(&content) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    if entries.len() != 1 || entries[0].tag() != "CERTIFICATE" {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+    if parse_x509_certificate(entries[0].contents()).is_err() {
+        return StatusCode::NOT_FOUND.into_response();
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(axum::http::header::CONTENT_TYPE, "application/x-pem-file")
+        .header(
+            axum::http::header::CONTENT_DISPOSITION,
+            "attachment; filename=\"solstone-lan-ca.pem\"",
+        )
+        .body(Body::from(content))
+        .unwrap_or_else(|_| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 
 fn write_endpoint_switch(journal: &std::path::Path, key: &str, enabled: bool) -> Response {
@@ -911,6 +1055,8 @@ async fn activity(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustls::client::danger::ServerCertVerifier;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
     use tempfile::TempDir;
     use tower::ServiceExt;
 
@@ -1225,26 +1371,134 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn owner_route_lan_ca_pem_download_and_isolation() {
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+
+        // No basis -> 404
+        let req_anon = Request::builder()
+            .uri("/app/agents/api/lan-door/ca.pem")
+            .body(Body::empty())
+            .unwrap();
+        let res_anon = owner_routes(journal_root.to_path_buf())
+            .oneshot(req_anon)
+            .await
+            .unwrap();
+        assert_eq!(res_anon.status(), StatusCode::NOT_FOUND);
+        let bytes_anon = axum::body::to_bytes(res_anon.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_anon = String::from_utf8_lossy(&bytes_anon);
+        assert!(!body_anon.contains("CERTIFICATE") && !body_anon.contains("PRIVATE KEY"));
+
+        // PairingPeer -> 404
+        let mut req_peer = Request::builder()
+            .uri("/app/agents/api/lan-door/ca.pem")
+            .body(Body::empty())
+            .unwrap();
+        req_peer.extensions_mut().insert(AccessBasis::PairingPeer {
+            carrier: solstone_core_convey_http::identity::Carrier::Direct,
+        });
+        let res_peer = owner_routes(journal_root.to_path_buf())
+            .oneshot(req_peer)
+            .await
+            .unwrap();
+        assert_eq!(res_peer.status(), StatusCode::NOT_FOUND);
+
+        // Owner with no CA file -> 404
+        let mut req_no_ca = Request::builder()
+            .uri("/app/agents/api/lan-door/ca.pem")
+            .body(Body::empty())
+            .unwrap();
+        req_no_ca.extensions_mut().insert(AccessBasis::Localhost);
+        let res_no_ca = owner_routes(journal_root.to_path_buf())
+            .oneshot(req_no_ca)
+            .await
+            .unwrap();
+        assert_eq!(res_no_ca.status(), StatusCode::NOT_FOUND);
+        assert!(res_no_ca.headers().get("content-disposition").is_none());
+
+        // Ready reconcile
+        let ip_admitted = [IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+        let identity = crate::lan_door::reconcile_lan_identity(journal_root, &ip_admitted);
+        assert!(identity.selected.is_some());
+
+        // Owner request after ready reconcile
+        let mut req_owner = Request::builder()
+            .uri("/app/agents/api/lan-door/ca.pem")
+            .body(Body::empty())
+            .unwrap();
+        req_owner.extensions_mut().insert(AccessBasis::Localhost);
+        let res_owner = owner_routes(journal_root.to_path_buf())
+            .oneshot(req_owner)
+            .await
+            .unwrap();
+        assert_eq!(res_owner.status(), StatusCode::OK);
+        assert_eq!(
+            res_owner.headers().get("content-type").unwrap(),
+            "application/x-pem-file"
+        );
+        assert_eq!(
+            res_owner.headers().get("content-disposition").unwrap(),
+            "attachment; filename=\"solstone-lan-ca.pem\""
+        );
+
+        let bytes_owner = axum::body::to_bytes(res_owner.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body_owner = String::from_utf8_lossy(&bytes_owner);
+        assert!(!body_owner.contains("PRIVATE KEY"));
+        let entries = pem::parse_many(body_owner.as_bytes()).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].tag(), "CERTIFICATE");
+
+        let ca_fp = crate::lan_door::compute_cert_fingerprint(entries[0].contents());
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["lan_door"]["ca_fingerprint"], ca_fp);
+
+        // WebPkiServerVerifier with downloaded CA as root verifies active leaf
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(rustls::pki_types::CertificateDer::from(
+                entries[0].contents().to_vec(),
+            ))
+            .unwrap();
+        let verifier = rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            Arc::new(rustls::crypto::ring::default_provider()),
+        )
+        .build()
+        .unwrap();
+
+        let leaf_pem =
+            std::fs::read_to_string(journal_root.join(crate::lan_door::LAN_LEAF_PEM_PATH)).unwrap();
+        let leaf_entries = pem::parse_many(&leaf_pem).unwrap();
+        let leaf_der = rustls::pki_types::CertificateDer::from(leaf_entries[0].contents().to_vec());
+        let server_name = rustls::pki_types::ServerName::IpAddress(ip_admitted[0].into());
+        let now = rustls::pki_types::UnixTime::now();
+        assert!(
+            verifier
+                .verify_server_cert(&leaf_der, &[], &server_name, &[], now)
+                .is_ok()
+        );
+
+        // Status JSON, state JSON, and downloaded PEM contain no private key
+        let status_json_str = serde_json::to_string(&val).unwrap();
+        assert!(!status_json_str.contains("PRIVATE KEY"));
+        if let Ok(state_file_str) =
+            std::fs::read_to_string(journal_root.join(crate::lan_door::LAN_DOOR_STATE_PATH))
+        {
+            assert!(!state_file_str.contains("PRIVATE KEY"));
+        }
+    }
+
+    #[tokio::test]
     async fn state_projects_lan_door_posture_addresses_and_urls() {
         let temp = TempDir::new_in("/var/tmp").unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
 
-        // 1. No config key + no state file -> enabled: false, listening: false, reason: "disabled", port: 7660, no fingerprint.
-        let val = state_value(journal_root).unwrap();
-        assert_eq!(val["lan_door"]["enabled"], false);
-        assert_eq!(val["lan_door"]["listening"], false);
-        assert_eq!(val["lan_door"]["reason"], "disabled");
-        assert_eq!(val["lan_door"]["port"], 7660);
-        assert!(val["lan_door"].get("fingerprint").is_none());
-
-        // 2 & 3. Injected enumerator with:
-        // - private Lan IPv4 (192.168.1.50 on eth0)
-        // - ULA IPv6 (fd00::1 on eth0)
-        // - CGNAT Vpn IPv4 (100.64.0.1 on tun0)
-        // - public Lan IPv4 (8.8.8.8 on eth0)
-        // - public Vpn IPv4 (8.8.4.4 on tun0)
         let mock_iface = MockRawInterfaceSource {
             addrs: vec![
                 solstone_core_sol_link::pairing::addresses::RawInterfaceAddress {
@@ -1270,14 +1524,22 @@ mod tests {
             ],
         };
 
-        // Turn on lan_door in config
+        // 1. Off/default with no CA: enabled: false, listening: false, reason: "disabled", no fingerprint, no ca_fingerprint.
+        let val = state_value(journal_root).unwrap();
+        assert_eq!(val["lan_door"]["enabled"], false);
+        assert_eq!(val["lan_door"]["listening"], false);
+        assert_eq!(val["lan_door"]["reason"], "disabled");
+        assert_eq!(val["lan_door"]["port"], 7660);
+        assert!(val["lan_door"].get("fingerprint").is_none());
+        assert!(val["lan_door"].get("ca_fingerprint").is_none());
+
+        // Phase 1: Turn on lan_door in config, forged state fingerprint sha256:0123456789abcdef and no leaf.
         std::fs::write(
             journal_root.join("config/journal.json"),
             r#"{"mcp_endpoint":{"lan_door":true}}"#,
         )
         .unwrap();
 
-        // Fresh record with 1 listening address and 1 port_in_use address
         let addr_states = vec![
             crate::lan_door::LanAddressState {
                 address: "192.168.1.50".to_string(),
@@ -1295,39 +1557,52 @@ mod tests {
             true,
             None,
             Some("sha256:0123456789abcdef"),
+            Some(addr_states.clone()),
+        );
+
+        let val1 = state_value_with_iface(journal_root, &mock_iface).unwrap();
+        assert_eq!(val1["lan_door"]["enabled"], true);
+        assert_eq!(val1["lan_door"]["listening"], false); // no leaf -> door not listening
+        assert_eq!(val1["lan_door"]["addresses"][0]["address"], "192.168.1.50");
+        assert_eq!(val1["lan_door"]["addresses"][0]["listening"], false); // 192.168.1.50 not listening without leaf
+        assert!(val1["lan_door"].get("fingerprint").is_none()); // no forged fingerprint echoed
+
+        // Phase 2: Reconcile leaf for the admitted set
+        let admitted = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+        ];
+        let identity = crate::lan_door::reconcile_lan_identity(journal_root, &admitted);
+        assert!(identity.selected.is_some());
+        let expected_leaf_fp = identity.selected.unwrap().leaf_fingerprint.clone();
+
+        // Fresh state file marking only 192.168.1.50 listening, fd00::1 port_in_use
+        crate::lan_door::write_lan_door_state(
+            journal_root,
+            true,
+            None,
+            Some(&expected_leaf_fp),
             Some(addr_states),
         );
 
-        let val = state_value_with_iface(journal_root, &mock_iface).unwrap();
-        assert_eq!(val["lan_door"]["enabled"], true);
-        assert_eq!(val["lan_door"]["listening"], true);
-        assert!(val["lan_door"]["reason"].is_null());
-        assert_eq!(val["lan_door"]["fingerprint"], "sha256:0123456789abcdef");
+        let val2 = state_value_with_iface(journal_root, &mock_iface).unwrap();
+        assert_eq!(val2["lan_door"]["enabled"], true);
+        assert_eq!(val2["lan_door"]["listening"], true);
+        assert_eq!(val2["lan_door"]["fingerprint"], expected_leaf_fp);
+        assert!(val2["lan_door"].get("ca_fingerprint").is_some());
 
-        // Check addresses:
-        let addresses = val["lan_door"]["addresses"].as_array().unwrap();
-        assert_eq!(addresses.len(), 3);
+        let addrs = val2["lan_door"]["addresses"].as_array().unwrap();
+        assert_eq!(addrs.len(), 3);
+        assert_eq!(addrs[0]["address"], "192.168.1.50");
+        assert_eq!(addrs[0]["listening"], true);
+        assert_eq!(addrs[1]["address"], "fd00::1");
+        assert_eq!(addrs[1]["listening"], false);
+        assert_eq!(addrs[1]["reason"], "port_in_use");
+        assert_eq!(addrs[2]["address"], "100.64.0.1");
+        assert_eq!(addrs[2]["listening"], false);
 
-        // Address 1: 192.168.1.50 (listening: true, reason omitted)
-        assert_eq!(addresses[0]["address"], "192.168.1.50");
-        assert_eq!(addresses[0]["url"], "https://192.168.1.50:7660/mcp");
-        assert_eq!(addresses[0]["listening"], true);
-        assert!(addresses[0].get("reason").is_none());
-
-        // Address 2: fd00::1 (listening: false, reason: "port_in_use")
-        // IPv6 spelled same in address and inside [brackets] of url
-        assert_eq!(addresses[1]["address"], "fd00::1");
-        assert_eq!(addresses[1]["url"], "https://[fd00::1]:7660/mcp");
-        assert_eq!(addresses[1]["listening"], false);
-        assert_eq!(addresses[1]["reason"], "port_in_use");
-
-        // Address 3: 100.64.0.1
-        assert_eq!(addresses[2]["address"], "100.64.0.1");
-        assert_eq!(addresses[2]["url"], "https://100.64.0.1:7660/mcp");
-        assert_eq!(addresses[2]["listening"], false);
-
-        // Check URLs in order (yields first 3 URLs in that order and omits both public addresses)
-        let urls: Vec<&str> = val["lan_door"]["urls"]
+        let urls: Vec<&str> = val2["lan_door"]["urls"]
             .as_array()
             .unwrap()
             .iter()
@@ -1341,5 +1616,55 @@ mod tests {
                 "https://100.64.0.1:7660/mcp",
             ]
         );
+    }
+
+    #[tokio::test]
+    async fn state_projects_enumeration_error_without_state_mutation() {
+        struct FailingInterfaceSource;
+        impl solstone_core_sol_link::pairing::addresses::RawInterfaceSource for FailingInterfaceSource {
+            fn enumerate(
+                &self,
+            ) -> Result<
+                Vec<solstone_core_sol_link::pairing::addresses::RawInterfaceAddress>,
+                solstone_core_sol_link::pairing::addresses::AddressError,
+            > {
+                Err(
+                    solstone_core_sol_link::pairing::addresses::AddressError::Enumeration(
+                        std::io::Error::other("simulated error"),
+                    ),
+                )
+            }
+        }
+
+        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let journal_root = temp.path();
+        std::fs::create_dir_all(journal_root.join("config")).unwrap();
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+
+        std::fs::write(
+            journal_root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"lan_door":true}}"#,
+        )
+        .unwrap();
+
+        // Write a ready reconcile first and initial state
+        let admitted = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50))];
+        let identity = crate::lan_door::reconcile_lan_identity(journal_root, &admitted);
+        assert!(identity.selected.is_some());
+        crate::lan_door::write_lan_door_state(journal_root, false, Some("retrying"), None, None);
+
+        let state_bytes_before =
+            std::fs::read(journal_root.join(crate::lan_door::LAN_DOOR_STATE_PATH)).unwrap();
+
+        let val = state_value_with_iface(journal_root, &FailingInterfaceSource).unwrap();
+        assert_eq!(val["lan_door"]["listening"], false);
+        assert_eq!(val["lan_door"]["reason"], "enumeration_failed");
+        assert_eq!(val["lan_door"]["addresses"], json!([]));
+        assert!(val["lan_door"].get("fingerprint").is_none());
+        assert!(val["lan_door"].get("ca_fingerprint").is_some());
+
+        let state_bytes_after =
+            std::fs::read(journal_root.join(crate::lan_door::LAN_DOOR_STATE_PATH)).unwrap();
+        assert_eq!(state_bytes_before, state_bytes_after);
     }
 }

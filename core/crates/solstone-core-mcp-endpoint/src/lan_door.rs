@@ -3,7 +3,7 @@
 
 //! Direct LAN MCP door service.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
@@ -14,7 +14,10 @@ use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use nix::libc;
-use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
+use rcgen::{
+    BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
+    KeyPair, KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, SanType,
+};
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -43,7 +46,43 @@ use crate::session::SessionTable;
 
 pub(crate) const LAN_DOOR_STATE_PATH: &str = "mcp-endpoint/lan-door-state.json";
 pub(crate) const LAN_TLS_PEM_PATH: &str = "mcp-endpoint/lan-tls.pem";
-const LAN_ENDPOINT_DIR: &str = "mcp-endpoint";
+pub(crate) const LAN_CA_KEY_PATH: &str = "mcp-endpoint/lan-ca.key";
+pub(crate) const LAN_CA_PEM_PATH: &str = "mcp-endpoint/lan-ca.pem";
+pub(crate) const LAN_LEAF_PEM_PATH: &str = "mcp-endpoint/lan-leaf.pem";
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum LanPublishStep {
+    None = 0,
+    BeforeCaKey = 1,
+    BeforeCaCert = 2,
+    BeforeLeaf = 3,
+    BeforeRetireLegacy = 4,
+}
+
+#[cfg(test)]
+pub static LAN_PUBLISH_STOP: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+#[cfg(test)]
+pub struct LanPublishStopGuard;
+
+#[cfg(test)]
+impl Drop for LanPublishStopGuard {
+    fn drop(&mut self) {
+        LAN_PUBLISH_STOP.store(0, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+#[cfg(test)]
+pub fn set_lan_publish_stop(step: LanPublishStep) -> LanPublishStopGuard {
+    LAN_PUBLISH_STOP.store(step as u8, std::sync::atomic::Ordering::SeqCst);
+    LanPublishStopGuard
+}
+
+#[cfg(test)]
+pub static LAN_BIND_ATTEMPTS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 const DEFAULT_CONNECTION_PERMITS: usize = 64;
 const DEFAULT_PER_SOURCE_LIMIT: usize = 16;
@@ -287,100 +326,573 @@ pub fn bind_admitted_address(ip: IpAddr, port: u16) -> io::Result<TcpListener> {
     TcpListener::from_std(std_listener)
 }
 
-struct ParsedPemTls {
-    fingerprint: String,
-    server_config: rustls::ServerConfig,
+pub(crate) fn compute_cert_fingerprint(cert_der: &[u8]) -> String {
+    let digest = Sha256::digest(cert_der);
+    digest
+        .iter()
+        .map(|b| format!("{b:02X}"))
+        .collect::<Vec<_>>()
+        .join(":")
 }
 
-fn generate_new_lan_cert_and_key() -> Result<(String, ParsedPemTls), McpServiceError> {
-    let key_pair =
-        KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|_| McpServiceError::Runtime)?;
-    let now = time::OffsetDateTime::now_utc();
-    let mut params = CertificateParams::default();
-    let mut dn = DistinguishedName::new();
-    dn.push(DnType::CommonName, "solstone journal");
-    params.distinguished_name = dn;
-    params.not_before = now;
-    params.not_after = now + time::Duration::days(825);
-    let cert = params
-        .self_signed(&key_pair)
-        .map_err(|_| McpServiceError::Runtime)?;
-    let cert_pem = cert.pem();
-    let key_pem = key_pair.serialize_pem();
-    let combined_pem = format!("{cert_pem}\n{key_pem}");
-    let parsed = parse_and_validate_pem(&combined_pem).ok_or(McpServiceError::Runtime)?;
-    Ok((combined_pem, parsed))
-}
-
-fn parse_and_validate_pem(pem_content: &str) -> Option<ParsedPemTls> {
-    let entries = pem::parse_many(pem_content).ok()?;
-    let mut cert_der: Option<Vec<u8>> = None;
-    let mut key_der: Option<Vec<u8>> = None;
-    for entry in entries {
-        if entry.tag() == "CERTIFICATE" && cert_der.is_none() {
-            cert_der = Some(entry.into_contents());
-        } else if (entry.tag() == "PRIVATE KEY" || entry.tag() == "EC PRIVATE KEY")
-            && key_der.is_none()
+pub(crate) fn parse_cert_san_ips(
+    x509: &x509_parser::certificate::X509Certificate,
+) -> BTreeSet<IpAddr> {
+    let mut ips = BTreeSet::new();
+    for ext in x509.extensions() {
+        if let x509_parser::extensions::ParsedExtension::SubjectAlternativeName(san) =
+            ext.parsed_extension()
         {
-            key_der = Some(entry.into_contents());
+            for name in &san.general_names {
+                if let x509_parser::extensions::GeneralName::IPAddress(raw_bytes) = name {
+                    if raw_bytes.len() == 4 {
+                        let octets: [u8; 4] = (*raw_bytes).try_into().unwrap();
+                        ips.insert(fold_ipv4_mapped(IpAddr::V4(Ipv4Addr::from(octets))));
+                    } else if raw_bytes.len() == 16 {
+                        let octets: [u8; 16] = (*raw_bytes).try_into().unwrap();
+                        ips.insert(fold_ipv4_mapped(IpAddr::V6(Ipv6Addr::from(octets))));
+                    }
+                }
+            }
         }
     }
-    let (cert_der, key_der) = (cert_der?, key_der?);
+    ips
+}
 
-    // Validate validity window
-    let (_, x509_cert) = parse_x509_certificate(&cert_der).ok()?;
-    let not_after = x509_cert.validity().not_after.timestamp();
-    let now = Utc::now().timestamp();
-    if not_after <= now {
-        return None;
+#[derive(Debug, Clone)]
+pub struct SelectedLanIdentity {
+    pub config: Arc<rustls::ServerConfig>,
+    pub sans: BTreeSet<IpAddr>,
+    pub leaf_fingerprint: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct LanIdentity {
+    pub ca_fingerprint: Option<String>,
+    pub selected: Option<Arc<SelectedLanIdentity>>,
+}
+
+#[derive(Debug)]
+struct ValidatedCa {
+    ca_cert_der: Vec<u8>,
+    ca_key_pem: String,
+    ca_pem: String,
+    ca_fingerprint: String,
+}
+
+#[derive(Debug)]
+enum CaValidation {
+    Absent,
+    Invalid { ca_fingerprint: Option<String> },
+    Valid(ValidatedCa),
+}
+
+fn validate_existing_ca(journal_root: &Path) -> CaValidation {
+    let ca_pem_path = journal_root.join(LAN_CA_PEM_PATH);
+    let ca_key_path = journal_root.join(LAN_CA_KEY_PATH);
+
+    if !ca_pem_path.exists() {
+        return CaValidation::Absent;
     }
 
-    // Build ServerConfig to verify key matches cert
+    let ca_pem_content = match std::fs::read_to_string(&ca_pem_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return CaValidation::Invalid {
+                ca_fingerprint: None,
+            };
+        }
+    };
+
+    let ca_entries = match pem::parse_many(&ca_pem_content) {
+        Ok(e) => e,
+        Err(_) => {
+            return CaValidation::Invalid {
+                ca_fingerprint: None,
+            };
+        }
+    };
+
+    if ca_entries.len() != 1 || ca_entries[0].tag() != "CERTIFICATE" {
+        return CaValidation::Invalid {
+            ca_fingerprint: None,
+        };
+    }
+
+    let ca_cert_der = ca_entries[0].contents().to_vec();
+    let (_, ca_x509) = match parse_x509_certificate(&ca_cert_der) {
+        Ok(res) => res,
+        Err(_) => {
+            return CaValidation::Invalid {
+                ca_fingerprint: None,
+            };
+        }
+    };
+
+    let ca_fingerprint = compute_cert_fingerprint(&ca_cert_der);
+
+    let ca_key_content = match std::fs::read_to_string(&ca_key_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return CaValidation::Invalid {
+                ca_fingerprint: Some(ca_fingerprint),
+            };
+        }
+    };
+
+    let key_entries = match pem::parse_many(&ca_key_content) {
+        Ok(e) => e,
+        Err(_) => {
+            return CaValidation::Invalid {
+                ca_fingerprint: Some(ca_fingerprint),
+            };
+        }
+    };
+
+    if key_entries.len() != 1
+        || !(key_entries[0].tag() == "PRIVATE KEY" || key_entries[0].tag() == "EC PRIVATE KEY")
+    {
+        return CaValidation::Invalid {
+            ca_fingerprint: Some(ca_fingerprint),
+        };
+    }
+
+    let ca_key = match KeyPair::from_pem_and_sign_algo(&ca_key_content, &PKCS_ECDSA_P256_SHA256) {
+        Ok(k) => k,
+        Err(_) => {
+            return CaValidation::Invalid {
+                ca_fingerprint: Some(ca_fingerprint),
+            };
+        }
+    };
+
+    if ca_key.public_key_der() != ca_x509.tbs_certificate.subject_pki.raw {
+        return CaValidation::Invalid {
+            ca_fingerprint: Some(ca_fingerprint),
+        };
+    }
+
+    CaValidation::Valid(ValidatedCa {
+        ca_cert_der,
+        ca_key_pem: ca_key_content,
+        ca_pem: ca_pem_content,
+        ca_fingerprint,
+    })
+}
+
+enum LeafValidation {
+    Absent,
+    CorruptOrFailClosed,
+    ValidMatching(Arc<SelectedLanIdentity>),
+    NeedsReissue {
+        previous_usable: Option<Arc<SelectedLanIdentity>>,
+    },
+}
+
+fn classify_existing_leaf(
+    journal_root: &Path,
+    ca_x509: &x509_parser::certificate::X509Certificate,
+    expected_sans: &BTreeSet<IpAddr>,
+) -> LeafValidation {
+    let leaf_pem_path = journal_root.join(LAN_LEAF_PEM_PATH);
+    if !leaf_pem_path.exists() {
+        return LeafValidation::Absent;
+    }
+
+    let leaf_content = match std::fs::read_to_string(&leaf_pem_path) {
+        Ok(c) => c,
+        Err(_) => return LeafValidation::CorruptOrFailClosed,
+    };
+
+    let entries = match pem::parse_many(&leaf_content) {
+        Ok(e) => e,
+        Err(_) => return LeafValidation::CorruptOrFailClosed,
+    };
+
+    if entries.len() != 2 {
+        return LeafValidation::CorruptOrFailClosed;
+    }
+
+    let cert_entry = entries.iter().find(|e| e.tag() == "CERTIFICATE");
+    let key_entry = entries
+        .iter()
+        .find(|e| e.tag() == "PRIVATE KEY" || e.tag() == "EC PRIVATE KEY");
+
+    let (cert_der, key_der) = match (cert_entry, key_entry) {
+        (Some(c), Some(k)) => (c.contents().to_vec(), k.contents().to_vec()),
+        _ => return LeafValidation::CorruptOrFailClosed,
+    };
+
+    let (_, leaf_x509) = match parse_x509_certificate(&cert_der) {
+        Ok(res) => res,
+        Err(_) => return LeafValidation::CorruptOrFailClosed,
+    };
+
+    if leaf_x509
+        .verify_signature(Some(&ca_x509.tbs_certificate.subject_pki))
+        .is_err()
+    {
+        return LeafValidation::CorruptOrFailClosed;
+    }
+
+    let cert_typed = CertificateDer::from(cert_der.clone());
+    let key_typed = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der));
+    let mut config =
+        match rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_typed], key_typed)
+        {
+            Ok(cfg) => cfg,
+            Err(_) => return LeafValidation::CorruptOrFailClosed,
+        };
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+
+    let leaf_fingerprint = compute_cert_fingerprint(&cert_der);
+    let leaf_sans = parse_cert_san_ips(&leaf_x509);
+
+    let now = Utc::now().timestamp();
+    let not_before = leaf_x509.validity().not_before.timestamp();
+    let not_after = leaf_x509.validity().not_after.timestamp();
+
+    let is_time_valid = now >= not_before && now < not_after;
+    let is_near_expiry = not_after - now < 7 * 86400;
+
+    let usable_identity = if is_time_valid {
+        Some(Arc::new(SelectedLanIdentity {
+            config: Arc::new(config),
+            sans: leaf_sans.clone(),
+            leaf_fingerprint,
+        }))
+    } else {
+        None
+    };
+
+    if is_time_valid && !is_near_expiry && leaf_sans == *expected_sans {
+        LeafValidation::ValidMatching(usable_identity.unwrap())
+    } else {
+        LeafValidation::NeedsReissue {
+            previous_usable: usable_identity,
+        }
+    }
+}
+
+fn generate_and_save_leaf(
+    journal_root: &Path,
+    ca: &ValidatedCa,
+    expected_sans: &BTreeSet<IpAddr>,
+) -> Result<Arc<SelectedLanIdentity>, McpServiceError> {
+    let ca_params =
+        CertificateParams::from_ca_cert_pem(&ca.ca_pem).map_err(|_| McpServiceError::Runtime)?;
+    let ca_key = KeyPair::from_pem_and_sign_algo(&ca.ca_key_pem, &PKCS_ECDSA_P256_SHA256)
+        .map_err(|_| McpServiceError::Runtime)?;
+    let ca_cert = ca_params
+        .self_signed(&ca_key)
+        .map_err(|_| McpServiceError::Runtime)?;
+
+    let leaf_key =
+        KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|_| McpServiceError::Runtime)?;
+    let mut leaf_params = CertificateParams::default();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "solstone lan leaf");
+    leaf_params.distinguished_name = dn;
+    leaf_params.is_ca = IsCa::ExplicitNoCa;
+    leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    leaf_params.subject_alt_names = expected_sans
+        .iter()
+        .map(|ip| SanType::IpAddress(*ip))
+        .collect();
+    let now = time::OffsetDateTime::now_utc();
+    leaf_params.not_before = now;
+    leaf_params.not_after = now + time::Duration::days(825);
+
+    let leaf_cert = leaf_params
+        .signed_by(&leaf_key, &ca_cert, &ca_key)
+        .map_err(|_| McpServiceError::Runtime)?;
+    let leaf_cert_pem = leaf_cert.pem();
+    let leaf_key_pem = leaf_key.serialize_pem();
+    let combined_leaf_pem = format!("{leaf_cert_pem}\n{leaf_key_pem}");
+
+    let leaf_pem_path = journal_root.join(LAN_LEAF_PEM_PATH);
+    atomic_replace(
+        &leaf_pem_path,
+        combined_leaf_pem.as_bytes(),
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|_| McpServiceError::Runtime)?;
+
+    let leaf_cert_der = leaf_cert.der().to_vec();
+    let leaf_key_der = leaf_key.serialize_der();
+
+    let (_, leaf_x509) =
+        parse_x509_certificate(&leaf_cert_der).map_err(|_| McpServiceError::Runtime)?;
+    let sans = parse_cert_san_ips(&leaf_x509);
+
+    let cert_typed = CertificateDer::from(leaf_cert_der.clone());
+    let key_typed = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(leaf_key_der));
+    let mut config =
+        rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_typed], key_typed)
+            .map_err(|_| McpServiceError::Runtime)?;
+    config.alpn_protocols = vec![b"http/1.1".to_vec()];
+
+    let leaf_fingerprint = compute_cert_fingerprint(&leaf_cert_der);
+
+    Ok(Arc::new(SelectedLanIdentity {
+        config: Arc::new(config),
+        sans,
+        leaf_fingerprint,
+    }))
+}
+
+fn generate_and_save_ca(journal_root: &Path) -> Result<ValidatedCa, McpServiceError> {
+    #[cfg(test)]
+    if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
+        == LanPublishStep::BeforeCaKey as u8
+    {
+        return Err(McpServiceError::Runtime);
+    }
+
+    let ca_key =
+        KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).map_err(|_| McpServiceError::Runtime)?;
+    let mut ca_params = CertificateParams::default();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "solstone lan ca");
+    ca_params.distinguished_name = dn;
+    ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+    ca_params.key_usages = vec![
+        KeyUsagePurpose::KeyCertSign,
+        KeyUsagePurpose::CrlSign,
+        KeyUsagePurpose::DigitalSignature,
+    ];
+    let now = time::OffsetDateTime::now_utc();
+    ca_params.not_before = now;
+    ca_params.not_after = now + time::Duration::days(3650);
+
+    let ca_cert = ca_params
+        .self_signed(&ca_key)
+        .map_err(|_| McpServiceError::Runtime)?;
+    let ca_pem = ca_cert.pem();
+    let ca_key_pem = ca_key.serialize_pem();
+
+    let ca_key_path = journal_root.join(LAN_CA_KEY_PATH);
+    atomic_replace(
+        &ca_key_path,
+        ca_key_pem.as_bytes(),
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|_| McpServiceError::Runtime)?;
+
+    #[cfg(test)]
+    if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
+        == LanPublishStep::BeforeCaCert as u8
+    {
+        return Err(McpServiceError::Runtime);
+    }
+
+    let ca_pem_path = journal_root.join(LAN_CA_PEM_PATH);
+    atomic_replace(
+        &ca_pem_path,
+        ca_pem.as_bytes(),
+        AtomicWriteOptions { mode: Some(0o600) },
+    )
+    .map_err(|_| McpServiceError::Runtime)?;
+
+    let ca_cert_der = ca_cert.der().to_vec();
+    let ca_fingerprint = compute_cert_fingerprint(&ca_cert_der);
+
+    Ok(ValidatedCa {
+        ca_cert_der,
+        ca_key_pem,
+        ca_pem,
+        ca_fingerprint,
+    })
+}
+
+fn write_lan_door_state_tls_unavailable(journal_root: &Path, admitted_ips: &[IpAddr]) {
+    let addr_states: Vec<LanAddressState> = admitted_ips
+        .iter()
+        .map(|ip| LanAddressState {
+            address: ip.to_string(),
+            listening: false,
+            reason: Some("tls_unavailable".to_string()),
+        })
+        .collect();
+    write_lan_door_state(
+        journal_root,
+        false,
+        Some("tls_unavailable"),
+        None,
+        Some(addr_states),
+    );
+}
+
+pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> LanIdentity {
+    let ca = match validate_existing_ca(journal_root) {
+        CaValidation::Valid(ca) => ca,
+        CaValidation::Absent => match generate_and_save_ca(journal_root) {
+            Ok(ca) => ca,
+            Err(_) => {
+                let identity = LanIdentity {
+                    ca_fingerprint: None,
+                    selected: None,
+                };
+                if !admitted_ips.is_empty() {
+                    write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                }
+                return identity;
+            }
+        },
+        CaValidation::Invalid { ca_fingerprint } => {
+            let identity = LanIdentity {
+                ca_fingerprint,
+                selected: None,
+            };
+            if !admitted_ips.is_empty() {
+                write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+            }
+            return identity;
+        }
+    };
+
+    let ca_fingerprint = ca.ca_fingerprint.clone();
+
+    if admitted_ips.is_empty() {
+        return LanIdentity {
+            ca_fingerprint: Some(ca_fingerprint),
+            selected: None,
+        };
+    }
+
+    let expected_sans: BTreeSet<IpAddr> = admitted_ips
+        .iter()
+        .map(|ip| fold_ipv4_mapped(*ip))
+        .collect();
+
+    let (_, ca_x509) = match parse_x509_certificate(&ca.ca_cert_der) {
+        Ok(parsed) => parsed,
+        Err(_) => {
+            let identity = LanIdentity {
+                ca_fingerprint: Some(ca_fingerprint),
+                selected: None,
+            };
+            write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+            return identity;
+        }
+    };
+
+    let leaf_classification = classify_existing_leaf(journal_root, &ca_x509, &expected_sans);
+
+    let selected = match leaf_classification {
+        LeafValidation::ValidMatching(selected) => selected,
+        LeafValidation::CorruptOrFailClosed => {
+            let identity = LanIdentity {
+                ca_fingerprint: Some(ca_fingerprint),
+                selected: None,
+            };
+            write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+            return identity;
+        }
+        LeafValidation::Absent | LeafValidation::NeedsReissue { .. } => {
+            let previous_usable = match leaf_classification {
+                LeafValidation::NeedsReissue { previous_usable } => previous_usable,
+                _ => None,
+            };
+
+            #[cfg(test)]
+            if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
+                == LanPublishStep::BeforeLeaf as u8
+            {
+                let identity = LanIdentity {
+                    ca_fingerprint: Some(ca_fingerprint),
+                    selected: previous_usable,
+                };
+                if identity.selected.is_none() {
+                    write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                }
+                return identity;
+            }
+
+            match generate_and_save_leaf(journal_root, &ca, &expected_sans) {
+                Ok(newly_generated) => newly_generated,
+                Err(_) => {
+                    let identity = LanIdentity {
+                        ca_fingerprint: Some(ca_fingerprint),
+                        selected: previous_usable,
+                    };
+                    if identity.selected.is_none() {
+                        write_lan_door_state_tls_unavailable(journal_root, admitted_ips);
+                    }
+                    return identity;
+                }
+            }
+        }
+    };
+
+    #[cfg(test)]
+    let skip_legacy_retire = LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
+        == LanPublishStep::BeforeRetireLegacy as u8;
+    #[cfg(not(test))]
+    let skip_legacy_retire = false;
+
+    if !skip_legacy_retire {
+        let legacy_path = journal_root.join(LAN_TLS_PEM_PATH);
+        if legacy_path.exists() {
+            let _ = std::fs::remove_file(legacy_path);
+        }
+    }
+
+    LanIdentity {
+        ca_fingerprint: Some(ca_fingerprint),
+        selected: Some(selected),
+    }
+}
+
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn test_loopback_server_config() -> Arc<rustls::ServerConfig> {
+    test_loopback_selected_identity(&[
+        IpAddr::V4(Ipv4Addr::LOCALHOST),
+        IpAddr::V6(Ipv6Addr::LOCALHOST),
+    ])
+    .config
+    .clone()
+}
+
+#[cfg(test)]
+pub(crate) fn test_loopback_selected_identity(sans: &[IpAddr]) -> Arc<SelectedLanIdentity> {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let mut params = CertificateParams::default();
+    let mut dn = DistinguishedName::new();
+    dn.push(DnType::CommonName, "solstone test loopback");
+    params.distinguished_name = dn;
+    params.is_ca = IsCa::ExplicitNoCa;
+    params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+    params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+    params.subject_alt_names = sans.iter().map(|ip| SanType::IpAddress(*ip)).collect();
+    let now = time::OffsetDateTime::now_utc();
+    params.not_before = now;
+    params.not_after = now + time::Duration::days(1);
+    let cert = params.self_signed(&key).unwrap();
+    let cert_der = cert.der().to_vec();
+    let key_der = key.serialize_der();
+
     let cert_typed = CertificateDer::from(cert_der.clone());
     let key_typed = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key_der));
     let mut config =
         rustls::ServerConfig::builder_with_protocol_versions(&[&rustls::version::TLS13])
             .with_no_client_auth()
             .with_single_cert(vec![cert_typed], key_typed)
-            .ok()?;
+            .unwrap();
     config.alpn_protocols = vec![b"http/1.1".to_vec()];
 
-    let digest = Sha256::digest(&cert_der);
-    let fingerprint = digest
-        .iter()
-        .map(|b| format!("{b:02X}"))
-        .collect::<Vec<_>>()
-        .join(":");
-
-    Some(ParsedPemTls {
-        fingerprint,
-        server_config: config,
+    let leaf_fingerprint = compute_cert_fingerprint(&cert_der);
+    Arc::new(SelectedLanIdentity {
+        config: Arc::new(config),
+        sans: sans.iter().copied().collect(),
+        leaf_fingerprint,
     })
-}
-
-fn load_or_generate_tls_config(
-    journal_root: &Path,
-) -> Result<(String, Arc<rustls::ServerConfig>), McpServiceError> {
-    let pem_path = journal_root.join(LAN_TLS_PEM_PATH);
-    if let Ok(content) = std::fs::read_to_string(&pem_path) {
-        #[allow(clippy::collapsible_if)]
-        if let Some(parsed) = parse_and_validate_pem(&content) {
-            return Ok((parsed.fingerprint, Arc::new(parsed.server_config)));
-        }
-    }
-
-    let dir = journal_root.join(LAN_ENDPOINT_DIR);
-    let _ = std::fs::create_dir_all(&dir);
-
-    let (combined_pem, parsed) = generate_new_lan_cert_and_key()?;
-    atomic_replace(
-        &pem_path,
-        combined_pem.as_bytes(),
-        AtomicWriteOptions { mode: Some(0o600) },
-    )
-    .map_err(|_| McpServiceError::Runtime)?;
-
-    Ok((parsed.fingerprint, Arc::new(parsed.server_config)))
 }
 
 struct SourceSlotGuard {
@@ -529,18 +1041,8 @@ pub(crate) async fn run_lan_door_loop_with_sources(
     let sessions = Arc::new(SessionTable::new());
     let pool_semaphore = Arc::new(Semaphore::new(run.connection_permits));
     let source_counts: Arc<Mutex<HashMap<IpAddr, usize>>> = Arc::new(Mutex::new(HashMap::new()));
-    let server_config_cell: Arc<ArcSwap<rustls::ServerConfig>> = {
-        let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-        let cert = CertificateParams::default().self_signed(&key).unwrap();
-        let config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(
-                vec![CertificateDer::from(cert.der().to_vec())],
-                PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(key.serialize_der())),
-            )
-            .unwrap();
-        Arc::new(ArcSwap::from_pointee(config))
-    };
+    let server_config_cell: Arc<ArcSwap<Option<Arc<SelectedLanIdentity>>>> =
+        Arc::new(ArcSwap::from_pointee(None));
 
     let mut active_tasks: HashMap<IpAddr, (watch::Sender<bool>, JoinHandle<()>)> = HashMap::new();
     let mut address_states: HashMap<IpAddr, LanAddressState> = HashMap::new();
@@ -587,30 +1089,33 @@ pub(crate) async fn run_lan_door_loop_with_sources(
                 LocalDoorConfig::Invalid => {
                     stop_all_listeners(&mut active_tasks).await;
                     address_states.clear();
+                    server_config_cell.store(Arc::new(None));
+                    current_fingerprint = None;
                     write_lan_door_state(journal_root, false, Some("config_invalid"), None, None);
                     return Ok(());
                 }
                 LocalDoorConfig::Off => {
                     stop_all_listeners(&mut active_tasks).await;
                     address_states.clear();
+                    server_config_cell.store(Arc::new(None));
+                    current_fingerprint = None;
                     write_lan_door_state(journal_root, false, Some("disabled"), None, None);
                     return Ok(());
                 }
                 LocalDoorConfig::On => {}
             }
 
-            // 2. Ensure TLS config is valid
-            match load_or_generate_tls_config(journal_root) {
-                Ok((fp, conf)) => {
-                    current_fingerprint = Some(fp);
-                    server_config_cell.store(conf);
-                }
-                Err(_) => {
-                    log::error!("failed to load or generate LAN TLS certificate");
-                }
+            #[cfg(test)]
+            if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst) != 0 {
+                stop_all_listeners(&mut active_tasks).await;
+                address_states.clear();
+                server_config_cell.store(Arc::new(None));
+                current_fingerprint = None;
+                write_lan_door_state(journal_root, false, Some("tls_unavailable"), None, None);
+                return Ok(());
             }
 
-            // 3. Enumerate interfaces
+            // 2. Enumerate interfaces
             let raw_interfaces = match iface_source.enumerate() {
                 Ok(raw) => raw,
                 Err(_) => {
@@ -640,14 +1145,33 @@ pub(crate) async fn run_lan_door_loop_with_sources(
             if admitted_ips.is_empty() {
                 stop_all_listeners(&mut active_tasks).await;
                 address_states.clear();
+                server_config_cell.store(Arc::new(None));
+                current_fingerprint = None;
                 write_lan_door_state(journal_root, false, Some("no_address"), None, None);
                 return Ok(());
             }
 
-            // Remove tasks for IPs no longer admitted
+            // 3. Reconcile TLS identity
+            let identity = reconcile_lan_identity(journal_root, &admitted_ips);
+            let selected = match identity.selected {
+                Some(s) => s,
+                None => {
+                    stop_all_listeners(&mut active_tasks).await;
+                    address_states.clear();
+                    server_config_cell.store(Arc::new(None));
+                    current_fingerprint = None;
+                    write_lan_door_state_tls_unavailable(journal_root, &admitted_ips);
+                    return Ok(());
+                }
+            };
+
+            current_fingerprint = Some(selected.leaf_fingerprint.clone());
+            server_config_cell.store(Arc::new(Some(Arc::clone(&selected))));
+
+            // Stop listeners whose IP is not in admitted_ips or not in the parsed SAN set
             let mut to_remove = Vec::new();
             for ip in active_tasks.keys() {
-                if !admitted_ips.contains(ip) {
+                if !admitted_ips.contains(ip) || !selected.sans.contains(&fold_ipv4_mapped(*ip)) {
                     to_remove.push(*ip);
                 }
             }
@@ -677,9 +1201,24 @@ pub(crate) async fn run_lan_door_loop_with_sources(
             // Bind new or retrying IPs
             for ip in &admitted_ips {
                 let bound_ip = *ip;
+                if !selected.sans.contains(&fold_ipv4_mapped(bound_ip)) {
+                    address_states.insert(
+                        bound_ip,
+                        LanAddressState {
+                            address: bound_ip.to_string(),
+                            listening: false,
+                            reason: Some("tls_unavailable".to_string()),
+                        },
+                    );
+                    continue;
+                }
+
                 if active_tasks.contains_key(&bound_ip) {
                     continue;
                 }
+
+                #[cfg(test)]
+                LAN_BIND_ATTEMPTS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
 
                 match bind_admitted_address(bound_ip, run.port) {
                     Ok(listener) => {
@@ -800,11 +1339,11 @@ async fn stop_all_listeners(tasks: &mut HashMap<IpAddr, (watch::Sender<bool>, Jo
 #[allow(clippy::too_many_arguments)]
 async fn accept_loop_for_address(
     listener: TcpListener,
-    _bound_ip: IpAddr,
+    bound_ip: IpAddr,
     journal_root: Arc<PathBuf>,
     oauth: Arc<OAuthRuntime>,
     sessions: Arc<SessionTable>,
-    server_config_cell: Arc<ArcSwap<rustls::ServerConfig>>,
+    server_config_cell: Arc<ArcSwap<Option<Arc<SelectedLanIdentity>>>>,
     pool_semaphore: Arc<Semaphore>,
     source_counts: Arc<Mutex<HashMap<IpAddr, usize>>>,
     run: LanDoorRun,
@@ -832,6 +1371,15 @@ async fn accept_loop_for_address(
             res = listener.accept() => {
                 match res {
                     Ok((stream, peer_addr)) => {
+                        let selected_opt = server_config_cell.load_full();
+                        let selected = match selected_opt.as_ref() {
+                            Some(s) if s.sans.contains(&fold_ipv4_mapped(bound_ip)) => Arc::clone(s),
+                            _ => {
+                                drop(stream);
+                                continue;
+                            }
+                        };
+
                         // 1. Peer admission check
                         if !(run.peer_admitted)(peer_addr.ip()) {
                             drop(stream);
@@ -865,8 +1413,7 @@ async fn accept_loop_for_address(
                         };
 
                         // 4. Spawn handshake & connection handler
-                        let config = server_config_cell.load_full();
-                        let tls_acceptor = TlsAcceptor::from(config);
+                        let tls_acceptor = TlsAcceptor::from(Arc::clone(&selected.config));
                         let root_clone = Arc::clone(&journal_root);
                         let oauth_clone = Arc::clone(&oauth);
                         let sessions_clone = Arc::clone(&sessions);
@@ -932,6 +1479,7 @@ async fn accept_loop_for_address(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rustls::client::danger::ServerCertVerifier;
     use std::net::{Ipv4Addr, Ipv6Addr};
 
     #[test]
@@ -1085,156 +1633,6 @@ mod tests {
     }
 
     #[test]
-    fn certificate_generation_and_pem_management() {
-        let temp = tempfile::Builder::new()
-            .prefix("lan-door-cert-test-")
-            .tempdir_in("/var/tmp")
-            .unwrap();
-        let journal_root = temp.path();
-
-        let (fp1, _) = load_or_generate_tls_config(journal_root).unwrap();
-        assert_eq!(fp1.len(), 32 * 3 - 1);
-        assert!(journal_root.join(LAN_TLS_PEM_PATH).exists());
-
-        // Second load reuses existing valid cert
-        let (fp2, _) = load_or_generate_tls_config(journal_root).unwrap();
-        assert_eq!(fp1, fp2);
-
-        // Corrupt file triggers regeneration
-        std::fs::write(journal_root.join(LAN_TLS_PEM_PATH), "corrupt pem data").unwrap();
-        let (fp3, _) = load_or_generate_tls_config(journal_root).unwrap();
-        assert_ne!(fp1, fp3);
-    }
-
-    fn generate_custom_test_cert_pem(
-        not_before: time::OffsetDateTime,
-        not_after: time::OffsetDateTime,
-    ) -> (String, String) {
-        let key_pair = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-        let mut params = CertificateParams::default();
-        let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, "solstone journal");
-        params.distinguished_name = dn;
-        params.not_before = not_before;
-        params.not_after = not_after;
-        let cert = params.self_signed(&key_pair).unwrap();
-        let cert_pem = cert.pem();
-        let key_pem = key_pair.serialize_pem();
-        let combined = format!("{cert_pem}\n{key_pem}");
-        let cert_der = cert.der().to_vec();
-        let digest = Sha256::digest(&cert_der);
-        let fp = digest
-            .iter()
-            .map(|b| format!("{b:02X}"))
-            .collect::<Vec<_>>()
-            .join(":");
-        (combined, fp)
-    }
-
-    #[test]
-    fn certificate_reload_retains_near_expiry_pem_byte_for_byte() {
-        let temp = tempfile::Builder::new()
-            .prefix("lan-door-cert-near-expiry-")
-            .tempdir_in("/var/tmp")
-            .unwrap();
-        let journal_root = temp.path();
-        let now = time::OffsetDateTime::now_utc();
-        let (pem_content, expected_fp) = generate_custom_test_cert_pem(
-            now - time::Duration::days(89),
-            now + time::Duration::hours(24),
-        );
-        let pem_path = journal_root.join(LAN_TLS_PEM_PATH);
-        std::fs::create_dir_all(journal_root.join(LAN_ENDPOINT_DIR)).unwrap();
-        std::fs::write(&pem_path, &pem_content).unwrap();
-
-        let (fp, _) = load_or_generate_tls_config(journal_root).unwrap();
-        assert_eq!(fp, expected_fp);
-        let loaded_pem = std::fs::read_to_string(&pem_path).unwrap();
-        assert_eq!(loaded_pem, pem_content);
-    }
-
-    #[test]
-    fn certificate_reload_retains_future_not_before_pem_byte_for_byte() {
-        let temp = tempfile::Builder::new()
-            .prefix("lan-door-cert-future-not-before-")
-            .tempdir_in("/var/tmp")
-            .unwrap();
-        let journal_root = temp.path();
-        let now = time::OffsetDateTime::now_utc();
-        let (pem_content, expected_fp) = generate_custom_test_cert_pem(
-            now + time::Duration::hours(1),
-            now + time::Duration::days(90),
-        );
-        let pem_path = journal_root.join(LAN_TLS_PEM_PATH);
-        std::fs::create_dir_all(journal_root.join(LAN_ENDPOINT_DIR)).unwrap();
-        std::fs::write(&pem_path, &pem_content).unwrap();
-
-        let (fp, _) = load_or_generate_tls_config(journal_root).unwrap();
-        assert_eq!(fp, expected_fp);
-        let loaded_pem = std::fs::read_to_string(&pem_path).unwrap();
-        assert_eq!(loaded_pem, pem_content);
-    }
-
-    #[test]
-    fn certificate_zero_extensions_and_ecdsa_p256() {
-        let temp = tempfile::Builder::new()
-            .prefix("lan-door-cert-ext-test-")
-            .tempdir_in("/var/tmp")
-            .unwrap();
-        let journal_root = temp.path();
-        let (_fp, _) = load_or_generate_tls_config(journal_root).unwrap();
-
-        let pem_content = std::fs::read_to_string(journal_root.join(LAN_TLS_PEM_PATH)).unwrap();
-        let entries = pem::parse_many(&pem_content).unwrap();
-        let cert_der = entries
-            .into_iter()
-            .find(|e| e.tag() == "CERTIFICATE")
-            .unwrap()
-            .into_contents();
-        let (_, x509_cert) = parse_x509_certificate(&cert_der).unwrap();
-
-        // Common Name is "solstone journal"
-        assert_eq!(
-            x509_cert
-                .subject()
-                .iter_common_name()
-                .next()
-                .unwrap()
-                .as_str()
-                .unwrap(),
-            "solstone journal"
-        );
-
-        // ECDSA P-256: 1.2.840.10045.4.3.2 is ecdsa-with-SHA256
-        assert_eq!(
-            x509_cert.signature_algorithm.algorithm.to_string(),
-            "1.2.840.10045.4.3.2"
-        );
-
-        // Zero extensions
-        assert!(x509_cert.extensions().is_empty());
-
-        // Valid for 825 days, so its fingerprint stays put for the life of the certificate
-        let validity = x509_cert.validity();
-        assert_eq!(
-            validity.not_after.timestamp() - validity.not_before.timestamp(),
-            825 * 86_400
-        );
-
-        // File permission 0o600 (skip check if root)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if !nix::unistd::geteuid().is_root() {
-                let perms = std::fs::metadata(journal_root.join(LAN_TLS_PEM_PATH))
-                    .unwrap()
-                    .permissions();
-                assert_eq!(perms.mode() & 0o777, 0o600);
-            }
-        }
-    }
-
-    #[test]
     fn state_file_serialization_and_read() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-state-test-")
@@ -1268,6 +1666,843 @@ mod tests {
         assert_eq!(read.reason, None);
         assert_eq!(read.fingerprint, Some("AA:BB:CC:DD".to_string()));
         assert_eq!(read.addresses, Some(addrs));
+    }
+
+    #[test]
+    fn lan_ca_and_leaf_atomic_generation_permissions_and_extensions() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-ca-leaf-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+
+        // Put a legacy file to prove it gets removed
+        std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+        std::fs::write(journal_root.join(LAN_TLS_PEM_PATH), "legacy").unwrap();
+
+        let admitted = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50)),
+            IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)),
+        ];
+        let identity = reconcile_lan_identity(journal_root, &admitted);
+
+        let ca_fp = identity.ca_fingerprint.expect("ca_fingerprint present");
+        assert_eq!(ca_fp.len(), 32 * 3 - 1);
+        let selected = identity.selected.expect("selected present");
+        assert_eq!(selected.leaf_fingerprint.len(), 32 * 3 - 1);
+
+        // Check files exist
+        let ca_key_path = journal_root.join(LAN_CA_KEY_PATH);
+        let ca_pem_path = journal_root.join(LAN_CA_PEM_PATH);
+        let leaf_pem_path = journal_root.join(LAN_LEAF_PEM_PATH);
+        let legacy_path = journal_root.join(LAN_TLS_PEM_PATH);
+
+        assert!(ca_key_path.exists());
+        assert!(ca_pem_path.exists());
+        assert!(leaf_pem_path.exists());
+        assert!(!legacy_path.exists());
+
+        // File permissions 0o600
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if !nix::unistd::geteuid().is_root() {
+                assert_eq!(
+                    std::fs::metadata(&ca_key_path)
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o600
+                );
+                assert_eq!(
+                    std::fs::metadata(&ca_pem_path)
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o600
+                );
+                assert_eq!(
+                    std::fs::metadata(&leaf_pem_path)
+                        .unwrap()
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o600
+                );
+            }
+        }
+
+        // Validate lan-ca.pem has exactly one CERTIFICATE and no private keys
+        let ca_pem_str = std::fs::read_to_string(&ca_pem_path).unwrap();
+        let ca_entries = pem::parse_many(&ca_pem_str).unwrap();
+        assert_eq!(ca_entries.len(), 1);
+        assert_eq!(ca_entries[0].tag(), "CERTIFICATE");
+
+        // Validate lan-ca.key has exactly one PRIVATE KEY
+        let ca_key_str = std::fs::read_to_string(&ca_key_path).unwrap();
+        let key_entries = pem::parse_many(&ca_key_str).unwrap();
+        assert_eq!(key_entries.len(), 1);
+        assert!(key_entries[0].tag() == "PRIVATE KEY" || key_entries[0].tag() == "EC PRIVATE KEY");
+
+        // Validate lan-leaf.pem has exactly one CERTIFICATE and one PRIVATE KEY
+        let leaf_pem_str = std::fs::read_to_string(&leaf_pem_path).unwrap();
+        let leaf_entries = pem::parse_many(&leaf_pem_str).unwrap();
+        assert_eq!(leaf_entries.len(), 2);
+        assert!(leaf_entries.iter().any(|e| e.tag() == "CERTIFICATE"));
+        assert!(
+            leaf_entries
+                .iter()
+                .any(|e| e.tag() == "PRIVATE KEY" || e.tag() == "EC PRIVATE KEY")
+        );
+
+        // Validate CA cert x509
+        let (_, ca_x509) = parse_x509_certificate(ca_entries[0].contents()).unwrap();
+        let ca_cn = ca_x509
+            .subject()
+            .iter_common_name()
+            .next()
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(ca_cn, "solstone lan ca");
+        assert_eq!(
+            ca_x509.signature_algorithm.algorithm.to_string(),
+            "1.2.840.10045.4.3.2"
+        ); // ECDSA P-256
+        let ca_val = ca_x509.validity();
+        assert!(
+            ca_val.not_after.timestamp() - ca_val.not_before.timestamp() >= 3000 * 86_400,
+            "CA lifetime should be at least 3000 days"
+        );
+
+        // Validate Leaf cert x509
+        let leaf_cert_entry = leaf_entries
+            .iter()
+            .find(|e| e.tag() == "CERTIFICATE")
+            .unwrap();
+        let (_, leaf_x509) = parse_x509_certificate(leaf_cert_entry.contents()).unwrap();
+        let leaf_cn = leaf_x509
+            .subject()
+            .iter_common_name()
+            .next()
+            .unwrap()
+            .as_str()
+            .unwrap();
+        assert_eq!(leaf_cn, "solstone lan leaf");
+        let leaf_val = leaf_x509.validity();
+        assert_eq!(
+            leaf_val.not_after.timestamp() - leaf_val.not_before.timestamp(),
+            825 * 86_400
+        );
+        let leaf_sans = parse_cert_san_ips(&leaf_x509);
+        let expected_sans: BTreeSet<IpAddr> = admitted.into_iter().collect();
+        assert_eq!(leaf_sans, expected_sans);
+    }
+
+    #[test]
+    fn lan_leaf_reissued_on_san_change() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-san-change-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+
+        let addrs1 = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+        let id1 = reconcile_lan_identity(journal_root, &addrs1);
+        let ca_pem_1 = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let fp_ca_1 = id1.ca_fingerprint.unwrap();
+        let fp_leaf_1 = id1.selected.unwrap().leaf_fingerprint.clone();
+
+        let addrs2 = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+        ];
+        let id2 = reconcile_lan_identity(journal_root, &addrs2);
+        let ca_pem_2 = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let fp_ca_2 = id2.ca_fingerprint.unwrap();
+        let fp_leaf_2 = id2.selected.unwrap().leaf_fingerprint.clone();
+
+        assert_eq!(fp_ca_1, fp_ca_2);
+        assert_eq!(ca_pem_1, ca_pem_2);
+        assert_ne!(fp_leaf_1, fp_leaf_2);
+
+        // Check new leaf has both SANs
+        let leaf_pem_str = std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+        let entries = pem::parse_many(&leaf_pem_str).unwrap();
+        let cert_entry = entries.iter().find(|e| e.tag() == "CERTIFICATE").unwrap();
+        let (_, leaf_x509) = parse_x509_certificate(cert_entry.contents()).unwrap();
+        let leaf_sans = parse_cert_san_ips(&leaf_x509);
+        let expected_sans: BTreeSet<IpAddr> = addrs2.into_iter().collect();
+        assert_eq!(leaf_sans, expected_sans);
+    }
+
+    #[test]
+    fn lan_leaf_reissued_on_removed_address() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-san-remove-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+
+        let addrs1 = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+        ];
+        let id1 = reconcile_lan_identity(journal_root, &addrs1);
+        let ca_pem_1 = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let fp_leaf_1 = id1.selected.unwrap().leaf_fingerprint.clone();
+
+        let addrs2 = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+        let id2 = reconcile_lan_identity(journal_root, &addrs2);
+        let ca_pem_2 = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let fp_leaf_2 = id2.selected.unwrap().leaf_fingerprint.clone();
+
+        assert_eq!(ca_pem_1, ca_pem_2);
+        assert_ne!(fp_leaf_1, fp_leaf_2);
+
+        let leaf_pem_str = std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+        let entries = pem::parse_many(&leaf_pem_str).unwrap();
+        let cert_entry = entries.iter().find(|e| e.tag() == "CERTIFICATE").unwrap();
+        let (_, leaf_x509) = parse_x509_certificate(cert_entry.contents()).unwrap();
+        let leaf_sans = parse_cert_san_ips(&leaf_x509);
+        let expected_sans: BTreeSet<IpAddr> = addrs2.into_iter().collect();
+        assert_eq!(leaf_sans, expected_sans);
+    }
+
+    #[test]
+    fn lan_leaf_reissued_when_near_expiry_or_future() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-reissue-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+
+        let addrs = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+        let id1 = reconcile_lan_identity(journal_root, &addrs);
+        let ca_pem_1 = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let fp_leaf_1 = id1.selected.unwrap().leaf_fingerprint.clone();
+
+        // 1. Near-expiry leaf (remaining < 7 days)
+        let ca_key_str = std::fs::read_to_string(journal_root.join(LAN_CA_KEY_PATH)).unwrap();
+        let ca_params = CertificateParams::from_ca_cert_pem(&ca_pem_1).unwrap();
+        let ca_key = KeyPair::from_pem_and_sign_algo(&ca_key_str, &PKCS_ECDSA_P256_SHA256).unwrap();
+        let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+
+        let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut leaf_params = CertificateParams::default();
+        let mut dn = DistinguishedName::new();
+        dn.push(DnType::CommonName, "solstone lan leaf");
+        leaf_params.distinguished_name = dn;
+        leaf_params.is_ca = IsCa::ExplicitNoCa;
+        leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        leaf_params.subject_alt_names = vec![SanType::IpAddress(addrs[0])];
+        let now = time::OffsetDateTime::now_utc();
+        leaf_params.not_before = now - time::Duration::days(100);
+        leaf_params.not_after = now + time::Duration::days(3); // 3 days left < 7 days!
+        let near_cert = leaf_params.signed_by(&leaf_key, &ca_cert, &ca_key).unwrap();
+        let combined = format!("{}\n{}", near_cert.pem(), leaf_key.serialize_pem());
+        std::fs::write(journal_root.join(LAN_LEAF_PEM_PATH), combined).unwrap();
+
+        let id_near = reconcile_lan_identity(journal_root, &addrs);
+        let ca_pem_near = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        assert_eq!(ca_pem_1, ca_pem_near);
+        let fp_near = id_near.selected.unwrap().leaf_fingerprint.clone();
+        assert_ne!(fp_leaf_1, fp_near);
+
+        // 2. Future not_before leaf (not yet valid)
+        let leaf_key2 = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut leaf_params2 = CertificateParams::default();
+        let mut dn2 = DistinguishedName::new();
+        dn2.push(DnType::CommonName, "solstone lan leaf");
+        leaf_params2.distinguished_name = dn2;
+        leaf_params2.is_ca = IsCa::ExplicitNoCa;
+        leaf_params2.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+        leaf_params2.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+        leaf_params2.subject_alt_names = vec![SanType::IpAddress(addrs[0])];
+        leaf_params2.not_before = now + time::Duration::hours(2); // in future!
+        leaf_params2.not_after = now + time::Duration::days(825);
+        let future_cert = leaf_params2
+            .signed_by(&leaf_key2, &ca_cert, &ca_key)
+            .unwrap();
+        let combined2 = format!("{}\n{}", future_cert.pem(), leaf_key2.serialize_pem());
+        std::fs::write(journal_root.join(LAN_LEAF_PEM_PATH), combined2).unwrap();
+
+        let id_future = reconcile_lan_identity(journal_root, &addrs);
+        let ca_pem_future = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        assert_eq!(ca_pem_1, ca_pem_future);
+        let fp_future = id_future.selected.unwrap().leaf_fingerprint.clone();
+        assert_ne!(fp_near, fp_future);
+    }
+
+    #[test]
+    fn lan_leaf_fail_closed_on_corrupted_or_mismatched_inputs() {
+        let addrs = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+
+        // 1. Corrupted leaf file
+        {
+            let temp = tempfile::Builder::new()
+                .prefix("lan-door-fail-closed-1-")
+                .tempdir_in("/var/tmp")
+                .unwrap();
+            let journal_root = temp.path();
+            let id_good = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_good.selected.is_some());
+            let good_ca_bytes = std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+
+            std::fs::write(journal_root.join(LAN_LEAF_PEM_PATH), "corrupted leaf").unwrap();
+            let id_corrupt = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_corrupt.selected.is_none());
+            assert_eq!(
+                std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap(),
+                "corrupted leaf"
+            );
+            assert_eq!(
+                std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+                good_ca_bytes
+            );
+            let state = read_lan_door_state(journal_root).unwrap();
+            assert!(!state.listening);
+            assert_eq!(state.reason.as_deref(), Some("tls_unavailable"));
+        }
+
+        // 2. lan-ca.pem replaced with non-PEM bytes
+        {
+            let temp = tempfile::Builder::new()
+                .prefix("lan-door-fail-closed-2-")
+                .tempdir_in("/var/tmp")
+                .unwrap();
+            let journal_root = temp.path();
+            let id_good = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_good.selected.is_some());
+
+            std::fs::write(journal_root.join(LAN_CA_PEM_PATH), "not a valid pem").unwrap();
+            let id_bad_ca = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_bad_ca.selected.is_none());
+            assert_eq!(
+                std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+                "not a valid pem"
+            );
+            let state = read_lan_door_state(journal_root).unwrap();
+            assert!(!state.listening);
+            assert_eq!(state.reason.as_deref(), Some("tls_unavailable"));
+        }
+
+        // 3. lan-ca.pem contains private key
+        {
+            let temp = tempfile::Builder::new()
+                .prefix("lan-door-fail-closed-3-")
+                .tempdir_in("/var/tmp")
+                .unwrap();
+            let journal_root = temp.path();
+            let id_good = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_good.selected.is_some());
+            let good_ca_bytes = std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+            let ca_key_str = std::fs::read_to_string(journal_root.join(LAN_CA_KEY_PATH)).unwrap();
+
+            let ca_with_key = format!(
+                "{}\n{}",
+                String::from_utf8(good_ca_bytes).unwrap(),
+                ca_key_str
+            );
+            std::fs::write(journal_root.join(LAN_CA_PEM_PATH), &ca_with_key).unwrap();
+            let id_ca_with_key = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_ca_with_key.selected.is_none());
+            assert_eq!(
+                std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+                ca_with_key
+            );
+        }
+
+        // 4. Leaf replaced by cert signed by unrelated CA
+        {
+            let temp = tempfile::Builder::new()
+                .prefix("lan-door-fail-closed-4-")
+                .tempdir_in("/var/tmp")
+                .unwrap();
+            let journal_root = temp.path();
+            let id_good = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_good.selected.is_some());
+            let good_ca_bytes = std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+
+            let unrelated_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut unrelated_params = CertificateParams::default();
+            unrelated_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+            let unrelated_ca = unrelated_params.self_signed(&unrelated_key).unwrap();
+
+            let foreign_leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut foreign_leaf_params = CertificateParams::default();
+            foreign_leaf_params.is_ca = IsCa::ExplicitNoCa;
+            foreign_leaf_params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
+            foreign_leaf_params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
+            foreign_leaf_params.subject_alt_names = vec![SanType::IpAddress(addrs[0])];
+            let foreign_cert = foreign_leaf_params
+                .signed_by(&foreign_leaf_key, &unrelated_ca, &unrelated_key)
+                .unwrap();
+            let foreign_leaf_pem = format!(
+                "{}\n{}",
+                foreign_cert.pem(),
+                foreign_leaf_key.serialize_pem()
+            );
+            std::fs::write(journal_root.join(LAN_LEAF_PEM_PATH), &foreign_leaf_pem).unwrap();
+
+            let id_foreign = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_foreign.selected.is_none());
+            assert_eq!(
+                std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap(),
+                foreign_leaf_pem
+            );
+            assert_eq!(
+                std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+                good_ca_bytes
+            );
+        }
+
+        // 5. Leaf key swapped for a different key
+        {
+            let temp = tempfile::Builder::new()
+                .prefix("lan-door-fail-closed-5-")
+                .tempdir_in("/var/tmp")
+                .unwrap();
+            let journal_root = temp.path();
+            let id_good = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_good.selected.is_some());
+            let good_ca_bytes = std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+
+            let current_leaf_str =
+                std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+            let entries = pem::parse_many(&current_leaf_str).unwrap();
+            let cert_entry = entries.iter().find(|e| e.tag() == "CERTIFICATE").unwrap();
+            let swapped_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let swapped_leaf_pem = format!(
+                "{}\n{}",
+                pem::encode(cert_entry),
+                swapped_key.serialize_pem()
+            );
+            std::fs::write(journal_root.join(LAN_LEAF_PEM_PATH), &swapped_leaf_pem).unwrap();
+
+            let id_swapped = reconcile_lan_identity(journal_root, &addrs);
+            assert!(id_swapped.selected.is_none());
+            assert_eq!(
+                std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap(),
+                swapped_leaf_pem
+            );
+            assert_eq!(
+                std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+                good_ca_bytes
+            );
+        }
+    }
+
+    #[test]
+    fn lan_ca_durability_and_issuance_failure_cuts() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-cuts-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+        let addrs_a = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
+
+        let id_a = reconcile_lan_identity(journal_root, &addrs_a);
+        assert!(id_a.selected.is_some());
+        let ca_bytes_initial = std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let leaf_bytes_initial = std::fs::read(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+
+        // 1. Arm BeforeLeaf cut and reconcile {A, B}
+        let guard = set_lan_publish_stop(LanPublishStep::BeforeLeaf);
+        let addrs_ab = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+        ];
+        let id_cut = reconcile_lan_identity(journal_root, &addrs_ab);
+
+        // On-disk leaf bytes unchanged
+        let leaf_bytes_after_cut = std::fs::read(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+        assert_eq!(leaf_bytes_initial, leaf_bytes_after_cut);
+
+        // Returned selected is previous usable leaf whose sans do not contain .20
+        if let Some(sel) = id_cut.selected {
+            assert!(
+                !sel.sans
+                    .contains(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)))
+            );
+            assert_eq!(sel.sans, addrs_a.iter().copied().collect());
+        }
+
+        // CA bytes identical
+        assert_eq!(
+            std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+            ca_bytes_initial
+        );
+
+        // Drop guard and reconcile {A, B} cleanly
+        drop(guard);
+        let id_clean = reconcile_lan_identity(journal_root, &addrs_ab);
+        assert!(id_clean.selected.is_some());
+        let clean_sel = id_clean.selected.unwrap();
+        assert_eq!(clean_sel.sans, addrs_ab.iter().copied().collect());
+        assert_eq!(
+            std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+            ca_bytes_initial
+        );
+    }
+
+    #[test]
+    fn lan_migration_from_legacy_cuts() {
+        let cuts = [
+            LanPublishStep::BeforeCaKey,
+            LanPublishStep::BeforeCaCert,
+            LanPublishStep::BeforeLeaf,
+            LanPublishStep::BeforeRetireLegacy,
+        ];
+
+        let admitted = vec![
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
+            IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1)),
+        ];
+
+        for cut in cuts {
+            let temp = tempfile::Builder::new()
+                .prefix("lan-migration-cut-")
+                .tempdir_in("/var/tmp")
+                .unwrap();
+            let journal_root = temp.path();
+
+            // Setup legacy self-signed certificate
+            let leg_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+            let mut leg_params = CertificateParams::default();
+            let mut dn = DistinguishedName::new();
+            dn.push(DnType::CommonName, "solstone journal");
+            leg_params.distinguished_name = dn;
+            leg_params.is_ca = IsCa::ExplicitNoCa;
+            let leg_cert = leg_params.self_signed(&leg_key).unwrap();
+            let leg_combined = format!("{}\n{}", leg_cert.pem(), leg_key.serialize_pem());
+            std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
+            std::fs::write(journal_root.join(LAN_TLS_PEM_PATH), &leg_combined).unwrap();
+            let leg_fp = compute_cert_fingerprint(leg_cert.der());
+
+            let guard = set_lan_publish_stop(cut);
+            let id = reconcile_lan_identity(journal_root, &admitted);
+
+            if let Some(sel) = &id.selected {
+                let ca_pem_bytes = std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+                let ca_entries = pem::parse_many(String::from_utf8(ca_pem_bytes).unwrap()).unwrap();
+                let mut root_store = rustls::RootCertStore::empty();
+                root_store
+                    .add(CertificateDer::from(ca_entries[0].contents().to_vec()))
+                    .unwrap();
+                let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(root_store))
+                    .build()
+                    .unwrap();
+
+                let leaf_bytes = std::fs::read(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+                let leaf_entries = pem::parse_many(String::from_utf8(leaf_bytes).unwrap()).unwrap();
+                let leaf_cert = leaf_entries
+                    .iter()
+                    .find(|e| e.tag() == "CERTIFICATE")
+                    .unwrap();
+                let end_entity = CertificateDer::from(leaf_cert.contents().to_vec());
+
+                for ip in &admitted {
+                    let server_name =
+                        rustls::pki_types::ServerName::try_from(ip.to_string()).unwrap();
+                    assert!(
+                        verifier
+                            .verify_server_cert(
+                                &end_entity,
+                                &[],
+                                &server_name,
+                                &[],
+                                rustls::pki_types::UnixTime::now(),
+                            )
+                            .is_ok()
+                    );
+                }
+                assert_ne!(sel.leaf_fingerprint, leg_fp);
+            } else {
+                let state = read_lan_door_state(journal_root).unwrap();
+                assert!(!state.listening);
+                assert_eq!(state.reason.as_deref(), Some("tls_unavailable"));
+            }
+
+            let ca_bytes_before = if journal_root.join(LAN_CA_PEM_PATH).exists() {
+                Some(std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap())
+            } else {
+                None
+            };
+
+            drop(guard);
+            let id_complete = reconcile_lan_identity(journal_root, &admitted);
+            assert!(id_complete.selected.is_some());
+            let complete_sel = id_complete.selected.unwrap();
+
+            if let Some(before) = ca_bytes_before {
+                assert_eq!(
+                    std::fs::read(journal_root.join(LAN_CA_PEM_PATH)).unwrap(),
+                    before
+                );
+            }
+
+            assert!(!journal_root.join(LAN_TLS_PEM_PATH).exists());
+            assert_eq!(complete_sel.sans, admitted.iter().copied().collect());
+            assert_ne!(complete_sel.leaf_fingerprint, leg_fp);
+        }
+    }
+
+    #[test]
+    fn lan_leaf_webpki_ip_san_and_chain_verification() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-webpki-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+        let ip_v4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
+        let ip_v6 = IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 1));
+        let admitted = vec![ip_v4, ip_v6];
+
+        let id = reconcile_lan_identity(journal_root, &admitted);
+        assert!(id.selected.is_some());
+
+        let ca_pem_str = std::fs::read_to_string(journal_root.join(LAN_CA_PEM_PATH)).unwrap();
+        let leaf_pem_str = std::fs::read_to_string(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
+
+        let ca_entries = pem::parse_many(&ca_pem_str).unwrap();
+        let (_, ca_x509) = parse_x509_certificate(ca_entries[0].contents()).unwrap();
+
+        let leaf_entries = pem::parse_many(&leaf_pem_str).unwrap();
+        let leaf_cert_entry = leaf_entries
+            .iter()
+            .find(|e| e.tag() == "CERTIFICATE")
+            .unwrap();
+        let (_, leaf_x509) = parse_x509_certificate(leaf_cert_entry.contents()).unwrap();
+
+        // 1. x509-parser structural checks
+        assert_eq!(
+            parse_cert_san_ips(&leaf_x509),
+            admitted.iter().copied().collect::<BTreeSet<_>>()
+        );
+        assert!(ca_x509.tbs_certificate.is_ca()); // CA is_ca true
+        assert!(!leaf_x509.tbs_certificate.is_ca()); // leaf is_ca false
+
+        // 2. WebPkiServerVerifier accepts admitted IPs
+        let mut root_store = rustls::RootCertStore::empty();
+        root_store
+            .add(CertificateDer::from(ca_entries[0].contents().to_vec()))
+            .unwrap();
+        let verifier = rustls::client::WebPkiServerVerifier::builder(Arc::new(root_store))
+            .build()
+            .unwrap();
+
+        let end_entity = CertificateDer::from(leaf_cert_entry.contents().to_vec());
+
+        for ip in &admitted {
+            let server_name = rustls::pki_types::ServerName::try_from(ip.to_string()).unwrap();
+            let verify_res = verifier.verify_server_cert(
+                &end_entity,
+                &[],
+                &server_name,
+                &[],
+                rustls::pki_types::UnixTime::now(),
+            );
+            assert!(
+                verify_res.is_ok(),
+                "WebPkiServerVerifier failed for {ip}: {:?}",
+                verify_res
+            );
+        }
+
+        // 3. Unlisted IP yields InvalidCertificate (NotValidForName)
+        let unlisted_name = rustls::pki_types::ServerName::try_from("192.0.2.1").unwrap();
+        let unlisted_res = verifier.verify_server_cert(
+            &end_entity,
+            &[],
+            &unlisted_name,
+            &[],
+            rustls::pki_types::UnixTime::now(),
+        );
+        assert!(
+            matches!(
+                unlisted_res,
+                Err(rustls::Error::InvalidCertificate(
+                    rustls::CertificateError::NotValidForName
+                )) | Err(rustls::Error::InvalidCertificate(
+                    rustls::CertificateError::NotValidForNameContext { .. }
+                ))
+            ),
+            "Expected NotValidForName, got {:?}",
+            unlisted_res
+        );
+
+        // 4. Unrelated CA fails chain building
+        let unrelated_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+        let mut unrelated_params = CertificateParams::default();
+        unrelated_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
+        let unrelated_ca = unrelated_params.self_signed(&unrelated_key).unwrap();
+
+        let mut unrelated_root_store = rustls::RootCertStore::empty();
+        unrelated_root_store
+            .add(CertificateDer::from(unrelated_ca.der().to_vec()))
+            .unwrap();
+        let unrelated_verifier =
+            rustls::client::WebPkiServerVerifier::builder(Arc::new(unrelated_root_store))
+                .build()
+                .unwrap();
+
+        let server_name_v4 = rustls::pki_types::ServerName::try_from(ip_v4.to_string()).unwrap();
+        let unrelated_res = unrelated_verifier.verify_server_cert(
+            &end_entity,
+            &[],
+            &server_name_v4,
+            &[],
+            rustls::pki_types::UnixTime::now(),
+        );
+        assert!(
+            matches!(
+                unrelated_res,
+                Err(rustls::Error::InvalidCertificate(
+                    rustls::CertificateError::UnknownIssuer
+                ))
+            ),
+            "Expected UnknownIssuer, got {:?}",
+            unrelated_res
+        );
+    }
+
+    #[tokio::test]
+    async fn lan_door_control_loop_drop_uncovered_listener() {
+        let temp = tempfile::Builder::new()
+            .prefix("lan-door-uncovered-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+
+        // Bind on 127.0.0.1
+        let test_port = {
+            let l = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            l.local_addr().unwrap().port()
+        };
+        let listener = bind_admitted_address(IpAddr::V4(Ipv4Addr::LOCALHOST), test_port).unwrap();
+
+        // Create identity with 192.168.1.50 only (NOT 127.0.0.1)
+        let identity =
+            reconcile_lan_identity(journal_root, &[IpAddr::V4(Ipv4Addr::new(192, 168, 1, 50))]);
+        let selected = identity.selected.unwrap();
+        let server_config_cell = Arc::new(ArcSwap::from_pointee(Some(selected)));
+
+        let oauth = Arc::new(OAuthRuntime::new_lan_door(journal_root));
+        let sessions = Arc::new(SessionTable::new());
+        let pool_semaphore = Arc::new(Semaphore::new(64));
+        let source_counts = Arc::new(Mutex::new(HashMap::new()));
+        let (stop_tx, stop_rx) = watch::channel(false);
+
+        let mut run = LanDoorRun::production();
+        run.port = test_port;
+        run.bind_admitted = |_| true;
+        run.peer_admitted = |_| true;
+
+        let root_arc = Arc::new(journal_root.to_path_buf());
+        let accept_task = tokio::spawn(accept_loop_for_address(
+            listener,
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            root_arc,
+            oauth,
+            sessions,
+            server_config_cell,
+            pool_semaphore,
+            source_counts,
+            run,
+            stop_rx,
+        ));
+
+        // Connect client to 127.0.0.1:test_port
+        use tokio::io::AsyncReadExt;
+        let mut client_stream = tokio::net::TcpStream::connect(("127.0.0.1", test_port))
+            .await
+            .unwrap();
+        let mut buf = [0u8; 10];
+        let n = client_stream.read(&mut buf).await.unwrap();
+        // Server immediately drops uncovered stream -> EOF (0 bytes read)
+        assert_eq!(n, 0);
+
+        let _ = stop_tx.send(true);
+        let _ = accept_task.await;
+    }
+
+    #[tokio::test]
+    async fn local_door_isolation_with_lan_door() {
+        let temp = tempfile::Builder::new()
+            .prefix("local-door-isolation-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let journal_root = temp.path();
+
+        let config_dir = journal_root.join("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let config_json = serde_json::json!({
+            "mcp_endpoint": {
+                "lan_door": true,
+                "local_door": true
+            }
+        });
+        std::fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_vec_pretty(&config_json).unwrap(),
+        )
+        .unwrap();
+
+        let guard = set_lan_publish_stop(LanPublishStep::BeforeCaKey);
+
+        let test_port = {
+            let l = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let p = l.local_addr().unwrap().port();
+            drop(l);
+            p
+        };
+
+        let attempts_before = LAN_BIND_ATTEMPTS.load(std::sync::atomic::Ordering::SeqCst);
+
+        let mut run = crate::local_door::LocalDoorRun::production();
+        run.port = test_port;
+        run.connection_permits = 256;
+        run.config_interval = Duration::from_millis(50);
+        run.rewrite_interval = Duration::from_millis(50);
+        run.bind_retry_interval = Duration::from_millis(50);
+
+        let root_buf = journal_root.to_path_buf();
+        let local_handle = tokio::spawn(async move {
+            let _ = crate::local_door::run_local_door_async(root_buf, run, None).await;
+        });
+
+        let start = std::time::Instant::now();
+        loop {
+            if start.elapsed() > Duration::from_secs(5) {
+                panic!("timed out waiting for local door and lan door state");
+            }
+            tokio::time::sleep(Duration::from_millis(30)).await;
+
+            let local_state = crate::local_door::read_local_door_state(journal_root);
+            let lan_state = read_lan_door_state(journal_root);
+
+            if let (Some(loc), Some(lan)) = (local_state, lan_state)
+                && loc.listening
+                && !lan.listening
+                && lan.reason.as_deref() == Some("tls_unavailable")
+            {
+                break;
+            }
+        }
+
+        let attempts_after = LAN_BIND_ATTEMPTS.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(attempts_after - attempts_before, 0);
+
+        drop(guard);
+        crate::local_door::TEST_FORCE_LOCAL_SHUTDOWN
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        let _ = local_handle.await;
+        crate::local_door::TEST_FORCE_LOCAL_SHUTDOWN
+            .store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -1486,7 +2721,7 @@ mod full_tests {
             .unwrap();
         let journal = temp.path();
 
-        let (_fp, server_config) = load_or_generate_tls_config(journal).unwrap();
+        let server_config = test_loopback_server_config();
         let tls_acceptor = TlsAcceptor::from(server_config);
 
         let client_config = Arc::new(
@@ -1865,9 +3100,8 @@ mod full_tests {
         };
 
         let listener = bind_admitted_address(IpAddr::V4(Ipv4Addr::LOCALHOST), test_port).unwrap();
-
-        let (_fp, server_config) = load_or_generate_tls_config(journal).unwrap();
-        let server_config_cell = Arc::new(ArcSwap::from_pointee((*server_config).clone()));
+        let selected = test_loopback_selected_identity(&[IpAddr::V4(Ipv4Addr::LOCALHOST)]);
+        let server_config_cell = Arc::new(ArcSwap::from_pointee(Some(selected)));
         let oauth = Arc::new(OAuthRuntime::new_lan_door(journal));
         let sessions = Arc::new(SessionTable::new());
         let pool_semaphore = Arc::new(Semaphore::new(64));
@@ -1955,8 +3189,8 @@ mod full_tests {
         };
 
         let listener = bind_admitted_address(IpAddr::V4(Ipv4Addr::LOCALHOST), port).unwrap();
-        let (_fp, server_config) = load_or_generate_tls_config(journal).unwrap();
-        let server_config_cell = Arc::new(ArcSwap::from_pointee((*server_config).clone()));
+        let selected = test_loopback_selected_identity(&[IpAddr::V4(Ipv4Addr::LOCALHOST)]);
+        let server_config_cell = Arc::new(ArcSwap::from_pointee(Some(selected)));
         let oauth = Arc::new(OAuthRuntime::new_lan_door(journal));
         let sessions = Arc::new(SessionTable::new());
         let pool_semaphore = Arc::new(Semaphore::new(64));
@@ -2250,8 +3484,11 @@ mod full_tests {
         let listener_v6 = bind_admitted_address(IpAddr::V6(Ipv6Addr::LOCALHOST), port_v6)
             .expect("fail the test if [::1] cannot be bound");
 
-        let (_fp, server_config) = load_or_generate_tls_config(journal).unwrap();
-        let server_config_cell = Arc::new(ArcSwap::from_pointee((*server_config).clone()));
+        let selected = test_loopback_selected_identity(&[
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            IpAddr::V6(Ipv6Addr::LOCALHOST),
+        ]);
+        let server_config_cell = Arc::new(ArcSwap::from_pointee(Some(selected)));
         let oauth = Arc::new(OAuthRuntime::new_lan_door(journal));
         let sessions = Arc::new(SessionTable::new());
         let pool_semaphore = Arc::new(Semaphore::new(64));
@@ -2622,8 +3859,8 @@ mod full_tests {
             p
         };
         let listener = bind_admitted_address(IpAddr::V4(Ipv4Addr::LOCALHOST), port).unwrap();
-        let (_fp, server_config) = load_or_generate_tls_config(journal).unwrap();
-        let server_config_cell = Arc::new(ArcSwap::from_pointee((*server_config).clone()));
+        let selected = test_loopback_selected_identity(&[IpAddr::V4(Ipv4Addr::LOCALHOST)]);
+        let server_config_cell = Arc::new(ArcSwap::from_pointee(Some(selected)));
         let oauth_arc = Arc::new(lan_runtime);
         let sessions = Arc::new(SessionTable::new());
         let pool_semaphore = Arc::new(Semaphore::new(64));

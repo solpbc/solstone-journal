@@ -163,14 +163,35 @@ pub async fn run_local_door_async(
     result
 }
 
+#[cfg(test)]
+pub static TEST_FORCE_LOCAL_SHUTDOWN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 async fn wait_for_shutdown_signal(shutdown_send: watch::Sender<bool>) {
     let mut sigterm =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("signal");
     let mut sigint =
         tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).expect("signal");
-    tokio::select! {
-        _ = sigterm.recv() => {}
-        _ = sigint.recv() => {}
+    #[cfg(test)]
+    {
+        loop {
+            tokio::select! {
+                _ = sigterm.recv() => break,
+                _ = sigint.recv() => break,
+                _ = tokio::time::sleep(Duration::from_millis(20)) => {
+                    if TEST_FORCE_LOCAL_SHUTDOWN.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(test))]
+    {
+        tokio::select! {
+            _ = sigterm.recv() => {}
+            _ = sigint.recv() => {}
+        }
     }
     let _ = shutdown_send.send(true);
 }
