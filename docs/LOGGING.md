@@ -146,6 +146,11 @@ explicit per-module directive in the value itself, e.g. `RUST_LOG=debug,hyper=wa
 This is an operational (drop-in file) change, not a code change; see the audit below for what was and
 was not applied.
 
+**`trace` prints credentials.** At `debug`, `ureq` redacts the `Authorization` header and the URL path.
+At `trace`, `ureq-proto` dumps raw request and response bytes: headers, `Authorization` included, and
+bodies, which can carry tokens. Keep `ureq` and `ureq_proto` at `warn` in a trace session:
+`RUST_LOG=trace,ureq=warn,ureq_proto=warn`.
+
 ## Audit — what this pass found and did
 
 Measured against `origin/main` at the start of this work (grep methodology: `\b(log::)?debug!\(`, never
