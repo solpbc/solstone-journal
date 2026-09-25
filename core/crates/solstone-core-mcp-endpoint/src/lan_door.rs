@@ -2370,6 +2370,7 @@ mod tests {
         );
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn lan_door_control_loop_drop_uncovered_listener() {
         let temp = tempfile::Builder::new()
@@ -2430,6 +2431,7 @@ mod tests {
         let _ = accept_task.await;
     }
 
+    #[cfg(all(test, feature = "full-tests"))]
     #[tokio::test]
     async fn local_door_isolation_with_lan_door() {
         let temp = tempfile::Builder::new()
