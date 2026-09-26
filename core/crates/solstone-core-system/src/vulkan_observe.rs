@@ -689,7 +689,7 @@ mod full_package_tests {
                     WindowsProbeFinish::Incomplete
                 },
             );
-            assert_eq!(obs.succeeded, false);
+            assert!(!obs.succeeded);
             assert_eq!(launch_calls.get(), 0);
         }
 
@@ -708,7 +708,7 @@ mod full_package_tests {
                     WindowsProbeFinish::Incomplete
                 },
             );
-            assert_eq!(obs.succeeded, false);
+            assert!(!obs.succeeded);
             assert_eq!(launch_calls.get(), 0);
         }
 
@@ -727,7 +727,7 @@ mod full_package_tests {
                     WindowsProbeFinish::Incomplete
                 },
             );
-            assert_eq!(obs.succeeded, false);
+            assert!(!obs.succeeded);
             assert_eq!(launch_calls.get(), 0);
         }
 
@@ -750,7 +750,7 @@ mod full_package_tests {
                     WindowsProbeFinish::Incomplete
                 },
             );
-            assert_eq!(obs.succeeded, false);
+            assert!(!obs.succeeded);
             assert_eq!(launch_calls.get(), 0);
         }
 
@@ -779,7 +779,7 @@ mod full_package_tests {
                     }
                 },
             );
-            assert_eq!(obs.succeeded, true);
+            assert!(obs.succeeded);
             assert_eq!(launch_calls.get(), 1);
         }
     }

@@ -309,7 +309,7 @@ fn enumerate_devices_bounded<Q: VulkanQuery>(
             let vram_bytes = memory.memory_heaps[..heap_count]
                 .iter()
                 .filter(|heap| heap.flags & VK_DEVICE_LOCAL_BIT != 0)
-                .fold(0_u64, |total, heap| total.saturating_add(heap.size));
+                .try_fold(0_u64, |total, heap| total.checked_add(heap.size).ok_or(()))?;
             devices.push(VulkanDevice {
                 index: u32::try_from(index).map_err(|_| ())?,
                 name: String::from_utf8_lossy(&name_bytes).into_owned(),
@@ -436,8 +436,12 @@ where
 
 fn main() -> ExitCode {
     let output = probe_entry(std::env::args_os().skip(1), run_probe);
-    if !output.stdout.is_empty() {
-        let _ = io::stdout().lock().write_all(&output.stdout);
+    emit_output(output, io::stdout().lock())
+}
+
+fn emit_output(output: ProbeOutput, mut writer: impl Write) -> ExitCode {
+    if writer.write_all(&output.stdout).is_err() || writer.flush().is_err() {
+        return ExitCode::FAILURE;
     }
     if output.exit_code == 0 {
         ExitCode::SUCCESS
@@ -688,6 +692,82 @@ mod tests {
                 ])
             );
         }
+    }
+
+    #[test]
+    fn overflowing_device_memory_fails_and_destroys_instance() {
+        let query = MockVulkanQuery {
+            create_instance_result: Ok(1 as VkInstance),
+            enumerate_count_result: Ok(1),
+            enumerate_pointers_result: Ok(1),
+            buffer_requested: Cell::new(false),
+            device_properties: vec![make_properties("GPU", 2)],
+            device_memory: vec![make_memory(&[
+                (u64::MAX, VK_DEVICE_LOCAL_BIT),
+                (1, VK_DEVICE_LOCAL_BIT),
+            ])],
+            destroyed: Cell::new(false),
+        };
+        assert_eq!(enumerate_devices_bounded(&query, 64), Err(()));
+        assert!(query.destroyed.get());
+    }
+
+    #[test]
+    fn output_delivery_must_finish_before_success() {
+        struct FailingWriter {
+            remaining: usize,
+            fail_flush: bool,
+        }
+        impl Write for FailingWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                if self.remaining == 0 {
+                    return Err(io::ErrorKind::BrokenPipe.into());
+                }
+                let count = self.remaining.min(bytes.len());
+                self.remaining -= count;
+                Ok(count)
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                if self.fail_flush {
+                    Err(io::ErrorKind::BrokenPipe.into())
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let successful_output = || ProbeOutput {
+            stdout: b"[]\n".to_vec(),
+            exit_code: 0,
+        };
+        let mut bytes = Vec::new();
+        assert_eq!(
+            emit_output(successful_output(), &mut bytes),
+            ExitCode::SUCCESS
+        );
+        assert_eq!(bytes, b"[]\n");
+        for (remaining, fail_flush) in [(0, false), (1, false), (3, true)] {
+            assert_eq!(
+                emit_output(
+                    successful_output(),
+                    FailingWriter {
+                        remaining,
+                        fail_flush
+                    }
+                ),
+                ExitCode::FAILURE,
+            );
+        }
+        assert_eq!(
+            emit_output(
+                ProbeOutput {
+                    stdout: Vec::new(),
+                    exit_code: 1
+                },
+                Vec::new()
+            ),
+            ExitCode::FAILURE,
+        );
     }
 
     #[test]

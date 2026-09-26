@@ -1835,6 +1835,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn build_local_report_windows_platform_skips_nvidia_and_calls_vulkan_once() {
         let temp = tempfile::tempdir().unwrap();
         let hardware = solstone_core_local::VulkanDevice {

@@ -1440,6 +1440,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn gather_host_inputs_with_windows_platform_skips_nvidia_and_calls_vulkan_once() {
         let hardware = VulkanDevice {
             index: 0,

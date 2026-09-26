@@ -1113,6 +1113,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "full-tests")]
     fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
         let root = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(root.path().join("config")).unwrap();
