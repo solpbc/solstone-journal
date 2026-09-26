@@ -19,7 +19,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - after you merge one facet into another, search and the agents you've given the remaining facet now find what was filed under the old one. an agent you'd given only the old facet needs the remaining one.
 - `journal facet doctor --fix` can now record facets you renamed, merged or deleted before this version, so material from a renamed or merged facet shows up under the facet it became. run it before you create new facets. `journal facet doctor --retire NAME --into FACET` does the same for a name the journal has no record of.
 
-## [2.0.20] - 2026-09-26
+## [2.0.21] - 2026-09-26
 
 ### Added
 
