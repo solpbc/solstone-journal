@@ -943,6 +943,109 @@ fn ac6_delete_recreate_and_ac9_rename_keep_stable_facet_ids_real() {
     );
 }
 
+fn grant(journal: &tempfile::TempDir, scope: ReadScope) {
+    PermissionStore::open(journal.path())
+        .set_permission(
+            CONNECTION,
+            ReadPermission {
+                categories: vec!["entities".to_owned(), "transcripts".to_owned()],
+                scope,
+            },
+        )
+        .unwrap();
+}
+
+fn reachable(journal: &tempfile::TempDir) -> (usize, usize) {
+    let search = probe(journal, "search", json!({"query":"indexed"}))
+        .map(|value| value["results"].as_array().map_or(0, Vec::len))
+        .unwrap_or(0);
+    let transcripts = probe(journal, "list_transcripts", json!({}))
+        .map(|value| value["transcripts"].as_array().map_or(0, Vec::len))
+        .unwrap_or(0);
+    (search, transcripts)
+}
+
+fn reconcile(journal: &tempfile::TempDir) {
+    let mut snapshot = || {
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(
+            journal.path(),
+        )
+    };
+    solstone_core_indexer_store::reconcile::reconcile_stale_classifications(
+        journal.path(),
+        &mut snapshot,
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_merged_facet_name_reaches_the_survivor_in_search_and_transcripts_and_never_its_old_grant() {
+    let journal = fixture();
+    // What `journal facet merge alpha --into beta` leaves: alpha's folder is
+    // gone and its name resolves to beta. The index was built before it.
+    fs::remove_dir_all(journal.path().join("facets/alpha")).unwrap();
+    fs::write(
+        journal.path().join("facets/retired.json"),
+        json!({"names": {"alpha": {"state": "merged", "id": FACET_A, "successor": FACET_B}}})
+            .to_string(),
+    )
+    .unwrap();
+    grant(
+        &journal,
+        ReadScope::Facets {
+            ids: vec![FACET_B.to_owned()],
+        },
+    );
+    // Transcripts re-check live, so they follow at once; search needs the
+    // stored classification brought up to date.
+    assert_eq!(reachable(&journal), (0, 1));
+    reconcile(&journal);
+    assert_eq!(reachable(&journal), (1, 1));
+    grant(
+        &journal,
+        ReadScope::Facets {
+            ids: vec![FACET_A.to_owned()],
+        },
+    );
+    assert_eq!(reachable(&journal), (0, 0));
+    grant(
+        &journal,
+        ReadScope::Facets {
+            ids: vec!["123e4567-e89b-42d3-a456-426614174009".to_owned()],
+        },
+    );
+    assert_eq!(reachable(&journal), (0, 0));
+}
+
+#[test]
+fn a_deleted_facet_name_is_never_given_to_a_new_facet_and_a_forced_reuse_stays_closed() {
+    let journal = fixture();
+    assert!(solstone_core_facets::delete_facet(journal.path(), "alpha").unwrap());
+    assert!(matches!(
+        solstone_core_facets::create_facet(journal.path(), "alpha", "Alpha", "", "", "", None),
+        Err(solstone_core_facets::FacetWriteError::NameRetired { .. })
+    ));
+    // A hand edit reuses the name anyway, with a new id.
+    let alpha = journal.path().join("facets/alpha");
+    fs::create_dir_all(&alpha).unwrap();
+    const FACET_C: &str = "123e4567-e89b-42d3-a456-426614174002";
+    fs::write(
+        alpha.join("facet.json"),
+        json!({"id": FACET_C, "title": "Alpha"}).to_string(),
+    )
+    .unwrap();
+    reconcile(&journal);
+    grant(
+        &journal,
+        ReadScope::Facets {
+            ids: vec![FACET_C.to_owned()],
+        },
+    );
+    assert_eq!(reachable(&journal), (0, 0));
+    grant(&journal, ReadScope::WholeJournal);
+    assert_eq!(reachable(&journal), (1, 1));
+}
+
 #[test]
 fn ac8_ac11_ac12_ac30_bad_live_scope_and_references_fail_closed() {
     let journal = fixture();

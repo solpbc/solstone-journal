@@ -758,6 +758,11 @@ mod tests {
                     None,
                 );
                 solstone_core_facets::delete_facet(&context.journal, "work").unwrap();
+                // These tests recreate "work" to prove the fences against a replaced facet;
+                // the store never reuses a name, so the retired record is dropped as a hand edit would.
+                let _ = std::fs::remove_file(
+                    std::path::Path::new(&context.journal).join("facets/retired.json"),
+                );
                 observer_fixture(root.path());
                 assert_ne!(
                     solstone_core_facets::facet_write_identity(&context.journal, "work").unwrap(),

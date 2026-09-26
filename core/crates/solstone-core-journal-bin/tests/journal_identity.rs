@@ -465,12 +465,19 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
         markdown
     );
 
-    for (slug, title) in [("source", "Source"), ("dest", "Destination")] {
+    for (slug, title, id) in [
+        ("source", "Source", "11111111-1111-4111-8111-111111111111"),
+        (
+            "dest",
+            "Destination",
+            "22222222-2222-4222-8222-222222222222",
+        ),
+    ] {
         let facet = journal.join("facets").join(slug);
         fs::create_dir_all(facet.join("news")).expect("seed merge facet");
         fs::write(
             facet.join("facet.json"),
-            format!("{{\"title\":\"{title}\"}}\n"),
+            format!("{{\"id\":\"{id}\",\"title\":\"{title}\"}}\n"),
         )
         .expect("write facet declaration");
     }
@@ -486,7 +493,15 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
     )
     .expect("seed convey config");
     let merge = run_journal_with_journal(
-        &["facet", "merge", "source", "--into", "dest", "--consent"],
+        &[
+            "facet",
+            "merge",
+            "source",
+            "--into",
+            "dest",
+            "--consent",
+            "--yes",
+        ],
         Some(&path),
         &journal,
     );
@@ -501,6 +516,14 @@ fn journal_identity_executes_all_local_authorities_in_the_real_binary() {
         b"Merged 'source' into 'dest'. Index rebuild completed.\n"
     );
     assert!(!journal.join("facets/source").exists());
+    let retired: Value = serde_json::from_slice(
+        &fs::read(journal.join("facets/retired.json")).expect("source name retired"),
+    )
+    .expect("retired record");
+    assert_eq!(
+        retired["names"]["source"]["successor"],
+        "22222222-2222-4222-8222-222222222222"
+    );
     assert_eq!(
         fs::read(journal.join("facets/dest/news/20260807.md")).unwrap(),
         b"source-only\n"

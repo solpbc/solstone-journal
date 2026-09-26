@@ -16,7 +16,7 @@ use solstone_core_format::segment::{segment_key, segment_parse};
 use crate::StoreError;
 use crate::db::ChunkClassification;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum FacetResolution {
     Id(String),
     Missing,
@@ -26,12 +26,69 @@ enum FacetResolution {
 
 /// Exact directory-name to facet-id view used by the indexer.
 ///
-/// A facet rename does not rewrite per-segment `talents/facets.json`: material
-/// under the facet directory follows its stable ID, while old segment names
-/// stop resolving until the segment is re-sensed.
-#[derive(Clone, Debug, Default)]
+/// Material under a live `facets/<name>/` directory follows that directory's
+/// stable id. Stored references to a facet by name (segment assignments and
+/// per-segment `talents/<name>/` output) also consult `facets/retired.json`:
+/// a merged-away name resolves to the facet it was merged into, and a deleted
+/// or unknown name resolves to no facet.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct FacetDeclarationSet {
     names: BTreeMap<String, FacetResolution>,
+    live_ids: BTreeMap<String, String>,
+    retired: BTreeMap<String, RetiredName>,
+}
+
+/// One `facets/retired.json` entry, reduced to what resolution needs.
+///
+/// Keep this reader behaviorally identical to `solstone_core_facets`'
+/// `read_retired_facets`; both are checked against one shared fixture corpus.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RetiredName {
+    id: Option<String>,
+    successor: Option<String>,
+}
+
+const MAX_RETIRED_HOPS: usize = 16;
+
+/// Parse `facets/retired.json`. A missing, unreadable or malformed file yields
+/// no entries: every name that is not live then resolves to no facet, which
+/// fails closed for chosen-facet access without hiding anything from
+/// whole-journal access.
+fn read_retired_names(journal: &Path) -> BTreeMap<String, RetiredName> {
+    let Ok(text) = fs::read_to_string(journal.join("facets").join("retired.json")) else {
+        return BTreeMap::new();
+    };
+    let Ok(Value::Object(root)) = serde_json::from_str::<Value>(&text) else {
+        return BTreeMap::new();
+    };
+    let Some(Value::Object(names)) = root.get("names") else {
+        return BTreeMap::new();
+    };
+    let well_formed = |value: Option<&Value>| {
+        value
+            .and_then(Value::as_str)
+            .filter(|id| is_well_formed_facet_id(id))
+            .map(str::to_owned)
+    };
+    names
+        .iter()
+        .filter_map(|(name, entry)| {
+            let entry = entry.as_object()?;
+            let state = entry.get("state").and_then(Value::as_str);
+            // An unknown state reserves the name like a deletion: no successor.
+            let successor = match state {
+                Some("merged" | "renamed") => well_formed(entry.get("successor")),
+                _ => None,
+            };
+            Some((
+                name.clone(),
+                RetiredName {
+                    id: well_formed(entry.get("id")),
+                    successor,
+                },
+            ))
+        })
+        .collect()
 }
 
 impl FacetDeclarationSet {
@@ -51,6 +108,11 @@ impl FacetDeclarationSet {
             let Some(name) = entry.file_name().to_str().map(str::to_owned) else {
                 continue;
             };
+            // Facet names start with a letter; dot-directories are merge scratch
+            // space and backups, never facets.
+            if name.starts_with('.') {
+                continue;
+            }
             let declaration = entry.path().join("facet.json");
             let resolution = match fs::read_to_string(&declaration) {
                 Ok(text) => serde_json::from_str::<Value>(&text)
@@ -77,7 +139,16 @@ impl FacetDeclarationSet {
                 names.insert(name.clone(), FacetResolution::Duplicate);
             }
         }
-        Ok(Self { names })
+        let live_ids = id_names
+            .into_iter()
+            .filter(|(_, names)| names.len() == 1)
+            .map(|(id, mut names)| (id, names.remove(0)))
+            .collect();
+        Ok(Self {
+            names,
+            live_ids,
+            retired: read_retired_names(journal),
+        })
     }
 
     #[cfg(test)]
@@ -91,15 +162,95 @@ impl FacetDeclarationSet {
                     .unwrap_or(FacetResolution::Missing);
                 (name, resolution)
             })
+            .collect::<BTreeMap<String, FacetResolution>>();
+        let mut id_names = BTreeMap::<String, Vec<String>>::new();
+        for (name, resolution) in &names {
+            if let FacetResolution::Id(id) = resolution {
+                id_names.entry(id.clone()).or_default().push(name.clone());
+            }
+        }
+        let live_ids = id_names
+            .into_iter()
+            .filter(|(_, names)| names.len() == 1)
+            .map(|(id, mut names)| (id, names.remove(0)))
             .collect();
-        Self { names }
+        Self {
+            names,
+            live_ids,
+            retired: BTreeMap::new(),
+        }
     }
 
+    /// Whether `id` belongs to exactly one live facet directory.
+    pub fn is_live_id(&self, id: &str) -> bool {
+        self.live_ids.contains_key(id)
+    }
+
+    /// Whether two views resolve every name identically.
+    pub fn same_as(&self, other: &Self) -> bool {
+        self == other
+    }
+
+    /// Resolve material that lives under a `facets/<name>/` directory. Only a
+    /// live directory owns it; a retired entry never redirects it.
     fn lookup(&self, name: &str) -> FacetResolution {
         self.names
             .get(name)
             .cloned()
             .unwrap_or(FacetResolution::Missing)
+    }
+
+    /// Resolve a stored reference to a facet by name.
+    fn lookup_reference(&self, name: &str) -> FacetResolution {
+        let live = self.names.get(name).cloned();
+        let Some(retired) = self.retired.get(name) else {
+            return live.unwrap_or(FacetResolution::Missing);
+        };
+        match live {
+            // The same facet: a leftover of an operation that did not complete,
+            // including one written before the facet was given an id.
+            Some(FacetResolution::Id(id))
+                if retired.id.is_none() || retired.id.as_deref() == Some(id.as_str()) =>
+            {
+                FacetResolution::Id(id)
+            }
+            // A live directory whose declaration cannot be read stays visibly
+            // unclassified; a duplicate id stays excluded.
+            Some(resolution @ (FacetResolution::Unreadable | FacetResolution::Duplicate)) => {
+                resolution
+            }
+            // The name is live with a different identity and also retired: the
+            // references are ambiguous, so they belong to no facet.
+            Some(_) => FacetResolution::Missing,
+            None => self.follow_successor(retired),
+        }
+    }
+
+    fn follow_successor(&self, retired: &RetiredName) -> FacetResolution {
+        let mut successor = retired.successor.clone();
+        for _ in 0..MAX_RETIRED_HOPS {
+            let Some(id) = successor else {
+                return FacetResolution::Missing;
+            };
+            if let Some(name) = self.live_ids.get(&id) {
+                // A live facet that is itself retired under its own name keeps
+                // its identity only when the entry is its own leftover.
+                return match self.retired.get(name) {
+                    Some(entry)
+                        if entry.id.is_some() && entry.id.as_deref() != Some(id.as_str()) =>
+                    {
+                        FacetResolution::Missing
+                    }
+                    _ => FacetResolution::Id(id),
+                };
+            }
+            successor = self
+                .retired
+                .values()
+                .find(|entry| entry.id.as_deref() == Some(id.as_str()))
+                .and_then(|entry| entry.successor.clone());
+        }
+        FacetResolution::Missing
     }
 }
 
@@ -161,7 +312,12 @@ pub fn classify_source(
             let Some(name) = facet_owned_name(path) else {
                 return excluded(path);
             };
-            match declarations.lookup(name) {
+            let resolution = if path.starts_with("facets/") {
+                declarations.lookup(name)
+            } else {
+                declarations.lookup_reference(name)
+            };
+            match resolution {
                 FacetResolution::Id(id) => admitted(path, category, basis, vec![id]),
                 FacetResolution::Unreadable => unclassified(path),
                 FacetResolution::Duplicate => excluded(path),
@@ -174,7 +330,7 @@ pub fn classify_source(
             let mut ids = BTreeSet::new();
             let mut unresolved = false;
             for name in read_segment_facet_assignments(journal, path) {
-                match declarations.lookup(&name) {
+                match declarations.lookup_reference(&name) {
                     FacetResolution::Id(id) => {
                         ids.insert(id);
                     }
@@ -511,5 +667,175 @@ mod tests {
                 .expect("restore declaration permissions");
         }
         std::fs::remove_dir_all(root).expect("cleanup assignments");
+    }
+
+    const S: &str = "22222222-2222-4222-8222-222222222222";
+    const P: &str = "44444444-4444-4444-8444-444444444444";
+    const W: &str = "55555555-5555-4555-8555-555555555555";
+    const Z: &str = "66666666-6666-4666-8666-666666666666";
+    const X: &str = "77777777-7777-4777-8777-777777777777";
+
+    fn declare(root: &std::path::Path, dir: &str, id: &str) {
+        std::fs::create_dir_all(root.join("facets").join(dir)).expect("facet dir");
+        std::fs::write(
+            root.join("facets").join(dir).join("facet.json"),
+            format!(r#"{{"id":"{id}"}}"#),
+        )
+        .expect("declaration");
+    }
+
+    fn assign(root: &std::path::Path, names: &[&str]) -> &'static str {
+        let talents = root.join("chronicle/20260107/default/123456_300/talents");
+        std::fs::create_dir_all(&talents).expect("segment");
+        let rows = names
+            .iter()
+            .map(|name| format!(r#"{{"facet":"{name}"}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        std::fs::write(talents.join("facets.json"), format!("[{rows}]")).expect("assignment");
+        "20260107/default/123456_300/talents/brief.md"
+    }
+
+    fn ids(root: &std::path::Path, path: &str) -> Vec<String> {
+        let declarations = FacetDeclarationSet::from_journal(root).expect("declarations");
+        let classified = classify_source(root, path, None, &declarations);
+        assert!(
+            classified.eligible && !classified.unclassified,
+            "{path} stays visible"
+        );
+        classified.facet_ids
+    }
+
+    #[test]
+    fn retired_facet_names_resolve_references_to_their_successor_or_to_no_facet() {
+        let root = reserve_temp_path("classification-retired");
+        declare(&root, "solstone", S);
+        declare(&root, "personal", P);
+        std::fs::write(
+            root.join("facets/retired.json"),
+            format!(
+                r#"{{"names":{{
+                    "sunstone":{{"state":"merged","id":null,"successor":"{S}"}},
+                    "gone":{{"state":"deleted","id":null}},
+                    "a":{{"state":"merged","id":null,"successor":"{X}"}},
+                    "b":{{"state":"merged","id":"{X}","successor":"{S}"}}
+                }}}}"#
+            ),
+        )
+        .expect("retired");
+
+        let path = assign(&root, &["sunstone"]);
+        assert_eq!(ids(&root, path), vec![S]);
+        let path = assign(&root, &["personal", "sunstone"]);
+        assert_eq!(
+            ids(&root, path),
+            vec![S.to_owned(), P.to_owned()]
+                .into_iter()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+        );
+        let path = assign(&root, &["gone"]);
+        assert!(ids(&root, path).is_empty());
+        // A deleted facet among several denies the whole segment to chosen facets.
+        let path = assign(&root, &["personal", "gone"]);
+        assert!(ids(&root, path).is_empty());
+        // Chains follow retired ids to a live facet.
+        let path = assign(&root, &["a"]);
+        assert_eq!(ids(&root, path), vec![S]);
+        // Per-segment output filed under a merged name is a reference too.
+        assert_eq!(
+            ids(
+                &root,
+                "20260107/default/123456_300/talents/sunstone/brief.md"
+            ),
+            vec![S]
+        );
+        // Material in a live folder keeps its own facet.
+        assert_eq!(ids(&root, "facets/solstone/news/20260107.md"), vec![S]);
+        // Merge scratch copies never make a live id a duplicate.
+        declare(&root, ".facet-merge-1.dest", S);
+        let path = assign(&root, &["sunstone"]);
+        assert_eq!(ids(&root, path), vec![S]);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_live_name_that_is_also_retired_keeps_its_folder_but_not_its_references() {
+        let root = reserve_temp_path("classification-ambiguous");
+        declare(&root, "work", W);
+        std::fs::write(
+            root.join("facets/retired.json"),
+            format!(r#"{{"names":{{"work":{{"state":"renamed","id":"{Z}","successor":"{W}"}}}}}}"#),
+        )
+        .expect("retired");
+        let path = assign(&root, &["work"]);
+        assert!(ids(&root, path).is_empty());
+        assert!(ids(&root, "20260107/default/123456_300/talents/work/brief.md").is_empty());
+        assert_eq!(ids(&root, "facets/work/news/20260107.md"), vec![W]);
+
+        // The facet's own leftover entry is the same facet, with or without
+        // the id it has since been given.
+        for leftover in [format!(r#""id":"{W}""#), r#""id":null"#.to_owned()] {
+            std::fs::write(
+                root.join("facets/retired.json"),
+                format!(r#"{{"names":{{"work":{{"state":"deleted",{leftover}}}}}}}"#),
+            )
+            .expect("leftover");
+            let path = assign(&root, &["work"]);
+            assert_eq!(ids(&root, path), vec![W]);
+        }
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_damaged_retired_record_fails_closed_only_for_names_that_are_not_live() {
+        let root = reserve_temp_path("classification-retired-damaged");
+        declare(&root, "personal", P);
+        std::fs::write(root.join("facets/retired.json"), "{not json").expect("damaged");
+        let path = assign(&root, &["sunstone"]);
+        assert!(ids(&root, path).is_empty());
+        let path = assign(&root, &["personal"]);
+        assert_eq!(ids(&root, path), vec![P]);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn retired_record_parse_matches_the_shared_corpus() {
+        let corpus: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("../solstone-core-facets/tests/fixtures/retired-facets-corpus.json"),
+            )
+            .expect("corpus"),
+        )
+        .expect("corpus json");
+        for case in corpus["cases"].as_array().expect("cases") {
+            let root = reserve_temp_path("classification-retired-corpus");
+            std::fs::create_dir_all(root.join("facets")).expect("facets");
+            std::fs::write(
+                root.join("facets/retired.json"),
+                case["input"].as_str().expect("input"),
+            )
+            .expect("input");
+            let parsed = read_retired_names(&root);
+            let expected = match case["expected"].as_object() {
+                None => BTreeMap::new(),
+                Some(entries) => entries
+                    .iter()
+                    .map(|(name, entry)| {
+                        (
+                            name.clone(),
+                            RetiredName {
+                                id: entry["id"].as_str().map(str::to_owned),
+                                successor: entry["successor"].as_str().map(str::to_owned),
+                            },
+                        )
+                    })
+                    .collect(),
+            };
+            assert_eq!(parsed, expected, "{}", case["input"]);
+            std::fs::remove_dir_all(root).expect("cleanup");
+        }
     }
 }

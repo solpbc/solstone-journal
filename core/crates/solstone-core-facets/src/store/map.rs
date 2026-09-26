@@ -12,7 +12,9 @@ use super::paths::{facet_entities_dir, facet_entity_link_path, facets_dir};
 pub fn list_facet_directories(journal_root: &Path) -> Result<Vec<String>, FacetStoreError> {
     let mut directories = Vec::new();
     for entry in list_dir_entries(&facets_dir(journal_root)?)? {
-        if entry.kind == DirEntryKind::Directory {
+        // Facet names start with a letter; dot-directories are merge scratch
+        // space and backups, never facets.
+        if entry.kind == DirEntryKind::Directory && !entry.name.to_string_lossy().starts_with('.') {
             directories.push(entry.name.to_string_lossy().into_owned());
         }
     }
@@ -26,6 +28,9 @@ pub fn list_declared_facet_names(journal_root: &Path) -> Result<Vec<String>, Fac
             continue;
         }
         let name = entry.name.to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
         let declaration = entry.path.join("facet.json");
         let Ok(contents) = read_text(&declaration, String::new()) else {
             continue;

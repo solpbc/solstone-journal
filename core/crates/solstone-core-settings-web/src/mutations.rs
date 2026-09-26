@@ -424,7 +424,7 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
     let lifecycle = crate::test_support::phase_root("rich");
     let lifecycle_router = crate::test_support::shell_router(lifecycle.path());
     for (method, path, body) in [
-        // A journal keeps one enabled facet, so deleting "renamed" needs a sibling.
+        // A journal keeps one enabled facet, so deleting "temporary" needs a sibling.
         (
             "POST",
             "/app/settings/api/facet",
@@ -450,21 +450,47 @@ async fn ac13_populated_journal_tree_mutation_bytes_and_runtime_day_logs() {
             "/app/settings/api/facet/temporary/activities/temporary_activity",
             json!({}),
         ),
+        // Renaming changes the title; the facet keeps its name.
         (
             "POST",
             "/app/settings/api/facet/temporary/rename",
-            json!({"new_name":"renamed"}),
+            json!({"new_name":"Renamed"}),
         ),
         (
             "DELETE",
-            "/app/settings/api/facet/renamed",
+            "/app/settings/api/facet/temporary",
             json!({"consent":true}),
         ),
     ] {
         let (status, _) = request(lifecycle_router.clone(), method, path, Some(&body)).await;
         assert!(status.is_success(), "{method} {path}: {status}");
     }
+    assert!(!lifecycle.path().join("facets/temporary").exists());
     assert!(!lifecycle.path().join("facets/renamed").exists());
+    assert!(
+        solstone_core_facets::retired_facet_entry(lifecycle.path(), "temporary")
+            .expect("retired record")
+            .is_some()
+    );
+    // Creating the same title again gives the new facet the next free name.
+    let (status, body) = request(
+        lifecycle_router.clone(),
+        "POST",
+        "/app/settings/api/facet",
+        Some(&json!({"title":"Temporary"})),
+    )
+    .await;
+    assert!(status.is_success(), "{status}");
+    assert_eq!(body["facet"], "temporary-2");
+    // A live facet's title keeps today's refusal.
+    let (status, _) = request(
+        lifecycle_router,
+        "POST",
+        "/app/settings/api/facet",
+        Some(&json!({"title":"Temporary 2"})),
+    )
+    .await;
+    assert!(status.is_client_error(), "{status}");
 }
 
 // Same executor-absence pin as `ac1`, for the same reason: this collection

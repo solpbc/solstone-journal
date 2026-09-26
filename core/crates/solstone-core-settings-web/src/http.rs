@@ -35,6 +35,16 @@ pub fn last_enabled_facet() -> Response {
     .into_response()
 }
 
+pub fn retired_facet_names_unreadable() -> Response {
+    error_envelope(
+        "retired_facet_names_unreadable",
+        "your journal's record of past facet names couldn't be read, so no facet was added.",
+        "run `journal facet doctor --fix` on the computer your journal is on, then try again",
+        StatusCode::CONFLICT,
+    )
+    .into_response()
+}
+
 pub fn settings_operation_failed() -> Response {
     settings_operation_failed_with_detail(
         "something went wrong — try again, and if it persists, check the health dashboard",

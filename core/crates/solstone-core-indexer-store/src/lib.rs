@@ -5,6 +5,7 @@ pub mod classification;
 pub mod db;
 pub mod merge;
 pub mod migrations;
+pub mod reconcile;
 pub mod retention;
 pub mod scan;
 

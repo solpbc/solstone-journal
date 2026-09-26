@@ -967,6 +967,9 @@ mod tests {
             None,
         );
         solstone_core_facets::delete_facet(root.path(), "work").unwrap();
+        // These tests recreate "work" to prove the fences against a replaced facet;
+        // the store never reuses a name, so the retired record is dropped as a hand edit would.
+        let _ = std::fs::remove_file(std::path::Path::new(root.path()).join("facets/retired.json"));
         with_daily_unit_authority(root.path(), &identity, |authority| {
             // A retry has a fresh publication fence but retains the same plan
             // and the historical receipts of its completed owner actions.
@@ -1678,6 +1681,11 @@ mod tests {
                     None,
                 );
                 solstone_core_facets::delete_facet(root.path(), "work").unwrap();
+                // These tests recreate "work" to prove the fences against a replaced facet;
+                // the store never reuses a name, so the retired record is dropped as a hand edit would.
+                let _ = std::fs::remove_file(
+                    std::path::Path::new(root.path()).join("facets/retired.json"),
+                );
                 if mutation == "replace" {
                     solstone_core_facets::create_facet(
                         root.path(),
@@ -1767,6 +1775,10 @@ mod tests {
                 None,
             );
             solstone_core_facets::delete_facet(root.path(), "work").unwrap();
+            // These tests recreate "work" to prove the fences against a replaced facet;
+            // the store never reuses a name, so the retired record is dropped as a hand edit would.
+            let _ =
+                std::fs::remove_file(std::path::Path::new(root.path()).join("facets/retired.json"));
             with_daily_unit_authority(root.path(), &identity, |authority| {
                 let error = publish_daily_publication(
                     authority,
@@ -1854,6 +1866,9 @@ mod tests {
             None,
         );
         solstone_core_facets::delete_facet(root.path(), "work").unwrap();
+        // These tests recreate "work" to prove the fences against a replaced facet;
+        // the store never reuses a name, so the retired record is dropped as a hand edit would.
+        let _ = std::fs::remove_file(std::path::Path::new(root.path()).join("facets/retired.json"));
         solstone_core_facets::create_facet(root.path(), "work", "Work", "", "", "", None).unwrap();
         let error = prepare_daily_publication(
             CommitPlan::Write(WriteIntent::FacetNewsletter {
@@ -2165,6 +2180,10 @@ mod tests {
             None,
         );
         solstone_core_facets::delete_facet(journal.path(), "work").unwrap();
+        // These tests recreate "work" to prove the fences against a replaced facet;
+        // the store never reuses a name, so the retired record is dropped as a hand edit would.
+        let _ =
+            std::fs::remove_file(std::path::Path::new(journal.path()).join("facets/retired.json"));
         let error = solstone_core_facets::publish_review_attachment(
             journal.path(),
             &promotion.attachment,
@@ -2213,6 +2232,10 @@ mod tests {
             None,
         );
         solstone_core_facets::delete_facet(journal.path(), "work").unwrap();
+        // These tests recreate "work" to prove the fences against a replaced facet;
+        // the store never reuses a name, so the retired record is dropped as a hand edit would.
+        let _ =
+            std::fs::remove_file(std::path::Path::new(journal.path()).join("facets/retired.json"));
         with_daily_unit_authority(journal.path(), &identity, |authority| {
             let mut record = DailyUnitRecord::new(identity.clone(), "E", "C");
             record.lock_token = Some("guard".into());

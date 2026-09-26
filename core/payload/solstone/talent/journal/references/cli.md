@@ -74,7 +74,7 @@ solstone call journal facet show         # uses SOL_FACET
 solstone call journal facet create <title> [--emoji EMOJI] [--icon ICON] [--color COLOR] [--description DESC] [--consent]
 ```
 
-Create a new facet directory and initial `facet.json`.
+Create a new facet directory and initial `facet.json`. The facet's name comes from the title and is returned as `facet`; use that name in later commands. If the name belonged to a facet that was deleted or merged, the new facet gets the next free one, such as `work-2`, and keeps the title you gave.
 
 - `title`: display title used for the facet.
 - `--emoji`: optional icon emoji (default: `📦`).
@@ -116,19 +116,19 @@ solstone call journal facet update work --icon brain
 ## facet rename
 
 ```bash
-solstone call journal facet rename <name> <new-name> [--consent]
+solstone call journal facet rename <name> <new-title> [--consent]
 ```
 
-Rename a facet (directory and references in config/chat metadata).
+Change a facet's title. The facet keeps its name, the one commands and agent permissions use, so everything filed under it stays where it is.
 
-- `name`: current facet identifier.
-- `new-name`: new facet identifier.
-- `--consent`: asserts that the agent has received explicit owner approval before performing this structural change. Pass when acting proactively rather than in direct response to an owner instruction. Adds `"consent": true` to the audit log entry.
+- `name`: the facet's name.
+- `new-title`: the title to show for it.
+- `--consent`: asserts that the agent has received explicit owner approval before making this change. Pass when acting proactively rather than in direct response to an owner instruction. Adds `"consent": true` to the audit log entry.
 
 Example:
 
 ```bash
-solstone call journal facet rename personal personal-life
+solstone call journal facet rename personal "Personal life"
 ```
 
 ## facet mute
@@ -165,7 +165,7 @@ solstone call journal facet unmute personal
 solstone call journal facet delete <name> --yes [--consent]
 ```
 
-Delete a facet directory and all its data. Run it only after the owner has approved this delete.
+Delete a facet directory and all its data. Its name can't be given to a new facet afterwards. Run it only after the owner has approved this delete.
 
 - `--yes`: required. Without it the command refuses.
 - `--consent`: accepted but changes nothing. Every delete is logged with `"consent": true` in the audit log entry.
@@ -179,18 +179,20 @@ solstone call journal facet delete old-facet --yes
 ## facet merge
 
 ```bash
-journal facet merge <source> --into <dest> [--consent] [--dry-run]
+journal facet merge <source> --into <dest> (--dry-run | --yes) [--consent]
 ```
 
-Move the contents of facet `<source>` into facet `<dest>`, remove `<source>`, and rebuild the search index. `.jsonl` logs and entity records that both facets have are combined; where both have the same record id or field, `<dest>`'s is kept. For any other file both facets have, `<dest>` keeps its own copy, `<source>`'s copy is deleted with `<source>`, and the command lists those files. `<source>`'s own facet settings are not carried over. Before asking the owner, run it with `--dry-run` and tell them what it lists; to keep both copies of a file it lists as one both facets have, rename one of the two before merging. This runs with the `journal` command on the computer the journal is on; there is no `solstone call journal` form.
+Move the contents of facet `<source>` into facet `<dest>`, remove `<source>`, and rebuild the search index. A merge can't be undone. Afterwards `<source>`'s name always means `<dest>`: material that still names it is found under `<dest>`, and no new facet can take that name. Agents limited to `<source>` see nothing until the owner gives them `<dest>`. `.jsonl` logs and entity records that both facets have are combined; where both have the same record id or field, `<dest>`'s is kept. For any other file both facets have, `<dest>` keeps its own copy, `<source>`'s copy is deleted with `<source>`, and the command lists those files. `<source>`'s own facet settings are not carried over. Before asking the owner, run it with `--dry-run` and tell them what it lists; to keep both copies of a listed file, rename one of the two files before merging. This runs with the `journal` command on the computer the journal is on; there is no `solstone call journal` form.
 
 - `--consent`: asserts that the agent has received explicit owner approval before performing this destructive operation. Agents pass it only after the owner has approved this merge. Adds `"consent": true` to the audit log entry.
+- `--yes`: required to merge. Without it the command refuses.
 - `--dry-run`: changes nothing. It lists the files both facets have that can't be combined, counts per file the records and entity fields that would give way to a different version with the same id or field (for records, the first with each id is kept, reading `<dest>` first; for entity fields, `<dest>`'s value is kept), and says whether `<source>`'s own settings would be dropped. Needs no `--consent`.
 
 Example:
 
 ```bash
-journal facet merge side-project --into work --consent
+journal facet merge side-project --into work --dry-run
+journal facet merge side-project --into work --consent --yes
 ```
 
 ## facets

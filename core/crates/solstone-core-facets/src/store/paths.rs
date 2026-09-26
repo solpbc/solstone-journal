@@ -31,13 +31,6 @@ pub(super) fn declaration_path(
     contained_path(journal_root, &format!("facets/{facet_dir}/facet.json")).map_err(Into::into)
 }
 
-pub(super) fn facet_dir_path(
-    journal_root: &Path,
-    facet_dir: &str,
-) -> Result<PathBuf, FacetStoreError> {
-    contained_path(journal_root, &format!("facets/{facet_dir}")).map_err(Into::into)
-}
-
 pub(super) fn facet_entities_dir(
     journal_root: &Path,
     facet_dir: &str,

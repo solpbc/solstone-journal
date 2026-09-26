@@ -6,10 +6,18 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- renaming a facet now changes only its title. its name, the one commands and agent permissions use, stays the same, so what's filed under it stays put and every agent you've given it to keeps its access.
+- from this version on, once you delete or merge a facet, its name is never used again. a new facet with the same title gets a new name, so nothing filed under the old facet can end up in the new one.
+- merging facets can't be undone, so `journal facet merge` now needs `--yes` to run. check first what a merge would lose with `--dry-run`.
+
 ### Fixed
 
 - security fix: since 2.0.9, anyone who could reach your journal could see your facets' names and colors on the page your browser opens to finish connecting an agent, before a pairing code was entered, and a wrong code could confirm whether a guessed facet name existed. that page now shows your facets only after the code matches, so if you limit an agent to chosen facets, you choose them on the next step.
 - a facet's entity review no longer stops for the day when another facet saved merge suggestions while it was running. if `journal doctor` already names a day that stopped this way, the reprocess command it suggests finishes that day's review.
+- after you merge one facet into another, search and the agents you've given the remaining facet now find what was filed under the old one. an agent you'd given only the old facet needs the remaining one.
+- `journal facet doctor --fix` can now record facets you renamed, merged or deleted before this version, so material from a renamed or merged facet shows up under the facet it became. run it before you create new facets. `journal facet doctor --retire NAME --into FACET` does the same for a name the journal has no record of.
 
 ## [2.0.20] - 2026-09-26
 

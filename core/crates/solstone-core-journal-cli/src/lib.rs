@@ -4,6 +4,8 @@
 use std::ffi::{OsStr, OsString};
 use std::process::ExitCode;
 
+#[cfg(not(target_os = "ios"))]
+mod facet_names;
 pub mod help;
 mod host;
 mod layout;

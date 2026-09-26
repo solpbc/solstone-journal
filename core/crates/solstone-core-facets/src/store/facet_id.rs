@@ -68,6 +68,13 @@ fn collect_existing_ids(journal_root: &Path) -> Result<HashSet<String>, FacetIdE
             existing.insert(id.to_owned());
         }
     }
+    // A retired facet's id is never given to a new facet either.
+    for entry in super::retired::read_retired_facets(journal_root)
+        .entries()
+        .into_values()
+    {
+        existing.extend(entry.id);
+    }
     Ok(existing)
 }
 

@@ -6,10 +6,7 @@ use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
-use solstone_core_entity::EntityAmbiguityRescopeError;
-use solstone_core_journal_io::{
-    AtomicWriteError, IdentifierMintError, LockError, PathError, ReadError,
-};
+use solstone_core_journal_io::{AtomicWriteError, IdentifierMintError, PathError, ReadError};
 
 use crate::FacetTrustLockError;
 
@@ -134,6 +131,20 @@ pub enum FacetWriteError {
     LastEnabledFacet {
         facet: String,
     },
+    /// The name belonged to a facet that was deleted or merged away; facet
+    /// names are never reused.
+    NameRetired {
+        name: String,
+    },
+    /// `facets/retired.json` exists but could not be read or parsed; it is
+    /// never overwritten.
+    RetiredFileDamaged {
+        detail: String,
+    },
+    /// A permanent retired entry already records a different outcome.
+    RetiredEntryConflict {
+        name: String,
+    },
 }
 
 pub use solstone_core_entity::{
@@ -174,6 +185,18 @@ impl fmt::Display for FacetWriteError {
                 formatter,
                 "facet '{facet}' is the only enabled facet; a journal keeps at least one"
             ),
+            Self::NameRetired { name } => write!(
+                formatter,
+                "the facet name '{name}' belonged to a facet that was deleted or merged; facet names are never reused"
+            ),
+            Self::RetiredFileDamaged { detail } => write!(
+                formatter,
+                "facets/retired.json could not be read ({detail}); run 'journal facet doctor --fix'"
+            ),
+            Self::RetiredEntryConflict { name } => write!(
+                formatter,
+                "the facet name '{name}' is already recorded as retired with a different outcome"
+            ),
         }
     }
 }
@@ -192,7 +215,10 @@ impl Error for FacetWriteError {
             | Self::DeclarationMissing { .. }
             | Self::DeclarationDamaged { .. }
             | Self::DeclarationUnreadable { .. }
-            | Self::LastEnabledFacet { .. } => None,
+            | Self::LastEnabledFacet { .. }
+            | Self::NameRetired { .. }
+            | Self::RetiredFileDamaged { .. }
+            | Self::RetiredEntryConflict { .. } => None,
         }
     }
 }
@@ -453,96 +479,5 @@ impl From<solstone_core_entity::EntityWriteError> for FacetEntityWriteError {
 impl From<io::Error> for FacetEntityWriteError {
     fn from(value: io::Error) -> Self {
         Self::Io(value)
-    }
-}
-
-/// Failure while renaming one facet directory and its dependent references.
-#[derive(Debug)]
-pub enum FacetRenameError {
-    InvalidName {
-        name: String,
-    },
-    Path(FacetStoreError),
-    FacetMissing {
-        path: PathBuf,
-    },
-    DestinationExists {
-        path: PathBuf,
-    },
-    TrustLock(FacetTrustLockError),
-    DirectoryRename {
-        old_path: PathBuf,
-        new_path: PathBuf,
-        source: io::Error,
-    },
-    AmbiguityRescope {
-        source: EntityAmbiguityRescopeError,
-        rollback: Option<io::Error>,
-    },
-    ConveyConfigLock(LockError),
-    ConveyConfigRead(FacetStoreError),
-    ConveyConfigWrite(AtomicWriteError),
-}
-
-impl fmt::Display for FacetRenameError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::InvalidName { name } => write!(formatter, "invalid facet name: {name:?}"),
-            Self::Path(error) => error.fmt(formatter),
-            Self::FacetMissing { path } => {
-                write!(
-                    formatter,
-                    "facet declaration is missing: {}",
-                    path.display()
-                )
-            }
-            Self::DestinationExists { path } => {
-                write!(
-                    formatter,
-                    "facet rename destination already exists: {}",
-                    path.display()
-                )
-            }
-            Self::TrustLock(error) => error.fmt(formatter),
-            Self::DirectoryRename {
-                old_path,
-                new_path,
-                source,
-            } => write!(
-                formatter,
-                "cannot rename facet directory {} to {}: {source}",
-                old_path.display(),
-                new_path.display()
-            ),
-            Self::AmbiguityRescope { source, rollback } => match rollback {
-                Some(rollback) => write!(
-                    formatter,
-                    "facet ambiguity rescope failed: {source}; directory rollback also failed: {rollback}"
-                ),
-                None => write!(
-                    formatter,
-                    "facet ambiguity rescope failed and directory was rolled back: {source}"
-                ),
-            },
-            Self::ConveyConfigLock(error) => error.fmt(formatter),
-            Self::ConveyConfigRead(error) => error.fmt(formatter),
-            Self::ConveyConfigWrite(error) => error.fmt(formatter),
-        }
-    }
-}
-
-impl Error for FacetRenameError {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Path(error) | Self::ConveyConfigRead(error) => Some(error),
-            Self::TrustLock(error) => Some(error),
-            Self::DirectoryRename { source, .. } => Some(source),
-            Self::AmbiguityRescope { source, .. } => Some(source),
-            Self::ConveyConfigLock(error) => Some(error),
-            Self::ConveyConfigWrite(error) => Some(error),
-            Self::InvalidName { .. }
-            | Self::FacetMissing { .. }
-            | Self::DestinationExists { .. } => None,
-        }
     }
 }

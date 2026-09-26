@@ -20,7 +20,7 @@
 //! rerunning it completes idempotently (`block_detaches_links_by_stored_entity_id_and_reports_only_new_detaches`).
 //! Delete removes links and repairs ambiguities before the entity directory, so a
 //! partial delete remains distinguishable by its surviving entity directory. Both
-//! operations take facet trust before entity trust, matching `rename_facet` and
+//! operations take facet trust before entity trust, matching `delete_facet` and
 //! preventing inversion. Delete leaves no durable trace beyond removed entity history
 //! and the deliberately dangling references.
 

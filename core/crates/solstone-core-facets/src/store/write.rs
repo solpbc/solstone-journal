@@ -1,27 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value};
-use solstone_core_journal_io::{JsonWriteOptions, path_lexists, remove_dir_all, write_json};
+use solstone_core_journal_io::{JsonWriteOptions, remove_dir_all, write_json};
 
 use crate::hold_facet_trust_lock;
 
 use super::declaration::{observe_declared_facet_inventory, read_facet_declaration};
-use super::error::{FacetRenameError, FacetStoreError, FacetWriteError};
+use super::error::FacetWriteError;
 use super::facet_id::allocate_facet_id_locked;
 use super::identity::read_facet_entity_link;
-use super::paths::{declaration_path, facet_dir_path, facet_entity_link_path};
-
-/// Structured successful result for a physical facet-directory rename.
-#[derive(Debug, Clone, PartialEq)]
-pub struct FacetRenameResult {
-    pub old_name: String,
-    pub new_name: String,
-    pub reindex_required: bool,
-}
+use super::paths::{declaration_path, facet_entity_link_path};
+use super::retired::{
+    RetiredFacet, first_free_facet_name, record_retired_facet, retired_facet_entry,
+};
 
 /// Create a facet declaration in its requested directory.
 pub fn create_facet(
@@ -37,6 +31,11 @@ pub fn create_facet(
     if read_facet_declaration(journal_root, facet_dir)?.is_some() {
         return Err(FacetWriteError::AlreadyExists {
             path: declaration_path(journal_root, facet_dir)?,
+        });
+    }
+    if retired_facet_entry(journal_root, facet_dir)?.is_some() {
+        return Err(FacetWriteError::NameRetired {
+            name: facet_dir.to_owned(),
         });
     }
     let id = allocate_facet_id_locked(journal_root)?;
@@ -74,15 +73,14 @@ pub fn ensure_default_facet(journal_root: &Path) -> Result<bool, FacetWriteError
     if inventory.muted.iter().any(|facet| facet == DEFAULT_FACET) {
         set_facet_muted(journal_root, DEFAULT_FACET, false)?;
     } else {
-        create_facet(
-            journal_root,
-            DEFAULT_FACET,
-            DEFAULT_FACET_TITLE,
-            "",
-            "",
-            "",
-            None,
-        )?;
+        // A retired `personal` is never recreated; the default takes the next
+        // free name and keeps the same title.
+        let name = if retired_facet_entry(journal_root, DEFAULT_FACET)?.is_none() {
+            DEFAULT_FACET.to_owned()
+        } else {
+            first_free_facet_name(journal_root, DEFAULT_FACET)?
+        };
+        create_facet(journal_root, &name, DEFAULT_FACET_TITLE, "", "", "", None)?;
     }
     Ok(true)
 }
@@ -106,6 +104,23 @@ pub fn delete_facet(journal_root: &Path, facet_dir: &str) -> Result<bool, FacetW
         return Ok(false);
     }
     refuse_last_enabled(journal_root, facet_dir)?;
+    // The name is retired before the directory goes: a crash in between leaves
+    // the live facet with its own leftover entry, which resolves to the live
+    // facet and lets a retried delete complete.
+    let declaration = read_facet_declaration(journal_root, facet_dir)?;
+    let id = declaration.as_ref().and_then(|snapshot| {
+        snapshot
+            .value()
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| super::facet_id::is_well_formed_facet_id(id))
+            .map(str::to_owned)
+    });
+    let title = declaration
+        .as_ref()
+        .and_then(|snapshot| snapshot.value().get("title").and_then(Value::as_str))
+        .map(str::to_owned);
+    record_retired_facet(journal_root, facet_dir, RetiredFacet::deleted(id, title))?;
     remove_dir_all(journal_root, &format!("facets/{facet_dir}"))
         .map_err(FacetWriteError::EntityLinkRemoval)?;
     let _ = path;
@@ -243,48 +258,23 @@ pub fn delete_facet_entity_link(
     Ok(true)
 }
 
-/// Physically rename one facet directory and rescope durable ambiguity rows.
-pub fn rename_facet(
+/// Change a facet's title. Its name, directory and id never change, so every
+/// reference, grant and index row stays as it is.
+pub fn retitle_facet(
     journal_root: &Path,
-    old_name: &str,
-    new_name: &str,
-) -> Result<FacetRenameResult, FacetRenameError> {
-    for name in [old_name, new_name] {
-        if !valid_facet_name(name) {
-            return Err(FacetRenameError::InvalidName {
-                name: name.to_owned(),
-            });
-        }
-    }
-    let old_declaration =
-        declaration_path(journal_root, old_name).map_err(FacetRenameError::Path)?;
-    if read_facet_declaration(journal_root, old_name)
-        .map_err(FacetRenameError::Path)?
-        .is_none()
-    {
-        return Err(FacetRenameError::FacetMissing {
-            path: old_declaration,
-        });
-    }
-    let old_path = facet_dir_path(journal_root, old_name).map_err(FacetRenameError::Path)?;
-    let new_path = facet_dir_path(journal_root, new_name).map_err(FacetRenameError::Path)?;
-    if path_lexists(&new_path)
-        .map_err(FacetStoreError::from)
-        .map_err(FacetRenameError::Path)?
-    {
-        return Err(FacetRenameError::DestinationExists { path: new_path });
-    }
-    let _trust = hold_facet_trust_lock(journal_root).map_err(FacetRenameError::TrustLock)?;
-    fs::rename(&old_path, &new_path).map_err(|source| FacetRenameError::DirectoryRename {
-        old_path: old_path.clone(),
-        new_path: new_path.clone(),
-        source,
-    })?;
-    Ok(FacetRenameResult {
-        old_name: old_name.to_owned(),
-        new_name: new_name.to_owned(),
-        reindex_required: true,
-    })
+    facet_dir: &str,
+    title: &str,
+) -> Result<(), FacetWriteError> {
+    let _trust = hold_facet_trust_lock(journal_root)?;
+    let path = declaration_path(journal_root, facet_dir)?;
+    let snapshot = read_facet_declaration(journal_root, facet_dir)?
+        .ok_or(FacetWriteError::DeclarationMissing { path })?;
+    let mut declaration = snapshot.into_value();
+    declaration
+        .as_object_mut()
+        .expect("facet declaration reader returns an object")
+        .insert("title".to_owned(), Value::String(title.to_owned()));
+    save_facet_declaration(journal_root, facet_dir, &declaration)
 }
 
 pub(super) fn save_facet_declaration(
@@ -302,16 +292,6 @@ fn json_options() -> JsonWriteOptions {
         indent: Some(2),
         sort_keys: false,
     }
-}
-
-fn valid_facet_name(name: &str) -> bool {
-    let mut characters = name.chars();
-    matches!(characters.next(), Some(character) if character.is_ascii_lowercase())
-        && characters.all(|character| {
-            character.is_ascii_lowercase()
-                || character.is_ascii_digit()
-                || matches!(character, '-' | '_')
-        })
 }
 
 #[cfg(test)]

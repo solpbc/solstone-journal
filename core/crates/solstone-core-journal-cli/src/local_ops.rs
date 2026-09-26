@@ -733,6 +733,12 @@ fn regular_archive_file(source: &Path) -> Result<PathBuf, String> {
 }
 
 fn facet_doctor(args: &[OsString]) -> Outcome {
+    if args
+        .first()
+        .is_some_and(|arg| arg == OsStr::new("--retire"))
+    {
+        return facet_doctor_retire(&args[1..]);
+    }
     let (fix, merge) = match args {
         [] => (false, false),
         [arg] if arg == OsStr::new("--fix") => (true, false),
@@ -747,7 +753,7 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
         }
         [arg] if arg == OsStr::new("--help") || arg == OsStr::new("-h") => {
             return success(
-                "Usage: journal facet doctor [--fix [--merge] | --merge --fix]\n".to_owned(),
+                "Usage: journal facet doctor [--fix [--merge] | --merge --fix]\n       journal facet doctor --retire NAME (--into FACET | --deleted)\n".to_owned(),
             );
         }
         _ => return usage("facet doctor", "unexpected argument"),
@@ -756,12 +762,229 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
         Ok(path) => path,
         Err(outcome) => return outcome,
     };
-    let mut orphans = match orphan_facets(&journal) {
-        Ok(orphans) => orphans,
+    #[cfg(target_os = "ios")]
+    {
+        return facet_doctor_orphans(&journal, fix, merge);
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        facet_doctor_all(&journal, fix, merge)
+    }
+}
+
+/// Every facet doctor check, in order: the retired-name record, orphan
+/// folders, names the action logs show were retired, stored references to
+/// names that match nothing, dot-named folders, and, with --fix, bringing
+/// search up to date. No check stops the ones after it.
+#[cfg(not(target_os = "ios"))]
+fn facet_doctor_all(journal: &Path, fix: bool, merge: bool) -> Outcome {
+    use crate::facet_names;
+    use solstone_core_facets::RetiredFacets;
+
+    let mut stdout = String::new();
+    let mut failures = Vec::new();
+    let mut retired_readable = true;
+    match solstone_core_facets::read_retired_facets(journal) {
+        RetiredFacets::Malformed(detail) => {
+            if fix {
+                match facet_names::repair_malformed_retired_file(journal) {
+                    Ok(Some(message)) => stdout.push_str(&format!("{message}\n")),
+                    Ok(None) => {}
+                    Err(error) => {
+                        retired_readable = false;
+                        failures.push(format!(
+                            "retired facet names could not be repaired: {error}"
+                        ));
+                    }
+                }
+            } else {
+                retired_readable = false;
+                stdout.push_str(&format!(
+                    "facets/retired.json does not parse ({detail}). Run with --fix to rebuild it; no name it reserves is freed.\n"
+                ));
+            }
+        }
+        RetiredFacets::Unreadable(detail) => {
+            retired_readable = false;
+            stdout.push_str(&format!(
+                "facets/retired.json could not be read ({detail}). Check its permissions; it was left as it is.\n"
+            ));
+        }
+        RetiredFacets::Absent | RetiredFacets::Loaded(_) => {}
+    }
+
+    let orphans = facet_doctor_orphans(journal, fix, merge);
+    match orphans {
+        Outcome::LocalSuccess { stdout: text, .. } => stdout.push_str(&text),
+        Outcome::LocalFailure {
+            stdout: text,
+            stderr,
+            ..
+        } => {
+            stdout.push_str(&text);
+            failures.push(
+                stderr
+                    .trim()
+                    .trim_start_matches("journal facet doctor: ")
+                    .to_owned(),
+            );
+        }
+        other => return other,
+    }
+
+    if retired_readable {
+        let retired = solstone_core_facets::read_retired_facets(journal).entries();
+        match facet_names::scan_history(journal, &retired) {
+            Ok(scan) => {
+                if !scan.proposals.is_empty() {
+                    stdout.push_str(if fix {
+                        "\nRecorded retired facet names from the action logs:\n"
+                    } else {
+                        "\nFacet names the action logs show were retired but aren't recorded (run with --fix to record them):\n"
+                    });
+                    for proposal in &scan.proposals {
+                        if fix
+                            && let Err(error) = solstone_core_facets::record_retired_facet(
+                                journal,
+                                &proposal.name,
+                                proposal.entry.clone(),
+                            )
+                        {
+                            failures.push(format!("{}: {error}", proposal.name));
+                            continue;
+                        }
+                        stdout.push_str(&format!("- {}\n", proposal.evidence));
+                    }
+                }
+                if !scan.reused.is_empty() {
+                    stdout.push_str(&format!(
+                        "\nThese facets were renamed or merged away earlier and their names later given to a new facet, so older material that names them can't be told apart. Nothing was changed: {}\n",
+                        scan.reused.join(", ")
+                    ));
+                }
+                if !scan.unrecoverable.is_empty() {
+                    stdout.push_str(&format!(
+                        "\nThe action logs mention these names but not where they went: {}. If material still names one, record it with --retire NAME --into FACET or --deleted.\n",
+                        scan.unrecoverable.join(", ")
+                    ));
+                }
+            }
+            Err(error) => failures.push(format!("action log scan failed: {error}")),
+        }
+        let retired = solstone_core_facets::read_retired_facets(journal).entries();
+        match facet_names::scan_unresolved_references(journal, &retired) {
+            Ok(found) if !found.is_empty() => {
+                stdout.push_str("\nSegments name these facets, which don't exist and aren't recorded as retired. Agents limited to chosen facets can't see that material; everything else can:\n");
+                for (name, (count, first, last)) in &found {
+                    stdout.push_str(&format!("- {name}: {count} ({first} to {last})\n"));
+                }
+                stdout.push_str("To make one reachable again, run: journal facet doctor --retire NAME --into FACET\n");
+            }
+            Ok(_) => {}
+            Err(error) => failures.push(format!("reference scan failed: {error}")),
+        }
+    }
+
+    let (leftovers, hidden) = facet_names::scan_dot_directories(journal);
+    if !leftovers.is_empty() {
+        stdout.push_str(&format!(
+            "\nLeftover folders from an interrupted facet merge, safe to delete once no merge is running: {}\n",
+            leftovers.join(", ")
+        ));
+    }
+    if !hidden.is_empty() {
+        stdout.push_str(&format!(
+            "\nFolders whose names start with a dot are never facets, so these facet declarations are ignored: {}\n",
+            hidden.join(", ")
+        ));
+    }
+
+    // Without an index there is nothing stored to bring up to date, and the
+    // doctor never creates one.
+    if fix && solstone_core_indexer_store::db::db_path(journal).exists() {
+        if retired_readable {
+            match facet_names::reconcile_facet_classifications(journal) {
+                Ok(report) if report.incomplete => failures.push(
+                    "facets kept changing while search was being updated; run again".to_owned(),
+                ),
+                Ok(report) if report.changed > 0 => stdout.push_str(&format!(
+                    "\nUpdated search for {} stored entries so it matches facet names.\n",
+                    report.changed
+                )),
+                Ok(_) => {}
+                Err(error) => failures.push(format!("search could not be updated: {error}")),
+            }
+        } else {
+            stdout.push_str(
+                "\nSearch was not updated, because facets/retired.json can't be used yet.\n",
+            );
+        }
+    }
+
+    if stdout.is_empty() {
+        stdout.push_str("Nothing to report.\n");
+    }
+    if failures.is_empty() {
+        success(stdout)
+    } else {
+        Outcome::LocalFailure {
+            stdout,
+            stderr: format!("journal facet doctor: {}\n", failures.join("; ")),
+            exit: EXIT_IO,
+        }
+    }
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_doctor_retire(args: &[OsString]) -> Outcome {
+    let (name, into) = match args {
+        [name, flag] if flag == OsStr::new("--deleted") => (name, None),
+        [name, flag, target] if flag == OsStr::new("--into") => (name, Some(target)),
+        _ => {
+            return usage(
+                "facet doctor",
+                "--retire needs NAME and then --into FACET or --deleted",
+            );
+        }
+    };
+    let (Some(name), into) = (name.to_str(), into.map(|target| target.to_str())) else {
+        return usage("facet doctor", "names must be UTF-8");
+    };
+    if into.is_some_and(|target| target.is_none()) {
+        return usage("facet doctor", "names must be UTF-8");
+    }
+    let journal = match journal_root("facet doctor") {
+        Ok(path) => path,
+        Err(outcome) => return outcome,
+    };
+    match crate::facet_names::retire_name(&journal, name, into.flatten()) {
+        Ok(stdout) => success(stdout),
+        Err(error) => failure("facet doctor", &error, EXIT_DATA),
+    }
+}
+
+#[cfg(target_os = "ios")]
+fn facet_doctor_retire(_args: &[OsString]) -> Outcome {
+    failure("facet doctor", "unavailable on iOS", EXIT_UNAVAILABLE)
+}
+
+/// Find and repair facet folders with content but no declaration.
+fn facet_doctor_orphans(journal: &Path, fix: bool, merge: bool) -> Outcome {
+    let journal = journal.to_path_buf();
+    let (mut orphans, retired_orphans) = match adoptable_orphan_facets(&journal) {
+        Ok(found) => found,
         Err(error) => return failure("facet doctor", &error, EXIT_DATA),
     };
+    let retired_note = if retired_orphans.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "These folders have content under facet names that were deleted or merged, so they are not registered as facets; their files are left in place: {}\n",
+            retired_orphans.join(", ")
+        )
+    };
     if orphans.is_empty() {
-        return success("No orphan facets found.\n".to_owned());
+        return success(format!("No orphan facets found.\n{retired_note}"));
     }
     if !fix {
         let mut stdout = String::from("Orphan facets:\n");
@@ -793,12 +1016,12 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
         Ok(lock) => lock,
         Err(error) => return failure("facet doctor", &error.to_string(), EXIT_IO),
     };
-    orphans = match orphan_facets(&journal) {
-        Ok(orphans) => orphans,
+    orphans = match adoptable_orphan_facets(&journal) {
+        Ok((orphans, _)) => orphans,
         Err(error) => return failure("facet doctor", &error, EXIT_DATA),
     };
     if orphans.is_empty() {
-        return success("No orphan facets found.\n".to_owned());
+        return success(format!("No orphan facets found.\n{retired_note}"));
     }
     if merge {
         #[cfg(not(target_os = "ios"))]
@@ -836,7 +1059,12 @@ fn facet_doctor(args: &[OsString]) -> Outcome {
 fn adopt_orphan_facet(journal: &Path, slug: &str, transaction: &str) -> Result<(), String> {
     let title = title_case_slug(slug);
     let declaration = journal.join("facets").join(slug).join("facet.json");
+    // An adopted facet gets a stable id like any other, so agents can be
+    // granted it and merged names can resolve to it.
+    let id = solstone_core_facets::allocate_facet_id_locked(journal)
+        .map_err(|error| error.to_string())?;
     let mut body = serde_json::to_vec_pretty(&json!({
+        "id": id,
         "title": title,
         "description": "",
         "color": "#667eea",
@@ -913,7 +1141,13 @@ fn facet_doctor_fix_merge(journal: &Path, orphans: &[String]) -> Outcome {
         let mut retained_origins = BTreeMap::<PathBuf, String>::new();
         for source in &members[1..] {
             // --merge is the caller's explicit consent for each derived merge audit record.
-            match facet_merge_transaction_in_journal(journal, source, destination, true) {
+            match facet_merge_transaction_in_journal(
+                journal,
+                source,
+                destination,
+                true,
+                FacetMergeMode::DoctorOrphan,
+            ) {
                 Err(outcome) => {
                     failed.push(format!(
                         "{source} -> {destination} (merge failed before commit: {})",
@@ -1027,7 +1261,7 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     if source == "--help" || source == "-h" {
         return if args.len() == 1 {
             success(
-                "Usage: journal facet merge SOURCE --into DEST [--consent] [--dry-run]\n"
+                "Usage: journal facet merge SOURCE --into DEST (--dry-run | --yes) [--consent]\n"
                     .to_owned(),
             )
         } else {
@@ -1037,6 +1271,7 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     let mut destination: Option<&str> = None;
     let mut consent = false;
     let mut dry_run = false;
+    let mut yes = false;
     let mut index = 1;
     while index < args.len() {
         match args[index].to_str() {
@@ -1055,6 +1290,10 @@ fn facet_merge(args: &[OsString]) -> Outcome {
                 dry_run = true;
                 index += 1;
             }
+            Some("--yes") if !yes => {
+                yes = true;
+                index += 1;
+            }
             _ => return usage("facet merge", "unexpected argument"),
         }
     }
@@ -1070,6 +1309,12 @@ fn facet_merge(args: &[OsString]) -> Outcome {
     };
     if dry_run {
         return facet_merge_preview_in_journal(&journal, source, destination);
+    }
+    if !yes {
+        return usage(
+            "facet merge",
+            "a merge is permanent and can't be undone; review it with --dry-run, then run it again with --yes",
+        );
     }
     facet_merge_in_journal(&journal, source, destination, consent)
 }
@@ -1177,7 +1422,13 @@ fn facet_merge_in_journal(
         report,
         post_commit_failure,
         source_removed,
-    } = match facet_merge_transaction_in_journal(journal, source, destination, consent) {
+    } = match facet_merge_transaction_in_journal(
+        journal,
+        source,
+        destination,
+        consent,
+        FacetMergeMode::Owner,
+    ) {
         Err(outcome) => return outcome,
         Ok(commit) => commit,
     };
@@ -1255,12 +1506,91 @@ struct FacetMergeCommit {
     source_removed: bool,
 }
 
+/// Which merge is running: the owner's `facet merge` of one live facet into
+/// another, or `facet doctor --fix --merge` folding an undeclared name-variant
+/// directory into the facet it adopted for the group.
+#[cfg(not(target_os = "ios"))]
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FacetMergeMode {
+    Owner,
+    DoctorOrphan,
+}
+
 #[cfg(not(target_os = "ios"))]
 fn facet_merge_transaction_in_journal(
     journal: &Path,
     source: &str,
     destination: &str,
     consent: bool,
+    mode: FacetMergeMode,
+) -> Result<FacetMergeCommit, Outcome> {
+    let committed = facet_merge_commit_locked(journal, source, destination, consent, mode)?;
+    let FacetMergeCommit {
+        report,
+        post_commit_failure,
+        source_removed,
+    } = committed;
+    if post_commit_failure.is_some() {
+        return Ok(FacetMergeCommit {
+            report,
+            post_commit_failure,
+            source_removed,
+        });
+    }
+    // The doctor runs its merges under its own facet trust lock and brings
+    // search up to date once, after releasing it; reconciling here would wait
+    // on another process's reconcile while holding that lock.
+    let reconcile_here = mode == FacetMergeMode::Owner;
+    // Both run after the facet trust lock is released: the rebuild refreshes
+    // the moved files, and the reconcile brings stored classifications for
+    // material that still names SOURCE onto DEST.
+    if let Err(error) = scan_journal(journal, true) {
+        return Ok(FacetMergeCommit {
+            report,
+            source_removed,
+            post_commit_failure: Some(failure(
+                "facet merge",
+                &format!("merge committed but index rebuild failed: {error}"),
+                EXIT_FAILED,
+            )),
+        });
+    }
+    if !reconcile_here {
+        return Ok(FacetMergeCommit {
+            report,
+            post_commit_failure: None,
+            source_removed,
+        });
+    }
+    let post_commit_failure = match crate::facet_names::reconcile_facet_classifications(journal) {
+        Ok(report) if !report.incomplete => None,
+        Ok(_) => Some(failure(
+            "facet merge",
+            "the merge finished, but facets kept changing while search was being updated; run 'journal facet doctor --fix'",
+            EXIT_FAILED,
+        )),
+        Err(error) => Some(failure(
+            "facet merge",
+            &format!(
+                "the merge finished, but search could not be updated for '{source}': {error}; run 'journal facet doctor --fix'"
+            ),
+            EXIT_FAILED,
+        )),
+    };
+    Ok(FacetMergeCommit {
+        report,
+        post_commit_failure,
+        source_removed,
+    })
+}
+
+#[cfg(not(target_os = "ios"))]
+fn facet_merge_commit_locked(
+    journal: &Path,
+    source: &str,
+    destination: &str,
+    consent: bool,
+    mode: FacetMergeMode,
 ) -> Result<FacetMergeCommit, Outcome> {
     let source_path = journal.join("facets").join(source);
     let destination_path = journal.join("facets").join(destination);
@@ -1280,6 +1610,13 @@ fn facet_merge_transaction_in_journal(
     if let Err(error) = require_real_directory(&destination_path) {
         return Err(failure("facet merge", &error, EXIT_DATA));
     }
+    let admission = crate::facet_names::admit_facet_merge(
+        journal,
+        source,
+        destination,
+        mode == FacetMergeMode::DoctorOrphan,
+    )
+    .map_err(|message| failure("facet merge", &message, EXIT_DATA))?;
     let transaction = transaction_id();
     let facets = journal.join("facets");
     let stage = facets.join(format!(".facet-merge-{transaction}.stage"));
@@ -1303,13 +1640,47 @@ fn facet_merge_transaction_in_journal(
         let _ = fs::remove_dir_all(&stage);
         return Err(failure("facet merge", &error.to_string(), EXIT_IO));
     }
-    let mut params = json!({"source": source, "dest": destination});
+    // SOURCE's name now resolves to DEST and can never be given to another facet.
+    let retired_before = match solstone_core_facets::snapshot_retired_files(journal) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            let rollback =
+                rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
+            return Err(transaction_failure(
+                "facet merge",
+                &error.to_string(),
+                rollback,
+            ));
+        }
+    };
+    if let Err(error) =
+        solstone_core_facets::record_retired_facet(journal, source, admission.retired_entry())
+    {
+        let _ = solstone_core_facets::restore_retired_files(journal, &retired_before);
+        let rollback =
+            rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
+        return Err(transaction_failure(
+            "facet merge",
+            &error.to_string(),
+            rollback,
+        ));
+    }
+    let mut params = json!({
+        "source": source,
+        "dest": destination,
+        "source_id": admission.source_id,
+        "dest_id": admission.destination_id,
+    });
     if consent {
         params["consent"] = Value::Bool(true);
     }
     if let Err(error) = append_action_log(journal, None, "cli", "user", "facet_merge", params) {
         let rollback =
-            rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup);
+            rollback_facet_trees(&destination_path, &backup, &source_path, &source_backup)
+                .and_then(|()| {
+                    solstone_core_facets::restore_retired_files(journal, &retired_before)
+                        .map_err(|error| error.to_string())
+                });
         return Err(transaction_failure(
             "facet merge",
             &error.to_string(),
@@ -1322,21 +1693,16 @@ fn facet_merge_transaction_in_journal(
             source_removed: false,
             post_commit_failure: Some(failure(
                 "facet merge",
-                &format!("merge committed but backup cleanup failed: {error}"),
+                &format!(
+                    "the merge finished, but its leftover folders couldn't be removed: {error}; run 'journal facet doctor' to list them, remove them, then run 'journal facet doctor --fix'"
+                ),
                 EXIT_IO,
             )),
         });
     }
-    let post_commit_failure = scan_journal(journal, true).err().map(|error| {
-        failure(
-            "facet merge",
-            &format!("merge committed but index rebuild failed: {error}"),
-            EXIT_FAILED,
-        )
-    });
     Ok(FacetMergeCommit {
         report,
-        post_commit_failure,
+        post_commit_failure: None,
         source_removed: true,
     })
 }
@@ -1468,6 +1834,16 @@ mod facet_merge_tests {
             fs::create_dir_all(path.join("facets/destination")).expect("destination facet");
             fs::create_dir_all(path.join("config")).expect("config directory");
             fs::write(path.join("facets/source/source.txt"), b"source").expect("source tree");
+            fs::write(
+                path.join("facets/source/facet.json"),
+                br#"{"id":"11111111-1111-4111-8111-111111111111","title":"Source"}"#,
+            )
+            .expect("source declaration");
+            fs::write(
+                path.join("facets/destination/facet.json"),
+                br#"{"id":"22222222-2222-4222-8222-222222222222","title":"Destination"}"#,
+            )
+            .expect("destination declaration");
             fs::write(
                 path.join("facets/destination/destination.txt"),
                 b"destination",
@@ -1678,8 +2054,44 @@ mod facet_merge_tests {
     }
 
     #[test]
+    fn facet_merge_retires_the_source_name_onto_the_destination() {
+        let journal = TempJournal::new();
+        let Outcome::LocalSuccess { .. } =
+            facet_merge_in_journal(journal.path(), "source", "destination", true)
+        else {
+            panic!("merge succeeds");
+        };
+        let entry = solstone_core_facets::retired_facet_entry(journal.path(), "source")
+            .expect("record readable")
+            .expect("source retired");
+        assert_eq!(entry.state, solstone_core_facets::RetiredFacetState::Merged);
+        assert_eq!(
+            entry.id.as_deref(),
+            Some("11111111-1111-4111-8111-111111111111")
+        );
+        assert_eq!(
+            entry.successor.as_deref(),
+            Some("22222222-2222-4222-8222-222222222222")
+        );
+        assert!(matches!(
+            solstone_core_facets::create_facet(
+                journal.path(),
+                "source",
+                "Source",
+                "",
+                "",
+                "",
+                None
+            ),
+            Err(solstone_core_facets::FacetWriteError::NameRetired { .. })
+        ));
+    }
+
+    #[test]
     fn facet_merge_dry_run_says_nothing_is_lost_when_nothing_is() {
         let journal = TempJournal::new();
+        // A source with no settings of its own loses nothing.
+        fs::remove_file(journal.path().join("facets/source/facet.json")).expect("no settings");
 
         let Outcome::LocalSuccess { stdout, .. } =
             facet_merge_preview_in_journal(journal.path(), "source", "destination")
@@ -1765,6 +2177,18 @@ mod orphan_facet_tests {
         fs::write(active, b"{\"message\":\"still supported\"}\n").unwrap();
         assert_eq!(orphan_facets(&journal.0).unwrap(), vec!["active"]);
     }
+}
+
+/// Orphan folders that may be registered, and those under a retired name,
+/// which never are.
+fn adoptable_orphan_facets(journal: &Path) -> Result<(Vec<String>, Vec<String>), String> {
+    let retired = solstone_core_facets::read_retired_facets(journal)
+        .entries_for_write()
+        .map_err(|error| error.to_string())?;
+    let (retired_orphans, orphans) = orphan_facets(journal)?
+        .into_iter()
+        .partition(|slug| retired.contains_key(slug));
+    Ok((orphans, retired_orphans))
 }
 
 fn orphan_facets(journal: &Path) -> Result<Vec<String>, String> {

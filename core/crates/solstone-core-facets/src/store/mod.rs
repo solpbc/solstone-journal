@@ -25,6 +25,7 @@ mod recent_names;
 pub(crate) mod reference_scan;
 mod relationship_scans;
 mod repair;
+mod retired;
 mod review_candidates;
 mod seeding;
 mod write;
@@ -64,8 +65,7 @@ pub use detected_entity_activity::{
     load_detected_entities_recent, read_detected_entity_names_strict,
 };
 pub use error::{
-    FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetRenameError, FacetStoreError,
-    FacetWriteError,
+    FacetEntityWriteError, FacetIdError, FacetIdResolveError, FacetStoreError, FacetWriteError,
 };
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
 pub use facet_entities::{
@@ -126,6 +126,12 @@ pub use repair::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetEntityLinkRepairReport,
     FacetEntityLinkReport, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
 };
+pub use retired::{
+    RETIRED_FACETS_FILE, RetiredFacet, RetiredFacetState, RetiredFacets, RetiredFilesSnapshot,
+    facet_name_is_free, first_free_facet_name, parse_retired_facets, read_retired_facets,
+    record_retired_facet, restore_retired_files, retired_facet_entry, retired_facets_path,
+    snapshot_retired_files,
+};
 pub use review_candidates::{
     FacetReviewCandidateError, accept_candidate, dismiss_candidate, facet_slug,
     humanize_facet_title, load_candidates, record_facet_candidates,
@@ -135,7 +141,7 @@ pub use seeding::{
     SeedEntityOutcome, seed_entities,
 };
 pub use write::{
-    DEFAULT_FACET, FacetRenameResult, create_facet, delete_facet, delete_facet_entity_link,
-    ensure_default_facet, rename_facet, save_facet_entity_link, set_facet_entity_link_detached,
-    set_facet_muted, update_facet,
+    DEFAULT_FACET, create_facet, delete_facet, delete_facet_entity_link, ensure_default_facet,
+    retitle_facet, save_facet_entity_link, set_facet_entity_link_detached, set_facet_muted,
+    update_facet,
 };

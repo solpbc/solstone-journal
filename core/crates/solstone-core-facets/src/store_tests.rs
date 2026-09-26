@@ -18,9 +18,9 @@ use crate::{
     FacetEntityLinkRepairBranch, FacetEntityLinkRepairError, FacetStoreError, FacetWriteError,
     create_facet, delete_facet, list_facet_entity_directories, read_activity_file,
     read_facet_declaration, read_facet_entity_link, read_facet_entity_observations, read_log_file,
-    read_news_file, rename_facet, repair_facet_entity_links,
-    repair_facet_entity_links_journal_wide, save_facet_entity_link, set_facet_muted, update_facet,
-    write_activity_file, write_facet_entity_observations, write_log_file, write_news_file,
+    read_news_file, repair_facet_entity_links, repair_facet_entity_links_journal_wide,
+    retitle_facet, save_facet_entity_link, set_facet_muted, update_facet, write_activity_file,
+    write_facet_entity_observations, write_log_file, write_news_file,
 };
 
 static NEXT_TEMP_DIR: AtomicU64 = AtomicU64::new(0);
@@ -419,7 +419,7 @@ fn facet_entity_link_retarget_does_not_move_or_orphan_observations() {
 }
 
 #[test]
-fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
+fn retitle_facet_keeps_its_name_id_references_and_choices() {
     let temporary = TempDir::new();
     create_test_facet(temporary.path(), "old-facet");
     create_test_facet(temporary.path(), "personal");
@@ -466,20 +466,26 @@ fn rename_facet_rescopes_recorded_choices_and_reports_reindexing() {
     )
     .unwrap();
 
-    let result = rename_facet(temporary.path(), "old-facet", "new-facet").unwrap();
+    let before = read_facet_declaration(temporary.path(), "old-facet")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
 
-    assert_eq!(result.old_name, "old-facet");
-    assert_eq!(result.new_name, "new-facet");
-    assert!(result.reindex_required);
-    assert!(!temporary.path().join("facets/old-facet").exists());
-    assert!(
-        temporary
-            .path()
-            .join("facets/new-facet/facet.json")
-            .exists()
+    retitle_facet(temporary.path(), "old-facet", "New Facet").unwrap();
+
+    // The name, directory and id stay; only the title the owner sees changes.
+    let after = read_facet_declaration(temporary.path(), "old-facet")
+        .unwrap()
+        .unwrap()
+        .value()
+        .clone();
+    assert_eq!(
+        after.get("title").and_then(Value::as_str),
+        Some("New Facet")
     );
-    // Rename follows the Python facet lifecycle only; ambiguity state is not
-    // a facet declaration write concern and therefore remains untouched.
+    assert_eq!(after.get("id"), before.get("id"));
+    assert!(!temporary.path().join("facets/new-facet").exists());
     let _ = origin_keys_before;
     assert!(
         load_resolved_ambiguity_choice(temporary.path(), &scope, "alex")
@@ -1008,21 +1014,199 @@ fn facet_rename_and_update_preserves_id() {
         Some(id.as_str())
     );
 
-    rename_facet(temporary.path(), "work", "work-renamed").unwrap();
+    retitle_facet(temporary.path(), "work", "Job").unwrap();
 
-    let renamed = read_facet_declaration(temporary.path(), "work-renamed")
+    let renamed = read_facet_declaration(temporary.path(), "work")
         .unwrap()
         .unwrap();
     assert_eq!(
         renamed.value().get("id").and_then(Value::as_str),
         Some(id.as_str())
     );
-
-    // Resolution across rename
+    assert_eq!(
+        renamed.value().get("title").and_then(Value::as_str),
+        Some("Job")
+    );
     assert_eq!(
         crate::resolve_facet_id(temporary.path(), &id).unwrap(),
-        "work-renamed"
+        "work"
     );
+}
+
+fn facet_id_of(root: &Path, name: &str) -> String {
+    read_facet_declaration(root, name)
+        .unwrap()
+        .unwrap()
+        .value()
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap()
+        .to_owned()
+}
+
+fn plain_facet(root: &Path, name: &str) {
+    create_facet(root, name, name, "", "", "", None).unwrap();
+}
+
+#[test]
+fn deleting_a_facet_retires_its_name_and_the_name_is_never_given_out_again() {
+    let temporary = TempDir::new();
+    plain_facet(temporary.path(), "personal");
+    plain_facet(temporary.path(), "work");
+    let id = facet_id_of(temporary.path(), "work");
+    assert!(crate::delete_facet(temporary.path(), "work").unwrap());
+
+    let entry = crate::retired_facet_entry(temporary.path(), "work")
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.state, crate::RetiredFacetState::Deleted);
+    assert_eq!(entry.id.as_deref(), Some(id.as_str()));
+    assert!(matches!(
+        create_facet(temporary.path(), "work", "Work", "", "", "", None),
+        Err(crate::FacetWriteError::NameRetired { name }) if name == "work"
+    ));
+    assert_eq!(
+        crate::first_free_facet_name(temporary.path(), "work").unwrap(),
+        "work-2"
+    );
+    // Any existing folder is skipped as well, declared or not.
+    fs::create_dir_all(temporary.path().join("facets/work-2")).unwrap();
+    assert_eq!(
+        crate::first_free_facet_name(temporary.path(), "work").unwrap(),
+        "work-3"
+    );
+}
+
+#[test]
+fn a_delete_interrupted_after_retiring_the_name_can_be_retried() {
+    let temporary = TempDir::new();
+    plain_facet(temporary.path(), "personal");
+    plain_facet(temporary.path(), "work");
+    let id = facet_id_of(temporary.path(), "work");
+    // The state a crash between the two steps leaves: the facet is still
+    // there and carries its own leftover entry, written with other details.
+    let mut leftover = crate::RetiredFacet::deleted(Some(id.clone()), Some("Old".to_owned()));
+    leftover.at = Some("2026-01-01T00:00:00Z".to_owned());
+    crate::record_retired_facet(temporary.path(), "work", leftover).unwrap();
+
+    assert!(crate::delete_facet(temporary.path(), "work").unwrap());
+    let entry = crate::retired_facet_entry(temporary.path(), "work")
+        .unwrap()
+        .unwrap();
+    assert_eq!(entry.id.as_deref(), Some(id.as_str()));
+    assert!(!temporary.path().join("facets/work").exists());
+}
+
+#[test]
+fn a_committed_retired_entry_is_never_replaced_by_another_facet() {
+    let temporary = TempDir::new();
+    plain_facet(temporary.path(), "personal");
+    plain_facet(temporary.path(), "work");
+    let work = facet_id_of(temporary.path(), "work");
+    crate::delete_facet(temporary.path(), "work").unwrap();
+    // A second live folder that happens to carry the deleted facet's id.
+    fs::create_dir_all(temporary.path().join("facets/x")).unwrap();
+    fs::write(
+        temporary.path().join("facets/x/facet.json"),
+        format!(r#"{{"id":"{work}","title":"X"}}"#),
+    )
+    .unwrap();
+    let personal = facet_id_of(temporary.path(), "personal");
+    assert!(matches!(
+        crate::record_retired_facet(
+            temporary.path(),
+            "work",
+            crate::RetiredFacet::merged(Some(work.clone()), personal, None),
+        ),
+        Err(crate::FacetWriteError::RetiredEntryConflict { .. })
+    ));
+    // Writing the same outcome again is a no-op.
+    crate::record_retired_facet(
+        temporary.path(),
+        "work",
+        crate::RetiredFacet::deleted(Some(work), None),
+    )
+    .unwrap();
+}
+
+#[test]
+fn a_damaged_retired_record_is_never_overwritten_and_blocks_new_names() {
+    let temporary = TempDir::new();
+    plain_facet(temporary.path(), "personal");
+    plain_facet(temporary.path(), "work");
+    let path = temporary.path().join("facets/retired.json");
+    fs::write(&path, b"{not json").unwrap();
+
+    assert!(matches!(
+        create_facet(temporary.path(), "fresh", "Fresh", "", "", "", None),
+        Err(crate::FacetWriteError::RetiredFileDamaged { .. })
+    ));
+    assert!(matches!(
+        crate::delete_facet(temporary.path(), "work"),
+        Err(crate::FacetWriteError::RetiredFileDamaged { .. })
+    ));
+    assert_eq!(fs::read(&path).unwrap(), b"{not json");
+    assert!(temporary.path().join("facets/work").exists());
+}
+
+#[test]
+fn the_default_facet_skips_a_retired_personal() {
+    let temporary = TempDir::new();
+    plain_facet(temporary.path(), "personal");
+    plain_facet(temporary.path(), "work");
+    crate::delete_facet(temporary.path(), "personal").unwrap();
+    crate::set_facet_muted(temporary.path(), "work", true).unwrap_err();
+    // Mute by hand to reach "no enabled facet", as a hand edit or older build could.
+    fs::write(
+        temporary.path().join("facets/work/facet.json"),
+        format!(
+            r#"{{"id":"{}","title":"work","muted":true}}"#,
+            facet_id_of(temporary.path(), "work")
+        ),
+    )
+    .unwrap();
+
+    assert!(crate::ensure_default_facet(temporary.path()).unwrap());
+    assert!(!temporary.path().join("facets/personal").exists());
+    let default = read_facet_declaration(temporary.path(), "personal-2")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        default.value().get("title").and_then(Value::as_str),
+        Some("Personal")
+    );
+}
+
+#[test]
+fn listing_facets_ignores_the_retired_record_and_dot_folders() {
+    let temporary = TempDir::new();
+    plain_facet(temporary.path(), "personal");
+    plain_facet(temporary.path(), "work");
+    let listed = |root: &Path| {
+        (
+            crate::list_declared_facet_names(root).unwrap(),
+            crate::list_facet_directories(root).unwrap(),
+            crate::observe_declared_facet_inventory(root)
+                .unwrap()
+                .enabled,
+        )
+    };
+    let before = listed(temporary.path());
+    crate::delete_facet(temporary.path(), "work").unwrap();
+    plain_facet(temporary.path(), "work-2");
+    let expected = listed(temporary.path());
+    // A merge scratch copy holding a live facet's declaration changes nothing.
+    fs::create_dir_all(temporary.path().join("facets/.facet-merge-x.dest")).unwrap();
+    fs::copy(
+        temporary.path().join("facets/personal/facet.json"),
+        temporary
+            .path()
+            .join("facets/.facet-merge-x.dest/facet.json"),
+    )
+    .unwrap();
+    assert!(temporary.path().join("facets/retired.json").exists());
+    assert_eq!(listed(temporary.path()), expected);
+    assert_ne!(before, expected);
 }
 
 #[test]

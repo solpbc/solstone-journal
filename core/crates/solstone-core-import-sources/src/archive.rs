@@ -1431,12 +1431,32 @@ fn stage_facets(
     if !source_facets.is_dir() {
         return Ok(());
     }
-    for facet_path in
+    let source_facet_dirs =
         sorted_dirs(&source_facets).map_err(|error| ImportSourcesError::FacetMerge {
             facet: "facets".to_owned(),
             detail: error.to_string(),
-        })?
-    {
+        })?;
+    // Facet names in this journal are never reused. Importing a facet under a
+    // name this journal retired would give that name back to a facet, so the
+    // whole import is refused before anything is published.
+    let retired = solstone_core_facets::read_retired_facets(target)
+        .entries_for_write()
+        .map_err(|error| ImportSourcesError::FacetMerge {
+            facet: "facets".to_owned(),
+            detail: error.to_string(),
+        })?;
+    for facet_path in &source_facet_dirs {
+        let facet = file_name(facet_path)?;
+        if retired.contains_key(&facet) {
+            return Err(ImportSourcesError::FacetMerge {
+                facet: facet.clone(),
+                detail: format!(
+                    "this journal had a facet named '{facet}' that was deleted or merged, and facet names are never reused, so this archive can't be imported; nothing was changed"
+                ),
+            });
+        }
+    }
+    for facet_path in source_facet_dirs {
         let facet = file_name(&facet_path)?;
         let target_facet = target.join("facets").join(&facet);
         if !target_facet.exists() {

@@ -17,7 +17,7 @@ use crate::{
     http::{
         facet_not_found, invalid_config_value, invalid_request_value, json_response,
         last_enabled_facet, missing_request_body, missing_required_field,
-        settings_operation_failed,
+        retired_facet_names_unreadable, settings_operation_failed,
     },
     icons,
     request_body::{JsonBody, json_body},
@@ -117,6 +117,17 @@ pub async fn create(journal_root: PathBuf, body: Bytes) -> Response {
     if facet(&journal_root, &slug).is_some() {
         return invalid_config_value("invalid or existing facet title");
     }
+    // Facet names are never reused. When this title's name belonged to a facet
+    // that was deleted or merged, the new facet takes the next free name; the
+    // title is what the owner sees, and it stays as asked.
+    let slug = match solstone_core_facets::retired_facet_entry(&journal_root, &slug) {
+        Ok(None) => slug,
+        Ok(Some(_)) => match solstone_core_facets::first_free_facet_name(&journal_root, &slug) {
+            Ok(name) => name,
+            Err(_) => return settings_operation_failed(),
+        },
+        Err(_) => return retired_facet_names_unreadable(),
+    };
     let emoji = data.get("emoji").and_then(Value::as_str).unwrap_or("📦");
     let color = data
         .get("color")
@@ -365,6 +376,8 @@ pub async fn delete(
     }
 }
 
+/// Renaming a facet changes its title. The facet's name, which commands and
+/// agent permissions use, never changes.
 pub async fn rename(
     journal_root: PathBuf,
     Path(facet_name): Path<String>,
@@ -373,7 +386,7 @@ pub async fn rename(
     let JsonBody::Value(Value::Object(data)) = json_body(body) else {
         return missing_request_body();
     };
-    let Some(new_name) = data
+    let Some(new_title) = data
         .get("new_name")
         .and_then(Value::as_str)
         .map(str::trim)
@@ -384,11 +397,19 @@ pub async fn rename(
     if !data.get("consent").is_none_or(Value::is_boolean) {
         return invalid_config_value("consent must be boolean");
     }
-    match solstone_core_facets::rename_facet(&journal_root, &facet_name, new_name) {
-        Ok(_) => {
+    let Some(previous) = facet(&journal_root, &facet_name) else {
+        return facet_not_found();
+    };
+    let old_title = previous
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or(&facet_name)
+        .to_owned();
+    match solstone_core_facets::retitle_facet(&journal_root, &facet_name, new_title) {
+        Ok(()) => {
             let mut params = [
-                ("old_name".to_owned(), json!(facet_name)),
-                ("new_name".to_owned(), json!(new_name)),
+                ("old_title".to_owned(), json!(old_title)),
+                ("new_title".to_owned(), json!(new_title)),
             ]
             .into_iter()
             .collect::<Map<_, _>>();
@@ -398,20 +419,19 @@ pub async fn rename(
             {
                 params.insert("consent".to_owned(), Value::Bool(true));
             }
-            if solstone_core_facets::append_action_log(
+            // The title has changed either way; a failed audit line must not
+            // report the rename as failed.
+            let _ = solstone_core_facets::append_action_log(
                 &journal_root,
-                Some(new_name),
+                Some(&facet_name),
                 "call",
                 "agent",
                 "facet_rename",
                 Value::Object(params),
-            )
-            .is_err()
-            {
-                return settings_operation_failed();
-            }
-            json_response(json!({"success":true,"facet":new_name}))
+            );
+            json_response(json!({"success":true,"facet":facet_name,"title":new_title}))
         }
+        Err(solstone_core_facets::FacetWriteError::DeclarationMissing { .. }) => facet_not_found(),
         Err(_) => settings_operation_failed(),
     }
 }
@@ -429,6 +449,10 @@ fn facet_entries(journal_root: &std::path::Path) -> Vec<(String, Value)> {
         .flatten()
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
+            // Dot-directories are merge scratch space and backups, never facets.
+            if name.starts_with('.') {
+                return None;
+            }
             facet(journal_root, &name).map(|config| (name, config))
         })
         .collect()
