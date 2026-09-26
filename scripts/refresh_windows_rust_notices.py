@@ -37,9 +37,19 @@ when it does not move anything in or out of the Windows notice closure, which is
 what the attestation is actually derived from. Both are required, and both are
 checked rather than assumed.
 
+The third is a **registry addition outside the Windows notice closure**: the
+new lock adds checksummed registry packages, removes nothing, and leaves the
+Windows notice closure (below) exactly as it was, so no Windows binary reaches
+them and the NOTICES file cannot change. The additions are acquired by `cargo
+vendor`, appended to the archive, and recorded as index rows outside the notice
+population, with their licence texts referenced by crate archive member. Each
+addition must declare a licence expression made only of permissive identifiers.
+
 It refuses -- loudly, with the reason -- rather than proceed, when:
-  * the external package population changed by `(name, version)` (an add,
-    remove, or upgrade). That is a real dependency change and needs licence
+  * the external package population lost or upgraded a package by `(name,
+    version)`, or added one that is not a checksummed registry package, that
+    reaches the Windows notice closure, or whose licence expression is not
+    wholly permissive. That is a real dependency change and needs licence
     review, not a mechanical refresh.
   * an external row changed source and either side is not a `git+` source.
   * the **Windows notice closure** changed -- the non-dev reach of the Windows
@@ -203,11 +213,16 @@ def git_source_revision(source: str) -> str:
 
 def classify_external_delta(
     old_external: list[dict[str, Any]], new_external: list[dict[str, Any]]
-) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-    """Return the `(old_row, new_row)` pairs a git pin move explains.
+) -> tuple[list[tuple[dict[str, Any], dict[str, Any]]], list[dict[str, Any]]]:
+    """Return the `(old_row, new_row)` pairs a git pin move explains, and the
+    registry packages the new lock adds.
 
-    Refuses anything else. An empty list means the population is identical and
-    the cheap member-preserving path applies unchanged.
+    An added package is admitted here only as a candidate: the caller refuses
+    it unless it stays outside the Windows notice closure (so no notice text
+    can change) and carries a permissive licence expression. A removal, an
+    upgrade (which reads as a removal plus an add) or an added git dependency
+    still refuses. Empty results mean the population is identical and the
+    cheap member-preserving path applies unchanged.
     """
     old_by_id = {(p["name"], p["version"]): p for p in old_external}
     new_by_id = {(p["name"], p["version"]): p for p in new_external}
@@ -216,15 +231,22 @@ def classify_external_delta(
             "the lock has two external rows sharing one name and version; "
             "this script cannot tell them apart -- scope this as engineering work"
         )
-    if set(old_by_id) != set(new_by_id):
-        added = sorted(set(new_by_id) - set(old_by_id))
-        removed = sorted(set(old_by_id) - set(new_by_id))
+    added_ids = sorted(set(new_by_id) - set(old_by_id))
+    removed = sorted(set(old_by_id) - set(new_by_id))
+    if removed:
         raise RefreshError(
-            "the external (non-workspace) package population changed -- an "
-            f"added, removed, or upgraded dependency (added={added} "
+            "the external (non-workspace) package population changed -- a "
+            f"removed or upgraded dependency (added={added_ids} "
             f"removed={removed}). That is a real dependency change and needs "
             "licence review, not a mechanical refresh."
         )
+    added = [new_by_id[identity] for identity in added_ids]
+    for row in added:
+        if not row.get("source", "").startswith("registry+") or not row.get("checksum"):
+            raise RefreshError(
+                f"added package {row['name']} {row['version']} is not a checksummed "
+                "registry package; this script only admits registry additions"
+            )
     moved = []
     for identity, old_row in old_by_id.items():
         new_row = new_by_id[identity]
@@ -232,6 +254,17 @@ def classify_external_delta(
             continue
         old_source = old_row.get("source", "")
         new_source = new_row.get("source", "")
+        edges_only = {
+            field
+            for field in set(old_row) | set(new_row)
+            if old_row.get(field) != new_row.get(field)
+        } == {"dependencies"}
+        if edges_only and old_source.startswith("registry+"):
+            # Same source and checksum, so the vendored bytes cannot differ; a
+            # feature elsewhere in the workspace only re-resolved this package's
+            # edges. Whether that moves anything into or out of Windows reach
+            # is the notice-closure check's to decide, after this.
+            continue
         if not (old_source.startswith("git+") and new_source.startswith("git+")):
             raise RefreshError(
                 f"external package {identity[0]} {identity[1]} changed "
@@ -257,7 +290,7 @@ def classify_external_delta(
                 f"({sorted(differing)}); refusing rather than guess what moved"
             )
         moved.append((old_row, new_row))
-    return moved
+    return moved, added
 
 
 def run_cargo_vendor(repo: Path, destination: Path) -> None:
@@ -451,11 +484,24 @@ def _workspace_existing_deps_only(
     old_lock: dict[str, Any],
     new_lock: dict[str, Any],
     external_unchanged: bool,
+    added: frozenset[tuple[str, str, str]] = frozenset(),
+    removed_workspace: frozenset[str] = frozenset(),
 ) -> bool:
-    """Admit workspace edges, and external edges only when external rows are unchanged."""
-    old_external = [p for p in old_lock["package"] if p.get("source")]
-    new_external = [p for p in new_lock["package"] if p.get("source")]
-    external_rows_unchanged = external_unchanged and old_external == new_external
+    """Admit workspace edges, external edges only when no existing external row
+    changed, new edges to admitted registry additions, and dropped edges to
+    removed workspace crates."""
+    def vendored(p: dict[str, Any]) -> dict[str, Any]:
+        # A registry row's edges do not change its vendored bytes; the
+        # notice-closure check decides what an edge move reaches.
+        return {k: v for k, v in p.items() if k != "dependencies"} if p["source"].startswith("registry+") else p
+
+    old_external = [vendored(p) for p in old_lock["package"] if p.get("source")]
+    new_external = [
+        vendored(p)
+        for p in new_lock["package"]
+        if p.get("source") and (p["name"], p["version"], p["source"]) not in added
+    ]
+    external_rows_unchanged = old_external == new_external
     left_rest, right_rest = dict(left), dict(right)
     left_deps = left_rest.pop("dependencies", None)
     right_deps = right_rest.pop("dependencies", None)
@@ -465,6 +511,10 @@ def _workspace_existing_deps_only(
     for token in moved:
         old = _resolve_lock_dependency(token, old_lock["package"])
         new = _resolve_lock_dependency(token, new_lock["package"])
+        if old is None and new is not None and new in added:
+            continue
+        if new is None and old is not None and not old[2] and old[0] in removed_workspace:
+            continue
         if old is None or new is None:
             return False
         # Workspace version moves remain permitted even when an unrelated git
@@ -480,7 +530,10 @@ def _workspace_existing_deps_only(
 
 
 def workspace_version_or_existing_dependency_edge_delta(
-    old_lock: dict[str, Any], new_lock: dict[str, Any], external_unchanged: bool
+    old_lock: dict[str, Any],
+    new_lock: dict[str, Any],
+    external_unchanged: bool,
+    added: frozenset[tuple[str, str, str]] = frozenset(),
 ) -> list[str]:
     """Allow workspace versions or edges to existing packages only.
 
@@ -491,13 +544,18 @@ def workspace_version_or_existing_dependency_edge_delta(
     """
     old_by_name = {p["name"]: p for p in old_lock["package"] if not p.get("source")}
     new_by_name = {p["name"]: p for p in new_lock["package"] if not p.get("source")}
-    if set(old_by_name) != set(new_by_name):
+    if set(new_by_name) - set(old_by_name):
         raise RefreshError(
-            "the workspace package set changed (a crate was added or removed); "
+            "the workspace package set changed (a crate was added); "
             "scope this as engineering work instead"
         )
-    delta = []
+    # A removed workspace crate can only take edges away; whether that moves
+    # anything out of Windows reach is the notice-closure check's to decide.
+    removed_workspace = frozenset(set(old_by_name) - set(new_by_name))
+    delta = [f"removed:{name}" for name in sorted(removed_workspace)]
     for name, old_pkg in old_by_name.items():
+        if name in removed_workspace:
+            continue
         new_pkg = new_by_name[name]
         if old_pkg == new_pkg:
             continue
@@ -505,7 +563,7 @@ def workspace_version_or_existing_dependency_edge_delta(
         left.pop("version", None)
         right.pop("version", None)
         if left != right and not _workspace_existing_deps_only(
-            left, right, old_lock, new_lock, external_unchanged
+            left, right, old_lock, new_lock, external_unchanged, added, removed_workspace
         ):
             raise RefreshError(
                 f"workspace package '{name}' changed beyond its version or "
@@ -865,6 +923,137 @@ def cargo_git_checkout(source: str, revision: str) -> Path:
     return candidates[0]
 
 
+# Licence identifiers an added package outside the Windows notice closure may
+# carry without review. Anything else, including a copyleft or unknown
+# identifier anywhere in the expression, refuses.
+PERMISSIVE_LICENSE_IDS = frozenset(
+    {
+        "0BSD",
+        "Apache-2.0",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "BSL-1.0",
+        "CC0-1.0",
+        "ISC",
+        "MIT",
+        "MIT-0",
+        "Unicode-3.0",
+        "Unicode-DFS-2016",
+        "Unlicense",
+        "Zlib",
+    }
+)
+LICENSE_FILE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "COPYRIGHT", "NOTICE")
+
+
+def vendored_package_metadata(
+    vendor_root: Path, added: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """The added packages' own `[package]` tables, read from the vendored
+    manifests. Windows-filtered cargo metadata omits packages no Windows
+    target reaches, which is exactly what an admitted addition is."""
+    packages = []
+    for row in added:
+        manifest = vendor_root / f"{row['name']}-{row['version']}" / "Cargo.toml"
+        if not manifest.is_file():
+            raise RefreshError(f"cargo vendor produced no manifest for {row['name']} {row['version']}")
+        table = tomllib.loads(manifest.read_text())["package"]
+        packages.append({**table, "source": row["source"]})
+    return {"packages": packages}
+
+
+def require_permissive_additions(
+    meta: dict[str, Any], added: list[dict[str, Any]]
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Return the manifest table for each added package after checking its licence."""
+    by_id = {(p["name"], p["version"]): p for p in meta["packages"] if p.get("source")}
+    found = {}
+    for row in added:
+        package = by_id.get((row["name"], row["version"]))
+        if package is None:
+            raise RefreshError(
+                f"no manifest describes added package {row['name']} {row['version']}"
+            )
+        expression = package.get("license") or ""
+        ids = {
+            token
+            for token in expression.replace("(", " ").replace(")", " ").replace("/", " OR ").split()
+            if token not in {"OR", "AND", "WITH"}
+        }
+        if not ids or not ids <= PERMISSIVE_LICENSE_IDS:
+            raise RefreshError(
+                f"added package {row['name']} {row['version']} declares licence "
+                f"{expression!r}, outside the permissive set this script admits "
+                "without review"
+            )
+        found[(row["name"], row["version"])] = package
+    return found
+
+
+def added_package_rows(
+    added: list[dict[str, Any]],
+    metadata: dict[tuple[str, str], dict[str, Any]],
+    vendor_root: Path,
+) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
+    """Index rows and vendored archive members for admitted additions.
+
+    Each row matches how the index records a registry package outside the
+    Windows notice closure: its licence texts are referenced by crate archive
+    member, and none of them enters the NOTICES file.
+    """
+    rows, members = [], {}
+    for lock_row in added:
+        name, version = lock_row["name"], lock_row["version"]
+        directory = vendor_root / f"{name}-{version}"
+        if not directory.is_dir():
+            raise RefreshError(f"cargo vendor produced no directory for {name} {version}")
+        for path in sorted(directory.rglob("*")):
+            if path.is_symlink() or not (path.is_file() or path.is_dir()):
+                raise RefreshError(f"non-regular vendored member: {path}")
+            if path.is_file():
+                members[f"vendor/{name}-{version}/{path.relative_to(directory).as_posix()}"] = (
+                    path.read_bytes()
+                )
+        references = []
+        for path in sorted(directory.iterdir()):
+            if path.is_file() and path.name.upper().startswith(LICENSE_FILE_PREFIXES):
+                data = path.read_bytes()
+                references.append(
+                    {
+                        "bytes": len(data),
+                        "sha256": sha256_bytes(data),
+                        "source": {
+                            "archive_sha256": lock_row["checksum"],
+                            "kind": "cargo-registry-archive",
+                            "member": path.name,
+                            "source_url": f"https://static.crates.io/crates/{name}/{name}-{version}.crate",
+                        },
+                    }
+                )
+        vcs_path = directory / ".cargo_vcs_info.json"
+        vcs = {}
+        if vcs_path.is_file():
+            recorded = json.loads(vcs_path.read_text())
+            vcs = {key: recorded[key] for key in ("git", "path_in_vcs") if key in recorded}
+        package = metadata[(name, version)]
+        rows.append(
+            {
+                "archive_sha256": lock_row["checksum"],
+                "identity": f"{name}@{version} ({lock_row['source']})",
+                "license_expression": package.get("license"),
+                "name": name,
+                "notice_references": references,
+                "notice_status": "texts-acquired" if references else "upstream-named-text-absent",
+                "repository": package.get("repository"),
+                "source": lock_row["source"],
+                "vcs": vcs,
+                "version": version,
+                "windows_notice_population": False,
+            }
+        )
+    return rows, members
+
+
 def refresh(
     repo: Path,
     prior_archive_path: Path,
@@ -916,10 +1105,19 @@ def refresh(
             "Cargo.lock -- it was edited out of band"
         )
 
-    moved_git = classify_external_delta(old_external, new_external)
+    moved_git, added_external = classify_external_delta(old_external, new_external)
+    added_ids = frozenset(
+        (p["name"], p["version"], p["source"]) for p in added_external
+    )
+    existing_new_external = [
+        p for p in new_external if (p["name"], p["version"], p["source"]) not in added_ids
+    ]
 
     workspace_delta = workspace_version_or_existing_dependency_edge_delta(
-        old_lock, new_lock, external_unchanged=old_external == new_external
+        old_lock,
+        new_lock,
+        external_unchanged=old_external == existing_new_external,
+        added=added_ids,
     )
 
     old_graph = load_prior_graph(prior_archive_path, prior_metadata_path)
@@ -985,6 +1183,23 @@ def refresh(
         substitutions |= build_git_substitutions(
             repo, prior_archive_path, moved_git, old, vendor_dir, revendored
         )
+    added_rows: list[dict[str, Any]] = []
+    if added_external:
+        with tempfile.TemporaryDirectory(prefix="windows-rust-add-vendor-") as scratch:
+            vendor_root = vendor_dir
+            if vendor_root is None:
+                vendor_root = Path(scratch) / "vendor"
+                run_cargo_vendor(repo, vendor_root)
+            added_metadata = require_permissive_additions(
+                vendored_package_metadata(vendor_root, added_external), added_external
+            )
+            added_rows, added_members = added_package_rows(
+                added_external, added_metadata, vendor_root
+            )
+        collisions = sorted(set(added_members) & set(substitutions))
+        if collisions:
+            raise RefreshError(f"added members collide with substitutions: {collisions}")
+        substitutions |= added_members
 
     # A substitution whose bytes already match is not a change, and the
     # controls below are stated in terms of changes. Running this tool against
@@ -1144,6 +1359,12 @@ def refresh(
 
     new_index = copy.deepcopy(old)
     advance_git_index_rows(new_index, moved_git)
+    if added_rows:
+        new_index["packages"] = sorted(
+            new_index["packages"] + added_rows,
+            key=lambda row: row["name"].lower(),
+        )
+        new_index["population"]["source_package_count"] = len(new_external)
     new_index["cargo_lock_sha256"] = lock_hash
     new_index["population"]["query_utc"] = datetime.datetime.now(
         datetime.timezone.utc
@@ -1171,6 +1392,14 @@ def refresh(
     report = {
         "workspace_version_or_existing_dependency_edge_changes": workspace_delta,
         "revendored_git_packages": revendored,
+        "added_packages_outside_windows_notice_closure": [
+            {
+                "identity": row["identity"],
+                "license_expression": row["license_expression"],
+                "notice_references": len(row["notice_references"]),
+            }
+            for row in added_rows
+        ],
         "external_package_count": len(new_external),
         "external_population_sha256": new_index["population"]["source_sha256"],
         "selected_external_identities": sorted(selected),
