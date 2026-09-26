@@ -27,7 +27,9 @@ async-trait = "0.1.89"
 base64 = "0.22.1"
 chrono = { workspace = true, features = ["serde"] }
 futures = "0.3.31"
-hickory-resolver = { version = "0.24", default-features = false, features = ["tokio-runtime"] }
+hickory-resolver = { version = "=0.26.3", default-features = false, features = ["tokio", "system-config", "dnssec-ring"] }
+hickory-proto = { version = "=0.26.3", default-features = false, features = ["dnssec-ring"] }
+hickory-net = { version = "=0.26.3", default-features = false, features = ["tokio", "dnssec-ring"] }
 log.workspace = true
 nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 pem = "3.0.6"

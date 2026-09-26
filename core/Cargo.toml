@@ -399,6 +399,20 @@ bzip2-rs = "0.1.2"
 # Decode-only xz for the nvattest appraiser .tar.xz payload. Pure Rust
 # (byteorder only); no C/FFI. Do not replace with xz2/liblzma.
 lzma-rs = "0.3"
+# DNSSEC-validated CAA lookups for solstone-core-mcp-endpoint. Release-rail lenses:
+# - `hickory-net` 0.26.3: MIT OR Apache-2.0. MSRV 1.88 <= 1.95 workspace rust-version.
+#   Pure Rust; `build = false` (no cc/cmake/native build.rs). Unix-target gated.
+# - `moka` 0.12.16: (MIT OR Apache-2.0) AND Apache-2.0. MSRV 1.71.1 <= 1.95 workspace.
+#   Pure Rust; `build = false` (no cc/cmake/native build.rs). Transitive cache via hickory-resolver.
+# - `resolv-conf` 0.7.6: MIT OR Apache-2.0. MSRV 1.61 <= 1.95 workspace. Pure Rust;
+#   `build = false`. System resolv.conf parser on Unix targets via hickory-resolver system-config.
+# - `prefix-trie` 0.8.4: MIT OR Apache-2.0. MSRV 1.71.1 <= 1.95 workspace. Pure Rust;
+#   `build = false`. Transitive prefix index via hickory-proto.
+# - `system-configuration` 0.7.0: MIT OR Apache-2.0. MSRV 1.64.0 <= 1.95 workspace.
+#   Pure Rust; `build = false`. Apple macOS/iOS targets only via hickory-resolver system-config;
+#   links SystemConfiguration.framework on Apple platforms.
+# Windows target resolution carries no hickory dependencies (`ipconfig` is absent).
+# All licenses are covered by cargo-deny allow lists; `aws-lc-rs`/`aws-lc-sys` are absent.
 
 # Dev-profile debug info. The cargo default (`debug = 2` for the workspace and
 # all 410 dependencies) put ~59G in target/debug against ~2.5G in

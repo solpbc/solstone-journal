@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- a DNSSEC-broken answer for your hostname is no longer treated as a passing check. if your resolver strips DNSSEC, that check still comes out the same way it does today.
 - renaming a facet now changes only its title. its name, the one commands and agent permissions use, stays the same, so what's filed under it stays put and every agent you've given it to keeps its access.
 - from this version on, once you delete or merge a facet, its name is never used again. a new facet with the same title gets a new name, so nothing filed under the old facet can end up in the new one.
 - merging facets can't be undone, so `journal facet merge` now needs `--yes` to run. check first what a merge would lose with `--dry-run`.
