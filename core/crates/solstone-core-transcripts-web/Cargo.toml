@@ -28,6 +28,7 @@ solstone-core-journal-stats-cli.workspace = true
 solstone-core-npy.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-retention.workspace = true
+solstone-core-serving = { path = "../solstone-core-serving" }
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
 solstone-core-transcripts.workspace = true

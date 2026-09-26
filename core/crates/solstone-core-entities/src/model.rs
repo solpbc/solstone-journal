@@ -38,6 +38,13 @@ pub enum ReasonCode {
     EntityAlreadyExists,
     EntityBlocked,
     EntityBusy,
+    EntityAlreadyDeleted,
+    EntityDeleteIncomplete,
+    EntityDeleteInProgress,
+    EntityDeleteNotCancelled,
+    EntityDeleteNotSaved,
+    EntityDeleteUnknown,
+    EntityNotDeleted,
     EntityNotFound,
     EntityOperationFailed,
     EntitySearchActivityUnavailable,
@@ -66,6 +73,13 @@ impl ReasonCode {
             Self::EntityAlreadyExists => "entity_already_exists",
             Self::EntityBlocked => "entity_blocked",
             Self::EntityBusy => "entity_busy",
+            Self::EntityAlreadyDeleted => "entity_already_deleted",
+            Self::EntityDeleteIncomplete => "entity_delete_incomplete",
+            Self::EntityDeleteInProgress => "entity_delete_in_progress",
+            Self::EntityDeleteNotCancelled => "entity_delete_not_cancelled",
+            Self::EntityDeleteNotSaved => "entity_delete_not_saved",
+            Self::EntityDeleteUnknown => "entity_delete_unknown",
+            Self::EntityNotDeleted => "entity_not_deleted",
             Self::EntityNotFound => "entity_not_found",
             Self::EntityOperationFailed => "entity_operation_failed",
             Self::EntitySearchActivityUnavailable => "entity_search_activity_unavailable",
@@ -93,15 +107,21 @@ impl ReasonCode {
             | Self::EntitySearchIndexBusy
             | Self::EntitySearchIndexStale
             | Self::EntitySearchIndexUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-            Self::EntityAliasConflict | Self::EntityAlreadyExists => StatusCode::CONFLICT,
-            Self::EntityNotFound
+            Self::EntityAliasConflict
+            | Self::EntityAlreadyExists
+            | Self::EntityDeleteIncomplete
+            | Self::EntityDeleteInProgress
+            | Self::EntityNotDeleted => StatusCode::CONFLICT,
+            Self::EntityDeleteUnknown
+            | Self::EntityNotFound
             | Self::ResolvedChoiceEntityAbsent
             | Self::ResolvedChoiceEntityBlocked => StatusCode::NOT_FOUND,
-            Self::OperationNoLongerAvailable => StatusCode::GONE,
+            Self::EntityAlreadyDeleted | Self::OperationNoLongerAvailable => StatusCode::GONE,
             Self::TalentNotPorted => StatusCode::NOT_IMPLEMENTED,
-            Self::EntityOperationFailed | Self::EntityAmbiguityCorrupt => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            Self::EntityOperationFailed
+            | Self::EntityAmbiguityCorrupt
+            | Self::EntityDeleteNotCancelled
+            | Self::EntityDeleteNotSaved => StatusCode::INTERNAL_SERVER_ERROR,
             Self::EntityBlocked
             | Self::InvalidEntityType
             | Self::InvalidRequestValue

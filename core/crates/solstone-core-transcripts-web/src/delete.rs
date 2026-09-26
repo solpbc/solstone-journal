@@ -18,10 +18,9 @@ use solstone_core_retention::tombstone::TOMBSTONE_NAME;
 use solstone_core_retention::{NoIndex, Outcome, RemovalReason, Target};
 use solstone_core_system::lifecycle::SupervisorLiveness;
 
-use crate::deferred::DeferredDeleteRegistry;
-use solstone_core_journal_io::LockError;
+use solstone_core_serving::held_delete::{Record, Registry, Settled, valid_pending_id};
 
-use crate::pending::{self, DeleteRecord, DeleteState, SegmentManifest};
+use crate::pending::{DeleteRecord, DeleteState, STORE, SegmentManifest, SegmentTarget};
 use crate::{AppState, legacy_error_response};
 
 /// Why a resumed delete keeps a segment whose files are not the confirmed ones.
@@ -57,7 +56,7 @@ pub(crate) async fn delete_segment(
 
     // One request at a time decides whether a segment already has a delete
     // waiting, so two tabs or a double submit cannot both create one.
-    let Ok(_create) = pending::create_lock(&state.journal_root) else {
+    let Ok(_create) = STORE.create_lock(&state.journal_root) else {
         return legacy_error_response(
             "segment_delete_not_saved",
             "your journal couldn't start that delete, so nothing was deleted.",
@@ -68,7 +67,10 @@ pub(crate) async fn delete_segment(
     // A second request for a segment already waiting joins that delete. One
     // whose timer this process no longer holds (a commit that gave up on its
     // lock) is armed again rather than swallowed.
-    if let Some(existing) = pending::pending_for(&state.journal_root, &day, &stream, &key) {
+    let waiting = STORE.waiting_for(&state.journal_root, |target: &SegmentTarget| {
+        target.day == day && target.stream == stream && target.key == key
+    });
+    if let Some(existing) = waiting {
         if !state.deferred_deletes.contains(&existing.pending_id) {
             let remaining = existing.commit_at_ms - Utc::now().timestamp_millis();
             let delay = Duration::from_millis(u64::try_from(remaining).unwrap_or(0).max(1));
@@ -98,23 +100,19 @@ pub(crate) async fn delete_segment(
             );
         }
     };
-    let commit_at_ms = Utc::now().timestamp_millis() + state.delete_window.as_millis() as i64;
-    let record = DeleteRecord {
-        pending_id: pending_id.clone(),
-        day,
-        stream,
-        key,
-        requested_at: Utc::now().to_rfc3339(),
-        commit_at_ms,
-        manifest,
-        state: DeleteState::Pending,
-        started_at: None,
-        reason: None,
-        finished_at: None,
-    };
+    let record = Record::pending(
+        pending_id,
+        SegmentTarget {
+            day,
+            stream,
+            key,
+            manifest,
+        },
+        state.delete_window,
+    );
     // ⛔ Durable before the answer: a delete the page reports as under way must
     // survive the journal stopping inside its window.
-    if let Err(error) = pending::write(&state.journal_root, &record) {
+    if let Err(error) = STORE.write(&state.journal_root, &record) {
         return legacy_error_response(
             "segment_delete_not_saved",
             "your journal couldn't start that delete, so nothing was deleted.",
@@ -149,15 +147,14 @@ fn accepted(state: &AppState, record: &DeleteRecord, joined: bool) -> Response {
         };
     let mut body = json!({
         "success": true,
-        "deleted": record.key,
+        "deleted": record.target.key,
         "pending": record.pending_id,
         "commit_at_ms": record.commit_at_ms,
         "ttl_seconds": 10,
     });
     if joined {
         // What is left of the first request's window, not a fresh one.
-        let remaining = (record.commit_at_ms - Utc::now().timestamp_millis()).max(0);
-        body["ttl_seconds"] = json!((remaining + 999) / 1000);
+        body["ttl_seconds"] = json!(record.remaining_seconds());
     }
     if search_index_warning {
         body["search_index_warning"] = json!(true);
@@ -169,7 +166,7 @@ fn accepted(state: &AppState, record: &DeleteRecord, joined: bool) -> Response {
 }
 
 fn schedule_commit(
-    registry: &DeferredDeleteRegistry,
+    registry: &Registry,
     journal_root: &Path,
     pending_id: String,
     delay: Duration,
@@ -182,52 +179,24 @@ fn schedule_commit(
     });
 }
 
-/// Resume every delete a previous run confirmed and never finished.
-///
-/// Called once per router, at start. A record still inside its window waits
-/// out the rest of it and can still be cancelled under the same id; a record
-/// whose window passed while the journal was stopped runs straight away,
-/// because the owner confirmed it and let the window go by.
-///
-/// The router is built before Convey's runtime starts, so the wait runs on its
-/// own thread rather than as a runtime task. If that thread cannot start the
-/// records stay pending on disk and the next start tries again.
-pub(crate) fn resume_pending(journal_root: &Path, registry: &DeferredDeleteRegistry) {
-    // The records live in `config/`, which travels with backups: resume only
-    // what names a segment the delete route itself would have accepted.
-    let records = pending::pending_and_prune(journal_root, Utc::now())
-        .into_iter()
-        .filter(resumable)
-        .collect::<Vec<_>>();
-    if records.is_empty() {
-        return;
-    }
-    for record in &records {
-        registry.hold(record.pending_id.clone());
-    }
-    let root = journal_root.to_path_buf();
-    let waiter = registry.clone();
-    let _ = std::thread::Builder::new()
-        .name("segment-delete-resume".into())
-        .spawn(move || {
-            for record in records {
-                let wait = record.commit_at_ms - Utc::now().timestamp_millis();
-                if let Ok(wait) = u64::try_from(wait) {
-                    std::thread::sleep(Duration::from_millis(wait));
-                }
-                if waiter.claim(&record.pending_id) {
-                    commit_delete(&root, &record.pending_id, true);
-                }
-            }
-        });
+/// Resume every delete a previous run confirmed and never finished; see
+/// [`solstone_core_serving::held_delete::Store::resume`].
+pub(crate) fn resume_pending(journal_root: &Path, registry: &Registry) {
+    STORE.resume(
+        journal_root,
+        registry,
+        "segment-delete-resume",
+        resumable,
+        |root, pending_id| commit_delete(root, pending_id, true),
+    );
 }
 
 /// Whether a record names a segment the delete route itself would accept.
 fn resumable(record: &DeleteRecord) -> bool {
     valid_pending_id(&record.pending_id)
-        && valid_day(&record.day)
-        && valid_stream(&record.stream)
-        && valid_key(&record.key)
+        && valid_day(&record.target.day)
+        && valid_stream(&record.target.stream)
+        && valid_key(&record.target.key)
 }
 
 pub(crate) async fn cancel_delete(
@@ -236,7 +205,7 @@ pub(crate) async fn cancel_delete(
 ) -> Response {
     let root = state.journal_root.as_path().to_path_buf();
     // An id this journal never issued changes nothing, not even a lock file.
-    if !valid_pending_id(&pending_id) || pending::read(&root, &pending_id).is_none() {
+    if !valid_pending_id(&pending_id) || STORE.read::<SegmentTarget>(&root, &pending_id).is_none() {
         return operation_unavailable();
     }
     let id = pending_id.clone();
@@ -279,39 +248,18 @@ pub(crate) async fn cancel_delete(
     }
 }
 
-enum Settled {
-    /// A commit holds the record: it is removing now.
-    Busy,
-    Failed(String),
-    Record(Box<DeleteRecord>),
-}
-
-fn settle_cancel(journal_root: &Path, pending_id: &str) -> Settled {
-    let _lock = match pending::lock(journal_root, pending_id, CANCEL_LOCK_WAIT) {
-        Ok(lock) => lock,
-        Err(LockError::Timeout(_)) => return Settled::Busy,
-        Err(error) => return Settled::Failed(error.to_string()),
-    };
-    let Some(mut record) = pending::read(journal_root, pending_id) else {
-        return Settled::Failed("the record could not be read".to_owned());
-    };
-    if record.state != DeleteState::Pending || record.started_at.is_some() {
-        return Settled::Record(Box::new(record));
-    }
-    record.finish(DeleteState::Cancelled, None);
-    if let Err(error) = pending::write(journal_root, &record) {
-        return Settled::Failed(error);
-    }
-    // Intentional Python divergence: this writer files by Local::now(), not segment day.
-    let _ = solstone_core_facets::append_action_log(
-        journal_root,
-        None,
-        "app",
-        "transcripts",
-        "segment_delete",
-        json!({"pending_id":pending_id,"phase":"cancelled"}),
-    );
-    Settled::Record(Box::new(record))
+fn settle_cancel(journal_root: &Path, pending_id: &str) -> Settled<SegmentTarget> {
+    STORE.settle_cancel(journal_root, pending_id, || {
+        // Intentional Python divergence: this writer files by Local::now(), not segment day.
+        let _ = solstone_core_facets::append_action_log(
+            journal_root,
+            None,
+            "app",
+            "transcripts",
+            "segment_delete",
+            json!({"pending_id":pending_id,"phase":"cancelled"}),
+        );
+    })
 }
 
 fn in_progress() -> Response {
@@ -340,7 +288,7 @@ pub(crate) async fn delete_status(
     RoutePath(pending_id): RoutePath<String>,
 ) -> Response {
     let record = valid_pending_id(&pending_id)
-        .then(|| pending::read(&state.journal_root, &pending_id))
+        .then(|| STORE.read::<SegmentTarget>(&state.journal_root, &pending_id))
         .flatten();
     let Some(record) = record else {
         return legacy_error_response(
@@ -356,7 +304,8 @@ pub(crate) async fn delete_status(
 /// Deletes from the last few days that did not remove their segment, so a page
 /// opened after a restart can still tell the owner.
 pub(crate) async fn delete_outcomes(State(state): State<Arc<AppState>>) -> Response {
-    let outcomes = pending::unfinished_outcomes(&state.journal_root, Utc::now())
+    let outcomes = STORE
+        .unfinished_outcomes::<SegmentTarget>(&state.journal_root, Utc::now())
         .iter()
         .filter(|record| record.state != DeleteState::Pending || resumable(record))
         .map(status_body)
@@ -368,9 +317,9 @@ fn status_body(record: &DeleteRecord) -> Value {
     let mut body = json!({
         "pending": record.pending_id,
         "state": record.state.as_str(),
-        "day": record.day,
-        "stream": record.stream,
-        "segment_key": record.key,
+        "day": record.target.day,
+        "stream": record.target.stream,
+        "segment_key": record.target.key,
         "commit_at_ms": record.commit_at_ms,
     });
     if let Some(reason) = &record.reason {
@@ -390,60 +339,39 @@ struct DeleteRequest {
 impl From<&DeleteRecord> for DeleteRequest {
     fn from(record: &DeleteRecord) -> Self {
         Self {
-            day: record.day.clone(),
-            stream: record.stream.clone(),
-            key: record.key.clone(),
+            day: record.target.day.clone(),
+            stream: record.target.stream.clone(),
+            key: record.target.key.clone(),
             pending_id: record.pending_id.clone(),
         }
     }
 }
 
-/// How long a commit waits for its record. Contention means another commit of
-/// the same delete holds it; the record stays pending and the next start
-/// retries if that one did not finish.
-const COMMIT_LOCK_WAIT: Duration = Duration::from_secs(5);
-/// How long a cancel waits. A commit holds the lock while it removes, so a
-/// cancel that cannot take it promptly is too late.
-const CANCEL_LOCK_WAIT: Duration = Duration::from_millis(200);
-
-/// Run one delete to its outcome, holding the record's lock from the claim to
-/// the written result, so no other commit or cancel can interleave.
+/// Run one delete to its outcome under the record's lock.
 fn commit_delete(journal_root: &Path, pending_id: &str, resumed: bool) {
-    let Ok(_lock) = pending::lock(journal_root, pending_id, COMMIT_LOCK_WAIT) else {
-        return;
-    };
-    let Some(mut record) = pending::read(journal_root, pending_id) else {
-        return;
-    };
-    if record.state != DeleteState::Pending {
-        return;
-    }
-    // A claim left by a run that stopped part-way is taken over as a resume.
-    let resumed = resumed || record.started_at.is_some();
-    record.started_at = Some(Utc::now().to_rfc3339());
-    if pending::write(journal_root, &record).is_err() {
-        return;
-    }
-    let Some((phase, detail, state, reason)) = run_delete(journal_root, &record, resumed) else {
-        // Another finisher holds the segment. Leave the record pending, with
-        // its claim, so the next run settles it from what is then on disk.
-        return;
-    };
-    let marker = if resumed {
-        json!({"resumed":true})
-    } else {
-        json!({})
-    };
-    append_action(
+    STORE.commit(
         journal_root,
-        &DeleteRequest::from(&record),
-        phase,
-        merge(marker, detail),
+        pending_id,
+        resumed,
+        |record: &DeleteRecord, claim| {
+            let resumed = claim.resumed;
+            // `None`: another finisher holds the segment. The record stays pending,
+            // with its claim, so the next run settles it from what is then on disk.
+            let (phase, detail, state, reason) = run_delete(journal_root, record, resumed)?;
+            let marker = if resumed {
+                json!({"resumed":true})
+            } else {
+                json!({})
+            };
+            append_action(
+                journal_root,
+                &DeleteRequest::from(record),
+                phase,
+                merge(marker, detail),
+            );
+            Some((state, reason.map(str::to_owned)))
+        },
     );
-    // Written last: a stop before this line leaves the record pending, and the
-    // next start finds the tombstone and reports the delete as done.
-    record.finish(state, reason.map(str::to_owned));
-    let _ = pending::write(journal_root, &record);
 }
 
 fn run_delete(
@@ -451,12 +379,16 @@ fn run_delete(
     record: &DeleteRecord,
     resumed: bool,
 ) -> Option<(&'static str, Value, DeleteState, Option<&'static str>)> {
+    let segment = &record.target;
     let target = Target {
-        day: record.day.clone(),
-        stream: record.stream.clone(),
-        dir: record.key.clone(),
+        day: segment.day.clone(),
+        stream: segment.stream.clone(),
+        dir: segment.key.clone(),
     };
-    let segment_rel = format!("chronicle/{}/{}/{}", record.day, record.stream, record.key);
+    let segment_rel = format!(
+        "chronicle/{}/{}/{}",
+        segment.day, segment.stream, segment.key
+    );
     let segment_dir = journal_root.join(&segment_rel);
     let deleted_at = Utc::now().to_rfc3339();
 
@@ -532,9 +464,9 @@ fn run_delete(
 fn staged_dir(journal_root: &Path, record: &DeleteRecord) -> std::path::PathBuf {
     journal_root
         .join("chronicle")
-        .join(&record.day)
-        .join(&record.stream)
-        .join(solstone_core_retention::staged_name(&record.key))
+        .join(&record.target.day)
+        .join(&record.target.stream)
+        .join(solstone_core_retention::staged_name(&record.target.key))
 }
 
 /// Whether anything is at `path`. An error reading it counts as present, so an
@@ -563,10 +495,10 @@ fn unmatched_reason(
     if !segment_dir.is_dir() {
         return None;
     }
-    if record.manifest.files.is_empty() {
+    if record.target.manifest.files.is_empty() {
         return resumed.then_some(UNCONFIRMED_REASON);
     }
-    match record.manifest.still_held_by(segment_dir) {
+    match record.target.manifest.still_held_by(segment_dir) {
         Ok(true) => None,
         Ok(false) => Some(CHANGED_REASON),
         Err(_) => Some(UNCONFIRMED_REASON),
@@ -712,13 +644,6 @@ pub(crate) fn valid_key(value: &str) -> bool {
         && time.bytes().all(|byte| byte.is_ascii_digit())
         && !length.is_empty()
         && length.bytes().all(|byte| byte.is_ascii_digit())
-}
-
-fn valid_pending_id(value: &str) -> bool {
-    value.len() == 32
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn invalid_day() -> Response {

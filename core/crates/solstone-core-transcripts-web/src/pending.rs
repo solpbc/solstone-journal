@@ -1,17 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-//! The durable record of one confirmed segment delete.
+//! What a confirmed segment delete records about its segment.
 //!
-//! A delete is held for its cancel window before it runs. The hold used to live
-//! only in memory, so a journal that stopped inside the window lost the delete
-//! while the page had already told the owner it was happening. This record is
-//! written before the delete route answers, is resumed at the next start, and
-//! carries the outcome afterwards so the page and cancel can report what really
-//! happened.
-//!
-//! ⛔ Cancel means the delete has not run yet. Nothing here commits first and
-//! undoes later.
+//! The hold itself (the record, its window, the resume at start and the
+//! outcome) is [`solstone_core_serving::held_delete`], shared with the other
+//! owner deletes. This module is the segment's half: which segment, and how to
+//! recognise it again.
 //!
 //! 🔴 A resumed delete removes only the segment the owner confirmed. The record
 //! keeps the size, modification time and (on Unix) inode of the segment's own
@@ -27,51 +22,15 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::path::Path;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use solstone_core_journal_io::{
-    AtomicWriteOptions, FileLock, LockError, LockOptions, atomic_replace, hold_lock,
-};
+pub(crate) use solstone_core_serving::held_delete::DeleteState;
+use solstone_core_serving::held_delete::{Record, Store};
 
 /// Where the records live, relative to the journal root.
-///
-/// ⛔ Not `health/`: that tree is derived runtime state, which tooling and
-/// recovery steps are free to clear. An owner's confirmed delete is intent,
-/// and it lives beside the action log.
 pub(crate) const RECORD_DIR: &str = "config/segment-deletes";
-
-/// How long a finished record is kept for status and cancel to read.
-const FINISHED_RETENTION_DAYS: i64 = 7;
-
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum DeleteState {
-    /// Confirmed and waiting for its window, or waiting for the next start.
-    Pending,
-    /// The segment is gone and its tombstone is in place.
-    Deleted,
-    /// The segment was kept. `reason` says why.
-    NotDeleted,
-    /// Removal started and did not finish: some of the segment may be gone.
-    Incomplete,
-    /// The owner cancelled inside the window.
-    Cancelled,
-}
-
-impl DeleteState {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Deleted => "deleted",
-            Self::NotDeleted => "not_deleted",
-            Self::Incomplete => "incomplete",
-            Self::Cancelled => "cancelled",
-        }
-    }
-}
+pub(crate) const STORE: Store = Store::new(RECORD_DIR);
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct FileStamp {
@@ -159,195 +118,24 @@ fn inode(_metadata: &fs::Metadata) -> Option<u64> {
     None
 }
 
+/// The segment the owner confirmed. Its fields sit at the top level of the record.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub(crate) struct DeleteRecord {
-    pub(crate) pending_id: String,
+pub(crate) struct SegmentTarget {
     pub(crate) day: String,
     pub(crate) stream: String,
     pub(crate) key: String,
-    pub(crate) requested_at: String,
-    pub(crate) commit_at_ms: i64,
     pub(crate) manifest: SegmentManifest,
-    pub(crate) state: DeleteState,
-    /// Set when a commit has claimed the record. A cancel after this is too late.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) started_at: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) reason: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub(crate) finished_at: Option<String>,
 }
 
-impl DeleteRecord {
-    pub(crate) fn finish(&mut self, state: DeleteState, reason: Option<String>) {
-        self.state = state;
-        self.reason = reason;
-        self.finished_at = Some(Utc::now().to_rfc3339());
-    }
-}
-
-fn record_path(journal_root: &Path, pending_id: &str) -> PathBuf {
-    journal_root
-        .join(RECORD_DIR)
-        .join(format!("{pending_id}.json"))
-}
-
-/// Serialize every read-modify-write of one record, across processes. A
-/// commit holds it from its claim until the outcome is written.
-pub(crate) fn lock(
-    journal_root: &Path,
-    pending_id: &str,
-    wait: Duration,
-) -> Result<FileLock, LockError> {
-    hold_lock(
-        record_path(journal_root, pending_id),
-        LockOptions {
-            timeout: wait,
-            poll_interval: Duration::from_millis(20),
-            mode: Some(0o600),
-        },
-    )
-}
-
-pub(crate) fn write(journal_root: &Path, record: &DeleteRecord) -> Result<(), String> {
-    let mut bytes = serde_json::to_vec_pretty(record).map_err(|error| error.to_string())?;
-    bytes.push(b'\n');
-    atomic_replace(
-        record_path(journal_root, &record.pending_id),
-        &bytes,
-        AtomicWriteOptions { mode: Some(0o600) },
-    )
-    .map_err(|error| error.to_string())
-}
-
-pub(crate) fn read(journal_root: &Path, pending_id: &str) -> Option<DeleteRecord> {
-    let bytes = fs::read(record_path(journal_root, pending_id)).ok()?;
-    serde_json::from_slice(&bytes).ok()
-}
-
-/// Every readable record.
-fn all(journal_root: &Path) -> Vec<(PathBuf, DeleteRecord)> {
-    let Ok(entries) = fs::read_dir(journal_root.join(RECORD_DIR)) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("json"))
-        .filter_map(|path| {
-            let record = fs::read(&path)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice::<DeleteRecord>(&bytes).ok())?;
-            Some((path, record))
-        })
-        .collect()
-}
-
-fn finished_days_ago(record: &DeleteRecord, now: DateTime<Utc>) -> Option<i64> {
-    let finished = DateTime::parse_from_rfc3339(record.finished_at.as_deref()?).ok()?;
-    Some(
-        now.signed_duration_since(finished.with_timezone(&Utc))
-            .num_days(),
-    )
-}
-
-/// Every record still waiting to run, earliest deadline first. Finished records
-/// past their retention are removed on the way.
-pub(crate) fn pending_and_prune(journal_root: &Path, now: DateTime<Utc>) -> Vec<DeleteRecord> {
-    let mut pending = Vec::new();
-    for (path, record) in all(journal_root) {
-        if record.state == DeleteState::Pending {
-            pending.push(record);
-        } else if finished_days_ago(&record, now)
-            .is_some_and(|days| days >= FINISHED_RETENTION_DAYS)
-        {
-            let _ = fs::remove_file(&path);
-            let _ = fs::remove_file(path.with_extension("json.lock"));
-        }
-    }
-    pending.sort_by_key(|record| record.commit_at_ms);
-    pending
-}
-
-/// Held while a delete request checks for a waiting delete and writes its own.
-pub(crate) fn create_lock(journal_root: &Path) -> Result<FileLock, LockError> {
-    hold_lock(
-        journal_root.join(RECORD_DIR).join("create"),
-        LockOptions {
-            timeout: Duration::from_secs(5),
-            poll_interval: Duration::from_millis(20),
-            mode: Some(0o600),
-        },
-    )
-}
-
-/// A delete already waiting for this segment, so a second request joins it
-/// instead of racing it.
-pub(crate) fn pending_for(
-    journal_root: &Path,
-    day: &str,
-    stream: &str,
-    key: &str,
-) -> Option<DeleteRecord> {
-    all(journal_root)
-        .into_iter()
-        .map(|(_, record)| record)
-        .find(|record| {
-            record.state == DeleteState::Pending
-                && record.started_at.is_none()
-                && record.day == day
-                && record.stream == stream
-                && record.key == key
-        })
-}
-
-/// How long past its deadline a delete may stay pending before it is reported.
-const OVERDUE_MINUTES: i64 = 5;
-
-/// Deletes that ended without removing the segment, still inside retention,
-/// and deletes stuck pending well past their deadline.
-pub(crate) fn unfinished_outcomes(journal_root: &Path, now: DateTime<Utc>) -> Vec<DeleteRecord> {
-    let mut outcomes = all(journal_root)
-        .into_iter()
-        .map(|(_, record)| record)
-        .filter(|record| match record.state {
-            DeleteState::NotDeleted | DeleteState::Incomplete => {
-                finished_days_ago(record, now).is_some_and(|days| days < FINISHED_RETENTION_DAYS)
-            }
-            DeleteState::Pending => {
-                now.timestamp_millis() - record.commit_at_ms > OVERDUE_MINUTES * 60_000
-            }
-            DeleteState::Deleted | DeleteState::Cancelled => false,
-        })
-        .collect::<Vec<_>>();
-    outcomes.sort_by(|left, right| left.finished_at.cmp(&right.finished_at));
-    outcomes
-}
+pub(crate) type DeleteRecord = Record<SegmentTarget>;
 
 #[cfg(test)]
 mod tests {
     use std::fs;
 
-    use chrono::{Duration, Utc};
     use tempfile::TempDir;
 
-    use super::{DeleteRecord, DeleteState, SegmentManifest, pending_and_prune, read, write};
-
-    fn record(id: &str, state: DeleteState, commit_at_ms: i64) -> DeleteRecord {
-        DeleteRecord {
-            pending_id: id.repeat(32),
-            day: "20260731".into(),
-            stream: "field".into(),
-            key: "090000_300".into(),
-            requested_at: Utc::now().to_rfc3339(),
-            commit_at_ms,
-            manifest: SegmentManifest::default(),
-            state,
-            started_at: None,
-            reason: None,
-            finished_at: None,
-        }
-    }
+    use super::SegmentManifest;
 
     #[test]
     fn a_segment_put_back_under_the_same_name_does_not_match_the_confirmed_one() {
@@ -379,32 +167,5 @@ mod tests {
 
         fs::remove_file(segment.join("audio.flac")).unwrap();
         assert!(!confirmed.still_held_by(&segment).unwrap());
-    }
-
-    #[test]
-    fn pending_records_are_returned_by_deadline_and_old_finished_ones_are_pruned() {
-        let root = TempDir::new().unwrap();
-        write(root.path(), &record("b", DeleteState::Pending, 20)).unwrap();
-        write(root.path(), &record("a", DeleteState::Pending, 10)).unwrap();
-        let mut old = record("c", DeleteState::Deleted, 0);
-        old.finished_at = Some((Utc::now() - Duration::days(8)).to_rfc3339());
-        write(root.path(), &old).unwrap();
-        let mut recent = record("d", DeleteState::NotDeleted, 0);
-        recent.finished_at = Some(Utc::now().to_rfc3339());
-        write(root.path(), &recent).unwrap();
-
-        let pending = pending_and_prune(root.path(), Utc::now());
-        assert_eq!(
-            pending
-                .iter()
-                .map(|record| record.commit_at_ms)
-                .collect::<Vec<_>>(),
-            vec![10, 20]
-        );
-        assert!(read(root.path(), &"c".repeat(32)).is_none());
-        assert_eq!(
-            read(root.path(), &"d".repeat(32)).unwrap().state,
-            DeleteState::NotDeleted
-        );
     }
 }

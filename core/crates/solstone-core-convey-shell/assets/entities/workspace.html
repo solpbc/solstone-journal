@@ -4750,14 +4750,27 @@ function confirmDeleteJournalEntity() {
   btn.disabled = true;
   btn.textContent = 'deleting…';
 
+  // Set once the journal has answered, so a later error on this page is never
+  // reported as the journal not answering.
+  let answered = false;
+  // Set once the journal has accepted the delete: from then on it is under
+  // way, whatever else fails on this page.
+  let accepted = false;
   fetch(`api/journal/entity/${encodeURIComponent(entityId)}`, {
     method: 'DELETE'
   })
-  .then(response => response.json())
+  .then(response => {
+    answered = true;
+    return response.json();
+  })
   .then(data => {
     if (data.error) {
       throw new Error(data.error);
     }
+    accepted = true;
+    // Time the wait from this answer, not the journal's clock: a paired
+    // device's clock can be minutes off.
+    watchEntityDeleteOutcome(data.pending, Date.now() + (data.ttl_seconds ?? 10) * 1000);
     hideInlineError('delete-modal-error');
     if (journalSummary) {
       const kept = (journalSummary.items || []).filter(entity => entity.id !== entityId);
@@ -4777,9 +4790,9 @@ function confirmDeleteJournalEntity() {
       app: 'entities',
       icon: 'trash-2',
       title: 'Deleting entity…',
-      message: 'Cancels in 10s',
+      message: `Cancels in ${Math.ceil(data.ttl_seconds ?? 10)}s`,
       dismissible: true,
-      autoDismiss: 10000,
+      autoDismiss: Math.max(1000, (data.ttl_seconds ?? 10) * 1000),
       buttons: [{
         label: 'Cancel',
         dismiss: false,
@@ -4789,10 +4802,159 @@ function confirmDeleteJournalEntity() {
   })
   .catch(error => {
     console.error('Error deleting entity:', error);
-    showInlineError('delete-modal-error', "couldn't delete entity");
+    if (accepted) {
+      // The delete is under way and its outcome is being watched.
+      closeDeleteJournalEntityModal();
+      return;
+    }
+    showInlineError('delete-modal-error', error instanceof TypeError && !answered
+      ? "your journal didn't answer, so the delete may still go ahead. reload to check."
+      : "couldn't delete entity");
     btn.disabled = false;
     btn.textContent = 'delete permanently';
   });
+}
+
+// Ids whose outcome this browser has already shown, so a reload does not
+// repeat them. Keyed by id and state: a delete reported as not finished yet
+// is reported again once the next start settles it.
+const REPORTED_ENTITY_DELETES_KEY = 'entities.reportedDeletes';
+// Ids whose outcome this page has already shown, so the watcher and the
+// cancel answer never both report one delete.
+const shownEntityDeleteOutcomes = new Set();
+
+function reportedEntityDeletes() {
+  try {
+    return JSON.parse(window.localStorage.getItem(REPORTED_ENTITY_DELETES_KEY) || '[]');
+  } catch (_) {
+    return [];
+  }
+}
+
+function markEntityDeleteReported(pendingId, state) {
+  const key = `${pendingId}:${state}`;
+  try {
+    const ids = reportedEntityDeletes().filter(id => id !== key);
+    ids.push(key);
+    window.localStorage.setItem(REPORTED_ENTITY_DELETES_KEY, JSON.stringify(ids.slice(-50)));
+  } catch (_) {
+    // Without storage a later page may show this outcome once more.
+  }
+}
+
+function entityDeleteSentence(text) {
+  const value = String(text || '').trim();
+  if (!value) return '';
+  const capitalized = value.charAt(0).toUpperCase() + value.slice(1);
+  return /[.!?]$/.test(capitalized) ? capitalized : `${capitalized}.`;
+}
+
+// Not deleted or partly deleted: reload the list so it shows what is really
+// in the journal.
+function showEntityDeleteOutcome(pendingId, state, reason, label) {
+  if (shownEntityDeleteOutcomes.has(pendingId)) return;
+  shownEntityDeleteOutcomes.add(pendingId);
+  markEntityDeleteReported(pendingId, state);
+  if (state !== 'pending') refreshEntitiesAfterMutation();
+  const title = {
+    incomplete: 'Entity only partly deleted',
+    pending: 'Delete not finished yet'
+  }[state] || 'Entity not deleted';
+  const fallback = {
+    incomplete: 'Some of it may already be gone.',
+    pending: 'Your journal will try again the next time it starts.'
+  }[state] || 'It\'s still in your journal.';
+  const message = [label, entityDeleteSentence(reason) || fallback].filter(Boolean).join(' ');
+  window.AppServices.notifications.show({
+    app: 'entities',
+    icon: 'triangle-alert',
+    title,
+    message,
+    dismissible: true,
+    autoDismiss: 10000
+  });
+}
+
+// The delete runs after its cancel window, so the answer to the DELETE is
+// only that it was accepted. Ask what happened once the window has passed,
+// so a refusal reaches the page and not just the journal's log.
+async function watchEntityDeleteOutcome(pendingId, commitAtLocalMs) {
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  await wait(Math.max(0, commitAtLocalMs - Date.now()) + 500);
+  let unknown = false;
+  for (let attempt = 0; attempt < 20; attempt++) {
+    let data = null;
+    try {
+      const response = await fetch(`api/delete-status/${pendingId}`);
+      data = await response.json().catch(() => null);
+      if (response.status === 404) {
+        unknown = true;
+        break;
+      }
+    } catch (_) {
+      data = null;
+    }
+    if (data?.state === 'cancelled') {
+      // The cancel landed even if its answer never reached this page.
+      if (!shownEntityDeleteOutcomes.has(pendingId)) {
+        shownEntityDeleteOutcomes.add(pendingId);
+        refreshEntitiesAfterMutation();
+        window.AppServices.notifications.show({
+          app: 'entities',
+          icon: 'undo-2',
+          title: 'Delete cancelled',
+          autoDismiss: 3000
+        });
+      }
+      return;
+    }
+    if (data?.state === 'deleted') {
+      if (shownEntityDeleteOutcomes.has(pendingId)) return;
+      shownEntityDeleteOutcomes.add(pendingId);
+      window.AppServices.notifications.show({
+        app: 'entities',
+        icon: 'trash-2',
+        title: 'Entity deleted',
+        autoDismiss: 3000
+      });
+      return;
+    }
+    if (data?.state === 'not_deleted' || data?.state === 'incomplete') {
+      showEntityDeleteOutcome(pendingId, data.state, data.reason, '');
+      return;
+    }
+    await wait(1000);
+  }
+  if (shownEntityDeleteOutcomes.has(pendingId)) return;
+  shownEntityDeleteOutcomes.add(pendingId);
+  window.AppServices.notifications.show({
+    app: 'entities',
+    icon: 'triangle-alert',
+    title: unknown ? 'Delete not confirmed' : 'Delete not confirmed yet',
+    message: unknown
+      ? 'Your journal has no record of this delete. Reload to see whether the entity is still there.'
+      : 'Your journal still holds this delete, even across a restart. Reload later to see whether it went through.',
+    dismissible: true,
+    autoDismiss: 10000
+  });
+}
+
+// A delete that ended without removing its entity while no page was
+// watching, for example across a restart, is shown the next time one opens.
+async function reportUnfinishedEntityDeletes() {
+  let data = null;
+  try {
+    const response = await fetch('api/delete-outcomes');
+    data = response.ok ? await response.json() : null;
+  } catch (_) {
+    return;
+  }
+  const shown = new Set(reportedEntityDeletes());
+  for (const outcome of data?.outcomes || []) {
+    if (shown.has(`${outcome.pending}:${outcome.state}`)) continue;
+    const label = outcome.name ? `${outcome.name}.` : '';
+    showEntityDeleteOutcome(outcome.pending, outcome.state, outcome.reason, label);
+  }
 }
 
 async function cancelJournalEntityDelete(pendingId, notificationId) {
@@ -4807,6 +4969,7 @@ async function cancelJournalEntityDelete(pendingId, notificationId) {
     }
 
     if (response.ok) {
+      shownEntityDeleteOutcomes.add(pendingId);
       await refreshEntitiesAfterMutation();
       window.AppServices.notifications.show({
         app: 'entities',
@@ -4817,7 +4980,9 @@ async function cancelJournalEntityDelete(pendingId, notificationId) {
       return;
     }
 
-    if (response.status === 410) {
+    // Each answer names what really happened; "already deleted" only when it was.
+    if (data.reason_code === 'entity_already_deleted') {
+      shownEntityDeleteOutcomes.add(pendingId);
       window.AppServices.notifications.show({
         app: 'entities',
         icon: 'timer',
@@ -4826,15 +4991,40 @@ async function cancelJournalEntityDelete(pendingId, notificationId) {
       });
       return;
     }
+    if (data.reason_code === 'entity_not_deleted' || data.reason_code === 'entity_delete_incomplete') {
+      const state = data.reason_code === 'entity_not_deleted' ? 'not_deleted' : 'incomplete';
+      showEntityDeleteOutcome(pendingId, state, data.detail, '');
+      return;
+    }
+    if (data.reason_code === 'entity_delete_in_progress') {
+      window.AppServices.notifications.show({
+        app: 'entities',
+        icon: 'timer',
+        title: 'Too late to cancel',
+        message: 'The delete is already under way.',
+        autoDismiss: 3000
+      });
+      return;
+    }
+    if (data.reason_code === 'entity_delete_not_cancelled') {
+      throw new Error('Your journal couldn\'t save the cancel, so the delete will still happen.');
+    }
+    if (response.status === 410) {
+      throw new Error('Your journal has no record of this delete. Reload to see whether the entity is still there.');
+    }
 
-    throw new Error(data.error || 'Failed to cancel delete');
+    throw new Error('The delete may still go ahead. Reload to see whether the entity is still there.');
   } catch (error) {
+    const unanswered = error instanceof TypeError;
     window.AppServices.notifications.show({
       app: 'entities',
       icon: 'triangle-alert',
       title: 'Couldn\'t cancel delete',
-      message: error.message || 'Please try again.',
-      autoDismiss: 3000
+      message: unanswered
+        ? 'Your journal didn\'t answer, so the cancel may not have gone through. Reload to see whether the entity is still there.'
+        : (error.message || 'Please try again.'),
+      dismissible: unanswered,
+      autoDismiss: unanswered ? 10000 : 3000
     });
   }
 }
@@ -5363,6 +5553,7 @@ async function initEntities() {
   }
   loadEntityTypes();  // Load entity types first for UI elements
   loadEntities();
+  reportUnfinishedEntityDeletes();
   setupCortexListener();
 
   // Entity search
