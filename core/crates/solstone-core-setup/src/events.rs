@@ -122,6 +122,9 @@ pub enum SkipReason {
     SkipService,
     SkipWrapper,
     WindowsPackageOwnsCommands,
+    /// Agent skills install through symlinks, which a standard Windows owner
+    /// cannot create; the step is skipped rather than reported as a failure.
+    WindowsAgentSkillsUnavailable,
     ProviderAlreadyConfigured,
     ProviderConfigUnexpectedShape,
     LocalProviderUnavailable,
@@ -146,6 +149,7 @@ impl SkipReason {
             Self::WindowsPackageOwnsCommands => {
                 "Windows packages expose the commands directly; POSIX wrappers are not applicable"
             }
+            Self::WindowsAgentSkillsUnavailable => "agent skills are not installed on windows yet",
             Self::ProviderAlreadyConfigured => "a provider is already configured",
             Self::ProviderConfigUnexpectedShape => "provider config is not in the expected shape",
             Self::LocalProviderUnavailable => "local provider unavailable on this host",

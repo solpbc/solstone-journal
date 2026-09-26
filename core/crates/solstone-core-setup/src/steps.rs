@@ -1462,43 +1462,71 @@ fn step_install_models(context: &mut SetupContext<'_>) -> Result<StepResult, Ste
     Ok(result)
 }
 
+/// Agent skills are not installed on Windows yet: they are symlinked into each
+/// agent's home, and a standard Windows owner cannot create a symlink. Both
+/// skills steps skip there instead of failing setup with a misleading remedy.
+#[cfg(windows)]
+fn skipped_windows_skills(context: &SetupContext<'_>, name: StepName) -> StepResult {
+    let mut result = StepResult::new(name, StepStatus::Skipped, Vec::new(), (context.now)());
+    result.reason = Some(
+        SkipReason::WindowsAgentSkillsUnavailable
+            .as_str()
+            .to_owned(),
+    );
+    result
+}
+
 fn step_skills_user(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
-    let paths = vec![
-        context.home_dir.join(".claude/skills/solstone/SKILL.md"),
-        context.home_dir.join(".codex/skills/solstone/SKILL.md"),
-        context.home_dir.join(".gemini/skills/solstone/SKILL.md"),
-    ];
-    run_skill_step(
-        context,
-        StepName::SkillsUser,
-        paths,
-        vec![
-            "skills".into(),
-            "install".into(),
-            "--agent".into(),
-            "all".into(),
-        ],
-    )
+    #[cfg(windows)]
+    {
+        Ok(skipped_windows_skills(context, StepName::SkillsUser))
+    }
+    #[cfg(not(windows))]
+    {
+        let paths = vec![
+            context.home_dir.join(".claude/skills/solstone/SKILL.md"),
+            context.home_dir.join(".codex/skills/solstone/SKILL.md"),
+            context.home_dir.join(".gemini/skills/solstone/SKILL.md"),
+        ];
+        run_skill_step(
+            context,
+            StepName::SkillsUser,
+            paths,
+            vec![
+                "skills".into(),
+                "install".into(),
+                "--agent".into(),
+                "all".into(),
+            ],
+        )
+    }
 }
 
 fn step_skills_journal(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
-    let paths = vec![
-        context.journal_path.join(".claude/skills"),
-        context.journal_path.join(".agents/skills"),
-    ];
-    run_skill_step(
-        context,
-        StepName::SkillsJournal,
-        paths,
-        vec![
-            "skills".into(),
-            "install".into(),
-            "--project".into(),
-            context.journal_path.to_string_lossy().into_owned(),
-            "--agent".into(),
-            "all".into(),
-        ],
-    )
+    #[cfg(windows)]
+    {
+        Ok(skipped_windows_skills(context, StepName::SkillsJournal))
+    }
+    #[cfg(not(windows))]
+    {
+        let paths = vec![
+            context.journal_path.join(".claude/skills"),
+            context.journal_path.join(".agents/skills"),
+        ];
+        run_skill_step(
+            context,
+            StepName::SkillsJournal,
+            paths,
+            vec![
+                "skills".into(),
+                "install".into(),
+                "--project".into(),
+                context.journal_path.to_string_lossy().into_owned(),
+                "--agent".into(),
+                "all".into(),
+            ],
+        )
+    }
 }
 
 fn step_wrapper(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutionError> {
@@ -1991,6 +2019,7 @@ fn step_brain(context: &mut SetupContext<'_>) -> Result<StepResult, StepExecutio
     ))
 }
 
+#[cfg(not(windows))]
 fn run_skill_step(
     context: &mut SetupContext<'_>,
     name: StepName,
