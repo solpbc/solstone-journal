@@ -111,6 +111,7 @@ mod tests {
     use solstone_core_backup::save_hosted_binding;
 
     #[cfg(not(windows))]
+    #[cfg(all(test, feature = "full-tests"))]
     #[test]
     fn status_never_reports_a_terminal_operation_without_its_recorded_result() {
         use serde_json::Value;
