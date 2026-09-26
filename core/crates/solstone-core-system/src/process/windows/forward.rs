@@ -42,14 +42,12 @@ mod session_end {
 
     use windows_sys::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows_sys::Win32::System::Console::{
-        CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, GetConsoleWindow,
-        SetConsoleCtrlHandler,
+        CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT, SetConsoleCtrlHandler,
     };
     use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW, MSG, RegisterClassExW,
-        SW_HIDE, ShowWindow, TranslateMessage, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSEXW,
-        WS_OVERLAPPED,
+        TranslateMessage, WM_ENDSESSION, WM_QUERYENDSESSION, WNDCLASSEXW, WS_OVERLAPPED,
     };
 
     static REQUESTED: AtomicBool = AtomicBool::new(false);
@@ -205,17 +203,6 @@ mod session_end {
                     return Err(io::Error::last_os_error());
                 }
                 install_window()?;
-                // Best effort: hides the console window Task Scheduler
-                // otherwise leaves visible at every logon. Session-end
-                // detection above does not depend on the console at all, so
-                // a failure here is cosmetic, not functional.
-                #[allow(unsafe_code)]
-                unsafe {
-                    let console = GetConsoleWindow();
-                    if !console.is_null() {
-                        ShowWindow(console, SW_HIDE);
-                    }
-                }
                 Ok(())
             })
             .as_ref()
@@ -315,12 +302,54 @@ const INSTALLED_TASK_RESTART_LIMIT: u32 = 10;
 const INSTALLED_TASK_RESTART_DELAY: Duration = Duration::from_secs(5);
 const RESTART_CREDIT_UPTIME: Duration = Duration::from_secs(300);
 
+/// Give up the console the Scheduler created for the installed task.
+///
+/// A console program started by the Scheduler gets a new console, and where
+/// Windows Terminal is the default terminal that console opens as a Terminal
+/// window on the owner's desktop at every sign-in. Hiding its window is not
+/// enough: an older Terminal ignores the hide and keeps the window open, and
+/// closing that window would end the resident. The forwarder needs no console:
+/// session end arrives through its own hidden window, stop never signals the
+/// console, and its children are created without one. So it hides the window
+/// for the terminals that honor that, detaches, and gives its children `NUL`
+/// for their standard handles.
+///
+/// Only the installed task does this. Every other forwarded command runs in the
+/// owner's own terminal, and must never hide or leave it.
+fn detach_installed_task_console() {
+    use std::ptr::null_mut;
+
+    use windows_sys::Win32::System::Console::{
+        FreeConsole, GetConsoleWindow, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
+        SetStdHandle,
+    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::{SW_HIDE, ShowWindow};
+
+    // SAFETY: the console window handle is only passed to ShowWindow when it is
+    // non-null; FreeConsole and SetStdHandle take no pointers the process owns.
+    #[allow(unsafe_code)]
+    unsafe {
+        let console = GetConsoleWindow();
+        if !console.is_null() {
+            ShowWindow(console, SW_HIDE);
+        }
+        if FreeConsole() != 0 {
+            // The standard handles named the console just freed. A null handle
+            // makes the child launch open NUL in their place.
+            for which in [STD_INPUT_HANDLE, STD_OUTPUT_HANDLE, STD_ERROR_HANDLE] {
+                SetStdHandle(which, null_mut());
+            }
+        }
+    }
+}
+
 /// Forward the exact installed action with no hosted generation grants,
 /// restarting it after an abnormal exit.
 pub fn forward_windows_installed_task(
     program: &OsStr,
     request: &InstalledTaskLaunchRequest,
 ) -> io::Result<i32> {
+    detach_installed_task_console();
     let arguments = request
         .arguments
         .iter()
