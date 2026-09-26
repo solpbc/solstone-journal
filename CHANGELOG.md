@@ -18,6 +18,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - if your journal can't delete a segment, transcripts now tells you and puts the segment back, instead of showing it as deleted. cancel says a segment was already deleted only when it was.
 - the delete dialog now says what it deletes: the segment's own audio, screen frames, transcript and the analysis stored with it. summaries made from it elsewhere in your journal aren't deleted and may still mention it.
 - after you erase location data, the list of what wasn't removed no longer shows an activity summary for a day that has none.
+- if your journal's setup isn't finished, saving a provider key or model in thinking settings now takes you to setup instead of showing a JSON error.
 
 ## [2.0.18] - 2026-09-25
 
