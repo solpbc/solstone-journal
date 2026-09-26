@@ -6,6 +6,10 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- on windows, agents on your computer can now connect to your journal, the same way they do on mac and linux, and agents on your wifi or VPN can too once you turn that on in the agents app. each agent needs a pairing code from your journal and reads only what you let it see, and your journal records each thing an agent asks for before it's served. solstone.me and your own hostname aren't available on windows yet.
+
 ### Changed
 
 - a DNSSEC-broken answer for your hostname is no longer treated as a passing check. if your resolver strips DNSSEC, that check still comes out the same way it does today.

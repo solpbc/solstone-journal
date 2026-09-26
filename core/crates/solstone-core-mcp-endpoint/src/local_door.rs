@@ -528,6 +528,49 @@ mod full_tests {
             .encode(Sha256::digest(OAUTH_VERIFIER.as_bytes()))
     }
 
+    /// On Windows another process, of this user or another, may bind a
+    /// listening port with `SO_REUSEADDR` unless the first socket forbids it.
+    /// Both agent doors' listeners must refuse that takeover.
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn windows_door_listeners_refuse_a_reuse_address_takeover() {
+        use socket2::{Domain, Socket, Type};
+
+        fn takeover(address: std::net::SocketAddr) -> std::io::Error {
+            let domain = if address.is_ipv4() {
+                Domain::IPV4
+            } else {
+                Domain::IPV6
+            };
+            let socket = Socket::new(domain, Type::STREAM, None).expect("probe socket");
+            socket
+                .set_reuse_address(true)
+                .expect("probe sets SO_REUSEADDR");
+            socket
+                .bind(&address.into())
+                .expect_err("a second listener must not take the door's address")
+        }
+
+        let loopback = bind_loopback(0).await.expect("loopback door binds");
+        for address in [
+            loopback.ipv4_addr().expect("ipv4 address"),
+            loopback.ipv6_addr().expect("ipv6 address"),
+        ] {
+            assert_eq!(
+                takeover(address).kind(),
+                std::io::ErrorKind::PermissionDenied,
+                "{address}"
+            );
+        }
+
+        let lan = crate::lan_door::bind_admitted_address(Ipv4Addr::LOCALHOST.into(), 0)
+            .expect("lan door listener binds");
+        assert_eq!(
+            takeover(lan.local_addr().expect("lan address")).kind(),
+            std::io::ErrorKind::PermissionDenied
+        );
+    }
+
     fn seed_indexed_note(journal: &Path) {
         let path = "20260831/default/123456_1/talents/brief.md";
         let source = journal.join("chronicle/20260831/default/123456_1");

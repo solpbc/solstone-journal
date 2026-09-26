@@ -2009,12 +2009,20 @@ mod tests {
             .oneshot(linked_put)
             .await
             .unwrap();
-        assert_eq!(put_res.status(), StatusCode::OK);
+        // Admitted on every platform; Windows then refuses the operated endpoint.
+        #[cfg(unix)]
+        let expected = StatusCode::OK;
+        #[cfg(windows)]
+        let expected = StatusCode::NOT_IMPLEMENTED;
+        assert_eq!(put_res.status(), expected);
         let bytes = axum::body::to_bytes(put_res.into_body(), usize::MAX)
             .await
             .unwrap();
         let body: Value = serde_json::from_slice(&bytes).unwrap();
+        #[cfg(unix)]
         assert_eq!(body["enabled"], true);
+        #[cfg(windows)]
+        assert_eq!(body["reason_code"], "unavailable_on_this_platform");
     }
 
     #[tokio::test]
@@ -2446,6 +2454,8 @@ mod tests {
         assert_eq!(state_bytes_before, state_bytes_after);
     }
 
+    // The owner-hostname state is reported on Unix only.
+    #[cfg(unix)]
     #[test]
     fn byo_state_json_disabled_limits() {
         let dir = tempfile::Builder::new()
@@ -2508,6 +2518,7 @@ mod tests {
         assert!(limits.contains(&"owner_dns_control_required"));
     }
 
+    #[cfg(unix)]
     #[test]
     fn byo_owner_state_does_not_report_a_stale_or_other_generation_socket() {
         let dir = tempfile::Builder::new()

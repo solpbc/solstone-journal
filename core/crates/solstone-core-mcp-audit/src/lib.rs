@@ -464,7 +464,11 @@ mod tests {
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
     fn journal_root() -> PathBuf {
-        let root = PathBuf::from("/var/tmp").join(format!(
+        #[cfg(unix)]
+        let scratch = PathBuf::from("/var/tmp");
+        #[cfg(windows)]
+        let scratch = std::env::temp_dir();
+        let root = scratch.join(format!(
             "solstone-mcp-audit-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
