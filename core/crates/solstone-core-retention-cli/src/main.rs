@@ -236,7 +236,10 @@ fn finish(journal: &Path, outcome: Outcome, extra: serde_json::Value) -> ExitCod
     let index = RetentionIndex::new(journal);
     // ⚠ A failed notification does not undo a removal and must not be reported as
     // one. It is a separate field, and it does not change the exit code: the files
-    // are gone either way, and a stale index row is self-announcing.
+    // are gone either way, and the chronicle remains authoritative. Search
+    // returns the index text without opening the file, a day discovery found
+    // nothing in keeps those rows until a full rescan, and telling the index
+    // first would hide content that is still on disk.
     let notified = match notify_index(&index, &outcome) {
         Ok(counts) => serde_json::json!({
             "ok": true, "chunks": counts.chunks, "files": counts.files

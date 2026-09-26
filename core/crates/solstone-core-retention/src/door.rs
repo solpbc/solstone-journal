@@ -274,9 +274,11 @@ pub fn remove_segments(
 /// in a verb.
 ///
 /// ⛔ Takes the outcome, so the paths it names are exactly the ones a verb
-/// confirmed gone. A failure here is reported and does not undo anything: the
-/// removal already happened, the index is a rebuildable cache, and the next scan
-/// corrects it.
+/// confirmed gone. A failure here is reported and does not undo the removal: the
+/// removal already happened, the chronicle is authoritative, and telling the
+/// index first would hide content that is still on disk. Search returns that
+/// hit's text from the index without opening the file, and a day discovery found
+/// nothing in keeps those rows until a full rescan.
 pub fn notify_index(
     index: &dyn IndexNotify,
     outcome: &Outcome,

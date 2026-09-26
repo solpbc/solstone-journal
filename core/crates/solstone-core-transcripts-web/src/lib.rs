@@ -3,7 +3,7 @@
 
 //! Native transcript read and write routes.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,8 +15,6 @@ use axum::response::IntoResponse;
 use axum::response::Response;
 use axum::routing::{get, post};
 use chrono::{DateTime, Utc};
-use solstone_core_system::lifecycle::SupervisorLiveness;
-
 mod assemble;
 mod attach;
 mod calendar;
@@ -33,8 +31,6 @@ mod shell;
 
 #[cfg(test)]
 mod corpus;
-
-type SupervisorLivenessProbe = Arc<dyn Fn(&Path) -> SupervisorLiveness + Send + Sync>;
 
 #[derive(Clone)]
 pub struct Clock(Arc<dyn Fn() -> DateTime<Utc> + Send + Sync>);
@@ -70,7 +66,6 @@ pub fn router_with_delete_window(
         shared_shell,
         delete_window,
         Arc::new(reprocess::ProcessSenseSpawner),
-        Arc::new(|journal| solstone_core_system::lifecycle::supervisor_liveness(journal)),
     )
 }
 
@@ -80,7 +75,6 @@ fn router_with_dependencies(
     shared_shell: fn() -> Response,
     delete_window: Duration,
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
-    supervisor_liveness: SupervisorLivenessProbe,
 ) -> Router {
     let deferred_deletes = solstone_core_serving::held_delete::Registry::new();
     delete::resume_pending(&journal_root, &deferred_deletes);
@@ -125,7 +119,6 @@ fn router_with_dependencies(
             deferred_deletes,
             delete_window,
             sense_spawner,
-            supervisor_liveness,
         }))
 }
 
@@ -143,25 +136,6 @@ pub(crate) fn router_with_test_spawner(
         shared_shell,
         delete_window,
         sense_spawner,
-        Arc::new(|journal| solstone_core_system::lifecycle::supervisor_liveness(journal)),
-    )
-}
-
-#[cfg(test)]
-pub(crate) fn router_with_test_liveness(
-    journal_root: PathBuf,
-    clock: Clock,
-    shared_shell: fn() -> Response,
-    delete_window: Duration,
-    liveness: SupervisorLiveness,
-) -> Router {
-    router_with_dependencies(
-        journal_root,
-        clock,
-        shared_shell,
-        delete_window,
-        Arc::new(reprocess::ProcessSenseSpawner),
-        Arc::new(move |_| liveness),
     )
 }
 
@@ -172,7 +146,6 @@ struct AppState {
     deferred_deletes: solstone_core_serving::held_delete::Registry,
     delete_window: Duration,
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
-    supervisor_liveness: SupervisorLivenessProbe,
 }
 
 struct EmbeddedAsset {

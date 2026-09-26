@@ -4939,6 +4939,7 @@ name = "solstone-core-retention-cli"
 version = "2.0.21"
 dependencies = [
  "chrono",
+ "rusqlite",
  "serde",
  "serde_json",
  "solstone-core-indexer-store",
@@ -5645,6 +5646,8 @@ dependencies = [
  "solstone-core-entity",
  "solstone-core-facets",
  "solstone-core-format",
+ "solstone-core-indexer-query",
+ "solstone-core-indexer-store",
  "solstone-core-journal-io",
  "solstone-core-journal-stats-cli",
  "solstone-core-npy",

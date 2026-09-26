@@ -13,10 +13,10 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use chrono::Utc;
 use serde_json::{Value, json};
+use solstone_core_indexer_store::RetentionIndex;
 use solstone_core_retention::door;
 use solstone_core_retention::tombstone::TOMBSTONE_NAME;
-use solstone_core_retention::{NoIndex, Outcome, RemovalReason, Target};
-use solstone_core_system::lifecycle::SupervisorLiveness;
+use solstone_core_retention::{Outcome, RemovalReason, Target};
 
 use solstone_core_serving::held_delete::{Record, Registry, Settled, valid_pending_id};
 
@@ -82,7 +82,7 @@ pub(crate) async fn delete_segment(
                 true,
             );
         }
-        return accepted(&state, &existing, true);
+        return accepted(&existing, true);
     }
     let prepared = pending_id().and_then(|id| {
         SegmentManifest::of(&segment_dir)
@@ -135,16 +135,10 @@ pub(crate) async fn delete_segment(
         false,
     );
 
-    accepted(&state, &record, false)
+    accepted(&record, false)
 }
 
-fn accepted(state: &AppState, record: &DeleteRecord, joined: bool) -> Response {
-    let (search_index_warning, supervisor_liveness) =
-        match (state.supervisor_liveness)(&state.journal_root) {
-            SupervisorLiveness::Up => (false, None),
-            SupervisorLiveness::Down => (true, None),
-            SupervisorLiveness::Unverifiable => (true, Some("unverifiable")),
-        };
+fn accepted(record: &DeleteRecord, joined: bool) -> Response {
     let mut body = json!({
         "success": true,
         "deleted": record.target.key,
@@ -155,12 +149,6 @@ fn accepted(state: &AppState, record: &DeleteRecord, joined: bool) -> Response {
     if joined {
         // What is left of the first request's window, not a fresh one.
         body["ttl_seconds"] = json!(record.remaining_seconds());
-    }
-    if search_index_warning {
-        body["search_index_warning"] = json!(true);
-    }
-    if let Some(liveness) = supervisor_liveness {
-        body["supervisor_liveness"] = json!(liveness);
     }
     Json(body).into_response()
 }
@@ -426,14 +414,11 @@ fn run_delete(
         if outcome.removed_paths().next().is_none() && present(&staged_dir(journal_root, record)) {
             return None;
         }
-        let _ = door::notify_index(&NoIndex, &outcome);
+        let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
         let (phase, detail) = terminal_detail(&outcome);
-        return Some((
-            phase,
-            merge(json!({"recovered":true}), detail),
-            owner_outcome(&outcome, &segment_dir),
-            None,
-        ));
+        let detail = merge(json!({"recovered":true}), detail);
+        let detail = fold_notify_detail(detail, notify_result);
+        return Some((phase, detail, owner_outcome(&outcome, &segment_dir), None));
     }
     // Someone else may have finished it while this run waited for the lock.
     if let Some(done) = already_removed() {
@@ -456,9 +441,35 @@ fn run_delete(
     );
     // The chronicle is authoritative: this notification deliberately happens
     // only after the removal door has returned its proven outcome.
-    let _ = door::notify_index(&NoIndex, &outcome);
+    let notify_result = door::notify_index(&RetentionIndex::new(journal_root), &outcome);
     let (phase, detail) = terminal_detail(&outcome);
+    let detail = fold_notify_detail(detail, notify_result);
     Some((phase, detail, owner_outcome(&outcome, &segment_dir), None))
+}
+
+fn fold_notify_detail(
+    mut detail: Value,
+    notify_result: Result<
+        solstone_core_retention::PruneCounts,
+        solstone_core_retention::NotifyError,
+    >,
+) -> Value {
+    match notify_result {
+        Ok(counts) => {
+            if (counts.chunks > 0 || counts.files > 0)
+                && let Value::Object(ref mut map) = detail
+            {
+                map.insert("index_chunks".into(), json!(counts.chunks));
+                map.insert("index_files".into(), json!(counts.files));
+            }
+        }
+        Err(_) => {
+            if let Value::Object(ref mut map) = detail {
+                map.insert("search_not_updated".into(), json!(true));
+            }
+        }
+    }
+    detail
 }
 
 fn staged_dir(journal_root: &Path, record: &DeleteRecord) -> std::path::PathBuf {
@@ -676,12 +687,430 @@ fn operation_unavailable() -> Response {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::Path;
+    use std::time::Duration;
 
+    use axum::body::{Body, to_bytes};
+    use axum::http::{Method, Request, StatusCode};
+    use chrono::{NaiveDate, TimeZone, Utc};
     use serde_json::Value;
     use solstone_core_retention::{NotRemoved, Outcome, RunHalt, Target, TargetOutcome};
     use tempfile::TempDir;
+    use tower::ServiceExt;
 
     use super::{DeleteRequest, record_terminal_action, terminal_detail};
+    use crate::{Clock, router_with_delete_window};
+    use solstone_core_indexer_store::scan::scan_journal;
+
+    fn shell() -> axum::response::Response {
+        axum::response::Response::new(Body::from("shell"))
+    }
+
+    fn write(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
+        let path = root.join(relative);
+        fs::create_dir_all(path.parent().expect("parent")).expect("directory");
+        fs::write(path, contents).expect("file");
+    }
+
+    fn setup_acceptance_journal(root: &Path) {
+        write(
+            root,
+            "config/journal.json",
+            br#"{"setup":{"completed_at":1700000000000}}"#,
+        );
+        for (name, contents) in [
+            ("audio.flac", b"raw".as_slice()),
+            ("audio.jsonl", b"{}\n".as_slice()),
+            ("stream.json", br#"{"stream":"field.audio"}"#.as_slice()),
+            (
+                "talents/summary.md",
+                b"# Target\nneedle in target segment\n".as_slice(),
+            ),
+        ] {
+            write(
+                root,
+                &format!("chronicle/20260805/field.audio/070000_17/{name}"),
+                contents,
+            );
+        }
+        for (name, contents) in [
+            ("audio.flac", b"raw".as_slice()),
+            ("audio.jsonl", b"{}\n".as_slice()),
+            ("stream.json", br#"{"stream":"field.audio"}"#.as_slice()),
+            (
+                "talents/summary.md",
+                b"# Sibling\nneedle in sibling segment\n".as_slice(),
+            ),
+        ] {
+            write(
+                root,
+                &format!("chronicle/20260805/field.audio/071000_17/{name}"),
+                contents,
+            );
+        }
+        write(
+            root,
+            "chronicle/20260805/talents/flow.md",
+            b"# Day Talent\nneedle in day talent\n",
+        );
+    }
+
+    fn read_all_actions(journal_root: &Path) -> Vec<Value> {
+        let actions_dir = journal_root.join("config/actions");
+        if !actions_dir.is_dir() {
+            return Vec::new();
+        }
+        let mut rows = Vec::new();
+        for entry in fs::read_dir(actions_dir).expect("read actions dir") {
+            let entry = entry.expect("entry");
+            if entry.path().extension().is_some_and(|ext| ext == "jsonl") {
+                let content = fs::read_to_string(entry.path()).expect("read action log");
+                for line in content.lines() {
+                    if !line.trim().is_empty() {
+                        rows.push(serde_json::from_str::<Value>(line).expect("parse action json"));
+                    }
+                }
+            }
+        }
+        rows
+    }
+
+    use std::collections::BTreeSet;
+
+    #[tokio::test]
+    async fn zero_window_delete_drops_the_target_from_search_and_keeps_the_sibling() {
+        let root = TempDir::new().expect("journal");
+        setup_acceptance_journal(root.path());
+
+        scan_journal(root.path(), true).expect("scan journal");
+
+        let ref_date = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+        let before = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search before");
+        assert_eq!(before.results.len(), 3);
+
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::ZERO,
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/app/transcripts/api/segment/20260805/field.audio/070000_17")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("delete response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let json: Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(
+            json.as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                "commit_at_ms".to_string(),
+                "deleted".to_string(),
+                "pending".to_string(),
+                "success".to_string(),
+                "ttl_seconds".to_string(),
+            ])
+        );
+        assert_eq!(json["deleted"], "070000_17");
+
+        let after = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search after");
+        assert_eq!(after.results.len(), 2);
+        let paths: Vec<String> = after
+            .results
+            .iter()
+            .map(|r| r.metadata.path.clone())
+            .collect();
+        assert!(paths.iter().any(|p| p.contains("071000_17")));
+        assert!(paths.iter().any(|p| p.contains("talents/flow.md")));
+        assert!(!paths.iter().any(|p| p.contains("070000_17")));
+
+        let action_rows = read_all_actions(root.path());
+        let committed = action_rows
+            .iter()
+            .find(|r| r["params"]["phase"] == "committed")
+            .expect("committed action row");
+        assert!(committed["params"]["index_chunks"].as_u64().unwrap() > 0);
+        assert!(committed["params"]["index_files"].as_u64().unwrap() > 0);
+        assert!(committed["params"].get("search_not_updated").is_none());
+    }
+
+    #[tokio::test]
+    async fn cancelled_delete_leaves_the_index_and_stays_cancelled() {
+        let root = TempDir::new().expect("journal");
+        setup_acceptance_journal(root.path());
+
+        scan_journal(root.path(), true).expect("scan journal");
+
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::from_secs(60),
+        );
+
+        let delete_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/app/transcripts/api/segment/20260805/field.audio/070000_17")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("delete response");
+        assert_eq!(delete_res.status(), StatusCode::OK);
+        let delete_bytes = to_bytes(delete_res.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let delete_json: Value = serde_json::from_slice(&delete_bytes).expect("json");
+        assert_eq!(delete_json["deleted"], "070000_17");
+        let pending_id = delete_json["pending"].as_str().expect("pending id string");
+
+        let cancel_res = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri(format!("/app/transcripts/api/cancel-delete/{pending_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("cancel response");
+        assert_eq!(cancel_res.status(), StatusCode::OK);
+
+        let snapshot_before = {
+            let conn = solstone_core_indexer_store::db::open_index(root.path())
+                .expect("open index before");
+            let mut stmt = conn
+                .prepare("SELECT path FROM files ORDER BY path")
+                .expect("prepare");
+            let paths: Vec<String> = stmt
+                .query_map([], |row| row.get(0))
+                .expect("query")
+                .map(|r| r.expect("path"))
+                .collect();
+            paths
+        };
+
+        super::commit_delete(root.path(), pending_id, false);
+
+        let snapshot_after = {
+            let conn =
+                solstone_core_indexer_store::db::open_index(root.path()).expect("open index after");
+            let mut stmt = conn
+                .prepare("SELECT path FROM files ORDER BY path")
+                .expect("prepare");
+            let paths: Vec<String> = stmt
+                .query_map([], |row| row.get(0))
+                .expect("query")
+                .map(|r| r.expect("path"))
+                .collect();
+            paths
+        };
+        assert_eq!(snapshot_before, snapshot_after);
+
+        let ref_date = NaiveDate::from_ymd_opt(2026, 8, 5).unwrap();
+        let search_res = solstone_core_indexer_query::search(
+            root.path(),
+            solstone_core_indexer_query::OwnerBoundary,
+            &solstone_core_indexer_query::SearchRequest::new(
+                "needle",
+                solstone_core_indexer_query::Order::Relevance,
+            ),
+            ref_date,
+        )
+        .expect("search after cancel");
+        assert_eq!(search_res.results.len(), 3);
+        let paths: Vec<String> = search_res
+            .results
+            .iter()
+            .map(|r| r.metadata.path.clone())
+            .collect();
+        assert!(paths.iter().any(|p| p.contains("070000_17")));
+
+        let status_res = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/app/transcripts/api/delete-status/{pending_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("status response");
+        assert_eq!(status_res.status(), StatusCode::OK);
+        let status_bytes = to_bytes(status_res.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let status_json: Value = serde_json::from_slice(&status_bytes).expect("json");
+        assert_eq!(status_json["state"], "cancelled");
+
+        let action_rows = read_all_actions(root.path());
+        assert!(
+            action_rows
+                .iter()
+                .any(|r| r["params"]["phase"] == "cancelled")
+        );
+        assert!(
+            !action_rows
+                .iter()
+                .any(|r| r["params"]["phase"] == "committed")
+        );
+    }
+
+    #[tokio::test]
+    async fn delete_without_an_index_settles_deleted_and_creates_none() {
+        let root = TempDir::new().expect("journal");
+        setup_acceptance_journal(root.path());
+
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::ZERO,
+        );
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/app/transcripts/api/segment/20260805/field.audio/070000_17")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("delete response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let json: Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json["deleted"], "070000_17");
+
+        let segment_dir = root.path().join("chronicle/20260805/field.audio/070000_17");
+        assert!(segment_dir.join(super::TOMBSTONE_NAME).is_file());
+
+        assert!(!root.path().join("indexer").exists());
+
+        let action_rows = read_all_actions(root.path());
+        let committed = action_rows
+            .iter()
+            .find(|r| r["params"]["phase"] == "committed")
+            .expect("committed action row");
+        assert!(committed["params"].get("search_not_updated").is_none());
+    }
+
+    #[tokio::test]
+    async fn corrupt_index_records_search_not_updated_and_still_deletes() {
+        let root = TempDir::new().expect("journal");
+        setup_acceptance_journal(root.path());
+
+        scan_journal(root.path(), true).expect("scan journal");
+
+        let index_file = root.path().join("indexer/journal.sqlite");
+        let _ = fs::remove_file(root.path().join("indexer/journal.sqlite-wal"));
+        let _ = fs::remove_file(root.path().join("indexer/journal.sqlite-shm"));
+        fs::write(&index_file, b"not a valid sqlite database").expect("corrupt db write");
+
+        let app = router_with_delete_window(
+            root.path().to_path_buf(),
+            Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 5, 12, 0, 0).unwrap()),
+            shell,
+            Duration::ZERO,
+        );
+
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::DELETE)
+                    .uri("/app/transcripts/api/segment/20260805/field.audio/070000_17")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("delete response");
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let json: Value = serde_json::from_slice(&bytes).expect("json");
+        assert_eq!(json["deleted"], "070000_17");
+        assert!(json.get("search_not_updated").is_none());
+        let pending_id = json["pending"].as_str().expect("pending id");
+
+        let segment_dir = root.path().join("chronicle/20260805/field.audio/070000_17");
+        assert!(segment_dir.join(super::TOMBSTONE_NAME).is_file());
+
+        let status_res = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::GET)
+                    .uri(format!("/app/transcripts/api/delete-status/{pending_id}"))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("status response");
+        assert_eq!(status_res.status(), StatusCode::OK);
+        let status_bytes = to_bytes(status_res.into_body(), usize::MAX)
+            .await
+            .expect("bytes");
+        let status_json: Value = serde_json::from_slice(&status_bytes).expect("json");
+        assert_eq!(status_json["state"], "deleted");
+        assert!(status_json.get("search_not_updated").is_none());
+
+        let record_path = root
+            .path()
+            .join("config/segment-deletes")
+            .join(format!("{pending_id}.json"));
+        let record_text = fs::read_to_string(&record_path).expect("read held delete record");
+        assert!(!record_text.contains("search_not_updated"));
+        let record_json: Value =
+            serde_json::from_str(&record_text).expect("parse held delete json");
+        assert_eq!(record_json["state"], "deleted");
+
+        let action_rows = read_all_actions(root.path());
+        let committed = action_rows
+            .iter()
+            .find(|r| r["params"]["phase"] == "committed")
+            .expect("committed action row");
+        assert_eq!(committed["params"]["search_not_updated"], true);
+        assert!(committed["params"].get("reason").is_none());
+    }
 
     #[test]
     fn halted_outcomes_are_failed_even_though_remove_segments_cannot_produce_them() {

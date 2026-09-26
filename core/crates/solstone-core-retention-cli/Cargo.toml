@@ -21,6 +21,7 @@ solstone-core-indexer-store = { workspace = true }
 solstone-core-retention = { workspace = true }
 
 [dev-dependencies]
+rusqlite.workspace = true
 solstone-core-journal-io.workspace = true
 
 [lints]

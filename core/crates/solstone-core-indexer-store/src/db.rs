@@ -252,26 +252,28 @@ pub fn prune_chunks_by_stream(
 
 /// Drop index rows for paths that have already been removed from the chronicle.
 ///
-/// Each `rel` is matched exactly **and** as a directory prefix, so passing a
+/// Each `rel` is matched in two shapes: as given, and paired with or without the
+/// leading `chronicle/` component so caller-provided chronicle paths match
+/// chronicle-free stored rows and vice versa. Each shape is matched exactly
+/// **and** as a directory prefix with LIKE wildcards escaped, so passing a
 /// segment's path clears the segment and everything that was inside it. Missing
 /// rows are not an error: the caller's authority is the filesystem, and being
 /// told about a path this index never held is ordinary.
 ///
-/// ⛔ **Never call this before the paths are actually gone.** The index is a
-/// derived cache that re-converges on the chronicle every scan, so the two
-/// orderings fail differently and only one of them fails safely: remove-then-tell
-/// leaves rows the next scan deletes, because the file is gone — a loud, local
-/// failure on a code path that runs. Tell-then-remove leaves files on disk the
-/// index does not list, which is silently invisible owner data, indistinguishable
-/// from misremembering, surviving until someone runs a full rebuild.
+/// ⛔ **Never call this before the paths are actually gone.** The chronicle is
+/// authoritative and the two orderings fail differently: remove-then-tell leaves
+/// rows whose text search returns without opening the file, and a day discovery
+/// found nothing in keeps those rows until a full rescan. Telling the index first
+/// would hide content that is still on disk, which is silently invisible owner
+/// data surviving until someone runs a full rebuild.
 ///
 /// ⚠ This is the inverse of the ordering a content-addressed store uses, and the
 /// difference is which side is authoritative: there the index is, and the blobs are
 /// derived. Here the chronicle is authoritative and the index is the cache.
 ///
-/// Returns `None` when the journal has no index. ⛔ Deliberately not
-/// [`open_index`], which creates the database: a prune must never be the thing
-/// that brings an index into existence.
+/// Uses an `Immediate` transaction to prevent lock upgrades. Stored rows are not
+/// rewritten. Returns `None` when the journal has no index without creating one:
+/// a prune must never be the thing that brings an index into existence.
 pub fn prune_by_paths(
     journal: &Path,
     rels: &[&str],
@@ -280,19 +282,15 @@ pub fn prune_by_paths(
         return Ok(None);
     }
     let mut conn = open_index(journal)?;
-    let tx = conn.transaction()?;
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
     let mut counts = StreamPruneCounts::default();
     for rel in rels {
-        let prefix = format!("{rel}/%");
-        delete_chunk_classifications_by_path_or_prefix(&tx, rel, &prefix)?;
-        counts.chunks += tx.execute(
-            "DELETE FROM chunks WHERE path=?1 OR path LIKE ?2",
-            rusqlite::params![rel, &prefix],
-        )? as u64;
-        counts.files += tx.execute(
-            "DELETE FROM files WHERE path=?1 OR path LIKE ?2",
-            rusqlite::params![rel, &prefix],
-        )? as u64;
+        let Some(pred) = prune_path_predicate(rel) else {
+            continue;
+        };
+        delete_chunk_classifications_by_predicate(&tx, &pred)?;
+        counts.chunks += execute_prune_predicate(&tx, "chunks", &pred)?;
+        counts.files += execute_prune_predicate(&tx, "files", &pred)?;
     }
     tx.commit()?;
     Ok(Some(counts))
@@ -454,19 +452,89 @@ pub fn delete_chunk_classification(conn: &Connection, path: &str) -> Result<(), 
     Ok(())
 }
 
-fn delete_chunk_classifications_by_path_or_prefix(
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct PrunePathPredicate {
+    shape1_exact: String,
+    shape1_prefix: String,
+    shape2: Option<(String, String)>,
+}
+
+fn prune_path_predicate(rel: &str) -> Option<PrunePathPredicate> {
+    if rel.is_empty() {
+        return None;
+    }
+    let shape1_exact = rel.to_string();
+    let shape1_prefix = format!("{}/%", escape_like(rel));
+
+    let shape2 = if rel == "chronicle" {
+        None
+    } else if let Some(remainder) = rel.strip_prefix("chronicle/") {
+        if remainder.is_empty() {
+            None
+        } else {
+            Some((
+                remainder.to_string(),
+                format!("{}/%", escape_like(remainder)),
+            ))
+        }
+    } else {
+        let paired = format!("chronicle/{rel}");
+        Some((paired.clone(), format!("{}/%", escape_like(&paired))))
+    };
+
+    Some(PrunePathPredicate {
+        shape1_exact,
+        shape1_prefix,
+        shape2,
+    })
+}
+
+fn execute_prune_predicate(
     conn: &Connection,
-    path: &str,
-    prefix: &str,
+    table: &str,
+    pred: &PrunePathPredicate,
+) -> Result<u64, StoreError> {
+    let count = match &pred.shape2 {
+        Some((shape2_exact, shape2_prefix)) => {
+            let sql = format!(
+                "DELETE FROM {table} WHERE path = ?1 OR path LIKE ?2 ESCAPE ?5 OR path = ?3 OR path LIKE ?4 ESCAPE ?5"
+            );
+            conn.execute(
+                &sql,
+                params![
+                    &pred.shape1_exact,
+                    &pred.shape1_prefix,
+                    shape2_exact,
+                    shape2_prefix,
+                    "\\",
+                ],
+            )? as u64
+        }
+        None => {
+            let sql = format!("DELETE FROM {table} WHERE path = ?1 OR path LIKE ?2 ESCAPE ?3");
+            conn.execute(&sql, params![&pred.shape1_exact, &pred.shape1_prefix, "\\"])? as u64
+        }
+    };
+    Ok(count)
+}
+
+fn delete_chunk_classifications_by_predicate(
+    conn: &Connection,
+    pred: &PrunePathPredicate,
 ) -> Result<(), StoreError> {
-    conn.execute(
-        "DELETE FROM chunk_classification_facets WHERE path=?1 OR path LIKE ?2",
-        params![path, prefix],
-    )?;
-    conn.execute(
-        "DELETE FROM chunk_classification WHERE path=?1 OR path LIKE ?2",
-        params![path, prefix],
-    )?;
+    execute_prune_predicate(conn, "chunk_classification_facets", pred)?;
+    execute_prune_predicate(conn, "chunk_classification", pred)?;
     Ok(())
 }
 
@@ -1447,6 +1515,240 @@ CREATE TABLE edge_files(path TEXT PRIMARY KEY, mtime INTEGER);
             !db_path(&journal).exists(),
             "the prune must not have materialised a database"
         );
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    #[test]
+    fn prune_by_paths_handles_both_shapes_and_escapes_like_wildcards_acceptance_3() {
+        use crate::scan::scan_journal;
+
+        for (door_shaped, name) in [(true, "door-shaped"), (false, "chronicle-free")] {
+            let journal = temp_root(&format!("prune-acceptance-3-{name}"));
+            let seg_target = journal.join("chronicle/20260805/a_b/090000_300/talents");
+            let seg_sibling = journal.join("chronicle/20260805/a-b/090000_300/talents");
+            fs::create_dir_all(&seg_target).unwrap();
+            fs::create_dir_all(&seg_sibling).unwrap();
+            fs::write(
+                seg_target.join("audio.md"),
+                b"# Audio\ntarget stream content\n",
+            )
+            .unwrap();
+            fs::write(
+                seg_sibling.join("audio.md"),
+                b"# Audio\nsibling stream content\n",
+            )
+            .unwrap();
+
+            scan_journal(&journal, false).expect("scan journal");
+
+            let target_stored = "20260805/a_b/090000_300/talents/audio.md";
+            let sibling_stored = "20260805/a-b/090000_300/talents/audio.md";
+
+            let conn = open_index(&journal).unwrap();
+            assert_eq!(count_path(&conn, "files", target_stored), 1);
+            assert_eq!(count_path(&conn, "files", sibling_stored), 1);
+            drop(conn);
+
+            let prune_target = if door_shaped {
+                "chronicle/20260805/a_b/090000_300/talents"
+            } else {
+                "20260805/a_b/090000_300"
+            };
+            let counts = prune_by_paths(&journal, &[prune_target])
+                .unwrap()
+                .expect("index exists");
+            assert!(counts.files >= 1);
+
+            let conn = open_index(&journal).unwrap();
+            assert_eq!(
+                count_path(&conn, "files", target_stored),
+                0,
+                "target a_b row must be deleted"
+            );
+            assert_eq!(
+                count_path(&conn, "chunks", target_stored),
+                0,
+                "target a_b chunk must be deleted"
+            );
+            assert_eq!(
+                count_path(&conn, "files", sibling_stored),
+                1,
+                "sibling a-b row must remain"
+            );
+            assert_eq!(
+                count_path(&conn, "chunks", sibling_stored),
+                1,
+                "sibling a-b chunk must remain"
+            );
+            fs::remove_dir_all(&journal).unwrap();
+        }
+    }
+
+    #[test]
+    fn prune_by_paths_escapes_percent_and_backslash_in_both_shapes() {
+        let journal = temp_root("prune-escapes");
+        let conn = open_index(&journal).unwrap();
+
+        // Percent in path
+        seed_chunk_and_file(
+            &conn,
+            "20260805/stream/seg%1/talents/audio.md",
+            "percent target",
+        );
+        seed_chunk_and_file(
+            &conn,
+            "20260805/stream/seg11/talents/audio.md",
+            "percent sibling",
+        );
+
+        // Backslash in path (stored chronicle-prefixed)
+        seed_chunk_and_file(
+            &conn,
+            "chronicle/20260805/stream/seg\\1/talents/audio.md",
+            "backslash target",
+        );
+        seed_chunk_and_file(
+            &conn,
+            "chronicle/20260805/stream/seg_1/talents/audio.md",
+            "backslash sibling",
+        );
+        drop(conn);
+
+        // Prune percent target using chronicle-prefixed path
+        prune_by_paths(&journal, &["chronicle/20260805/stream/seg%1"]).unwrap();
+
+        let conn = open_index(&journal).unwrap();
+        assert_eq!(
+            count_path(&conn, "files", "20260805/stream/seg%1/talents/audio.md"),
+            0
+        );
+        assert_eq!(
+            count_path(&conn, "files", "20260805/stream/seg11/talents/audio.md"),
+            1
+        );
+        drop(conn);
+
+        // Prune backslash target using chronicle-free path
+        prune_by_paths(&journal, &["20260805/stream/seg\\1"]).unwrap();
+
+        let conn = open_index(&journal).unwrap();
+        assert_eq!(
+            count_path(
+                &conn,
+                "files",
+                "chronicle/20260805/stream/seg\\1/talents/audio.md"
+            ),
+            0
+        );
+        assert_eq!(
+            count_path(
+                &conn,
+                "files",
+                "chronicle/20260805/stream/seg_1/talents/audio.md"
+            ),
+            1
+        );
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    #[test]
+    fn prune_by_paths_preserves_edges_and_prunes_classifications() {
+        let journal = temp_root("prune-edges-and-classifications");
+        let conn = open_index(&journal).unwrap();
+
+        let target_path = "20260805/field/070000_17/talents/audio.md";
+        let sibling_path = "20260805/field/071000_17/talents/audio.md";
+
+        seed_chunk_and_file(&conn, target_path, "target");
+        seed_chunk_and_file(&conn, sibling_path, "sibling");
+
+        // Edge row with path = target_path
+        conn.execute(
+            "INSERT INTO edges(src, dst, kind, directed, source, path, weight) VALUES ('src', 'dst', 'mention', 1, 'source', ?1, 1)",
+            [target_path],
+        )
+        .unwrap();
+
+        // Classifications for target and sibling
+        conn.execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            [target_path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?1, 'work')",
+            [target_path],
+        )
+        .unwrap();
+
+        conn.execute(
+            "INSERT INTO chunk_classification(path, category, basis, eligible, unclassified) VALUES (?1, 'transcripts', 'segment_assigned', 1, 0)",
+            [sibling_path],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO chunk_classification_facets(path, facet_id) VALUES (?1, 'work')",
+            [sibling_path],
+        )
+        .unwrap();
+        drop(conn);
+
+        prune_by_paths(&journal, &["chronicle/20260805/field/070000_17"]).unwrap();
+
+        let conn = open_index(&journal).unwrap();
+        // Target file and chunk are gone
+        assert_eq!(count_path(&conn, "files", target_path), 0);
+        assert_eq!(count_path(&conn, "chunks", target_path), 0);
+        // Sibling file and chunk remain
+        assert_eq!(count_path(&conn, "files", sibling_path), 1);
+        assert_eq!(count_path(&conn, "chunks", sibling_path), 1);
+
+        // Edge row MUST survive
+        let edge_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM edges WHERE path=?1",
+                [target_path],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(edge_count, 1, "edges row must not be pruned");
+
+        // Target classification rows are gone, sibling remain
+        assert_eq!(count_path(&conn, "chunk_classification", target_path), 0);
+        assert_eq!(
+            count_path(&conn, "chunk_classification_facets", target_path),
+            0
+        );
+        assert_eq!(count_path(&conn, "chunk_classification", sibling_path), 1);
+        assert_eq!(
+            count_path(&conn, "chunk_classification_facets", sibling_path),
+            1
+        );
+
+        fs::remove_dir_all(&journal).unwrap();
+    }
+
+    #[test]
+    fn prune_by_paths_empty_and_bare_chronicle() {
+        let journal = temp_root("prune-empty-and-bare-chronicle");
+        let conn = open_index(&journal).unwrap();
+        seed_chunk_and_file(&conn, "20260805/talents/flow.md", "flow");
+        drop(conn);
+
+        // Pruning "" deletes nothing
+        let counts = prune_by_paths(&journal, &[""]).unwrap().unwrap();
+        assert_eq!(counts.chunks, 0);
+        assert_eq!(counts.files, 0);
+
+        let conn = open_index(&journal).unwrap();
+        assert_eq!(count_path(&conn, "files", "20260805/talents/flow.md"), 1);
+        drop(conn);
+
+        // Pruning "chronicle" (no remainder) does not delete chronicle-free rows
+        let counts = prune_by_paths(&journal, &["chronicle"]).unwrap().unwrap();
+        assert_eq!(counts.chunks, 0);
+        let conn = open_index(&journal).unwrap();
+        assert_eq!(count_path(&conn, "files", "20260805/talents/flow.md"), 1);
         fs::remove_dir_all(&journal).unwrap();
     }
 }

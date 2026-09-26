@@ -2203,3 +2203,71 @@ fn rfc3339_flag_refusals_leave_the_register_unchanged() {
         None,
     );
 }
+
+#[test]
+fn remove_segments_prunes_index_and_keeps_siblings_with_real_scan() {
+    let bed = Bed::new("remove-segments-prunes-index");
+    let target = bed.proven_segment(
+        "20260805",
+        "field.audio",
+        "070000_17",
+        "2026-08-05T07:00:00Z",
+    );
+    let sibling = bed.proven_segment(
+        "20260805",
+        "field.audio",
+        "071000_17",
+        "2026-08-05T07:10:00Z",
+    );
+    let day_talent = bed.root.join("chronicle/20260805/talents/flow.md");
+    fs::create_dir_all(day_talent.parent().unwrap()).unwrap();
+    let target_talents = target.join("talents");
+    fs::create_dir_all(&target_talents).unwrap();
+    fs::write(
+        target_talents.join("summary.md"),
+        "# Target\nneedle in target segment\n",
+    )
+    .unwrap();
+    let sibling_talents = sibling.join("talents");
+    fs::create_dir_all(&sibling_talents).unwrap();
+    fs::write(
+        sibling_talents.join("summary.md"),
+        "# Sibling\nneedle in sibling segment\n",
+    )
+    .unwrap();
+    fs::write(&day_talent, "# Day Talent\nneedle in day talent\n").unwrap();
+
+    // Populate index with real scan
+    solstone_core_indexer_store::scan::scan_journal(bed.journal(), true).unwrap();
+
+    let output = bed.run(
+        "remove-segments",
+        &[
+            "--journal",
+            bed.journal().to_str().unwrap(),
+            "--at",
+            "2026-08-05T12:00:00Z",
+            "--did",
+            "owner",
+            "--segment",
+            "20260805/field.audio/070000_17",
+        ],
+    );
+    assert_eq!(output.status.code(), Some(0));
+    let rep = receipt(&output);
+    let chunks = rep["index"]["chunks"].as_u64().expect("index.chunks u64");
+    let files = rep["index"]["files"].as_u64().expect("index.files u64");
+    assert!(chunks > 0);
+    assert!(files > 0);
+
+    let conn = rusqlite::Connection::open(bed.journal().join("indexer/journal.sqlite")).unwrap();
+    let mut stmt = conn.prepare("SELECT path FROM files").unwrap();
+    let file_paths: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert!(!file_paths.iter().any(|p| p.contains("070000_17")));
+    assert!(file_paths.iter().any(|p| p.contains("071000_17")));
+    assert!(file_paths.iter().any(|p| p.contains("talents/flow.md")));
+}

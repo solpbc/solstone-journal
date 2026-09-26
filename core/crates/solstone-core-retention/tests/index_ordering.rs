@@ -97,9 +97,9 @@ fn a_removal_leaves_the_index_stale_until_it_is_told_and_never_before() {
     );
 
     // 🔴 The index is STALE here, and that is correct. The files are gone and the
-    // rows remain; a query would return a hit that fails loudly when opened, and a
-    // scan would clear it. The inverse -- rows already gone while the files remain
-    // -- is the state nothing surfaces.
+    // rows remain; search returns the hit text from the index without opening
+    // the file, and a day discovery found nothing in keeps those rows until a full
+    // rescan. Telling the index first would hide content that is still on disk.
     assert_eq!(
         indexed_paths(&journal).len(),
         2,
@@ -116,6 +116,66 @@ fn a_removal_leaves_the_index_stale_until_it_is_told_and_never_before() {
         vec![sibling.to_owned()],
         "exactly the removed segment left the index"
     );
+
+    fs::remove_dir_all(&journal).expect("teardown");
+}
+
+/// Acceptance 2: both chronicle/ and chronicle-free paths, including nested talents/ files.
+#[test]
+fn a_removal_clears_both_chronicle_shapes_and_nested_talent_files_acceptance_2() {
+    let journal = bed("acceptance-2");
+    let segment = journal.join("chronicle/20260805/field.audio/070000_17");
+    fs::create_dir_all(segment.join("talents")).expect("a segment talents dir");
+    fs::write(segment.join("audio.flac"), b"raw").expect("raw");
+    fs::write(segment.join("audio.jsonl"), b"{}").expect("derived");
+    fs::write(segment.join("talents/audio.md"), b"# Talent").expect("talent");
+
+    let target_rows = [
+        "chronicle/20260805/field.audio/070000_17/audio.jsonl",
+        "20260805/field.audio/070000_17/audio.jsonl",
+        "chronicle/20260805/field.audio/070000_17/talents/audio.md",
+        "20260805/field.audio/070000_17/talents/audio.md",
+    ];
+    let sibling_rows = [
+        "chronicle/20260805/field.audio/070100_17/audio.jsonl",
+        "20260805/field.audio/070100_17/audio.jsonl",
+        "chronicle/20260805/field.audio/070100_17/talents/audio.md",
+        "20260805/field.audio/070100_17/talents/audio.md",
+    ];
+
+    for row in &target_rows {
+        indexed_row(&journal, row);
+    }
+    for row in &sibling_rows {
+        indexed_row(&journal, row);
+    }
+    assert_eq!(indexed_paths(&journal).len(), 8);
+
+    let target = Target {
+        day: "20260805".to_owned(),
+        stream: "field.audio".to_owned(),
+        dir: "070000_17".to_owned(),
+    };
+    let outcome = remove_segments(
+        &journal,
+        std::slice::from_ref(&target),
+        "2026-08-05T22:00:00Z",
+        RemovalReason::OwnerSegmentDelete,
+        "sha256:abc",
+    );
+    assert!(
+        outcome.targets[0].not_removed.is_empty(),
+        "removal succeeds: {outcome:?}"
+    );
+
+    let index = RetentionIndex::new(&journal);
+    let counts = notify_index(&index, &outcome).expect("notify index");
+    assert_eq!(counts.files, 4, "all 4 target rows cleared");
+
+    let remaining = indexed_paths(&journal);
+    let mut expected_siblings = sibling_rows.to_vec();
+    expected_siblings.sort();
+    assert_eq!(remaining, expected_siblings);
 
     fs::remove_dir_all(&journal).expect("teardown");
 }

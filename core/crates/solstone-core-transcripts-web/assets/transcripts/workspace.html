@@ -6326,17 +6326,6 @@ body.presentation-mode .tr-screen-text { font-size: 16px; padding: 12px 16px; bo
       const deleteDay = day;
       watchDeleteOutcome(data.pending, seg, deleteDay, Date.now() + (data.ttl_seconds || 10) * 1000);
 
-      if (data.search_index_warning === true) {
-        window.AppServices.notifications.show({
-          app: 'transcripts',
-          icon: 'triangle-alert',
-          title: 'Search index may be stale',
-          message: 'Search results may be briefly stale until the supervisor is restarted and the index is rebuilt.',
-          dismissible: true,
-          autoDismiss: 10000
-        });
-      }
-
     } catch (err) {
       if (err instanceof TypeError) {
         err = new Error('Your journal didn\'t answer, so the delete may still go ahead. Reload to check.');

@@ -5,17 +5,18 @@
 //!
 //! # The ordering is a safety property, not a preference
 //!
-//! Index discovery is a filesystem glob with no database input, and a scan deletes
-//! any row the glob no longer produces. So the index re-converges on the chronicle
-//! every run, and the two orderings fail differently:
+//! Index discovery is a filesystem glob with no database input. A full rescan
+//! deletes a stored row the glob no longer produces. A light scan does not: a day
+//! discovery found nothing in keeps those rows until `--rescan-full`. The two
+//! orderings fail differently:
 //!
-//! - **Remove, then tell.** A crash between them leaves rows for a file that is
-//!   gone. A query returns the hit, something opens it, and the failure is loud,
-//!   local, and on a code path that actually runs. The next scan clears it.
+//! - **Remove, then tell.** A crash between them leaves index rows for a file that
+//!   is gone. Search returns that hit's text from the index and does not open the
+//!   file.
 //! - **Tell, then remove.** A crash leaves files on disk the index does not list.
-//!   Nothing surfaces that: a missing search result is indistinguishable from
-//!   misremembering. It survives until someone runs a full rebuild, which nobody
-//!   does on a system that looks healthy.
+//!   Telling the index first would hide content that is still on disk. The
+//!   chronicle is authoritative, so that content stays out of search until a full
+//!   rebuild.
 //!
 //! For a journal whose promise is that the owner's recordings are theirs and
 //! findable, the second is a silent loss of access to their own data. That is the

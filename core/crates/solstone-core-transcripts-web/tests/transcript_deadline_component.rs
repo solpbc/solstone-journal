@@ -1,15 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(target_os = "linux")]
-use std::collections::BTreeSet;
 use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use axum::body::Body;
-#[cfg(target_os = "linux")]
-use axum::body::to_bytes;
 use axum::http::{Method, Request, StatusCode};
 use chrono::{TimeZone, Utc};
 use serde_json::Value;
@@ -155,79 +151,6 @@ async fn sense_spawn_resolution_child() {
     assert_eq!(failure["reason"], "no_output");
 }
 
-#[cfg(target_os = "linux")]
-fn this_process_started_at() -> f64 {
-    let pid = std::process::id();
-    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).expect("proc stat");
-    let close = stat.rfind(')').expect("comm close");
-    let ticks: f64 = stat[close + 1..]
-        .split_whitespace()
-        .nth(19)
-        .expect("start ticks")
-        .parse()
-        .expect("numeric ticks");
-    let boot: f64 = fs::read_to_string("/proc/stat")
-        .expect("proc stat")
-        .lines()
-        .find_map(|line| line.strip_prefix("btime "))
-        .expect("boot time")
-        .parse()
-        .expect("numeric boot");
-    let ticks_per_second: f64 = std::process::Command::new("getconf")
-        .arg("CLK_TCK")
-        .output()
-        .expect("getconf")
-        .stdout
-        .iter()
-        .map(|byte| *byte as char)
-        .collect::<String>()
-        .trim()
-        .parse()
-        .expect("clock ticks");
-    boot + ticks / ticks_per_second
-}
-
-#[cfg(target_os = "linux")]
-#[tokio::test]
-async fn search_index_warning_tracks_the_native_supervisor_identity_contract() {
-    let down = deletion_root();
-    let down_response = delete_request(delete_app(down.path(), Duration::from_secs(1))).await;
-    assert_eq!(down_response["search_index_warning"], true);
-
-    let up = deletion_root();
-    write(
-        up.path(),
-        "health/supervisor.pid",
-        std::process::id().to_string().as_bytes(),
-    );
-    write(
-        up.path(),
-        "health/supervisor.start_time",
-        this_process_started_at().to_string().as_bytes(),
-    );
-    assert_eq!(
-        solstone_core_system::lifecycle::supervisor_liveness(up.path()),
-        solstone_core_system::lifecycle::SupervisorLiveness::Up
-    );
-    let up_response = delete_request(delete_app(up.path(), Duration::from_secs(1))).await;
-    assert!(up_response.get("search_index_warning").is_none());
-    assert_eq!(
-        up_response
-            .as_object()
-            .unwrap()
-            .keys()
-            .cloned()
-            .collect::<BTreeSet<_>>(),
-        BTreeSet::from([
-            "commit_at_ms".into(),
-            "deleted".into(),
-            "pending".into(),
-            "success".into(),
-            "ttl_seconds".into(),
-        ])
-    );
-}
-
 fn shell() -> axum::response::Response {
     axum::response::Response::new(Body::from("shell"))
 }
@@ -236,54 +159,4 @@ fn write(root: &Path, relative: &str, contents: impl AsRef<[u8]>) {
     let path = root.join(relative);
     fs::create_dir_all(path.parent().expect("parent")).expect("directory");
     fs::write(path, contents).expect("file");
-}
-
-#[cfg(target_os = "linux")]
-fn deletion_root() -> TempDir {
-    let root = TempDir::new().expect("journal");
-    write(
-        root.path(),
-        "config/journal.json",
-        br#"{"setup":{"completed_at":1700000000000}}"#,
-    );
-    for (name, contents) in [
-        ("audio.flac", b"raw".as_slice()),
-        ("audio.jsonl", b"{}\n".as_slice()),
-        ("stream.json", b"{}".as_slice()),
-        ("talents/sense.json", b"{}".as_slice()),
-    ] {
-        write(
-            root.path(),
-            &format!("chronicle/20260731/field/090000_300/{name}"),
-            contents,
-        );
-    }
-    root
-}
-
-#[cfg(target_os = "linux")]
-fn delete_app(root: &Path, window: Duration) -> axum::Router {
-    router_with_delete_window(
-        root.to_path_buf(),
-        Clock::fixed(Utc.with_ymd_and_hms(2026, 8, 2, 0, 0, 0).unwrap()),
-        shell,
-        window,
-    )
-}
-
-#[cfg(target_os = "linux")]
-async fn delete_request(app: axum::Router) -> Value {
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::DELETE)
-                .uri("/app/transcripts/api/segment/20260731/field/090000_300")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-    serde_json::from_slice(&to_bytes(response.into_body(), usize::MAX).await.unwrap())
-        .expect("delete response")
 }
