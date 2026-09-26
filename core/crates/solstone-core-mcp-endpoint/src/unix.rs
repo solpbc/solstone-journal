@@ -447,7 +447,7 @@ pub(crate) fn bind_byo_socket(
         .map_err(|e| (errno_error(e), None))?;
     if identity(&post_stat) != identity(&verified)
         || (verified.st_mode & 0o170000) != 0o140000
-        || (verified.st_mode & 0o777) != FILE_MODE
+        || permission_bits(&verified) != mode(FILE_MODE)
         || verified.st_uid != byo_dir.owner
     {
         unlink_byo_socket_if_inode_matches(byo_dir, socket_name, post_stat.st_ino);
