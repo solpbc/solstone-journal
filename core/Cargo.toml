@@ -401,7 +401,8 @@ bzip2-rs = "0.1.2"
 lzma-rs = "0.3"
 # DNSSEC-validated CAA lookups for solstone-core-mcp-endpoint. Release-rail lenses:
 # - `hickory-net` 0.26.3: MIT OR Apache-2.0. MSRV 1.88 <= 1.95 workspace rust-version.
-#   Pure Rust; `build = false` (no cc/cmake/native build.rs). Unix-target gated.
+#   Pure Rust; `build = false` (no cc/cmake/native build.rs). Every target, since the
+#   endpoint builds on Windows too.
 # - `moka` 0.12.16: (MIT OR Apache-2.0) AND Apache-2.0. MSRV 1.71.1 <= 1.95 workspace.
 #   Pure Rust; `build = false` (no cc/cmake/native build.rs). Transitive cache via hickory-resolver.
 # - `resolv-conf` 0.7.6: MIT OR Apache-2.0. MSRV 1.61 <= 1.95 workspace. Pure Rust;
@@ -411,7 +412,13 @@ lzma-rs = "0.3"
 # - `system-configuration` 0.7.0: MIT OR Apache-2.0. MSRV 1.64.0 <= 1.95 workspace.
 #   Pure Rust; `build = false`. Apple macOS/iOS targets only via hickory-resolver system-config;
 #   links SystemConfiguration.framework on Apple platforms.
-# Windows target resolution carries no hickory dependencies (`ipconfig` is absent).
+# - `ipconfig` 0.3.4: MIT OR Apache-2.0 (declared `MIT/Apache-2.0`). MSRV 1.71 <= 1.95
+#   workspace. Pure Rust; its `build.rs` only emits a link to the system `iphlpapi`
+#   library (no cc/cmake). Windows targets only, via hickory-resolver system-config.
+# - `widestring` 1.2.1: MIT OR Apache-2.0. MSRV 1.58. Pure Rust; `build = false`.
+#   Windows targets only, via ipconfig.
+# - `windows-registry` 0.6.1: MIT OR Apache-2.0. MSRV 1.82. Pure Rust; `build = false`.
+#   Windows targets only, via ipconfig.
 # All licenses are covered by cargo-deny allow lists; `aws-lc-rs`/`aws-lc-sys` are absent.
 
 # Dev-profile debug info. The cargo default (`debug = 2` for the workspace and
