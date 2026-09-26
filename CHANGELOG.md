@@ -6,6 +6,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.19] - 2026-09-26
+
+### Added
+
+- your agents, wherever they run, can now reach your journal at a public hostname you own. it's off until you set it up in the agents app: you provide the public server, DNS pointing straight at it and an OpenSSH forward, and your journal gets its own certificate. requests stay encrypted until your journal opens them, as long as your route only passes the bytes through; anything that opens them first can read what your agent reads and reuse its access to reach your journal. each agent still needs a pairing code made for this address and gets only what you let it see; a key you created won't work there. the certificate puts your hostname in public certificate logs permanently.
+
 ### Fixed
 
 - security fix: if you renamed, merged or deleted a facet, an agent you had limited to chosen facets could read a segment filed under both that facet and one the agent was allowed. those segments are now out of reach for agents limited to chosen facets. agents you let see your whole journal aren't affected.
