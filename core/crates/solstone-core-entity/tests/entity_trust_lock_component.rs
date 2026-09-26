@@ -387,6 +387,30 @@ mod merge_recovery {
                     .unwrap();
             assert!(rows.contains("source memory"));
             assert!(rows.contains("target memory"));
+            // A successful retry queues edge repair on a background thread. Wait for
+            // that writer before deleting the scratch journal, and drive the job
+            // directly if another test's worker occupied the process-wide slot.
+            let deadline = std::time::Instant::now() + Duration::from_secs(30);
+            loop {
+                let completed = solstone_core_entity::read_entity_edge_repair_completion(
+                    &journal,
+                    "merge",
+                    &report.merge_id,
+                )
+                .unwrap()
+                .is_some();
+                if completed && !solstone_core_entity::is_edge_repair_driver_active() {
+                    break;
+                }
+                if !solstone_core_entity::is_edge_repair_driver_active() {
+                    solstone_core_entity::drive_entity_edge_repair(&journal).unwrap();
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "edge repair did not settle"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
             fs::remove_dir_all(journal).unwrap();
         }
     }
