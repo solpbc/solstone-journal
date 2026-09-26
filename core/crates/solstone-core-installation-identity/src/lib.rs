@@ -1632,7 +1632,11 @@ fn base_segments(platform: PlatformTag) -> &'static [&'static str] {
             "installation-identity",
             "v1",
         ],
-        PlatformTag::Windows => &["solstone", "installation-identity", "v1"],
+        // Not `%LOCALAPPDATA%\solstone`: NTFS names are case-insensitive, and that
+        // is the solstone app's own per-user install and data root. Setup for the
+        // app refuses a directory it did not create, and uninstalling the app
+        // removes the whole root. `solstone-journal` is no Velopack package's root.
+        PlatformTag::Windows => &["solstone-journal", "installation-identity", "v1"],
     }
 }
 
@@ -5449,7 +5453,7 @@ mod windows_tests {
         let fixture = TestRoot::new();
         let expected = fixture
             .local_app_data
-            .join("solstone")
+            .join("solstone-journal")
             .join("installation-identity")
             .join("v1");
         assert_eq!(fixture.owner.path(), expected);
