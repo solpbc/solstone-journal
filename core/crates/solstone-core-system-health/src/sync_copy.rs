@@ -9,13 +9,13 @@ use std::path::{Path, PathBuf};
 
 use solstone_core_journal_io::{FlatDirectoryError, JournalEntryKind};
 #[cfg(unix)]
-use solstone_core_system::lifecycle::{
-    ADMISSION_WAIT_TRANSIENT_COPY, SyncRescan, rescan_sync_read_only,
-};
+use solstone_core_system::lifecycle::ADMISSION_WAIT_TRANSIENT_COPY;
 use solstone_core_system::lifecycle::{
     HeartbeatClassification, SyncCheckResult, SyncIncompleteSnapshotReason, SyncScanFailure,
     SyncUnsafeReason, is_admission_wait_marker_filename_candidate,
 };
+#[cfg(any(unix, windows))]
+use solstone_core_system::lifecycle::{SyncRescan, rescan_sync_read_only};
 use solstone_core_system::process::ProcessInstanceSource;
 
 use crate::sanitize_os_bytes_for_terminal;
@@ -111,7 +111,7 @@ pub fn describe_sync_rescan(
     now: f64,
     process_source: &dyn ProcessInstanceSource,
 ) -> SyncRescanDiagnosis {
-    #[cfg(not(unix))]
+    #[cfg(not(any(unix, windows)))]
     {
         let _ = (journal, self_filename, now, process_source);
         return SyncRescanDiagnosis::Unsafe(
@@ -119,7 +119,7 @@ pub fn describe_sync_rescan(
                 .to_owned(),
         );
     }
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     {
         match rescan_sync_read_only(journal, self_filename, None, now) {
             Ok(SyncRescan::Absent) => SyncRescanDiagnosis::Clean(None),

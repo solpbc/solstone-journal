@@ -845,6 +845,50 @@ mod platform {
         })
     }
 
+    /// Rescan `health/sync` for diagnostics without writing anything.
+    ///
+    /// Unlike [`boot`], this never creates `health` or `health/sync`: an absent
+    /// directory is reported as [`sync::SyncRescan::Absent`], exactly as the
+    /// Unix read-only rescan reports it. The scan itself is the same one the
+    /// resident runs at boot, so a diagnostic and the resident classify the
+    /// same peer set the same way.
+    pub fn rescan_sync_read_only(
+        journal: &Path,
+        self_filename: &str,
+        previous: Option<&SyncSnapshot>,
+        now: f64,
+    ) -> Result<sync::SyncRescan, SyncScanFailure> {
+        let root = JournalRoot::open(journal)
+            .map_err(|error| sync::directory_binding_from_root(journal, error))?;
+        let health_path = root.canonical_path().join("health");
+        let Some(health) =
+            open_windows_flat_directory_bound(&root, OsStr::new("health"), root.canonical_path())
+                .map_err(|reason| {
+                sync_directory_failure(
+                    health_path.clone(),
+                    SyncDirectoryOperation::BindHealth,
+                    reason,
+                )
+            })?
+        else {
+            return Ok(sync::SyncRescan::Absent);
+        };
+        let Some(directory) =
+            open_windows_flat_directory_bound(&health, OsStr::new("sync"), &health_path).map_err(
+                |reason| {
+                    sync_directory_failure(
+                        health_path.join("sync"),
+                        SyncDirectoryOperation::BindSync,
+                        reason,
+                    )
+                },
+            )?
+        else {
+            return Ok(sync::SyncRescan::Absent);
+        };
+        scan_windows_sync(&directory, self_filename, previous, now).map(sync::SyncRescan::Complete)
+    }
+
     pub(crate) struct WindowsFilesystemStore<'a> {
         root: &'a JournalRoot,
     }
@@ -1243,6 +1287,8 @@ mod platform {
     }
 }
 
+#[cfg(windows)]
+pub use platform::rescan_sync_read_only;
 #[cfg(windows)]
 pub(crate) use platform::{boot, filesystem_store, hostname};
 #[cfg(all(windows, feature = "test-hooks"))]

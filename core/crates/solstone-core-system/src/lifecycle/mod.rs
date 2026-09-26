@@ -128,6 +128,10 @@ pub use state::{
     clear_ready as clear_readiness, compact_log_if_oversized, recorded_supervisor_pid,
 };
 pub use sweep::{OrphanSweepOutcome, OrphanSweepReport, sweep_orphans};
+#[cfg(any(unix, windows))]
+pub use sync::SyncRescan;
+#[cfg(unix)]
+pub use sync::rescan_sync_read_only;
 pub use sync::{
     ADMISSION_WAIT_MARKER_SCHEMA_V2, AdmissionWaitMarker, AdmissionWaitReason,
     DEFAULT_INTERVAL_SECONDS, FRESH_WINDOW_MULTIPLIER, FRESH_WINDOW_SECONDS, HEARTBEAT_SCHEMA_V1,
@@ -140,8 +144,8 @@ pub use sync::{
     parse_admission_wait_marker_filename, parse_v2_heartbeat_filename, sanitize_hostname,
     sync_conflict_event, sync_peer_diagnostic, v2_heartbeat_filename,
 };
-#[cfg(unix)]
-pub use sync::{SyncRescan, rescan_sync_read_only};
+#[cfg(windows)]
+pub use windows::rescan_sync_read_only;
 #[cfg(all(windows, feature = "test-hooks"))]
 pub use windows::{
     run_with_windows_lifecycle_checkpoint, run_with_windows_lifecycle_deletion_attempt_witness,

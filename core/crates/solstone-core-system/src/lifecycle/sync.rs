@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use solstone_core_journal_io::{FileObservation, FlatDirectoryError, JournalEntryKind};
 #[cfg(unix)]
 use solstone_core_journal_io::{
-    FlatDirectory, JournalRoot, JournalRootError, list_flat_directory, open_flat_directory_bound,
+    FlatDirectory, JournalRoot, list_flat_directory, open_flat_directory_bound,
     read_observed_file_bounded,
 };
 
@@ -919,11 +919,12 @@ pub fn rescan_sync_read_only(
     scan_bound_sync(&sync, self_filename, previous, now).map(SyncRescan::Complete)
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 pub(crate) fn directory_binding_from_root(
-    journal: &Path,
-    error: JournalRootError,
+    journal: &std::path::Path,
+    error: solstone_core_journal_io::JournalRootError,
 ) -> SyncScanFailure {
+    use solstone_core_journal_io::JournalRootError;
     let reason = match error {
         JournalRootError::Changed => FlatDirectoryError::IdentityChanged {
             path: journal.to_path_buf(),
