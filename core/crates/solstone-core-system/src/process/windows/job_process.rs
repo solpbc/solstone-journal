@@ -729,6 +729,24 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
         stdio: Option<[super::handle::RawWindowsHandle; 3]>,
         inherit_handles: bool,
     ) -> io::Result<CreatedWindowsProcess> {
+        self.create_process_on(launch_spec, startup, stdio, inherit_handles, false)
+    }
+}
+
+#[cfg(windows)]
+impl SystemWindowsCreateProcessApi {
+    /// `share_console` creates the child on this process's own console instead
+    /// of a new hidden one. A forwarded command run in the owner's terminal has
+    /// to write there: console handles handed to a child that was given a
+    /// console of its own reach nothing, so its output vanished.
+    fn create_process_on(
+        &self,
+        launch_spec: &mut super::launch_spec::WindowsLaunchSpec,
+        startup: &WindowsStartupInfo,
+        stdio: Option<[super::handle::RawWindowsHandle; 3]>,
+        inherit_handles: bool,
+        share_console: bool,
+    ) -> io::Result<CreatedWindowsProcess> {
         use std::ptr::null;
 
         use windows_sys::Win32::System::Threading::{
@@ -748,7 +766,9 @@ impl WindowsCreateProcessApi for SystemWindowsCreateProcessApi {
                 null(),
                 null(),
                 i32::from(inherit_handles),
-                EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT | CREATE_NO_WINDOW,
+                EXTENDED_STARTUPINFO_PRESENT
+                    | CREATE_UNICODE_ENVIRONMENT
+                    | if share_console { 0 } else { CREATE_NO_WINDOW },
                 launch_spec.environment().as_ptr().cast(),
                 launch_spec
                     .current_directory()
@@ -1075,11 +1095,19 @@ pub(super) fn launch_windows_forwarder(
     for handle in &handles {
         api.set_inherit(handle)?;
     }
-    let created = SystemWindowsCreateProcessApi.create_process(
+    // The forwarder's child shares its console when there is one (a command
+    // typed in the owner's terminal); the installed task detaches from its
+    // console first, so its child still gets none.
+    // SAFETY: GetConsoleWindow takes no arguments and only reports a handle.
+    #[allow(unsafe_code)]
+    let share_console =
+        !unsafe { windows_sys::Win32::System::Console::GetConsoleWindow() }.is_null();
+    let created = SystemWindowsCreateProcessApi.create_process_on(
         &mut spec,
         &startup,
         Some(handles.each_ref().map(PipeEndHandle::raw)),
         true,
+        share_console,
     );
     startup.delete_with(&startup_api);
     // Close every private stdio copy even when another close fails. No incoming
