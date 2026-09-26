@@ -33,7 +33,7 @@ use x509_parser::prelude::parse_x509_certificate;
 
 pub fn owner_routes(journal_root: PathBuf) -> Router {
     let journal = Arc::new(journal_root);
-    Router::new()
+    let router = Router::new()
         .route("/app/agents/api/state", get(state))
         .route("/app/agents/api/capability", put(set_capability))
         .route("/app/agents/api/local-door", put(set_local_door))
@@ -51,6 +51,15 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
             "/app/agents/api/connections/{kind}/{id}/permission",
             put(set_permission),
         )
+        .route("/app/agents/api/activity", get(activity));
+    with_byo_routes(router)
+        .route_layer(middleware::from_fn(admit_owner))
+        .layer(Extension(journal))
+}
+
+#[cfg(unix)]
+fn with_byo_routes(router: Router) -> Router {
+    router
         .route(
             "/app/agents/api/byo",
             put(set_byo_hostname).delete(remove_byo_hostname),
@@ -60,9 +69,32 @@ pub fn owner_routes(journal_root: PathBuf) -> Router {
             "/app/agents/api/byo/account/replace",
             post(replace_byo_account),
         )
-        .route("/app/agents/api/activity", get(activity))
-        .route_layer(middleware::from_fn(admit_owner))
-        .layer(Extension(journal))
+}
+
+/// The owner-hostname door and solstone.me keep private keys behind the
+/// owner-only state layer, which Windows does not have yet. Their routes stay
+/// mounted so an older page gets a plain refusal rather than a missing route.
+#[cfg(windows)]
+fn with_byo_routes(router: Router) -> Router {
+    router
+        .route(
+            "/app/agents/api/byo",
+            put(platform_unavailable).delete(platform_unavailable),
+        )
+        .route("/app/agents/api/byo/account", post(platform_unavailable))
+        .route(
+            "/app/agents/api/byo/account/replace",
+            post(platform_unavailable),
+        )
+}
+
+#[cfg(windows)]
+async fn platform_unavailable() -> Response {
+    refusal(
+        "unavailable_on_this_platform",
+        "this isn't available in this version of your journal yet.",
+        StatusCode::NOT_IMPLEMENTED,
+    )
 }
 
 async fn admit_owner(request: Request<Body>, next: Next) -> Response {
@@ -486,14 +518,18 @@ pub(crate) fn state_value_with_iface(
         obj
     };
 
+    #[cfg(unix)]
     let byo_config = solstone_core_journal_config::byo_hostname_config(&config);
+    #[cfg(unix)]
     let byo_state = crate::byo_door::read_byo_door_state(root);
+    #[cfg(unix)]
     let socket_path = root
         .join("mcp-endpoint/byo")
         .join(crate::unix::BYO_INGRESS_SOCKET)
         .to_string_lossy()
         .to_string();
 
+    #[cfg(unix)]
     let byo_limits = json!([
         "owner_dns_control_required",
         "nameserver_ownership_unproven",
@@ -502,6 +538,7 @@ pub(crate) fn state_value_with_iface(
         "dns_spoofing_outside_check"
     ]);
 
+    #[cfg(unix)]
     let byo_json = match byo_config {
         solstone_core_journal_config::ByoHostnameConfigStatus::None => {
             json!({
@@ -664,7 +701,7 @@ pub(crate) fn state_value_with_iface(
         "status": status,
         "local_door": local_door,
         "lan_door": lan_door,
-        "byo": byo_json,
+        "relay_available": cfg!(unix),
         "owner_state": owner_state,
         "certificate": certificate,
         "connections": connections,
@@ -681,12 +718,17 @@ pub(crate) fn state_value_with_iface(
             pairing_obj
         }),
     });
+    #[cfg(unix)]
+    {
+        response["byo"] = byo_json;
+    }
     if status == "needs_subscription" {
         response["subscribe_url"] = json!(format!("{}/services/solstone-me", portal_origin()));
     }
     Ok(response)
 }
 
+#[cfg(unix)]
 #[derive(Deserialize)]
 struct SetByoRequest {
     #[serde(default)]
@@ -694,6 +736,7 @@ struct SetByoRequest {
     enabled: bool,
 }
 
+#[cfg(unix)]
 async fn set_byo_hostname(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(payload): Json<SetByoRequest>,
@@ -776,6 +819,7 @@ async fn set_byo_hostname(
     }
 }
 
+#[cfg(unix)]
 async fn remove_byo_hostname(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     let mutation = mutate_journal_config(&journal, LockOptions::default(), |config| {
         let status = solstone_core_journal_config::byo_hostname_config_from_map(config);
@@ -836,6 +880,7 @@ async fn remove_byo_hostname(Extension(journal): Extension<Arc<PathBuf>>) -> Res
     }
 }
 
+#[cfg(unix)]
 async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     let journal_clone = Arc::clone(&journal);
     let cutover_result = tokio::task::spawn_blocking(move || {
@@ -931,12 +976,13 @@ async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub type TestRegistrarFn = Arc<dyn Fn(&[u8]) -> Result<String, String> + Send + Sync>;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub static TEST_REGISTRAR: std::sync::RwLock<Option<TestRegistrarFn>> =
     std::sync::RwLock::new(None);
 
+#[cfg(unix)]
 pub async fn register_acme_account(key_der: &[u8]) -> Result<String, String> {
     #[cfg(test)]
     {
@@ -975,6 +1021,7 @@ pub async fn register_acme_account(key_der: &[u8]) -> Result<String, String> {
     Ok(account.kid)
 }
 
+#[cfg(unix)]
 async fn register_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     let config = match read_journal_config(&journal) {
         Ok(c) => c,
@@ -1099,6 +1146,7 @@ async fn register_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Re
     }
 }
 
+#[cfg(unix)]
 async fn replace_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Response {
     let config = match read_journal_config(&journal) {
         Ok(c) => c,
@@ -1299,6 +1347,10 @@ async fn set_capability(
     Extension(journal): Extension<Arc<PathBuf>>,
     Json(body): Json<CapabilityBody>,
 ) -> Response {
+    #[cfg(windows)]
+    if body.enabled {
+        return platform_unavailable().await;
+    }
     write_endpoint_switch(&journal, "enabled", body.enabled)
 }
 
@@ -1520,7 +1572,7 @@ async fn generate_pairing(
                 Some(Value::String(door_str)) => {
                     if door_str == "lan" {
                         Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_string())
-                    } else if door_str == "byo" {
+                    } else if cfg!(unix) && door_str == "byo" {
                         Some("byo".to_string())
                     } else {
                         return refusal(
@@ -1779,7 +1831,7 @@ mod tests {
 
     #[test]
     fn state_defaults_off_and_keeps_connection_state_separate() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let value = state_value(temp.path()).unwrap();
         assert_eq!(value["enabled"], false);
         assert_eq!(value["status"], "off");
@@ -1788,7 +1840,7 @@ mod tests {
 
     #[test]
     fn state_projects_needs_subscription_status_and_subscribe_url() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1817,7 +1869,7 @@ mod tests {
 
     #[test]
     fn state_projects_not_accepted_status_and_no_subscribe_url() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1844,7 +1896,7 @@ mod tests {
 
     #[tokio::test]
     async fn local_door_switch_writes_its_own_key_and_repairs_an_invalid_value() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::write(
@@ -1888,7 +1940,7 @@ mod tests {
         use axum::http::Method;
         use solstone_core_convey_http::identity::{Carrier, LinkedDeviceCid};
 
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let route = "/app/agents/api/state";
         let hidden = owner_routes(temp.path().to_path_buf())
             .oneshot(Request::builder().uri(route).body(Body::empty()).unwrap())
@@ -1958,7 +2010,7 @@ mod tests {
 
     #[tokio::test]
     async fn state_projects_local_door_posture_and_connection_door_origin() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -2001,7 +2053,7 @@ mod tests {
     #[tokio::test]
     async fn reader_window_and_reason_passthrough_and_bound_canonical() {
         use crate::oauth::OAuthRuntime;
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -2089,7 +2141,7 @@ mod tests {
 
     #[tokio::test]
     async fn owner_route_lan_ca_pem_download_and_isolation() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
 
         // No basis -> 404
@@ -2211,7 +2263,7 @@ mod tests {
 
     #[tokio::test]
     async fn state_projects_lan_door_posture_addresses_and_urls() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -2353,7 +2405,7 @@ mod tests {
             }
         }
 
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path();
         std::fs::create_dir_all(journal_root.join("config")).unwrap();
         std::fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -2389,7 +2441,7 @@ mod tests {
     fn byo_state_json_disabled_limits() {
         let dir = tempfile::Builder::new()
             .prefix("solstone-mcp-byo-state-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let root = dir.path();
         let config_dir = root.join("config");
@@ -2451,7 +2503,7 @@ mod tests {
     fn byo_owner_state_does_not_report_a_stale_or_other_generation_socket() {
         let dir = tempfile::Builder::new()
             .prefix("solstone-mcp-byo-heartbeat-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("config")).unwrap();

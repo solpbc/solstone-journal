@@ -308,7 +308,7 @@ mod tests {
     fn journal_with_two_facets() -> tempfile::TempDir {
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-registry-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         for (name, id, title) in [("alpha", FACET_A, "Alpha"), ("beta", FACET_B, "Beta")] {
             let directory = journal.path().join("facets").join(name);
@@ -463,7 +463,7 @@ mod tests {
     fn a_journal_with_no_facets_offers_no_facet_argument_at_all() {
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-registry-bare-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let snapshot = ConnectionReadSnapshot {
             categories: all_categories(),

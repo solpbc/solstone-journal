@@ -11,150 +11,118 @@
 use std::fmt;
 use std::path::Path;
 
-#[cfg(unix)]
 use std::sync::Arc;
-#[cfg(unix)]
 use tokio::sync::watch;
 
-#[cfg(unix)]
 use solstone_core_journal_config::McpEndpointCertificateEnvironment;
-#[cfg(unix)]
 use solstone_core_journal_io::journal_root::JournalRoot;
 
-#[cfg(not(unix))]
-use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
-
-#[cfg(unix)]
 #[allow(dead_code)]
 mod account_wire;
-#[cfg(unix)]
 mod activity;
-#[cfg(unix)]
 mod audit;
-#[cfg(all(test, unix, feature = "full-tests"))]
+#[cfg(all(test, feature = "full-tests"))]
 mod boundary_tests;
-#[cfg(unix)]
 mod bridge_carrier;
-#[cfg(unix)]
 mod bridge_forwarder;
-#[cfg(unix)]
 mod bridge_pop;
-#[cfg(unix)]
 mod bridge_session;
-#[cfg(unix)]
 pub mod byo_dns;
-#[cfg(unix)]
 pub mod byo_door;
-#[cfg(unix)]
 mod dispatch;
-#[cfg(unix)]
 mod http1;
-#[cfg(unix)]
 mod jsonrpc;
-#[cfg(unix)]
 pub mod lan_door;
-#[cfg(unix)]
 pub mod local_door;
-#[cfg(unix)]
 mod oauth;
-#[cfg(unix)]
 mod owner_state;
-#[cfg(unix)]
 mod owner_web;
-#[cfg(unix)]
 mod permissions;
-#[cfg(unix)]
 mod permits;
-#[cfg(unix)]
 mod proxy_preface;
-#[cfg(unix)]
 mod references;
-#[cfg(unix)]
 mod registry;
 #[cfg(unix)]
 mod rlimit;
-#[cfg(unix)]
 mod server;
-#[cfg(unix)]
 mod service_process;
-#[cfg(unix)]
 mod session;
+mod signals;
 #[cfg(all(unix, any(test, feature = "test-hooks")))]
 mod test_seam;
 #[cfg(all(test, unix, not(feature = "full-tests")))]
 mod tests;
-#[cfg(unix)]
 mod tls;
-#[cfg(unix)]
 mod tokens;
-#[cfg(unix)]
 mod tools;
 #[cfg(unix)]
 mod unix;
+#[cfg(windows)]
+mod windows_state;
+#[cfg(windows)]
+use windows_state as unix;
 
-#[cfg(unix)]
 pub use activity::{
     ActivityAnchor, ActivityEntry, ActivityPage, ActivityQuery, ActivityReadError,
     MAX_EXAMINED_RECORDS, RecordedOutcome, read_activity, tally,
 };
-#[cfg(unix)]
 pub use bridge_carrier::McpBridgeCarrierError;
-#[cfg(unix)]
 pub use bridge_session::{McpBridgeSession, McpPublicStream};
-#[cfg(unix)]
 pub use dispatch::{McpProbeError, run_mcp_probe};
-#[cfg(unix)]
 pub use lan_door::{LanDoorRun, LanDoorState, read_lan_door_state, write_lan_door_state};
-#[cfg(unix)]
 pub use local_door::{
     LocalDoorRun, LocalDoorState, read_local_door_state, run_local_door_async,
     run_local_door_with_hosted_parent, write_local_door_state,
 };
-#[cfg(unix)]
 pub use oauth::store::{
     CreatedPairingCode, OAuthClientSummary, OAuthGrantSummary, OAuthStore, OAuthStoreError,
     PairingCodeSummary,
 };
-#[cfg(unix)]
 pub use owner_state::{McpOwnerState, read_mcp_owner_state};
-#[cfg(unix)]
 pub use owner_web::owner_routes;
-#[cfg(unix)]
 pub use permissions::{
     ConnectionPermissionRecord, ConnectionReadSnapshot, PermissionDecision, PermissionStore,
     PermissionStoreError, PermissionsFile, ReadPermission, ReadScope, evaluate_connection_read,
     resolve_permission_facet_names,
 };
-#[cfg(unix)]
 pub use service_process::{McpServiceError, run_native_service_with_hosted_parent};
 /// The closed audit vocabulary, re-exported for the owner's CLI.
 ///
 /// ⛔ This is the record *type*, not a reader: `solstone-core-mcp-audit` stays a
 /// write-only leaf, and the owner's read lives in this crate beside the closed
 /// registry that keeps it away from the wire.
-#[cfg(unix)]
 pub use solstone_core_mcp_audit::{
     Outcome as AuditOutcome, PermissionSnapshotRecord, RequestRecord, ResultShape,
     ToolName as AuditToolName,
 };
-#[cfg(unix)]
 pub use tls::{
     McpEndpointCertificateLifecycleError, McpEndpointTlsService, mcp_endpoint_server_config,
 };
-#[cfg(unix)]
 pub use tokens::{CreatedToken, TokenStore, TokenStoreError, TokenSummary, VerifiedToken};
+
+/// Scratch root for test journals: `/var/tmp` on Unix, which stays on disk
+/// outside the gate's capped tmpfs, and the user's temp directory on Windows.
+#[cfg(test)]
+pub(crate) fn test_scratch() -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        std::path::PathBuf::from("/var/tmp")
+    }
+    #[cfg(windows)]
+    {
+        std::env::temp_dir()
+    }
+}
 
 /// One authenticated bridge session paired with its authorized TLS service.
 ///
 /// The service can be handed to Lane B before the opaque bridge session is
 /// consumed by the forwarder. Neither field exposes a hostname or key.
-#[cfg(unix)]
 pub struct McpEndpointTunnel {
     tls: McpEndpointTlsService,
     session: McpBridgeSession,
 }
 
-#[cfg(unix)]
 impl McpEndpointTunnel {
     /// Borrow the sole opaque TLS service for the dedicated MCP listener.
     pub fn tls_service(&self) -> &McpEndpointTlsService {
@@ -196,20 +164,7 @@ impl McpEndpointTunnel {
 pub fn bootstrap_mcp_endpoint_owner_identity(
     journal_root: &Path,
 ) -> Result<Option<McpEndpointOwnerContext>, McpEndpointBootstrapError> {
-    #[cfg(unix)]
-    {
-        unix::bootstrap(journal_root)
-    }
-
-    #[cfg(not(unix))]
-    {
-        let config = solstone_core_journal_config::read_journal_config(journal_root)
-            .map_err(|_| McpEndpointBootstrapError::ConfigRead)?;
-        match mcp_endpoint_capability(&config).map_err(|_| McpEndpointBootstrapError::Capability)? {
-            McpEndpointCapability::Disabled => Ok(None),
-            McpEndpointCapability::Enabled => Err(McpEndpointBootstrapError::UnsupportedPlatform),
-        }
-    }
+    unix::bootstrap(journal_root)
 }
 
 /// A successfully admitted committed owner identity and private Ed25519 PoP key.
@@ -304,15 +259,10 @@ pub fn bootstrap_mcp_endpoint_owner_identity(
 /// ```
 pub struct McpEndpointOwnerContext {
     _private: (),
-    #[cfg(unix)]
     committed: Arc<solstone_core_sol_link::committed::CommittedIdentity>,
-    #[cfg(unix)]
     keypair: Arc<ring::signature::Ed25519KeyPair>,
-    #[cfg(unix)]
     journal_root: Arc<JournalRoot>,
-    #[cfg(unix)]
     certificate_environment: McpEndpointCertificateEnvironment,
-    #[cfg(unix)]
     force_staging_renewal: bool,
 }
 
@@ -326,7 +276,6 @@ impl McpEndpointOwnerContext {
     }
 }
 
-#[cfg(unix)]
 impl McpEndpointOwnerContext {
     /// Connect one fixed WebPKI-authenticated bridge carrier for this enabled journal.
     ///

@@ -19,8 +19,6 @@ test-hooks = [
 
 [dependencies]
 solstone-core-journal-config.workspace = true
-
-[target.'cfg(unix)'.dependencies]
 arc-swap = "1.9.1"
 axum.workspace = true
 async-trait = "0.1.89"
@@ -31,7 +29,6 @@ hickory-resolver = { version = "=0.26.3", default-features = false, features = [
 hickory-proto = { version = "=0.26.3", default-features = false, features = ["dnssec-ring"] }
 hickory-net = { version = "=0.26.3", default-features = false, features = ["tokio", "dnssec-ring"] }
 log.workspace = true
-nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 pem = "3.0.6"
 rcgen.workspace = true
 ring.workspace = true
@@ -60,6 +57,9 @@ tokio = { workspace = true, features = ["io-util", "net", "rt", "rt-multi-thread
 tokio-rustls = { version = "0.26.4", default-features = false, features = ["ring"] }
 webpki-roots = "1.0.9"
 x509-parser = { version = "0.16.0", features = ["verify"] }
+
+[target.'cfg(unix)'.dependencies]
+nix = { workspace = true, features = ["dir", "fs", "user", "resource"] }
 
 [dev-dependencies]
 proc-macro2 = "1.0.107"

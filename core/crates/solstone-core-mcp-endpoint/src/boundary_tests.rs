@@ -27,7 +27,7 @@ const PATH: &str = "20260914/default/090000_300/talents/brief.md";
 fn fixture() -> tempfile::TempDir {
     let journal = tempfile::Builder::new()
         .prefix("solstone-mcp-boundary-")
-        .tempdir_in("/var/tmp")
+        .tempdir_in(crate::test_scratch())
         .unwrap();
     for (name, id, title) in [("alpha", FACET_A, "Alpha"), ("beta", FACET_B, "Beta")] {
         let directory = journal.path().join("facets").join(name);

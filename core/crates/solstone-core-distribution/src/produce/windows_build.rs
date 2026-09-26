@@ -279,6 +279,7 @@ fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
     .map(str::to_owned)
     .to_vec();
     let mut count = 0;
+    let mut journal_core = false;
     for entry in &inventory.entry {
         if let Entry::Bin {
             package,
@@ -291,11 +292,20 @@ fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
                 .any(|t| t == crate::windows_payload::WINDOWS_PAYLOAD_TARGET)
         {
             args.extend(["-p".into(), package.clone(), "--bin".into(), bin.clone()]);
+            if package == "solstone-core" && bin == "solstone-core" {
+                journal_core = true;
+            }
             count += 1;
         }
     }
     if count == 0 {
         return Err("Windows inventory declares no Cargo commands".into());
+    }
+    if journal_core {
+        args.extend([
+            "--features".into(),
+            "solstone-core/journal-mcp-endpoint".into(),
+        ]);
     }
     Ok(args)
 }
@@ -623,5 +633,12 @@ mod tests {
         }
         assert!(!argv.iter().any(|s| s == "solstone-core-llama"));
         assert!(argv.windows(2).any(|pair| pair == ["--target", TRIPLE]));
+        assert_eq!(
+            argv.windows(2)
+                .filter(|pair| *pair == ["--features", "solstone-core/journal-mcp-endpoint"])
+                .count(),
+            1,
+            "the agent connector is compiled into the Windows journal exactly once"
+        );
     }
 }

@@ -178,6 +178,19 @@ cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --l
 echo === cargo test --locked (ingest resolve: the write path paired apps upload through) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-ingest-resolve --lib || exit /b 1
 
+:: The agent connector: the journal binary with it compiled in, its audit
+:: record, and both its routine and boundary suites. The boundary suite is
+:: what proves no tool call is served before its admission record exists.
+echo === cargo build --locked (journal with the agent connector) ===
+cargo build --manifest-path core\Cargo.toml --locked -p solstone-core --bin solstone-core --features journal-mcp-endpoint || exit /b 1
+echo === cargo test --locked (agent connector audit record) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-mcp-audit --lib || exit /b 1
+echo === cargo test --locked (agent connector routine suite) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-mcp-endpoint --lib -- --test-threads=1 || exit /b 1
+echo === cargo test --locked (agent connector boundary suite) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-mcp-endpoint --lib --features full-tests -- --test-threads=1 || exit /b 1
+echo JOURNAL_WIN_CI_MCP_ENDPOINT=executed/pass
+
 if "%JOURNAL_WIN_CI_RUN_BACKUP%"=="1" (
   call :run_native_backup || exit /b 1
   set "JOURNAL_WIN_CI_BACKUP_EVIDENCE=executed/pass"

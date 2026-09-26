@@ -60,6 +60,8 @@ fn emit_observed(journal_root: &Path, coordinates: &AuditCoordinates) {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
+// The fixture listens as Callosum on a Unix socket.
+#[cfg(unix)]
 mod tests {
     use std::fs;
     use std::io::Read as _;
@@ -76,7 +78,7 @@ mod tests {
     fn observed_notification_contains_only_audit_coordinates() {
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-audit-event-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .expect("fixture journal");
         let health = journal.path().join("health");
         fs::create_dir_all(&health).expect("fixture health directory");

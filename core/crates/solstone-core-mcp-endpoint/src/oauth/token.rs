@@ -218,7 +218,7 @@ mod tests {
     fn journal_root() -> tempfile::TempDir {
         tempfile::Builder::new()
             .prefix("solstone-mcp-token-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap()
     }
 

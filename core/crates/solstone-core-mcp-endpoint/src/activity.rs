@@ -382,7 +382,7 @@ mod tests {
     fn fixture() -> tempfile::TempDir {
         tempfile::Builder::new()
             .prefix("solstone-mcp-activity-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .expect("fixture journal")
     }
 

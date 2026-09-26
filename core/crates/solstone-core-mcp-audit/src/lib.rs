@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#![cfg(unix)]
-
 //! Durable, journal-rooted MCP interaction audit records and the owner-only
 //! reader over them.
 //!

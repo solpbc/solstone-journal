@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn resolve_owner_facet_names_returns_ids_and_refuses_without_writing_permissions() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let facet = temp.path().join("facets/alpha");
         fs::create_dir_all(&facet).unwrap();
         fs::write(
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn unknown_categories_authorize_nothing_but_remain_an_enforceable_snapshot() {
-        let temp = TempDir::new_in("/var/tmp").expect("temp dir");
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
         let store = PermissionStore::open(temp.path());
         store
             .set_permission(
@@ -568,7 +568,7 @@ mod tests {
 
     #[test]
     fn chosen_facet_scope_is_an_enforceable_snapshot() {
-        let temp = TempDir::new_in("/var/tmp").expect("temp dir");
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
         let store = PermissionStore::open(temp.path());
         store
             .set_permission(
@@ -629,7 +629,7 @@ mod tests {
 
     #[test]
     fn store_rejects_unsupported_schema() {
-        let temp = TempDir::new_in("/var/tmp").expect("temp dir");
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
         let store = PermissionStore::open(temp.path());
         let mcp_dir = temp.path().join(ENDPOINT_DIRECTORY);
         fs::create_dir_all(&mcp_dir).expect("creates dir");
@@ -658,7 +658,7 @@ mod tests {
 
     #[test]
     fn store_get_set_clear_sweep_lifecycle() {
-        let temp = TempDir::new_in("/var/tmp").expect("temp dir");
+        let temp = TempDir::new_in(crate::test_scratch()).expect("temp dir");
         let store = PermissionStore::open(temp.path());
 
         // Missing file returns empty permissions and evaluates to no_permission

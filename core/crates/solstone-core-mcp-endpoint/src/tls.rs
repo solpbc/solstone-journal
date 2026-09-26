@@ -209,6 +209,7 @@ impl McpEndpointTlsService {
         Ok(service)
     }
 
+    #[cfg(unix)]
     pub(crate) fn for_byo_cert_directory(
         cert_directory: unix::TlsStateDirectory,
         hostname: String,
@@ -417,6 +418,7 @@ impl McpEndpointTlsService {
         }
     }
 
+    #[cfg(unix)]
     pub(crate) async fn run_byo_acme_renewal(
         &self,
         account_dir: unix::TlsStateDirectory,
@@ -476,11 +478,13 @@ impl McpEndpointTlsService {
     }
 
     #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) fn empty_for_test(hostname: String) -> Self {
         Self::empty(hostname, None, false)
     }
 
     #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn install_ordinary_for_test(&self, key: Arc<CertifiedKey>) {
         self.resolver
             .ordinary
@@ -614,12 +618,15 @@ impl AccountCache for McpEndpointAcmeCache {
     }
 }
 
+// The owner-hostname door's certificate cache; that door runs on Unix only.
+#[cfg(unix)]
 pub(crate) struct ByoAccountCache {
     pub(crate) account_dir: unix::TlsStateDirectory,
     pub(crate) service: McpEndpointTlsService,
 }
 
 #[async_trait::async_trait]
+#[cfg(unix)]
 impl CertCache for ByoAccountCache {
     type EC = io::Error;
 
@@ -670,6 +677,7 @@ impl CertCache for ByoAccountCache {
 }
 
 #[async_trait::async_trait]
+#[cfg(unix)]
 impl AccountCache for ByoAccountCache {
     type EA = io::Error;
 
@@ -1164,6 +1172,8 @@ fn is_only_acme_alpn(protocols: &[&[u8]]) -> bool {
 }
 
 #[cfg(all(test, not(feature = "full-tests")))]
+// These exercise the owner-only state layer, which exists on Unix only.
+#[cfg(unix)]
 mod tests {
     use std::fs;
     use std::io::Cursor;

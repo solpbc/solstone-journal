@@ -350,7 +350,7 @@ pub(crate) enum AppService {
     Spl,
     #[cfg_attr(not(all(unix, feature = "journal-mcp-endpoint")), allow(dead_code))]
     Mcp,
-    #[cfg_attr(not(all(unix, feature = "journal-mcp-endpoint")), allow(dead_code))]
+    #[cfg_attr(not(feature = "journal-mcp-endpoint"), allow(dead_code))]
     McpLocalDoor,
 }
 
@@ -1197,10 +1197,16 @@ fn app_service_enablement(options: &SupervisorOptions) -> Vec<(AppService, bool)
         (AppService::Cortex, !options.no_cortex),
         (AppService::Spl, !options.no_spl),
     ];
+    // The operated endpoint's owner state is Unix-only; the local door is not.
     #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
     let services = {
         let mut services = services;
         services.push((AppService::Mcp, true));
+        services
+    };
+    #[cfg(feature = "journal-mcp-endpoint")]
+    let services = {
+        let mut services = services;
         services.push((AppService::McpLocalDoor, true));
         services
     };
@@ -1438,7 +1444,7 @@ async fn start_app_stack(
         AppService::Cortex,
         AppService::Spl,
     ];
-    #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+    #[cfg(feature = "journal-mcp-endpoint")]
     let services = {
         let mut services = services;
         if app_processes

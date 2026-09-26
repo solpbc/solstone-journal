@@ -437,20 +437,7 @@ async fn wait_for_hosted_parent(
 }
 
 async fn wait_for_shutdown_signal(shutdown: watch::Sender<bool>) {
-    let termination = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate());
-    match termination {
-        Ok(mut termination) => {
-            tokio::select! {
-                result = tokio::signal::ctrl_c() => {
-                    let _ = result;
-                }
-                _ = termination.recv() => {}
-            }
-        }
-        Err(_) => {
-            let _ = tokio::signal::ctrl_c().await;
-        }
-    }
+    crate::signals::termination_requested().await;
     let _ = shutdown.send(true);
 }
 

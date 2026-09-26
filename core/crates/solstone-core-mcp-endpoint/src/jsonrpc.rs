@@ -312,7 +312,7 @@ mod tests {
     fn tool_registry_is_a_closed_scoped_vocabulary() {
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-jsonrpc-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let result = advertised_tools_list(
             journal.path(),

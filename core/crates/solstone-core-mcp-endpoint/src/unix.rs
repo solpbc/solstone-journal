@@ -353,15 +353,7 @@ pub(crate) fn delete_byo_account_pair(dir: &TlsStateDirectory) -> io::Result<()>
     Ok(())
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ByoSocketBlocker {
-    LiveSocket,
-    Symlink,
-    RegularFile,
-    InodeReplaced,
-    PathTooLong,
-}
+pub(crate) use crate::byo_door::ByoSocketBlocker;
 
 pub(crate) fn bind_byo_socket(
     byo_dir: &ByoDirectory,

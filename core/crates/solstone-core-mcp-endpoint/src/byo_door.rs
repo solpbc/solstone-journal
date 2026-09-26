@@ -5,27 +5,43 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+#[cfg(unix)]
 use std::sync::Arc;
+#[cfg(unix)]
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use solstone_core_journal_config::{
-    ByoHostnameConfigStatus, byo_hostname_config, read_journal_config,
-};
-use solstone_core_journal_io::journal_root::JournalRoot;
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
-use tokio::net::UnixListener;
-use tokio::sync::{Semaphore, watch};
-use tokio_rustls::TlsAcceptor;
+use tokio::sync::watch;
+#[cfg(unix)]
+use {
+    crate::byo_dns::resolve_byo_dns,
+    crate::oauth::OAuthRuntime,
+    crate::permits::try_acquire_connection_permit,
+    crate::server::{RequestGuard, serve_stream},
+    crate::session::SessionTable,
+    crate::tls::{McpEndpointTlsService, mcp_endpoint_server_config},
+    crate::unix,
+    solstone_core_journal_config::{
+        ByoHostnameConfigStatus, byo_hostname_config, read_journal_config,
+    },
+    solstone_core_journal_io::journal_root::JournalRoot,
+    tokio::net::UnixListener,
+    tokio::sync::Semaphore,
+    tokio_rustls::TlsAcceptor,
+};
 
-use crate::byo_dns::resolve_byo_dns;
-use crate::oauth::OAuthRuntime;
-use crate::permits::try_acquire_connection_permit;
-use crate::server::{RequestGuard, serve_stream};
-use crate::session::SessionTable;
-use crate::tls::{McpEndpointTlsService, mcp_endpoint_server_config};
-use crate::unix::{self, ByoSocketBlocker};
+/// Why the owner-hostname ingress socket could not be bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ByoSocketBlocker {
+    LiveSocket,
+    Symlink,
+    RegularFile,
+    InodeReplaced,
+    PathTooLong,
+}
 
 pub(crate) const BYO_DOOR_STATE_PATH: &str = "mcp-endpoint/byo-door-state.json";
 pub const DEFAULT_BYO_CONNECTION_PERMITS: usize = 64;
@@ -67,12 +83,14 @@ pub fn write_byo_door_state(journal_root: &Path, state: &ByoDoorState) {
     );
 }
 
+#[cfg(unix)]
 struct ByoBoundResources {
     ingress_task: tokio::task::JoinHandle<()>,
     acme_task: Option<tokio::task::JoinHandle<()>>,
     ingress_inode: u64,
 }
 
+#[cfg(unix)]
 struct ByoServiceRuntime {
     hostname: String,
     generation: u64,
@@ -90,6 +108,7 @@ struct ByoServiceRuntime {
     last_dns_check: tokio::time::Instant,
 }
 
+#[cfg(unix)]
 impl ByoServiceRuntime {
     fn new(
         journal_root: &Path,
@@ -406,6 +425,7 @@ impl ByoServiceRuntime {
     }
 }
 
+#[cfg(unix)]
 async fn tick_byo_admission(
     journal_root: &Path,
     byo_dir: &unix::ByoDirectory,
@@ -521,6 +541,7 @@ async fn tick_byo_admission(
     }
 }
 
+#[cfg(unix)]
 fn handle_cutover_stream(stream: &std::os::unix::net::UnixStream) -> bool {
     let _ = stream.set_nonblocking(false);
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(2)));
@@ -533,10 +554,12 @@ fn handle_cutover_stream(stream: &std::os::unix::net::UnixStream) -> bool {
     }
 }
 
+#[cfg(unix)]
 fn reply_cutover_ok(stream: &std::os::unix::net::UnixStream) {
     let _ = nix::unistd::write(stream, b"ok\n");
 }
 
+#[cfg(unix)]
 pub async fn run_byo_door_async(
     journal_root: PathBuf,
     mut shutdown: watch::Receiver<bool>,
@@ -611,6 +634,7 @@ pub async fn run_byo_door_async(
     Ok(())
 }
 
+#[cfg(unix)]
 pub async fn run_single_byo_service(
     journal_root: PathBuf,
     hostname: String,
@@ -660,7 +684,19 @@ pub async fn run_single_byo_service(
     runtime.stop(&byo_dir);
 }
 
+/// The owner-hostname door needs the owner-only state layer, which Windows
+/// does not have yet; the door never binds there.
+#[cfg(windows)]
+pub async fn run_byo_door_async(
+    _journal_root: PathBuf,
+    _shutdown: watch::Receiver<bool>,
+) -> Result<(), ()> {
+    Err(())
+}
+
 #[cfg(all(test, not(feature = "full-tests")))]
+// The owner-hostname door runs on Unix only.
+#[cfg(unix)]
 mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -674,7 +710,7 @@ mod tests {
     fn test_journal() -> (TempDir, JournalRoot) {
         let dir = tempfile::Builder::new()
             .prefix("solstone-byo-state-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let root = JournalRoot::open(dir.path()).unwrap();
         (dir, root)
@@ -797,6 +833,8 @@ mod tests {
 }
 
 #[cfg(all(test, feature = "full-tests"))]
+// The owner-hostname door runs on Unix only.
+#[cfg(unix)]
 mod full_tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
@@ -833,7 +871,7 @@ mod full_tests {
     fn test_journal() -> (TempDir, JournalRoot) {
         let dir = tempfile::Builder::new()
             .prefix("solstone-byo-full-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let root = JournalRoot::open(dir.path()).unwrap();
         (dir, root)

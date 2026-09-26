@@ -120,8 +120,14 @@ async fn serve_with_permit_pool(
 pub(crate) enum RequestGuard {
     None,
     Loopback,
-    IpLiteral { port: u16 },
-    ByoHostname { canonical_hostname: Arc<str> },
+    IpLiteral {
+        port: u16,
+    },
+    // The owner-hostname door that admits by this guard runs on Unix only.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    ByoHostname {
+        canonical_hostname: Arc<str>,
+    },
 }
 
 async fn handle_connection(
@@ -837,14 +843,17 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for PrefixedStream<S> {
 mod tests {
     use std::fs;
     use std::io;
+    #[cfg(unix)]
     use std::io::Read as _;
     use std::net::{Ipv4Addr, SocketAddr};
+    #[cfg(unix)]
     use std::os::unix::net::UnixListener;
     use std::path::Path;
     use std::pin::Pin;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::task::{Context, Poll};
+    #[cfg(unix)]
     use std::thread;
 
     use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
@@ -992,7 +1001,7 @@ mod tests {
         async fn start(tls_config: std::sync::Arc<ServerConfig>) -> Self {
             let journal = tempfile::Builder::new()
                 .prefix("solstone-mcp-server-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .expect("fixture journal directory");
             Self::start_with_journal(tls_config, journal).await
         }
@@ -1556,7 +1565,7 @@ mod tests {
         let (_, shutdown) = watch::channel(false);
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-server-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .expect("fixture journal directory");
         let oauth = Arc::new(OAuthRuntime::new(
             journal.path(),
@@ -1593,8 +1602,12 @@ mod tests {
         seed_indexed_note(server.journal.path());
         let health = server.journal.path().join("health");
         fs::create_dir_all(&health).expect("fixture health directory");
+        // The observation is best-effort beside the durable records; its fixture
+        // listens as Callosum on a Unix socket, so Windows checks the records only.
+        #[cfg(unix)]
         let listener =
             UnixListener::bind(health.join("callosum.sock")).expect("fixture Callosum listener");
+        #[cfg(unix)]
         let events = thread::spawn(move || {
             (0..2)
                 .map(|_| {
@@ -1700,18 +1713,21 @@ mod tests {
             .collect::<Vec<_>>();
         names.sort();
         assert_eq!(names, ["fetch", "search"]);
-        let events = events.join().expect("Callosum listener joins");
-        assert_eq!(events.len(), 2);
-        assert!(events.iter().all(|event| {
-            event
-                == &json!({
-                    "tract": "observe",
-                    "event": "observed",
-                    "day": event["day"],
-                    "stream": "mcp.agent",
-                    "segment": event["segment"],
-                })
-        }));
+        #[cfg(unix)]
+        {
+            let events = events.join().expect("Callosum listener joins");
+            assert_eq!(events.len(), 2);
+            assert!(events.iter().all(|event| {
+                event
+                    == &json!({
+                        "tract": "observe",
+                        "event": "observed",
+                        "day": event["day"],
+                        "stream": "mcp.agent",
+                        "segment": event["segment"],
+                    })
+            }));
+        }
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
     }
@@ -2422,7 +2438,7 @@ mod tests {
         let (cimd_addr, cimd_client, cimd_server) = spawn_cimd_fixture().await;
         let journal = tempfile::Builder::new()
             .prefix("solstone-mcp-server-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .expect("fixture journal directory");
         seed_indexed_note(journal.path());
         let server = ServerHarness::start_with_journal_override(
@@ -3052,7 +3068,7 @@ mod unit_tests {
     fn handle_mcp_cross_runtime_and_unknown_bearer_auth_matches() {
         let journal = tempfile::Builder::new()
             .prefix("solstone-server-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
         let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
@@ -3229,7 +3245,7 @@ mod unit_tests {
     fn static_bearer_key_accepted_on_both_binding_and_unbound_runtimes() {
         let journal = tempfile::Builder::new()
             .prefix("solstone-server-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let unbound = OAuthRuntime::new(journal.path(), "https://mcp.test".to_owned());
         let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());

@@ -66,6 +66,8 @@
   function doorAddress() { return state?.local_door?.address || LOCAL_DOOR_ADDRESS; }
   // A journal that serves agents on your network reports lan_door; one that doesn't, doesn't.
   function hasLan() { return Boolean(state?.lan_door); }
+  // A journal that cannot run solstone.me says so; one from before this field can.
+  function relayAvailable() { return state?.relay_available !== false; }
   function lanAddresses() { return Array.isArray(state?.lan_door?.addresses) ? state.lan_door.addresses : []; }
   function lanOpen() { return lanAddresses().filter(address => address.listening); }
   function lanTaken() { return lanAddresses().filter(address => address.reason === 'port_in_use'); }
@@ -212,7 +214,8 @@
   // ---- your hostname: a raw public route that ends TLS in this journal ---------------------------
   function byoTag() {
     const b = state?.byo;
-    if (!b?.hostname) return ['', 'not set up'];
+    if (!b) return ['', 'not available'];
+    if (!b.hostname) return ['', 'not set up'];
     if (!b.enabled) return ['', 'off'];
     if (byoReady()) return ['on', 'ready here'];
     return ['warn', 'needs setup'];
@@ -260,6 +263,7 @@
 
   // ---- solstone.me: agents anywhere, operated by sol pbc ------------------------------------------
   function meState() {
+    if (!relayAvailable()) return 'unavailable';
     if (pending()) return 'approve';
     if (enableOp?.phase === 'needs_subscription') return 'notyet';
     if (enableOp?.phase === 'error' || enableOp?.phase === 'revoked') return 'failed';
@@ -272,10 +276,11 @@
     return 'turning';
   }
   function meTag() {
-    return {off:['','off'], turnedoff:['','off'], approve:['warn','setting up'], notyet:['warn','not on yet'], failed:['warn','not on yet'], on:['on','on'], offline:['warn','offline'], renewal:['warn','needs attention'], lapsed:['warn','not on'], refused:['warn','needs attention'], turning:['warn','turning on']}[meState()];
+    return {unavailable:['','not available'], off:['','off'], turnedoff:['','off'], approve:['warn','setting up'], notyet:['warn','not on yet'], failed:['warn','not on yet'], on:['on','on'], offline:['warn','offline'], renewal:['warn','needs attention'], lapsed:['warn','not on'], refused:['warn','needs attention'], turning:['warn','turning on']}[meState()];
   }
   function meBody() {
     const me = meState();
+    if (me === 'unavailable') return '<div class="lane-body"><p class="note">this isn\'t available in this version of your journal yet.</p></div>';
     const row = (sub, on) => `<div class="onoff"><div><p class="onlab">solstone.me</p><p class="onsub">${sub}</p></div>${sw(on, 'solstone.me', on ? 'me-off' : 'turn-on')}</div>`;
     const address = `<dl class="lane-row"><dt>address</dt><dd><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></dd></dl>`;
     const about = `<details><summary>about this address</summary><p>eight random characters with nothing of yours in them. because the address gets a real certificate, it is written into public certificate logs. that record is permanent: it stays even if you turn solstone.me off, and it shows that an address existed, not whose.</p></details>`;
@@ -340,9 +345,10 @@
   function connectDialog() {
     const lanWay = hasLan() && lanState() === 'on' && lanOpen().length > 0;
     const otherOn = ownState() === 'on' || Boolean(state.enabled && meAddress());
-    const choices = [['other', 'on this computer, or anywhere through solstone.me'], ...(lanWay ? [['lan', 'on another computer on your wifi or VPN']] : []), ...(byoReady() ? [['byo', 'anywhere through your hostname']] : [])];
+    const nearby = relayAvailable() ? 'on this computer, or anywhere through solstone.me' : 'on this computer';
+    const choices = [['other', nearby], ...(lanWay ? [['lan', 'on another computer on your wifi or VPN']] : []), ...(byoReady() ? [['byo', 'anywhere through your hostname']] : [])];
     if (!otherOn) choices.shift();
-    if (!choices.length) choices.push(['other', 'on this computer, or anywhere through solstone.me']);
+    if (!choices.length) choices.push(['other', nearby]);
     if (choices.length === 1) connectWay = choices[0][0];
     else if (connectWay && !choices.some(([id]) => id === connectWay)) connectWay = null;
     const wantLan = connectWay === 'lan';
@@ -473,7 +479,7 @@
     try {
       state = await api('/app/agents/api/state');
       if (!identity) await loadIdentity();
-      if (!state.enabled && usesConsentFlow()) await checkEnableOp();
+      if (relayAvailable() && !state.enabled && usesConsentFlow()) await checkEnableOp();
       else enableOp = null;
       render();
     }

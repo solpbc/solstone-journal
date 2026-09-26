@@ -20,7 +20,7 @@ mod journal_route_coordination_lock;
 #[path = "journal_route/record.rs"]
 mod journal_route_record;
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 pub use solstone_core_mcp_endpoint::{
     ActivityAnchor, ActivityEntry, ActivityPage, ActivityQuery, ActivityReadError, AuditOutcome,
     AuditToolName, ConnectionReadSnapshot, CreatedPairingCode, McpEndpointTlsService,

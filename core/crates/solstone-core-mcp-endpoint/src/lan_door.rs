@@ -13,6 +13,7 @@ use std::time::Duration;
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
+#[cfg(unix)]
 use nix::libc;
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
@@ -298,6 +299,7 @@ pub enum AcceptDisposition {
 }
 
 /// Classify an accept error into its disposition.
+#[cfg(unix)]
 pub fn classify_accept_error(err: &io::Error) -> AcceptDisposition {
     let Some(raw) = err.raw_os_error() else {
         return AcceptDisposition::Release;
@@ -317,6 +319,35 @@ pub fn classify_accept_error(err: &io::Error) -> AcceptDisposition {
         #[cfg(target_os = "linux")]
         libc::ENONET => AcceptDisposition::Skip,
         libc::EMFILE | libc::ENFILE | libc::ENOBUFS | libc::ENOMEM => AcceptDisposition::Backoff,
+        _ => AcceptDisposition::Release,
+    }
+}
+
+/// Classify an accept error into its disposition, by the Winsock codes that
+/// correspond to the Unix table above.
+#[cfg(windows)]
+pub fn classify_accept_error(err: &io::Error) -> AcceptDisposition {
+    const WSAEINTR: i32 = 10004;
+    const WSAEMFILE: i32 = 10024;
+    const WSAEWOULDBLOCK: i32 = 10035;
+    const WSAENOPROTOOPT: i32 = 10042;
+    const WSAEOPNOTSUPP: i32 = 10045;
+    const WSAENETDOWN: i32 = 10050;
+    const WSAENETUNREACH: i32 = 10051;
+    const WSAECONNABORTED: i32 = 10053;
+    const WSAECONNRESET: i32 = 10054;
+    const WSAENOBUFS: i32 = 10055;
+    const WSAEHOSTDOWN: i32 = 10064;
+    const WSAEHOSTUNREACH: i32 = 10065;
+    let Some(raw) = err.raw_os_error() else {
+        return AcceptDisposition::Release;
+    };
+    match raw {
+        WSAECONNABORTED | WSAECONNRESET | WSAENETDOWN | WSAENETUNREACH | WSAEHOSTUNREACH
+        | WSAEHOSTDOWN | WSAENOPROTOOPT | WSAEOPNOTSUPP | WSAEWOULDBLOCK | WSAEINTR => {
+            AcceptDisposition::Skip
+        }
+        WSAEMFILE | WSAENOBUFS => AcceptDisposition::Backoff,
         _ => AcceptDisposition::Release,
     }
 }
@@ -988,14 +1019,7 @@ pub async fn run_lan_door_hosted_async(
 }
 
 async fn wait_for_shutdown_signal(shutdown_send: watch::Sender<bool>) {
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("signal");
-    let mut sigint =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).expect("signal");
-    tokio::select! {
-        _ = sigterm.recv() => {}
-        _ = sigint.recv() => {}
-    }
+    crate::signals::termination_requested().await;
     let _ = shutdown_send.send(true);
 }
 
@@ -1603,6 +1627,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn accept_error_classification_cases() {
         assert_eq!(
@@ -1639,11 +1664,34 @@ mod tests {
         );
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn accept_error_classification_uses_the_winsock_codes() {
+        for (code, expected) in [
+            (10053, AcceptDisposition::Skip),    // WSAECONNABORTED
+            (10054, AcceptDisposition::Skip),    // WSAECONNRESET
+            (10035, AcceptDisposition::Skip),    // WSAEWOULDBLOCK
+            (10024, AcceptDisposition::Backoff), // WSAEMFILE
+            (10055, AcceptDisposition::Backoff), // WSAENOBUFS
+            (10060, AcceptDisposition::Release), // WSAETIMEDOUT
+        ] {
+            assert_eq!(
+                classify_accept_error(&io::Error::from_raw_os_error(code)),
+                expected,
+                "winsock code {code}"
+            );
+        }
+        assert_eq!(
+            classify_accept_error(&io::Error::other("custom")),
+            AcceptDisposition::Release
+        );
+    }
+
     #[test]
     fn state_file_serialization_and_read() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-state-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -1679,7 +1727,7 @@ mod tests {
     fn lan_ca_and_leaf_atomic_generation_permissions_and_extensions() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-ca-leaf-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -1812,7 +1860,7 @@ mod tests {
     fn lan_leaf_reissued_on_san_change() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-san-change-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -1849,7 +1897,7 @@ mod tests {
     fn lan_leaf_reissued_on_removed_address() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-san-remove-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -1882,7 +1930,7 @@ mod tests {
     fn lan_leaf_reissued_when_near_expiry_or_future() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-reissue-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -1952,7 +2000,7 @@ mod tests {
         {
             let temp = tempfile::Builder::new()
                 .prefix("lan-door-fail-closed-1-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .unwrap();
             let journal_root = temp.path();
             let id_good = reconcile_lan_identity(journal_root, &addrs);
@@ -1979,7 +2027,7 @@ mod tests {
         {
             let temp = tempfile::Builder::new()
                 .prefix("lan-door-fail-closed-2-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .unwrap();
             let journal_root = temp.path();
             let id_good = reconcile_lan_identity(journal_root, &addrs);
@@ -2001,7 +2049,7 @@ mod tests {
         {
             let temp = tempfile::Builder::new()
                 .prefix("lan-door-fail-closed-3-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .unwrap();
             let journal_root = temp.path();
             let id_good = reconcile_lan_identity(journal_root, &addrs);
@@ -2027,7 +2075,7 @@ mod tests {
         {
             let temp = tempfile::Builder::new()
                 .prefix("lan-door-fail-closed-4-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .unwrap();
             let journal_root = temp.path();
             let id_good = reconcile_lan_identity(journal_root, &addrs);
@@ -2071,7 +2119,7 @@ mod tests {
         {
             let temp = tempfile::Builder::new()
                 .prefix("lan-door-fail-closed-5-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .unwrap();
             let journal_root = temp.path();
             let id_good = reconcile_lan_identity(journal_root, &addrs);
@@ -2107,7 +2155,7 @@ mod tests {
     fn lan_ca_durability_and_issuance_failure_cuts() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-cuts-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
         let addrs_a = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10))];
@@ -2173,7 +2221,7 @@ mod tests {
         for cut in cuts {
             let temp = tempfile::Builder::new()
                 .prefix("lan-migration-cut-")
-                .tempdir_in("/var/tmp")
+                .tempdir_in(crate::test_scratch())
                 .unwrap();
             let journal_root = temp.path();
 
@@ -2262,7 +2310,7 @@ mod tests {
     fn lan_leaf_webpki_ip_san_and_chain_verification() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-webpki-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
         let ip_v4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10));
@@ -2382,7 +2430,7 @@ mod tests {
     async fn lan_door_control_loop_drop_uncovered_listener() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-uncovered-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -2443,7 +2491,7 @@ mod tests {
     async fn local_door_isolation_with_lan_door() {
         let temp = tempfile::Builder::new()
             .prefix("local-door-isolation-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal_root = temp.path();
 
@@ -2627,7 +2675,7 @@ mod full_tests {
     async fn lan_door_control_loop_config_and_enumeration_transitions() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-ctrl-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
 
@@ -2689,7 +2737,7 @@ mod full_tests {
     async fn lan_door_control_loop_panic_recovery() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-panic-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
         write_config(journal, Some(false));
@@ -2726,7 +2774,7 @@ mod full_tests {
     async fn lan_door_duplex_tls_handshake_and_ip_literal_guard() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-tls-duplex-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
 
@@ -3096,7 +3144,7 @@ mod full_tests {
     async fn lan_door_loopback_injected_live_listener_lifecycle() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-live-test-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
 
@@ -3184,7 +3232,7 @@ mod full_tests {
     async fn lan_door_oauth_end_to_end_flow() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-oauth-e2e-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
         write_config(journal, Some(true));
@@ -3469,7 +3517,7 @@ mod full_tests {
     async fn lan_door_dual_host_authorization_and_host_matching() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-dual-host-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
         write_config(journal, Some(true));
@@ -3690,7 +3738,7 @@ mod full_tests {
     async fn lan_door_token_isolation_and_static_bearer_refusal() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-isolation-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
 
@@ -3919,7 +3967,7 @@ mod full_tests {
     async fn lan_door_pairing_code_door_isolation() {
         let temp = tempfile::Builder::new()
             .prefix("lan-door-pairing-isolation-")
-            .tempdir_in("/var/tmp")
+            .tempdir_in(crate::test_scratch())
             .unwrap();
         let journal = temp.path();
 

@@ -17,6 +17,7 @@
   },
   "SME_ALREADY_ENABLED_DETAIL": "solstone.me is already on",
   "SME_CONSENT_LINK_PREPARE_FAILED_DETAIL": "couldn't start turning on solstone.me. try again.",
+  "SME_UNAVAILABLE_HERE_DETAIL": "this isn't available in this version of your journal yet.",
   "SME_OUTCOME_GUIDANCE": {
     "approved": null,
     "revoked": "try again when you're ready.",

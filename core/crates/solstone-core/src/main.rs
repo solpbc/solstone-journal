@@ -81,9 +81,9 @@ mod service_windows;
 mod settings;
 #[cfg(any(unix, windows))]
 use solstone_core::supervisor;
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 use solstone_core::{OAuthStore, OAuthStoreError, TokenStore, TokenStoreError};
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 use solstone_core_cli::McpTarget;
 #[cfg(unix)]
 use solstone_core_system::lifecycle::{
@@ -118,7 +118,7 @@ use solstone_core_journal::{
     ConfigError, HomeError, Source, describe_package_roots_miss, ensure_journal_dir_with_label,
     read_config_journal, resolve_installation_root_from_executable_dir, resolve_journal_path,
 };
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 use solstone_core_journal_config::{McpEndpointCapability, mcp_endpoint_capability};
 use solstone_core_journal_config::{materialized_defaults, read_journal_config};
 use solstone_core_journal_config_write::{
@@ -1558,11 +1558,11 @@ fn run_convey(
         #[cfg(windows)]
         admitted,
         move |parent| {
-            #[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+            #[cfg(feature = "journal-mcp-endpoint")]
             let agents_routes = Some(solstone_core_mcp_endpoint::owner_routes(
                 service_journal.clone(),
             ));
-            #[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+            #[cfg(not(feature = "journal-mcp-endpoint"))]
             let agents_routes = None;
             match solstone_core_convey_shell::run_convey_with_hosted_parent_and_routes(
                 service_journal,
@@ -5218,7 +5218,7 @@ fn run_mcp_service(
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_local_door(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
@@ -5248,7 +5248,7 @@ fn run_mcp_local_door(
     )
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_local_door(
     #[cfg(windows)] admitted: Option<&solstone_core_system::process::AdmittedWindowsLaunch>,
 ) -> ExitCode {
@@ -5256,7 +5256,7 @@ fn run_mcp_local_door(
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_status() -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5343,13 +5343,13 @@ fn run_mcp_status() -> ExitCode {
     exit
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_status() -> ExitCode {
     eprintln!("journal mcp status is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5391,13 +5391,13 @@ fn run_mcp_token(command: McpTokenCommand) -> ExitCode {
     }
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_token(_command: McpTokenCommand) -> ExitCode {
     eprintln!("journal mcp token management is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_pairing(command: McpPairingCommand) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5438,13 +5438,13 @@ fn run_mcp_pairing(command: McpPairingCommand) -> ExitCode {
     }
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_pairing(_command: McpPairingCommand) -> ExitCode {
     eprintln!("journal mcp pairing is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5485,13 +5485,13 @@ fn run_mcp_oauth(command: McpOauthCommand) -> ExitCode {
     }
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_oauth(_command: McpOauthCommand) -> ExitCode {
     eprintln!("journal mcp oauth is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn render_token_store_error(operation: &str, error: &TokenStoreError) -> ExitCode {
     match error {
         TokenStoreError::InvalidLabel(error) => {
@@ -5512,7 +5512,7 @@ fn render_token_store_error(operation: &str, error: &TokenStoreError) -> ExitCod
     ExitCode::from(token_store_error_exit(error))
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 const fn token_store_error_exit(error: &TokenStoreError) -> u8 {
     match error {
         TokenStoreError::InvalidLabel(_) | TokenStoreError::DuplicateLabel { .. } => EXIT_USAGE,
@@ -5526,7 +5526,7 @@ const fn token_store_error_exit(error: &TokenStoreError) -> u8 {
     }
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn render_oauth_store_error(command: &str, operation: &str, error: &OAuthStoreError) -> ExitCode {
     match error {
         OAuthStoreError::NoActivePairing => {
@@ -5542,7 +5542,7 @@ fn render_oauth_store_error(command: &str, operation: &str, error: &OAuthStoreEr
     ExitCode::from(oauth_store_error_exit(error))
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
     match error {
         OAuthStoreError::NoActivePairing
@@ -5567,7 +5567,7 @@ const fn oauth_store_error_exit(error: &OAuthStoreError) -> u8 {
     }
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5747,7 +5747,7 @@ fn run_mcp_permission(command: McpPermissionCommand) -> ExitCode {
 /// no MCP bearer credential reaches it — the closed tool registry has no row
 /// that names this surface. ⚠ Operator-plain by design; the owner's product
 /// surface and its wording are lane D's.
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode {
     use solstone_core::{ActivityQuery, RecordedOutcome, read_activity, tally};
 
@@ -5941,12 +5941,12 @@ fn run_mcp_activity(command: solstone_core_cli::McpActivityCommand) -> ExitCode 
     ExitCode::SUCCESS
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn solstone_core_mcp_audit_tool_name(value: &str) -> Option<solstone_core::AuditToolName> {
     solstone_core::AuditToolName::from_token(value)
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn run_mcp_probe_command(command: solstone_core_cli::McpProbeCommand) -> ExitCode {
     let journal = match resolve_process_journal_path() {
         Ok(journal) => journal,
@@ -5991,7 +5991,7 @@ fn run_mcp_probe_command(command: solstone_core_cli::McpProbeCommand) -> ExitCod
     }
 }
 
-#[cfg(all(unix, feature = "journal-mcp-endpoint"))]
+#[cfg(feature = "journal-mcp-endpoint")]
 fn resolve_connection_key(
     journal_path: &std::path::Path,
     target: &McpTarget,
@@ -6053,19 +6053,19 @@ fn resolve_connection_key(
     }
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_permission(_command: McpPermissionCommand) -> ExitCode {
     eprintln!("journal mcp permission management is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_activity(_command: solstone_core_cli::McpActivityCommand) -> ExitCode {
     eprintln!("journal mcp activity is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)
 }
 
-#[cfg(not(all(unix, feature = "journal-mcp-endpoint")))]
+#[cfg(not(feature = "journal-mcp-endpoint"))]
 fn run_mcp_probe_command(_command: solstone_core_cli::McpProbeCommand) -> ExitCode {
     eprintln!("journal mcp probe is not compiled into this build");
     ExitCode::from(EXIT_UNAVAILABLE)

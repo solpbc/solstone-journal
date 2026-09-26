@@ -114,6 +114,7 @@ pub async fn run_local_door_async(
     run: LocalDoorRun,
     hosted_parent: Option<Arc<HostedServiceParentRuntime>>,
 ) -> Result<(), McpServiceError> {
+    #[cfg(unix)]
     crate::rlimit::apply_soft_nofile_limit();
     let (shutdown_send, shutdown_receive) = watch::channel(false);
     let signal_task = tokio::spawn(wait_for_shutdown_signal(shutdown_send.clone()));
@@ -193,16 +194,13 @@ pub static TEST_FORCE_LOCAL_SHUTDOWN: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 async fn wait_for_shutdown_signal(shutdown_send: watch::Sender<bool>) {
-    let mut sigterm =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).expect("signal");
-    let mut sigint =
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt()).expect("signal");
     #[cfg(test)]
     {
+        let termination = crate::signals::termination_requested();
+        tokio::pin!(termination);
         loop {
             tokio::select! {
-                _ = sigterm.recv() => break,
-                _ = sigint.recv() => break,
+                _ = &mut termination => break,
                 _ = tokio::time::sleep(Duration::from_millis(20)) => {
                     if TEST_FORCE_LOCAL_SHUTDOWN.load(std::sync::atomic::Ordering::SeqCst) {
                         break;
@@ -212,12 +210,7 @@ async fn wait_for_shutdown_signal(shutdown_send: watch::Sender<bool>) {
         }
     }
     #[cfg(not(test))]
-    {
-        tokio::select! {
-            _ = sigterm.recv() => {}
-            _ = sigint.recv() => {}
-        }
-    }
+    crate::signals::termination_requested().await;
     let _ = shutdown_send.send(true);
 }
 
@@ -649,7 +642,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_end_to_end_plain_flow() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -938,7 +931,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_ipv6_and_port_in_use() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1057,7 +1050,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_loopback_guard_rejections() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1167,7 +1160,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_unserved_routes_404() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1264,7 +1257,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_and_relay_token_isolation() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1349,7 +1342,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_config_dynamic_reconfiguration() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1478,7 +1471,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_oauth_revocation() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();
@@ -1572,7 +1565,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn local_door_parent_loss_and_signal() {
-        let temp = TempDir::new_in("/var/tmp").unwrap();
+        let temp = TempDir::new_in(crate::test_scratch()).unwrap();
         let journal_root = temp.path().to_path_buf();
         fs::create_dir_all(journal_root.join("config")).unwrap();
         fs::create_dir_all(journal_root.join("mcp-endpoint")).unwrap();

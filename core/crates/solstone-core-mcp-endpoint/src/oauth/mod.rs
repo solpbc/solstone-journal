@@ -116,10 +116,9 @@ pub(crate) enum ResourceOrigin {
     /// LAN door. Published origin is `https://` plus the admitted Host, unchanged.
     /// Grant canonical is `MCP_LAN_DOOR_RESOURCE` (`urn:solstone:mcp-door:lan`).
     Request,
-    Byo {
-        origin: String,
-        generation: u64,
-    },
+    // The owner-hostname door that builds this origin runs on Unix only.
+    #[cfg_attr(not(unix), allow(dead_code))]
+    Byo { origin: String, generation: u64 },
 }
 
 /// Process-local OAuth helpers bound to one journal root.
@@ -189,6 +188,7 @@ impl OAuthRuntime {
         }
     }
 
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) fn new_byo(journal_root: &Path, canonical_hostname: &str, generation: u64) -> Self {
         let origin = format!("https://{canonical_hostname}");
         Self {
