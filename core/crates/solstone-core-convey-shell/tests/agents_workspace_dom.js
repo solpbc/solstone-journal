@@ -116,14 +116,14 @@ async function test(name, body) {
     has(view, 'K7Q2M9XA');
   });
 
-  await test('a journal that cannot run solstone.me or a hostname says so, and connect offers only this computer', async () => {
+  await test('a Windows journal says solstone.me and a hostname are not there yet, and connect offers only this computer', async () => {
     const {view, click, calls} = await boot(baseState({...door({listening: true}), relay_available: false}));
     has(view, 'agents on this computer can reach your journal.');
     await click({lane: 'me'});
-    has(view, "this isn't available in this version of your journal yet.");
+    has(view, "this isn't available on windows yet.");
     lacks(view, 'set up solstone.me', 'an unavailable relay must not offer to be set up');
     await click({lane: 'byo'});
-    has(view, "this isn't available in this version of your journal yet.");
+    has(view, "this isn't available on windows yet.");
     lacks(view, 'save hostname');
     has(view, '<span class="tag ">not available</span>');
     await click({action: 'connect'});

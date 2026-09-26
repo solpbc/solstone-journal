@@ -66,7 +66,7 @@
   function doorAddress() { return state?.local_door?.address || LOCAL_DOOR_ADDRESS; }
   // A journal that serves agents on your network reports lan_door; one that doesn't, doesn't.
   function hasLan() { return Boolean(state?.lan_door); }
-  // A journal that cannot run solstone.me says so; one from before this field can.
+  // A Windows journal cannot run solstone.me or a hostname yet and says so; one from before this field can.
   function relayAvailable() { return state?.relay_available !== false; }
   function lanAddresses() { return Array.isArray(state?.lan_door?.addresses) ? state.lan_door.addresses : []; }
   function lanOpen() { return lanAddresses().filter(address => address.listening); }
@@ -222,7 +222,7 @@
   }
   function byoBody() {
     const b = state?.byo;
-    if (!b) return '<div class="lane-body"><p class="note">this isn\'t available in this version of your journal yet.</p></div>';
+    if (!b) return `<div class="lane-body"><p class="note">${relayAvailable() ? "this isn't available in this version of your journal yet." : "this isn't available on windows yet."}</p></div>`;
     const host = b.hostname || '';
     const caa = b.account_uri ? `0 issue "letsencrypt.org; accounturi=${b.account_uri}; validationmethods=tls-alpn-01"` : '';
     const action = {
@@ -280,7 +280,7 @@
   }
   function meBody() {
     const me = meState();
-    if (me === 'unavailable') return '<div class="lane-body"><p class="note">this isn\'t available in this version of your journal yet.</p></div>';
+    if (me === 'unavailable') return '<div class="lane-body"><p class="note">this isn\'t available on windows yet.</p></div>';
     const row = (sub, on) => `<div class="onoff"><div><p class="onlab">solstone.me</p><p class="onsub">${sub}</p></div>${sw(on, 'solstone.me', on ? 'me-off' : 'turn-on')}</div>`;
     const address = `<dl class="lane-row"><dt>address</dt><dd><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></dd></dl>`;
     const about = `<details><summary>about this address</summary><p>eight random characters with nothing of yours in them. because the address gets a real certificate, it is written into public certificate logs. that record is permanent: it stays even if you turn solstone.me off, and it shows that an address existed, not whose.</p></details>`;

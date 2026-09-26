@@ -79,20 +79,29 @@ fn with_byo_routes(router: Router) -> Router {
     router
         .route(
             "/app/agents/api/byo",
-            put(platform_unavailable).delete(platform_unavailable),
+            put(hostname_unavailable).delete(hostname_unavailable),
         )
-        .route("/app/agents/api/byo/account", post(platform_unavailable))
+        .route("/app/agents/api/byo/account", post(hostname_unavailable))
         .route(
             "/app/agents/api/byo/account/replace",
-            post(platform_unavailable),
+            post(hostname_unavailable),
         )
 }
 
 #[cfg(windows)]
-async fn platform_unavailable() -> Response {
+async fn hostname_unavailable() -> Response {
     refusal(
         "unavailable_on_this_platform",
-        "this isn't available in this version of your journal yet.",
+        "your hostname isn't available on windows yet.",
+        StatusCode::NOT_IMPLEMENTED,
+    )
+}
+
+#[cfg(windows)]
+fn relay_unavailable() -> Response {
+    refusal(
+        "unavailable_on_this_platform",
+        "solstone.me isn't available on windows yet.",
         StatusCode::NOT_IMPLEMENTED,
     )
 }
@@ -1349,7 +1358,7 @@ async fn set_capability(
 ) -> Response {
     #[cfg(windows)]
     if body.enabled {
-        return platform_unavailable().await;
+        return relay_unavailable();
     }
     write_endpoint_switch(&journal, "enabled", body.enabled)
 }
