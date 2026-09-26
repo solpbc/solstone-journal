@@ -148,7 +148,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             return Ok(make_result(
                 check,
                 Status::Skip,
-                format!("couldn't read the journal service registration — {reason}"),
+                format!("couldn't read the journal's service registration — {reason}"),
                 None::<String>,
             ));
         }

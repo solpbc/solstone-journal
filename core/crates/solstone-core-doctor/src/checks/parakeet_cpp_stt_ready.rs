@@ -32,7 +32,7 @@ fn windows_ready(context: &CheckContext, check: Check) -> RunnerResult {
     server_ready(
         context,
         check,
-        "parakeet-cpp ready (signed package server + model verified, server reachable)",
+        "parakeet-cpp ready (server + model match the signed package, server reachable)",
     )
 }
 
@@ -62,7 +62,7 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
         return Ok(make_result(
             check,
             Status::Skip,
-            "parakeet-cpp is only supported on Linux and Windows",
+            "parakeet-cpp is only supported on linux and windows",
             None::<String>,
         ));
     }

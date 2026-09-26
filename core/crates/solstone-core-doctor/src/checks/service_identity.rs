@@ -93,7 +93,7 @@ fn windows(context: &CheckContext, check: Check) -> RunnerResult {
         WindowsServiceRegistration::Unreadable(reason) => Ok(make_result(
             check,
             Status::Skip,
-            format!("couldn't read the journal service registration — {reason}"),
+            format!("couldn't read the journal's service registration — {reason}"),
             None::<String>,
         )),
         WindowsServiceRegistration::Present {

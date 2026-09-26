@@ -43,12 +43,31 @@ fn ced_download_disclosure(os_name: &str, arch: &str) -> String {
 /// same detail is already the operator-facing diagnostic on `journal check`
 /// (`cause` field). Appending it here closes that gap without changing the
 /// fixed sentence a person reads first.
-fn ced_unavailable_message(status: &CapabilityStatus) -> String {
+///
+/// ⛔ On Windows the CED engine is a member of the signed app package, and the
+/// package verifies as a whole: a changed runtime DLL, VAD model or helper
+/// fails the same check, and CED is only the first step to run it. Blaming
+/// "CED assets" there sends the owner after the wrong part, so a package that
+/// does not verify is named as the package.
+fn ced_unavailable_message(status: &CapabilityStatus, os_name: &str, arch: &str) -> String {
+    let guidance = if ced_install::ced_uses_package_engine(os_name, arch)
+        && matches!(
+            status,
+            CapabilityStatus::ResourceOrOwnerScopeUnavailable { .. }
+        ) {
+        WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE
+    } else {
+        CED_UNAVAILABLE_GUIDANCE
+    };
     match status.detail() {
-        Some(detail) => format!("{CED_UNAVAILABLE_GUIDANCE} ({detail})"),
-        None => CED_UNAVAILABLE_GUIDANCE.to_owned(),
+        Some(detail) => format!("{guidance} ({detail})"),
+        None => guidance.to_owned(),
     }
 }
+
+/// The owner-facing sentence for a Windows app package that fails its own
+/// signed-manifest verification. The detail appended after it names the file.
+const WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE: &str = "The installed journal app doesn't match its signed contents, so its models can't be checked. Reinstall the journal app.";
 
 /// RF-DETR assets are verified from the release tree, so this disclosure must
 /// describe the bundled payload rather than an upstream or mirror endpoint.
@@ -479,7 +498,7 @@ where
             return InstallModelsOutcome::failure_with_stdout(
                 variant,
                 EXIT_DATAERR,
-                ced_unavailable_message(&status),
+                ced_unavailable_message(&status, &host.os_name, &host.arch),
                 provider_stdout,
             );
         }
@@ -532,7 +551,7 @@ where
                             return InstallModelsOutcome::failure_with_stdout(
                                 variant,
                                 EXIT_DATAERR,
-                                ced_unavailable_message(&status),
+                                ced_unavailable_message(&status, &host.os_name, &host.arch),
                                 provider_stdout,
                             );
                         }
@@ -963,8 +982,13 @@ fn install_error_message(error: DispatchError) -> String {
         .unwrap_or_else(|| "parakeet install failed".to_owned())
 }
 
+/// Rebuilt from its components so a path joined from `/`-separated pieces
+/// prints with one separator on Windows, where the journal root uses `\`.
 fn ready_line(path: &Path) -> String {
-    format!("model ready: {}", path.display())
+    format!(
+        "model ready: {}",
+        path.components().collect::<PathBuf>().display()
+    )
 }
 
 #[cfg(test)]
@@ -1515,12 +1539,12 @@ mod tests {
             outcome.stdout,
             [ced_download_disclosure("windows", "x86_64")]
         );
-        // The generic guidance sentence stays first, but a Degraded verdict's
-        // specific CapabilityStatus detail is now appended rather than
-        // discarded -- here, "not a real Windows package layout under test".
+        // A package that does not verify is named as the package, not as CED,
+        // and the specific CapabilityStatus detail is still appended -- here,
+        // "not a real Windows package layout under test".
         assert_eq!(outcome.stderr.len(), 1);
-        assert!(outcome.stderr[0].starts_with(CED_UNAVAILABLE_GUIDANCE));
-        assert!(outcome.stderr[0].len() > CED_UNAVAILABLE_GUIDANCE.len());
+        assert!(outcome.stderr[0].starts_with(WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE));
+        assert!(outcome.stderr[0].len() > WINDOWS_PACKAGE_UNVERIFIED_GUIDANCE.len());
     }
 
     #[test]

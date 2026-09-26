@@ -16,6 +16,13 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 
+### Fixed
+
+- on windows, `journal doctor` now checks your installation and reports what it finds, as it does on mac and linux. before, it skipped every check.
+- on windows, a new screen description now shows up in the journal while it's open, without a refresh.
+- on windows, if `journal install-models` finds the installed journal doesn't match its signed contents, it now says so and asks you to reinstall, instead of pointing at the sound-tagging files.
+- on windows, when `journal service start` can't confirm your journal started, it now tells you to run `journal service logs` to see why.
+
 ## [2.0.22] - 2026-09-27
 
 ### Changed

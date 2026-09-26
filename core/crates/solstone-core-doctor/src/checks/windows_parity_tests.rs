@@ -94,7 +94,7 @@ fn windows_service_running_reads_the_registration_before_the_resident() {
     assert_eq!(row.status, Status::Skip);
     assert!(
         row.detail
-            .starts_with("couldn't read the journal service registration")
+            .starts_with("couldn't read the journal's service registration")
     );
 
     staged.context.windows_service_probe = Some(absent);

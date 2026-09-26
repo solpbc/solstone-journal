@@ -470,7 +470,11 @@ fn retain_task_run(
         deadline.saturating_duration_since(Instant::now()),
         POLL_INTERVAL,
     )
-    .ok_or_else(|| task_error("service startup or abnormal shutdown has no verified run target"))?;
+    .ok_or_else(|| {
+        task_error(
+            "your journal didn't report ready, so the start can't be confirmed. run `journal service logs` to see why",
+        )
+    })?;
     let supervisor_instance: solstone_core_system::process::ProcessInstance =
         serde_json::from_value(
             marker

@@ -362,7 +362,7 @@ fn require_supported_platform() -> Result<(), TranscribeError> {
         .ok_or_else(|| {
             failure(
                 "unsupported_platform",
-                "parakeet-cpp is only supported on Linux and Windows",
+                "parakeet-cpp is only supported on linux and windows",
             )
         })
 }

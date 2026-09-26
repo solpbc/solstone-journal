@@ -45,7 +45,7 @@ impl Unavailable {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::NoSocket => "nothing is listening",
-            Self::Unverifiable => "its process couldn't be checked",
+            Self::Unverifiable => "can't tell whether anything is listening",
             Self::ProbeRuntime => "nothing answered",
             Self::Timeout => "took too long to answer",
             Self::Transport => "the connection dropped",
