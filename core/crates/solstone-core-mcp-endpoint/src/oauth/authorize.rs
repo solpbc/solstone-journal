@@ -241,7 +241,7 @@ pub(crate) fn post_authorize(
         return html_status(
             429,
             "Too Many Requests",
-            "<p>wait and try again, or ask the owner for a new code</p>",
+            "<p>wait and try again, or make a new code in the agents app.</p>",
         );
     }
     let categories = chosen_categories(&pairs);
@@ -418,14 +418,14 @@ fn expired_error() -> HttpResponse {
 
 fn pairing_error(error: OAuthStoreError) -> HttpResponse {
     match error {
-        OAuthStoreError::PairingLocked => local_error(
-            "pairing is temporarily locked; ask the owner to run `journal mcp pairing generate`.",
-        ),
+        OAuthStoreError::PairingLocked => {
+            local_error("this pairing code no longer works. make a new one in the agents app.")
+        }
         OAuthStoreError::TransactionNotFound
         | OAuthStoreError::TransactionExpired
         | OAuthStoreError::TransactionExhausted => expired_error(),
         OAuthStoreError::NoActivePairing => {
-            local_error("no active pairing code; ask the owner to generate one.")
+            local_error("there's no open pairing code. make one in the agents app.")
         }
         _ => local_error("authorization is temporarily unavailable"),
     }
@@ -1229,7 +1229,10 @@ mod tests {
     async fn post_happy_path_issues_a_redeemable_code() {
         let journal = journal_root();
         let oauth = runtime(&journal);
-        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let get = get_with(
             &oauth,
             FakeIo::ok("fixture"),
@@ -1280,7 +1283,10 @@ mod tests {
     async fn post_wrong_code_retries_then_exhausts() {
         let journal = journal_root();
         let oauth = runtime(&journal);
-        oauth.store.generate_pairing_code().unwrap();
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
         let transaction_id = hidden_transaction_id(&body_text(&get));
         let body = format!(
@@ -1317,7 +1323,10 @@ mod tests {
         )
         .unwrap();
         let oauth = runtime(&journal);
-        oauth.store.generate_pairing_code().unwrap();
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
         let transaction_id = hidden_transaction_id(&body_text(&get));
         let response = post_authorize(
@@ -1385,12 +1394,30 @@ mod tests {
         let (_tx, mut shutdown) = watch::channel(false);
         for door in ["relay", "byo", "lan"] {
             let journal = journal_root();
+            if door == "byo" {
+                let config_dir = journal.path().join("config");
+                std::fs::create_dir_all(&config_dir).unwrap();
+                std::fs::write(
+                    config_dir.join("journal.json"),
+                    serde_json::to_string(&serde_json::json!({
+                        "mcp_endpoint": {
+                            "byo_hostname": {
+                                "hostname": "journal.example",
+                                "enabled": true,
+                                "generation": 1
+                            }
+                        }
+                    }))
+                    .unwrap(),
+                )
+                .unwrap();
+            }
             create_sensitive_facet(&journal);
             let (_, oauth, resource) = public_doors(&journal)
                 .into_iter()
                 .find(|(name, _, _)| *name == door)
                 .unwrap();
-            oauth.store.generate_pairing_code().unwrap();
+            oauth.store.generate_pairing_code_with_door(door).unwrap();
             let registration = crate::oauth::dcr::register_with_io(
                 &post_request(&format!(r#"{{"redirect_uris":["{REDIRECT}"]}}"#)),
                 SOURCE,
@@ -1458,7 +1485,10 @@ mod tests {
         solstone_core_facets::create_facet(journal.path(), "work", "Work", "", "#123456", "", None)
             .unwrap();
         let oauth = runtime(&journal);
-        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let get = get_with(
             &oauth,
             FakeIo::ok("fixture"),
@@ -1556,7 +1586,10 @@ mod tests {
         let journal = journal_root();
         create_sensitive_facet(&journal);
         let oauth = runtime(&journal);
-        oauth.store.generate_pairing_code().unwrap();
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
         let transaction_id = hidden_transaction_id(&body_text(&get));
         for body in [
@@ -1584,7 +1617,10 @@ mod tests {
     async fn post_twenty_failures_lock_pairing_and_then_429() {
         let journal = journal_root();
         let oauth = runtime(&journal);
-        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         for _ in 0..4 {
             let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
             let transaction_id = hidden_transaction_id(&body_text(&get));
@@ -1657,7 +1693,10 @@ mod tests {
     async fn post_ignores_spoofed_redirect_and_state_fields() {
         let journal = journal_root();
         let oauth = runtime(&journal);
-        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let get = get_with(
             &oauth,
             FakeIo::ok("fixture"),
@@ -1687,7 +1726,10 @@ mod tests {
     async fn post_prunes_stale_generation_limiter_buckets() {
         let journal = journal_root();
         let oauth = runtime(&journal);
-        oauth.store.generate_pairing_code().unwrap();
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let old_generation = oauth.store.pairing_generation().unwrap();
         let overflow = IpAddr::V4(Ipv4Addr::from(u32::MAX));
         for index in 0..u32::MAX {
@@ -1700,7 +1742,10 @@ mod tests {
         }
         assert!(oauth.pairing_limiter.is_limited(overflow, old_generation));
 
-        oauth.store.generate_pairing_code().unwrap();
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let new_generation = oauth.store.pairing_generation().unwrap();
         assert_ne!(new_generation, old_generation);
 
@@ -1740,7 +1785,10 @@ mod tests {
             )
             .unwrap();
 
-        let pairing = unbound.store.generate_pairing_code().unwrap();
+        let pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
 
         let unknown_resp = post_authorize(
             &post_request(
@@ -1860,7 +1908,10 @@ mod tests {
         assert_eq!(resp_no_pairing.body, unknown_resp.body);
         assert_eq!(resp_no_pairing.extra_headers, unknown_resp.extra_headers);
 
-        let unbound_p2 = unbound.store.generate_pairing_code().unwrap();
+        let unbound_p2 = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         assert!(
             unbound
                 .store
@@ -1882,7 +1933,10 @@ mod tests {
                 "192.0.2.1",
             )
             .unwrap();
-        let _bound_p3 = bound.store.generate_pairing_code().unwrap();
+        let _bound_p3 = bound
+            .store
+            .generate_pairing_code_with_door("local")
+            .unwrap();
         bound.store.lock_pairing_code().unwrap();
         assert!(bound.store.current_pairing_code().unwrap().unwrap().locked);
 
@@ -1940,5 +1994,16 @@ mod tests {
                 .iter()
                 .any(|p| p["transaction_id"] == tx4)
         );
+    }
+
+    #[test]
+    fn consent_error_responses_omit_cli_command_references() {
+        let locked = super::pairing_error(super::OAuthStoreError::PairingLocked);
+        let locked_body = body_text(&locked);
+        assert!(!locked_body.contains("journal mcp pairing generate"));
+
+        let no_pairing = super::pairing_error(super::OAuthStoreError::NoActivePairing);
+        let no_pairing_body = body_text(&no_pairing);
+        assert!(!no_pairing_body.contains("journal mcp pairing generate"));
     }
 }

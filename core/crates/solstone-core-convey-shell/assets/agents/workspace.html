@@ -29,7 +29,7 @@
   .agents .check small{display:block}
   .agents .outcome.empty{padding:4px 8px;text-align:left}.agents .activity-row .outcome{flex:none;align-self:flex-start}
   .agents .door-lan{margin-top:16px;border-top:1px solid var(--hairline)}.agents .fp{font-size:.8rem;line-height:1.55;word-spacing:.12em;overflow-wrap:anywhere}.agents .addr-preview code{color:var(--muted)}
-  .agents .seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.agents .byo-setup{overflow-wrap:anywhere}
+  .agents .seg3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.agents .ways{display:grid;grid-template-columns:1fr;gap:10px}.agents .byo-setup{overflow-wrap:anywhere}
   @media(max-width:700px){.agents .seg3{grid-template-columns:1fr}}
   @media(max-width:640px){.agents h1{font-size:2rem}.agents .activity-row time{flex-basis:100%}.agents .seg2{grid-template-columns:1fr}.agents .lane-row{grid-template-columns:1fr;gap:4px}}
 </style>
@@ -343,43 +343,72 @@
 
   // ---- dialogs -----------------------------------------------------------------------------------
   function connectDialog() {
-    const lanWay = hasLan() && lanState() === 'on' && lanOpen().length > 0;
-    const otherOn = ownState() === 'on' || Boolean(state.enabled && meAddress());
-    const nearby = relayAvailable() ? 'on this computer, or anywhere through solstone.me' : 'on this computer';
-    const choices = [['other', nearby], ...(lanWay ? [['lan', 'on another computer on your wifi or VPN']] : []), ...(byoReady() ? [['byo', 'anywhere through your hostname']] : [])];
-    if (!otherOn) choices.shift();
-    if (!choices.length) choices.push(['other', nearby]);
+    const choices = [];
+    if (ownState() === 'on') choices.push(['local', 'on this computer']);
+    if (meState() === 'on' || meState() === 'renewal') choices.push(['relay', 'anywhere through solstone.me']);
+    if (hasLan() && lanState() === 'on' && lanOpen().length > 0) choices.push(['lan', 'on another computer on your wifi or VPN']);
+    if (byoReady()) choices.push(['byo', 'anywhere through your hostname']);
+
     if (choices.length === 1) connectWay = choices[0][0];
     else if (connectWay && !choices.some(([id]) => id === connectWay)) connectWay = null;
-    const wantLan = connectWay === 'lan';
-    const wantByo = connectWay === 'byo';
-    const codeMatches = code => wantByo ? code?.door === 'byo' : wantLan ? code?.door === 'lan' : code?.door !== 'byo' && code?.door !== 'lan';
-    const choice = choices.length > 1 ? `<div class="mstep" style="display:block"><p><strong>where is this agent?</strong></p><div class="seg3" role="radiogroup" aria-label="where is this agent">${choices.map(([id, name]) => `<button class="seg${connectWay === id ? ' is' : ''}" role="radio" aria-checked="${connectWay === id}" data-way="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${name}</span></span></button>`).join('')}</div></div>` : '';
-    const mark = markUnit();
+
     const close = `<button class="btn sm" style="float:right" data-close-modal>close</button><h2>connect an agent</h2>`;
-    if (!connectWay) return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent">${close}${choice}<p class="meta">pick where the agent is first. the pairing code works only for the one you pick.</p></article></div>`;
-    const addresses = [];
-    if (wantByo) {
-      addresses.push(`<div class="addr"><span>an agent anywhere · test this route from the agent's network</span><div><code>${esc(byoEndpoint())}</code><button class="btn sm" data-copy="${esc(byoEndpoint())}">copy</button></div></div>`);
-    } else if (wantLan) {
-      for (const address of lanOpen()) addresses.push(`<div class="addr"><span>an agent on another computer on your wifi or VPN · use the address on the same network as that computer</span><div><code>${esc(address.url)}</code><button class="btn sm" data-copy="${esc(address.url)}">copy</button></div></div>`);
-    } else {
-      if (ownState() === 'on') addresses.push(`<div class="addr"><span>an agent on this computer</span><div><code>${esc(doorAddress())}</code><button class="btn sm" data-copy="${esc(doorAddress())}">copy</button></div></div>`);
-      if (state.enabled && meAddress()) addresses.push(`<div class="addr"><span>an agent anywhere, through solstone.me · in Claude, add it as a custom connector</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></div></div>`);
+    if (!choices.length) {
+      connectWay = null;
+      return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="none">${close}<p class="meta">none of the ways an agent can reach your journal is ready right now.</p></article></div>`;
     }
-    const other = wantByo ? 'another address' : wantLan ? (byoReady() ? 'this computer, solstone.me or your hostname' : 'this computer and solstone.me') : (byoReady() ? 'your network or hostname' : 'your network');
-    const shown = pairingCode && codeMatches(pairingCode) ? pairingCode : null;
-    const open = state.pairing && !shown ? (codeMatches(state.pairing) ? `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>` : hasLan() ? `<p class="meta">the open code is for ${other}. make a new one for this agent. it replaces the open one.</p>` : `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>`) : '';
-    const code = shown
-      ? `<code class="copy-code">${esc(shown.code)}</code><p class="meta">works once. expires at ${esc(new Date(shown.expires_at).toLocaleTimeString())}.${wantLan ? ' this code works only for an agent on your network.' : wantByo ? ' this code works only at your hostname.' : ''}</p><button class="btn sm" data-action="new-code">make a new code</button>`
-      : `${state.pairing?.locked && codeMatches(state.pairing) ? `<p class="meta">the last code was entered wrong too many times, so it no longer works.</p>` : open}<button class="btn primary" data-action="new-code">make a pairing code</button><p class="meta">it works once and expires after 10 minutes.</p>`;
-    const step1 = `<div class="mstep"><span class="n">1</span><div><p>give your agent your journal's address, where it asks for an MCP server.</p>${addresses.length ? addresses.join('') : `<p class="meta">neither way is on right now. turn one on first.</p>`}${wantLan ? `<p class="meta">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>` : ''}<p class="meta">if an app already opened your journal's page on its own, go to step 2.</p></div></div>`;
+
+    const choice = `<div class="mstep" style="display:block"><p><strong>where is this agent?</strong></p><div class="ways" role="radiogroup" aria-label="where is this agent">${choices.map(([id, name]) => `<button class="seg${connectWay === id ? ' is' : ''}" role="radio" aria-checked="${connectWay === id}" data-way="${id}"><span class="segtop"><span class="radio" aria-hidden="true"></span><span class="segname">${name}</span></span></button>`).join('')}</div></div>`;
+    const mark = markUnit();
+    if (!connectWay) return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="none">${close}${choice}<p class="meta">pick where the agent is first. the pairing code works only for the one you pick.</p></article></div>`;
+
+    const addresses = [];
+    if (connectWay === 'byo') {
+      addresses.push(`<div class="addr"><span>an agent anywhere · test this route from the agent's network</span><div><code>${esc(byoEndpoint())}</code><button class="btn sm" data-copy="${esc(byoEndpoint())}">copy</button></div></div>`);
+    } else if (connectWay === 'lan') {
+      for (const address of lanOpen()) addresses.push(`<div class="addr"><span>an agent on another computer on your wifi or VPN · use the address on the same network as that computer</span><div><code>${esc(address.url)}</code><button class="btn sm" data-copy="${esc(address.url)}">copy</button></div></div>`);
+    } else if (connectWay === 'local') {
+      addresses.push(`<div class="addr"><span>an agent on this computer</span><div><code>${esc(doorAddress())}</code><button class="btn sm" data-copy="${esc(doorAddress())}">copy</button></div></div>`);
+    } else if (connectWay === 'relay') {
+      addresses.push(`<div class="addr"><span>an agent anywhere, through solstone.me · in Claude, add it as a custom connector</span><div><code>${esc(meEndpoint())}</code><button class="btn sm" data-copy="${esc(meEndpoint())}">copy</button></div></div>`);
+    }
+
+    const doorLabel = {local: 'this computer', relay: 'solstone.me', lan: 'your network', byo: 'your hostname'};
+    const openPairingKind = !state.pairing?.door
+      ? 'none'
+      : state.pairing.locked && state.pairing.door === connectWay
+        ? 'locked'
+        : state.pairing.door === connectWay
+          ? 'same'
+          : 'other';
+
+    let openMsg = '';
+    if (openPairingKind === 'locked') {
+      openMsg = `<p class="meta">the last code was entered wrong too many times, so it no longer works.</p>`;
+    } else if (openPairingKind === 'same') {
+      openMsg = `<p class="meta">a code is already open. codes are shown once; make a new one to see it.</p>`;
+    } else if (openPairingKind === 'other') {
+      const otherDoor = doorLabel[state.pairing.door] || 'another address';
+      openMsg = `<p class="meta">the open code is for ${otherDoor}. make a new one for this agent. it replaces the open one.</p>`;
+    }
+
+    const codeSuffix = pairingCode?.door === 'lan'
+      ? ' this code works only for an agent on your network.'
+      : pairingCode?.door === 'byo'
+        ? ' this code works only at your hostname.'
+        : '';
+
+    const code = pairingCode
+      ? `<div><code class="copy-code"${pairingCode.door ? ` data-code-door="${esc(pairingCode.door)}"` : ''}>${esc(pairingCode.code)}</code><p class="meta">works once. expires at ${esc(new Date(pairingCode.expires_at).toLocaleTimeString())}.${codeSuffix}</p><button class="btn sm" data-action="new-code">make a new code</button></div>`
+      : `<div>${openMsg}<button class="btn primary" data-action="new-code">make a pairing code</button><p class="meta">it works once and expires after 10 minutes.</p></div>`;
+
+    const step1 = `<div class="mstep"><span class="n">1</span><div><p>give your agent your journal's address, where it asks for an MCP server.</p>${addresses.length ? addresses.join('') : `<p class="meta">none of the ways an agent can reach your journal is ready right now.</p>`}${connectWay === 'lan' ? `<p class="meta">a key you created doesn't work at these addresses, so don't give one to an agent on your network.</p>` : ''}<p class="meta">if an app already opened your journal's page on its own, go to step 2.</p></div></div>`;
     const where = `<details><summary>certificate fingerprint</summary><p>your journal's certificate for these addresses has this SHA-256 fingerprint:</p><p><code class="fp">${esc(fingerprint())}</code></p><p>your browser shows it in the certificate's details.</p></details>`;
-    const step2 = wantLan
+    const step2 = connectWay === 'lan'
       ? `<div class="mstep"><span class="n">2</span><div><p>the browser on that computer opens your journal's page. it may warn about the certificate unless you have trusted your journal's LAN CA there. check the page shows ${mark ? 'this mark:' : "your journal's mark."}</p>${mark}${fingerprint() ? where : ''}</div></div>`
-      : `<div class="mstep"><span class="n">2</span><div><p>your browser opens your journal's page.${wantByo ? ' check the address is your hostname.' : ''} check it shows ${mark ? 'this mark:' : "your journal's mark."}</p>${mark}</div></div>`;
+      : `<div class="mstep"><span class="n">2</span><div><p>your browser opens your journal's page.${connectWay === 'byo' ? ' check the address is your hostname.' : ''} check it shows ${mark ? 'this mark:' : "your journal's mark."}</p>${mark}</div></div>`;
     const step3 = `<div class="mstep"><span class="n">3</span><div><p>enter a pairing code on that page.</p>${code}</div></div>`;
-    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent">${close}${choice}${step1}${step2}${step3}<p class="meta">a different mark, or not expecting this? close that page. nothing connects until you enter the code.</p></article></div>`;
+    return `<div class="modal" data-close-modal><article class="modal-card" role="dialog" aria-modal="true" aria-label="connect an agent" data-open-pairing="${openPairingKind}">${close}${choice}${step1}${step2}${step3}<p class="meta">a different mark, or not expecting this? close that page. nothing connects until you enter the code.</p></article></div>`;
   }
   function confirmDialog(kind) {
     if (kind === 'lan-off') {
@@ -508,11 +537,11 @@
 
   view.addEventListener('click', async event => {
     const target = event.target.closest('button,a,[data-close-modal]'); if (!target) return;
-    if (target.dataset.closeModal !== undefined && (target === event.target || target.tagName === 'BUTTON')) { if (dialog) { dialog = null; render(); } else target.closest('.modal')?.remove(); return; }
+    if (target.dataset.closeModal !== undefined && (target === event.target || target.tagName === 'BUTTON')) { pairingCode = null; if (dialog) { dialog = null; render(); } else target.closest('.modal')?.remove(); return; }
     if (target.closest('.modal-card') === null && target.dataset.closeModal !== undefined) return;
     const action = target.dataset.action;
     if (target.dataset.lane) { lane = target.dataset.lane; render(); return; }
-    if (target.dataset.way) { connectWay = target.dataset.way; render(); return; }
+    if (target.dataset.way) { connectWay = target.dataset.way; pairingCode = null; render(); return; }
     if (target.dataset.route) { event.preventDefault(); if (target.dataset.route === 'activity') await loadActivity(); else { route = {name: target.dataset.route}; render(); } return; }
     if (target.dataset.activityConnection) { await loadActivity(target.dataset.activityConnection); return; }
     if (target.dataset.connection) { const [kind,id] = target.dataset.connection.split(':'); route = {name:'connection', connection: state.connections.find(item => item.kind === kind && item.id === id)}; render(); return; }
@@ -520,7 +549,7 @@
     if (target.dataset.activityIndex) { const entry = activity.entries[Number(target.dataset.activityIndex)]; view.insertAdjacentHTML('beforeend', activityDetail(entry)); view.querySelector('.modal-card:last-of-type')?.insertAdjacentHTML('beforeend', targetLinks(entry)); return; }
     try {
       if (action === 'reload' || action === 'refresh') await reload(true);
-      else if (action === 'connect') { dialog = 'connect'; connectWay = null; render(); }
+      else if (action === 'connect') { dialog = 'connect'; connectWay = null; pairingCode = null; render(); }
       else if (action === 'me-off' || action === 'own-off' || action === 'lan-off') { dialog = action; render(); }
       else if (action === 'lan-on' || action === 'lan-door-off') { await api('/app/agents/api/lan-door', jsonOptions('PUT', {enabled: action === 'lan-on'})); dialog = null; await reload(true); }
       else if (action === 'own-on' || action === 'door-off') { await api('/app/agents/api/local-door', jsonOptions('PUT', {enabled: action === 'own-on'})); dialog = null; await reload(true); }
@@ -531,9 +560,19 @@
       else if (action === 'byo-replace') { if (!confirm("replace this journal's certificate registration? the public route will turn off and you must publish a new CAA record before turning it on again.")) return; await api('/app/agents/api/byo/account/replace', ownerOptions('POST')); await reload(true); }
       else if (action === 'turn-on') await turnOn();
       else if (action === 'turn-off') { await api('/app/agents/api/capability', jsonOptions('PUT', {enabled:false})); dialog = null; await reload(true); }
-      else if (action === 'dismiss-enable') { clearTimeout(enablePollTimer); enableOp = null; lastEnableView = ''; render(); }
-      else if (action === 'new-code') { const codeDoor = connectWay === 'lan' ? 'lan' : connectWay === 'byo' ? 'byo' : null; pairingCode = await api('/app/agents/api/pairing', codeDoor ? jsonOptions('POST', {door:codeDoor}) : ownerOptions('POST')); if (codeDoor && !pairingCode.door) pairingCode.door = codeDoor; state.pairing = pairingCode; render(); }
-      else if (action === 'filter-activity') { const params = new URLSearchParams(); const outcome = document.getElementById('a-outcome').value; const tool = document.getElementById('a-tool').value; const connection = document.getElementById('a-agent').value; const from = document.getElementById('a-from').value.replaceAll('-',''); const to = document.getElementById('a-to').value.replaceAll('-',''); if (outcome) params.set('outcome', outcome); if (tool) params.set('tool', tool); if (connection) params.set('connection', connection); if (from) params.set('from', from); if (to) params.set('to', to); activity = await api(`/app/agents/api/activity?${params}`); render(); }
+      else if (action === 'new-code') {
+        const choices = [];
+        if (ownState() === 'on') choices.push('local');
+        if (meState() === 'on' || meState() === 'renewal') choices.push('relay');
+        if (hasLan() && lanState() === 'on' && lanOpen().length > 0) choices.push('lan');
+        if (byoReady()) choices.push('byo');
+        if (connectWay && choices.includes(connectWay)) {
+          const res = await api('/app/agents/api/pairing', jsonOptions('POST', {door: connectWay}));
+          pairingCode = res;
+          state.pairing = {expires_at: res.expires_at, generation: res.generation, locked: false, door: res.door};
+          render();
+        }
+      }
       else if (target.dataset.savePermission) { const [kind,id] = target.dataset.savePermission.split(':'); const categories = [...document.querySelectorAll('input[name=category]:checked')].map(node => node.value); const scope = document.getElementById('scope').value; const facets = [...document.querySelectorAll('input[name=facet]:checked')].map(node => node.value); await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}/permission`, jsonOptions('PUT', {categories, scope, facets})); route = {name:'home'}; await reload(true); }
       else if (target.dataset.revoke) { const [kind,id] = target.dataset.revoke.split(':'); if (confirm('disconnect this agent? what it already read stays with it. its activity stays in your journal.')) { await api(`/app/agents/api/connections/${encodeURIComponent(kind)}/${encodeURIComponent(id)}`, ownerOptions('DELETE')); route = {name:'home'}; await reload(true); } }
       else if (target.dataset.rename) { const name = prompt('name this key', route.connection.name); if (name) { await api(`/app/agents/api/connections/bearer/${encodeURIComponent(target.dataset.rename)}`, jsonOptions('PATCH', {name})); route = {name:'home'}; await reload(true); } }

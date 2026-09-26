@@ -4153,17 +4153,26 @@ fn parse_mcp_pairing(args: &[OsString]) -> Result<McpPairingCommand, McpUsageErr
             if rest.is_empty() {
                 Ok(McpPairingCommand::Generate { door: None })
             } else if let [flag, door] = rest {
-                if flag != OsStr::new("--door") || door != OsStr::new("lan") {
+                if flag != OsStr::new("--door") {
                     return Err(McpUsageError(
-                        "expected optional `--door lan` argument".to_owned(),
+                        "expected optional `--door local|lan|solstone.me|hostname` argument"
+                            .to_owned(),
                     ));
                 }
-                Ok(McpPairingCommand::Generate {
-                    door: Some("lan".to_owned()),
-                })
+                let door_str = door.to_str().unwrap_or("");
+                match door_str {
+                    "local" | "lan" | "solstone.me" | "hostname" => {
+                        Ok(McpPairingCommand::Generate {
+                            door: Some(door_str.to_owned()),
+                        })
+                    }
+                    _ => Err(McpUsageError(
+                        "unknown door, choose one of local, lan, solstone.me, hostname".to_owned(),
+                    )),
+                }
             } else {
                 Err(McpUsageError(
-                    "expected optional `--door lan` argument".to_owned(),
+                    "expected optional `--door local|lan|solstone.me|hostname` argument".to_owned(),
                 ))
             }
         }
@@ -9181,6 +9190,14 @@ mod tests {
             )))
         );
         assert_eq!(
+            evaluate_args(&args(&["mcp", "pairing", "generate", "--door", "local"])),
+            Ok(Command::Mcp(McpCommand::Pairing(
+                McpPairingCommand::Generate {
+                    door: Some("local".to_owned())
+                }
+            )))
+        );
+        assert_eq!(
             evaluate_args(&args(&["mcp", "pairing", "generate", "--door", "lan"])),
             Ok(Command::Mcp(McpCommand::Pairing(
                 McpPairingCommand::Generate {
@@ -9188,6 +9205,36 @@ mod tests {
                 }
             )))
         );
+        assert_eq!(
+            evaluate_args(&args(&[
+                "mcp",
+                "pairing",
+                "generate",
+                "--door",
+                "solstone.me"
+            ])),
+            Ok(Command::Mcp(McpCommand::Pairing(
+                McpPairingCommand::Generate {
+                    door: Some("solstone.me".to_owned())
+                }
+            )))
+        );
+        assert_eq!(
+            evaluate_args(&args(&["mcp", "pairing", "generate", "--door", "hostname"])),
+            Ok(Command::Mcp(McpCommand::Pairing(
+                McpPairingCommand::Generate {
+                    door: Some("hostname".to_owned())
+                }
+            )))
+        );
+        assert!(matches!(
+            evaluate_args(&args(&["mcp", "pairing", "generate", "--door", "bad"])),
+            Ok(Command::McpUsage(McpUsageError(_)))
+        ));
+        assert!(matches!(
+            evaluate_args(&args(&["mcp", "pairing", "generate", "--bad", "local"])),
+            Ok(Command::McpUsage(McpUsageError(_)))
+        ));
         assert_eq!(
             evaluate_args(&args(&["mcp", "pairing", "revoke"])),
             Ok(Command::Mcp(McpCommand::Pairing(McpPairingCommand::Revoke)))

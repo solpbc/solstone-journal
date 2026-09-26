@@ -13,21 +13,32 @@ request.
 ## Local pairing
 
 ```
-journal mcp pairing generate
+journal mcp pairing generate [--door local|lan|solstone.me|hostname]
 journal mcp pairing revoke
 ```
 
 `generate` prints an 8-character pairing code once. It is valid for 10
-minutes and one successful use. The ledger stores only a hash. Generate
-and revoke always advance the pairing generation and invalidate any
-previous code.
+minutes and one successful use. The code works only at the door it was made
+for; with no `--door`, that door is this computer. A code made by an older
+version, which recorded no door, works nowhere. The ledger stores only a
+hash. Generate always advances the pairing generation and invalidates any
+previous code, replacing a locked code. Revoke clears a live code; revoke
+does not clear a code that has already expired.
 
 A transaction allows five wrong guesses; a sixth requires restarting
-authorization from the client. Twenty wrong guesses from the same source
-in the same generation lock the current pairing code. Locked pairing
-refuses further guesses without advancing generation. Recover with
-`journal mcp pairing generate` (new code, new generation) or `journal mcp
-pairing revoke`.
+authorization from the client. An attempt to redeem a pairing code at a
+different door fails with a pairing error and increments the failure count;
+five wrong attempts or door mismatches exhaust the transaction. Twenty wrong
+guesses from the same source in the same generation lock the current pairing
+code. Locked pairing refuses further guesses without advancing generation.
+Recover with `journal mcp pairing generate` (new code, new generation) or
+`journal mcp pairing revoke`.
+
+Downgrade considerations: 2.0.19 still accepts a `local` code at solstone.me;
+2.0.18 cannot read the OAuth file while a hostname code is in it; builds before
+2.0.18 cannot read it while any code with a door is in it; the record can
+outlast its 10 minutes. Before downgrading, make a new code with this version
+and then revoke it, which clears it.
 
 ## OAuth clients
 
@@ -82,3 +93,8 @@ If it is unreadable or corrupt, OAuth issuance and redemption fail closed
 independent and is not affected. Recover by restoring or removing the
 corrupt file. New OAuth state starts empty; existing OAuth grants are
 lost, static tokens are not.
+
+Once a pairing code carries a `door` field, an older binary that does not
+support per-door pairing will reject the entire `oauth.json` file as
+malformed, failing all OAuth operations until upgraded or until the pairing
+code is revoked/cleared.

@@ -741,7 +741,7 @@ mod tests {
         let binding = crate::oauth::RuntimeBinding::Unbound {
             canonical: "https://mcp.test/mcp".to_owned(),
         };
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = store
             .create_transaction(
                 client_record_id,

@@ -12,6 +12,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- when you connect an agent, you now choose between an agent on this computer and one that reaches your journal through solstone.me, instead of one choice for both. each pairing code works only the way you chose it for, so a code for an agent on this computer can't be used through solstone.me.
+- `journal mcp pairing generate` now makes a code for an agent on this computer unless you pass `--door lan`, `--door solstone.me` or `--door hostname`, and says which way the code works.
 - a DNSSEC-broken answer for your hostname is no longer treated as a passing check. if your resolver strips DNSSEC, that check still comes out the same way it does today.
 - renaming a facet now changes only its title. its name, the one commands and agent permissions use, stays the same, so what's filed under it stays put and every agent you've given it to keeps its access.
 - from this version on, once you delete or merge a facet, its name is never used again. a new facet with the same title gets a new name, so nothing filed under the old facet can end up in the new one.

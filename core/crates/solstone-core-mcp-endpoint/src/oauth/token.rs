@@ -251,7 +251,10 @@ mod tests {
             .store
             .register_client(CIMD_URL, vec![REDIRECT.to_owned()], None, "198.51.100.10")
             .unwrap();
-        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let transaction = oauth
             .store
             .create_transaction(
@@ -562,7 +565,10 @@ mod tests {
                 "198.51.100.10",
             )
             .unwrap();
-        let pairing = oauth.store.generate_pairing_code().unwrap();
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("local")
+            .unwrap();
         oauth
             .store
             .complete_pairing(&transaction, &pairing.code, &oauth.binding())

@@ -1572,45 +1572,58 @@ async fn generate_pairing(
     body: axum::body::Bytes,
 ) -> Response {
     let trimmed = body.trim_ascii();
-    let door = if trimmed.is_empty() {
-        None
-    } else {
-        match serde_json::from_slice::<Value>(&body) {
-            Ok(Value::Object(map)) => match map.get("door") {
-                None | Some(Value::Null) => None,
-                Some(Value::String(door_str)) => {
-                    if door_str == "lan" {
-                        Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_string())
-                    } else if cfg!(unix) && door_str == "byo" {
-                        Some("byo".to_string())
-                    } else {
-                        return refusal(
-                            "pairing_create_failed",
-                            "unsupported door",
-                            StatusCode::BAD_REQUEST,
-                        );
-                    }
-                }
-                _ => {
-                    return refusal(
-                        "pairing_create_failed",
-                        "invalid door field",
-                        StatusCode::BAD_REQUEST,
-                    );
-                }
-            },
-            _ => {
-                return refusal(
-                    "pairing_create_failed",
-                    "invalid request body",
-                    StatusCode::BAD_REQUEST,
-                );
-            }
+    if trimmed.is_empty() {
+        return refusal(
+            "pairing_create_failed",
+            "missing door",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    let val: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(_) => {
+            return refusal(
+                "pairing_create_failed",
+                "invalid request body",
+                StatusCode::BAD_REQUEST,
+            );
         }
     };
-    match OAuthStore::open(&journal).generate_pairing_code_with_door(door.as_deref()) {
-        Ok(created) => Json(json!({"code": created.code, "expires_at": created.expires_at, "generation": created.generation})).into_response(),
-        Err(error) => refusal("pairing_create_failed", error, StatusCode::INTERNAL_SERVER_ERROR),
+    let Value::Object(map) = val else {
+        return refusal(
+            "pairing_create_failed",
+            "invalid request body",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    let Some(Value::String(door_str)) = map.get("door") else {
+        return refusal(
+            "pairing_create_failed",
+            "invalid door field",
+            StatusCode::BAD_REQUEST,
+        );
+    };
+    if !matches!(door_str.as_str(), "local" | "relay" | "lan") && !(cfg!(unix) && door_str == "byo")
+    {
+        return refusal(
+            "pairing_create_failed",
+            "unsupported door",
+            StatusCode::BAD_REQUEST,
+        );
+    }
+    match OAuthStore::open(&journal).generate_pairing_code_with_door(door_str.as_str()) {
+        Ok(created) => Json(json!({
+            "code": created.code,
+            "expires_at": created.expires_at,
+            "generation": created.generation,
+            "door": created.door,
+        }))
+        .into_response(),
+        Err(error) => refusal(
+            "pairing_create_failed",
+            error,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
     }
 }
 
@@ -2558,5 +2571,94 @@ mod tests {
         let stale = state_value(root).unwrap();
         assert_eq!(stale["byo"]["socket_listening"], false);
         assert_eq!(stale["byo"]["dns_verdict"], "unchecked");
+    }
+
+    #[tokio::test]
+    async fn owner_api_pairing_generate_validates_door_and_preserves_oauth_file_on_refusal() {
+        use axum::body::to_bytes;
+
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-mcp-owner-pairing-test-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let root = dir.path();
+        let journal = Arc::new(root.to_path_buf());
+        let oauth_path = root.join("mcp-endpoint/oauth.json");
+
+        // 1. Empty body -> 400
+        let resp = generate_pairing(Extension(journal.clone()), axum::body::Bytes::new()).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!oauth_path.exists());
+
+        // 2. Missing door field -> 400
+        let resp =
+            generate_pairing(Extension(journal.clone()), axum::body::Bytes::from(r#"{}"#)).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!oauth_path.exists());
+
+        // 3. Non-string door -> 400
+        let resp = generate_pairing(
+            Extension(journal.clone()),
+            axum::body::Bytes::from(r#"{"door": 123}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!oauth_path.exists());
+
+        // 4. Invalid door symbol -> 400
+        let resp = generate_pairing(
+            Extension(journal.clone()),
+            axum::body::Bytes::from(r#"{"door": "unsupported"}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!oauth_path.exists());
+
+        // 5. Raw LAN resource string -> 400
+        let resp = generate_pairing(
+            Extension(journal.clone()),
+            axum::body::Bytes::from(r#"{"door": "urn:solstone:mcp-door:lan"}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!oauth_path.exists());
+
+        // 6. Valid door "relay" -> 200
+        let resp = generate_pairing(
+            Extension(journal.clone()),
+            axum::body::Bytes::from(r#"{"door": "relay"}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(oauth_path.exists());
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let val: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["door"], "relay");
+        assert!(val.get("code").is_some());
+        assert!(val.get("expires_at").is_some());
+        assert!(val.get("generation").is_some());
+
+        let bytes_after_relay = std::fs::read(&oauth_path).unwrap();
+
+        // 7. Invalid request when oauth.json already exists -> leaves file byte-identical
+        let resp = generate_pairing(
+            Extension(journal.clone()),
+            axum::body::Bytes::from(r#"{"door": "invalid"}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let bytes_after_refusal = std::fs::read(&oauth_path).unwrap();
+        assert_eq!(bytes_after_relay, bytes_after_refusal);
+
+        // 8. Valid door "local" -> 200
+        let resp = generate_pairing(
+            Extension(journal.clone()),
+            axum::body::Bytes::from(r#"{"door": "local"}"#),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), 1024).await.unwrap();
+        let val: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(val["door"], "local");
     }
 }

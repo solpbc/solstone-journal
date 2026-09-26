@@ -3352,9 +3352,7 @@ mod full_tests {
 
         // 6. POST /authorize with pairing code
         let store = OAuthStore::open(journal);
-        let pairing = store
-            .generate_pairing_code_with_door(Some(MCP_LAN_DOOR_RESOURCE))
-            .unwrap();
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
         let auth_form = format!(
             "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
             query_value_encode(&tx_id),
@@ -3631,9 +3629,7 @@ mod full_tests {
         let tx_id = hidden_transaction_id(&String::from_utf8(body).unwrap());
 
         let store = OAuthStore::open(journal);
-        let pairing = store
-            .generate_pairing_code_with_door(Some(MCP_LAN_DOOR_RESOURCE))
-            .unwrap();
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
         let auth_form = format!(
             "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
             query_value_encode(&tx_id),
@@ -3771,9 +3767,7 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        let p_lan = store
-            .generate_pairing_code_with_door(Some(MCP_LAN_DOOR_RESOURCE))
-            .unwrap();
+        let p_lan = store.generate_pairing_code_with_door("lan").unwrap();
         let auth_lan = store
             .complete_pairing_with_permission(&tx_lan, &p_lan.code, None, &lan_runtime.binding())
             .unwrap();
@@ -3801,7 +3795,7 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        let p_local = store.generate_pairing_code_with_door(None).unwrap();
+        let p_local = store.generate_pairing_code_with_door("local").unwrap();
         let auth_local = store
             .complete_pairing_with_permission(
                 &tx_local,
@@ -3834,7 +3828,7 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        let p_unbound = store.generate_pairing_code_with_door(None).unwrap();
+        let p_unbound = store.generate_pairing_code_with_door("relay").unwrap();
         let auth_unbound = store
             .complete_pairing_with_permission(
                 &tx_unbound,
@@ -3988,9 +3982,7 @@ mod full_tests {
         let challenge = pkce_challenge();
 
         // 1. Pairing code stored with door MCP_LAN_DOOR_RESOURCE
-        let pairing_lan = store
-            .generate_pairing_code_with_door(Some(MCP_LAN_DOOR_RESOURCE))
-            .unwrap();
+        let pairing_lan = store.generate_pairing_code_with_door("lan").unwrap();
 
         let tx1 = store
             .create_transaction(
@@ -4062,15 +4054,25 @@ mod full_tests {
                 .is_ok()
         );
 
-        // 2. Unbound pairing code
-        let pairing_unbound = store.generate_pairing_code_with_door(None).unwrap();
-
-        // Unbound oauth.json has no "door" key (null in JSON)
-        let store_json: Value = serde_json::from_str(
-            &fs::read_to_string(journal.join("mcp-endpoint/oauth.json")).unwrap(),
-        )
-        .unwrap();
-        assert!(store_json["pairing"]["door"].is_null());
+        // 2. Planted doorless pairing code fails across all doors
+        let code = "K7Q2M9XA";
+        let mut hasher = Sha256::new();
+        hasher.update(code.as_bytes());
+        let digest = hasher.finalize();
+        let verifier =
+            base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, digest);
+        let oauth_path = journal.join("mcp-endpoint/oauth.json");
+        let mut file: serde_json::Value =
+            serde_json::from_slice(&fs::read(&oauth_path).unwrap()).unwrap();
+        file["pairing"] = serde_json::json!({
+            "verifier": verifier,
+            "expires_at": (Utc::now() + chrono::Duration::seconds(600)).to_rfc3339(),
+            "generation": 2,
+            "locked": false,
+            "door": null,
+            "config_generation": null,
+        });
+        fs::write(&oauth_path, serde_json::to_vec(&file).unwrap()).unwrap();
 
         let tx4 = store
             .create_transaction(
@@ -4084,14 +4086,9 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        // Unbound pairing fails on LAN runtime
+        // Doorless pairing fails on LAN runtime
         assert!(matches!(
-            store.complete_pairing_with_permission(
-                &tx4,
-                &pairing_unbound.code,
-                None,
-                &lan_runtime.binding(),
-            ),
+            store.complete_pairing_with_permission(&tx4, code, None, &lan_runtime.binding(),),
             Err(crate::oauth::store::OAuthStoreError::PairingMismatch)
         ));
 
@@ -4107,16 +4104,10 @@ mod full_tests {
                 "127.0.0.1",
             )
             .unwrap();
-        // Unbound pairing completes on local door
-        assert!(
-            store
-                .complete_pairing_with_permission(
-                    &tx5,
-                    &pairing_unbound.code,
-                    None,
-                    &local_runtime.binding(),
-                )
-                .is_ok()
-        );
+        // Doorless pairing also fails on local door
+        assert!(matches!(
+            store.complete_pairing_with_permission(&tx5, code, None, &local_runtime.binding(),),
+            Err(crate::oauth::store::OAuthStoreError::PairingMismatch)
+        ));
     }
 }

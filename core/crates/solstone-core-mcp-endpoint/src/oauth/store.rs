@@ -53,6 +53,7 @@ pub struct CreatedPairingCode {
     pub code: String,
     pub expires_at: DateTime<Utc>,
     pub generation: u64,
+    pub door: String,
 }
 
 /// Non-secret state for the owner's currently active pairing window.
@@ -62,6 +63,17 @@ pub struct PairingCodeSummary {
     pub generation: u64,
     pub locked: bool,
     pub door: Option<String>,
+}
+
+pub(crate) fn stored_door_to_symbol(door: Option<&str>) -> Option<String> {
+    match door {
+        None => None,
+        Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE) => Some("lan".to_string()),
+        Some("local") => Some("local".to_string()),
+        Some("relay") => Some("relay".to_string()),
+        Some(d) if d.starts_with("https://") => Some("byo".to_string()),
+        Some(_) => None,
+    }
 }
 
 /// Authorization code plus the GET-bound redirect fields.
@@ -292,14 +304,9 @@ impl OAuthStore {
         }
     }
 
-    /// Generate one pairing code, replacing any previous code.
-    pub fn generate_pairing_code(&self) -> Result<CreatedPairingCode, OAuthStoreError> {
-        self.generate_pairing_code_with_random_and_door(&SystemRandomSource, None)
-    }
-
     pub fn generate_pairing_code_with_door(
         &self,
-        door: Option<&str>,
+        door: &str,
     ) -> Result<CreatedPairingCode, OAuthStoreError> {
         self.generate_pairing_code_with_random_and_door(&SystemRandomSource, door)
     }
@@ -307,11 +314,16 @@ impl OAuthStore {
     pub(crate) fn generate_pairing_code_with_random_and_door(
         &self,
         random: &dyn RandomSource,
-        door: Option<&str>,
+        door: &str,
     ) -> Result<CreatedPairingCode, OAuthStoreError> {
-        let mut config_generation = None;
-        let door_stored = if let Some(door_str) = door {
-            if door_str == "byo" || door_str.starts_with("https://") {
+        let (door_stored, config_generation) = match door {
+            "local" => (Some("local".to_string()), None),
+            "relay" => (Some("relay".to_string()), None),
+            "lan" => (
+                Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_string()),
+                None,
+            ),
+            "byo" => {
                 let config = solstone_core_journal_config::read_journal_config(&self.root)
                     .map_err(|_| OAuthStoreError::BindingMismatch)?;
                 let byo = solstone_core_journal_config::byo_hostname_config(&config);
@@ -323,18 +335,15 @@ impl OAuthStore {
                 let Some(hostname) = byo_cfg.hostname else {
                     return Err(OAuthStoreError::BindingMismatch);
                 };
-                config_generation = Some(byo_cfg.generation);
-                Some(format!("https://{hostname}/mcp"))
-            } else if door_str == "lan"
-                || door_str == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-            {
-                Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_string())
-            } else {
-                Some(door_str.to_owned())
+                (
+                    Some(format!("https://{hostname}/mcp")),
+                    Some(byo_cfg.generation),
+                )
             }
-        } else {
-            None
+            _ => return Err(OAuthStoreError::BindingMismatch),
         };
+        let door_symbol = stored_door_to_symbol(door_stored.as_deref())
+            .ok_or(OAuthStoreError::BindingMismatch)?;
         let mut code_bytes = [0_u8; PAIRING_CODE_BYTES];
         fill_exact(random, &mut code_bytes)?;
         let code = encode_pairing_code(&code_bytes);
@@ -355,6 +364,7 @@ impl OAuthStore {
                 code,
                 expires_at,
                 generation,
+                door: door_symbol,
             })
         })
     }
@@ -379,15 +389,7 @@ impl OAuthStore {
                 expires_at: pairing.expires_at,
                 generation: pairing.generation,
                 locked: pairing.locked,
-                door: pairing.door.as_deref().and_then(|d| {
-                    if d == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE {
-                        Some("lan".to_string())
-                    } else if d == "byo" || d.starts_with("https://") {
-                        Some("byo".to_string())
-                    } else {
-                        None
-                    }
-                }),
+                door: stored_door_to_symbol(pairing.door.as_deref()),
             })
         }))
     }
@@ -1328,37 +1330,28 @@ fn consume_pairing_code(
         path: PathBuf::from(OAUTH_FILE),
     })?;
     let door_matches = match pairing.door.as_deref() {
-        None => match binding {
-            super::RuntimeBinding::Unbound { .. } => true,
+        None => false,
+        Some("relay") => matches!(binding, super::RuntimeBinding::Unbound { .. }),
+        Some("local") => match binding {
             super::RuntimeBinding::Bound { canonical } => {
                 canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
             }
-            super::RuntimeBinding::Byo { .. } => false,
+            _ => false,
         },
-        Some(required) => match binding {
+        Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE) => match binding {
+            super::RuntimeBinding::Bound { canonical } => {
+                canonical == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+            }
+            _ => false,
+        },
+        Some(required) if required.starts_with("https://") => match binding {
             super::RuntimeBinding::Byo {
                 canonical,
                 generation,
-            } => {
-                (required == "byo" || canonical == required)
-                    && pairing.config_generation == Some(*generation)
-            }
-            super::RuntimeBinding::Bound { canonical } => {
-                if required == "lan"
-                    || required == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                {
-                    canonical == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                } else if required == "local" {
-                    canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                } else {
-                    canonical == required
-                }
-            }
-            // A code made for the local door works only there.
-            super::RuntimeBinding::Unbound { canonical } => {
-                required != "local" && canonical == required
-            }
+            } => canonical == required && pairing.config_generation == Some(*generation),
+            _ => false,
         },
+        Some(_) => false,
     };
     let matches =
         presented_digest.is_some_and(|digest| bool::from(digest.ct_eq(&verifier))) && door_matches;
@@ -1578,6 +1571,28 @@ mod tests {
             .unwrap()
     }
 
+    fn open_transaction_for_binding(
+        store: &OAuthStore,
+        client_id: &str,
+        binding: &RuntimeBinding,
+        source: &str,
+    ) -> String {
+        let challenge = sha256_b64(b"pkce-verifier");
+        store
+            .create_transaction_with_generation(
+                client_id,
+                "http://127.0.0.1/callback",
+                binding.canonical(),
+                "https://mcp.test",
+                &challenge,
+                "S256",
+                Some("state-1"),
+                source,
+                binding.stored_grant_generation(),
+            )
+            .unwrap()
+    }
+
     struct ShortRandom;
 
     impl RandomSource for ShortRandom {
@@ -1609,10 +1624,11 @@ mod tests {
     fn generate_and_reread_round_trip() {
         let journal = journal_root();
         let store = store_in(&journal);
-        let created = store.generate_pairing_code().unwrap();
+        let created = store.generate_pairing_code_with_door("local").unwrap();
         assert_eq!(created.generation, 1);
         assert_eq!(store.pairing_generation().unwrap(), 1);
         assert_eq!(created.code.len(), 8);
+        assert_eq!(created.door, "local");
     }
 
     #[test]
@@ -1620,7 +1636,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -1641,7 +1657,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         for _ in 0..5 {
             assert!(matches!(
@@ -1664,7 +1680,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let generation = pairing.generation;
         store.lock_pairing_code().unwrap();
         assert_eq!(store.pairing_generation().unwrap(), generation);
@@ -1680,11 +1696,11 @@ mod tests {
     fn generate_and_revoke_bump_generation_and_clear_lock() {
         let journal = journal_root();
         let store = store_in(&journal);
-        let first = store.generate_pairing_code().unwrap();
+        let first = store.generate_pairing_code_with_door("relay").unwrap();
         store.lock_pairing_code().unwrap();
         store.revoke_pairing_code().unwrap();
         assert_eq!(store.pairing_generation().unwrap(), 0);
-        let second = store.generate_pairing_code().unwrap();
+        let second = store.generate_pairing_code_with_door("relay").unwrap();
         assert_eq!(second.generation, first.generation + 2);
         let client = seed_client(&store, "192.0.2.1");
         let transaction = open_transaction(&store, &client, "192.0.2.1");
@@ -1698,9 +1714,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store
-            .generate_pairing_code_with_door(Some("local"))
-            .unwrap();
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         assert!(matches!(
             store.complete_pairing(&transaction, &pairing.code, &test_binding()),
@@ -1721,7 +1735,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -1739,7 +1753,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client_id = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client_id, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -1768,7 +1782,7 @@ mod tests {
         ));
 
         set_now(start.timestamp());
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let still_open = open_transaction(&store, &client_id, "192.0.2.8");
         let expiring = open_transaction(&store, &client_id, "192.0.2.9");
         let late = open_transaction(&store, &client_id, "192.0.2.10");
@@ -1788,12 +1802,12 @@ mod tests {
             ),
             Err(OAuthStoreError::CodeExpired | OAuthStoreError::InvalidToken)
         ));
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         store
             .complete_pairing(&still_open, &pairing.code, &test_binding())
             .expect("unpaired transaction remains valid for 10 minutes");
         set_now(start.timestamp() + PENDING_TRANSACTION_TTL_SECS + 1);
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         assert!(matches!(
             store.complete_pairing(&late, &pairing.code, &test_binding()),
             Err(OAuthStoreError::TransactionExpired | OAuthStoreError::TransactionNotFound)
@@ -1805,7 +1819,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -1921,7 +1935,7 @@ mod tests {
 
         TEST_MAX_STATE_BYTES.with(|limit| limit.set(Some(64)));
         assert!(matches!(
-            store.generate_pairing_code(),
+            store.generate_pairing_code_with_door("relay"),
             Err(OAuthStoreError::StateTooLarge)
         ));
     }
@@ -1934,7 +1948,7 @@ mod tests {
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("oauth.json");
         fs::write(&path, b"not json").unwrap();
-        assert!(store.generate_pairing_code().is_err());
+        assert!(store.generate_pairing_code_with_door("relay").is_err());
         assert_eq!(fs::read(&path).unwrap(), b"not json");
     }
 
@@ -1943,7 +1957,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         assert!(matches!(
-            store.generate_pairing_code_with_random_and_door(&ShortRandom, None),
+            store.generate_pairing_code_with_random_and_door(&ShortRandom, "relay"),
             Err(OAuthStoreError::Randomness)
         ));
         assert!(!journal.path().join("mcp-endpoint/oauth.json").exists());
@@ -1954,7 +1968,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -1995,7 +2009,7 @@ mod tests {
     }
 
     fn redeem_access(store: &OAuthStore, client_record_id: &str, client_id: &str) -> String {
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(store, client_record_id, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -2054,7 +2068,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -2159,7 +2173,7 @@ mod tests {
         let used = seed_client(&store, "192.0.2.9");
         redeem_access(&store, &used, "https://client.example/cimd.json");
         set_now(start.timestamp() + CLIENT_UNUSED_TTL_SECS + 1);
-        store.generate_pairing_code().unwrap();
+        store.generate_pairing_code_with_door("relay").unwrap();
         assert!(
             store
                 .lookup_client_by_cimd_url("https://client.example/unused.json")
@@ -2180,7 +2194,7 @@ mod tests {
         let journal = journal_root();
         let store = store_in(&journal);
         let client = seed_client(&store, "192.0.2.1");
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let transaction = open_transaction(&store, &client, "192.0.2.1");
         let issued = store
             .complete_pairing(&transaction, &pairing.code, &test_binding())
@@ -2229,7 +2243,10 @@ mod tests {
         let bound = OAuthRuntime::new_bound(journal.path(), "http://127.0.0.1:7659".to_owned());
 
         let unbound_client = seed_client(&unbound.store, "192.0.2.1");
-        let unbound_pairing = unbound.store.generate_pairing_code().unwrap();
+        let unbound_pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let unbound_tx = unbound
             .store
             .create_transaction(
@@ -2272,7 +2289,10 @@ mod tests {
             Err(OAuthStoreError::InvalidToken)
         ));
 
-        let bound_pairing = bound.store.generate_pairing_code().unwrap();
+        let bound_pairing = bound
+            .store
+            .generate_pairing_code_with_door("local")
+            .unwrap();
         let bound_tx = bound
             .store
             .create_transaction(
@@ -2393,7 +2413,10 @@ mod tests {
             )
             .unwrap();
 
-        let pairing = unbound.store.generate_pairing_code().unwrap();
+        let pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let challenge = sha256_b64(b"flow-verifier");
         let tx = unbound
             .store
@@ -2444,7 +2467,10 @@ mod tests {
                 .unwrap();
         }
 
-        let _ = unbound.store.generate_pairing_code().unwrap();
+        let _ = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let _ = unbound
             .store
             .create_transaction(
@@ -2517,9 +2543,16 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let pairing_allowed: HashSet<&str> = ["verifier", "expires_at", "generation", "locked"]
-            .into_iter()
-            .collect();
+        let pairing_allowed: HashSet<&str> = [
+            "verifier",
+            "expires_at",
+            "generation",
+            "locked",
+            "door",
+            "config_generation",
+        ]
+        .into_iter()
+        .collect();
 
         for key in value.as_object().unwrap().keys() {
             assert!(
@@ -2580,7 +2613,7 @@ mod tests {
                     "192.0.2.50",
                 )
                 .unwrap();
-            let pairing = store.generate_pairing_code().unwrap();
+            let pairing = store.generate_pairing_code_with_door("relay").unwrap();
             let tx = store
                 .create_transaction(
                     &client.id,
@@ -2654,7 +2687,7 @@ mod tests {
                 "192.0.2.60",
             )
             .unwrap();
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let tx = store
             .create_transaction(
                 &oldest_client.id,
@@ -2816,7 +2849,7 @@ mod tests {
                 "192.0.2.71",
             )
             .unwrap();
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         set_now(t + 400);
         let _auth = store
             .complete_pairing(&tx, &pairing.code, &test_binding())
@@ -2878,7 +2911,10 @@ mod tests {
                 "192.0.2.80",
             )
             .unwrap();
-        let pairing = unbound.store.generate_pairing_code().unwrap();
+        let pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let tx = unbound
             .store
             .create_transaction(
@@ -2977,7 +3013,7 @@ mod tests {
                 "192.0.2.90",
             )
             .unwrap();
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
         let tx = store
             .create_transaction(
                 &target_client.id,
@@ -3154,7 +3190,7 @@ mod tests {
                     "192.0.2.100",
                 )
                 .unwrap();
-            let pairing = store.generate_pairing_code().unwrap();
+            let pairing = store.generate_pairing_code_with_door("relay").unwrap();
             let tx = store
                 .create_transaction(
                     &client.id,
@@ -3454,7 +3490,7 @@ mod tests {
             .unwrap();
 
         // 1. Pairing code with door="byo" and generation=1
-        let created_pairing = store.generate_pairing_code_with_door(Some("byo")).unwrap();
+        let created_pairing = store.generate_pairing_code_with_door("byo").unwrap();
 
         // Completing on local_binding or lan_binding fails
         assert!(matches!(
@@ -3501,7 +3537,7 @@ mod tests {
             )
             .unwrap();
 
-        let unbound_pairing = store.generate_pairing_code().unwrap();
+        let unbound_pairing = store.generate_pairing_code_with_door("relay").unwrap();
 
         assert!(matches!(
             store.complete_pairing(&tx_id2, &unbound_pairing.code, &byo_binding_gen1),
@@ -3571,5 +3607,484 @@ mod tests {
 
         assert_ne!(local_reg.id, byo_reg.id);
         assert_eq!(local_reg.client_id, byo_reg.client_id);
+    }
+
+    #[test]
+    fn relay_pairing_code_accepted_on_unbound_refused_on_loopback_lan_and_hostname() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+
+        let unbound_binding = test_binding();
+        let loopback_binding = RuntimeBinding::Bound {
+            canonical: "http://127.0.0.1:7659/mcp".to_owned(),
+        };
+        let lan_binding = RuntimeBinding::Bound {
+            canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+        };
+        let byo_binding = RuntimeBinding::Byo {
+            canonical: "https://hostname.example/mcp".to_owned(),
+            generation: 1,
+        };
+
+        // 1. Refused on loopback
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &loopback_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &loopback_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 2. Refused on LAN
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &lan_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &lan_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 3. Refused on BYO
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &byo_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &byo_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 4. Accepted on unbound
+        let pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &unbound_binding, "192.0.2.1");
+        let completed = store
+            .complete_pairing(&tx, &pairing.code, &unbound_binding)
+            .expect("relay code accepted on unbound");
+        assert_eq!(completed.redirect_uri, "http://127.0.0.1/callback");
+    }
+
+    #[test]
+    fn doorless_pairing_code_refused_across_all_doors_and_increments_failure_count() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+
+        let code = "K7Q2M9XA";
+        let verifier = sha256_b64(code.as_bytes());
+        let now = Utc::now();
+
+        let bindings = vec![
+            test_binding(),
+            RuntimeBinding::Bound {
+                canonical: "http://127.0.0.1:7659/mcp".to_owned(),
+            },
+            RuntimeBinding::Bound {
+                canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+            },
+            RuntimeBinding::Byo {
+                canonical: "https://hostname.example/mcp".to_owned(),
+                generation: 1,
+            },
+        ];
+
+        for (idx, binding) in bindings.iter().enumerate() {
+            let tx = open_transaction_for_binding(&store, &client, binding, "192.0.2.1");
+
+            // Plant a doorless pairing row
+            let path = journal.path().join("mcp-endpoint/oauth.json");
+            let mut file = store.read_store().unwrap();
+            file.pairing = Some(super::StoredPairing {
+                verifier: verifier.clone(),
+                expires_at: now + Duration::seconds(600),
+                generation: (idx + 1) as u64,
+                locked: false,
+                door: None,
+                config_generation: None,
+            });
+            fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+
+            assert!(matches!(
+                store.complete_pairing(&tx, code, binding),
+                Err(OAuthStoreError::PairingMismatch)
+            ));
+
+            let read_back = store.read_store().unwrap();
+            let pending_tx = read_back
+                .pending
+                .iter()
+                .find(|p| p.transaction_id == tx)
+                .expect("pending tx exists");
+            assert_eq!(pending_tx.failure_count, 1);
+        }
+    }
+
+    #[test]
+    fn local_pairing_code_accepted_on_loopback_refused_on_unbound_lan_and_hostname() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+
+        let unbound_binding = test_binding();
+        let loopback_binding = RuntimeBinding::Bound {
+            canonical: "http://127.0.0.1:7659/mcp".to_owned(),
+        };
+        let lan_binding = RuntimeBinding::Bound {
+            canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+        };
+        let byo_binding = RuntimeBinding::Byo {
+            canonical: "https://hostname.example/mcp".to_owned(),
+            generation: 1,
+        };
+
+        // 1. Refused on unbound
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &unbound_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &unbound_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 2. Refused on LAN
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &lan_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &lan_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 3. Refused on BYO
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &byo_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &byo_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 4. Accepted on loopback
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &loopback_binding, "192.0.2.1");
+        let completed = store
+            .complete_pairing(&tx, &pairing.code, &loopback_binding)
+            .expect("local code accepted on loopback");
+        assert_eq!(completed.redirect_uri, "http://127.0.0.1/callback");
+    }
+
+    #[test]
+    fn invalid_mint_door_symbols_and_raw_resources_rejected_pre_mutate_leaving_file_identical() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+
+        // Case A: file does not exist yet
+        let invalid_symbols = [
+            "urn:solstone:mcp-door:lan",
+            "https://example.com/mcp",
+            "unknown",
+            "",
+            "byo", // byo fails because no config exists
+            "local ",
+            "RELAY",
+        ];
+
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+
+        for sym in invalid_symbols {
+            assert!(matches!(
+                store.generate_pairing_code_with_door(sym),
+                Err(OAuthStoreError::BindingMismatch)
+            ));
+            assert!(!path.exists(), "no file created for symbol {sym}");
+        }
+
+        // Case B: file exists with initial content
+        let initial_pairing = store.generate_pairing_code_with_door("relay").unwrap();
+        assert_eq!(initial_pairing.door, "relay");
+        let initial_bytes = fs::read(&path).unwrap();
+
+        for sym in invalid_symbols {
+            assert!(matches!(
+                store.generate_pairing_code_with_door(sym),
+                Err(OAuthStoreError::BindingMismatch)
+            ));
+            let current_bytes = fs::read(&path).unwrap();
+            assert_eq!(
+                initial_bytes, current_bytes,
+                "file modified for symbol {sym}"
+            );
+        }
+    }
+
+    #[test]
+    fn stored_pairing_json_keys_strictly_match_schema_with_conditional_config_generation() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+
+        // 1. local
+        let p = store.generate_pairing_code_with_door("local").unwrap();
+        assert_eq!(p.door, "local");
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).expect("reads json");
+        let pairing_obj = value["pairing"].as_object().unwrap();
+        assert_eq!(pairing_obj["door"].as_str(), Some("local"));
+        assert!(!pairing_obj.contains_key("config_generation"));
+
+        // 2. relay
+        let p = store.generate_pairing_code_with_door("relay").unwrap();
+        assert_eq!(p.door, "relay");
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).expect("reads json");
+        let pairing_obj = value["pairing"].as_object().unwrap();
+        assert_eq!(pairing_obj["door"].as_str(), Some("relay"));
+        assert!(!pairing_obj.contains_key("config_generation"));
+
+        // 3. lan
+        let p = store.generate_pairing_code_with_door("lan").unwrap();
+        assert_eq!(p.door, "lan");
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).expect("reads json");
+        let pairing_obj = value["pairing"].as_object().unwrap();
+        assert_eq!(
+            pairing_obj["door"].as_str(),
+            Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE)
+        );
+        assert!(!pairing_obj.contains_key("config_generation"));
+
+        // 4. byo
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_string(&serde_json::json!({
+                "mcp_endpoint": {
+                    "byo_hostname": {
+                        "hostname": "byo.example.com",
+                        "enabled": true,
+                        "generation": 42
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let p = store.generate_pairing_code_with_door("byo").unwrap();
+        assert_eq!(p.door, "byo");
+        let value: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).expect("reads json");
+        let pairing_obj = value["pairing"].as_object().unwrap();
+        assert_eq!(
+            pairing_obj["door"].as_str(),
+            Some("https://byo.example.com/mcp")
+        );
+        assert_eq!(pairing_obj["config_generation"].as_u64(), Some(42));
+
+        let allowed_keys: HashSet<&str> = [
+            "verifier",
+            "expires_at",
+            "generation",
+            "locked",
+            "door",
+            "config_generation",
+        ]
+        .into_iter()
+        .collect();
+
+        for key in pairing_obj.keys() {
+            assert!(
+                allowed_keys.contains(key.as_str()),
+                "unexpected key {key} in pairing json"
+            );
+        }
+    }
+
+    #[test]
+    fn lan_pairing_code_accepted_on_lan_refused_on_loopback_unbound_and_hostname() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+
+        let unbound_binding = test_binding();
+        let loopback_binding = RuntimeBinding::Bound {
+            canonical: "http://127.0.0.1:7659/mcp".to_owned(),
+        };
+        let lan_binding = RuntimeBinding::Bound {
+            canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+        };
+        let byo_binding = RuntimeBinding::Byo {
+            canonical: "https://hostname.example/mcp".to_owned(),
+            generation: 1,
+        };
+
+        // 1. Refused on unbound
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &unbound_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &unbound_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 2. Refused on loopback
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &loopback_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &loopback_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 3. Refused on BYO
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &byo_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &byo_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 4. Accepted on LAN
+        let pairing = store.generate_pairing_code_with_door("lan").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &lan_binding, "192.0.2.1");
+        let completed = store
+            .complete_pairing(&tx, &pairing.code, &lan_binding)
+            .expect("lan code accepted on lan");
+        assert_eq!(completed.redirect_uri, "http://127.0.0.1/callback");
+    }
+
+    #[test]
+    fn byo_pairing_code_accepted_on_matching_hostname_refused_on_other_doors_and_mismatched_generation()
+     {
+        let journal = journal_root();
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_string(&serde_json::json!({
+                "mcp_endpoint": {
+                    "byo_hostname": {
+                        "hostname": "byo.example.com",
+                        "enabled": true,
+                        "generation": 42
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+
+        let unbound_binding = test_binding();
+        let loopback_binding = RuntimeBinding::Bound {
+            canonical: "http://127.0.0.1:7659/mcp".to_owned(),
+        };
+        let lan_binding = RuntimeBinding::Bound {
+            canonical: solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE.to_owned(),
+        };
+        let byo_matching_binding = RuntimeBinding::Byo {
+            canonical: "https://byo.example.com/mcp".to_owned(),
+            generation: 42,
+        };
+        let byo_mismatched_gen = RuntimeBinding::Byo {
+            canonical: "https://byo.example.com/mcp".to_owned(),
+            generation: 43,
+        };
+        let byo_mismatched_host = RuntimeBinding::Byo {
+            canonical: "https://other.example.com/mcp".to_owned(),
+            generation: 42,
+        };
+
+        // 1. Refused on unbound
+        let pairing = store.generate_pairing_code_with_door("byo").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &unbound_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &unbound_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 2. Refused on loopback
+        let pairing = store.generate_pairing_code_with_door("byo").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &loopback_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &loopback_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 3. Refused on LAN
+        let pairing = store.generate_pairing_code_with_door("byo").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &lan_binding, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &lan_binding),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 4. Refused on mismatched generation
+        let pairing = store.generate_pairing_code_with_door("byo").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &byo_mismatched_gen, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &byo_mismatched_gen),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 5. Refused on mismatched hostname
+        let pairing = store.generate_pairing_code_with_door("byo").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &byo_mismatched_host, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&tx, &pairing.code, &byo_mismatched_host),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        // 6. Accepted on matching BYO
+        let pairing = store.generate_pairing_code_with_door("byo").unwrap();
+        let tx = open_transaction_for_binding(&store, &client, &byo_matching_binding, "192.0.2.1");
+        let completed = store
+            .complete_pairing(&tx, &pairing.code, &byo_matching_binding)
+            .expect("byo code accepted on matching byo");
+        assert_eq!(completed.redirect_uri, "http://127.0.0.1/callback");
+    }
+
+    #[test]
+    fn stored_door_is_always_one_of_the_four_canonical_values() {
+        let journal = journal_root();
+        let config_dir = journal.path().join("config");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("journal.json"),
+            serde_json::to_string(&serde_json::json!({
+                "mcp_endpoint": {
+                    "byo_hostname": {
+                        "hostname": "canonical.example.com",
+                        "enabled": true,
+                        "generation": 1
+                    }
+                }
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let store = store_in(&journal);
+        let path = journal.path().join("mcp-endpoint/oauth.json");
+
+        // local
+        store.generate_pairing_code_with_door("local").unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["pairing"]["door"].as_str(), Some("local"));
+
+        // relay
+        store.generate_pairing_code_with_door("relay").unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(value["pairing"]["door"].as_str(), Some("relay"));
+
+        // lan
+        store.generate_pairing_code_with_door("lan").unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            value["pairing"]["door"].as_str(),
+            Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE)
+        );
+
+        // byo
+        store.generate_pairing_code_with_door("byo").unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            value["pairing"]["door"].as_str(),
+            Some("https://canonical.example.com/mcp")
+        );
     }
 }

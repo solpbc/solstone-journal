@@ -128,10 +128,14 @@ mod talent_contract;
 mod talent_preview;
 mod warm;
 const EXIT_USAGE: u8 = 64;
+const EXIT_DATAERR: u8 = 65;
+#[allow(dead_code)]
+const EXIT_NOINPUT: u8 = 66;
+#[allow(dead_code)]
+const EXIT_NOHOST: u8 = 68;
 const EXIT_UNAVAILABLE: u8 = 69;
 const EXIT_INTERNAL_FAILURE: u8 = 70;
 const EXIT_TEMPFAIL: u8 = 75;
-const EXIT_DATAERR: u8 = 65;
 const EXIT_CANTCREAT: u8 = 73;
 const EXIT_IOERR: u8 = 74;
 /// `EX_PROTOCOL`: the caller broke a brain-session framing contract.
@@ -5406,16 +5410,82 @@ fn run_mcp_pairing(command: McpPairingCommand) -> ExitCode {
             return ExitCode::from(EXIT_TEMPFAIL);
         }
     };
-    let store = OAuthStore::open(&journal.path);
+    run_mcp_pairing_at(&journal.path, command)
+}
+
+#[cfg(feature = "journal-mcp-endpoint")]
+fn run_mcp_pairing_at(journal_root: &Path, command: McpPairingCommand) -> ExitCode {
+    let store = OAuthStore::open(journal_root);
     match command {
         McpPairingCommand::Generate { door } => {
-            let door_resource = door.as_deref().map(|d| match d {
-                "lan" => solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE,
-                _ => d,
-            });
-            match store.generate_pairing_code_with_door(door_resource) {
+            let mint_symbol = match door.as_deref() {
+                None | Some("local") => "local",
+                Some("lan") => "lan",
+                Some("solstone.me") => "relay",
+                Some("hostname") => {
+                    let config_read = match read_journal_config(journal_root) {
+                        Ok(cfg) => cfg,
+                        Err(_) => {
+                            eprintln!(
+                                "journal mcp pairing generate: this journal's config could not be read."
+                            );
+                            return ExitCode::from(EXIT_NOINPUT);
+                        }
+                    };
+                    match solstone_core_journal_config::byo_hostname_config(&config_read) {
+                        solstone_core_journal_config::ByoHostnameConfigStatus::Invalid => {
+                            eprintln!(
+                                "journal mcp pairing generate: this journal's config could not be read."
+                            );
+                            return ExitCode::from(EXIT_NOINPUT);
+                        }
+                        solstone_core_journal_config::ByoHostnameConfigStatus::None
+                        | solstone_core_journal_config::ByoHostnameConfigStatus::Configured(
+                            solstone_core_journal_config::ByoHostnameConfig {
+                                hostname: None, ..
+                            },
+                        ) => {
+                            eprintln!(
+                                "journal mcp pairing generate: no hostname is set up for this journal. set one up in the agents app first."
+                            );
+                            return ExitCode::from(EXIT_NOHOST);
+                        }
+                        solstone_core_journal_config::ByoHostnameConfigStatus::Configured(
+                            solstone_core_journal_config::ByoHostnameConfig {
+                                hostname: Some(_),
+                                ..
+                            },
+                        ) => "byo",
+                    }
+                }
+                Some(other) => other,
+            };
+
+            match store.generate_pairing_code_with_door(mint_symbol) {
                 Ok(created) => {
                     println!("Generated a pairing code, valid for 10 minutes and one use.");
+                    match door.as_deref() {
+                        None => {
+                            println!(
+                                "It works only for an agent on this computer. To connect an agent another way, use --door lan, solstone.me or hostname."
+                            );
+                        }
+                        Some("local") => {
+                            println!("It works only for an agent on this computer.");
+                        }
+                        Some("lan") => {
+                            println!("It works only for an agent on your network.");
+                        }
+                        Some("solstone.me") => {
+                            println!("It works only through solstone.me.");
+                        }
+                        Some("hostname") => {
+                            println!("It works only at your hostname.");
+                        }
+                        Some(_) => {
+                            println!("It works only for an agent on this computer.");
+                        }
+                    }
                     println!("Save this now. It will not be shown again and cannot be recovered:");
                     println!("{}", created.code);
                     println!("Expires at {}.", created.expires_at.to_rfc3339());
@@ -7089,6 +7159,8 @@ mod tests {
     fn exit_code_constants_match_the_documented_contract() {
         assert_eq!(EXIT_USAGE, 64);
         assert_eq!(EXIT_DATAERR, 65);
+        assert_eq!(EXIT_NOINPUT, 66);
+        assert_eq!(EXIT_NOHOST, 68);
         assert_eq!(EXIT_UNAVAILABLE, 69);
         assert_eq!(EXIT_CANTCREAT, 73);
         assert_eq!(EXIT_IOERR, 74);
@@ -7391,5 +7463,182 @@ mod tests {
         if std::env::var("RUST_LOG").is_err() {
             assert!(log::max_level() >= log::LevelFilter::Warn);
         }
+    }
+}
+
+#[cfg(all(test, unix, feature = "journal-mcp-endpoint"))]
+mod mcp_pairing_cli_tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    fn read_active_pairing(journal_root: &Path) -> Option<serde_json::Value> {
+        let path = journal_root.join("mcp-endpoint/oauth.json");
+        if !path.exists() {
+            return None;
+        }
+        let data = fs::read_to_string(&path).unwrap();
+        let val: serde_json::Value = serde_json::from_str(&data).unwrap();
+        val.get("pairing")
+            .and_then(|p| p.as_object())
+            .cloned()
+            .map(serde_json::Value::Object)
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_default() {
+        let dir = tempdir().unwrap();
+        let code = run_mcp_pairing_at(dir.path(), McpPairingCommand::Generate { door: None });
+        assert_eq!(code, ExitCode::SUCCESS);
+        let pairing = read_active_pairing(dir.path()).unwrap();
+        assert_eq!(pairing.get("door").and_then(|d| d.as_str()), Some("local"));
+        assert_eq!(pairing.get("config_generation"), None);
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_local() {
+        let dir = tempdir().unwrap();
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("local".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        let pairing = read_active_pairing(dir.path()).unwrap();
+        assert_eq!(pairing.get("door").and_then(|d| d.as_str()), Some("local"));
+        assert_eq!(pairing.get("config_generation"), None);
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_lan() {
+        let dir = tempdir().unwrap();
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("lan".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        let pairing = read_active_pairing(dir.path()).unwrap();
+        assert_eq!(
+            pairing.get("door").and_then(|d| d.as_str()),
+            Some(solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE)
+        );
+        assert_eq!(pairing.get("config_generation"), None);
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_solstone_me() {
+        let dir = tempdir().unwrap();
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("solstone.me".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        let pairing = read_active_pairing(dir.path()).unwrap();
+        assert_eq!(pairing.get("door").and_then(|d| d.as_str()), Some("relay"));
+        assert_eq!(pairing.get("config_generation"), None);
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_hostname_valid() {
+        let dir = tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("config")).unwrap();
+        fs::write(
+            dir.path().join("config/journal.json"),
+            r#"{
+  "mcp_endpoint": {
+    "byo_hostname": {
+      "hostname": "my-host.example.com",
+      "enabled": true,
+      "generation": 42
+    }
+  }
+}"#,
+        )
+        .unwrap();
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("hostname".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::SUCCESS);
+        let pairing = read_active_pairing(dir.path()).unwrap();
+        assert_eq!(
+            pairing.get("door").and_then(|d| d.as_str()),
+            Some("https://my-host.example.com/mcp")
+        );
+        assert_eq!(
+            pairing.get("config_generation").and_then(|g| g.as_u64()),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_hostname_unconfigured() {
+        let dir = tempdir().unwrap();
+        let oauth_path = dir.path().join("mcp-endpoint/oauth.json");
+        let mint_code = run_mcp_pairing_at(dir.path(), McpPairingCommand::Generate { door: None });
+        assert_eq!(mint_code, ExitCode::SUCCESS);
+        let before_bytes = fs::read(&oauth_path).unwrap();
+
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("hostname".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::from(EXIT_NOHOST));
+        assert_eq!(fs::read(&oauth_path).unwrap(), before_bytes);
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_hostname_corrupt_config() {
+        let dir = tempdir().unwrap();
+        let oauth_path = dir.path().join("mcp-endpoint/oauth.json");
+        let mint_code = run_mcp_pairing_at(dir.path(), McpPairingCommand::Generate { door: None });
+        assert_eq!(mint_code, ExitCode::SUCCESS);
+        let before_bytes = fs::read(&oauth_path).unwrap();
+
+        fs::create_dir_all(dir.path().join("config")).unwrap();
+        fs::write(dir.path().join("config/journal.json"), "invalid json {[[[").unwrap();
+
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("hostname".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::from(EXIT_NOINPUT));
+        assert_eq!(fs::read(&oauth_path).unwrap(), before_bytes);
+    }
+
+    #[test]
+    fn run_mcp_pairing_at_mint_door_hostname_invalid_config() {
+        let dir = tempdir().unwrap();
+        let oauth_path = dir.path().join("mcp-endpoint/oauth.json");
+        let mint_code = run_mcp_pairing_at(dir.path(), McpPairingCommand::Generate { door: None });
+        assert_eq!(mint_code, ExitCode::SUCCESS);
+        let before_bytes = fs::read(&oauth_path).unwrap();
+
+        fs::create_dir_all(dir.path().join("config")).unwrap();
+        fs::write(
+            dir.path().join("config/journal.json"),
+            r#"{"mcp_endpoint":{"byo_hostname":{"hostname":"ok.example","enabled":"yes","generation":1}}}"#,
+        )
+        .unwrap();
+
+        let code = run_mcp_pairing_at(
+            dir.path(),
+            McpPairingCommand::Generate {
+                door: Some("hostname".to_owned()),
+            },
+        );
+        assert_eq!(code, ExitCode::from(EXIT_NOINPUT));
+        assert_eq!(fs::read(&oauth_path).unwrap(), before_bytes);
     }
 }

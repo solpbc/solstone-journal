@@ -46,7 +46,7 @@ function connection(kind, id, name, doorName) {
   return {kind, id, key: `${kind}:${id}`, name, door: doorName, created_at: '2026-09-24T12:00:00Z', permission: null, requests_this_week: 2, last_request_at: null, activity_complete: true};
 }
 
-async function boot(state, {identityFails = false, enable = null} = {}) {
+async function boot(state, {identityFails = false, enable = null, pairingResponse} = {}) {
   const calls = [];
   const opened = [];
   const view = {
@@ -63,10 +63,13 @@ async function boot(state, {identityFails = false, enable = null} = {}) {
       calls.push({url, method, body: options.body ? JSON.parse(options.body) : undefined});
       if (url === '/app/agents/api/state') return JSON.parse(JSON.stringify(state));
       if (url === '/app/network/api/identity') { if (identityFails) throw new Error('unavailable'); return MARK; }
-      if (url === '/app/agents/api/pairing') return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1};
+      if (url === '/app/agents/api/pairing') {
+        if (pairingResponse !== undefined) return JSON.parse(JSON.stringify(pairingResponse));
+        return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1, door: options.body ? JSON.parse(options.body).door : 'local'};
+      }
       if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability' || url === '/app/agents/api/byo') return {changed: true};
       if (url === '/app/agents/api/byo/account' || url === '/app/agents/api/byo/account/replace') return {changed: true};
-      if (url === '/app/agents/api/enable') return method === 'POST' ? {operation: enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}} : {operation: null};
+      if (url === '/app/agents/api/enable') return {operation: method === 'POST' ? (enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}) : (enable || null)};
       throw new Error(`unexpected request ${method} ${url}`);
     },
     setInterval() {},
@@ -96,7 +99,6 @@ async function test(name, body) {
     const {view, click} = await boot(baseState());
     has(view, 'coming later');
     has(view, 'set up solstone.me →');
-    has(view, 'neither way is on right now.');
     for (const copy of FALSE_WITH_A_DOOR) lacks(view, copy);
     await click({lane: 'own'});
     has(view, "this isn't available in this version of your journal yet.");
@@ -153,7 +155,7 @@ async function test(name, body) {
     await click({action:'new-code'});
     const post = calls.find(call => call.url === '/app/agents/api/pairing');
     assert(post && post.body.door === 'byo');
-    has(view, 'this code works only at your hostname');
+    has(view, 'data-code-door="byo"');
   });
 
   const reasons = {
@@ -175,14 +177,17 @@ async function test(name, body) {
   }
 
   await test('address taken: red status, the mark, and "or none"', async () => {
-    const {view, click} = await boot(baseState(door({listening: false, reason: 'port_in_use'})));
+    const {view, click, calls} = await boot(baseState(door({listening: false, reason: 'port_in_use'})));
     has(view, 'class="sdot r"');
     has(view, 'a program pretending to be your journal');
     has(view, 'aria-label="teal, amber · afoot unfixed"');
     has(view, 'if it shows a different mark, or none, close that page.');
     await click({action: 'connect'});
     lacks(view, `<code>${ADDRESS}</code><button class="btn sm" data-copy="${ADDRESS}">copy</button></div></div>`, 'connect must not offer a taken address');
-    has(view, 'neither way is on right now.');
+    lacks(view, 'data-action="new-code"');
+    lacks(view, 'data-way="local"');
+    await click({action: 'new-code'});
+    assert(!calls.some(call => call.url === '/app/agents/api/pairing'), 'no way offered posts nothing');
   });
 
   await test('address taken without a readable mark still says to check it', async () => {
@@ -251,7 +256,9 @@ async function test(name, body) {
     const put = calls.find(call => call.url === '/app/agents/api/capability');
     assert(put && put.body.enabled === false);
     await click({action: 'connect'});
+    await click({way: 'local'});
     has(view, `<code>${ADDRESS}</code>`);
+    await click({way: 'relay'});
     has(view, 'in Claude, add it as a custom connector');
   });
 
@@ -305,9 +312,11 @@ async function test(name, body) {
   await test('connect with both doors open: pick where the agent is, then a code for that door only', async () => {
     const {view, click, calls} = await boot(baseState({...door({listening: true}), ...lan({})}));
     await click({action: 'connect'});
-    has(view, 'where is this agent?');
-    has(view, 'pick where the agent is first. the pairing code works only for the one you pick.');
-    lacks(view, 'make a pairing code');
+    has(view, 'data-way="local"');
+    has(view, 'data-way="lan"');
+    const before = calls.filter(call => call.url === '/app/agents/api/pairing').length;
+    await click({action: 'new-code'});
+    assert(calls.filter(call => call.url === '/app/agents/api/pairing').length === before, 'no way chosen posts nothing');
     await click({way: 'lan'});
     const modal = () => view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"'));
     assert(modal().includes(`<code>${LAN_A}</code>`));
@@ -318,21 +327,23 @@ async function test(name, body) {
     await click({action: 'new-code'});
     const post = calls.find(call => call.url === '/app/agents/api/pairing');
     assert(post && post.method === 'POST' && post.body.door === 'lan', 'a network code is made for the network door');
-    has(view, 'this code works only for an agent on your network.');
-    await click({way: 'other'});
+    has(view, 'data-code-door="lan"');
+    await click({way: 'local'});
+    lacks(view, 'class="copy-code"');
     has(view, 'the open code is for your network. make a new one for this agent.');
     assert(modal().includes(`<code>${ADDRESS}</code>`));
-    assert(!modal().includes(`<code>${LAN_A}</code>`), 'the other way offers no network address');
+    assert(!modal().includes(`<code>${LAN_A}</code>`), 'the local way offers no network address');
     await click({action: 'new-code'});
     const posts = calls.filter(call => call.url === '/app/agents/api/pairing');
-    assert.strictEqual(posts[1].body, undefined, 'the other way makes an unbound code');
+    assert(posts[1] && posts[1].body.door === 'local', 'the local way makes a local code');
   });
 
   await test('network door alone: connect goes straight to the network way', async () => {
     const {view, click} = await boot(baseState({...door({enabled: false, listening: false, reason: 'disabled'}), ...lan({})}));
     has(view, 'agents on your network can reach your journal.');
     await click({action: 'connect'});
-    lacks(view, 'where is this agent?');
+    has(view, 'where is this agent?');
+    has(view, 'aria-checked="true" data-way="lan"');
     assert(view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"')).includes(`<code>${LAN_A}</code>`));
   });
 
@@ -364,6 +375,148 @@ async function test(name, body) {
       if (reason !== 'config_invalid' && reason !== 'no_address') has(view, "your journal's addresses on your network aren't open right now.");
     });
   }
+
+  await test('connect dialog open pairing states and code door attribute', async () => {
+    // 1. None
+    const s1 = baseState({...door({listening: true}), ...lan({})});
+    const {view: v1, click: c1} = await boot(s1);
+    await c1({action: 'connect'});
+    has(v1, 'data-open-pairing="none"');
+    await c1({way: 'local'});
+    has(v1, 'data-open-pairing="none"');
+
+    // 2. Mint code on local -> shows data-code-door="local"
+    await c1({action: 'new-code'});
+    has(v1, 'data-code-door="local"');
+
+    // 3. Same door open in state -> data-open-pairing="same"
+    const s2 = baseState({
+      ...door({listening: true}),
+      ...lan({}),
+      pairing: {generation: 1, expires_at: '2026-09-24T12:10:00Z', locked: false, door: 'local'},
+    });
+    const {view: v2, click: c2} = await boot(s2);
+    await c2({action: 'connect'});
+    await c2({way: 'local'});
+    has(v2, 'data-open-pairing="same"');
+    lacks(v2, 'class="copy-code"');
+
+    // 4. Other door open in state -> data-open-pairing="other"
+    await c2({way: 'lan'});
+    has(v2, 'data-open-pairing="other"');
+
+    // 5. Locked pairing on same door -> data-open-pairing="locked"
+    const s3 = baseState({
+      ...door({listening: true}),
+      pairing: {generation: 1, expires_at: '2026-09-24T12:10:00Z', locked: true, door: 'local'},
+    });
+    const {view: v3, click: c3} = await boot(s3);
+    await c3({action: 'connect'});
+    has(v3, 'data-open-pairing="locked"');
+
+    // 6. Doorless pairing in state -> data-open-pairing="none" even when locked
+    const s4 = baseState({
+      ...door({listening: true}),
+      pairing: {generation: 1, expires_at: '2026-09-24T12:10:00Z', locked: true, door: null},
+    });
+    const {view: v4, click: c4} = await boot(s4);
+    await c4({action: 'connect'});
+    has(v4, 'data-open-pairing="none"');
+
+    // 7. Lapsed solstone.me does not offer relay
+    const s5 = baseState({
+      enabled: true,
+      status: 'needs_subscription',
+      owner_state: {address: 'k7q2m9xa.solstone.me', status: 'needs_subscription'},
+      ...door({listening: true}),
+    });
+    const {view: v5, click: c5} = await boot(s5);
+    await c5({action: 'connect'});
+    lacks(v5, 'data-way="relay"');
+    has(v5, 'data-way="local"');
+
+    // 8. Other solstone.me states do not offer relay. on and renewal do.
+    const meOffered = new Set(['on', 'renewal_overdue']);
+    const meStates = ['offline', 'failed', 'needs_subscription', 'not_accepted', 'starting', 'renewal_overdue', 'on'];
+    for (const status of meStates) {
+      const offered = baseState({
+        enabled: true,
+        status,
+        owner_state: {address: 'k7q2m9xa.solstone.me', status},
+        ...door({listening: true}),
+      });
+      const {view, click} = await boot(offered);
+      await click({action: 'connect'});
+      if (meOffered.has(status)) has(view, 'data-way="relay"');
+      else lacks(view, 'data-way="relay"');
+      has(view, 'data-way="local"');
+    }
+    for (const [label, localDoor] of [
+      ['soon', null],
+      ['port', door({listening: false, reason: 'port_in_use'})],
+      ['off', door({enabled: false, listening: false, reason: 'disabled'})],
+      ['down', door({listening: false, reason: 'not_running'})],
+      ['invalid', door({enabled: false, listening: false, reason: 'config_invalid'})],
+      ['unreadable', door({listening: false, reason: 'config_unreadable'})],
+    ]) {
+      const state = localDoor
+        ? baseState({...ME_ON, ...localDoor})
+        : baseState(ME_ON);
+      const {view, click} = await boot(state);
+      await click({action: 'connect'});
+      lacks(view, 'data-way="local"', label);
+      has(view, 'data-way="relay"');
+    }
+    for (const phase of ['waiting', 'needs_subscription', 'error']) {
+      const {view, click} = await boot(baseState({enabled: false, ...door({listening: true})}), {enable: {phase}});
+      await click({action: 'connect'});
+      lacks(view, 'data-way="relay"', phase);
+      has(view, 'data-way="local"');
+    }
+    {
+      const {view, click} = await boot(baseState({enabled: false, owner_state: {address: 'k7q2m9xa.solstone.me', status: 'on'}, ...door({listening: true})}));
+      await click({action: 'connect'});
+      lacks(view, 'data-way="relay"');
+      has(view, 'data-way="local"');
+    }
+
+    // 9. Response door wins over the requested way. A response with no door has no attribute.
+    const mismatch = {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1, door: 'local'};
+    const {view: vm, click: cm} = await boot(baseState({...door({listening: true}), ...ME_ON}), {pairingResponse: mismatch});
+    await cm({action: 'connect'});
+    await cm({way: 'relay'});
+    await cm({action: 'new-code'});
+    assert(vm.innerHTML.split('class="copy-code"').length === 2, 'plaintext once');
+    has(vm, 'data-code-door="local"');
+    lacks(vm, 'data-code-door="relay"');
+    await cm({way: 'local'});
+    lacks(vm, 'class="copy-code"');
+    has(vm, 'data-open-pairing="same"');
+
+    const omitted = {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1};
+    const {view: vo, click: co} = await boot(baseState(door({listening: true})), {pairingResponse: omitted});
+    await co({action: 'connect'});
+    await co({action: 'new-code'});
+    assert(vo.innerHTML.split('class="copy-code"').length === 2, 'plaintext once without a door');
+    lacks(vo, 'data-code-door');
+
+    await co({closeModal: ''});
+    lacks(vo, 'class="copy-code"');
+    await co({action: 'connect'});
+    lacks(vo, 'class="copy-code"');
+    has(vo, 'data-open-pairing="none"');
+
+    const {view: vc, click: cc} = await boot(baseState(door({listening: true})));
+    await cc({action: 'connect'});
+    await cc({action: 'new-code'});
+    has(vc, 'class="copy-code"');
+    await cc({closeModal: ''});
+    await cc({action: 'connect'});
+    lacks(vc, 'class="copy-code"');
+    has(vc, 'data-open-pairing="same"');
+    await cc({way: 'local'});
+    lacks(vc, 'class="copy-code"');
+  });
 
   console.log(`DOM CASES: ${cases} passed`);
 })().catch(error => { console.error(error); process.exit(1); });

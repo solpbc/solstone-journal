@@ -2524,7 +2524,11 @@ mod tests {
         assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
         let html = String::from_utf8(body).unwrap();
         let transaction_id = hidden_transaction_id(&html);
-        let pairing = server.oauth.store.generate_pairing_code().unwrap();
+        let pairing = server
+            .oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let (status, _, head) = oauth_form(
             &mut client,
             "/authorize",
@@ -2672,7 +2676,11 @@ mod tests {
         .await;
         drop(client);
 
-        let pairing = server.oauth.store.generate_pairing_code().unwrap();
+        let pairing = server
+            .oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let challenge = pkce_challenge();
         let query = format!(
             "client_id={}&redirect_uri={}&response_type=code&code_challenge={}&code_challenge_method=S256&resource={origin}/mcp",
@@ -2835,7 +2843,11 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let pairing = server.oauth.store.generate_pairing_code().unwrap();
+        let pairing = server
+            .oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let challenge = pkce_challenge();
         let origin = server.oauth.fixed_resource_origin().to_string();
         let query = format!(
@@ -3096,7 +3108,10 @@ mod unit_tests {
                 "192.0.2.1",
             )
             .unwrap();
-        let unbound_pairing = unbound.store.generate_pairing_code().unwrap();
+        let unbound_pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let unbound_auth = unbound
             .store
             .complete_pairing(&unbound_tx, &unbound_pairing.code, &unbound.binding())
@@ -3113,7 +3128,10 @@ mod unit_tests {
             )
             .unwrap();
 
-        let bound_pairing = bound.store.generate_pairing_code().unwrap();
+        let bound_pairing = bound
+            .store
+            .generate_pairing_code_with_door("local")
+            .unwrap();
         let bound_tx = bound
             .store
             .create_transaction(

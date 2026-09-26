@@ -798,7 +798,7 @@ mod full_tests {
 
         // 6. POST /authorize with pairing code
         let store = OAuthStore::open(&journal_root);
-        let pairing = store.generate_pairing_code().unwrap();
+        let pairing = store.generate_pairing_code_with_door("local").unwrap();
         let auth_form = format!(
             "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
             query_value_encode(&tx_id),
@@ -1266,7 +1266,12 @@ mod full_tests {
             )
             .unwrap();
         let challenge = pkce_challenge();
-        let pairing = runtime.store.generate_pairing_code().unwrap();
+        let door = match runtime.binding() {
+            crate::oauth::RuntimeBinding::Bound { .. } => "local",
+            crate::oauth::RuntimeBinding::Unbound { .. } => "relay",
+            crate::oauth::RuntimeBinding::Byo { .. } => "byo",
+        };
+        let pairing = runtime.store.generate_pairing_code_with_door(door).unwrap();
         let tx = runtime
             .store
             .create_transaction(
