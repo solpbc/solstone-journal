@@ -5375,6 +5375,7 @@ dependencies = [
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-indexer",
+ "solstone-core-indexer-store",
  "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",

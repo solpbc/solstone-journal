@@ -24,6 +24,7 @@ test-hooks = ["solstone-core-journal-io/test-hooks", "solstone-core-installation
 chrono = { workspace = true }
 chrono-tz.workspace = true
 solstone-core-indexer.workspace = true
+solstone-core-indexer-store.workspace = true
 solstone-core-talent-config.workspace = true
 solstone-core-facets.workspace = true
 solstone-core-journal.workspace = true

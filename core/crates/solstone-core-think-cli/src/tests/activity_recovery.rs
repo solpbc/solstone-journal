@@ -1195,3 +1195,119 @@ fn unreadable_activity_declaration_retries_with_backoff_and_same_identity() {
     );
     assert_eq!(recorder.requests.lock().unwrap().len(), 2);
 }
+
+#[test]
+fn an_activity_row_moved_here_by_a_facet_merge_runs_and_is_adopted() {
+    let (_journal, _roots, context, recorder) = fixture();
+    fail_first(&context, &recorder);
+    assert!(replay(&context, &["090000_300", "090500_300"], true).is_err());
+    let work =
+        solstone_core_facets::observe_facet_write_identity(&context.journal, "work").unwrap();
+
+    // As a facet merge leaves it: the row still names the merged facet's id.
+    let merged = "77777777-7777-4777-8777-777777777777";
+    fs::write(
+        context.journal.join("facets/retired.json"),
+        serde_json::json!({"names": {"old": {"state": "merged", "id": merged, "successor": work}}})
+            .to_string(),
+    )
+    .unwrap();
+    let day = context
+        .journal
+        .join("facets/work/activities/20260813.jsonl");
+    let rows = fs::read_to_string(&day).unwrap();
+    assert!(rows.contains(&work));
+    fs::write(&day, rows.replace(&work, merged)).unwrap();
+
+    recorder.end_states.lock().unwrap().clear();
+    let next = later(&context, 60_001);
+    let mut log = test_log(&next, "retry");
+    let result =
+        activity::run(&next, &mut log, "work_090000_300", "work", false, false, 1).unwrap();
+    assert_eq!((result.success, result.failed), (1, 0));
+    assert!(provenance(&next).exists());
+    let record = solstone_core_facets::get_activity_record(
+        &context.journal,
+        "work",
+        "20260813",
+        "work_090000_300",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(record["destination_id"], work.as_str());
+}
+
+/// The replayed day's row, pointed at a merged-away facet as a facet merge
+/// leaves it. With `record`, the merge is in `facets/retired.json`.
+fn move_row_to_merged_facet(context: &context::ThinkContext, record: bool) -> String {
+    let work =
+        solstone_core_facets::observe_facet_write_identity(&context.journal, "work").unwrap();
+    let merged = "77777777-7777-4777-8777-777777777777";
+    if record {
+        fs::write(
+            context.journal.join("facets/retired.json"),
+            serde_json::json!({"names": {"old": {"state": "merged", "id": merged, "successor": work}}})
+                .to_string(),
+        )
+        .unwrap();
+    }
+    let day = context
+        .journal
+        .join("facets/work/activities/20260813.jsonl");
+    let rows = fs::read_to_string(&day).unwrap();
+    fs::write(&day, rows.replace(&work, merged)).unwrap();
+    work
+}
+
+#[test]
+fn a_moved_activity_row_with_no_earlier_work_runs_under_the_facet_it_joined() {
+    let (_journal, _roots, context, recorder) = fixture();
+    fail_first(&context, &recorder);
+    assert!(replay(&context, &["090000_300", "090500_300"], true).is_err());
+    // No earlier work: the row's own id is the one every check sees.
+    fs::remove_dir_all(context.journal.join("health/activity-work")).unwrap();
+    let work = move_row_to_merged_facet(&context, true);
+
+    recorder.end_states.lock().unwrap().clear();
+    let next = later(&context, 60_001);
+    let mut log = test_log(&next, "fresh");
+    let result =
+        activity::run(&next, &mut log, "work_090000_300", "work", false, false, 1).unwrap();
+    assert_eq!((result.success, result.failed), (1, 0));
+    let requests = recorder.requests.lock().unwrap();
+    let request = &requests.last().unwrap().config;
+    assert_eq!(request["destination_id"], work.as_str());
+    assert_eq!(request["activity"]["destination_id"], work.as_str());
+}
+
+#[test]
+fn work_an_earlier_version_blocked_for_a_merged_facet_runs_once_the_row_is_adopted() {
+    let (_journal, _roots, context, recorder) = fixture();
+    fail_first(&context, &recorder);
+    assert!(replay(&context, &["090000_300", "090500_300"], true).is_err());
+    fs::remove_dir_all(context.journal.join("health/activity-work")).unwrap();
+    // Before the merge is on record, the row blocks as it always did.
+    move_row_to_merged_facet(&context, false);
+    recorder.end_states.lock().unwrap().clear();
+    let next = later(&context, 60_001);
+    let mut log = test_log(&next, "blocked");
+    let blocked =
+        activity::run(&next, &mut log, "work_090000_300", "work", false, false, 1).unwrap();
+    assert_eq!(blocked.failed, 1);
+
+    // With the merge on record, the next ordinary run adopts and proceeds.
+    move_row_to_merged_facet(&context, true);
+    let later_run = later(&next, 60_001);
+    let mut log = test_log(&later_run, "adopted");
+    let result = activity::run(
+        &later_run,
+        &mut log,
+        "work_090000_300",
+        "work",
+        false,
+        false,
+        1,
+    )
+    .unwrap();
+    assert_eq!((result.success, result.failed), (1, 0));
+}

@@ -186,6 +186,36 @@ impl FacetDeclarationSet {
         self.live_ids.contains_key(id)
     }
 
+    /// The live facet name a stored reference to `name` belongs to: the name
+    /// itself when it is live, or the live facet a retired name was merged or
+    /// renamed into. `None` for a deleted, unknown or ambiguous name.
+    pub fn live_name_for_reference(&self, name: &str) -> Option<String> {
+        match self.lookup_reference(name) {
+            FacetResolution::Id(id) => self.live_ids.get(&id).cloned(),
+            _ => None,
+        }
+    }
+
+    /// Whether `stored`, a facet id recorded on some material, is a retired
+    /// facet's id whose merge or rename chain ends at the live facet
+    /// `current`. A live id, even one a leftover retired entry also carries,
+    /// never resolves elsewhere.
+    pub fn id_resolves_to(&self, stored: &str, current: &str) -> bool {
+        if stored == current || self.live_ids.contains_key(stored) {
+            return false;
+        }
+        // Any entry that carries the id may be the one the merge wrote; one
+        // that names itself as its successor leads nowhere.
+        self.retired
+            .values()
+            .filter(|entry| {
+                entry.id.as_deref() == Some(stored) && entry.successor.as_deref() != Some(stored)
+            })
+            .any(|entry| {
+                matches!(self.follow_successor(entry), FacetResolution::Id(id) if id == current)
+            })
+    }
+
     /// Whether two views resolve every name identically.
     pub fn same_as(&self, other: &Self) -> bool {
         self == other
@@ -757,6 +787,54 @@ mod tests {
         declare(&root, ".facet-merge-1.dest", S);
         let path = assign(&root, &["sunstone"]);
         assert_eq!(ids(&root, path), vec![S]);
+        std::fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn a_stored_facet_id_resolves_only_through_a_merge_or_rename_chain() {
+        let root = reserve_temp_path("classification-id-chain");
+        declare(&root, "solstone", S);
+        declare(&root, "personal", P);
+        let gone = "d4c3b2a1-0000-4000-8000-000000000001";
+        let hop = "d4c3b2a1-0000-4000-8000-000000000002";
+        std::fs::write(
+            root.join("facets/retired.json"),
+            format!(
+                r#"{{"names":{{
+                    "a":{{"state":"merged","id":"{X}","successor":"{S}"}},
+                    "a_loop":{{"state":"renamed","id":"{X}","successor":"{X}"}},
+                    "b":{{"state":"merged","id":"{hop}","successor":"{X}"}},
+                    "gone":{{"state":"deleted","id":"{gone}"}},
+                    "leftover":{{"state":"merged","id":"{P}","successor":"{S}"}},
+                    "orphan":{{"state":"merged","id":null,"successor":"{S}"}}
+                }}}}"#
+            ),
+        )
+        .expect("retired");
+        let set = FacetDeclarationSet::from_journal(&root).expect("declarations");
+        assert!(set.id_resolves_to(X, S));
+        // Two hops: `b` was merged into `a`, which was merged into S. A
+        // leftover entry that loops on X doesn't hide the real one.
+        assert!(set.id_resolves_to(hop, S));
+        assert!(!set.id_resolves_to(X, P));
+        assert!(!set.id_resolves_to(gone, S));
+        assert!(!set.id_resolves_to(S, S));
+        // A live id stays its own facet, even if a leftover entry carries it.
+        assert!(!set.id_resolves_to(P, S));
+        assert_eq!(
+            set.live_name_for_reference("a").as_deref(),
+            Some("solstone")
+        );
+        assert_eq!(
+            set.live_name_for_reference("orphan").as_deref(),
+            Some("solstone")
+        );
+        assert_eq!(
+            set.live_name_for_reference("personal").as_deref(),
+            Some("personal")
+        );
+        assert_eq!(set.live_name_for_reference("gone"), None);
+        assert_eq!(set.live_name_for_reference("unknown"), None);
         std::fs::remove_dir_all(root).expect("cleanup");
     }
 

@@ -164,6 +164,92 @@ fn write_rows(path: &Path, rows: &[ActivityRecord]) -> Result<(), ActivityRecord
     Ok(())
 }
 
+/// Point rows a facet merge moved here at this facet. A merge copies a
+/// facet's activity rows as they are, so a moved row still names the merged
+/// facet's id, and every write-side identity check refuses it. A row whose
+/// stored id is a retired facet id whose merge or rename chain ends at
+/// `current_id` is given `current_id`; nothing else in it changes. Rows with a
+/// deleted facet's id, a live facet's id or no id are left alone, as is every
+/// row when the journal's facets can't be read.
+fn adopt_moved_rows(
+    root: &Path,
+    current_id: &str,
+    rows: Vec<ActivityRecord>,
+) -> Vec<ActivityRecord> {
+    let moved = |row: &ActivityRecord| {
+        row.get("destination_id")
+            .and_then(Value::as_str)
+            .is_some_and(|stored| stored != current_id)
+    };
+    if !rows.iter().any(moved) {
+        return rows;
+    }
+    let Ok(facets) =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(root)
+    else {
+        return rows;
+    };
+    rows.into_iter()
+        .map(|mut row| {
+            let adopt = row
+                .get("destination_id")
+                .and_then(Value::as_str)
+                .is_some_and(|stored| facets.id_resolves_to(stored, current_id));
+            if adopt {
+                row.insert(
+                    "destination_id".to_owned(),
+                    Value::String(current_id.to_owned()),
+                );
+            }
+            row
+        })
+        .collect()
+}
+
+/// Adopt one day's rows moved here by a facet merge, before automated work
+/// reads them. Returns how many rows changed. A day with no file changes
+/// nothing.
+pub fn adopt_moved_activity_rows(
+    root: &Path,
+    facet: &str,
+    day: &str,
+) -> Result<usize, ActivityRecordStoreError> {
+    // Look first, without locks or side effects: most days have nothing to
+    // adopt, and a missing day or an unready facet has nothing to change.
+    let path = day_path(root, facet, day)?;
+    if !path.exists() {
+        return Ok(0);
+    }
+    let super::declaration::DestinationObservation::Ready { id, .. } =
+        super::declaration::observe_facet_destination(root, facet)?
+    else {
+        return Ok(0);
+    };
+    let unadopted = read_rows(&path)?.iter().any(|row| {
+        row.get("destination_id")
+            .and_then(Value::as_str)
+            .is_some_and(|stored| stored != id)
+    });
+    if !unadopted {
+        return Ok(0);
+    }
+    let current_id = admit_activity_destination(root, facet)?;
+    let result = locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        let before = rows.clone();
+        let adopted = adopt_moved_rows(root, &current_id, rows);
+        let changed = adopted
+            .iter()
+            .zip(&before)
+            .filter(|(after, before)| after != before)
+            .count();
+        Ok((adopted, changed))
+    });
+    match result {
+        Err(ActivityRecordStoreError::MissingDayFile { .. }) => Ok(0),
+        other => other,
+    }
+}
+
 fn locked_modify_day_records<T>(
     root: &Path,
     facet: &str,
@@ -467,6 +553,7 @@ pub fn update_activity_record(
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
         for row in &rows {
             if id(row) == record_id
@@ -517,6 +604,7 @@ pub fn set_activity_hidden(
 ) -> Result<Option<ActivityRecord>, ActivityRecordStoreError> {
     let current_id = admit_activity_destination(root, facet)?;
     locked_modify_day_records(root, facet, day, false, &current_id, |rows| {
+        let rows = adopt_moved_rows(root, &current_id, rows);
         let mut result = None;
         for row in &rows {
             if id(row) == record_id
@@ -733,6 +821,140 @@ mod tests {
             append_activity_record(root.path(), "work", "20260510", record).expect("read"),
             AppendOutcome::AlreadyExists
         ));
+    }
+
+    #[test]
+    fn rows_moved_by_a_facet_merge_are_adopted_and_others_stay_refused() {
+        let root = tempfile::tempdir().expect("root");
+        crate::create_facet(root.path(), "team", "Team", "", "", "", None).unwrap();
+        crate::create_facet(root.path(), "personal", "Personal", "", "", "", None).unwrap();
+        let team = crate::observe_facet_write_identity(root.path(), "team").unwrap();
+        let personal = crate::observe_facet_write_identity(root.path(), "personal").unwrap();
+        let merged = "77777777-7777-4777-8777-777777777777";
+        let deleted = "66666666-6666-4666-8666-666666666666";
+        let orphan = "55555555-5555-4555-8555-555555555555";
+        std::fs::write(
+            root.path().join("facets/retired.json"),
+            serde_json::json!({"names": {
+                "project": {"state": "merged", "id": merged, "successor": team},
+                "gone": {"state": "deleted", "id": deleted},
+                "orphaned": {"state": "merged", "id": null, "successor": team},
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        let rows = [
+            ("moved", merged),
+            ("from_deleted", deleted),
+            ("from_personal", personal.as_str()),
+            ("from_orphan", orphan),
+        ];
+        let path = root.path().join("facets/team/activities/20260510.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let text: String = rows
+            .iter()
+            .map(|(id, destination)| {
+                serde_json::json!({"id": id, "title": id, "destination_id": destination})
+                    .to_string()
+                    + "\n"
+            })
+            .collect();
+        std::fs::write(&path, &text).unwrap();
+        // A second day, touched only by a hide, so each write path's
+        // adoption is shown on its own.
+        let hide_day = root.path().join("facets/team/activities/20260511.jsonl");
+        std::fs::write(&hide_day, &text).unwrap();
+        let mut patch = Map::new();
+        patch.insert("title".to_owned(), Value::String("Edited".to_owned()));
+        let edit = |record: &str| {
+            update_activity_record(
+                root.path(),
+                "team",
+                "20260510",
+                record,
+                &patch,
+                "owner",
+                "",
+                "2026-05-10T10:00:00Z",
+            )
+        };
+
+        for refused in ["from_deleted", "from_personal", "from_orphan"] {
+            assert!(edit(refused).is_err(), "{refused}");
+        }
+        // A refused edit writes nothing, not even an adoption.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        let edited = edit("moved").unwrap().expect("moved row");
+        assert_eq!(edited["title"], "Edited");
+        assert_eq!(edited["destination_id"], team.as_str());
+        let hidden = set_activity_hidden(
+            root.path(),
+            "team",
+            "20260511",
+            "moved",
+            true,
+            "owner",
+            None,
+            "2026-05-10T10:00:00Z",
+        )
+        .unwrap()
+        .expect("moved row");
+        assert_eq!(hidden["hidden"], true);
+        assert_eq!(hidden["destination_id"], team.as_str());
+        let stored = |record: &str| {
+            load_activity_records(root.path(), "team", "20260510", true)
+                .unwrap()
+                .into_iter()
+                .find(|row| id(row) == record)
+                .unwrap()["destination_id"]
+                .clone()
+        };
+        assert_eq!(stored("from_deleted"), deleted);
+        assert_eq!(stored("from_personal"), personal.as_str());
+        assert_eq!(stored("from_orphan"), orphan);
+        assert!(
+            hold_activity_enrichment(root.path(), "team", stored("moved").as_str().unwrap())
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn adopting_a_day_changes_only_moved_rows_and_a_missing_day_is_nothing() {
+        let root = tempfile::tempdir().expect("root");
+        crate::create_facet(root.path(), "team", "Team", "", "", "", None).unwrap();
+        let team = crate::observe_facet_write_identity(root.path(), "team").unwrap();
+        let merged = "77777777-7777-4777-8777-777777777777";
+        std::fs::write(
+            root.path().join("facets/retired.json"),
+            serde_json::json!({"names": {
+                "project": {"state": "merged", "id": merged, "successor": team},
+            }})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(
+            adopt_moved_activity_rows(root.path(), "team", "20260510").unwrap(),
+            0
+        );
+        let path = root.path().join("facets/team/activities/20260510.jsonl");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let text = format!(
+            "{}\n{}\n",
+            serde_json::json!({"id": "moved", "destination_id": merged, "note": "kept"}),
+            serde_json::json!({"id": "home", "destination_id": team})
+        );
+        std::fs::write(&path, &text).unwrap();
+        assert_eq!(
+            adopt_moved_activity_rows(root.path(), "team", "20260510").unwrap(),
+            1
+        );
+        let rows = load_activity_records(root.path(), "team", "20260510", true).unwrap();
+        assert_eq!(rows[0]["destination_id"], team.as_str());
+        assert_eq!(rows[0]["note"], "kept");
+        assert_eq!(
+            adopt_moved_activity_rows(root.path(), "team", "20260510").unwrap(),
+            0
+        );
     }
 
     #[test]

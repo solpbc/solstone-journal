@@ -38,9 +38,10 @@ pub use activities::{
 pub use activity_records::{
     ActivityRecord, ActivityRecordStoreError, AppendOutcome, PreparedAnticipationBatch,
     activity_is_available, activity_value_or_empty, activity_value_string, activity_value_truthy,
-    admit_activity_destination, append_activity_record, append_edit, get_activity_record,
-    hold_activity_enrichment, load_activity_records, prepare_anticipation_batch,
-    publish_anticipation_batch, set_activity_hidden, update_activity_record,
+    admit_activity_destination, adopt_moved_activity_rows, append_activity_record, append_edit,
+    get_activity_record, hold_activity_enrichment, load_activity_records,
+    prepare_anticipation_batch, publish_anticipation_batch, set_activity_hidden,
+    update_activity_record,
 };
 pub use awareness::{
     AwarenessStoreError, append_log, load_current, load_imports, read_log, record_import,

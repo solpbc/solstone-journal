@@ -41,6 +41,24 @@ pub fn active_facets(journal: &Path, day: &str) -> BTreeSet<String> {
             }
         }
     }
+    with_live_facets(journal, active)
+}
+
+/// Add, for every recorded facet name, the live facet it now belongs to: a
+/// facet merged or renamed away makes the facet it became active. Names
+/// already present stay, so nothing that matched before stops matching, and
+/// a journal whose facets can't be read keeps exactly the recorded names.
+fn with_live_facets(journal: &Path, mut active: BTreeSet<String>) -> BTreeSet<String> {
+    let Ok(facets) =
+        solstone_core_indexer_store::classification::FacetDeclarationSet::from_journal(journal)
+    else {
+        return active;
+    };
+    let live: Vec<String> = active
+        .iter()
+        .filter_map(|name| facets.live_name_for_reference(name))
+        .collect();
+    active.extend(live);
     active
 }
 
@@ -73,7 +91,7 @@ pub fn active_facets_checked(journal: &Path, day: &str) -> Result<BTreeSet<Strin
             facets.insert(facet.to_owned());
         }
     }
-    Ok(facets)
+    Ok(with_live_facets(journal, facets))
 }
 
 fn collect_segment_facets(segment: &Path, active: &mut BTreeSet<String>) {
@@ -545,7 +563,7 @@ mod tests {
 
     use super::{
         ActivityStateMachine, END_HYSTERESIS_SEGMENTS, GAP_THRESHOLD_SECONDS, active_facets,
-        level_value, make_activity_id, normalize_activity_description,
+        active_facets_checked, level_value, make_activity_id, normalize_activity_description,
     };
 
     fn active(facet: &str) -> serde_json::Value {
@@ -615,6 +633,72 @@ mod tests {
         assert_eq!(
             active_facets(root.path(), "20260102"),
             std::collections::BTreeSet::from(["home".to_owned()])
+        );
+    }
+
+    const TEAM: &str = "11111111-1111-4111-8111-111111111111";
+    const PROJECT: &str = "22222222-2222-4222-8222-222222222222";
+    const OLD: &str = "33333333-3333-4333-8333-333333333333";
+    const GONE: &str = "44444444-4444-4444-8444-444444444444";
+    const HOME: &str = "55555555-5555-4555-8555-555555555555";
+
+    /// Live `team` and `home`; `project` merged into `team`; `old` renamed
+    /// to `project` before that; `gone` deleted. One segment names the
+    /// retired and deleted names and `home`.
+    fn merged_facet_journal(retired: &str) -> tempfile::TempDir {
+        let root = tempfile::tempdir().unwrap();
+        for (name, id) in [("team", TEAM), ("home", HOME)] {
+            let dir = root.path().join("facets").join(name);
+            fs::create_dir_all(&dir).unwrap();
+            fs::write(
+                dir.join("facet.json"),
+                serde_json::to_vec(&json!({"id": id, "title": name})).unwrap(),
+            )
+            .unwrap();
+        }
+        fs::write(root.path().join("facets/retired.json"), retired).unwrap();
+        let talents = root.path().join("chronicle/20260101/090000_60/talents");
+        fs::create_dir_all(&talents).unwrap();
+        fs::write(
+            talents.join("facets.json"),
+            serde_json::to_vec(
+                &json!([{"facet":"project"},{"facet":"old"},{"facet":"gone"},{"facet":"home"}]),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        root
+    }
+
+    fn names(values: &[&str]) -> std::collections::BTreeSet<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_merged_or_renamed_facet_makes_the_facet_it_became_active() {
+        let retired = json!({"names": {
+            "project": {"state": "merged", "id": PROJECT, "successor": TEAM},
+            "old": {"state": "renamed", "id": OLD, "successor": PROJECT},
+            "gone": {"state": "deleted", "id": GONE},
+        }})
+        .to_string();
+        let root = merged_facet_journal(&retired);
+        let expected = names(&["gone", "home", "old", "project", "team"]);
+        assert_eq!(active_facets(root.path(), "20260101"), expected);
+        assert_eq!(
+            active_facets_checked(root.path(), "20260101").unwrap(),
+            expected
+        );
+    }
+
+    #[test]
+    fn a_damaged_facet_record_keeps_exactly_the_recorded_names() {
+        let root = merged_facet_journal("{not json");
+        let recorded = names(&["gone", "home", "old", "project"]);
+        assert_eq!(active_facets(root.path(), "20260101"), recorded);
+        assert_eq!(
+            active_facets_checked(root.path(), "20260101").unwrap(),
+            recorded
         );
     }
 

@@ -30,6 +30,13 @@ pub(crate) fn run(
     reactivate: bool,
     max_concurrency: i64,
 ) -> Result<ModeResult, String> {
+    // A facet merge copies activity rows without pointing them at the facet
+    // they joined. Adopt this day's rows before reading one, so the record
+    // and the request name the same facet. When adoption can't run, the
+    // identity checks below refuse exactly as they would have.
+    let adopted =
+        solstone_core_facets::adopt_moved_activity_rows(&context.journal, facet, &context.day)
+            .unwrap_or(0);
     let record = get_activity_record(&context.journal, facet, &context.day, activity_id)
         .map_err(|error| error.to_string())?;
     let Some(record) = record else {
@@ -207,7 +214,14 @@ pub(crate) fn run(
         );
         return Ok(failed(message));
     }
-    if reactivate {
+    // An earlier version blocked this work because the row still named the
+    // facet merged into this one. The row now names this facet, so that
+    // block no longer holds.
+    let stale_merge_block = adopted > 0
+        && work
+            .blocked_disposition()
+            .is_some_and(|blocked| blocked.reason_code == "destination_replaced");
+    if reactivate || stale_merge_block {
         work.reactivate()?;
     } else {
         if work.is_muted_pause() {
