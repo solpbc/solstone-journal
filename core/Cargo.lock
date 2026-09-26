@@ -3991,6 +3991,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-assets",
+ "solstone-core-callosum",
  "solstone-core-cli-boundary",
  "solstone-core-depict",
  "solstone-core-describe-categories",

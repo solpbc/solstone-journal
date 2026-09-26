@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-use std::io::Write;
-#[cfg(unix)]
-use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
 use serde_json::json;
+use solstone_core_callosum::CallosumOneShotSender;
 use solstone_core_format::paths::relative_to_journal;
 use solstone_core_format::segment::{is_date_key, segment_key};
 
@@ -84,17 +82,14 @@ pub fn described(
     send(journal, &row);
 }
 
-#[cfg(unix)]
+/// One framed line through the local Callosum transport: the Unix socket, or
+/// on Windows the resident's authenticated named pipe. Best effort, as above.
 fn send(journal: &Path, row: &serde_json::Value) {
-    let Ok(mut stream) = UnixStream::connect(journal.join("health/callosum.sock")) else {
-        return;
-    };
-    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
-    let _ = stream.write_all(format!("{row}\n").as_bytes());
+    let _ = CallosumOneShotSender::new(journal.join("health/callosum.sock"), SEND_TIMEOUT)
+        .send_line(&format!("{row}\n"));
 }
 
-#[cfg(not(unix))]
-fn send(_journal: &Path, _row: &serde_json::Value) {}
+const SEND_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[cfg(all(test, not(feature = "full-tests")))]
 mod tests {
