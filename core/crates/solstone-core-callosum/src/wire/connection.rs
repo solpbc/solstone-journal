@@ -614,7 +614,7 @@ async fn run_connection(run: ConnectionRun) {
         frames,
     } = run;
     let mut stream: Option<ConnectedStream> = None;
-    let mut buffer = Vec::new();
+    let mut buffer = crate::local_inference::FrameAccum::new();
     let mut gapped = false;
     let mut resume_current = false;
 
@@ -766,7 +766,12 @@ async fn run_connection(run: ConnectionRun) {
                     #[cfg(any(test, feature = "test-hooks"))]
                     frames.record();
                 }
-                Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) => {
+                Ok(ReadFrame::PrivateRequest(_)) | Ok(ReadFrame::PrivateResponse(_)) => {
+                    // Ignore private frames on general subscriber connection without gapping.
+                    #[cfg(any(test, feature = "test-hooks"))]
+                    frames.record();
+                }
+                Ok(ReadFrame::Malformed) | Ok(ReadFrame::InvalidUtf8) | Ok(ReadFrame::PrivateRejected) => {
                     let _ = malformed_frame_drops.fetch_add(1, Ordering::AcqRel);
                     if enter_gap(&queues, &mut counters, &mut gapped, CallosumGapReason::MalformedFrameDropped, 1) {
                         #[cfg(any(test, feature = "test-hooks"))]

@@ -4,11 +4,15 @@
 mod connection;
 mod frame;
 mod framing;
+mod local_inference_client;
 mod server;
 
 pub use connection::{
     CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
     CallosumSocketConnection, CallosumStoppedReason, TokioRetrySource,
+};
+pub use local_inference_client::{
+    request_local_inference_snapshot, request_local_inference_snapshot_sync,
 };
 pub use server::{CallosumSocketServer, CallosumSocketServerError};
 

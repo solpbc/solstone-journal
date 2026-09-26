@@ -69,32 +69,37 @@ impl Error for CallosumSocketServerError {
 
 /// Async Callosum local-transport broadcast server.
 pub struct CallosumSocketServer {
-    inner: Arc<ServerInner>,
+    pub(crate) inner: Arc<ServerInner>,
 }
 
-struct ServerInner {
-    socket_path: PathBuf,
-    broadcasts: mpsc::Sender<CallosumEnvelope>,
-    clients: Mutex<HashMap<u64, ClientEntry>>,
-    shutdown: watch::Sender<bool>,
-    tasks: Mutex<Vec<JoinHandle<()>>>,
-    next_client_id: AtomicU64,
-    stopped: AtomicBool,
-    malformed_frame_drops: AtomicU64,
-    broadcast_saturation_drops: AtomicU64,
-    stalled_client_evictions: AtomicU64,
-    unauthenticated_connection_drops: AtomicU64,
+pub(crate) struct ServerInner {
+    pub(crate) socket_path: PathBuf,
+    pub(crate) broadcasts: mpsc::Sender<CallosumEnvelope>,
+    pub(crate) clients: Mutex<HashMap<u64, ClientEntry>>,
+    pub(crate) shutdown: watch::Sender<bool>,
+    pub(crate) tasks: Mutex<Vec<JoinHandle<()>>>,
+    pub(crate) next_client_id: AtomicU64,
+    pub(crate) stopped: AtomicBool,
+    pub(crate) malformed_frame_drops: AtomicU64,
+    pub(crate) broadcast_saturation_drops: AtomicU64,
+    pub(crate) stalled_client_evictions: AtomicU64,
+    pub(crate) unauthenticated_connection_drops: AtomicU64,
+    pub(crate) snapshot_source: Mutex<
+        Option<Arc<dyn Fn() -> crate::local_inference::LocalInferenceSnapshotOffer + Send + Sync>>,
+    >,
+    #[cfg(all(test, not(windows)))]
+    pub(crate) test_snapshot_secret: Mutex<Option<[u8; crate::local_inference::MAC_LEN]>>,
     #[cfg(windows)]
-    pipe_secret: [u8; crate::windows::PIPE_CHALLENGE_LEN],
+    pub(crate) pipe_secret: [u8; crate::windows::PIPE_CHALLENGE_LEN],
     #[cfg(any(test, feature = "test-hooks"))]
-    hooks: Option<Arc<ServerTestHooks>>,
+    pub(crate) hooks: Option<Arc<ServerTestHooks>>,
 }
 
-struct ClientEntry {
-    outbound: mpsc::Sender<Vec<u8>>,
-    shutdown: watch::Sender<bool>,
+pub(crate) struct ClientEntry {
+    pub(crate) outbound: mpsc::Sender<Vec<u8>>,
+    pub(crate) shutdown: watch::Sender<bool>,
     // Dropping this detaches a client task that is already exiting after shutdown/removal.
-    _task: JoinHandle<()>,
+    pub(crate) _task: JoinHandle<()>,
 }
 
 impl CallosumSocketServer {
@@ -137,6 +142,9 @@ impl CallosumSocketServer {
             broadcast_saturation_drops: AtomicU64::new(0),
             stalled_client_evictions: AtomicU64::new(0),
             unauthenticated_connection_drops: AtomicU64::new(0),
+            snapshot_source: Mutex::new(None),
+            #[cfg(all(test, not(windows)))]
+            test_snapshot_secret: Mutex::new(None),
             #[cfg(windows)]
             pipe_secret,
             #[cfg(any(test, feature = "test-hooks"))]
@@ -241,6 +249,57 @@ impl CallosumSocketServer {
         hooks: Arc<ServerTestHooks>,
     ) -> Result<Self, CallosumSocketServerError> {
         Self::bind_inner(socket_path.as_ref().to_path_buf(), Some(hooks)).await
+    }
+
+    #[cfg(test)]
+    pub(crate) fn new_routing_test() -> (Self, mpsc::Receiver<CallosumEnvelope>) {
+        let (broadcasts, broadcast_rx) = mpsc::channel(SERVER_BROADCAST_CAPACITY);
+        let (shutdown, _) = watch::channel(false);
+        let inner = Arc::new(ServerInner {
+            socket_path: PathBuf::from("test/routing/callosum.sock"),
+            broadcasts,
+            clients: Mutex::new(HashMap::new()),
+            shutdown,
+            tasks: Mutex::new(Vec::new()),
+            next_client_id: AtomicU64::new(1),
+            stopped: AtomicBool::new(false),
+            malformed_frame_drops: AtomicU64::new(0),
+            broadcast_saturation_drops: AtomicU64::new(0),
+            stalled_client_evictions: AtomicU64::new(0),
+            unauthenticated_connection_drops: AtomicU64::new(0),
+            snapshot_source: Mutex::new(None),
+            #[cfg(all(test, not(windows)))]
+            test_snapshot_secret: Mutex::new(None),
+            #[cfg(windows)]
+            pipe_secret: [0_u8; crate::windows::PIPE_CHALLENGE_LEN],
+            #[cfg(any(test, feature = "test-hooks"))]
+            hooks: None,
+        });
+        (Self { inner }, broadcast_rx)
+    }
+
+    /// Register a closure providing active local-inference snapshots.
+    ///
+    /// The current-user DACL and remote-client rejection protect cross-user/cross-identity
+    /// and remote-network access—not same-SID malware, which is trusted once admitted.
+    /// The closure is called once per accepted request, outside the mutex, and is not cached.
+    /// Replacing it is visible to the next request.
+    pub fn set_local_inference_snapshot_source<F>(&self, source: F)
+    where
+        F: Fn() -> crate::local_inference::LocalInferenceSnapshotOffer + Send + Sync + 'static,
+    {
+        *lock(&self.inner.snapshot_source) = Some(Arc::new(source));
+    }
+
+    /// Clear the registered local-inference snapshot provider.
+    pub fn clear_local_inference_snapshot_source(&self) {
+        *lock(&self.inner.snapshot_source) = None;
+    }
+
+    #[cfg(all(test, not(windows)))]
+    #[doc(hidden)]
+    pub fn set_test_snapshot_secret(&self, secret: Option<[u8; crate::local_inference::MAC_LEN]>) {
+        *lock(&self.inner.test_snapshot_secret) = secret;
     }
 }
 
@@ -377,25 +436,20 @@ async fn run_client(
     }
     let (read_half, mut write_half) = split_stream(stream);
     let mut reader = reader(read_half);
-    let mut buffer = Vec::new();
+    let mut accum = crate::local_inference::FrameAccum::new();
     loop {
         tokio::select! {
             changed = shutdown.changed() => {
                 let _ = changed;
                 break;
             }
-            line = read_frame(&mut reader, &mut buffer) => match line {
-                Ok(ReadFrame::Envelope(mut envelope)) => {
-                    stamp_timestamp(&mut envelope);
-                    let _ = queue_broadcast(&inner, envelope);
+            line = read_frame(&mut reader, &mut accum) => match line {
+                Ok(frame) => {
+                    if !route_client_frame(&inner, id, frame) {
+                        break;
+                    }
                 }
-                Ok(ReadFrame::Whitespace) => {}
-                Ok(ReadFrame::Malformed) => record_malformed(&inner),
-                Ok(ReadFrame::InvalidUtf8) => {
-                    // Intentional deviation from Python: discard one bad frame to preserve bus stability.
-                    record_malformed(&inner);
-                }
-                Ok(ReadFrame::Eof) | Err(_) => break,
+                Err(_) => break,
             },
             line = outbound.recv() => match line {
                 Some(line) => {
@@ -410,6 +464,108 @@ async fn run_client(
         }
     }
     remove_client(&inner, id);
+}
+
+pub(crate) fn route_client_frame(inner: &Arc<ServerInner>, id: u64, frame: ReadFrame) -> bool {
+    match frame {
+        ReadFrame::Envelope(mut envelope) => {
+            stamp_timestamp(&mut envelope);
+            queue_broadcast(inner, envelope);
+            true
+        }
+        ReadFrame::PrivateRequest(request) => {
+            accept_private_request(inner, id, request);
+            true
+        }
+        ReadFrame::PrivateResponse(_) | ReadFrame::PrivateRejected => {
+            record_malformed(inner);
+            true
+        }
+        ReadFrame::Whitespace => true,
+        ReadFrame::Malformed | ReadFrame::InvalidUtf8 => {
+            record_malformed(inner);
+            true
+        }
+        ReadFrame::Eof => false,
+    }
+}
+
+fn mac_secret(_inner: &ServerInner) -> Option<[u8; crate::local_inference::MAC_LEN]> {
+    #[cfg(windows)]
+    {
+        Some(_inner.pipe_secret)
+    }
+    #[cfg(all(test, not(windows)))]
+    {
+        *_inner.test_snapshot_secret.lock().unwrap()
+    }
+    #[cfg(not(any(windows, all(test, not(windows)))))]
+    {
+        None
+    }
+}
+
+fn accept_private_request(
+    inner: &Arc<ServerInner>,
+    id: u64,
+    request: crate::local_inference::LocalInferencePrivateRequest,
+) {
+    let Some(secret) = mac_secret(inner) else {
+        return;
+    };
+    let source_opt = {
+        let lock = lock(&inner.snapshot_source);
+        lock.clone()
+    };
+    let reply_bytes = match source_opt {
+        None => crate::local_inference::encode_response_frame(
+            &secret,
+            crate::local_inference::PRIVATE_KIND_UNAVAILABLE,
+            request.correlation,
+            &request.nonce,
+            0,
+            0,
+            &[],
+        ),
+        Some(source) => match source() {
+            crate::local_inference::LocalInferenceSnapshotOffer::Unavailable => {
+                crate::local_inference::encode_response_frame(
+                    &secret,
+                    crate::local_inference::PRIVATE_KIND_UNAVAILABLE,
+                    request.correlation,
+                    &request.nonce,
+                    0,
+                    0,
+                    &[],
+                )
+            }
+            crate::local_inference::LocalInferenceSnapshotOffer::Ready(snapshot) => {
+                crate::local_inference::encode_response_frame(
+                    &secret,
+                    crate::local_inference::PRIVATE_KIND_CREDENTIAL,
+                    request.correlation,
+                    &request.nonce,
+                    snapshot.generation(),
+                    snapshot.port(),
+                    snapshot.token(),
+                )
+            }
+        },
+    };
+    enqueue_client_bytes(inner, id, reply_bytes);
+}
+
+pub(crate) fn enqueue_client_bytes(inner: &ServerInner, id: u64, bytes: Vec<u8>) {
+    let sender = {
+        let clients = lock(&inner.clients);
+        clients.get(&id).map(|entry| entry.outbound.clone())
+    };
+    if let Some(sender) = sender {
+        let sent = sender.try_send(bytes);
+        if matches!(sent, Err(mpsc::error::TrySendError::Full(_))) {
+            evict_client(inner, id);
+        }
+    }
 }
 
 async fn write_client_line(

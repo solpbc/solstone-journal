@@ -5,6 +5,7 @@
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 
+mod local_inference;
 mod model;
 mod oneshot;
 mod reader;
@@ -15,6 +16,11 @@ pub mod windows;
 mod wire;
 mod writer;
 
+pub use local_inference::LOCAL_INFERENCE_TOKEN_MAX;
+#[cfg(feature = "wire")]
+pub use local_inference::{
+    LocalInferenceReadError, LocalInferenceSnapshot, LocalInferenceSnapshotOffer,
+};
 pub use model::{CallosumEnvelope, DeviceIngestEvent, DurableEvent, FileDescriptor};
 pub use oneshot::{CallosumOneShotError, CallosumOneShotSender};
 pub use reader::{
@@ -29,6 +35,7 @@ pub use wire::test_support;
 pub use wire::{
     CallosumConnectionPhase, CallosumGapReason, CallosumReceiveEvent, CallosumRetrySource,
     CallosumSocketConnection, CallosumSocketServer, CallosumSocketServerError,
-    CallosumStoppedReason, TokioRetrySource,
+    CallosumStoppedReason, TokioRetrySource, request_local_inference_snapshot,
+    request_local_inference_snapshot_sync,
 };
 pub use writer::{CallosumWriteError, append_durable_event};
