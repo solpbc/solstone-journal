@@ -2,22 +2,24 @@
 // Copyright (c) 2026 sol pbc
 
 use std::env;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::io::Read;
 use std::path::{Path, PathBuf};
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::thread;
 use std::time::Duration;
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 use std::time::Instant;
 
 use solstone_core_cogitate::{AccessTierError, classify_command};
 #[cfg(unix)]
 use solstone_core_system::lifecycle::{RunId, hosted_child_launch_provenance};
 #[cfg(unix)]
+use solstone_core_system::process::launch_command_hosted;
+#[cfg(any(unix, windows))]
 use solstone_core_system::process::{
     BoxedTerminateFn, CommandLaunchRequest, Disposition, LaunchAuthority, LaunchError,
-    launch_command, launch_command_hosted,
+    launch_command,
 };
 
 use crate::{BudgetExhaustedEvent, SlotLease, SlotReacquireError, SolCallBudget};
@@ -119,7 +121,7 @@ pub fn run_command(argv: &[String], journal_root: &Path) -> Result<SolObservatio
     )
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn run_command_with_timeout(
     argv: &[String],
     journal_root: &Path,
@@ -135,6 +137,8 @@ fn run_command_with_timeout(
         });
     };
     let command = CommandLaunchRequest {
+        #[cfg(windows)]
+        read_file_grants: Vec::new(),
         program: executable.into_os_string(),
         arguments: argv[1..].iter().map(Into::into).collect(),
         environment: Default::default(),
@@ -144,7 +148,7 @@ fn run_command_with_timeout(
         stdout_piped: true,
         stderr_piped: true,
     };
-    let child = ProcessGroupChild::spawn(command, timeout);
+    let child = OwnedCommandChild::spawn(command, timeout);
     let mut child = match child {
         Ok(child) => child,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -173,12 +177,12 @@ fn run_command_with_timeout(
     let stderr_reader = thread::spawn(move || read_all(stderr));
     let deadline = Instant::now() + timeout;
     let outcome = loop {
-        match child.exited_without_reaping() {
-            Ok(true) => break child.finish().map(|status| (status, false)),
-            Ok(false) if Instant::now() >= deadline => {
+        match child.poll_exit() {
+            Ok(Some(exit)) => break Ok(exit),
+            Ok(None) if Instant::now() >= deadline => {
                 break child.finish().map(|status| (status, true));
             }
-            Ok(false) => thread::sleep(Duration::from_millis(5)),
+            Ok(None) => thread::sleep(Duration::from_millis(5)),
             Err(error) => {
                 let cleanup = child.finish();
                 let cleanup = cleanup.err().map(|cleanup| cleanup.to_string());
@@ -194,15 +198,14 @@ fn run_command_with_timeout(
     let stderr = String::from_utf8_lossy(&stderr_reader.join().expect("stderr reader panicked"))
         .into_owned();
     let (status, timed_out) = outcome.map_err(|error| error.to_string())?;
-    // signal_aware_exit_code is non-negative iff ExitStatus::code() was Some.
-    let text = format_shell_output(&stdout, &stderr, (status >= 0).then_some(status), timed_out);
+    let text = format_shell_output(&stdout, &stderr, reported_exit_code(status), timed_out);
     Ok(SolObservation {
         is_error: timed_out || status != 0,
         text,
     })
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(unix, windows)))]
 fn run_command_with_timeout(
     _argv: &[String],
     _journal_root: &Path,
@@ -211,15 +214,27 @@ fn run_command_with_timeout(
     Err("process capability unavailable on this platform".to_owned())
 }
 
+// signal_aware_exit_code is non-negative iff ExitStatus::code() was Some.
 #[cfg(unix)]
-struct ProcessGroupChild {
+fn reported_exit_code(status: i32) -> Option<i32> {
+    (status >= 0).then_some(status)
+}
+
+// A Windows exit code is always a code; NTSTATUS values read as negative i32.
+#[cfg(windows)]
+fn reported_exit_code(status: i32) -> Option<i32> {
+    Some(status)
+}
+
+#[cfg(unix)]
+struct OwnedCommandChild {
     authority: LaunchAuthority,
     group: rustix::process::Pid,
     timeout: Duration,
 }
 
 #[cfg(unix)]
-impl ProcessGroupChild {
+impl OwnedCommandChild {
     fn spawn(command: CommandLaunchRequest, timeout: Duration) -> std::io::Result<Self> {
         // Journal owns native same-device operations and acknowledges admission
         // at entry. Give it a distinct descendant identity rather than letting
@@ -283,24 +298,84 @@ impl ProcessGroupChild {
         self.authority.take_stderr()
     }
 
-    fn exited_without_reaping(&self) -> std::io::Result<bool> {
-        rustix::process::waitid(
+    /// Once the root has exited, stop its group before reaping so no
+    /// descendant outlives the call or keeps the output pipes open.
+    fn poll_exit(&mut self) -> std::io::Result<Option<(i32, bool)>> {
+        let exited = rustix::process::waitid(
             rustix::process::WaitId::Pid(self.group),
             rustix::process::WaitIdOptions::EXITED
                 | rustix::process::WaitIdOptions::NOHANG
                 | rustix::process::WaitIdOptions::NOWAIT,
         )
-        .map(|status| status.is_some())
-        .map_err(std::io::Error::from)
+        .map_err(std::io::Error::from)?
+        .is_some();
+        if !exited {
+            return Ok(None);
+        }
+        self.finish().map(|status| Some((status, false)))
     }
 
-    fn finish(mut self) -> std::io::Result<i32> {
+    fn finish(&mut self) -> std::io::Result<i32> {
         let _ = self.authority.terminate(self.timeout);
         self.authority.wait()
     }
 }
 
-#[cfg(unix)]
+/// The command runs as the root of its own kill-on-close Job. The launch
+/// facade prepares the child's environment, launch-only names excluded, and
+/// its bounded-helper deadline stops the whole Job even if this caller stalls.
+#[cfg(windows)]
+struct OwnedCommandChild {
+    authority: LaunchAuthority,
+    timeout: Duration,
+}
+
+#[cfg(windows)]
+impl OwnedCommandChild {
+    fn spawn(command: CommandLaunchRequest, timeout: Duration) -> std::io::Result<Self> {
+        // Windows termination is the Job's; the facade never calls this.
+        let terminate: BoxedTerminateFn =
+            Box::new(|child, _timeout| child.kill().map_err(LaunchError::Terminate));
+        let authority = launch_command(
+            Disposition::IndependentBoundedHelper { timeout },
+            command,
+            terminate,
+        )
+        .map_err(|error| match error {
+            LaunchError::Spawn(inner) => inner,
+            other => std::io::Error::other(other),
+        })?;
+        Ok(Self { authority, timeout })
+    }
+
+    fn take_stdout(&mut self) -> Option<std::fs::File> {
+        self.authority.take_stdout()
+    }
+
+    fn take_stderr(&mut self) -> Option<std::fs::File> {
+        self.authority.take_stderr()
+    }
+
+    /// A root exit is reported only after the facade has stopped any
+    /// descendant still in the Job; its elapsed deadline reports a timeout.
+    fn poll_exit(&mut self) -> std::io::Result<Option<(i32, bool)>> {
+        match self.authority.poll() {
+            Ok(Some(status)) => Ok(Some((status, false))),
+            Ok(None) => Ok(None),
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => Ok(Some((-1, true))),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn finish(&mut self) -> std::io::Result<i32> {
+        self.authority
+            .terminate(self.timeout)
+            .map_err(std::io::Error::other)?;
+        Ok(-1)
+    }
+}
+
+#[cfg(any(unix, windows))]
 fn read_all(mut stream: impl Read) -> Vec<u8> {
     let mut bytes = Vec::new();
     let _ = stream.read_to_end(&mut bytes);
@@ -328,16 +403,27 @@ fn resolve_executable_in(
     if candidate.is_absolute() && candidate.exists() {
         return Some(candidate.to_path_buf());
     }
+    let file_name = executable_file_name(name);
     if let Some(path) = executable_dir
-        .map(|directory| directory.join(name))
+        .map(|directory| directory.join(&file_name))
         .filter(|path| path.exists())
     {
         return Some(path);
     }
     paths
         .iter()
-        .map(|directory| directory.join(name))
+        .map(|directory| directory.join(&file_name))
         .find(|path| path.exists())
+}
+
+/// A bare command name names the platform's executable file: `journal` is
+/// `journal.exe` on Windows.
+fn executable_file_name(name: &str) -> String {
+    if Path::new(name).extension().is_some() {
+        name.to_owned()
+    } else {
+        format!("{name}{}", env::consts::EXE_SUFFIX)
+    }
 }
 
 pub fn format_shell_output(
@@ -443,11 +529,11 @@ mod tests {
         let path = root.path().join("path");
         fs::create_dir_all(&sibling).expect("sibling directory");
         fs::create_dir_all(&path).expect("path directory");
-        fs::write(sibling.join("solstone"), "sibling").expect("sibling fixture");
-        fs::write(path.join("solstone"), "path").expect("path fixture");
+        fs::write(sibling.join(exe("solstone")), "sibling").expect("sibling fixture");
+        fs::write(path.join(exe("solstone")), "path").expect("path fixture");
         assert_eq!(
             resolve_executable_in("solstone", Some(&sibling), &[path]),
-            Some(sibling.join("solstone"))
+            Some(sibling.join(exe("solstone")))
         );
     }
 
@@ -458,11 +544,11 @@ mod tests {
         let path = root.path().join("path");
         fs::create_dir_all(&sibling).expect("sibling directory");
         fs::create_dir_all(&path).expect("path directory");
-        fs::write(sibling.join("solstone"), "sibling").expect("current sibling");
-        fs::write(path.join("sol"), "stale-path-sol").expect("stale path sol");
+        fs::write(sibling.join(exe("solstone")), "sibling").expect("current sibling");
+        fs::write(path.join(exe("sol")), "stale-path-sol").expect("stale path sol");
         assert_eq!(
             resolve_executable_in("solstone", Some(&sibling), std::slice::from_ref(&path)),
-            Some(sibling.join("solstone"))
+            Some(sibling.join(exe("solstone")))
         );
         assert_eq!(
             resolve_executable_in("sol", Some(&sibling), &[]),
@@ -527,6 +613,22 @@ mod tests {
         let exact = serde_json::json!({"a": "é".repeat(SHELL_STDOUT_CAP - 8)}).to_string();
         assert_eq!(exact.chars().count(), SHELL_STDOUT_CAP);
         assert_eq!(format_stdout(&format!("\n{exact}")), exact);
+    }
+
+    #[test]
+    fn bare_name_resolves_the_platform_executable_file() {
+        let root = unique_temp_dir("suffix");
+        let sibling = root.path().join("sibling");
+        fs::create_dir_all(&sibling).expect("sibling directory");
+        fs::write(sibling.join(exe("journal")), "journal").expect("journal fixture");
+        assert_eq!(
+            resolve_executable_in("journal", Some(&sibling), &[]),
+            Some(sibling.join(exe("journal")))
+        );
+    }
+
+    fn exe(name: &str) -> String {
+        format!("{name}{}", std::env::consts::EXE_SUFFIX)
     }
 
     fn unique_temp_dir(name: &str) -> tempfile::TempDir {

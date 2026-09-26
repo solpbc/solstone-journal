@@ -119,6 +119,8 @@ pub fn spawn_one(
         stop_group(pgid);
         Ok(())
     });
+    // Never called on Windows: the launch facade ignores it, and a stop or
+    // the bounded deadline terminates the talent's whole kill-on-close Job.
     #[cfg(not(unix))]
     let terminate = Box::new(|child: &mut std::process::Child, _timeout| {
         child.kill().map_err(LaunchError::Terminate)

@@ -4663,6 +4663,20 @@ required_features = ["test-hooks"]
 runtime = "none"
 
 [[suites]]
+id = "solstone-core-cogitate-tools::sol_execution_process_windows"
+package = "solstone-core-cogitate-tools"
+target = "sol_execution_process_windows"
+set = "component"
+areas = ["cognition", "commands"]
+platforms = ["windows"]
+prerequisites = ["cargo-cache"]
+timeout = "standard"
+serial_group = "host-contention"
+default_full = true
+required_features = ["test-hooks"]
+runtime = "none"
+
+[[suites]]
 id = "solstone-core-cogitate-wire::cogitate_environment_isolation"
 package = "solstone-core-cogitate-wire"
 target = "cogitate_environment_isolation"

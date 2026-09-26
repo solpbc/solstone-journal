@@ -198,6 +198,8 @@ call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tes
 call :run_exact_library "solstone-core-service-unit" "windows_task_readback::tests::refuses_duplicate_actions_triggers_wrong_namespace_and_privilege" || exit /b 1
 call :run_platform_receipt "Windows readiness birth" "solstone-core-system" "windows_lifecycle_receipt" "windows_readiness_birth_binding_receipt" "JOURNAL_WIN_CI_READINESS_BIRTH" || exit /b 1
 call :run_exact_target "solstone-core" "windows_service_capture" "windows_service_capture::windows_service_capture_receipt" "JOURNAL_WIN_CI_SERVICE_CAPTURE=PASS" || exit /b 1
+echo === cargo test --locked (cogitate sol tool command contract) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-cogitate-tools --test sol_execution_process_windows --features test-hooks -- --test-threads=1 || exit /b 1
 echo JOURNAL_WIN_CI_RUNTIME_COMPONENTS=executed/pass
 
 :: Detect another operator replacing the persistent checkout while Cargo ran.

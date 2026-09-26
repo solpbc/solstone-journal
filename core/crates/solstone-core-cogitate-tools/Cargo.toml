@@ -35,5 +35,10 @@ name = "sol_execution_process"
 path = "tests/sol_execution_process.rs"
 required-features = ["test-hooks"]
 
+[[test]]
+name = "sol_execution_process_windows"
+path = "tests/sol_execution_process_windows.rs"
+required-features = ["test-hooks"]
+
 [lints]
 workspace = true
