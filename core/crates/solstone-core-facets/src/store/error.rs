@@ -469,7 +469,8 @@ impl From<ObservationWriteError> for FacetEntityWriteError {
             ObservationWriteError::Write(e) => Self::FacetWrite(FacetWriteError::ContentWrite(e)),
             ObservationWriteError::Resolve(_)
             | ObservationWriteError::EmptyContent
-            | ObservationWriteError::Conflict { .. } => {
+            | ObservationWriteError::Conflict { .. }
+            | ObservationWriteError::Retired { .. } => {
                 Self::Io(io::Error::other(error.to_string()))
             }
         }

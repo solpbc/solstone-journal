@@ -71,10 +71,10 @@ pub use error::{
 pub use event_topic_migration::{EventTopicMigrationReport, migrate_event_topic_keys};
 pub use facet_entities::{
     FacetEntityAttachResult, PreparedReviewAttachment, PreparedReviewPromotion, ScopedFacetEntity,
-    add_entity_aka, attach_or_reactivate_entity, detach_facet_entity, list_scoped_facet_entities,
-    list_scoped_facet_entities_tolerant, prepare_review_promotion, publish_review_aliases,
-    publish_review_attachment, review_promotion_snapshot, update_facet_entity_description,
-    update_facet_entity_identity,
+    add_entity_aka, attach_or_reactivate_entity, attach_or_reactivate_entity_for_owner,
+    detach_facet_entity, list_scoped_facet_entities, list_scoped_facet_entities_tolerant,
+    prepare_review_promotion, publish_review_aliases, publish_review_attachment,
+    review_promotion_snapshot, update_facet_entity_description, update_facet_entity_identity,
 };
 pub use facet_entity_move::{FacetEntityMoveResult, move_facet_entity};
 pub use facet_id::{
@@ -89,7 +89,7 @@ pub use legacy_entity_migration::{
 pub use lifecycle::{
     EntityBlockReport, EntityDeleteGuardOutcome, EntityDeleteReport, EntityHistoryReference,
     FacetEntityLifecycleError, block_journal_entity, delete_created_entity_if_unreferenced,
-    delete_journal_entity,
+    delete_journal_entity, delete_journal_entity_after,
 };
 #[cfg(any(test, feature = "test-hooks"))]
 pub use lifecycle::{

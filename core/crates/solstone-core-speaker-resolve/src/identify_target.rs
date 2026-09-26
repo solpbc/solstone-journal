@@ -199,18 +199,31 @@ pub fn resolve_identify_target(
             entity_type: request.entity_type.clone(),
         });
     }
-    let proposed_id = entity_slug(name);
+    let mut proposed_id = entity_slug(name);
     let _trust = hold_entity_trust_lock(&request.journal_root)?;
-    if let Ok(Some(successor)) =
-        solstone_core_entity::merged_away(&request.journal_root, &proposed_id)
+    // A name merged into a live entity names that entity. A name that was
+    // deleted, or merged into an entity that is gone, is the owner making a
+    // new entity: it gets a suffixed id and keeps the name.
+    let suffix = match solstone_core_entity::retired_state(&request.journal_root, &proposed_id) {
+        Ok(Some(solstone_core_entity::RetiredState::Merged { successor })) => {
+            match solstone_core_entity::live_merge_successor(&request.journal_root, &successor) {
+                Some(successor) => {
+                    return Ok(IdentifyTargetOutcome::EntityMerged {
+                        entity_id: proposed_id,
+                        successor,
+                    });
+                }
+                None => true,
+            }
+        }
+        Ok(Some(solstone_core_entity::RetiredState::Deleted)) => true,
+        Ok(None) | Err(_) => false,
+    };
+    if suffix
+        && let Ok(fresh) =
+            solstone_core_entity::fresh_entity_id(&request.journal_root, &proposed_id)
     {
-        let successor =
-            solstone_core_entity::live_merge_successor(&request.journal_root, &successor)
-                .unwrap_or(successor);
-        return Ok(IdentifyTargetOutcome::EntityMerged {
-            entity_id: proposed_id,
-            successor,
-        });
+        proposed_id = fresh;
     }
     let occupied = read_identity_map(&request.journal_root)?
         .resolved

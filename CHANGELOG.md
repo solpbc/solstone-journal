@@ -13,6 +13,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - merging facets can't be undone, so `journal facet merge` now needs `--yes` to run. check first what a merge would lose with `--dry-run`.
 - merging entities can't be undone any more, and the confirmation before a merge now says so. an entity that was merged away is never created again: a new mention of its name doesn't bring it back, and adding it yourself is refused with the name of the entity it joined.
 - `solstone call entities merge --commit`, `solstone call entities accept-merge-candidate --commit`, `solstone call speakers merge-names` and `solstone call speakers resolve-names --commit` now need `--yes`. `solstone call entities undo-merge` is gone. a script that runs one of these needs to add `--yes`.
+- when you delete an entity, your journal now remembers that you deleted it, so it never brings the entity back on its own when the name comes up again. if you add the name yourself later, you get a new entity, and the one you deleted stays gone. adding notes to the deleted name is refused until you add it again. this applies to entities you delete from this version on.
+- importing an archive no longer brings back an entity you delete in this journal from this version on. the archive's copy shows as staged in the import's details, and its links and notes aren't added. if you've added the name again, the archive's copy joins the one you added instead, as any matching entity does.
 
 ### Removed
 

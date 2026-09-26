@@ -482,11 +482,6 @@ pub fn prepare_publication(
             skipped += 1;
             continue;
         };
-        // A merged entity is never created again, so its name is not promoted.
-        if solstone_core_entity::merged_away(journal, &slug)?.is_some() {
-            skipped += 1;
-            continue;
-        }
         let aliases = row
             .get("aliases")
             .and_then(Value::as_array)
@@ -530,6 +525,15 @@ pub fn prepare_publication(
             description,
             &aliases,
         )?;
+        // A merged or deleted entity is never created again. A name a live
+        // entity carries (one the owner added again under a new id) resolves
+        // to that entity and is promoted as usual.
+        if let Some(change) = &promotion.identity
+            && solstone_core_entity::retired_state(journal, &change.entity_id)?.is_some()
+        {
+            skipped += 1;
+            continue;
+        }
         if let Some(change) = promotion.identity {
             actions.push(PreparedDailyAction::Identity {
                 facet: facet.into(),
@@ -715,10 +719,11 @@ pub fn apply_result(
                     *counts.get_mut("skipped").unwrap() += 1;
                     Some(canonical_slug.to_owned())
                 }
-                // A merged entity is never created again; the detection is
-                // not an error, and nothing is attached for it.
+                // A merged or deleted entity is never created again; the
+                // detection is not an error, and nothing is attached for it.
                 Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
-                    solstone_core_entity::EntityWriteError::IdentityMerged { .. },
+                    solstone_core_entity::EntityWriteError::IdentityMerged { .. }
+                    | solstone_core_entity::EntityWriteError::IdentityDeleted { .. },
                 )) => {
                     *counts.get_mut("skipped").unwrap() += 1;
                     None

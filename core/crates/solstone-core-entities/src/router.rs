@@ -2451,12 +2451,32 @@ enum Held {
     Principal,
     ReadFailed,
     NotSaved(String),
+    RecordDamaged(String),
+    MergePending,
 }
 
 /// Write the delete down before answering: a delete the page reports as under
 /// way must survive the journal stopping inside its window.
 fn hold_delete(state: &RouterState, entity_id: &str) -> Held {
     let root = &state.journal_root;
+    // An entity merge that stopped partway is settled first, as the delete
+    // itself does: it may restore this entity or its principal mark.
+    // Without a recovery record the delete is held at once, even while an
+    // import runs; a merge under way has one, so the request waits for it.
+    // The commit settles anything left then.
+    if solstone_core_entity::entity_merge_recovery_pending(root) {
+        let Ok(_entity) = solstone_core_entity::hold_entity_trust_lock(root) else {
+            return Held::NotSaved("your journal is busy. try again in a moment.".to_owned());
+        };
+        if crate::deferred_delete::settle_interrupted_merge(root).is_err() {
+            return Held::MergePending;
+        }
+    }
+    // The delete records the id before it removes anything; a record that
+    // can't be read refuses now, not after the cancel window.
+    if let Some(detail) = solstone_core_entity::retired_record_damage(root) {
+        return Held::RecordDamaged(detail);
+    }
     let (target, identity) = match crate::deferred_delete::current_target(root, entity_id) {
         Ok(Some(found)) => found,
         Ok(None) => return Held::NotFound,
@@ -2562,6 +2582,11 @@ async fn deferred_delete_journal_entity_route(
         Ok(Held::NotSaved(error)) => refusal(
             ReasonCode::EntityDeleteNotSaved,
             format!("the pending delete was not saved, so nothing was deleted: {error}"),
+        ),
+        Ok(Held::RecordDamaged(detail)) => refusal(ReasonCode::EntityRecordDamaged, detail),
+        Ok(Held::MergePending) => refusal(
+            ReasonCode::EntityMergeRecoveryPending,
+            crate::deferred_delete::MERGE_PENDING_REASON,
         ),
         Ok(Held::ReadFailed) | Err(_) => {
             refusal(ReasonCode::EntityOperationFailed, "entity read failed")
@@ -3690,7 +3715,7 @@ async fn observations_route(
         order,
     };
     match solstone_core_serving::seam::run_blocking(move || {
-        let entity_dir = facet_observation_entity_dir(&root, &facet, &name)
+        let (entity_dir, _) = facet_observation_entity_dir(&root, &facet, &name)
             .map_err(|error| error.to_string())?;
         solstone_core_facets::read_live_observations(&root, &facet, &entity_dir, read_query)
             .map_err(|error| error.to_string())
@@ -3711,18 +3736,20 @@ async fn observations_route(
 }
 
 /// Resolve a stored facet relationship before using the legacy slug fallback.
+/// The folder for a facet observation about `name`, and whether it is the
+/// slug fallback rather than an entity linked in the facet.
 fn facet_observation_entity_dir(
     journal_root: &Path,
     facet: &str,
     name: &str,
-) -> Result<String, solstone_core_facets::FacetEntityWriteError> {
+) -> Result<(String, bool), solstone_core_facets::FacetEntityWriteError> {
     let attached =
         solstone_core_facets::list_scoped_facet_entities(journal_root, facet, false, false)?;
     if let Some(entity) = attached
         .iter()
         .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
     {
-        return Ok(entity.relationship_dir.clone());
+        return Ok((entity.relationship_dir.clone(), false));
     }
     let inclusive =
         solstone_core_facets::list_scoped_facet_entities(journal_root, facet, true, true)?;
@@ -3730,9 +3757,9 @@ fn facet_observation_entity_dir(
         .iter()
         .find(|entity| entity.identity.get("name").and_then(Value::as_str) == Some(name))
     {
-        return Ok(entity.relationship_dir.clone());
+        return Ok((entity.relationship_dir.clone(), false));
     }
-    Ok(solstone_core_entity_matching::entity_slug(name))
+    Ok((solstone_core_entity_matching::entity_slug(name), true))
 }
 
 fn facet_entity_write_error_is_busy(error: &solstone_core_facets::FacetEntityWriteError) -> bool {
@@ -3870,7 +3897,13 @@ async fn attach_route(
     let name_for_response = name.clone();
     let refusal_root = root.clone();
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::attach_or_reactivate_entity(&root, &facet, &kind, &name, &description)
+        solstone_core_facets::attach_or_reactivate_entity_for_owner(
+            &root,
+            &facet,
+            &kind,
+            &name,
+            &description,
+        )
     })
     .await
     {
@@ -3937,7 +3970,13 @@ async fn create_entity_route(
     let name_for_response = name.clone();
     let refusal_root = root.clone();
     match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_facets::attach_or_reactivate_entity(&root, &facet, &kind, &name, &description)
+        solstone_core_facets::attach_or_reactivate_entity_for_owner(
+            &root,
+            &facet,
+            &kind,
+            &name,
+            &description,
+        )
     })
     .await
     {
@@ -4237,11 +4276,37 @@ async fn observe_route(
         let root = Arc::clone(&root);
         let facet = facet.clone();
         let name = name.clone();
-        move || facet_observation_entity_dir(&root, &facet, &name)
+        move || {
+            let (entity_dir, fallback) = facet_observation_entity_dir(&root, &facet, &name)?;
+            // A name whose entity was merged or deleted has no folder of its
+            // own to take notes: they would sit where nothing lists them.
+            let retired = if fallback {
+                solstone_core_entity::retired_state(&root, &entity_dir)
+            } else {
+                Ok(None)
+            };
+            Ok::<_, solstone_core_facets::FacetEntityWriteError>((entity_dir, retired))
+        }
     })
     .await
     {
-        Ok(Ok(entity_dir)) => entity_dir,
+        Ok(Ok((entity_dir, Ok(None)))) => entity_dir,
+        Ok(Ok((entity_id, Ok(Some(solstone_core_entity::RetiredState::Merged { successor }))))) => {
+            return merged_entity_refusal(&root, &entity_id, &successor);
+        }
+        Ok(Ok((_, Ok(Some(solstone_core_entity::RetiredState::Deleted))))) => {
+            return refusal(
+                ReasonCode::EntityNotFound,
+                format!(
+                    "'{name}' isn't in this facet. add it here first, then add notes about it."
+                ),
+            );
+        }
+        // The record can't say whether the name was deleted, so nothing is
+        // written where it might not be listed.
+        Ok(Ok((_, Err(detail)))) => {
+            return refusal(ReasonCode::EntityRecordDamaged, detail);
+        }
         _ => {
             return refusal(
                 ReasonCode::EntityOperationFailed,

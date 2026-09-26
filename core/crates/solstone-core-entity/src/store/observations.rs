@@ -118,7 +118,14 @@ pub enum ObservationWriteError {
     Write(AtomicWriteError),
     Resolve(String),
     EmptyContent,
-    Conflict { message: String },
+    Conflict {
+        message: String,
+    },
+    /// The entity was merged away or deleted. Its notes are not written, and
+    /// this is not a failure: the name simply no longer has an entity.
+    Retired {
+        entity_id: String,
+    },
 }
 
 impl fmt::Display for ObservationWriteError {
@@ -130,6 +137,10 @@ impl fmt::Display for ObservationWriteError {
             Self::Resolve(message) => write!(formatter, "{message}"),
             Self::EmptyContent => write!(formatter, "Observation content cannot be blank"),
             Self::Conflict { message } => write!(formatter, "{message}"),
+            Self::Retired { entity_id } => write!(
+                formatter,
+                "'{entity_id}' was merged away or deleted, so no notes are added for it"
+            ),
         }
     }
 }
@@ -1338,6 +1349,22 @@ fn ensure_facet_relationship_internal(
     Ok(entity_dir)
 }
 
+/// The `entity_id` a facet link folder's `entity.json` names, if it has one.
+fn linked_entity_id(journal_root: &Path, facet_dir: &str, folder: &str) -> Option<String> {
+    let path = contained_path(
+        journal_root,
+        &format!("facets/{facet_dir}/entities/{folder}/entity.json"),
+    )
+    .ok()?;
+    let text = solstone_core_journal_io::read_optional_text(path).ok()??;
+    serde_json::from_str::<Value>(&text)
+        .ok()?
+        .get("entity_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_owned)
+}
+
 /// Apply batch observation operations with strict JSON validation under the facet trust lock.
 pub fn record_observation_ops_strict(
     journal_root: &Path,
@@ -1351,19 +1378,29 @@ pub fn record_observation_ops_strict(
         let entity_dir = match resolve_observation_entity_dir(journal_root, facet_dir, entity_query)
             .map_err(|e| ObservationWriteError::Resolve(e.to_string()))?
         {
-            ObservationEntityResolution::Resolved { entity_dir } => entity_dir,
+            ObservationEntityResolution::Resolved { entity_dir } => {
+                // A folder whose link names a merged or deleted entity (or an
+                // orphan folder named by one) is not a match: notes written
+                // there would sit where nothing lists them.
+                let linked = linked_entity_id(journal_root, facet_dir, &entity_dir)
+                    .unwrap_or_else(|| entity_dir.clone());
+                if super::retired::retired_state(journal_root, &linked)
+                    .map_err(ObservationWriteError::Resolve)?
+                    .is_some()
+                {
+                    return Err(ObservationWriteError::Retired { entity_id: linked });
+                }
+                entity_dir
+            }
             ObservationEntityResolution::NoSuchEntity => {
                 let entity_id = entity_slug(entity_query);
-                // A merged entity is never recreated, not even as a bare link
-                // its observations would be hidden behind.
-                if let Some(successor) = super::retired::merged_away(journal_root, &entity_id)
+                // A merged or deleted entity is never recreated, not even as a
+                // bare link its observations would be hidden behind.
+                if super::retired::retired_state(journal_root, &entity_id)
                     .map_err(ObservationWriteError::Resolve)?
+                    .is_some()
                 {
-                    let survivor = super::retired::live_merge_successor(journal_root, &successor)
-                        .unwrap_or(successor);
-                    return Err(ObservationWriteError::Resolve(format!(
-                        "'{entity_id}' was merged into '{survivor}'; add notes about '{survivor}' instead"
-                    )));
+                    return Err(ObservationWriteError::Retired { entity_id });
                 }
                 ensure_facet_relationship_internal(
                     journal_root,

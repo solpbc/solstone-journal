@@ -204,6 +204,24 @@ pub(crate) fn with_source_sync_failure<T>(relative: &str, run: impl FnOnce() -> 
     run()
 }
 
+/// Whether an entity merge stopped partway and left a recovery record. It
+/// takes no lock, so a busy journal answers at once; a caller that finds one
+/// settles it under the entity trust lock.
+pub fn entity_merge_recovery_pending(journal: &Path) -> bool {
+    recovery_root(journal)
+        .ok()
+        .is_some_and(|root| path_lexists(&root).unwrap_or(true))
+}
+
+/// Settle an interrupted entity merge before another writer touches what it
+/// captured, as merge itself does first. The caller holds the entity trust
+/// lock. Returns the owner-readable reason when recovery can't finish.
+pub fn recover_interrupted_entity_merge(journal: &Path) -> Result<(), String> {
+    recover(journal)
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+}
+
 /// Called by the real merge and undo entries, while entity-trust is held.
 /// Returns a committed operation so a retry can return its existing result.
 /// No source restoration occurs after the durable source-commit record.

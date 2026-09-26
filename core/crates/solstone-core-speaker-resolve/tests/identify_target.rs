@@ -317,3 +317,49 @@ fn create_new_names_the_entity_a_merged_name_joined() {
     ));
     assert!(!temporary.path().join("entities/bob").exists());
 }
+
+#[test]
+fn create_new_for_a_deleted_name_makes_a_new_entity_under_a_suffixed_id() {
+    let temporary = Temp::new();
+    fs::create_dir_all(temporary.path().join("entities")).unwrap();
+    fs::write(
+        temporary.path().join("entities/retired.json"),
+        json!({"ids":{"bob":{"state":"deleted","dir":"bob"}}}).to_string(),
+    )
+    .unwrap();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("Bob".to_owned());
+    target_request.create_new = true;
+
+    let IdentifyTargetOutcome::Ready(target) = resolve_identify_target(&target_request).unwrap()
+    else {
+        panic!("a deleted name is the owner making a new entity");
+    };
+    assert_eq!(target.entity_id, "bob_2");
+    assert_eq!(target.entity_name, "Bob");
+    assert!(target.will_create);
+}
+
+#[test]
+fn create_new_for_a_name_merged_into_a_deleted_entity_is_suffixed_too() {
+    let temporary = Temp::new();
+    fs::create_dir_all(temporary.path().join("entities")).unwrap();
+    fs::write(
+        temporary.path().join("entities/retired.json"),
+        json!({"ids":{
+            "bob":{"state":"merged","dir":"bob","successor":"robert"},
+            "robert":{"state":"deleted","dir":"robert"}
+        }})
+        .to_string(),
+    )
+    .unwrap();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("Bob".to_owned());
+    target_request.create_new = true;
+
+    let IdentifyTargetOutcome::Ready(target) = resolve_identify_target(&target_request).unwrap()
+    else {
+        panic!("a merge that leads to a deleted entity names nothing");
+    };
+    assert_eq!(target.entity_id, "bob_2");
+}

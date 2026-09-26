@@ -30,6 +30,8 @@ pub enum ReviewOwnerConflictKind {
     ArtifactBeforeChanged,
     /// The id the plan would create was merged away after it was prepared.
     IdentityMerged,
+    /// The id the plan would create was deleted after it was prepared.
+    IdentityDeleted,
 }
 
 impl ReviewOwnerConflictKind {
@@ -54,6 +56,7 @@ impl ReviewOwnerConflictKind {
         Self::OwningFacetChanged,
         Self::ArtifactBeforeChanged,
         Self::IdentityMerged,
+        Self::IdentityDeleted,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -78,6 +81,7 @@ impl ReviewOwnerConflictKind {
             Self::OwningFacetChanged => "owning_facet_changed",
             Self::ArtifactBeforeChanged => "artifact_before_changed",
             Self::IdentityMerged => "identity_merged",
+            Self::IdentityDeleted => "identity_deleted",
         }
     }
 }

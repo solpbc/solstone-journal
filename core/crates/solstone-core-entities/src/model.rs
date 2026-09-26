@@ -48,6 +48,8 @@ pub enum ReasonCode {
     EntityAlreadyExists,
     /// The name's entity was merged into another; merges are permanent.
     EntityMerged,
+    EntityRecordDamaged,
+    EntityMergeRecoveryPending,
     EntityBlocked,
     EntityBusy,
     EntityAlreadyDeleted,
@@ -84,6 +86,8 @@ impl ReasonCode {
             Self::EntityAliasConflict => "entity_alias_conflict",
             Self::EntityAlreadyExists => "entity_already_exists",
             Self::EntityMerged => "entity_merged",
+            Self::EntityRecordDamaged => "entity_record_damaged",
+            Self::EntityMergeRecoveryPending => "entity_merge_recovery_pending",
             Self::EntityBlocked => "entity_blocked",
             Self::EntityBusy => "entity_busy",
             Self::EntityAlreadyDeleted => "entity_already_deleted",
@@ -123,6 +127,8 @@ impl ReasonCode {
             Self::EntityAliasConflict
             | Self::EntityAlreadyExists
             | Self::EntityMerged
+            | Self::EntityRecordDamaged
+            | Self::EntityMergeRecoveryPending
             | Self::EntityDeleteIncomplete
             | Self::EntityDeleteInProgress
             | Self::EntityNotDeleted => StatusCode::CONFLICT,

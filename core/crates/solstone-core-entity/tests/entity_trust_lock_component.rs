@@ -367,6 +367,51 @@ mod merge_recovery {
     }
 
     #[test]
+    fn a_delete_after_an_interrupted_merge_settles_it_first_and_nothing_wedges() {
+        let journal = recovery_fixture();
+        save_entity_identity(
+            &journal,
+            "other",
+            &json!({"id":"other","name":"Other"}),
+            None,
+        )
+        .unwrap();
+        crash_merge(&journal, "audit");
+        // What the owner delete does before it records anything.
+        {
+            let _entity = solstone_core_entity::hold_entity_trust_lock(&journal).unwrap();
+            solstone_core_entity::recover_interrupted_entity_merge(&journal).unwrap();
+            solstone_core_entity::record_deleted_entity(&journal, "other", "other", Some("Other"))
+                .unwrap();
+        }
+        assert!(journal.join("entities/source").exists());
+        assert!(!journal.join("health/entity-merge-recovery").exists());
+        let report =
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .unwrap();
+        assert_eq!(report.target_id, "target");
+        let record: Value = serde_json::from_str(
+            &fs::read_to_string(journal.join("entities/retired.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(record["ids"]["other"]["state"], "deleted");
+        assert_eq!(record["ids"]["source"]["state"], "merged");
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
+    fn recording_a_delete_without_settling_an_interrupted_merge_would_wedge_it() {
+        let journal = recovery_fixture();
+        crash_merge(&journal, "audit");
+        solstone_core_entity::record_deleted_entity(&journal, "other", "other", None).unwrap();
+        assert!(
+            commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+                .is_err()
+        );
+        fs::remove_dir_all(journal).unwrap();
+    }
+
+    #[test]
     fn checkpointed_process_interruption_recovers_through_merge_retry() {
         for phase in ["history", "discovery cache"] {
             let journal = recovery_fixture();

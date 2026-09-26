@@ -35,6 +35,19 @@ const UNCONFIRMED_REASON: &str =
     "your journal couldn't confirm this was the entity you chose, so it was kept";
 /// Why a delete finds nothing to remove.
 const GONE_REASON: &str = "it was merged or removed before the delete ran";
+/// Why a delete stops before removing anything: the record of deleted
+/// entities, written first, can't be read or updated.
+pub(crate) const RECORD_DAMAGED_REASON: &str = "your journal's record of merged and deleted entities couldn't be updated, so nothing was deleted";
+/// Why a delete waits for an entity merge that stopped partway.
+pub(crate) const MERGE_PENDING_REASON: &str =
+    "an entity merge that stopped partway couldn't be finished, so nothing was deleted";
+
+/// Settle an entity merge that stopped partway, before a delete judges or
+/// changes anything: recovery may put back the entity being deleted, or its
+/// principal mark. The caller holds the entity trust lock.
+pub(crate) fn settle_interrupted_merge(journal_root: &Path) -> Result<(), String> {
+    solstone_core_entity::recover_interrupted_entity_merge(journal_root)
+}
 
 /// The entity the owner confirmed. Its fields sit at the top level of the record.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -260,6 +273,15 @@ fn run_delete(journal_root: &Path, record: &DeleteRecord, claim: Claim) -> Resul
             Err(_) => std::thread::sleep(Duration::from_secs(1)),
         }
     };
+    if let Err(error) = settle_interrupted_merge(journal_root) {
+        // A removal already under way has changed the journal, so it can't be
+        // reported as "nothing was deleted": it stays pending, and a later
+        // start settles it.
+        if claim.removal_started {
+            return Err(json!({"error":error, "merge_recovery_pending":true}));
+        }
+        return Ok(refused_because(error, MERGE_PENDING_REASON));
+    }
     if claim.removal_started {
         return finish_started_removal(journal_root, record);
     }
@@ -298,7 +320,11 @@ fn run_delete(journal_root: &Path, record: &DeleteRecord, claim: Claim) -> Resul
                 .map_err(|error| json!({"error":error}))?;
             let error = match delete(journal_root, target) {
                 Ok(done) => return Ok(done),
-                Err(error) => error,
+                // The record is written before anything is removed.
+                Err(DeleteFailure::RecordDamaged(error)) => {
+                    return Ok(refused_because(error, RECORD_DAMAGED_REASON));
+                }
+                Err(DeleteFailure::Store(error)) => error,
             };
             let unsettled = |read: String| json!({"error":error, "evidence_error":read});
             if !entity_dir_present(journal_root, &target.entity_dir).map_err(unsettled)? {
@@ -337,7 +363,7 @@ fn finish_started_removal(journal_root: &Path, record: &DeleteRecord) -> Result<
         ));
     }
     match find(journal_root, target, false).map_err(unsettled)? {
-        Found::Same => match delete(journal_root, target) {
+        Found::Same => match delete(journal_root, target).map_err(DeleteFailure::detail) {
             Ok(done) => Ok(done),
             Err(error) => {
                 let unsettled = |read: String| json!({"error":error, "evidence_error":read});
@@ -356,19 +382,61 @@ fn finish_started_removal(journal_root: &Path, record: &DeleteRecord) -> Result<
     }
 }
 
-/// The store's delete. Its error text can name paths, so it goes to the action
-/// log and never to the owner.
-fn delete(journal_root: &Path, target: &EntityTarget) -> Result<Outcome, String> {
-    solstone_core_facets::delete_journal_entity(journal_root, &target.entity_id)
-        .map(|report| {
-            (
-                "committed",
-                json!({"facets_deleted":report.facets_deleted}),
-                DeleteState::Deleted,
-                None,
+/// Why the store's delete did not finish.
+enum DeleteFailure {
+    /// The record of deleted entities could not be written; nothing was removed.
+    RecordDamaged(String),
+    Store(String),
+}
+
+impl DeleteFailure {
+    fn detail(self) -> String {
+        match self {
+            Self::RecordDamaged(detail) | Self::Store(detail) => detail,
+        }
+    }
+}
+
+fn refused_because(error: String, reason: &'static str) -> Outcome {
+    (
+        "refused",
+        json!({"error":error,"reason":reason}),
+        DeleteState::NotDeleted,
+        Some(reason),
+    )
+}
+
+/// The store's delete. The deleted id is recorded first, so it is never
+/// created again, even if the removal stops partway. Error text can name
+/// paths, so it goes to the action log and never to the owner.
+fn delete(journal_root: &Path, target: &EntityTarget) -> Result<Outcome, DeleteFailure> {
+    solstone_core_facets::delete_journal_entity_after(
+        journal_root,
+        &target.entity_id,
+        |entity_dir, identity| {
+            let name = identity.get("name").and_then(Value::as_str);
+            solstone_core_entity::record_deleted_entity(
+                journal_root,
+                &target.entity_id,
+                entity_dir,
+                name,
             )
-        })
-        .map_err(|error| error.to_string())
+        },
+    )
+    .map(|report| {
+        (
+            "committed",
+            json!({"facets_deleted":report.facets_deleted}),
+            DeleteState::Deleted,
+            None,
+        )
+    })
+    .map_err(|error| match error {
+        solstone_core_facets::FacetEntityLifecycleError::BeforeRemoval(detail) => {
+            DeleteFailure::RecordDamaged(detail)
+        }
+        error => DeleteFailure::Store(error.to_string()),
+    })
 }
 
 /// The entity itself is gone; a later bookkeeping step failed.

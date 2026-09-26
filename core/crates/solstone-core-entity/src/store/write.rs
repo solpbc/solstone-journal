@@ -161,6 +161,11 @@ pub enum EntityWriteError {
         identity_id: String,
         successor: String,
     },
+    /// The id belonged to an entity the owner deleted; a deleted entity is
+    /// never created again under its id.
+    IdentityDeleted {
+        identity_id: String,
+    },
     ReconciliationRepairRequired {
         entity_dir: String,
         version_id: String,
@@ -215,6 +220,10 @@ impl fmt::Display for EntityWriteError {
             } => write!(
                 formatter,
                 "'{identity_id}' was merged into '{successor}', and a merged entity is never created again"
+            ),
+            Self::IdentityDeleted { identity_id } => write!(
+                formatter,
+                "'{identity_id}' was deleted, and a deleted entity is never created again under its id"
             ),
             Self::AmbiguityRowInvalid { detail } => {
                 write!(formatter, "invalid entity ambiguity row: {detail}")
@@ -292,6 +301,7 @@ impl Error for EntityWriteError {
             | Self::AmbiguityCountOverflow { .. }
             | Self::CreateDestinationOccupied { .. }
             | Self::IdentityMerged { .. }
+            | Self::IdentityDeleted { .. }
             | Self::ReconciliationRepairRequired { .. }
             | Self::PreparedStageCollision { .. }
             | Self::AmbiguityChoiceNotFound { .. }
@@ -378,12 +388,17 @@ fn save_entity_identity_with_lock_options(
         None => (identity_id.to_owned(), true),
     };
     if creating {
-        match super::retired::merged_successor(journal_root, identity_id) {
+        match super::retired::retired_state(journal_root, identity_id) {
             Ok(None) => {}
-            Ok(Some(successor)) => {
+            Ok(Some(super::retired::RetiredState::Merged { successor })) => {
                 return Err(EntityWriteError::IdentityMerged {
                     identity_id: identity_id.to_owned(),
                     successor,
+                });
+            }
+            Ok(Some(super::retired::RetiredState::Deleted)) => {
+                return Err(EntityWriteError::IdentityDeleted {
+                    identity_id: identity_id.to_owned(),
                 });
             }
             Err(detail) => {
@@ -500,17 +515,26 @@ pub fn publish_identity_change(
             "conflict: promoted identity moved after preparation",
         ));
     }
-    // A merge that landed after preparation retires the id; the next
-    // preparation skips it, so this conflict converges.
-    if !map.resolved.contains_key(&change.entity_id)
-        && super::retired::merged_successor(root, &change.entity_id)
+    // A merge or delete that landed after preparation retires the id; the
+    // next preparation skips it, so this conflict converges.
+    if !map.resolved.contains_key(&change.entity_id) {
+        match super::retired::retired_state(root, &change.entity_id)
             .map_err(ReviewOwnerError::failed)?
-            .is_some()
-    {
-        return Err(ReviewOwnerError::conflict(
-            ReviewOwnerConflictKind::IdentityMerged,
-            "conflict: promoted identity was merged away after preparation",
-        ));
+        {
+            Some(super::retired::RetiredState::Merged { .. }) => {
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::IdentityMerged,
+                    "conflict: promoted identity was merged away after preparation",
+                ));
+            }
+            Some(super::retired::RetiredState::Deleted) => {
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::IdentityDeleted,
+                    "conflict: promoted identity was deleted after preparation",
+                ));
+            }
+            None => {}
+        }
     }
     let planned = classify_prepared_history_plan(root, &change.entity_dir)
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;

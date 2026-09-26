@@ -75,6 +75,7 @@
     created: 'created',
     merged: 'merged',
     staged: 'staged',
+    links_left_out: 'entity links left out',
     importer: 'importer',
     processed: 'processed',
     profile_link: 'review profile settings',
@@ -453,7 +454,10 @@
         strings.facets,
         [
           counter('facets_created', strings.created),
-          counter('facets_merged', strings.merged)
+          counter('facets_merged', strings.merged),
+          numberValue(summary.entity_links_skipped)
+            ? counter('entity_links_skipped', strings.links_left_out)
+            : ''
         ]
       ),
       row(

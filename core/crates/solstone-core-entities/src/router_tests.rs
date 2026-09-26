@@ -7382,3 +7382,154 @@ fn edge_extraction_resolves_entity_ids_to_the_same_directories_as_the_identity_m
     assert_eq!(indexer["bee"], "b1");
     assert_eq!(indexer["carol"], "carol");
 }
+
+/// Delete an entity as the owner does and wait for the delete to land.
+async fn owner_delete(root: &Path, entity_id: &str) {
+    let router = held_router(root, Duration::ZERO);
+    let (status, response) = delete_with_router(
+        &router,
+        &format!("/app/entities/api/journal/entity/{entity_id}"),
+    )
+    .await;
+    assert_eq!(status, 200, "{response}");
+    let pending = response["pending"].as_str().unwrap().to_owned();
+    for _ in 0..500 {
+        let (_, body) = get_with_router(
+            &router,
+            &format!("/app/entities/api/delete-status/{pending}"),
+        )
+        .await;
+        if body["state"] == "deleted" {
+            return;
+        }
+        assert_ne!(body["state"], "not_deleted", "{body}");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    panic!("the delete of {entity_id} never landed");
+}
+
+fn retired_record(root: &Path) -> Value {
+    serde_json::from_slice(&fs::read(root.join("entities/retired.json")).unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn a_deleted_name_the_owner_adds_again_is_a_new_entity_with_a_suffixed_id() {
+    let j = Journal::new();
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/work/attach",
+        json!({"type":"Person","name":"Alice","description":"friend"}),
+    )
+    .await;
+    assert!(status == 200 || status == 201);
+    owner_delete(j.path(), "alice").await;
+    assert_eq!(retired_record(j.path())["ids"]["alice"]["state"], "deleted");
+    assert!(!j.path().join("entities/alice").exists());
+
+    let (status, again) = post(
+        j.path(),
+        "/app/entities/api/work/attach",
+        json!({"type":"Person","name":"Alice","description":"a new friend"}),
+    )
+    .await;
+    assert!(status == 200 || status == 201, "{again}");
+    assert!(!j.path().join("entities/alice").exists());
+    let identity: Value =
+        serde_json::from_slice(&fs::read(j.path().join("entities/alice_2/entity.json")).unwrap())
+            .unwrap();
+    assert_eq!(identity["name"], "Alice");
+    let link: Value = serde_json::from_slice(
+        &fs::read(j.path().join("facets/work/entities/alice_2/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["entity_id"], "alice_2");
+    // The tombstone stays.
+    assert_eq!(retired_record(j.path())["ids"]["alice"]["state"], "deleted");
+}
+
+#[tokio::test]
+async fn a_name_merged_into_an_entity_since_deleted_is_added_under_a_suffixed_id() {
+    let j = Journal::new();
+    for name in ["Aa", "Xx"] {
+        post(
+            j.path(),
+            "/app/entities/api/work/attach",
+            json!({"type":"Person","name":name,"description":""}),
+        )
+        .await;
+    }
+    let (status, merged) = post(
+        j.path(),
+        "/app/entities/api/merge",
+        json!({"source_slug":"aa","target_slug":"xx","commit":true}),
+    )
+    .await;
+    assert_eq!(status, 200, "{merged}");
+    owner_delete(j.path(), "xx").await;
+    let (status, again) = post(
+        j.path(),
+        "/app/entities/api/work/attach",
+        json!({"type":"Person","name":"Aa","description":""}),
+    )
+    .await;
+    assert!(status == 200 || status == 201, "{again}");
+    assert!(j.path().join("entities/aa_2/entity.json").is_file());
+}
+
+#[tokio::test]
+async fn a_damaged_entity_record_refuses_a_delete_before_its_window() {
+    let j = Journal::new();
+    seed_entity(j.path(), "target", "Target");
+    write_raw(j.path(), "entities/retired.json", b"{not json");
+    let router = held_router(j.path(), Duration::from_secs(60));
+    let (status, body) =
+        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["reason_code"], "entity_record_damaged");
+    assert!(!j.path().join("config/entity-deletes").exists());
+    assert!(j.path().join("entities/target/entity.json").is_file());
+    assert_eq!(
+        fs::read(j.path().join("entities/retired.json")).unwrap(),
+        b"{not json"
+    );
+}
+
+#[tokio::test]
+async fn notes_about_a_deleted_name_are_refused_and_create_nothing() {
+    let j = Journal::new();
+    post(
+        j.path(),
+        "/app/entities/api/work/attach",
+        json!({"type":"Person","name":"Bob","description":""}),
+    )
+    .await;
+    owner_delete(j.path(), "bob").await;
+    let (status, body) = post(
+        j.path(),
+        "/app/entities/api/work/observe",
+        json!({"name":"Bob","content":"a note about bob"}),
+    )
+    .await;
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["reason_code"], "entity_not_found");
+    assert!(!j.path().join("facets/work/entities/bob").exists());
+}
+
+#[tokio::test]
+async fn a_merge_that_can_not_be_finished_refuses_a_delete_with_its_reason() {
+    let j = Journal::new();
+    seed_entity(j.path(), "target", "Target");
+    // A recovery record the journal can't settle.
+    write_raw(
+        j.path(),
+        "health/entity-merge-recovery/state.json",
+        b"{not json",
+    );
+    let router = held_router(j.path(), Duration::from_secs(60));
+    let (status, body) =
+        delete_with_router(&router, "/app/entities/api/journal/entity/target").await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["reason_code"], "entity_merge_recovery_pending");
+    assert!(!j.path().join("config/entity-deletes").exists());
+    assert!(j.path().join("entities/target/entity.json").is_file());
+}

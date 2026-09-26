@@ -2465,8 +2465,85 @@ fn a_merged_name_gets_no_new_observation_link() {
         None,
     )
     .unwrap_err();
-    assert!(error.to_string().contains("'target'"), "{error}");
+    assert!(
+        matches!(&error, crate::ObservationWriteError::Retired { entity_id } if entity_id == "source"),
+        "{error}"
+    );
     assert!(!journal.join("facets/work/entities/source").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_deleted_name_is_never_created_again_and_takes_no_notes() {
+    let journal = voiceprint_journal();
+    two_entities(&journal);
+    crate::record_deleted_entity(&journal, "source", "source", Some("source")).unwrap();
+    fs::remove_dir_all(journal.join("entities/source")).unwrap();
+
+    let error = save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"source"}),
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, crate::EntityWriteError::IdentityDeleted { .. }),
+        "{error}"
+    );
+    assert!(!journal.join("entities/source").exists());
+
+    let error = crate::record_observation_ops_strict(
+        &journal,
+        "work",
+        "source",
+        &[json!({"op":"add","content":"about the deleted name"})],
+        None,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, crate::ObservationWriteError::Retired { .. }),
+        "{error}"
+    );
+    assert!(!journal.join("facets/work/entities/source").exists());
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_folder_whose_link_names_a_deleted_entity_takes_no_notes() {
+    let journal = voiceprint_journal();
+    two_entities(&journal);
+    // A link left behind in another folder, naming the deleted entity.
+    let folder = journal.join("facets/work/entities/old_folder");
+    fs::create_dir_all(&folder).unwrap();
+    fs::write(folder.join("entity.json"), br#"{"entity_id":"source"}"#).unwrap();
+    crate::record_deleted_entity(&journal, "source", "source", None).unwrap();
+    fs::remove_dir_all(journal.join("entities/source")).unwrap();
+
+    for query in ["source", "old_folder"] {
+        let error = crate::record_observation_ops_strict(
+            &journal,
+            "work",
+            query,
+            &[json!({"op":"add","content":"about the deleted entity"})],
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, crate::ObservationWriteError::Retired { .. }),
+            "{query}: {error}"
+        );
+    }
+    assert!(!folder.join("observations.jsonl").exists());
+    // A live entity still takes notes.
+    crate::record_observation_ops_strict(
+        &journal,
+        "work",
+        "target",
+        &[json!({"op":"add","content":"about the live entity"})],
+        None,
+    )
+    .unwrap();
     fs::remove_dir_all(journal).unwrap();
 }
 

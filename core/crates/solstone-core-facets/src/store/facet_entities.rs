@@ -133,6 +133,72 @@ pub fn attach_or_reactivate_entity(
     name: &str,
     description: &str,
 ) -> Result<FacetEntityAttachResult, FacetEntityWriteError> {
+    attach_or_reactivate(
+        journal_root,
+        facet_dir,
+        entity_type,
+        name,
+        description,
+        false,
+    )
+}
+
+/// The owner's attach. It differs from the model's in one place: a name whose
+/// id was deleted, or merged into an entity that no longer exists, becomes a
+/// new entity under a suffixed id (`name_2`) with the same display name. The
+/// model never re-creates such an entity; its attach refuses it.
+pub fn attach_or_reactivate_entity_for_owner(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_type: &str,
+    name: &str,
+    description: &str,
+) -> Result<FacetEntityAttachResult, FacetEntityWriteError> {
+    attach_or_reactivate(
+        journal_root,
+        facet_dir,
+        entity_type,
+        name,
+        description,
+        true,
+    )
+}
+
+/// The id an owner's new entity takes for `slug`: the slug itself unless it
+/// was deleted or merged into an entity that is gone, when it is suffixed. A
+/// slug merged into a live entity stays as it is, so the create refuses and
+/// names that entity.
+fn owner_entity_id(journal_root: &Path, slug: &str) -> Result<String, FacetEntityWriteError> {
+    let invalid = |detail: String| {
+        FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::InvalidIdentity {
+                identity_id: slug.to_owned(),
+                detail,
+            },
+        )
+    };
+    let suffix = match solstone_core_entity::retired_state(journal_root, slug).map_err(invalid)? {
+        None => false,
+        Some(solstone_core_entity::RetiredState::Deleted) => true,
+        Some(solstone_core_entity::RetiredState::Merged { successor }) => {
+            solstone_core_entity::live_merge_successor(journal_root, &successor).is_none()
+        }
+    };
+    if suffix {
+        solstone_core_entity::fresh_entity_id(journal_root, slug).map_err(invalid)
+    } else {
+        Ok(slug.to_owned())
+    }
+}
+
+fn attach_or_reactivate(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_type: &str,
+    name: &str,
+    description: &str,
+    owner: bool,
+) -> Result<FacetEntityAttachResult, FacetEntityWriteError> {
     let _facet_trust = hold_facet_trust_lock(journal_root)?;
     let _entity_trust = solstone_core_entity::hold_entity_trust_lock(journal_root)?;
     let query = normalize_resolution_query(name);
@@ -235,10 +301,15 @@ pub fn attach_or_reactivate_entity(
             description,
         );
     }
+    let created = winners.is_empty();
     let (entity_id, identity) = if let Some((entity_id, identity)) = winners.pop() {
         (entity_id, identity)
     } else {
-        let entity_id = slug;
+        let entity_id = if owner {
+            owner_entity_id(journal_root, &slug)?
+        } else {
+            slug
+        };
         let identity =
             json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
         let saved = save_entity_identity(
@@ -258,7 +329,12 @@ pub fn attach_or_reactivate_entity(
     if identity.get("blocked") == Some(&Value::Bool(true)) {
         return Err(FacetEntityWriteError::EntityBlocked { entity_id });
     }
-    let relationship_dir = entity_slug(name);
+    // A new entity's link lives in the folder named by its id.
+    let relationship_dir = if created {
+        entity_id.clone()
+    } else {
+        entity_slug(name)
+    };
     let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
     let object = object_clone(&relationship)?;
     save_facet_entity_link(

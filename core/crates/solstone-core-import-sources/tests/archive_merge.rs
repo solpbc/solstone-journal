@@ -735,3 +735,142 @@ fn an_entity_merged_away_in_this_journal_refuses_the_import_and_changes_nothing(
     assert!(!target.join("entities/sunstone").exists());
     assert!(load_all_journal_entities(&target).unwrap().is_empty());
 }
+
+fn tombstone(target: &Path, id: &str) {
+    fs::create_dir_all(target.join("entities")).unwrap();
+    fs::write(
+        target.join("entities/retired.json"),
+        serde_json::to_vec(&json!({"ids":{id:{"state":"deleted","dir":id}}})).unwrap(),
+    )
+    .unwrap();
+}
+
+fn linked_with_note(root: &Path, facet: &str, folder: &str, entity_id: &str) {
+    save_facet_entity_link(root, facet, folder, entity_id, &Map::new()).unwrap();
+    add_observation(root, facet, folder, "a note", Some("2026-08-11"), None).unwrap();
+}
+
+#[test]
+fn an_entity_deleted_here_is_held_and_its_links_are_left_out() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    for (id, name) in [("bob", "Qqxq Bob"), ("carol", "Qqxq Carol")] {
+        save_entity_identity(
+            &source,
+            id,
+            &json!({"id":id,"name":name,"type":"Person"}),
+            None,
+        )
+        .unwrap();
+    }
+    // `work` exists here, so links merge one by one; `team` is new, so it is
+    // copied whole.
+    save_facet_entity_link(&target, "work", "existing", "existing", &Map::new()).unwrap();
+    for facet in ["work", "team"] {
+        linked_with_note(&source, facet, "bob", "bob");
+        linked_with_note(&source, facet, "carol", "carol");
+    }
+    tombstone(&target, "bob");
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    assert!(!target.join("entities/bob").exists());
+    assert!(target.join("entities/carol/entity.json").is_file());
+    assert!(result.entity_dispositions.iter().any(|item| {
+        item.source_id == "bob" && item.disposition == EntityDispositionKind::StagedDeletedHere
+    }));
+    for facet in ["work", "team"] {
+        assert!(
+            !target.join(format!("facets/{facet}/entities/bob")).exists(),
+            "{facet}"
+        );
+        assert!(
+            target
+                .join(format!("facets/{facet}/entities/carol/observations.jsonl"))
+                .is_file(),
+            "{facet}"
+        );
+    }
+    assert_eq!(result.merge_summary.entity_links_skipped, 2);
+}
+
+#[test]
+fn a_link_to_a_deleted_id_follows_the_entity_it_matched_unless_the_facet_has_it() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    save_entity_identity(
+        &source,
+        "bob",
+        &json!({"id":"bob","name":"Qqxq Bob","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    // Here, `bob` was deleted and the owner added "Qqxq Bob" again.
+    save_entity_identity(
+        &target,
+        "bob_2",
+        &json!({"id":"bob_2","name":"Qqxq Bob","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    tombstone(&target, "bob");
+    save_facet_entity_link(&target, "work", "existing", "existing", &Map::new()).unwrap();
+    save_facet_entity_link(&target, "home", "bob_2", "bob_2", &Map::new()).unwrap();
+    linked_with_note(&source, "work", "bob", "bob");
+    linked_with_note(&source, "home", "bob", "bob");
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    // `work` had no link to bob_2: the archive's link points at it.
+    let link: Value = serde_json::from_slice(
+        &fs::read(target.join("facets/work/entities/bob/entity.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(link["entity_id"], "bob_2");
+    // `home` already links bob_2: no second link.
+    assert!(!target.join("facets/home/entities/bob").exists());
+    assert_eq!(result.merge_summary.entity_links_skipped, 1);
+    assert!(!target.join("entities/bob").exists());
+}
+
+#[test]
+fn two_archive_links_to_a_deleted_id_become_one_link_to_the_entity_it_matched() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    save_entity_identity(
+        &source,
+        "bob",
+        &json!({"id":"bob","name":"Qqxq Bob","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    save_entity_identity(
+        &target,
+        "bob_2",
+        &json!({"id":"bob_2","name":"Qqxq Bob","type":"Person"}),
+        None,
+    )
+    .unwrap();
+    tombstone(&target, "bob");
+    save_facet_entity_link(&target, "work", "existing", "existing", &Map::new()).unwrap();
+    // The archive links `bob` from two folders.
+    linked_with_note(&source, "work", "bob", "bob");
+    linked_with_note(&source, "work", "robert", "bob");
+    let archive = archive_from(&source, &tree.path);
+
+    let result = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap();
+    let links: Vec<String> = fs::read_dir(target.join("facets/work/entities"))
+        .unwrap()
+        .filter_map(|entry| {
+            let path = entry.unwrap().path().join("entity.json");
+            let link: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+            Some(link["entity_id"].as_str()?.to_owned())
+        })
+        .filter(|id| id == "bob_2")
+        .collect();
+    assert_eq!(links.len(), 1);
+    assert_eq!(result.merge_summary.entity_links_skipped, 1);
+}

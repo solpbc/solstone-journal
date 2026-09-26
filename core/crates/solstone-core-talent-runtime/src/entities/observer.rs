@@ -1002,6 +1002,11 @@ pub fn apply_result(
                 Some(day),
             ) {
                 Ok(op_counts) => merge_counts(&mut counts, &op_counts),
+                // A merged or deleted entity takes no notes; that is not an
+                // error in the day's work.
+                Err(solstone_core_entity::ObservationWriteError::Retired { .. }) => {
+                    *counts.entry("skip").or_default() += clean.len();
+                }
                 Err(write_error) => {
                     error = Some(format!("ObservationWriteError: {write_error}"));
                     *counts.entry("refused").or_default() += clean.len();
@@ -1361,6 +1366,52 @@ mod tests {
         assert_eq!(batches.len(), 1);
         assert_eq!(outcome["refused"], 1);
         assert_eq!(outcome["replace"], 0);
+    }
+
+    #[test]
+    fn notes_for_a_deleted_entity_are_skipped_without_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        solstone_core_facets::create_facet(temp.path(), "work", "Work", "", "", "", None).unwrap();
+        solstone_core_facets::attach_or_reactivate_entity(
+            temp.path(),
+            "work",
+            "Person",
+            "Ada",
+            "Role",
+        )
+        .unwrap();
+        solstone_core_facets::delete_journal_entity_after(temp.path(), "ada", |dir, _| {
+            solstone_core_entity::record_deleted_entity(temp.path(), "ada", dir, Some("Ada"))
+        })
+        .unwrap();
+        let served_ids = BTreeSet::from(["ada".to_string()]);
+        let output = serde_json::json!({
+            "entities": [{"entity_id": "ada", "decisions": [{"op": "add", "content": "A new fact"}]}]
+        })
+        .to_string();
+        apply_result(
+            temp.path(),
+            &output,
+            "work",
+            "20260910",
+            &served_ids,
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let outcome: Value = serde_json::from_str(
+            &std::fs::read_to_string(
+                temp.path()
+                    .join("facets/work/entities/20260910_observer_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        // A deleted entity is no longer attached, so its notes are passed over
+        // before any write, and that is not an error.
+        assert!(outcome["error"].is_null(), "{outcome}");
+        assert_eq!(outcome["refused"], 0);
+        assert_eq!(outcome["unselected"], 1);
+        assert!(!temp.path().join("facets/work/entities/ada").exists());
     }
 
     #[test]

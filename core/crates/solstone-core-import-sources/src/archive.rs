@@ -132,6 +132,10 @@ pub struct MergeSummary {
     pub entities_staged: usize,
     pub facets_created: usize,
     pub facets_merged: usize,
+    /// Facet links to an entity deleted or merged in this journal that the
+    /// import left out, with their notes.
+    #[serde(default)]
+    pub entity_links_skipped: usize,
     pub imports_copied: usize,
     pub imports_skipped: usize,
     pub errors: Vec<String>,
@@ -181,6 +185,9 @@ pub enum EntityDispositionKind {
     Skipped,
     StagedAmbiguous,
     StagedIdCollision,
+    /// Deleted in this journal: held, not created, so an import never brings
+    /// back an entity the owner deleted.
+    StagedDeletedHere,
 }
 
 /// Informational collision only; it never changes merge control flow.
@@ -1281,6 +1288,21 @@ fn stage_entities(
                 )?;
             }
             EntityResolutionOutcome::NoMatch => {
+                // An entity the owner deleted here is held, not created; its
+                // links are left out when facets are staged.
+                if matches!(
+                    solstone_core_entity::retired_state(target, &source_id),
+                    Ok(Some(solstone_core_entity::RetiredState::Deleted))
+                ) {
+                    stage_entity(
+                        &source_id,
+                        &source_value,
+                        EntityDispositionKind::StagedDeletedHere,
+                        PrincipalAdoption::NotClaimed,
+                        state,
+                    )?;
+                    continue;
+                }
                 // Merges are permanent: an entity merged away in this journal is
                 // never created again, so the whole import stops before anything
                 // is published.
@@ -1490,6 +1512,7 @@ fn stage_facets(
                     detail: error.to_string(),
                 }
             })?;
+            gate_staged_facet_links(target, &facet, state)?;
             state.decision(
                 "committed",
                 "facets",
@@ -1517,6 +1540,9 @@ fn merge_facet_relationships(
     if !entities.is_dir() {
         return Ok(());
     }
+    // Ids this facet links, here and as staged so far, so a remapped link is
+    // never a second link to one entity.
+    let mut linked_here = facet_link_ids(target, facet)?;
     for source_relationship in
         sorted_dirs(&entities).map_err(|error| ImportSourcesError::FacetMerge {
             facet: facet.to_owned(),
@@ -1536,6 +1562,26 @@ fn merge_facet_relationships(
                 detail: error.to_string(),
             }
         })?;
+        let remap = match source_link.as_ref() {
+            None => None,
+            Some(link) => match link_gate(target, state, facet, link.entity_id())? {
+                LinkGate::Keep => None,
+                // Into the folder that already links it, or into a new folder
+                // when the facet doesn't link it yet.
+                LinkGate::Remap(to)
+                    if match target_link.as_ref() {
+                        Some(existing) => existing.entity_id() == to,
+                        None => linked_here.insert(to.clone()),
+                    } =>
+                {
+                    Some(to)
+                }
+                LinkGate::Remap(_) | LinkGate::Skip => {
+                    skip_link(state, facet, &entity_dir)?;
+                    continue;
+                }
+            },
+        };
         match (source_link, target_link) {
             (Some(source_link), Some(target_link)) => {
                 let source_obs_text = read_facet_entity_observations(source, facet, &entity_dir)
@@ -1616,10 +1662,9 @@ fn merge_facet_relationships(
             }
             (Some(source_link), None) => {
                 let mut fields = source_link.value().as_object().cloned().unwrap_or_default();
-                fields.insert(
-                    "entity_id".to_owned(),
-                    Value::String(source_link.entity_id().to_owned()),
-                );
+                let linked = remap.unwrap_or_else(|| source_link.entity_id().to_owned());
+                linked_here.insert(linked.clone());
+                fields.insert("entity_id".to_owned(), Value::String(linked));
                 state.decision(
                     "prepared",
                     "facets",
@@ -1660,6 +1705,147 @@ fn merge_facet_relationships(
                 state.writes += 1;
             }
             _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// What an imported facet link to `entity_id` becomes.
+enum LinkGate {
+    /// The id is live here, or new: imported as it is.
+    Keep,
+    /// The id is merged or deleted here, and the import matched its entity to
+    /// this live one.
+    Remap(String),
+    /// The id is merged or deleted here, with nothing it could point to: a
+    /// link would sit where nothing lists it.
+    Skip,
+}
+
+fn link_gate(
+    target: &Path,
+    state: &MergeState,
+    facet: &str,
+    entity_id: &str,
+) -> Result<LinkGate, ImportSourcesError> {
+    let retired = solstone_core_entity::retired_state(target, entity_id).map_err(|detail| {
+        ImportSourcesError::FacetMerge {
+            facet: facet.to_owned(),
+            detail,
+        }
+    })?;
+    if retired.is_none() {
+        return Ok(LinkGate::Keep);
+    }
+    let resolved = state
+        .entity_dispositions
+        .iter()
+        .find(|disposition| disposition.source_id == entity_id)
+        .and_then(|disposition| disposition.target_id.clone())
+        .filter(|resolved| resolved != entity_id);
+    Ok(resolved.map_or(LinkGate::Skip, LinkGate::Remap))
+}
+
+/// Every `entity_id` this journal's facet links.
+fn facet_link_ids(
+    target: &Path,
+    facet: &str,
+) -> Result<std::collections::BTreeSet<String>, ImportSourcesError> {
+    let mut ids = std::collections::BTreeSet::new();
+    let entities = target.join("facets").join(facet).join("entities");
+    if !entities.is_dir() {
+        return Ok(ids);
+    }
+    for folder in sorted_dirs(&entities).map_err(|error| ImportSourcesError::FacetMerge {
+        facet: facet.to_owned(),
+        detail: error.to_string(),
+    })? {
+        let folder = file_name(&folder)?;
+        let link = read_facet_entity_link(target, facet, &folder).map_err(|error| {
+            ImportSourcesError::FacetMerge {
+                facet: facet.to_owned(),
+                detail: error.to_string(),
+            }
+        })?;
+        if let Some(link) = link {
+            ids.insert(link.entity_id().to_owned());
+        }
+    }
+    Ok(ids)
+}
+
+fn skip_link(
+    state: &mut MergeState,
+    facet: &str,
+    entity_dir: &str,
+) -> Result<(), ImportSourcesError> {
+    state.decision(
+        "prepared",
+        "facets",
+        json!({"facet": facet, "relationship": entity_dir, "skipped": "entity_retired"}),
+    )?;
+    state.summary.entity_links_skipped += 1;
+    Ok(())
+}
+
+/// Apply the link gate to a facet copied whole into staging: a link to a
+/// merged or deleted id is repointed at its matched entity, or left out
+/// with its folder, and a second link to one entity is left out.
+fn gate_staged_facet_links(
+    target: &Path,
+    facet: &str,
+    state: &mut MergeState,
+) -> Result<(), ImportSourcesError> {
+    let staging_error = |detail: String| ImportSourcesError::FacetMerge {
+        facet: facet.to_owned(),
+        detail,
+    };
+    let entities = join_contained(&state.staged_publish, &format!("facets/{facet}/entities"))
+        .map_err(|error| staging_error(error.to_string()))?;
+    if !entities.is_dir() {
+        return Ok(());
+    }
+    let mut links = Vec::new();
+    for folder in sorted_dirs(&entities).map_err(|error| staging_error(error.to_string()))? {
+        let name = file_name(&folder)?;
+        let file = folder.join("entity.json");
+        let Ok(text) = fs::read_to_string(&file) else {
+            continue;
+        };
+        let Ok(Value::Object(link)) = serde_json::from_str::<Value>(&text) else {
+            continue;
+        };
+        let entity_id = link
+            .get("entity_id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())
+            .map_or_else(|| name.clone(), str::to_owned);
+        links.push((name, folder, link, entity_id));
+    }
+    let mut gates = Vec::new();
+    let mut linked = std::collections::BTreeSet::new();
+    for (name, folder, link, entity_id) in links {
+        let gate = link_gate(target, state, facet, &entity_id)?;
+        if matches!(gate, LinkGate::Keep) {
+            linked.insert(entity_id.clone());
+        }
+        gates.push((name, folder, link, gate));
+    }
+    for (name, folder, mut link, gate) in gates {
+        match gate {
+            LinkGate::Keep => {}
+            LinkGate::Remap(to) if linked.insert(to.clone()) => {
+                link.insert("entity_id".to_owned(), Value::String(to));
+                fs::write(
+                    folder.join("entity.json"),
+                    serde_json::to_vec_pretty(&Value::Object(link)).expect("Value serializes"),
+                )
+                .map_err(|error| staging_error(error.to_string()))?;
+            }
+            LinkGate::Remap(_) | LinkGate::Skip => {
+                fs::remove_dir_all(&folder).map_err(|error| staging_error(error.to_string()))?;
+                skip_link(state, facet, &name)?;
+            }
         }
     }
     Ok(())

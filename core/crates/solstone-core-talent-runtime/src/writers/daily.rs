@@ -1582,6 +1582,58 @@ mod tests {
     }
 
     #[test]
+    fn a_promotion_skips_only_a_retired_create_and_resolves_a_re_added_name() {
+        let root = fixture();
+        solstone_core_entity::record_deleted_entity(root.path(), "bob", "bob", None).unwrap();
+        // With no live "Bob", the plan would create `bob`: the review skips it.
+        let plan = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "work",
+            "Person",
+            "Bob",
+            "A friend",
+            &[],
+        )
+        .unwrap();
+        let create = plan.identity.as_ref().expect("a new identity");
+        assert_eq!(create.entity_id, "bob");
+        assert!(
+            solstone_core_entity::retired_state(root.path(), &create.entity_id)
+                .unwrap()
+                .is_some()
+        );
+        // The owner adds "Bob" again, in another facet: the name resolves to
+        // the new entity, and nothing retired is created.
+        solstone_core_facets::create_facet(root.path(), "home", "Home", "", "", "", None).unwrap();
+        solstone_core_facets::attach_or_reactivate_entity_for_owner(
+            root.path(),
+            "home",
+            "Person",
+            "Bob",
+            "",
+        )
+        .unwrap();
+        let plan = solstone_core_facets::prepare_review_promotion(
+            root.path(),
+            "work",
+            "Person",
+            "Bob",
+            "A friend",
+            &[],
+        )
+        .unwrap();
+        if let Some(change) = plan.identity.as_ref() {
+            assert_eq!(change.entity_id, "bob_2");
+            assert!(
+                solstone_core_entity::retired_state(root.path(), &change.entity_id)
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        assert!(format!("{:?}", plan.attachment).contains("bob_2"));
+    }
+
+    #[test]
     fn prepared_merge_proposals_preserve_owner_decisions() {
         let root = fixture();
         let proposal = json!({"facet":"work", "day":"20260910", "source":"Ada", "source_slug":"ada", "target":"Ada Lovelace", "target_slug":"ada-lovelace", "summary":"Name variant"});
