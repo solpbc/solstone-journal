@@ -18,6 +18,7 @@ solstone-core-ingest.workspace = true
 solstone-core-journal.workspace = true
 solstone-core-journal-config.workspace = true
 solstone-core-journal-io.workspace = true
+solstone-core-local.workspace = true
 solstone-core-processing-record.workspace = true
 solstone-core-system.workspace = true
 solstone-core-system-health.workspace = true
@@ -32,6 +33,10 @@ tokio = { workspace = true, features = ["net", "rt", "sync", "time"] }
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+solstone-core-installation-identity.workspace = true
+windows-sys = { workspace = true, features = ["Win32_Storage_FileSystem"] }
 
 [dev-dependencies]
 solstone-core-journal-io.workspace = true

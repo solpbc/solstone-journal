@@ -4050,9 +4050,11 @@ dependencies = [
  "solstone-core-brain",
  "solstone-core-callosum",
  "solstone-core-ingest",
+ "solstone-core-installation-identity",
  "solstone-core-journal",
  "solstone-core-journal-config",
  "solstone-core-journal-io",
+ "solstone-core-local",
  "solstone-core-processing-record",
  "solstone-core-sense",
  "solstone-core-setup",
@@ -4062,6 +4064,7 @@ dependencies = [
  "solstone-core-system-health",
  "solstone-core-transcribe",
  "tokio",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

@@ -1,20 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 use crate::{
+    checks::directory_access::writable,
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
-fn writable(path: &std::path::Path) -> bool {
-    #[cfg(unix)]
-    {
-        nix::unistd::access(path, nix::unistd::AccessFlags::W_OK).is_ok()
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-        false
-    }
-}
 fn ancestor(path: &std::path::Path) -> &std::path::Path {
     let mut current = path;
     while !current.exists() {
@@ -26,14 +16,6 @@ fn ancestor(path: &std::path::Path) -> &std::path::Path {
     current
 }
 pub fn shared(context: &CheckContext, check: Check) -> RunnerResult {
-    if context.platform == crate::vocabulary::Platform::Windows {
-        return Ok(make_result(
-            check,
-            Status::Skip,
-            "not supported on windows",
-            None::<String>,
-        ));
-    }
     let path = &context.journal_path;
     if path.is_dir() {
         return Ok(if writable(path) {

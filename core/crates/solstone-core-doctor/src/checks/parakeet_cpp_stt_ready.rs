@@ -10,12 +10,59 @@ const INSTALL: &str =
 // ⛔ This named the service and then gave the FOREGROUND command, in one
 // sentence. `journal up` is the documented alias for `journal service start`.
 const START: &str = "parakeet-server is not reachable — start the journal service: journal up";
+// ⛔ A Windows install carries no per-journal parakeet cache to fetch into:
+// the server and model are members of the signed package, so a failed
+// verification means the package itself changed.
+const WINDOWS_REINSTALL: &str = "reinstall the journal";
+
+/// Windows answers the same question from the signed package: the server and
+/// model the resident launches are declared members of the verified payload,
+/// and the server is the same authenticated one the resident runs.
+fn windows_ready(context: &CheckContext, check: Check) -> RunnerResult {
+    if let Err(error) =
+        solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package()
+    {
+        return Ok(make_result(
+            check,
+            Status::Warn,
+            error,
+            Some(WINDOWS_REINSTALL),
+        ));
+    }
+    server_ready(
+        context,
+        check,
+        "parakeet-cpp ready (signed package server + model verified, server reachable)",
+    )
+}
+
+fn server_ready(context: &CheckContext, check: Check, ready: &str) -> RunnerResult {
+    let probe = context
+        .parakeet_server_probe_override
+        .unwrap_or(solstone_core_system::provider_runtime::probe_parakeet_cpp_server);
+    if let Err(error) = probe(
+        &context.journal_path,
+        solstone_core_system::provider_runtime::PARAKEET_CPP_PROBE_TIMEOUT,
+    ) {
+        return Ok(make_result(
+            check,
+            Status::Warn,
+            format!("parakeet-server not reachable: {error}"),
+            Some(START),
+        ));
+    }
+    Ok(make_result(check, Status::Ok, ready, None::<String>))
+}
+
 pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
+    if context.platform == crate::vocabulary::Platform::Windows {
+        return windows_ready(context, check);
+    }
     if context.platform != crate::vocabulary::Platform::Linux {
         return Ok(make_result(
             check,
             Status::Skip,
-            "parakeet-cpp is only supported on Linux",
+            "parakeet-cpp is only supported on Linux and Windows",
             None::<String>,
         ));
     }
@@ -57,26 +104,11 @@ pub fn ready(context: &CheckContext, check: Check) -> RunnerResult {
             ));
         }
     };
-    let probe = context
-        .parakeet_server_probe_override
-        .unwrap_or(solstone_core_system::provider_runtime::probe_parakeet_cpp_server);
-    if let Err(error) = probe(
-        &context.journal_path,
-        solstone_core_system::provider_runtime::PARAKEET_CPP_PROBE_TIMEOUT,
-    ) {
-        return Ok(make_result(
-            check,
-            Status::Warn,
-            format!("parakeet-server not reachable: {error}"),
-            Some(START),
-        ));
-    }
-    Ok(make_result(
+    server_ready(
+        context,
         check,
-        Status::Ok,
         "parakeet-cpp ready (binaries + model installed, server reachable)",
-        None::<String>,
-    ))
+    )
 }
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     match common::config_backend(context) {

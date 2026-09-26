@@ -3995,13 +3995,18 @@ fn run_setup(args: solstone_core_setup::args::SetupArgs) -> ExitCode {
 }
 
 fn run_doctor(args: solstone_core_doctor::args::DoctorArgs) -> ExitCode {
-    let context = match solstone_core_doctor::context::CheckContext::production(args.port) {
+    #[cfg_attr(not(windows), allow(unused_mut))]
+    let mut context = match solstone_core_doctor::context::CheckContext::production(args.port) {
         Ok(context) => context,
         Err(error) => {
             eprintln!("doctor failed to resolve context: {error}");
             return ExitCode::from(1);
         }
     };
+    #[cfg(windows)]
+    {
+        context.windows_service_probe = Some(service_windows::doctor_registration);
+    }
     let started = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
     let started_at = std::time::Instant::now();
     let results = solstone_core_doctor::run(&args, &context);

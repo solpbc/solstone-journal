@@ -81,6 +81,7 @@ fn context() -> (CheckContext, TestRoot) {
             speakers_analyze_resolvers: None,
             vad_runtime_probe: None,
             free_space_bytes_override: None,
+            windows_service_probe: None,
         },
         TestRoot(root),
     )
@@ -305,6 +306,7 @@ fn poison_battery_context(root: &Path) -> CheckContext {
         speakers_analyze_resolvers: Some((speakers_binary_missing, speakers_model_ready)),
         vad_runtime_probe: None,
         free_space_bytes_override: None,
+        windows_service_probe: None,
     }
 }
 

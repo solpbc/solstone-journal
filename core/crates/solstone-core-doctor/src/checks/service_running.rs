@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-#[cfg(unix)]
 use super::service_status;
 use crate::{
-    context::CheckContext,
+    context::{CheckContext, WindowsServiceRegistration},
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 #[cfg(unix)]
@@ -91,9 +90,15 @@ impl ProcessGroupChild {
     }
 }
 
-#[cfg(unix)]
-fn installed(context: &CheckContext) -> bool {
-    match context.platform {
+/// Whether a journal service is registered for this installation.
+enum Installed {
+    Yes,
+    No,
+    Unknown(String),
+}
+
+fn installed(context: &CheckContext) -> Installed {
+    let present = match context.platform {
         crate::vocabulary::Platform::Darwin => context
             .home_dir
             .join("Library/LaunchAgents/org.solpbc.solstone.plist")
@@ -102,18 +107,51 @@ fn installed(context: &CheckContext) -> bool {
             .home_dir
             .join(".config/systemd/user/solstone.service")
             .exists(),
-        crate::vocabulary::Platform::Windows => false,
+        crate::vocabulary::Platform::Windows => {
+            return match windows_registration(context) {
+                WindowsServiceRegistration::Absent => Installed::No,
+                WindowsServiceRegistration::Present { .. } => Installed::Yes,
+                WindowsServiceRegistration::Unreadable(reason) => Installed::Unknown(reason),
+            };
+        }
+    };
+    if present {
+        Installed::Yes
+    } else {
+        Installed::No
     }
 }
-#[cfg(unix)]
+
+/// The Windows service registration, read through the journal command's own
+/// Task Scheduler client.
+pub(crate) fn windows_registration(context: &CheckContext) -> WindowsServiceRegistration {
+    match context.windows_service_probe {
+        Some(probe) => probe(context),
+        None => WindowsServiceRegistration::Unreadable(
+            "no reader for the service registration".to_owned(),
+        ),
+    }
+}
+
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    if !installed(context) {
-        return Ok(make_result(
-            check,
-            Status::Skip,
-            "no local journal service",
-            None::<String>,
-        ));
+    match installed(context) {
+        Installed::Yes => {}
+        Installed::No => {
+            return Ok(make_result(
+                check,
+                Status::Skip,
+                "no local journal service",
+                None::<String>,
+            ));
+        }
+        Installed::Unknown(reason) => {
+            return Ok(make_result(
+                check,
+                Status::Skip,
+                format!("couldn't read the journal service registration — {reason}"),
+                None::<String>,
+            ));
+        }
     }
     let status = match service_status::fetch(context) {
         Ok(status) => status,
@@ -184,14 +222,12 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         None::<String>,
     ))
 }
+
+/// A Windows task has no "failed" state distinct from not running: the
+/// Scheduler reports only its last result, which a clean stop also sets.
 #[cfg(not(unix))]
-pub fn run(_context: &CheckContext, check: Check) -> RunnerResult {
-    Ok(make_result(
-        check,
-        Status::Skip,
-        "not supported on windows",
-        None::<String>,
-    ))
+fn service_is_failed(_context: &CheckContext) -> bool {
+    false
 }
 
 #[cfg(unix)]

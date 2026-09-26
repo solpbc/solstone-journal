@@ -10,6 +10,7 @@ pub mod common;
 pub mod config_dir_readable;
 pub mod default_stt_ready;
 pub mod device_day_listing;
+pub(crate) mod directory_access;
 pub mod disk_space;
 pub mod facet_routing;
 pub mod journal_caught_up;
@@ -35,3 +36,5 @@ pub mod vad_runtime_ready;
 
 #[cfg(test)]
 pub(crate) mod test_support;
+#[cfg(test)]
+mod windows_parity_tests;

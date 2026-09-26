@@ -7,8 +7,11 @@ use std::{
 };
 
 use crate::{
-    checks::managed_wrapper::{parse_sol_bin, resolve_non_strict},
-    context::CheckContext,
+    checks::{
+        managed_wrapper::{parse_sol_bin, resolve_non_strict},
+        service_running::windows_registration,
+    },
+    context::{CheckContext, WindowsServiceRegistration},
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
 
@@ -16,18 +19,13 @@ const REPAIR: &str = "run journal setup to reinstall the service";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if context.platform == crate::vocabulary::Platform::Windows {
-        return Ok(make_result(
-            check,
-            Status::Skip,
-            "not supported on windows",
-            None::<String>,
-        ));
+        return windows(context, check);
     }
     let Some(path) = service_path(context) else {
         return Ok(make_result(
             check,
             Status::Skip,
-            "not supported on windows",
+            "no local journal service",
             None::<String>,
         ));
     };
@@ -42,14 +40,7 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     let parts = match context.platform {
         crate::vocabulary::Platform::Darwin => launchd_program_arguments(&path),
         crate::vocabulary::Platform::Linux => systemd_exec_start_parts(&path),
-        crate::vocabulary::Platform::Windows => {
-            return Ok(make_result(
-                check,
-                Status::Skip,
-                "not supported on windows",
-                None::<String>,
-            ));
-        }
+        crate::vocabulary::Platform::Windows => unreachable!("answered above"),
     };
     let Some(parts) = parts.filter(|parts| !parts.is_empty()) else {
         return Ok(make_result(
@@ -86,6 +77,44 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
         ),
         Some("run journal setup --force from this install to refresh the service"),
     ))
+}
+
+/// The Windows service is a Task Scheduler registration rather than a unit
+/// file, so the same question -- does the registered service run this
+/// install? -- is answered from the registration the journal command reads.
+fn windows(context: &CheckContext, check: Check) -> RunnerResult {
+    match windows_registration(context) {
+        WindowsServiceRegistration::Absent => Ok(make_result(
+            check,
+            Status::Skip,
+            "no local journal service",
+            None::<String>,
+        )),
+        WindowsServiceRegistration::Unreadable(reason) => Ok(make_result(
+            check,
+            Status::Skip,
+            format!("couldn't read the journal service registration — {reason}"),
+            None::<String>,
+        )),
+        WindowsServiceRegistration::Present {
+            command,
+            mismatch: None,
+        } => Ok(make_result(
+            check,
+            Status::Ok,
+            format!("service target matches current install: {command}"),
+            None::<String>,
+        )),
+        WindowsServiceRegistration::Present {
+            mismatch: Some(mismatch),
+            ..
+        } => Ok(make_result(
+            check,
+            Status::Fail,
+            format!("service target mismatch: {mismatch}"),
+            Some("run journal setup --force from this install to refresh the service"),
+        )),
+    }
 }
 
 fn service_path(context: &CheckContext) -> Option<PathBuf> {

@@ -31,7 +31,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
             None::<String>,
         ));
     }
-    if context.platform == crate::vocabulary::Platform::Linux && context.host_arch == "x86_64" {
+    // Windows runs parakeet through parakeet-cpp, from the signed package.
+    if (context.platform == crate::vocabulary::Platform::Linux && context.host_arch == "x86_64")
+        || context.platform == crate::vocabulary::Platform::Windows
+    {
         return parakeet_cpp_stt_ready::ready(context, check);
     }
     if context.platform == crate::vocabulary::Platform::Darwin && context.host_arch == "arm64" {

@@ -1,10 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 use crate::context::CheckContext;
+use crate::vocabulary::Platform;
 use serde_json::Value;
 use solstone_core_callosum::{
     CallosumConnectionPhase, CallosumReceiveEvent, CallosumSocketConnection,
 };
+use solstone_core_system::process::{
+    InstanceVerdict, ProcessInstance, ProcessInstanceSource, SystemProcessInstanceSource,
+};
+use std::path::Path;
 use std::time::Duration;
 
 const STOP_CLEANUP_BOUND: Duration = Duration::from_millis(50);
@@ -21,8 +26,12 @@ fn is_fresh_status_timestamp(timestamp_ms: i64, watermark_ms: i64, now_ms: i64) 
 /// dead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unavailable {
-    /// No callosum socket exists, so there is nothing listening to answer.
+    /// Nothing is listening to answer: no callosum socket exists, or on
+    /// Windows, no live resident owns the named pipe.
     NoSocket,
+    /// Windows only: the resident's recorded process could not be checked,
+    /// so whether anything is listening is unknown.
+    Unverifiable,
     /// The probe could not construct its own async runtime.
     ProbeRuntime,
     /// A connection was made and no status frame arrived within the budget.
@@ -36,6 +45,7 @@ impl Unavailable {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::NoSocket => "nothing is listening",
+            Self::Unverifiable => "its process couldn't be checked",
             Self::ProbeRuntime => "nothing answered",
             Self::Timeout => "took too long to answer",
             Self::Transport => "the connection dropped",
@@ -43,9 +53,46 @@ impl Unavailable {
     }
 }
 
+/// Is there anything to connect to?
+///
+/// On Unix the socket file is the listener's own artifact. ⛔ On Windows it is
+/// not: the resident serves a named pipe and never creates
+/// `health/callosum.sock`, so testing that path reports "nothing listening" on
+/// every healthy install. The Windows equivalent is the resident itself -- the
+/// process instance it records at boot, alive and the same process -- which is
+/// the evidence `journal service status` already reads for readiness.
+fn endpoint_absent(context: &CheckContext) -> Option<Unavailable> {
+    match context.platform {
+        Platform::Windows => match resident_process(&context.journal_path) {
+            InstanceVerdict::SameLive { .. } => None,
+            InstanceVerdict::NotSameOrExited => Some(Unavailable::NoSocket),
+            InstanceVerdict::Unverifiable => Some(Unavailable::Unverifiable),
+        },
+        Platform::Linux | Platform::Darwin => {
+            (!context.callosum_socket_path.exists()).then_some(Unavailable::NoSocket)
+        }
+    }
+}
+
+/// The verdict on the process the resident recorded in
+/// `health/supervisor.process_instance`. A missing or unreadable record means
+/// no resident has booted since the journal was last cleanly stopped, which is
+/// the same fact as a missing socket.
+pub(crate) fn resident_process(journal: &Path) -> InstanceVerdict {
+    let Ok(bytes) = std::fs::read(journal.join("health").join(SUPERVISOR_PROCESS_INSTANCE)) else {
+        return InstanceVerdict::NotSameOrExited;
+    };
+    let Ok(instance) = serde_json::from_slice::<ProcessInstance>(&bytes) else {
+        return InstanceVerdict::NotSameOrExited;
+    };
+    SystemProcessInstanceSource.observe(&instance)
+}
+
+const SUPERVISOR_PROCESS_INSTANCE: &str = "supervisor.process_instance";
+
 pub fn fetch(context: &CheckContext) -> Result<Value, Unavailable> {
-    if !context.callosum_socket_path.exists() {
-        return Err(Unavailable::NoSocket);
+    if let Some(cause) = endpoint_absent(context) {
+        return Err(cause);
     }
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -87,8 +134,8 @@ pub fn fetch(context: &CheckContext) -> Result<Value, Unavailable> {
 /// the connection's `Connected` watermark prevents such a queued old beacon
 /// from making the live check look healthy.
 pub fn fetch_observe_status(context: &CheckContext) -> Result<Value, Unavailable> {
-    if !context.callosum_socket_path.exists() {
-        return Err(Unavailable::NoSocket);
+    if let Some(cause) = endpoint_absent(context) {
+        return Err(cause);
     }
     let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
         .enable_all()

@@ -35,7 +35,9 @@ pub struct RegistryEntry {
     pub runner: Runner,
     pub deferred: Option<DeferredCheckSet>,
 }
-const BOTH: &[Platform] = &[Platform::Linux, Platform::Darwin];
+/// Every platform the journal runs on. A check whose question has no answer
+/// on one of them says so in its own row rather than being gated here.
+const ALL: &[Platform] = &[Platform::Linux, Platform::Darwin, Platform::Windows];
 const DARWIN: &[Platform] = &[Platform::Darwin];
 fn config(c: &CheckContext) -> RunnerResult {
     checks::config_dir_readable::run(c, CHECK_CONFIG)
@@ -130,17 +132,17 @@ fn journal_durability(c: &CheckContext) -> RunnerResult {
 const CHECK_CONFIG: Check = Check {
     name: "config_dir_readable",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_WRITABLE: Check = Check {
     name: "journal_dir_writable",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SERVICE: Check = Check {
     name: "service_running",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CONFLICT: Check = Check {
     name: "supervisor_conflict",
@@ -155,122 +157,122 @@ const CHECK_PLIST: Check = Check {
 const CHECK_DISK_SPACE: Check = Check {
     name: "disk_space",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SERVICE_IDENTITY: Check = Check {
     name: "service_identity",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_LOCAL_BIN_SOLSTONE_REACHABLE: Check = Check {
     name: "local_bin_solstone_reachable",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SYNC: Check = Check {
     name: "journal_sync",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CAUGHT_UP: Check = Check {
     name: "journal_caught_up",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SOURCES_READABLE: Check = Check {
     name: "journal_sources_readable",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_TASK_PACE: Check = Check {
     name: "task_pace",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SENSE_DISPATCH: Check = Check {
     name: "sense_dispatch",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_BRAIN: Check = Check {
     name: "brain",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CAPTURE: Check = Check {
     name: "capture_health",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CLIENT_BINDING: Check = Check {
     name: "client_binding",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CLIENT_DELIVERY: Check = Check {
     name: "client_delivery_stall",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CLIENT_INGEST: Check = Check {
     name: "client_ingest_health",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_DEVICE_DAY_LISTING: Check = Check {
     name: "device_day_listing",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_FACET_ROUTING: Check = Check {
     name: "facet_routing",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CLIENT_TRANSPORT_REFUSAL: Check = Check {
     name: "client_transport_refusal",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_ORPHAN: Check = Check {
     name: "orphan_segment_pdf",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_DEFAULT_STT: Check = Check {
     name: "default_stt_ready",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_CPP_STT: Check = Check {
     name: "parakeet_cpp_stt_ready",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SPEAKERS: Check = Check {
     name: "speakers_analyze_installation",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_VAD_RUNTIME: Check = Check {
     name: "vad_runtime_ready",
     severity: Severity::Blocker,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_SKILLS: Check = Check {
     name: "skill_state",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_UNRETRYABLE_TRANSCRIBE_INPUT: Check = Check {
     name: "unretryable_transcribe_input",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 const CHECK_JOURNAL_DURABILITY: Check = Check {
     name: "journal_durability",
     severity: Severity::Advisory,
-    platforms: BOTH,
+    platforms: ALL,
 };
 pub static JOURNAL: &[RegistryEntry] = &[
     RegistryEntry {

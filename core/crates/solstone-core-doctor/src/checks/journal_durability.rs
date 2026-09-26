@@ -395,6 +395,7 @@ mod tests {
             speakers_analyze_resolvers: None,
             vad_runtime_probe: None,
             free_space_bytes_override: None,
+            windows_service_probe: None,
         }
     }
 

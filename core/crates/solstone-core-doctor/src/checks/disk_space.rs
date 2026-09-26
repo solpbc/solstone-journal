@@ -1,17 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
-#[cfg(unix)]
-use nix::sys::statvfs::statvfs;
-#[cfg(unix)]
 use solstone_core_journal::{
     LAYOUT_BUNDLE_ANCHOR, LAYOUT_LAYOUT_ANCHOR, LAYOUT_TEMPLATE_ANCHOR,
     resolve_installation_root_from_executable_dir,
 };
-#[cfg(unix)]
 use std::{fs, path::Path};
 
-#[cfg(unix)]
 use crate::vocabulary::ExecutionError;
 use crate::{
     context::CheckContext,
@@ -20,31 +15,11 @@ use crate::{
 
 // Covers filesystem allocation and transient installation bookkeeping beyond
 // the measured replacement tree.
-#[cfg(unix)]
 const INSTALL_TREE_HEADROOM_BYTES: u64 = 1024 * 1024 * 1024;
-#[cfg(unix)]
 const NOT_LAYOUT_INSTALL_TREE_DETAIL: &str =
     "resolved installation root is not a layout install tree";
 
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
-    #[cfg(unix)]
-    {
-        run_unix(context, check)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = context;
-        Ok(make_result(
-            check,
-            Status::Skip,
-            "not supported on windows",
-            None::<String>,
-        ))
-    }
-}
-
-#[cfg(unix)]
-fn run_unix(context: &CheckContext, check: Check) -> RunnerResult {
     let Some(_resolved_root) =
         resolve_installation_root_from_executable_dir(&context.install_bin_dir)
     else {
@@ -79,16 +54,10 @@ fn run_unix(context: &CheckContext, check: Check) -> RunnerResult {
         ));
     }
     let (tree_bytes, slack_bytes) = required_free_space_bytes(prefix)?;
-    let stats = statvfs(prefix).map_err(|error| ExecutionError {
-        kind: "StatvfsError".into(),
-        message: format!(
-            "could not inspect free space at {}: {error}",
-            prefix.display()
-        ),
-    })?;
-    let free_bytes = context
-        .free_space_bytes_override
-        .unwrap_or_else(|| stats.blocks_available() as u64 * stats.fragment_size() as u64);
+    let free_bytes = match context.free_space_bytes_override {
+        Some(bytes) => bytes,
+        None => available_bytes(prefix)?,
+    };
     let required_bytes = tree_bytes + slack_bytes;
     let free_gib = bytes_to_gib(free_bytes);
     let required_gib = bytes_to_gib(required_bytes);
@@ -114,7 +83,40 @@ fn run_unix(context: &CheckContext, check: Check) -> RunnerResult {
     ))
 }
 
+/// Bytes this account may still write on the filesystem holding `prefix`.
 #[cfg(unix)]
+fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
+    let stats = nix::sys::statvfs::statvfs(prefix).map_err(|error| ExecutionError {
+        kind: "StatvfsError".into(),
+        message: format!(
+            "could not inspect free space at {}: {error}",
+            prefix.display()
+        ),
+    })?;
+    Ok(stats.blocks_available() as u64 * stats.fragment_size() as u64)
+}
+
+/// Bytes this account may still write on the volume holding `prefix` -- the
+/// caller's quota-aware figure, the same one the journal's own writers check.
+#[cfg(windows)]
+fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
+    solstone_core_journal_io::windows_available_disk_bytes(prefix).map_err(|error| ExecutionError {
+        kind: "DiskFreeSpaceError".into(),
+        message: format!(
+            "could not inspect free space at {}: {error}",
+            prefix.display()
+        ),
+    })
+}
+
+#[cfg(not(any(unix, windows)))]
+fn available_bytes(prefix: &Path) -> Result<u64, ExecutionError> {
+    Err(ExecutionError {
+        kind: "UnsupportedPlatform".into(),
+        message: format!("free space is not readable at {}", prefix.display()),
+    })
+}
+
 pub(crate) fn required_free_space_bytes(prefix: &Path) -> Result<(u64, u64), ExecutionError> {
     let tree_bytes = ["bin", "lib", "share"]
         .into_iter()
@@ -128,7 +130,6 @@ pub(crate) fn required_free_space_bytes(prefix: &Path) -> Result<(u64, u64), Exe
     Ok((tree_bytes, INSTALL_TREE_HEADROOM_BYTES))
 }
 
-#[cfg(unix)]
 fn tree_bytes(path: &Path) -> Result<u64, ExecutionError> {
     let metadata = fs::symlink_metadata(path).map_err(|error| ExecutionError {
         kind: "InstallTreeWalkError".into(),
@@ -170,7 +171,6 @@ fn tree_bytes(path: &Path) -> Result<u64, ExecutionError> {
         })
 }
 
-#[cfg(unix)]
 fn bytes_to_gib(bytes: u64) -> f64 {
     bytes as f64 / 1024_f64.powi(3)
 }

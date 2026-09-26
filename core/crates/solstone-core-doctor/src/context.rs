@@ -26,6 +26,28 @@ pub struct VadRuntimeProbeSeam {
 /// Test seam that returns a VAD helper path and probe deadline.
 pub type VadRuntimeProbeResolver = fn() -> VadRuntimeProbeSeam;
 
+/// What the Windows Task Scheduler holds for this installation's service.
+///
+/// The doctor cannot read the registration itself -- the Scheduler client is
+/// the journal command's -- so the command that owns it answers through
+/// [`CheckContext::windows_service_probe`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowsServiceRegistration {
+    /// No task is registered for this installation.
+    Absent,
+    /// A task is registered. `command` is the program it runs; `mismatch`
+    /// names the first way it differs from this install, if any.
+    Present {
+        command: String,
+        mismatch: Option<String>,
+    },
+    /// The registration could not be read; the reason says why.
+    Unreadable(String),
+}
+
+/// Reads this installation's Windows service registration.
+pub type WindowsServiceProbe = fn(&CheckContext) -> WindowsServiceRegistration;
+
 #[derive(Debug, Clone)]
 pub struct CheckContext {
     pub home_dir: PathBuf,
@@ -52,6 +74,9 @@ pub struct CheckContext {
     pub vad_runtime_probe: Option<VadRuntimeProbeResolver>,
     /// Test seam for available bytes on the installation filesystem.
     pub free_space_bytes_override: Option<u64>,
+    /// How the Windows service registration is read. `None` means nobody
+    /// supplied a reader, which the service checks report as unreadable.
+    pub windows_service_probe: Option<WindowsServiceProbe>,
 }
 impl CheckContext {
     pub fn production(port: u16) -> Result<Self, String> {
@@ -114,6 +139,7 @@ impl CheckContext {
             speakers_analyze_resolvers: None,
             vad_runtime_probe: None,
             free_space_bytes_override: None,
+            windows_service_probe: None,
         })
     }
 }

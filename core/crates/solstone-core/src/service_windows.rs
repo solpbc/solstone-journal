@@ -92,60 +92,35 @@ fn resolve_context_at(selected: Option<&Path>) -> Result<ServiceContext, ExitCod
             }
         },
     };
-    let owner = match owner_base() {
-        Ok(owner) => owner,
-        Err(error) => {
-            eprintln!("could not locate owner base: {error}");
-            return Err(ExitCode::from(1));
-        }
-    };
-    let exe = match std::env::current_exe() {
-        Ok(exe) => exe,
-        Err(error) => {
-            eprintln!("could not inspect current executable: {error}");
-            return Err(ExitCode::from(1));
-        }
-    };
+    context_for_journal(journal).map_err(|error| {
+        eprintln!("{error}");
+        ExitCode::from(1)
+    })
+}
+
+/// The service context for `journal`, or the one-line reason there is none.
+fn context_for_journal(journal: PathBuf) -> Result<ServiceContext, String> {
+    let owner = owner_base().map_err(|error| format!("could not locate owner base: {error}"))?;
+    let exe = std::env::current_exe()
+        .map_err(|error| format!("could not inspect current executable: {error}"))?;
     let exe_dir = exe.parent().unwrap_or_else(|| Path::new("."));
-    let root = match resolve_identity_root_from_executable_dir(exe_dir) {
-        Some(root) => root,
-        None => {
-            eprintln!("could not resolve identity root from executable directory");
-            return Err(ExitCode::from(1));
-        }
-    };
-    let root_token = match root_token_from_path(&root) {
-        Ok(token) => token,
-        Err(error) => {
-            eprintln!("could not resolve root token: {error}");
-            return Err(ExitCode::from(1));
-        }
-    };
-    let binding = match load_installation_binding(&owner, &root_token) {
-        Ok(binding) => binding,
-        Err(error) => {
-            eprintln!("could not load installation binding: {error}");
-            return Err(ExitCode::from(1));
-        }
-    };
+    let root = resolve_identity_root_from_executable_dir(exe_dir)
+        .ok_or_else(|| "could not resolve identity root from executable directory".to_owned())?;
+    let root_token = root_token_from_path(&root)
+        .map_err(|error| format!("could not resolve root token: {error}"))?;
+    let binding = load_installation_binding(&owner, &root_token)
+        .map_err(|error| format!("could not load installation binding: {error}"))?;
 
     if journal_token_from_path(&journal).ok().as_ref() != Some(&binding.journal_token) {
-        eprintln!("selected journal differs from the saved installation binding");
-        return Err(ExitCode::from(1));
+        return Err("selected journal differs from the saved installation binding".to_owned());
     }
-    let sid = match solstone_core_callosum::windows::sid::current_user_sid() {
-        Ok(sid) => sid,
-        Err(error) => {
-            eprintln!("could not retrieve user SID: {error}");
-            return Err(ExitCode::from(1));
-        }
-    };
+    let sid = solstone_core_callosum::windows::sid::current_user_sid()
+        .map_err(|error| format!("could not retrieve user SID: {error}"))?;
     let installation_id = binding.id.as_hex();
     let task_path = format!(r"\solstone-{sid}\{installation_id}");
     let public_journal_exe = exe_dir.join("journal.exe");
     if !public_journal_exe.is_file() {
-        eprintln!("the installed journal.exe facade is unavailable");
-        return Err(ExitCode::from(1));
+        return Err("the installed journal.exe facade is unavailable".to_owned());
     }
 
     Ok(ServiceContext {
@@ -156,6 +131,70 @@ fn resolve_context_at(selected: Option<&Path>) -> Result<ServiceContext, ExitCod
         task_path,
         public_journal_exe,
     })
+}
+
+/// How long `journal doctor` waits on the Task Scheduler for one readback.
+const DOCTOR_INSPECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// `journal doctor`'s reading of this installation's service registration.
+///
+/// The doctor asks the same question of every platform -- is a service
+/// registered, and does it run this install? -- and on Windows only this
+/// command's Task Scheduler client can answer it. Nothing is printed: every
+/// failure comes back as the reason the registration could not be read.
+pub(crate) fn doctor_registration(
+    context: &solstone_core_doctor::context::CheckContext,
+) -> solstone_core_doctor::context::WindowsServiceRegistration {
+    use solstone_core_doctor::context::WindowsServiceRegistration;
+
+    let ctx = match context_for_journal(context.journal_path.clone()) {
+        Ok(ctx) => ctx,
+        Err(reason) => return WindowsServiceRegistration::Unreadable(reason),
+    };
+    let snapshot = match task_scheduler::execute_until(
+        &ctx.sid,
+        &ctx.guard.id.as_hex(),
+        Operation::Inspect,
+        Instant::now() + DOCTOR_INSPECT_TIMEOUT,
+    ) {
+        Ok(snapshot) => snapshot,
+        Err(error) => return WindowsServiceRegistration::Unreadable(error.to_string()),
+    };
+    if !snapshot.present {
+        return WindowsServiceRegistration::Absent;
+    }
+    let Some(xml) = snapshot.validation_xml.as_deref() else {
+        return WindowsServiceRegistration::Unreadable(
+            "the registered task has no readable definition".to_owned(),
+        );
+    };
+    let definition = match parse_windows_task_xml(xml) {
+        Ok(definition) => definition,
+        Err(error) => return WindowsServiceRegistration::Unreadable(error.to_string()),
+    };
+    let expected = ctx.public_journal_exe.display().to_string();
+    let journal = ctx.journal.display().to_string();
+    let mismatch = if definition.command != expected {
+        Some(format!(
+            "{} is registered, expected {expected}",
+            definition.command
+        ))
+    } else if definition.principal_sid != ctx.sid {
+        Some("it is registered to another account".to_owned())
+    } else if definition.working_directory != journal || definition.action.journal != journal {
+        Some(format!(
+            "it runs the journal at {}, expected {journal}",
+            definition.action.journal
+        ))
+    } else if definition.action.guard != ctx.guard {
+        Some("it belongs to a different installation of the journal".to_owned())
+    } else {
+        None
+    };
+    WindowsServiceRegistration::Present {
+        command: definition.command,
+        mismatch,
+    }
 }
 
 fn task_error(error: impl std::fmt::Display) -> ExitCode {

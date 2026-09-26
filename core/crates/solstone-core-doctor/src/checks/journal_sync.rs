@@ -4,19 +4,14 @@ use crate::{
     context::CheckContext,
     vocabulary::{Check, RunnerResult, Status, make_result},
 };
-#[cfg(unix)]
 use solstone_core_system::lifecycle::{
     SyncCheckResult, SyncPeerIdentity, SyncRescan, rescan_sync_read_only, sync_peer_diagnostic,
 };
-#[cfg(unix)]
 use solstone_core_system::process::SystemProcessInstanceSource;
-#[cfg(unix)]
 use solstone_core_system_health::{SyncRescanDiagnosis, describe_sync_rescan};
 
-#[cfg(unix)]
 use super::service_status;
 
-#[cfg(unix)]
 pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     if !context.journal_path.is_dir() {
         return Ok(make_result(
@@ -63,21 +58,10 @@ pub fn run(context: &CheckContext, check: Check) -> RunnerResult {
     render_sync_rescan(context, check, diagnosis)
 }
 
-#[cfg(not(unix))]
-pub fn run(_context: &CheckContext, check: Check) -> RunnerResult {
-    Ok(make_result(
-        check,
-        Status::Skip,
-        "not supported on windows",
-        None::<String>,
-    ))
-}
-
 /// Render the "this device only" detail, naming the most recently observed
 /// peer's identity when one is present. Shared by the confirmed-running
 /// downgrade above and the `Clean` diagnosis below so both report a genuine
 /// foreign writer identically instead of one of them silently dropping it.
-#[cfg(unix)]
 fn clean_detail(context: &CheckContext, result: Option<&SyncCheckResult>) -> String {
     let clean = format!("this device only ({})", context.hostname);
     result
@@ -96,7 +80,6 @@ fn clean_detail(context: &CheckContext, result: Option<&SyncCheckResult>) -> Str
         )
 }
 
-#[cfg(unix)]
 fn render_sync_rescan(
     context: &CheckContext,
     check: Check,
@@ -122,7 +105,6 @@ fn render_sync_rescan(
     }
 }
 
-#[cfg(unix)]
 fn doctor_identity_label(identity: &SyncPeerIdentity) -> String {
     match identity {
         SyncPeerIdentity::LegacyV1 {
@@ -172,6 +154,7 @@ mod tests {
             speakers_analyze_resolvers: None,
             vad_runtime_probe: None,
             free_space_bytes_override: None,
+            windows_service_probe: None,
         }
     }
 
