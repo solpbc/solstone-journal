@@ -119,6 +119,9 @@ pub(crate) fn parse_publication_path(
     if input.contains('\0') {
         return Err(PublicationPathParseError::InteriorNul);
     }
+    if let Some(rest) = input.strip_prefix(r"\\?\") {
+        return parse_drive_verbatim(rest);
+    }
     if starts_with_two_separators(input) {
         return Err(PublicationPathParseError::UncOrDevicePrefix);
     }
@@ -144,6 +147,32 @@ pub(crate) fn parse_publication_path(
     }
     Ok(PublicationPathSpec::CurrentDirectoryRelative {
         components: split_components(input)?,
+    })
+}
+
+/// Admit the drive-verbatim spelling `\\?\X:\a\b` that `std::fs::canonicalize`
+/// returns on Windows. It names the same drive-absolute path as `X:\a\b`; the
+/// admitted path is re-anchored through the drive's volume GUID and every component
+/// is still checked, so accepting it widens nothing. A verbatim path takes `/` as a
+/// literal name character, so a `/` anywhere refuses. Every other `\\?\` form (UNC,
+/// volume GUID, GLOBALROOT) stays refused.
+fn parse_drive_verbatim(rest: &str) -> Result<PublicationPathSpec, PublicationPathParseError> {
+    let Some(drive) = ascii_drive_letter(rest) else {
+        return Err(PublicationPathParseError::UncOrDevicePrefix);
+    };
+    let remainder = &rest[2..];
+    let Some(tail) = remainder.strip_prefix('\\') else {
+        return Err(PublicationPathParseError::DriveRelative);
+    };
+    if tail.is_empty() {
+        return Err(PublicationPathParseError::RootOnly);
+    }
+    if tail.contains('/') {
+        return Err(PublicationPathParseError::UncOrDevicePrefix);
+    }
+    Ok(PublicationPathSpec::DriveAbsolute {
+        drive,
+        components: split_components(tail)?,
     })
 }
 
@@ -1087,11 +1116,54 @@ mod tests {
     }
 
     #[test]
-    fn parse_rejects_verbatim() {
+    fn parse_admits_drive_verbatim_as_drive_absolute() {
         assert_eq!(
-            parse_publication_path(r"\\?\C:\foo"),
-            Err(PublicationPathParseError::UncOrDevicePrefix)
+            parse_publication_path(r"\\?\C:\foo\bar"),
+            Ok(PublicationPathSpec::DriveAbsolute {
+                drive: b'C',
+                components: vec!["foo".to_owned(), "bar".to_owned()],
+            })
         );
+        assert_eq!(
+            parse_publication_path(r"\\?\c:\foo"),
+            parse_publication_path(r"C:\foo")
+        );
+    }
+
+    #[test]
+    fn parse_rejects_other_verbatim_forms() {
+        for input in [
+            r"\\?\UNC\server\share\foo",
+            r"\\?\Volume{00000000-0000-0000-0000-000000000000}\foo",
+            r"\\?\GLOBALROOT\Device\HarddiskVolume1\foo",
+            r"\\?\C:\foo/bar",
+        ] {
+            assert_eq!(
+                parse_publication_path(input),
+                Err(PublicationPathParseError::UncOrDevicePrefix),
+                "{input}"
+            );
+        }
+        assert_eq!(
+            parse_publication_path(r"\\?\C:"),
+            Err(PublicationPathParseError::DriveRelative)
+        );
+        assert_eq!(
+            parse_publication_path(r"\\?\C:foo"),
+            Err(PublicationPathParseError::DriveRelative)
+        );
+        assert_eq!(
+            parse_publication_path(r"\\?\C:/foo"),
+            Err(PublicationPathParseError::DriveRelative)
+        );
+        assert_eq!(
+            parse_publication_path(r"\\?\C:\"),
+            Err(PublicationPathParseError::RootOnly)
+        );
+        assert!(matches!(
+            parse_publication_path(r"\\?\C:\\foo"),
+            Err(PublicationPathParseError::InvalidComponent(_))
+        ));
     }
 
     #[test]
