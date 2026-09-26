@@ -137,3 +137,52 @@ fn missing_command_is_command_not_found() {
     assert!(actual.is_error);
     assert_eq!(actual.text, "command_not_found: solstone-no-such-command");
 }
+
+/// Cortex stops a timed-out or cancelled talent through the same facade:
+/// `terminate()` retires the whole Job and never calls the terminate closure.
+#[test]
+fn facade_stop_retires_descendants_without_the_terminate_closure() {
+    use solstone_core_system::process::{
+        BoxedTerminateFn, CommandLaunchRequest, Disposition, launch_command,
+    };
+
+    let root = tempfile::tempdir().expect("create process fixture root");
+    let receipt = root.path().join("descendant.pid");
+    let script = format!(
+        "{}; Start-Sleep 120",
+        start_descendant(&receipt, "-WindowStyle Hidden")
+    );
+    let terminate: BoxedTerminateFn =
+        Box::new(|_child, _timeout| panic!("Windows stop must not use the terminate closure"));
+    let mut authority = launch_command(
+        Disposition::IndependentBoundedHelper {
+            timeout: Duration::from_secs(120),
+        },
+        CommandLaunchRequest {
+            read_file_grants: Vec::new(),
+            program: Path::new(&std::env::var_os("SystemRoot").expect("SystemRoot"))
+                .join(r"System32\WindowsPowerShell\v1.0\powershell.exe")
+                .into_os_string(),
+            arguments: powershell(&script)[1..].iter().map(Into::into).collect(),
+            environment: Default::default(),
+            current_dir: Some(root.path().to_path_buf()),
+            process_group: true,
+            stdin_piped: false,
+            stdout_piped: false,
+            stderr_piped: false,
+        },
+        terminate,
+    )
+    .expect("launch owned command");
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !receipt.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    assert!(receipt.exists(), "descendant receipt never appeared");
+    // Set-Content may still be writing; wait for a complete PID.
+    std::thread::sleep(Duration::from_millis(500));
+    authority
+        .terminate(Duration::from_secs(10))
+        .expect("stop the owned Job");
+    assert_descendant_exited(&receipt);
+}
