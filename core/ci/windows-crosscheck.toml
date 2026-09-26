@@ -2,12 +2,12 @@ version = 1
 target = "x86_64-pc-windows-msvc"
 
 [baseline]
-# Re-derived on 2026-09-10 using cargo metadata --no-deps --format-version 1
-# after removing two retired support crates. Count workspace members, then those
+# Re-derived on 2026-09-26 using cargo metadata --no-deps --format-version 1
+# after retiring solstone-core-clients-web. Count workspace members, then those
 # with any
 # target whose kind includes `lib`; one package is counted once.
-workspace_packages = 132
-library_packages = 126
+workspace_packages = 131
+library_packages = 125
 
 [[exclusions]]
 package = "ring"

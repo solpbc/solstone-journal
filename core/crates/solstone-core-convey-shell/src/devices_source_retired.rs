@@ -14,7 +14,9 @@ const CID: &str = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 const SEGMENT_DIR: &str = "chronicle/20260805/location/070000_17";
 const STREAM_RECORD: &str = "streams/location.json";
 
-fn setup_bed() -> (TempDir, BTreeSet<String>, Vec<(String, Vec<u8>)>, Vec<u8>) {
+type Bed = (TempDir, BTreeSet<String>, Vec<(String, Vec<u8>)>, Vec<u8>);
+
+fn setup_bed() -> Bed {
     let bed = TempDir::new_in("/var/tmp").expect("journal");
     let journal = bed.path();
 
