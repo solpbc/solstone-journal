@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "clock_ms": 1700000000000,
+  "ca_pubkey": "-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\n-----END PUBLIC KEY-----",
+  "cnf_jwk": {
+    "kty": "OKP",
+    "crv": "Ed25519",
+    "x": "AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c"
+  },
+  "cases": [
+    {
+      "name": "first_pin",
+      "request": {
+        "method": "POST",
+        "url": "https://services.solstone.app/reach/mcp/bridge-token",
+        "body": "{\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjVmODQzZjkxLTVmY2QtOGE1YS05YzhiLTUwMDlkZWJkOGQwMCIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI1Zjg0M2Y5MS01ZmNkLThhNWEtOWM4Yi01MDA5ZGViZDhkMDAiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MCwiYWNtZV9hY2NvdW50X3VyaSI6Imh0dHBzOi8vYWNtZS12MDIuYXBpLmxldHNlbmNyeXB0Lm9yZy9hY21lL2FjY3QvMTIzNDU2In0.FV6Sspl31a7e0HMwRQhK8nTDoOPbRCR8FLSBNAMMh7Nv5Xc_4s9I6cyEQ7P9wKRLcbv-KKF3x_ajRABPeR4tBw\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+      },
+      "response": {
+        "status": 200,
+        "cache_control": "no-store",
+        "body_text": "{\"token\":\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6Im1jcC1icmlkZ2UtZml4dHVyZS12MiJ9.eyJob3N0bmFtZSI6ImFhYXFlYXllLnNvbHN0b25lLm1lIiwiY25mIjp7Imp3ayI6eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI1NTE5IiwieCI6IkFzak9PWVVNVURER1lWdmYyYTAyU0RFWGFiMUg5VzNadmM0V1h6eW1MNGMifX0sImlzcyI6InNlcnZpY2VzLnNvbHN0b25lLmFwcCIsImF1ZCI6Im1jcC1icmlkZ2UtZml4dHVyZSIsInN1YiI6ImhvbWU6NWY4NDNmOTEtNWZjZC04YTVhLTljOGItNTAwOWRlYmQ4ZDAwIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.9VbSGJqx-MbirQgOfq_n1D-k6_NZ5dNfMQXzo9x9-2qkU3lg2_r5tg2MhPxjJQn0EzpIYLStPUjJBgSxiwevDw\",\"token_type\":\"Bearer\",\"expires_in\":600,\"expires_at\":\"2023-11-14T22:23:20Z\",\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"hostname\":\"aaaqeaye.solstone.me\",\"bridge_id\":\"mcp-bridge-fixture\",\"bridge_addresses\":[\"20.186.92.169\"]}"
+      }
+    },
+    {
+      "name": "acme_account_changed",
+      "request": {
+        "method": "POST",
+        "url": "https://services.solstone.app/reach/mcp/bridge-token",
+        "body": "{\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjVmODQzZjkxLTVmY2QtOGE1YS05YzhiLTUwMDlkZWJkOGQwMCIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI1Zjg0M2Y5MS01ZmNkLThhNWEtOWM4Yi01MDA5ZGViZDhkMDAiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MCwiYWNtZV9hY2NvdW50X3VyaSI6Imh0dHBzOi8vYWNtZS12MDIuYXBpLmxldHNlbmNyeXB0Lm9yZy9hY21lL2FjY3QvMDAwNzg5In0.qiGfeA7mR9DF6kqXNHZfJ9SKm4v-i07UZM3B9Jfi_uzaX0eiQDOPJLM_HkJ-DbRMl1VFQ5MF5iyAdCUHPrQ55A\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+      },
+      "response": {
+        "status": 409,
+        "cache_control": "no-store",
+        "body_text": "{\"error\":\"acme_account_changed\"}"
+      }
+    },
+    {
+      "name": "replace",
+      "request": {
+        "method": "POST",
+        "url": "https://services.solstone.app/reach/mcp/bridge-token",
+        "body": "{\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjVmODQzZjkxLTVmY2QtOGE1YS05YzhiLTUwMDlkZWJkOGQwMCIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI1Zjg0M2Y5MS01ZmNkLThhNWEtOWM4Yi01MDA5ZGViZDhkMDAiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MCwiYWNtZV9hY2NvdW50X3VyaSI6Imh0dHBzOi8vYWNtZS12MDIuYXBpLmxldHNlbmNyeXB0Lm9yZy9hY21lL2FjY3QvMDAwNzg5IiwiYWNtZV9hY2NvdW50X3JlcGxhY2UiOnRydWV9.1LASqdvvlq-cK6Tv6A6qGCT0MqcodecT3W3ZXYSlttNMRaVTTB11dfuEkygOSdd-JSm_g34W1acNUFBKumIpVg\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+      },
+      "response": {
+        "status": 200,
+        "cache_control": "no-store",
+        "body_text": "{\"token\":\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCIsImtpZCI6Im1jcC1icmlkZ2UtZml4dHVyZS12MiJ9.eyJob3N0bmFtZSI6ImFhYXFlYXllLnNvbHN0b25lLm1lIiwiY25mIjp7Imp3ayI6eyJrdHkiOiJPS1AiLCJjcnYiOiJFZDI1NTE5IiwieCI6IkFzak9PWVVNVURER1lWdmYyYTAyU0RFWGFiMUg5VzNadmM0V1h6eW1MNGMifX0sImlzcyI6InNlcnZpY2VzLnNvbHN0b25lLmFwcCIsImF1ZCI6Im1jcC1icmlkZ2UtZml4dHVyZSIsInN1YiI6ImhvbWU6NWY4NDNmOTEtNWZjZC04YTVhLTljOGItNTAwOWRlYmQ4ZDAwIiwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDAwMDA2MDB9.9VbSGJqx-MbirQgOfq_n1D-k6_NZ5dNfMQXzo9x9-2qkU3lg2_r5tg2MhPxjJQn0EzpIYLStPUjJBgSxiwevDw\",\"token_type\":\"Bearer\",\"expires_in\":600,\"expires_at\":\"2023-11-14T22:23:20Z\",\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"hostname\":\"aaaqeaye.solstone.me\",\"bridge_id\":\"mcp-bridge-fixture\",\"bridge_addresses\":[\"20.186.92.169\"],\"acme_account_replaced_at\":\"2023-11-14T22:13:20Z\"}"
+      }
+    },
+    {
+      "name": "journal_update_required",
+      "request": {
+        "method": "POST",
+        "url": "https://services.solstone.app/reach/mcp/bridge-token",
+        "body": "{\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjVmODQzZjkxLTVmY2QtOGE1YS05YzhiLTUwMDlkZWJkOGQwMCIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI1Zjg0M2Y5MS01ZmNkLThhNWEtOWM4Yi01MDA5ZGViZDhkMDAiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MH0.f2x_CD3Qn8PudlYFR__z9esVjYqJjy-uBSM6qJmveFtQThKgnfOLhvBXxpESFXv84S_1stQq5hc50I-5PX6syA\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+      },
+      "response": {
+        "status": 426,
+        "cache_control": "no-store",
+        "body_text": "{\"error\":\"journal_update_required\"}"
+      }
+    },
+    {
+      "name": "hostname_records_unavailable",
+      "request": {
+        "method": "POST",
+        "url": "https://services.solstone.app/reach/mcp/bridge-token",
+        "body": "{\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjVmODQzZjkxLTVmY2QtOGE1YS05YzhiLTUwMDlkZWJkOGQwMCIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI1Zjg0M2Y5MS01ZmNkLThhNWEtOWM4Yi01MDA5ZGViZDhkMDAiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MCwiYWNtZV9hY2NvdW50X3VyaSI6Imh0dHBzOi8vYWNtZS12MDIuYXBpLmxldHNlbmNyeXB0Lm9yZy9hY21lL2FjY3QvMDAwNzg5IiwiYWNtZV9hY2NvdW50X3JlcGxhY2UiOnRydWV9.1LASqdvvlq-cK6Tv6A6qGCT0MqcodecT3W3ZXYSlttNMRaVTTB11dfuEkygOSdd-JSm_g34W1acNUFBKumIpVg\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+      },
+      "response": {
+        "status": 503,
+        "cache_control": "no-store",
+        "body_text": "{\"error\":\"hostname_records_unavailable\"}"
+      }
+    },
+    {
+      "name": "hostname_capacity",
+      "request": {
+        "method": "POST",
+        "url": "https://services.solstone.app/reach/mcp/bridge-token",
+        "body": "{\"instance_id\":\"5f843f91-5fcd-8a5a-9c8b-5009debd8d00\",\"assertion\":\"eyJhbGciOiJFUzI1NiIsInR5cCI6ImhvbWUtcmVhY2gifQ.eyJpc3MiOiJob21lOjVmODQzZjkxLTVmY2QtOGE1YS05YzhiLTUwMDlkZWJkOGQwMCIsImF1ZCI6InNvbHN0b25lLXJlYWNoIiwic2NvcGUiOiJtY3AuYnJpZGdlLnJlZ2lzdGVyIiwiaW5zdGFuY2VfaWQiOiI1Zjg0M2Y5MS01ZmNkLThhNWEtOWM4Yi01MDA5ZGViZDhkMDAiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDI0MCwiYWNtZV9hY2NvdW50X3VyaSI6Imh0dHBzOi8vYWNtZS12MDIuYXBpLmxldHNlbmNyeXB0Lm9yZy9hY21lL2FjY3QvMDAwNzg5IiwiYWNtZV9hY2NvdW50X3JlcGxhY2UiOnRydWV9.1LASqdvvlq-cK6Tv6A6qGCT0MqcodecT3W3ZXYSlttNMRaVTTB11dfuEkygOSdd-JSm_g34W1acNUFBKumIpVg\",\"ca_pubkey\":\"-----BEGIN PUBLIC KEY-----\\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQWlKYw5U0BTp/TLsowvmpKeLBzg9\\nbu+9FzYqScH+EVXR2+GHE0xZoSOR242MK4NX7h+sp/kGyDpkBKWfT3zBsA==\\n-----END PUBLIC KEY-----\",\"cnf_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"AsjOOYUMUDDGYVvf2a02SDEXab1H9W3Zvc4WXzymL4c\"}}"
+      },
+      "response": {
+        "status": 503,
+        "cache_control": "no-store",
+        "body_text": "{\"error\":\"hostname_capacity\"}"
+      }
+    }
+  ]
+}
