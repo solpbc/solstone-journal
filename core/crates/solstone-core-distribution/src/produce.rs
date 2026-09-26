@@ -41,6 +41,7 @@ use crate::record;
 use crate::select::{self, ArtifactId, Selection};
 use crate::stage;
 
+pub mod target_cache;
 pub mod windows_archives;
 pub mod windows_build;
 pub mod windows_cli;
@@ -95,6 +96,9 @@ pub struct ProduceReport {
     pub onnx_source: String,
     pub onnx_wheel_sha256: String,
     pub artifacts: Vec<PathBuf>,
+    /// What the successful produce removed from its warm cache. A failure
+    /// here leaves a larger cache, never a wrong artifact.
+    pub cache_prune: Result<target_cache::Pruned, String>,
 }
 
 /// Keep the release cache across runs, but place it on the output filesystem.
@@ -462,6 +466,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
     fs::create_dir_all(&wrappers)?;
     fs::create_dir_all(&onnx_dir)?;
     fs::create_dir_all(&target_dir)?;
+    let mut generations = target_cache::Generations::new(&target_dir);
 
     let _ = git_run(
         repo,
@@ -548,6 +553,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                     epoch: &epoch,
                     ffmpeg_archive: &ffmpeg_archive,
                     ffmpeg_run_id: &ffmpeg_run_id,
+                    generations: &mut generations,
                 })?,
             );
             build_parakeet_helper(&checkout)?;
@@ -668,6 +674,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 epoch: &epoch,
                 ffmpeg_archive: &ffmpeg_archive,
                 ffmpeg_run_id: &ffmpeg_run_id,
+                generations: &mut generations,
             })?,
         );
         merge_artifacts(
@@ -685,6 +692,7 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
                 epoch: &epoch,
                 ffmpeg_archive: &ffmpeg_archive,
                 ffmpeg_run_id: &ffmpeg_run_id,
+                generations: &mut generations,
             })?,
         );
 
@@ -709,6 +717,22 @@ pub fn run(args: ProduceArgs) -> Result<ProduceReport, ProduceError> {
             delivery_contract: None,
         })
     })();
+
+    // Still under the work lock, and only once the whole produce succeeded.
+    let result = result.map(|mut report| {
+        let layouts: Vec<PathBuf> = std::iter::once(target_dir.join("release"))
+            .chain(
+                target
+                    .triples()
+                    .into_iter()
+                    .map(|triple| target_dir.join(triple).join("release")),
+            )
+            .collect();
+        report.cache_prune = generations
+            .prune(&layouts)
+            .map_err(|error| format!("{}: {error}", target_dir.display()));
+        report
+    });
 
     let _ = git_run(
         repo,
@@ -949,6 +973,7 @@ fn finish_produce(finish: FinishProduce<'_>) -> Result<ProduceReport, ProduceErr
         },
         onnx_wheel_sha256: spec.wheel_sha256.to_owned(),
         artifacts: produced_artifacts,
+        cache_prune: Ok(target_cache::Pruned::default()),
     })
 }
 
@@ -1001,6 +1026,7 @@ struct BuildLane<'a> {
     epoch: &'a str,
     ffmpeg_archive: &'a Path,
     ffmpeg_run_id: &'a str,
+    generations: &'a mut target_cache::Generations,
 }
 
 fn cargo_argv(triple: &str, bins: &[(String, String)]) -> Vec<String> {
@@ -1095,6 +1121,7 @@ fn build_lane(lane: BuildLane<'_>) -> Result<BTreeMap<ArtifactId, PathBuf>, Prod
         )));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
+    lane.generations.record(&stdout);
     let ffmpeg_out_dir =
         require_single_ffmpeg_out_dir(bind_ffmpeg_build_script_out_dirs(&stdout), lane.triple)?;
     validate_ffmpeg_evidence(

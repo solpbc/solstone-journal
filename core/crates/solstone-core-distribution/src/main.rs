@@ -178,6 +178,15 @@ fn main() -> ExitCode {
                             for path in report.artifacts {
                                 println!("{}", path.display());
                             }
+                            match report.cache_prune {
+                                Ok(pruned) => eprintln!(
+                                    "warm cache: removed {} superseded entries ({} bytes)",
+                                    pruned.entries, pruned.bytes
+                                ),
+                                Err(error) => {
+                                    eprintln!("warning: warm cache prune failed: {error}")
+                                }
+                            }
                             ExitCode::SUCCESS
                         }
                         Err(error) => {
