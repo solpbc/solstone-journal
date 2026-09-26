@@ -3402,6 +3402,57 @@ fn new_stale_merge_suggestions_are_reversible_and_fresh_evidence_reopens() {
 }
 
 #[test]
+fn merge_proposals_conflict_only_when_their_own_rows_move() {
+    let temporary = TempDir::new();
+    let proposal = |facet: &str, source: &str, target: &str| json!({"facet":facet, "day":"20260828", "source":source, "source_slug":source.to_lowercase(), "target":target, "target_slug":target.to_lowercase(), "summary":"name variant"});
+    let publish = |batch: &crate::PreparedMergeProposals| {
+        crate::publish_merge_proposals(temporary.path(), batch, true, || Ok(()), || Ok(()))
+    };
+    publish(
+        &crate::prepare_merge_proposals(temporary.path(), &[proposal("work", "Ada", "Lovelace")])
+            .unwrap(),
+    )
+    .unwrap();
+
+    // Two facets reviewing the same day prepare from the same file.
+    let home =
+        crate::prepare_merge_proposals(temporary.path(), &[proposal("home", "Bo", "Bob")]).unwrap();
+    let work = crate::prepare_merge_proposals(temporary.path(), &[proposal("work", "Al", "Alan")])
+        .unwrap();
+    publish(&home).unwrap();
+    publish(&work).unwrap();
+    let rows = crate::load_merge_candidates(temporary.path(), None, None).unwrap();
+    let pairs: Vec<_> = rows
+        .iter()
+        .map(|row| {
+            (
+                row["facet"].as_str().unwrap(),
+                row["source_slug"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(pairs, [("work", "ada"), ("home", "bo"), ("work", "al")]);
+    let published =
+        fs::read_to_string(temporary.path().join("entities/review-candidates.jsonl")).unwrap();
+    publish(&work).unwrap();
+    assert_eq!(
+        fs::read_to_string(temporary.path().join("entities/review-candidates.jsonl")).unwrap(),
+        published
+    );
+
+    // An owner decision on a row the batch changes is still a conflict.
+    let mut renewed = proposal("work", "Ada", "Lovelace");
+    renewed["summary"] = json!("fresh evidence");
+    let later = crate::prepare_merge_proposals(temporary.path(), &[renewed]).unwrap();
+    crate::dismiss_merge_candidate(temporary.path(), "work", "ada", "lovelace").unwrap();
+    let error = publish(&later).unwrap_err();
+    assert_eq!(
+        error.kind(),
+        Some(crate::ReviewOwnerConflictKind::MergeProposalsChanged)
+    );
+}
+
+#[test]
 fn review_sweep_refuses_bad_merge_rows_without_completion_and_retries_safely() {
     let temporary = TempDir::new();
     let entities = temporary.path().join("entities");

@@ -3,6 +3,7 @@
 
 //! Durable entity merge-review candidates.
 
+use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::path::Path;
@@ -234,21 +235,106 @@ pub fn publish_merge_proposals(
         .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     let current = proposal_bytes(&path).map_err(ReviewOwnerError::failed)?;
     if current.as_deref() != Some(batch.after.as_str()) {
-        if !allow_before || current != batch.before {
-            return Err(ReviewOwnerError::conflict(
-                ReviewOwnerConflictKind::MergeProposalsChanged,
-                "conflict: merge proposals changed after preparation",
-            ));
+        match rebase_merge_proposals(batch, current.as_deref()).map_err(ReviewOwnerError::failed)? {
+            Rebase::Published => {}
+            Rebase::Pending(bytes) if allow_before => {
+                start().map_err(ReviewOwnerError::failed)?;
+                write_text(&path, &bytes, AtomicWriteOptions { mode: Some(0o600) })
+                    .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
+            }
+            Rebase::Pending(_) | Rebase::Conflict => {
+                return Err(ReviewOwnerError::conflict(
+                    ReviewOwnerConflictKind::MergeProposalsChanged,
+                    "conflict: merge proposals changed after preparation",
+                ));
+            }
         }
-        start().map_err(ReviewOwnerError::failed)?;
-        write_text(
-            &path,
-            &batch.after,
-            AtomicWriteOptions { mode: Some(0o600) },
-        )
-        .map_err(|e| ReviewOwnerError::failed(e.to_string()))?;
     }
     receipt().map_err(ReviewOwnerError::failed)
+}
+
+enum Rebase {
+    Published,
+    Pending(String),
+    Conflict,
+}
+
+/// The candidate file is journal-wide, while a batch owns only the rows it
+/// changes. Rows other facets wrote since preparation are kept as they are; the
+/// batch conflicts only when one of its own rows moved.
+fn rebase_merge_proposals(
+    batch: &PreparedMergeProposals,
+    current: Option<&str>,
+) -> Result<Rebase, String> {
+    let whole_file = || -> Result<Rebase, String> {
+        Ok(if current == batch.before.as_deref() {
+            Rebase::Pending(batch.after.clone())
+        } else {
+            Rebase::Conflict
+        })
+    };
+    let (Some(before), Some(after), Some(current_rows)) = (
+        keyed_lines(batch.before.as_deref())?,
+        keyed_lines(Some(&batch.after))?,
+        keyed_lines(current)?,
+    ) else {
+        return whole_file();
+    };
+    let before: HashMap<&str, &str> = before.iter().map(|(k, l)| (k.as_str(), *l)).collect();
+    let after_keys: HashSet<&str> = after.iter().map(|(k, _)| k.as_str()).collect();
+    if before.keys().any(|key| !after_keys.contains(key)) {
+        return whole_file();
+    }
+    let changed: Vec<(&str, &str)> = after
+        .iter()
+        .map(|(k, l)| (k.as_str(), *l))
+        .filter(|(key, line)| before.get(key) != Some(line))
+        .collect();
+    let now: HashMap<&str, &str> = current_rows.iter().map(|(k, l)| (k.as_str(), *l)).collect();
+    if changed.iter().all(|(key, line)| now.get(key) == Some(line)) {
+        return Ok(Rebase::Published);
+    }
+    if !changed
+        .iter()
+        .all(|(key, _)| now.get(key) == before.get(key))
+    {
+        return Ok(Rebase::Conflict);
+    }
+    let replacements: HashMap<&str, &str> = changed.iter().copied().collect();
+    let mut bytes = String::new();
+    for (key, line) in &current_rows {
+        bytes.push_str(replacements.get(key.as_str()).unwrap_or(line));
+        bytes.push('\n');
+    }
+    for (key, line) in &changed {
+        if !now.contains_key(key) {
+            bytes.push_str(line);
+            bytes.push('\n');
+        }
+    }
+    Ok(Rebase::Pending(bytes))
+}
+
+/// Candidate lines keyed by facet and pair; `None` when a key repeats.
+fn keyed_lines(text: Option<&str>) -> Result<Option<Vec<(String, &str)>>, String> {
+    let mut seen = HashSet::new();
+    let mut rows = Vec::new();
+    for line in text.unwrap_or_default().lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let row: Value =
+            serde_json::from_str(line).map_err(|e| format!("malformed merge candidate: {e}"))?;
+        if !row.is_object() {
+            return Err("malformed merge candidate object".into());
+        }
+        let key = candidate_key_for_row(&row);
+        if !seen.insert(key.clone()) {
+            return Ok(None);
+        }
+        rows.push((key, line));
+    }
+    Ok(Some(rows))
 }
 
 /// Mark one entity merge-review candidate accepted, when it exists.

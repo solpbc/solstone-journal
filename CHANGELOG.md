@@ -9,6 +9,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - security fix: since 2.0.9, anyone who could reach your journal could see your facets' names and colors on the page your browser opens to finish connecting an agent, before a pairing code was entered, and a wrong code could confirm whether a guessed facet name existed. that page now shows your facets only after the code matches, so if you limit an agent to chosen facets, you choose them on the next step.
+- a facet's entity review no longer stops for the day when another facet saved merge suggestions while it was running. if `journal doctor` already names a day that stopped this way, the reprocess command it suggests finishes that day's review.
 
 ## [2.0.20] - 2026-09-26
 
