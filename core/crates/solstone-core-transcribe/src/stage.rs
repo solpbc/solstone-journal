@@ -1473,11 +1473,12 @@ mod tests {
     }
 
     #[test]
-    fn parakeet_cpp_routing_covers_linux_and_darwin_in_one_host_test() {
+    fn parakeet_cpp_routing_covers_linux_macos_and_windows_in_one_host_test() {
         assert!(super::uses_parakeet_cpp_for("linux", "parakeet-cpp"));
         assert!(super::uses_parakeet_cpp_for("linux", "parakeet"));
-        assert!(!super::uses_parakeet_cpp_for("darwin", "parakeet"));
-        assert!(super::uses_parakeet_cpp_for("darwin", "parakeet-cpp"));
+        // `std::env::consts::OS` is "macos" on a Mac, never "darwin".
+        assert!(!super::uses_parakeet_cpp_for("macos", "parakeet"));
+        assert!(super::uses_parakeet_cpp_for("macos", "parakeet-cpp"));
         assert!(!super::uses_parakeet_cpp_for("linux", "confidential"));
         assert!(super::uses_parakeet_cpp_for("windows", "parakeet"));
         assert!(super::uses_parakeet_cpp_for("windows", "parakeet-cpp"));
