@@ -35,6 +35,10 @@ function door(extra) { return {local_door: {enabled: true, address: ADDRESS, ...
 const LAN_A = 'https://192.168.4.47:7660/mcp';
 const LAN_B = 'https://[fd7a:115c:a1e0::5]:7660/mcp';
 const FP = 'AB:CD:EF:01';
+const BYO_URI = 'https://acme-v02.api.letsencrypt.org/acme/acct/12345';
+function byo(extra = {}) {
+  return {byo: {hostname: 'journal.example.com', enabled: false, account_uri: BYO_URI, dns_verdict: 'unchecked', socket_listening: false, certificate_active: false, socket_path: '/home/owner/journal/mcp-endpoint/byo/ingress.sock', next_action: 'publish_caa', ...extra}};
+}
 function lan(extra, addresses = [{url: LAN_A, listening: true}, {url: LAN_B, listening: true}]) {
   return {lan_door: {enabled: true, listening: true, port: 7660, fingerprint: FP, addresses, ...extra}};
 }
@@ -60,7 +64,8 @@ async function boot(state, {identityFails = false, enable = null} = {}) {
       if (url === '/app/agents/api/state') return JSON.parse(JSON.stringify(state));
       if (url === '/app/network/api/identity') { if (identityFails) throw new Error('unavailable'); return MARK; }
       if (url === '/app/agents/api/pairing') return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1};
-      if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability') return {enabled: JSON.parse(options.body).enabled, changed: true};
+      if (url === '/app/agents/api/local-door' || url === '/app/agents/api/lan-door' || url === '/app/agents/api/capability' || url === '/app/agents/api/byo') return {changed: true};
+      if (url === '/app/agents/api/byo/account' || url === '/app/agents/api/byo/account/replace') return {changed: true};
       if (url === '/app/agents/api/enable') return method === 'POST' ? {operation: enable || {phase: 'waiting', portal_url: 'https://services.example/consent'}} : {operation: null};
       throw new Error(`unexpected request ${method} ${url}`);
     },
@@ -109,6 +114,30 @@ async function test(name, body) {
     await click({action: 'new-code'});
     assert(calls.some(call => call.url === '/app/agents/api/pairing' && call.method === 'POST'));
     has(view, 'K7Q2M9XA');
+  });
+
+  await test('your hostname shows the account CAA pin, protected socket and separate local readiness', async () => {
+    const {view, click, calls} = await boot(baseState({...door({listening: true}), ...byo()}));
+    await click({lane: 'byo'});
+    has(view, 'journal.example.com');
+    has(view, `accounturi=${BYO_URI}; validationmethods=tls-alpn-01`);
+    has(view, '/home/owner/journal/mcp-endpoint/byo/ingress.sock');
+    has(view, 'these checks cannot show whether the public route reaches this journal');
+    has(view, 'turn on public route');
+    await click({action: 'byo-on'});
+    assert(calls.some(call => call.url === '/app/agents/api/byo' && call.method === 'PUT' && call.body.enabled === true));
+  });
+
+  await test('a ready owner hostname gets its own pairing code and never borrows another door code', async () => {
+    const {view, click, calls} = await boot(baseState({...door({listening: true}), ...byo({enabled:true, dns_verdict:'admitted', socket_listening:true, certificate_active:true, next_action:'none'}), connections:[connection('oauth', 'b1', 'cloud agent', 'byo')]}));
+    has(view, 'cloud agent<span class="chip">your hostname</span>');
+    await click({action:'connect'});
+    await click({way:'byo'});
+    has(view, 'https://journal.example.com/mcp');
+    await click({action:'new-code'});
+    const post = calls.find(call => call.url === '/app/agents/api/pairing');
+    assert(post && post.body.door === 'byo');
+    has(view, 'this code works only at your hostname');
   });
 
   const reasons = {
@@ -176,6 +205,7 @@ async function test(name, body) {
     await click({lane: 'me'});
     has(view, 'set up solstone.me →');
     has(view, 'public certificate logs');
+    has(view, 'could get another valid certificate');
     lacks(view, ADDRESS, 'solstone.me must not teach your own');
     await click({action: 'turn-on'});
     assert(calls.some(call => call.url === '/app/agents/api/enable' && call.method === 'POST'));
@@ -197,7 +227,7 @@ async function test(name, body) {
     has(view, 'agents on this computer, and anywhere through solstone.me, can reach your journal.');
     await click({lane: 'me'});
     has(view, 'https://k7q2m9xa.solstone.me/mcp');
-    has(view, "it passes the traffic along and can't read it");
+    has(view, 'could get another valid certificate');
     await click({action: 'me-off'});
     has(view, 'agents on this computer keep working.');
     has(view, 'the address and your agents are kept: turning back on uses the same address, with no new certificate');
@@ -235,13 +265,17 @@ async function test(name, body) {
   });
 
   await test('network door on: addresses, the fingerprint as detail, its agents, and a confirmed turn-off', async () => {
-    const state = baseState({...door({listening: true}), ...lan({}), connections: [connection('oauth', 'n1', 'tiles on the laptop', 'lan')]});
+    const state = baseState({...door({listening: true}), ...lan({ca_fingerprint: '12:34:56:78'}), connections: [connection('oauth', 'n1', 'tiles on the laptop', 'lan')]});
     const {view, click, calls} = await boot(state);
     has(view, 'agents on this computer can reach your journal. agents on your network can reach your journal too.');
     has(view, `data-copy="${LAN_A}"`);
     has(view, `data-copy="${LAN_B}"`);
     has(view, '<details><summary>certificate fingerprint</summary>');
     has(view, 'AB CD EF 01');
+    has(view, '/app/agents/api/lan-door/ca.pem');
+    has(view, '12 34 56 78');
+    has(view, 'NODE_EXTRA_CA_CERTS');
+    has(view, 'CODEX_CA_CERTIFICATE');
     has(view, "a key you created doesn't work at these addresses");
     has(view, 'tiles on the laptop<span class="chip">your network</span>');
     await click({action: 'lan-off'});
@@ -262,7 +296,7 @@ async function test(name, body) {
     const modal = () => view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"'));
     assert(modal().includes(`<code>${LAN_A}</code>`));
     assert(!modal().includes(`<code>${ADDRESS}</code>`), 'the network way offers only network addresses');
-    has(view, "first it warns that the connection isn't private.");
+    has(view, "it may warn about the certificate unless you have trusted your journal's LAN CA there.");
     has(view, 'aria-label="teal, amber · afoot unfixed"', 'the mark is the check on the network way too');
     has(view, 'AB CD EF 01');
     await click({action: 'new-code'});

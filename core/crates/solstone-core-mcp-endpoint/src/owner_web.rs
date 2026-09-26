@@ -582,13 +582,31 @@ pub(crate) fn state_value_with_iface(
 
             let (dns_verdict_str, dns_observed_at, raw_socket_listening, socket_blocker) =
                 if let Some(state) = &byo_state {
+                    let age = Utc::now().signed_duration_since(state.observed_at);
+                    let matches_current = state.hostname == cfg.hostname
+                        && state.generation == cfg.generation
+                        && state.enabled == cfg.enabled
+                        && age >= Duration::seconds(-5)
+                        && age <= Duration::seconds(5);
                     (
-                        state.dns_verdict.as_deref().unwrap_or("unchecked"),
-                        state.dns_observed_at,
-                        state.socket_listening,
-                        state
-                            .socket_blocker
-                            .map(|b| serde_json::to_value(b).unwrap_or(Value::Null)),
+                        if matches_current {
+                            state.dns_verdict.as_deref().unwrap_or("unchecked")
+                        } else {
+                            "unchecked"
+                        },
+                        if matches_current {
+                            state.dns_observed_at
+                        } else {
+                            None
+                        },
+                        matches_current && state.socket_listening,
+                        if matches_current {
+                            state
+                                .socket_blocker
+                                .map(|b| serde_json::to_value(b).unwrap_or(Value::Null))
+                        } else {
+                            None
+                        },
                     )
                 } else {
                     ("unchecked", None, false, None)
@@ -854,21 +872,27 @@ async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
             StatusCode::SERVICE_UNAVAILABLE,
         ),
         Err(true) => {
-            let mut blocker = None;
-            if let Ok(root) = solstone_core_journal_io::journal_root::JournalRoot::open(&journal)
-                && let Ok(byo_dir) = crate::unix::open_byo_directory(&root)
-            {
-                let ingress_path = journal
-                    .join("mcp-endpoint")
-                    .join("byo")
-                    .join(crate::unix::BYO_INGRESS_SOCKET);
-                if let Err(b) = crate::unix::reclaim_stale_byo_socket_if_inactive(
-                    &byo_dir,
-                    crate::unix::BYO_INGRESS_SOCKET,
-                    &ingress_path,
-                ) {
-                    blocker = b;
-                }
+            let reclaimed = solstone_core_journal_io::journal_root::JournalRoot::open(&journal)
+                .ok()
+                .and_then(|root| crate::unix::open_byo_directory(&root).ok())
+                .is_some_and(|byo_dir| {
+                    let ingress_path = journal
+                        .join("mcp-endpoint")
+                        .join("byo")
+                        .join(crate::unix::BYO_INGRESS_SOCKET);
+                    crate::unix::reclaim_stale_byo_socket_if_inactive(
+                        &byo_dir,
+                        crate::unix::BYO_INGRESS_SOCKET,
+                        &ingress_path,
+                    )
+                    .is_ok()
+                });
+            if !reclaimed {
+                return refusal(
+                    "byo_cutover_unconfirmed",
+                    "BYO ingress could not be proved inactive",
+                    StatusCode::SERVICE_UNAVAILABLE,
+                );
             }
             let mut current_state =
                 crate::byo_door::read_byo_door_state(&journal).unwrap_or_else(|| {
@@ -899,7 +923,7 @@ async fn perform_byo_cutover(journal: Arc<PathBuf>) -> Response {
                     }
                 });
             current_state.socket_listening = false;
-            current_state.socket_blocker = blocker;
+            current_state.socket_blocker = None;
             current_state.observed_at = Utc::now();
             crate::byo_door::write_byo_door_state(&journal, &current_state);
             state(Extension(journal)).await
@@ -1139,6 +1163,21 @@ async fn replace_byo_account(Extension(journal): Extension<Arc<PathBuf>>) -> Res
             );
         }
     };
+
+    // Replacement changes the CAA account authorization. Withdraw the public
+    // ingress, including accepted streams, before touching either account
+    // file. The owner must publish the new CAA pin and turn BYO on again.
+    let cutover = set_byo_hostname(
+        Extension(Arc::clone(&journal)),
+        Json(SetByoRequest {
+            hostname: None,
+            enabled: false,
+        }),
+    )
+    .await;
+    if !cutover.status().is_success() {
+        return cutover;
+    }
 
     let _ = crate::unix::delete_byo_account_pair(&account_dir);
     let keypair = match rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256) {
@@ -2406,5 +2445,46 @@ mod tests {
             .collect();
         assert!(limits.contains(&"forwarder_reads_plaintext"));
         assert!(limits.contains(&"owner_dns_control_required"));
+    }
+
+    #[test]
+    fn byo_owner_state_does_not_report_a_stale_or_other_generation_socket() {
+        let dir = tempfile::Builder::new()
+            .prefix("solstone-mcp-byo-heartbeat-test-")
+            .tempdir_in("/var/tmp")
+            .unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("config")).unwrap();
+        std::fs::write(
+            root.join("config/journal.json"),
+            r#"{"mcp_endpoint":{"byo_hostname":{"hostname":"mcp.example.com","enabled":true,"generation":2}}}"#,
+        )
+        .unwrap();
+        let mut state = crate::byo_door::ByoDoorState {
+            hostname: Some("mcp.example.com".to_string()),
+            enabled: true,
+            generation: 1,
+            account_uri: None,
+            caa: Some("admitted".to_string()),
+            dns_verdict: Some("admitted".to_string()),
+            dns_observed_at: Some(Utc::now()),
+            socket_listening: true,
+            certificate_active: false,
+            socket_path: None,
+            socket_blocker: None,
+            next_action: None,
+            observed_at: Utc::now(),
+        };
+        crate::byo_door::write_byo_door_state(root, &state);
+        let other_generation = state_value(root).unwrap();
+        assert_eq!(other_generation["byo"]["socket_listening"], false);
+        assert_eq!(other_generation["byo"]["dns_verdict"], "unchecked");
+
+        state.generation = 2;
+        state.observed_at = Utc::now() - Duration::seconds(10);
+        crate::byo_door::write_byo_door_state(root, &state);
+        let stale = state_value(root).unwrap();
+        assert_eq!(stale["byo"]["socket_listening"], false);
+        assert_eq!(stale["byo"]["dns_verdict"], "unchecked");
     }
 }

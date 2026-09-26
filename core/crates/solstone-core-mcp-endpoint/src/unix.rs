@@ -429,18 +429,29 @@ pub(crate) fn bind_byo_socket(
 
     let post_stat = fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW)
         .map_err(|e| (errno_error(e), None))?;
-    let sock_stat = fstat(&listener).map_err(|e| (errno_error(e), None))?;
-
-    if identity(&post_stat) != identity(&sock_stat)
-        || (post_stat.st_mode & 0o777) != FILE_MODE
-        || post_stat.st_uid != byo_dir.owner
+    // A socket fd's fstat inode is sockfs on Linux, not the bound pathname's
+    // inode. Verify the named entry across chmod under the owner-only parent.
+    if (post_stat.st_mode & 0o170000) != 0o140000 || post_stat.st_uid != byo_dir.owner {
+        return Err((invalid_entry(), Some(ByoSocketBlocker::InodeReplaced)));
+    }
+    if let Err(error) = nix::sys::stat::fchmodat(
+        &byo_dir.file,
+        name,
+        mode(FILE_MODE),
+        nix::sys::stat::FchmodatFlags::NoFollowSymlink,
+    ) {
+        unlink_byo_socket_if_inode_matches(byo_dir, socket_name, post_stat.st_ino);
+        return Err((errno_error(error), None));
+    }
+    let verified = fstatat(&byo_dir.file, name, AtFlags::AT_SYMLINK_NOFOLLOW)
+        .map_err(|e| (errno_error(e), None))?;
+    if identity(&post_stat) != identity(&verified)
+        || (verified.st_mode & 0o170000) != 0o140000
+        || (verified.st_mode & 0o777) != FILE_MODE
+        || verified.st_uid != byo_dir.owner
     {
-        let _ = nix::sys::stat::fchmodat(
-            &byo_dir.file,
-            name,
-            mode(FILE_MODE),
-            nix::sys::stat::FchmodatFlags::NoFollowSymlink,
-        );
+        unlink_byo_socket_if_inode_matches(byo_dir, socket_name, post_stat.st_ino);
+        return Err((invalid_entry(), Some(ByoSocketBlocker::InodeReplaced)));
     }
     let bound_inode = post_stat.st_ino;
     Ok((listener, bound_inode))

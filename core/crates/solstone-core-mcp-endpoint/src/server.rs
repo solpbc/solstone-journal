@@ -173,6 +173,7 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
     let mut waiting_for_next_request = false;
     loop {
         let request = tokio::select! {
+            biased;
             changed = shutdown.changed() => {
                 let _ = changed;
                 return Ok(());
@@ -187,6 +188,11 @@ pub(crate) async fn serve_stream<S: AsyncRead + AsyncWrite + Unpin>(
                 return Ok(());
             }
         };
+        // A buffered keep-alive request can win the read immediately after a
+        // door cutover. Do not start handling it once shutdown was signaled.
+        if *shutdown.borrow() {
+            return Ok(());
+        }
         match request_guard {
             RequestGuard::None => {}
             RequestGuard::Loopback => {

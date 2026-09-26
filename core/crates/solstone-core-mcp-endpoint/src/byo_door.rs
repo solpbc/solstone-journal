@@ -86,6 +86,7 @@ struct ByoServiceRuntime {
     service_shutdown_rx: watch::Receiver<bool>,
     bound_resources: Option<ByoBoundResources>,
     last_dns_verdict: Option<crate::byo_dns::DnsVerdict>,
+    last_dns_account_uri: Option<String>,
     last_dns_check: tokio::time::Instant,
 }
 
@@ -120,12 +121,16 @@ impl ByoServiceRuntime {
             service_shutdown_rx,
             bound_resources: None,
             last_dns_verdict: None,
+            last_dns_account_uri: None,
             last_dns_check: tokio::time::Instant::now() - Duration::from_secs(120),
         })
     }
 
     fn unbind_ingress(&mut self, byo_dir: &unix::ByoDirectory) {
         if let Some(res) = self.bound_resources.take() {
+            // Close accepted keep-alive streams too. Otherwise a client could
+            // start another MCP request after CAA drift withdrew the socket.
+            let _ = self.service_shutdown_tx.send(true);
             res.ingress_task.abort();
             if let Some(a) = res.acme_task {
                 a.abort();
@@ -135,6 +140,10 @@ impl ByoServiceRuntime {
                 unix::BYO_INGRESS_SOCKET,
                 res.ingress_inode,
             );
+            let (shutdown_tx, shutdown_rx) = watch::channel(false);
+            self.service_shutdown_tx = shutdown_tx;
+            self.service_shutdown_rx = shutdown_rx;
+            self.sessions = Arc::new(SessionTable::new());
         }
     }
 
@@ -189,11 +198,36 @@ impl ByoServiceRuntime {
         let uri_str = account_uri.clone().unwrap();
 
         // 2. DNS Check (recheck every 60s)
+        if self.last_dns_account_uri.as_deref() != Some(uri_str.as_str()) {
+            // A replacement ACME account has no inherited CAA verdict.
+            self.unbind_ingress(byo_dir);
+            self.last_dns_verdict = None;
+            self.last_dns_account_uri = Some(uri_str.clone());
+            write_byo_door_state(
+                journal_root,
+                &ByoDoorState {
+                    hostname: Some(self.hostname.clone()),
+                    enabled: true,
+                    generation: self.generation,
+                    account_uri: Some(uri_str.clone()),
+                    caa: None,
+                    dns_verdict: None,
+                    dns_observed_at: None,
+                    socket_listening: false,
+                    certificate_active: false,
+                    socket_path: None,
+                    socket_blocker: None,
+                    next_action: Some("publish_caa".to_string()),
+                    observed_at: Utc::now(),
+                },
+            );
+        }
         if self.last_dns_check.elapsed() >= Duration::from_secs(60)
             || self.last_dns_verdict.is_none()
         {
             let verdict = resolve_byo_dns(&self.hostname, &uri_str, Utc::now()).await;
             self.last_dns_verdict = Some(verdict);
+            self.last_dns_account_uri = Some(uri_str.clone());
             self.last_dns_check = tokio::time::Instant::now();
         }
 
@@ -226,6 +260,13 @@ impl ByoServiceRuntime {
 
         // 3. Both account and DNS are valid! Bind if not already bound.
         if self.bound_resources.is_none() {
+            let acc_dir_clone = match unix::open_byo_account_directory(byo_dir, &self.hostname) {
+                Ok(d) => d,
+                Err(_) => {
+                    self.last_dns_verdict = None;
+                    return;
+                }
+            };
             let (std_ingress, ingress_inode) =
                 match unix::bind_byo_socket(byo_dir, unix::BYO_INGRESS_SOCKET, ingress_path) {
                     Ok(p) => p,
@@ -256,15 +297,18 @@ impl ByoServiceRuntime {
 
             let ingress_listener = match UnixListener::from_std(std_ingress) {
                 Ok(l) => l,
-                Err(_) => return,
+                Err(_) => {
+                    unix::unlink_byo_socket_if_inode_matches(
+                        byo_dir,
+                        unix::BYO_INGRESS_SOCKET,
+                        ingress_inode,
+                    );
+                    return;
+                }
             };
 
             // ACME renewal task
             let tls_clone = Arc::clone(&self.tls_service);
-            let acc_dir_clone = match unix::open_byo_account_directory(byo_dir, &self.hostname) {
-                Ok(d) => d,
-                Err(_) => return,
-            };
             let mut acme_shutdown = self.service_shutdown_rx.clone();
             let acme_task = tokio::spawn(async move {
                 let _ = tls_clone
@@ -288,7 +332,10 @@ impl ByoServiceRuntime {
                         accepted = ingress_listener.accept() => {
                             let (stream, _) = match accepted {
                                 Ok(conn) => conn,
-                                Err(_) => continue,
+                                Err(_) => {
+                                    tokio::time::sleep(Duration::from_millis(100)).await;
+                                    continue;
+                                }
                             };
                             let permit = match try_acquire_connection_permit(&ingress_permits) {
                                 Some(p) => p,
@@ -766,6 +813,10 @@ mod full_tests {
     use crate::byo_dns::{DnsVerdict, DnsVerdictCode};
     use crate::unix::{self, ByoSocketBlocker};
 
+    // These fixtures deliberately replace process-wide DNS, registrar, and
+    // clock inputs. Keep their complete lifetimes separate under parallel CI.
+    static BYO_TEST_SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     struct TestOverridesGuard;
     impl Drop for TestOverridesGuard {
         fn drop(&mut self) {
@@ -790,6 +841,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn test_byo_ingress_socket_bind_and_blockers() {
+        let _serial = BYO_TEST_SERIAL.lock().await;
         let (dir, root) = test_journal();
         let byo_dir = unix::open_byo_directory(&root).expect("byo dir opens");
         let socket_path = dir.path().join("mcp-endpoint/byo/ingress.sock");
@@ -846,6 +898,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn test_byo_door_no_socket_without_valid_account_and_fresh_admitted_dns() {
+        let _serial = BYO_TEST_SERIAL.lock().await;
         let _guard = TestOverridesGuard;
         let (dir, root) = test_journal();
         let journal_path = dir.path().to_path_buf();
@@ -934,6 +987,7 @@ mod full_tests {
 
     #[tokio::test]
     async fn test_byo_unix_socket_raw_tls_no_proxy_preface() {
+        let _serial = BYO_TEST_SERIAL.lock().await;
         let _guard = TestOverridesGuard;
         let (dir, root) = test_journal();
         let journal_path = dir.path().to_path_buf();
@@ -1041,8 +1095,9 @@ mod full_tests {
         let _ = handle.await;
     }
 
-    #[test]
-    fn test_byo_expired_certificate_inactive() {
+    #[tokio::test]
+    async fn test_byo_expired_certificate_inactive() {
+        let _serial = BYO_TEST_SERIAL.lock().await;
         let _guard = TestOverridesGuard;
         let (_dir, root) = test_journal();
         let byo_dir = unix::open_byo_directory(&root).unwrap();
@@ -1083,6 +1138,7 @@ mod full_tests {
     async fn test_byo_cutover_barrier_disables_ingress_before_ok() {
         use tower::ServiceExt;
 
+        let _serial = BYO_TEST_SERIAL.lock().await;
         let _guard = TestOverridesGuard;
         let (dir, root) = test_journal();
         let journal_path = dir.path().to_path_buf();

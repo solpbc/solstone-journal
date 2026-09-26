@@ -62,22 +62,36 @@ pub enum LanPublishStep {
 }
 
 #[cfg(test)]
-pub static LAN_PUBLISH_STOP: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+static LAN_PUBLISH_STOPS: std::sync::LazyLock<Mutex<HashMap<PathBuf, LanPublishStep>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[cfg(test)]
-pub struct LanPublishStopGuard;
+pub struct LanPublishStopGuard(PathBuf);
 
 #[cfg(test)]
 impl Drop for LanPublishStopGuard {
     fn drop(&mut self) {
-        LAN_PUBLISH_STOP.store(0, std::sync::atomic::Ordering::SeqCst);
+        LAN_PUBLISH_STOPS.lock().unwrap().remove(&self.0);
     }
 }
 
 #[cfg(test)]
-pub fn set_lan_publish_stop(step: LanPublishStep) -> LanPublishStopGuard {
-    LAN_PUBLISH_STOP.store(step as u8, std::sync::atomic::Ordering::SeqCst);
-    LanPublishStopGuard
+pub fn set_lan_publish_stop(journal_root: &Path, step: LanPublishStep) -> LanPublishStopGuard {
+    LAN_PUBLISH_STOPS
+        .lock()
+        .unwrap()
+        .insert(journal_root.to_path_buf(), step);
+    LanPublishStopGuard(journal_root.to_path_buf())
+}
+
+#[cfg(test)]
+fn lan_publish_stop(journal_root: &Path) -> LanPublishStep {
+    LAN_PUBLISH_STOPS
+        .lock()
+        .unwrap()
+        .get(journal_root)
+        .copied()
+        .unwrap_or(LanPublishStep::None)
 }
 
 #[cfg(test)]
@@ -648,9 +662,7 @@ fn generate_and_save_leaf(
 
 fn generate_and_save_ca(journal_root: &Path) -> Result<ValidatedCa, McpServiceError> {
     #[cfg(test)]
-    if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
-        == LanPublishStep::BeforeCaKey as u8
-    {
+    if lan_publish_stop(journal_root) == LanPublishStep::BeforeCaKey {
         return Err(McpServiceError::Runtime);
     }
 
@@ -685,9 +697,7 @@ fn generate_and_save_ca(journal_root: &Path) -> Result<ValidatedCa, McpServiceEr
     .map_err(|_| McpServiceError::Runtime)?;
 
     #[cfg(test)]
-    if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
-        == LanPublishStep::BeforeCaCert as u8
-    {
+    if lan_publish_stop(journal_root) == LanPublishStep::BeforeCaCert {
         return Err(McpServiceError::Runtime);
     }
 
@@ -801,9 +811,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
             };
 
             #[cfg(test)]
-            if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
-                == LanPublishStep::BeforeLeaf as u8
-            {
+            if lan_publish_stop(journal_root) == LanPublishStep::BeforeLeaf {
                 let identity = LanIdentity {
                     ca_fingerprint: Some(ca_fingerprint),
                     selected: previous_usable,
@@ -831,8 +839,7 @@ pub fn reconcile_lan_identity(journal_root: &Path, admitted_ips: &[IpAddr]) -> L
     };
 
     #[cfg(test)]
-    let skip_legacy_retire = LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst)
-        == LanPublishStep::BeforeRetireLegacy as u8;
+    let skip_legacy_retire = lan_publish_stop(journal_root) == LanPublishStep::BeforeRetireLegacy;
     #[cfg(not(test))]
     let skip_legacy_retire = false;
 
@@ -1106,7 +1113,7 @@ pub(crate) async fn run_lan_door_loop_with_sources(
             }
 
             #[cfg(test)]
-            if LAN_PUBLISH_STOP.load(std::sync::atomic::Ordering::SeqCst) != 0 {
+            if lan_publish_stop(journal_root) != LanPublishStep::None {
                 stop_all_listeners(&mut active_tasks).await;
                 address_states.clear();
                 server_config_cell.store(Arc::new(None));
@@ -2111,7 +2118,7 @@ mod tests {
         let leaf_bytes_initial = std::fs::read(journal_root.join(LAN_LEAF_PEM_PATH)).unwrap();
 
         // 1. Arm BeforeLeaf cut and reconcile {A, B}
-        let guard = set_lan_publish_stop(LanPublishStep::BeforeLeaf);
+        let guard = set_lan_publish_stop(journal_root, LanPublishStep::BeforeLeaf);
         let addrs_ab = vec![
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 10)),
             IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
@@ -2183,7 +2190,7 @@ mod tests {
             std::fs::write(journal_root.join(LAN_TLS_PEM_PATH), &leg_combined).unwrap();
             let leg_fp = compute_cert_fingerprint(leg_cert.der());
 
-            let guard = set_lan_publish_stop(cut);
+            let guard = set_lan_publish_stop(journal_root, cut);
             let id = reconcile_lan_identity(journal_root, &admitted);
 
             if let Some(sel) = &id.selected {
@@ -2454,7 +2461,7 @@ mod tests {
         )
         .unwrap();
 
-        let guard = set_lan_publish_stop(LanPublishStep::BeforeCaKey);
+        let guard = set_lan_publish_stop(journal_root, LanPublishStep::BeforeCaKey);
 
         let test_port = {
             let l = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();

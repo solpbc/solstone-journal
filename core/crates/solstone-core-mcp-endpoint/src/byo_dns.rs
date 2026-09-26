@@ -137,7 +137,9 @@ pub fn evaluate_byo_dns_policy(
     }
 
     let single_issue = issue_records[0];
-    let (ca_domain, params) = parse_caa_issue_value(&single_issue.value);
+    let Some((ca_domain, params)) = parse_caa_issue_value(&single_issue.value) else {
+        return DnsVerdict::new(DnsVerdictCode::OtherCa, now);
+    };
 
     if !ca_domain.eq_ignore_ascii_case("letsencrypt.org") {
         return DnsVerdict::new(DnsVerdictCode::OtherCa, now);
@@ -181,21 +183,32 @@ fn find_closest_caa<'a>(
 }
 
 /// Parse CAA issue value: `letsencrypt.org; accounturi=...; validationmethods=tls-alpn-01`
-fn parse_caa_issue_value(value: &str) -> (String, HashMap<String, String>) {
+fn parse_caa_issue_value(value: &str) -> Option<(String, HashMap<String, String>)> {
     let mut parts = value.split(';');
-    let ca_domain = parts.next().unwrap_or("").trim().to_string();
+    // Hickory prints an absolute issuer Name with its terminal DNS root dot.
+    let issuer = parts.next().unwrap_or("").trim();
+    let ca_domain = issuer.strip_suffix('.').unwrap_or(issuer).to_string();
     let mut params = HashMap::new();
 
     for part in parts {
         let trimmed = part.trim();
-        if let Some((k, v)) = trimmed.split_once('=') {
-            let key = k.trim().to_ascii_lowercase();
-            let val = v.trim().trim_matches('"').trim().to_string();
-            params.insert(key, val);
+        if trimmed.is_empty() {
+            continue;
+        }
+        let (k, v) = trimmed.split_once('=')?;
+        let key = k.trim().to_ascii_lowercase();
+        if key != "accounturi" && key != "validationmethods" {
+            return None;
+        }
+        let val = v.trim().trim_matches('"').trim().to_string();
+        if val.is_empty() || params.insert(key, val).is_some() {
+            // Ambiguous duplicate parameters may be interpreted differently by
+            // the CA, so never admit them as a constrained issuance policy.
+            return None;
         }
     }
 
-    (ca_domain, params)
+    Some((ca_domain, params))
 }
 
 #[cfg(test)]
@@ -293,7 +306,7 @@ async fn query_host_records(
     let mut records = HostDnsRecords::default();
 
     // Query A
-    if let Ok(lookup) = resolver.lookup(host, RecordType::A).await {
+    if let Some(lookup) = lookup_optional(resolver, host, RecordType::A).await? {
         for rdata in lookup.iter() {
             if let RData::A(ip) = rdata {
                 records.a.push(ip.0);
@@ -302,7 +315,7 @@ async fn query_host_records(
     }
 
     // Query AAAA
-    if let Ok(lookup) = resolver.lookup(host, RecordType::AAAA).await {
+    if let Some(lookup) = lookup_optional(resolver, host, RecordType::AAAA).await? {
         for rdata in lookup.iter() {
             if let RData::AAAA(ip) = rdata {
                 records.aaaa.push(ip.0);
@@ -311,7 +324,7 @@ async fn query_host_records(
     }
 
     // Query CNAME
-    if let Ok(lookup) = resolver.lookup(host, RecordType::CNAME).await {
+    if let Some(lookup) = lookup_optional(resolver, host, RecordType::CNAME).await? {
         for rdata in lookup.iter() {
             if let RData::CNAME(name) = rdata {
                 records.cname.push(name.to_utf8());
@@ -320,7 +333,7 @@ async fn query_host_records(
     }
 
     // Query CAA
-    if let Ok(lookup) = resolver.lookup(host, RecordType::CAA).await {
+    if let Some(lookup) = lookup_optional(resolver, host, RecordType::CAA).await? {
         for rdata in lookup.iter() {
             if let RData::CAA(caa) = rdata {
                 let flags = if caa.issuer_critical() { 128 } else { 0 };
@@ -359,7 +372,7 @@ async fn query_caa_records(
     use hickory_resolver::proto::rr::RecordType;
 
     let mut caa_list = Vec::new();
-    if let Ok(lookup) = resolver.lookup(host, RecordType::CAA).await {
+    if let Some(lookup) = lookup_optional(resolver, host, RecordType::CAA).await? {
         for rdata in lookup.iter() {
             if let RData::CAA(caa) = rdata {
                 let flags = if caa.issuer_critical() { 128 } else { 0 };
@@ -387,6 +400,31 @@ async fn query_caa_records(
         }
     }
     Ok(caa_list)
+}
+
+async fn lookup_optional(
+    resolver: &hickory_resolver::TokioAsyncResolver,
+    host: &str,
+    record_type: hickory_resolver::proto::rr::RecordType,
+) -> Result<Option<hickory_resolver::lookup::Lookup>, String> {
+    use hickory_resolver::error::ResolveErrorKind;
+    use hickory_resolver::proto::op::ResponseCode;
+
+    match resolver.lookup(host, record_type).await {
+        Ok(lookup) => Ok(Some(lookup)),
+        Err(error)
+            if matches!(
+                error.kind(),
+                ResolveErrorKind::NoRecordsFound {
+                    response_code: ResponseCode::NoError,
+                    ..
+                }
+            ) =>
+        {
+            Ok(None)
+        }
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -423,6 +461,29 @@ mod tests {
         let verdict = evaluate_byo_dns_policy(HOST, URI, &map, now);
         assert_eq!(verdict.code, DnsVerdictCode::Admitted);
         assert!(verdict.is_admitted());
+    }
+
+    #[test]
+    fn policy_accepts_fully_qualified_issuer_name() {
+        let mut map = base_records();
+        map.get_mut(HOST).unwrap().caa[0].value =
+            format!("letsencrypt.org.; accounturi={URI}; validationmethods=tls-alpn-01");
+        assert_eq!(
+            evaluate_byo_dns_policy(HOST, URI, &map, Utc::now()).code,
+            DnsVerdictCode::Admitted
+        );
+    }
+
+    #[test]
+    fn policy_rejects_duplicate_account_uri_even_when_last_matches() {
+        let mut map = base_records();
+        map.get_mut(HOST).unwrap().caa[0].value = format!(
+            "letsencrypt.org; accounturi=https://acme.example/acct/other; accounturi={URI}; validationmethods=tls-alpn-01"
+        );
+        assert_ne!(
+            evaluate_byo_dns_policy(HOST, URI, &map, Utc::now()).code,
+            DnsVerdictCode::Admitted
+        );
     }
 
     #[test]

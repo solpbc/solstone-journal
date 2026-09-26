@@ -1150,9 +1150,9 @@ fn environment_name(environment: McpEndpointCertificateEnvironment) -> &'static 
 fn is_exact_authorized_hostname(candidate: &str, expected: &str) -> bool {
     !expected.is_empty()
         && candidate == expected
-        && candidate
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'.')
+        && candidate.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'.' || byte == b'-'
+        })
 }
 
 fn is_acme_attempt(protocols: &[&[u8]]) -> bool {
@@ -1352,6 +1352,10 @@ mod tests {
         let service = McpEndpointTlsService::empty_for_test(HOSTNAME.to_owned());
         service.install_ordinary_for_test(fixture_key().0);
         assert!(is_exact_authorized_hostname(HOSTNAME, HOSTNAME));
+        assert!(is_exact_authorized_hostname(
+            "mcp.my-domain.org",
+            "mcp.my-domain.org"
+        ));
         assert!(!is_exact_authorized_hostname(
             "AB12CD34.solstone.me",
             HOSTNAME
