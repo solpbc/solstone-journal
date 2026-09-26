@@ -184,5 +184,7 @@ fn facade_stop_retires_descendants_without_the_terminate_closure() {
     authority
         .terminate(Duration::from_secs(10))
         .expect("stop the owned Job");
+    // Cortex's reaper keeps polling after a stop; the stopped Job reports exit.
+    authority.wait().expect("observe the stopped Job");
     assert_descendant_exited(&receipt);
 }

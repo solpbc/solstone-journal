@@ -362,7 +362,10 @@ impl OwnedCommandChild {
         match self.authority.poll() {
             Ok(Some(status)) => Ok(Some((status, false))),
             Ok(None) => Ok(None),
-            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => Ok(Some((-1, true))),
+            Err(error) if error.kind() == std::io::ErrorKind::TimedOut => {
+                self.authority.cleanup();
+                Ok(Some((-1, true)))
+            }
             Err(error) => Err(error),
         }
     }
@@ -371,6 +374,9 @@ impl OwnedCommandChild {
         self.authority
             .terminate(self.timeout)
             .map_err(std::io::Error::other)?;
+        // A stopped Job still has a pending deadline timer; settle it here so
+        // dropping the authority does not report an incomplete cleanup.
+        self.authority.cleanup();
         Ok(-1)
     }
 }
