@@ -44,7 +44,7 @@ class ExistingDependencyEdges(unittest.TestCase):
     def admit(self, old_graph=None, new_graph=None):
         before = [p for p in self.old["package"] if p.get("source")]
         after = [p for p in self.new["package"] if p.get("source")]
-        self.assertEqual(refresh.classify_external_delta(before, after), [])
+        self.assertEqual(refresh.classify_external_delta(before, after), ([], []))
         changes = refresh.workspace_version_or_existing_dependency_edge_delta(
             self.old, self.new, external_unchanged=before == after
         )
@@ -65,7 +65,9 @@ class ExistingDependencyEdges(unittest.TestCase):
             self.admit(graph(digest_reachable=False), graph(extra_edge=True))
 
     def test_changed_external_population_refuses(self):
-        self.new["package"].append(package("unknown", source=SOURCE))
+        # A removal (or an upgrade, which reads as one) always refuses; an
+        # addition is a candidate the closure and licence checks decide.
+        self.old["package"].append(package("unknown", source=SOURCE))
         with self.assertRaisesRegex(refresh.RefreshError, "population changed"):
             self.admit()
 
@@ -110,7 +112,7 @@ class ExistingDependencyEdges(unittest.TestCase):
         self.new["package"][1]["dependencies"] = ["app"]
         before = [p for p in self.old["package"] if p.get("source")]
         after = [p for p in self.new["package"] if p.get("source")]
-        self.assertEqual(len(refresh.classify_external_delta(before, after)), 1)
+        self.assertEqual(len(refresh.classify_external_delta(before, after)[0]), 1)
         self.assertEqual(
             refresh.workspace_version_or_existing_dependency_edge_delta(
                 self.old, self.new, external_unchanged=before == after
@@ -143,7 +145,7 @@ class GitPinVendorDelta(unittest.TestCase):
         new_source = "git+https://example.invalid/spl?tag=v2#" + "b" * 40
         before = [package("spl-core", source=old_source, dependencies=["base64"])]
         after = [package("spl-core", source=new_source, dependencies=["base64", "indexmap"])]
-        self.assertEqual(refresh.classify_external_delta(before, after), [(before[0], after[0])])
+        self.assertEqual(refresh.classify_external_delta(before, after), ([(before[0], after[0])], []))
 
     def test_git_pin_still_refuses_unrelated_row_change(self):
         old_source = "git+https://example.invalid/spl?tag=v1#" + "a" * 40
@@ -208,3 +210,93 @@ class SourceOfferArchive(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RegistryAdditionOutsideClosure(unittest.TestCase):
+    def added(self, name="resolver", source=SOURCE, checksum="c" * 64):
+        row = package(name, source=source)
+        row["checksum"] = checksum
+        return row
+
+    def test_registry_addition_is_returned_for_the_caller_to_check(self):
+        before = [package("digest", source=SOURCE)]
+        extra = self.added()
+        moved, added = refresh.classify_external_delta(before, before + [extra])
+        self.assertEqual((moved, added), ([], [extra]))
+
+    def test_removal_still_refuses(self):
+        before = [package("digest", source=SOURCE), package("old", source=SOURCE)]
+        with self.assertRaisesRegex(refresh.RefreshError, "removed or upgraded"):
+            refresh.classify_external_delta(before, [before[0], self.added()])
+
+    def test_git_addition_refuses(self):
+        before = [package("digest", source=SOURCE)]
+        git = "git+https://example.invalid/x?tag=v1#" + "a" * 40
+        with self.assertRaisesRegex(refresh.RefreshError, "checksummed registry"):
+            refresh.classify_external_delta(before, before + [self.added(source=git)])
+
+    def test_workspace_edge_to_an_addition_is_admitted(self):
+        extra = self.added()
+        old = {"package": [package("app", dependencies=["digest"]), package("digest", source=SOURCE)]}
+        new = copy.deepcopy(old)
+        new["package"][0]["dependencies"] = ["digest", "resolver"]
+        new["package"].append(extra)
+        ids = frozenset({(extra["name"], extra["version"], extra["source"])})
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True, added=ids
+            ),
+            ["app"],
+        )
+        with self.assertRaisesRegex(refresh.RefreshError, "changed beyond"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True
+            )
+
+    def meta(self, license):
+        return {"packages": [{"name": "resolver", "version": "1.0.0", "source": SOURCE, "license": license}]}
+
+    def test_permissive_licences_are_admitted(self):
+        for license in ("MIT OR Apache-2.0", "MIT/Apache-2.0", "(MIT OR Apache-2.0) AND Unicode-3.0"):
+            refresh.require_permissive_additions(self.meta(license), [self.added()])
+
+    def test_copyleft_or_missing_licence_refuses(self):
+        for license in ("GPL-3.0-only", "MIT OR LGPL-2.1", "", None):
+            with self.assertRaisesRegex(refresh.RefreshError, "permissive"):
+                refresh.require_permissive_additions(self.meta(license), [self.added()])
+
+
+class RegistryEdgeReResolution(unittest.TestCase):
+    def test_registry_row_with_only_new_edges_is_admitted(self):
+        before = [package("curve", source=SOURCE), package("kdf", source=SOURCE)]
+        after = copy.deepcopy(before)
+        after[0]["dependencies"] = ["kdf"]
+        self.assertEqual(refresh.classify_external_delta(before, after), ([], []))
+
+    def test_registry_row_with_a_new_checksum_still_refuses(self):
+        before = [package("curve", source=SOURCE)]
+        after = copy.deepcopy(before)
+        after[0]["dependencies"] = ["kdf"]
+        after[0]["checksum"] = "changed"
+        with self.assertRaisesRegex(refresh.RefreshError, "not a git dependency"):
+            refresh.classify_external_delta(before, after)
+
+
+class WorkspaceCrateRemoval(unittest.TestCase):
+    def test_removed_workspace_crate_and_its_dropped_edges_are_admitted(self):
+        old = {"package": [package("app", dependencies=["transfer"]), package("transfer")]}
+        new = {"package": [package("app")]}
+        self.assertEqual(
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True
+            ),
+            ["removed:transfer", "app"],
+        )
+
+    def test_added_workspace_crate_still_refuses(self):
+        old = {"package": [package("app")]}
+        new = {"package": [package("app"), package("fresh")]}
+        with self.assertRaisesRegex(refresh.RefreshError, "crate was added"):
+            refresh.workspace_version_or_existing_dependency_edge_delta(
+                old, new, external_unchanged=True
+            )
