@@ -1101,7 +1101,7 @@ async fn index_plate_missing_index_is_edge_index_unavailable() {
 }
 
 #[tokio::test]
-async fn index_plate_repair_does_not_report_empty_connections() {
+async fn leftover_edge_repair_files_do_not_block_connections() {
     let journal = Journal::new();
     save_person(journal.path(), "person-ada", "Ada Lovelace");
     save_person(journal.path(), "person-bob", "Bob");
@@ -1115,20 +1115,149 @@ async fn index_plate_repair_does_not_report_empty_connections() {
             "a",
         )],
     );
-    write(
-        journal.path(),
-        "health/entity-edge-repair/jobs/merge-m1.json",
-        json!({"operation":"merge","merge_id":"m1","generation":1,"enqueued_at":1}),
-    );
+    // Written by earlier versions, which repaired connections in the background.
+    for dir in ["jobs", "progress", "failures"] {
+        write(
+            journal.path(),
+            &format!("health/entity-edge-repair/{dir}/merge-m1.json"),
+            json!({"operation":"merge","merge_id":"m1","generation":1,"enqueued_at":1}),
+        );
+    }
     for route in [
         "/app/entities/api/network?entity=person-ada",
         "/app/entities/api/history?entity=person-ada&peer=person-bob",
         "/app/entities/api/overview",
     ] {
         let (status, body) = call(journal.path(), route).await;
-        assert_eq!(status, 503, "{route}");
-        assert_eq!(body["reason_code"], "edge_index_unavailable", "{route}");
+        assert_eq!(status, 200, "{route}");
+        assert!(body.get("edge_repair_state").is_none(), "{route}");
     }
+}
+
+/// Connections indexed before `person-ada-old` is merged into `person-ada`.
+fn seed_merge_connections(root: &Path) {
+    save_person(root, "person-ada", "Ada Lovelace");
+    save_person(root, "person-ada-old", "Ada L.");
+    save_person(root, "person-bob", "Bob");
+    save_person(root, "person-carol", "Carol");
+    seed_edge_rows(
+        root,
+        &[
+            (
+                "person-ada-old",
+                "person-bob",
+                "works-with",
+                Some("20260501"),
+                "a",
+            ),
+            (
+                "person-carol",
+                "person-ada-old",
+                "knows",
+                Some("20260502"),
+                "b",
+            ),
+            (
+                "person-ada",
+                "person-bob",
+                "works-with",
+                Some("20260503"),
+                "c",
+            ),
+            (
+                "person-ada-old",
+                "person-ada",
+                "works-with",
+                Some("20260504"),
+                "d",
+            ),
+        ],
+    );
+}
+
+async fn assert_merged_connections_combined(root: &Path) {
+    let (status, network) = call(root, "/app/entities/api/network?entity=person-ada").await;
+    assert_eq!(status, 200, "{network}");
+    let peers: Vec<(String, i64)> = network["neighbors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|n| {
+            (
+                n["entity_id"].as_str().unwrap().to_owned(),
+                n["count"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        peers,
+        vec![("person-bob".to_owned(), 2), ("person-carol".to_owned(), 1)]
+    );
+
+    let (status, from_bob) = call(root, "/app/entities/api/network?entity=person-bob").await;
+    assert_eq!(status, 200);
+    assert_eq!(from_bob["total_neighbors"], 1);
+    assert_eq!(from_bob["neighbors"][0]["entity_id"], "person-ada");
+    assert_eq!(from_bob["neighbors"][0]["count"], 2);
+    assert_eq!(from_bob["neighbors"][0]["name"], "Ada Lovelace");
+
+    let (status, history) = call(
+        root,
+        "/app/entities/api/history?entity=person-ada&peer=person-bob",
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(history["total"], 2);
+    for row in history["evidence"].as_array().unwrap() {
+        assert_eq!(row["src"], "person-ada");
+    }
+
+    let (status, overview) = call(root, "/app/entities/api/overview").await;
+    assert_eq!(status, 200);
+    assert_eq!(overview["totals"]["edges"], 3);
+    let ids: Vec<&str> = overview["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["entity_id"].as_str().unwrap())
+        .collect();
+    assert!(!ids.contains(&"person-ada-old"), "{ids:?}");
+    let ada = overview["entities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|e| e["entity_id"] == "person-ada")
+        .unwrap();
+    assert_eq!(ada["count"], 3);
+}
+
+#[tokio::test]
+async fn connections_combine_a_merged_entity_as_soon_as_the_merge_commits() {
+    let journal = Journal::new();
+    seed_merge_connections(journal.path());
+    let (status, merged) = post(
+        journal.path(),
+        "/app/entities/api/merge",
+        json!({"source_slug":"person-ada-old","target_slug":"person-ada","commit":true}),
+    )
+    .await;
+    assert_eq!(status, 200, "{merged}");
+    assert_merged_connections_combined(journal.path()).await;
+}
+
+#[tokio::test]
+async fn connections_still_combine_through_the_merge_log_when_the_record_is_damaged() {
+    let journal = Journal::new();
+    seed_merge_connections(journal.path());
+    let (status, merged) = post(
+        journal.path(),
+        "/app/entities/api/merge",
+        json!({"source_slug":"person-ada-old","target_slug":"person-ada","commit":true}),
+    )
+    .await;
+    assert_eq!(status, 200, "{merged}");
+    fs::write(journal.path().join("entities/retired.json"), b"{nope").unwrap();
+    assert_merged_connections_combined(journal.path()).await;
 }
 
 #[tokio::test]
@@ -2800,90 +2929,6 @@ async fn history_empty_and_missing() {
     let (s, missing) = call(j.path(), "/app/entities/api/journal/entity/nope/history").await;
     assert_eq!(s, 404);
     assert_eq!(missing["reason_code"], "entity_not_found");
-}
-
-#[tokio::test]
-async fn history_attaches_edge_repair_completion_data() {
-    let j = Journal::new();
-    seed_entity(j.path(), "a", "Alice");
-    write(
-        j.path(),
-        "entities/a/history/events/0001-merge.json",
-        json!({"seq":1,"kind":"merge","operation":{"merge_id":"m1"}}),
-    );
-    let (_, v_before) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_before["items"][0].get("affected_rows"), None);
-    assert_eq!(v_before["items"][0].get("rebuilt"), None);
-    assert_eq!(v_before["items"][0].get("edge_repair_state"), None);
-
-    // With a pending job (no completion)
-    write(
-        j.path(),
-        "health/entity-edge-repair/jobs/merge-m1.json",
-        json!({
-            "operation": "merge",
-            "merge_id": "m1",
-            "generation": 1,
-            "enqueued_at": 100
-        }),
-    );
-    let (_, v_pending) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_pending["items"][0]["edge_repair_state"], "pending");
-    assert_eq!(v_pending["items"][0].get("affected_rows"), None);
-    assert_eq!(v_pending["items"][0].get("rebuilt"), None);
-
-    // With job + failure file (no completion) -> failed
-    write(
-        j.path(),
-        "health/entity-edge-repair/failures/merge-m1.json",
-        json!({"error": "injected failure"}),
-    );
-    let (_, v_failed) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_failed["items"][0]["edge_repair_state"], "failed");
-    assert_eq!(v_failed["items"][0].get("affected_rows"), None);
-    assert_eq!(v_failed["items"][0].get("rebuilt"), None);
-    fs::remove_file(
-        j.path()
-            .join("health/entity-edge-repair/failures/merge-m1.json"),
-    )
-    .unwrap();
-
-    write(
-        j.path(),
-        "health/entity-edge-repair/completions/merge-m1.json",
-        json!({
-            "operation": "merge",
-            "merge_id": "m1",
-            "generation": 1,
-            "published": true,
-            "affected_rows": 5,
-            "rebuilt": false,
-            "completed_at": 100
-        }),
-    );
-    let (_, v_after) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_after["items"][0]["affected_rows"], 5);
-    assert_eq!(v_after["items"][0]["rebuilt"], false);
-    assert_eq!(v_after["items"][0].get("edge_repair_state"), None);
-
-    // With stored rebuilt: true
-    write(
-        j.path(),
-        "health/entity-edge-repair/completions/merge-m1.json",
-        json!({
-            "operation": "merge",
-            "merge_id": "m1",
-            "generation": 1,
-            "published": true,
-            "affected_rows": 12,
-            "rebuilt": true,
-            "completed_at": 100
-        }),
-    );
-    let (_, v_rebuilt) = call(j.path(), "/app/entities/api/journal/entity/a/history").await;
-    assert_eq!(v_rebuilt["items"][0]["affected_rows"], 12);
-    assert_eq!(v_rebuilt["items"][0]["rebuilt"], true);
-    assert_eq!(v_rebuilt["items"][0].get("edge_repair_state"), None);
 }
 
 #[tokio::test]
@@ -7302,4 +7347,38 @@ async fn attaching_a_merged_name_is_refused_naming_the_entity_it_joined() {
         "{response}"
     );
     assert!(!j.path().join("entities/source").exists());
+}
+
+#[test]
+fn edge_extraction_resolves_entity_ids_to_the_same_directories_as_the_identity_map() {
+    let journal = Journal::new();
+    save_person(journal.path(), "ann", "Ann");
+    save_person(journal.path(), "z_ann", "Ann Z");
+    rewrite_written_id(journal.path(), "z_ann", "ann");
+    save_person(journal.path(), "b2", "Bee 2");
+    rewrite_written_id(journal.path(), "b2", "bee");
+    save_person(journal.path(), "b1", "Bee 1");
+    rewrite_written_id(journal.path(), "b1", "bee");
+    save_person(journal.path(), "carol", "Carol");
+    // `ann` and `carol` carry no written id: each falls back to its directory.
+    for dir in ["ann", "carol"] {
+        let path = journal.path().join(format!("entities/{dir}/entity.json"));
+        let mut identity: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        identity.as_object_mut().unwrap().remove("id");
+        fs::write(path, serde_json::to_vec(&identity).unwrap()).unwrap();
+    }
+
+    let indexer =
+        solstone_core_indexer::edges::candidates::journal_entity_dirs_by_id(journal.path())
+            .unwrap();
+    let store: std::collections::BTreeMap<String, String> =
+        solstone_core_entity::read_identity_map(journal.path())
+            .unwrap()
+            .resolved
+            .into_iter()
+            .collect();
+    assert_eq!(indexer, store);
+    assert_eq!(indexer["ann"], "z_ann");
+    assert_eq!(indexer["bee"], "b1");
+    assert_eq!(indexer["carol"], "carol");
 }

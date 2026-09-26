@@ -13,11 +13,57 @@ use solstone_core_indexer_store::db::{db_path, open_index};
 use crate::edges::EVIDENCE_ORDER_SQL;
 use crate::test_support::reserve_temp_path;
 use crate::{
-    EdgeEvidenceRequest, EdgeFilters, EdgeQueryError, NETWORK_EVIDENCE_LIMIT_MAX,
-    NETWORK_NEIGHBOR_LIMIT_MAX, NetworkOverviewRequest, NetworkRequest, load_edge_evidence,
-    load_entity_network, load_network_overview, network_bound_detail, open_edges_reader,
-    read_edge_repair_state,
+    EdgeAliases, EdgeEvidenceRequest, EdgeEvidenceResponse, EdgeFilters, EdgeQueryError,
+    EntityTypeLookup, NETWORK_EVIDENCE_LIMIT_MAX, NETWORK_NEIGHBOR_LIMIT_MAX,
+    NetworkOverviewRequest, NetworkOverviewResponse, NetworkRequest, NetworkResponse,
+    network_bound_detail, open_edges_reader,
 };
+
+// The pre-alias tests read the index as stored.
+fn load_entity_network(
+    journal: &std::path::Path,
+    entity_id: &str,
+    request: &NetworkRequest,
+    principal_id: Option<&str>,
+    attendance_kinds: &[&str],
+) -> Result<NetworkResponse, EdgeQueryError> {
+    crate::load_entity_network(
+        journal,
+        entity_id,
+        request,
+        principal_id,
+        attendance_kinds,
+        &EdgeAliases::default(),
+    )
+}
+fn load_edge_evidence(
+    journal: &std::path::Path,
+    entity_id: &str,
+    peer_id: &str,
+    request: &EdgeEvidenceRequest,
+) -> Result<EdgeEvidenceResponse, EdgeQueryError> {
+    crate::load_edge_evidence(
+        journal,
+        entity_id,
+        peer_id,
+        request,
+        &EdgeAliases::default(),
+    )
+}
+fn load_network_overview(
+    journal: &std::path::Path,
+    request: &NetworkOverviewRequest,
+    attendance_kinds: &[&str],
+    entity_type_lookup: &EntityTypeLookup<'_>,
+) -> Result<NetworkOverviewResponse, EdgeQueryError> {
+    crate::load_network_overview(
+        journal,
+        request,
+        attendance_kinds,
+        entity_type_lookup,
+        &EdgeAliases::default(),
+    )
+}
 
 const ATTENDANCE: &[&str] = &["attended-with", "co-present", "scheduled-with"];
 
@@ -1117,10 +1163,218 @@ fn network_preview_rank_filters_and_evidence_follow_the_request() {
     }
 }
 
+fn sunstone_aliases() -> EdgeAliases {
+    let mut aliases = EdgeAliases::default();
+    aliases.insert("sunstone", "solstone", Some("Solstone".to_string()));
+    aliases
+}
+
+/// Rows extracted before `sunstone` was merged into `solstone`, plus one after.
+fn merged_rows() -> Vec<SeedEdge<'static>> {
+    let mut old_alice = SeedEdge::new("sunstone", "alice", "works-with", Some("20260101"), "p1");
+    old_alice.src_name = Some("Sunstone");
+    old_alice.dst_name = Some("Alice");
+    let mut alice_old = SeedEdge::new("alice", "sunstone", "knows", Some("20260102"), "p2");
+    alice_old.src_name = Some("Alice");
+    alice_old.dst_name = Some("Sunstone");
+    alice_old.directed = 1;
+    let mut new_bob = SeedEdge::new("solstone", "bob", "works-with", Some("20260103"), "p3");
+    new_bob.src_name = Some("Solstone");
+    new_bob.dst_name = Some("Bob");
+    // Between the two names for one entity: an alias-made self-edge.
+    let between = SeedEdge::new("sunstone", "solstone", "works-with", Some("20260104"), "p4");
+    vec![old_alice, alice_old, new_bob, between]
+}
+
 #[test]
-fn edge_repair_state_reader_and_query_behavior() {
+fn merged_rows_combine_under_the_survivor() {
+    let root = seed("alias-network", &merged_rows());
+    let aliases = sunstone_aliases();
+    let request = default_network("20260110");
+
+    let survivor =
+        crate::load_entity_network(&root, "solstone", &request, None, ATTENDANCE, &aliases)
+            .unwrap();
+    let peers: Vec<_> = survivor
+        .neighbors
+        .iter()
+        .map(|n| (n.entity_id.as_str(), n.count))
+        .collect();
+    assert_eq!(peers, vec![("alice", 2), ("bob", 1)]);
+    let alice = &survivor.neighbors[0];
+    assert_eq!(alice.name.as_deref(), Some("Alice"));
+    assert_eq!((alice.directed.out, alice.directed.r#in), (0, 1));
+
+    let from_alice =
+        crate::load_entity_network(&root, "alice", &request, None, ATTENDANCE, &aliases).unwrap();
+    assert_eq!(from_alice.total_neighbors, 1);
+    assert_eq!(from_alice.neighbors[0].entity_id, "solstone");
+    assert_eq!(from_alice.neighbors[0].count, 2);
+    // The newest row still says "Sunstone"; the label is the survivor's name.
+    assert_eq!(from_alice.neighbors[0].name.as_deref(), Some("Solstone"));
+
+    // Asking for the merged id reads the survivor's connections.
+    let merged =
+        crate::load_entity_network(&root, "sunstone", &request, None, ATTENDANCE, &aliases)
+            .unwrap();
+    assert_eq!(merged.entity_id, "sunstone");
+    assert_eq!(merged.neighbors, survivor.neighbors);
+
+    // Read as stored, the old rows stay under their own id.
+    let stored = load_entity_network(&root, "solstone", &request, None, ATTENDANCE).unwrap();
+    let stored_peers: Vec<_> = stored
+        .neighbors
+        .iter()
+        .map(|n| n.entity_id.as_str())
+        .collect();
+    assert_eq!(stored_peers, vec!["sunstone", "bob"]);
+    cleanup(root);
+}
+
+#[test]
+fn merged_evidence_carries_survivor_ids_and_names_as_seen() {
+    let mut rows = merged_rows();
+    // A full tie with the old row on everything but rowid.
+    let mut tie = SeedEdge::new("solstone", "alice", "works-with", Some("20260101"), "p1");
+    tie.src_name = Some("Solstone");
+    tie.dst_name = Some("Alice");
+    rows.push(tie);
+    let root = seed("alias-evidence", &rows);
+    let aliases = sunstone_aliases();
+
+    let history = crate::load_edge_evidence(
+        &root,
+        "solstone",
+        "alice",
+        &EdgeEvidenceRequest::default(),
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(history.total, 3);
+    assert_eq!(history.peer_name.as_deref(), Some("Alice"));
+    let seen: Vec<_> = history
+        .evidence
+        .iter()
+        .map(|e| {
+            (
+                e.src.as_str(),
+                e.dst.as_str(),
+                e.src_name.as_deref(),
+                e.path.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        seen,
+        vec![
+            ("alice", "solstone", Some("Alice"), "p2"),
+            ("solstone", "alice", Some("Sunstone"), "p1"),
+            ("solstone", "alice", Some("Solstone"), "p1"),
+        ]
+    );
+
+    let reverse = crate::load_edge_evidence(
+        &root,
+        "alice",
+        "sunstone",
+        &EdgeEvidenceRequest::default(),
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(reverse.peer_id, "sunstone");
+    assert_eq!(reverse.peer_name.as_deref(), Some("Solstone"));
+    assert_eq!(reverse.total, 3);
+
+    // Nothing is shown between the two names of one entity.
+    let between = crate::load_edge_evidence(
+        &root,
+        "solstone",
+        "sunstone",
+        &EdgeEvidenceRequest::default(),
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(between.total, 0);
+    cleanup(root);
+}
+
+#[test]
+fn merged_overview_counts_each_row_once_under_the_survivor() {
+    let mut rows = merged_rows();
+    // A stored self-edge still counts, once.
+    rows.push(SeedEdge::new(
+        "solstone",
+        "solstone",
+        "mentioned",
+        Some("20260105"),
+        "p5",
+    ));
+    let root = seed("alias-overview", &rows);
+    let aliases = sunstone_aliases();
+
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(overview.totals.edges, 4);
+    let counts: Vec<_> = overview
+        .entities
+        .iter()
+        .map(|e| (e.entity_id.as_str(), e.count, e.name.as_deref()))
+        .collect();
+    assert_eq!(
+        counts,
+        vec![
+            ("solstone", 4, Some("Solstone")),
+            ("alice", 2, Some("Alice")),
+            ("bob", 1, Some("Bob")),
+        ]
+    );
+    assert_eq!(overview.totals.entities, 3);
+
+    let stored =
+        load_network_overview(&root, &default_overview("20260110"), ATTENDANCE, &|_| None).unwrap();
+    assert_eq!(stored.totals.edges, 5);
+    assert!(stored.entities.iter().any(|e| e.entity_id == "sunstone"));
+    cleanup(root);
+}
+
+#[test]
+fn an_alias_for_unrelated_ids_changes_nothing() {
+    let root = seed("alias-unrelated", &merged_rows());
+    let mut aliases = EdgeAliases::default();
+    aliases.insert("nobody", "noone", None);
+    aliases.insert("same", "same", None);
+    assert_eq!(aliases.len(), 1);
+    let request = default_network("20260110");
+    for id in ["solstone", "sunstone", "alice"] {
+        assert_eq!(
+            crate::load_entity_network(&root, id, &request, None, ATTENDANCE, &aliases).unwrap(),
+            load_entity_network(&root, id, &request, None, ATTENDANCE).unwrap()
+        );
+    }
+    assert_eq!(
+        crate::load_network_overview(
+            &root,
+            &default_overview("20260110"),
+            ATTENDANCE,
+            &|_| None,
+            &aliases
+        )
+        .unwrap(),
+        load_network_overview(&root, &default_overview("20260110"), ATTENDANCE, &|_| None).unwrap()
+    );
+    cleanup(root);
+}
+
+#[test]
+fn leftover_edge_repair_files_are_ignored() {
     let root = seed(
-        "repair-state",
+        "leftover-repair",
         &[SeedEdge::new(
             "alice",
             "bob",
@@ -1129,111 +1383,195 @@ fn edge_repair_state_reader_and_query_behavior() {
             "seed",
         )],
     );
-
-    let net_req = default_network("20260102");
-    let ev_req = EdgeEvidenceRequest::default();
-    let ov_req = default_overview("20260102");
-    let no_type = |_: &str| None;
-
-    // 1. Healthy populated
-    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
-    assert_eq!(net.total_neighbors, 1);
-    assert!(net.edge_repair_state.is_none());
-    assert!(!json_keys(&net).contains("edge_repair_state"));
-
-    let ev = load_edge_evidence(&root, "alice", "bob", &ev_req).unwrap();
-    assert_eq!(ev.total, 1);
-    assert!(ev.edge_repair_state.is_none());
-    assert!(!json_keys(&ev).contains("edge_repair_state"));
-
-    let ov = load_network_overview(&root, &ov_req, ATTENDANCE, &no_type).unwrap();
-    assert_eq!(ov.totals.edges, 1);
-    assert!(ov.edge_repair_state.is_none());
-    assert!(!json_keys(&ov).contains("edge_repair_state"));
-
-    // 2. Pending job
-    let jobs_dir = root.join("health/entity-edge-repair/jobs");
-    fs::create_dir_all(&jobs_dir).unwrap();
-    fs::write(jobs_dir.join("merge-m1.json"), b"{}").unwrap();
-
-    for error in [
-        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE)
-            .unwrap_err()
-            .to_string(),
-        load_edge_evidence(&root, "alice", "bob", &ev_req)
-            .unwrap_err()
-            .to_string(),
-        load_network_overview(&root, &ov_req, ATTENDANCE, &no_type)
-            .unwrap_err()
-            .to_string(),
-    ] {
-        assert!(error.contains("Connections aren't available right now"));
+    for dir in ["jobs", "progress", "failures"] {
+        let dir = root.join("health/entity-edge-repair").join(dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("merge-m1.json"), b"{}").unwrap();
     }
+    let network = load_entity_network(
+        &root,
+        "alice",
+        &default_network("20260102"),
+        None,
+        ATTENDANCE,
+    )
+    .unwrap();
+    assert_eq!(network.total_neighbors, 1);
+    assert!(!json_keys(&network).contains("edge_repair_state"));
+    let history =
+        load_edge_evidence(&root, "alice", "bob", &EdgeEvidenceRequest::default()).unwrap();
+    assert_eq!(history.total, 1);
+    let overview =
+        load_network_overview(&root, &default_overview("20260102"), ATTENDANCE, &|_| None).unwrap();
+    assert_eq!(overview.totals.edges, 1);
+    cleanup(root);
+}
 
-    // 3. Interrupted job (progress file exists)
-    let prog_dir = root.join("health/entity-edge-repair/progress");
-    fs::create_dir_all(&prog_dir).unwrap();
-    fs::write(prog_dir.join("merge-m1.json"), b"{}").unwrap();
+fn many_aliases(count: usize) -> EdgeAliases {
+    let mut aliases = sunstone_aliases();
+    for i in 0..count {
+        aliases.insert(&format!("old{i}"), &format!("hub{}", i % 50), None);
+    }
+    aliases
+}
 
-    assert!(
-        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE)
-            .unwrap_err()
-            .to_string()
-            .contains("Connections aren't available right now")
+#[test]
+fn thousands_of_merges_leave_every_read_working_and_unchanged() {
+    let root = seed("alias-scale", &merged_rows());
+    let few = sunstone_aliases();
+    let many = many_aliases(3000);
+    let request = default_network("20260110");
+    for id in ["solstone", "alice", "bob"] {
+        assert_eq!(
+            crate::load_entity_network(&root, id, &request, None, ATTENDANCE, &many).unwrap(),
+            crate::load_entity_network(&root, id, &request, None, ATTENDANCE, &few).unwrap(),
+            "{id}"
+        );
+    }
+    assert_eq!(
+        crate::load_edge_evidence(
+            &root,
+            "solstone",
+            "alice",
+            &EdgeEvidenceRequest::default(),
+            &many
+        )
+        .unwrap(),
+        crate::load_edge_evidence(
+            &root,
+            "solstone",
+            "alice",
+            &EdgeEvidenceRequest::default(),
+            &few
+        )
+        .unwrap()
     );
-    assert!(
-        load_edge_evidence(&root, "alice", "bob", &ev_req)
-            .unwrap_err()
-            .to_string()
-            .contains("Connections aren't available right now")
+    let overview = |aliases: &EdgeAliases| {
+        crate::load_network_overview(
+            &root,
+            &default_overview("20260110"),
+            ATTENDANCE,
+            &|_| None,
+            aliases,
+        )
+        .unwrap()
+    };
+    assert_eq!(overview(&many), overview(&few));
+    cleanup(root);
+}
+
+#[test]
+fn filters_apply_to_merged_rows_like_any_other() {
+    let root = seed("alias-filters", &merged_rows());
+    let aliases = sunstone_aliases();
+    let request = NetworkRequest {
+        filters: EdgeFilters {
+            kinds: Some(vec!["knows".to_string()]),
+            day_from: Some("20260102".to_string()),
+            day_to: Some("20260102".to_string()),
+            facet: Some("work".to_string()),
+        },
+        ..default_network("20260110")
+    };
+    let network =
+        crate::load_entity_network(&root, "solstone", &request, None, ATTENDANCE, &aliases)
+            .unwrap();
+    assert_eq!(network.total_neighbors, 1);
+    assert_eq!(network.neighbors[0].entity_id, "alice");
+    assert_eq!(network.neighbors[0].count, 1);
+    assert_eq!(
+        (
+            network.neighbors[0].directed.out,
+            network.neighbors[0].directed.r#in
+        ),
+        (0, 1)
     );
-    assert!(
-        load_network_overview(&root, &ov_req, ATTENDANCE, &no_type)
-            .unwrap_err()
-            .to_string()
-            .contains("Connections aren't available right now")
+    cleanup(root);
+}
+
+#[test]
+fn a_principal_merged_away_is_still_excluded_under_its_survivor() {
+    let mut to_me = SeedEdge::new("alice", "me_old", "works-with", Some("20260101"), "p1");
+    to_me.dst_name = Some("Me");
+    let root = seed(
+        "alias-principal",
+        &[
+            to_me,
+            SeedEdge::new("alice", "bob", "works-with", Some("20260102"), "p2"),
+        ],
     );
+    let mut aliases = EdgeAliases::default();
+    aliases.insert("me_old", "me", Some("Me".to_string()));
+    let request = default_network("20260110");
+    let hidden =
+        crate::load_entity_network(&root, "alice", &request, Some("me"), ATTENDANCE, &aliases)
+            .unwrap();
+    let ids: Vec<_> = hidden
+        .neighbors
+        .iter()
+        .map(|n| n.entity_id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["bob"]);
+    let shown = crate::load_entity_network(
+        &root,
+        "alice",
+        &NetworkRequest {
+            include_principal: true,
+            ..request
+        },
+        Some("me"),
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    let ids: Vec<_> = shown
+        .neighbors
+        .iter()
+        .map(|n| n.entity_id.as_str())
+        .collect();
+    assert_eq!(ids, vec!["bob", "me"]);
+    cleanup(root);
+}
 
-    // 4. Failed job (failure file exists)
-    let fail_dir = root.join("health/entity-edge-repair/failures");
-    fs::create_dir_all(&fail_dir).unwrap();
-    fs::write(fail_dir.join("merge-m1.json"), b"error").unwrap();
-
-    assert!(
-        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE)
-            .unwrap_err()
-            .to_string()
-            .contains("Connections aren't available right now")
+#[test]
+fn several_merged_ids_on_both_sides_of_a_pair_combine() {
+    let root = seed(
+        "alias-both-sides",
+        &[
+            SeedEdge::new("a1", "b1", "works-with", Some("20260101"), "p1"),
+            SeedEdge::new("b2", "a2", "works-with", Some("20260102"), "p2"),
+            SeedEdge::new("a", "b", "works-with", Some("20260103"), "p3"),
+            SeedEdge::new("a1", "a2", "works-with", Some("20260104"), "p4"),
+        ],
     );
-    assert!(
-        load_edge_evidence(&root, "alice", "bob", &ev_req)
-            .unwrap_err()
-            .to_string()
-            .contains("Connections aren't available right now")
-    );
-    assert!(
-        load_network_overview(&root, &ov_req, ATTENDANCE, &no_type)
-            .unwrap_err()
-            .to_string()
-            .contains("Connections aren't available right now")
-    );
-
-    // 5. Completion exists -> healthy again
-    let comp_dir = root.join("health/entity-edge-repair/completions");
-    fs::create_dir_all(&comp_dir).unwrap();
-    fs::write(comp_dir.join("merge-m1.json"), b"{}").unwrap();
-
-    let net = load_entity_network(&root, "alice", &net_req, None, ATTENDANCE).unwrap();
-    assert_eq!(net.total_neighbors, 1);
-    assert!(net.edge_repair_state.is_none());
-
-    fs::remove_dir_all(&jobs_dir).unwrap();
-    fs::write(&jobs_dir, b"not a directory").unwrap();
-    assert_eq!(read_edge_repair_state(&root).as_deref(), Some("unreadable"));
-    assert!(matches!(
-        load_entity_network(&root, "alice", &net_req, None, ATTENDANCE),
-        Err(EdgeQueryError::EdgeIndexUnavailable { .. })
-    ));
-
+    let mut aliases = EdgeAliases::default();
+    for (raw, canonical) in [("a1", "a"), ("a2", "a"), ("b1", "b"), ("b2", "b")] {
+        aliases.insert(raw, canonical, Some(canonical.to_uppercase()));
+    }
+    let history =
+        crate::load_edge_evidence(&root, "a", "b", &EdgeEvidenceRequest::default(), &aliases)
+            .unwrap();
+    assert_eq!(history.total, 3);
+    assert_eq!(history.peer_name.as_deref(), Some("B"));
+    let network = crate::load_entity_network(
+        &root,
+        "a",
+        &default_network("20260110"),
+        None,
+        ATTENDANCE,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(network.total_neighbors, 1);
+    assert_eq!(network.neighbors[0].count, 3);
+    let overview = crate::load_network_overview(
+        &root,
+        &default_overview("20260110"),
+        ATTENDANCE,
+        &|_| None,
+        &aliases,
+    )
+    .unwrap();
+    assert_eq!(overview.totals.edges, 3);
     cleanup(root);
 }

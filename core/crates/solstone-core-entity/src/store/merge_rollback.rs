@@ -235,21 +235,9 @@ pub(super) fn recover(journal: &Path) -> Result<Option<Value>, SnapshotError> {
         return Ok((state.get("source_committed") == Some(&Value::Bool(true))).then_some(state));
     }
     if state.get("source_committed") == Some(&Value::Bool(true)) {
-        let op = state["operation"]
-            .as_str()
-            .ok_or_else(|| failure(&root, "missing committed entity operation"))?;
-        let merge_id = state["report"]["merge_id"]
-            .as_str()
-            .ok_or_else(|| failure(&root, "missing committed entity merge_id"))?;
-        let completion =
-            super::edge_repair::read_entity_edge_repair_completion(journal, op, merge_id)
-                .map_err(|e| failure(&root, e.to_string()))?;
-        if completion.is_none() && !super::edge_repair::job_exists(journal, op, merge_id) {
-            let generation = super::edge_repair::bump_generation(journal)
-                .map_err(|e| failure(&root, e.to_string()))?;
-            super::edge_repair::enqueue_edge_repair_job(journal, op, merge_id, generation)
-                .map_err(|e| failure(&root, e.to_string()))?;
-        }
+        // The interrupted operation committed its source changes; only the
+        // discovery cache removal may be missing.
+        super::merge::remove_discovery_cache(journal);
         finish(journal)?;
         return Ok(Some(state));
     }

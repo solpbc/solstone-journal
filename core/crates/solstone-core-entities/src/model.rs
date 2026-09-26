@@ -13,6 +13,16 @@ pub static ENTITIES_COPY: LazyLock<serde_json::Value> = LazyLock::new(|| {
         .expect("entities_copy.json is valid JSON")
 });
 
+/// How connection reads see merged entities: each merged id's rows count
+/// under the live entity it joined.
+pub fn edge_aliases(journal_root: &std::path::Path) -> solstone_core_indexer_query::EdgeAliases {
+    let mut aliases = solstone_core_indexer_query::EdgeAliases::default();
+    for alias in solstone_core_entity::entity_edge_aliases(journal_root) {
+        aliases.insert(&alias.raw, &alias.canonical, alias.name);
+    }
+    aliases
+}
+
 pub fn compose_connections_horizon_note(earlier_days: usize) -> String {
     debug_assert!(earlier_days >= 1);
     if earlier_days == 1 {

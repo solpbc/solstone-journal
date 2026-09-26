@@ -4741,7 +4741,6 @@ async fn history_route(
                     ),
                 );
             }
-            solstone_core_entity::attach_edge_repair_completion(&root, event);
         }
         Ok(Some((id, items)))
     })
@@ -5081,6 +5080,7 @@ fn network_plate_work(
                 &request,
                 principal_id.as_deref(),
                 &ATTENDANCE_KINDS,
+                &crate::edge_aliases(journal_root),
             )
             .map_err(IndexPlateError::Query)?;
             let mut value = serde_json::to_value(&response)
@@ -5154,8 +5154,14 @@ fn history_plate_work(
         limit,
         offset,
     };
-    let response = load_edge_evidence(journal_root, &entity_dir, &peer_dir, &request)
-        .map_err(IndexPlateError::Query)?;
+    let response = load_edge_evidence(
+        journal_root,
+        &entity_dir,
+        &peer_dir,
+        &request,
+        &crate::edge_aliases(journal_root),
+    )
+    .map_err(IndexPlateError::Query)?;
     payload_value(response)
 }
 
@@ -5169,9 +5175,13 @@ fn overview_plate_work(
         limit,
         reference_day: None,
     };
-    let response = load_network_overview(journal_root, &request, &ATTENDANCE_KINDS, &|entity_id| {
-        index_plate_entity_type(journal_root, entity_id)
-    })
+    let response = load_network_overview(
+        journal_root,
+        &request,
+        &ATTENDANCE_KINDS,
+        &|entity_id| index_plate_entity_type(journal_root, entity_id),
+        &crate::edge_aliases(journal_root),
+    )
     .map_err(IndexPlateError::Query)?;
     payload_value(response)
 }

@@ -496,31 +496,29 @@ pub(crate) fn commit_entity_merge_with_injector(
     // an index lock refusal nor a restart may roll source state back.
     let committed = json!({"operation":"merge", "report":report});
     rollback.commit_source(journal, "merge", &committed["report"])?;
-    if injector.is_some_and(|injector| injector("edges", 0)) {
+    // Connections read merged ids through `entities/retired.json` and the
+    // merge log, so nothing in the edge index is rewritten here. Discovery
+    // clusters were built from the old ids; the cache is removed before the
+    // recovery record finishes, so a restart in between removes it too.
+    if injector.is_some_and(|injector| injector("discovery cache", 0)) {
         return Err(EntityMergeError::Refused(
-            "entity merge committed; index repair pending: injected failure".to_owned(),
+            "entity merge committed; cleanup pending: injected failure".to_owned(),
         ));
     }
-    let generation = super::edge_repair::bump_generation(journal).map_err(|error| {
-        EntityMergeError::Refused(format!(
-            "entity merge committed; edge generation bump failed: {error}"
-        ))
-    })?;
-    super::edge_repair::enqueue_edge_repair_job(journal, "merge", &merge_id, generation).map_err(
-        |error| {
-            EntityMergeError::Refused(format!(
-                "entity merge committed; edge job enqueue failed: {error}"
-            ))
-        },
-    )?;
+    remove_discovery_cache(journal);
     rollback.finish(journal).map_err(|error| {
         EntityMergeError::Refused(format!(
             "entity merge committed; recovery cleanup pending: {error}"
         ))
     })?;
     drop(_trust);
-    super::edge_repair::spawn_entity_edge_repair(journal);
     Ok(report)
+}
+
+/// Remove discovery clusters derived before an entity merge. Best effort: the
+/// cache is rebuilt on its own schedule and a missing file is normal.
+pub(super) fn remove_discovery_cache(journal: &Path) {
+    let _ = solstone_core_journal_io::remove_file(journal, "awareness/discovery_clusters.json");
 }
 
 fn capture_undo_expected(

@@ -13,13 +13,14 @@
 //! entity files and is not a directory, so every reader that lists entity
 //! directories ignores it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{Map, Value, json};
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
 
-use solstone_core_journal_io::contained_path;
+use solstone_core_journal_io::{contained_path, path_lexists};
 
 pub const RETIRED_ENTITIES_FILE: &str = "entities/retired.json";
 
@@ -151,18 +152,207 @@ pub fn merged_successor(journal_root: &Path, identity_id: &str) -> Result<Option
 /// The most recent logged merge target for `source_id`, read from the merge
 /// audit log. Unreadable lines are skipped; the log only ever grows.
 fn logged_merge_target(journal_root: &Path, source_id: &str) -> Option<String> {
-    let path = contained_path(journal_root, "logs/entity-merges.jsonl").ok()?;
-    let text = solstone_core_journal_io::read_optional_text(path).ok()??;
-    text.lines()
-        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
-        .filter(|record| record.get("source_id").and_then(Value::as_str) == Some(source_id))
-        .filter_map(|record| {
-            record
-                .get("target_id")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
+    logged_merge_targets(journal_root).remove(source_id)
+}
+
+/// Every source id in the merge audit log with its most recent target.
+fn logged_merge_targets(journal_root: &Path) -> BTreeMap<String, String> {
+    let mut targets = BTreeMap::new();
+    let Some(text) = contained_path(journal_root, "logs/entity-merges.jsonl")
+        .ok()
+        .and_then(|path| {
+            solstone_core_journal_io::read_optional_text(path)
+                .ok()
+                .flatten()
         })
-        .next_back()
+    else {
+        return targets;
+    };
+    for record in text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+    {
+        let text_field = |key: &str| {
+            record
+                .get(key)
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+        };
+        // A line with an empty target still records the merge, so its source
+        // stays reserved; it just leads nowhere.
+        if let (Some(source), Some(target)) = (
+            text_field("source_id"),
+            record.get("target_id").and_then(Value::as_str),
+        ) {
+            targets.insert(source.to_owned(), target.to_owned());
+        }
+    }
+    targets
+}
+
+/// One stored edge key to read as another entity.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EntityEdgeAlias {
+    /// The directory or id stored in edge rows for a merged entity.
+    pub raw: String,
+    /// The directory of the live entity it was merged into.
+    pub canonical: String,
+    /// That live entity's name.
+    pub name: Option<String>,
+}
+
+static DAMAGED_RECORD_WARNED: AtomicBool = AtomicBool::new(false);
+static IDENTITY_MAP_WARNED: AtomicBool = AtomicBool::new(false);
+
+fn warn_once(flag: &AtomicBool, detail: &str) {
+    if !flag.swap(true, Ordering::Relaxed) {
+        log::warn!("entity connections: {detail}");
+    }
+}
+
+/// Edge keys of merged entities, each mapped to the live entity that absorbed
+/// it, so connections recorded before a merge count under the survivor.
+///
+/// Merges come from `entities/retired.json` and from the merge audit log,
+/// which also covers merges made before the record existed. The record wins
+/// for an id it holds; among log lines the latest wins. A chain of merges is
+/// followed to the first live entity. A key that is a live entity directory
+/// is never aliased, so a merged id that is live again keeps its own
+/// connections. A damaged record contributes nothing and the log still
+/// does; that is warned once per process.
+///
+/// Every connection read calls this, so it reads only what the merges name:
+/// a survivor is looked for in the directory named by its id, and the whole
+/// identity map is read only when it isn't there.
+pub fn entity_edge_aliases(journal_root: &Path) -> Vec<EntityEdgeAlias> {
+    let recorded = match read_retired_entities(journal_root) {
+        RetiredEntities::Loaded(entries) => entries,
+        RetiredEntities::Absent => BTreeMap::new(),
+        RetiredEntities::Malformed(detail) | RetiredEntities::Unreadable(detail) => {
+            warn_once(
+                &DAMAGED_RECORD_WARNED,
+                &format!(
+                    "{RETIRED_ENTITIES_FILE} could not be used ({detail}); merges are read from the merge log only"
+                ),
+            );
+            BTreeMap::new()
+        }
+    };
+    let logged = logged_merge_targets(journal_root);
+    if recorded.is_empty() && logged.is_empty() {
+        return Vec::new();
+    }
+    let successor = |id: &str| -> Option<&str> {
+        recorded
+            .get(id)
+            .map(|entry| entry.successor.as_str())
+            .or_else(|| logged.get(id).map(String::as_str))
+    };
+    let mut identity_map = None;
+    // The directory an id lives in, when it is live. An entity that wrote its
+    // own id into the directory of that name owns it, as in the identity
+    // map. Anything else falls back to reading the whole map once.
+    let mut live_directory_of = |id: &str| -> Option<String> {
+        if let Ok(Some(identity)) = super::identity::read_entity_identity(journal_root, id)
+            && identity.was_written()
+            && identity.entity_id() == id
+        {
+            return Some(id.to_owned());
+        }
+        let map = identity_map.get_or_insert_with(|| {
+            super::map::read_identity_map(journal_root)
+                .map_err(|error| {
+                    warn_once(
+                        &IDENTITY_MAP_WARNED,
+                        &format!(
+                            "entity identities could not be read ({error}); some merged entities show separately"
+                        ),
+                    )
+                })
+                .ok()
+        });
+        map.as_ref()?.resolved.get(id).cloned()
+    };
+    let mut names = BTreeMap::<String, Option<String>>::new();
+    let mut aliases = BTreeMap::<String, String>::new();
+    let sources: BTreeSet<&str> = recorded
+        .keys()
+        .chain(logged.keys())
+        .map(String::as_str)
+        .collect();
+    for source in sources {
+        let mut current = successor(source);
+        let mut canonical = None;
+        for _ in 0..16 {
+            // An empty target (a malformed log line) leads nowhere.
+            let Some(id) = current.filter(|id| !id.is_empty()) else {
+                break;
+            };
+            // A merged id that is not live leads on without a lookup: merged
+            // ids are never created again, so only a live-again one (caught
+            // by its own directory) could stop the chain here.
+            if let Some(next) = successor(id)
+                && !is_live_entity_dir(journal_root, id)
+            {
+                current = Some(next);
+                continue;
+            }
+            if let Some(dir) = live_directory_of(id) {
+                canonical = Some(dir);
+                break;
+            }
+            current = successor(id);
+        }
+        let Some(canonical) = canonical else { continue };
+        let mut raws = vec![source.to_owned()];
+        if let Some(entry) = recorded.get(source) {
+            raws.push(entry.dir.clone());
+        }
+        for raw in raws {
+            if raw == canonical || is_live_entity_dir(journal_root, &raw) {
+                continue;
+            }
+            aliases.insert(raw, canonical.clone());
+        }
+    }
+    aliases
+        .into_iter()
+        .map(|(raw, canonical)| {
+            let name = names
+                .entry(canonical.clone())
+                .or_insert_with(|| entity_name(journal_root, &canonical))
+                .clone();
+            EntityEdgeAlias {
+                raw,
+                canonical,
+                name,
+            }
+        })
+        .collect()
+}
+
+/// Whether `entities/<dir>/` holds an `entity.json`, readable or not. A
+/// check that fails counts as live, so an entity is never folded away on a
+/// read error.
+fn is_live_entity_dir(journal_root: &Path, dir: &str) -> bool {
+    if matches!(dir, "" | "." | "..") || dir.contains(['/', '\\', '\0']) {
+        return false;
+    }
+    match contained_path(journal_root, &format!("entities/{dir}/entity.json")) {
+        Ok(path) => path_lexists(&path).unwrap_or(true),
+        Err(_) => false,
+    }
+}
+
+fn entity_name(journal_root: &Path, entity_dir: &str) -> Option<String> {
+    super::identity::read_entity_identity(journal_root, entity_dir)
+        .ok()
+        .flatten()?
+        .value()
+        .get("name")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
 }
 
 /// The survivor for an id that was merged away and is not a live entity now.
@@ -264,7 +454,198 @@ pub(crate) fn record_merged_entity(
 
 #[cfg(test)]
 mod tests {
-    use super::{MergedEntity, RetiredEntities, parse_retired_entities};
+    #![allow(clippy::disallowed_methods)]
+
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use super::{
+        EntityEdgeAlias, MergedEntity, RetiredEntities, entity_edge_aliases, parse_retired_entities,
+    };
+
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    fn journal() -> PathBuf {
+        let root = std::env::temp_dir().join(format!(
+            "solstone-edge-aliases-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(root.join("entities")).unwrap();
+        root
+    }
+
+    fn live(root: &Path, dir: &str, body: &str) {
+        fs::create_dir_all(root.join("entities").join(dir)).unwrap();
+        fs::write(root.join("entities").join(dir).join("entity.json"), body).unwrap();
+    }
+
+    fn person(root: &Path, dir: &str, name: &str) {
+        live(root, dir, &format!(r#"{{"id":"{dir}","name":"{name}"}}"#));
+    }
+
+    fn record(root: &Path, body: &str) {
+        fs::write(root.join("entities/retired.json"), body).unwrap();
+    }
+
+    fn log(root: &Path, merges: &[(&str, &str)]) {
+        fs::create_dir_all(root.join("logs")).unwrap();
+        let lines: String = merges
+            .iter()
+            .map(|(source, target)| {
+                format!(r#"{{"source_id":"{source}","target_id":"{target}"}}"#) + "\n"
+            })
+            .collect();
+        fs::write(root.join("logs/entity-merges.jsonl"), lines).unwrap();
+    }
+
+    fn pairs(root: &Path) -> Vec<(String, String)> {
+        entity_edge_aliases(root)
+            .into_iter()
+            .map(|alias| (alias.raw, alias.canonical))
+            .collect()
+    }
+
+    fn pair(raw: &str, canonical: &str) -> (String, String) {
+        (raw.to_owned(), canonical.to_owned())
+    }
+
+    #[test]
+    fn a_recorded_merge_aliases_its_id_and_directory_to_the_survivor() {
+        let root = journal();
+        person(&root, "solstone", "Solstone");
+        record(
+            &root,
+            r#"{"ids":{"sunstone":{"state":"merged","dir":"sun_stone","successor":"solstone"}}}"#,
+        );
+        assert_eq!(
+            entity_edge_aliases(&root),
+            vec![
+                EntityEdgeAlias {
+                    raw: "sun_stone".to_owned(),
+                    canonical: "solstone".to_owned(),
+                    name: Some("Solstone".to_owned()),
+                },
+                EntityEdgeAlias {
+                    raw: "sunstone".to_owned(),
+                    canonical: "solstone".to_owned(),
+                    name: Some("Solstone".to_owned()),
+                },
+            ]
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn nothing_merged_gives_no_aliases() {
+        let root = journal();
+        person(&root, "solstone", "Solstone");
+        assert!(entity_edge_aliases(&root).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_merged_id_that_is_live_again_keeps_its_own_connections() {
+        let root = journal();
+        person(&root, "jane_doe", "Jane Doe");
+        person(&root, "jane", "Jane");
+        log(&root, &[("jane", "jane_doe")]);
+        assert!(pairs(&root).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_live_directory_that_can_not_be_read_or_lost_a_collision_is_not_aliased() {
+        let root = journal();
+        person(&root, "target", "Target");
+        live(&root, "broken", "{nope");
+        // Also claims the id `target`: one of the two directories loses the
+        // collision, and both are still live directories.
+        live(&root, "loser", r#"{"id":"target","name":"Loser"}"#);
+        log(&root, &[("broken", "target"), ("loser", "target")]);
+        assert!(pairs(&root).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn chains_end_at_the_first_live_entity_and_broken_chains_alias_nothing() {
+        let root = journal();
+        person(&root, "c", "C");
+        log(
+            &root,
+            &[("a", "b"), ("b", "c"), ("x", "y"), ("p", "q"), ("q", "p")],
+        );
+        assert_eq!(pairs(&root), vec![pair("a", "c"), pair("b", "c")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_log_line_without_a_target_aliases_nothing_but_still_reserves_its_id() {
+        let root = journal();
+        log(&root, &[("sunstone", "")]);
+        assert!(pairs(&root).is_empty());
+        assert_eq!(
+            super::merged_successor(&root, "sunstone"),
+            Ok(Some(String::new()))
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_deleted_survivor_leaves_the_merged_id_unaliased() {
+        let root = journal();
+        log(&root, &[("sunstone", "solstone")]);
+        assert!(pairs(&root).is_empty());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_record_wins_and_the_latest_log_line_wins_over_earlier_ones() {
+        let root = journal();
+        person(&root, "b", "B");
+        person(&root, "c", "C");
+        person(&root, "d", "D");
+        // `a` was merged into `b`, that was undone, and then `a` was merged into `c`.
+        log(&root, &[("a", "b"), ("a", "c"), ("e", "b")]);
+        record(
+            &root,
+            r#"{"ids":{"e":{"state":"merged","dir":"e","successor":"d"}}}"#,
+        );
+        assert_eq!(pairs(&root), vec![pair("a", "c"), pair("e", "d")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_damaged_record_still_reads_merges_from_the_log() {
+        let root = journal();
+        person(&root, "solstone", "Solstone");
+        log(&root, &[("sunstone", "solstone")]);
+        record(&root, "{nope");
+        assert_eq!(pairs(&root), vec![pair("sunstone", "solstone")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_survivor_id_claimed_by_two_directories_resolves_as_the_identity_map_does() {
+        let root = journal();
+        // `solstone/` falls back to its directory name; `sol_dir/` wrote the
+        // id, so it owns `solstone` in the identity map.
+        live(&root, "solstone", r#"{"name":"Solstone fallback"}"#);
+        live(&root, "sol_dir", r#"{"id":"solstone","name":"Solstone"}"#);
+        log(&root, &[("sunstone", "solstone")]);
+        assert_eq!(pairs(&root), vec![pair("sunstone", "sol_dir")]);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn the_survivor_is_found_by_id_and_aliased_to_its_directory() {
+        let root = journal();
+        live(&root, "sol_dir", r#"{"id":"solstone","name":"Solstone"}"#);
+        log(&root, &[("sunstone", "solstone")]);
+        assert_eq!(pairs(&root), vec![pair("sunstone", "sol_dir")]);
+        fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn only_merged_entries_are_read_and_later_states_are_ignored() {

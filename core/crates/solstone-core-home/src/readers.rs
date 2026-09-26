@@ -1247,6 +1247,8 @@ pub fn load_connections_network(
         &request,
         None,
         &ATTENDANCE_KINDS,
+        // The principal's id is its directory, which is what aliases map.
+        &solstone_core_entities::edge_aliases(context.journal_root()),
     )
     .map(Some)
     .map_err(|_| ConnectionReadError)
@@ -2447,6 +2449,41 @@ mod tests {
             load_backlog_source(&context).validity,
             BacklogValidity::Malformed
         );
+    }
+
+    #[test]
+    fn the_connections_card_counts_a_merged_entity_under_its_survivor() {
+        let root = TempDir::new().unwrap();
+        let context = context(root.path());
+        for (dir, name) in [("me", "Me"), ("ada", "Ada Lovelace")] {
+            write(
+                root.path(),
+                &format!("entities/{dir}/entity.json"),
+                &json!({"id": dir, "name": name}).to_string(),
+            );
+        }
+        write(
+            root.path(),
+            "logs/entity-merges.jsonl",
+            "{\"source_id\":\"ada_old\",\"target_id\":\"ada\"}\n",
+        );
+        let connection = solstone_core_indexer_store::db::open_index(root.path()).unwrap();
+        for (dst, day, path) in [("ada_old", "20260530", "a"), ("ada", "20260601", "b")] {
+            connection
+                .execute(
+                    "INSERT INTO edges(src,dst,kind,directed,src_name,dst_name,day,facet,source,path,anchor,label,ts,weight) VALUES('me',?,'works-with',0,NULL,NULL,?,'work','test',?,NULL,NULL,1,1)",
+                    rusqlite::params![dst, day, path],
+                )
+                .unwrap();
+        }
+        drop(connection);
+        let network = load_connections_network(&context, &json!({"id":"me"}))
+            .unwrap()
+            .unwrap();
+        assert_eq!(network.total_neighbors, 1);
+        assert_eq!(network.neighbors[0].entity_id, "ada");
+        assert_eq!(network.neighbors[0].count, 2);
+        assert_eq!(network.neighbors[0].name.as_deref(), Some("Ada Lovelace"));
     }
 
     #[test]

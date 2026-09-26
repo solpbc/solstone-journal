@@ -55,6 +55,174 @@ pub fn network_bound_detail(name: &str, max: i64) -> String {
 /// A caller-provided canonical entity type lookup. `None` is an ordinary missing type.
 pub type EntityTypeLookup<'a> = dyn Fn(&str) -> Option<String> + 'a;
 
+/// Merged entity directories mapped to the live entity that absorbed them.
+///
+/// An edge row keeps the directory each endpoint had when its file was
+/// extracted, so rows written before a merge still name the merged entity.
+/// Every edge query reads rows through this map: an aliased endpoint counts
+/// under its survivor and carries the survivor's name, and a merge needs no
+/// re-extraction. An empty map reads the index exactly as stored.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct EdgeAliases {
+    entries: BTreeMap<String, EdgeAlias>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct EdgeAlias {
+    canonical: String,
+    name: Option<String>,
+}
+
+impl EdgeAliases {
+    /// Read rows keyed `raw` as `canonical`, labelled `name` when it is known.
+    /// A mapping onto itself is ignored.
+    pub fn insert(&mut self, raw: &str, canonical: &str, name: Option<String>) {
+        if raw != canonical {
+            self.entries.insert(
+                raw.to_owned(),
+                EdgeAlias {
+                    canonical: canonical.to_owned(),
+                    name,
+                },
+            );
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// The id rows keyed `id` are counted under.
+    pub fn canonical<'a>(&'a self, id: &'a str) -> &'a str {
+        self.entries
+            .get(id)
+            .map_or(id, |alias| alias.canonical.as_str())
+    }
+
+    /// The current name of an entity that absorbed a merge. Such an entity is
+    /// labelled with it wherever it appears, whatever older rows called it.
+    fn survivor_name(&self, canonical: &str) -> Option<&str> {
+        self.entries
+            .values()
+            .find(|alias| alias.canonical == canonical)
+            .and_then(|alias| alias.name.as_deref())
+    }
+
+    /// Only the entries for stored ids in `groups`. A query binds the aliases
+    /// its rows can carry, never the whole journal's.
+    fn restricted_to(&self, groups: &[&[String]]) -> Self {
+        let entries = groups
+            .iter()
+            .flat_map(|group| group.iter())
+            .filter_map(|id| {
+                self.entries
+                    .get(id)
+                    .map(|alias| (id.clone(), alias.clone()))
+            })
+            .collect();
+        Self { entries }
+    }
+
+    /// Every stored key whose rows count under `canonical`, itself first.
+    fn members(&self, canonical: &str) -> Vec<String> {
+        let mut members = vec![canonical.to_owned()];
+        members.extend(
+            self.entries
+                .iter()
+                .filter(|(_, alias)| alias.canonical == canonical)
+                .map(|(raw, _)| raw.clone()),
+        );
+        members
+    }
+}
+
+/// The `WITH` head the pair queries start from: CTE `e` holds the stored
+/// rows between two member groups, with `src`/`dst` the ids each row counts
+/// under. Rows an alias would turn into self-edges are left out; stored
+/// self-edges stay. Callers pass only the aliases of the two groups, so the
+/// statement stays small however many merges the journal holds.
+struct EdgeSource {
+    sql: String,
+    params: Vec<rusqlite::types::Value>,
+}
+
+fn borrowed(ids: &[String]) -> Vec<&str> {
+    ids.iter().map(String::as_str).collect()
+}
+
+fn edge_source(aliases: &EdgeAliases, left: &[String], right: &[String]) -> EdgeSource {
+    const COLUMNS: &str =
+        "kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight";
+    let mut params = Vec::new();
+    if aliases.is_empty() {
+        // No aliases: the stored rows as they are, filtered by the caller.
+        return EdgeSource {
+            sql: format!(
+                "WITH e AS NOT MATERIALIZED (SELECT src, dst, {COLUMNS}, rowid AS rowid FROM edges)"
+            ),
+            params,
+        };
+    }
+    let in_list = |ids: &[&str], params: &mut Vec<rusqlite::types::Value>| {
+        params.extend(ids.iter().map(|id| text(id)));
+        std::iter::repeat_n("?", ids.len())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    // Each endpoint maps through an inline CASE: the alias list is small, and
+    // an expression keeps every row's lookup out of a join.
+    let canonical = |column: &str, params: &mut Vec<rusqlite::types::Value>| {
+        let mut sql = format!("CASE edges.{column}");
+        for (raw, alias) in &aliases.entries {
+            sql.push_str(" WHEN ? THEN ?");
+            params.push(text(raw));
+            params.push(text(&alias.canonical));
+        }
+        sql.push_str(&format!(" ELSE edges.{column} END"));
+        sql
+    };
+    let src = canonical("src", &mut params);
+    let dst = canonical("dst", &mut params);
+    let columns = COLUMNS
+        .split(", ")
+        .map(|column| format!("edges.{column} AS {column}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    // Only a row between two members of one alias group can become a
+    // self-edge; the index-backed lists keep the mapping off every other row.
+    let group: Vec<&str> = aliases
+        .entries
+        .iter()
+        .flat_map(|(raw, alias)| [raw.as_str(), alias.canonical.as_str()])
+        .collect();
+    let group_src = in_list(&group, &mut params);
+    let group_dst = in_list(&group, &mut params);
+    let where_src = canonical("src", &mut params);
+    let where_dst = canonical("dst", &mut params);
+    let (left, right) = (borrowed(left), borrowed(right));
+    let a = in_list(&left, &mut params);
+    let b = in_list(&right, &mut params);
+    let c = in_list(&right, &mut params);
+    let d = in_list(&left, &mut params);
+    let stored = format!(
+        " AND ((edges.src IN ({a}) AND edges.dst IN ({b})) OR (edges.src IN ({c}) AND edges.dst IN ({d})))"
+    );
+    EdgeSource {
+        sql: format!(
+            "WITH e AS NOT MATERIALIZED (\n  \
+             SELECT {src} AS src, {dst} AS dst, {columns}, edges.rowid AS rowid\n  \
+             FROM edges\n  \
+             WHERE NOT (edges.src != edges.dst AND edges.src IN ({group_src}) AND edges.dst IN ({group_dst})\n    \
+             AND {where_src} = {where_dst}){stored}\n)"
+        ),
+        params,
+    }
+}
+
 /// Common requested edge filters.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct EdgeFilters {
@@ -206,8 +374,6 @@ pub struct NetworkResponse {
     pub evidence_limit: i64,
     pub total_neighbors: usize,
     pub neighbors: Vec<NetworkNeighbor>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub edge_repair_state: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct EdgeEvidenceResponse {
@@ -219,8 +385,6 @@ pub struct EdgeEvidenceResponse {
     pub limit: i64,
     pub offset: i64,
     pub evidence: Vec<EvidenceRow>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub edge_repair_state: Option<String>,
 }
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct OverviewTotals {
@@ -247,8 +411,6 @@ pub struct NetworkOverviewResponse {
     pub totals: OverviewTotals,
     pub kinds: BTreeMap<String, KindSummary>,
     pub entities: Vec<OverviewEntity>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub edge_repair_state: Option<String>,
 }
 
 /// Open the edge index without creating, migrating, or otherwise mutating it.
@@ -295,62 +457,6 @@ fn consider_neighbor(retained: &mut Vec<NetworkNeighbor>, neighbor: NetworkNeigh
     }
 }
 
-/// Check for in-flight or failed entity edge repair jobs in the journal.
-pub fn read_edge_repair_state(journal: &Path) -> Option<String> {
-    let jobs_dir = journal.join("health/entity-edge-repair/jobs");
-    let entries = match std::fs::read_dir(&jobs_dir) {
-        Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
-        Err(_) => return Some("unreadable".to_string()),
-    };
-    let completions_dir = journal.join("health/entity-edge-repair/completions");
-    let progress_dir = journal.join("health/entity-edge-repair/progress");
-    let failures_dir = journal.join("health/entity-edge-repair/failures");
-
-    let mut has_unfinished = false;
-    let mut has_interrupted = false;
-    let mut has_failed = false;
-
-    for entry in entries {
-        let Ok(entry) = entry else {
-            return Some("unreadable".to_string());
-        };
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if !name_str.ends_with(".json") {
-            continue;
-        }
-        let completion_path = completions_dir.join(&name);
-        if completion_path.is_file() {
-            continue;
-        }
-        has_unfinished = true;
-        let failure_path = failures_dir.join(&name);
-        if failure_path.is_file() {
-            has_failed = true;
-            break;
-        }
-        let progress_path = progress_dir.join(&name);
-        if progress_path.is_file() {
-            has_interrupted = true;
-        }
-    }
-
-    if has_failed {
-        Some("failed".to_string())
-    } else if has_interrupted {
-        Some("interrupted".to_string())
-    } else if has_unfinished {
-        Some("pending".to_string())
-    } else {
-        None
-    }
-}
-
-fn edge_repair_unavailable_detail(_state: &str) -> String {
-    "Connections aren't available right now.".to_string()
-}
-
 /// Load one-hop neighbors. The caller supplies principal identity and attendance policy.
 pub fn load_entity_network(
     journal: &Path,
@@ -358,7 +464,10 @@ pub fn load_entity_network(
     request: &NetworkRequest,
     principal_id: Option<&str>,
     attendance_kinds: &[&str],
+    aliases: &EdgeAliases,
 ) -> Result<NetworkResponse, EdgeQueryError> {
+    let requested_id = entity_id;
+    let entity_id = aliases.canonical(entity_id);
     if !(0..=NETWORK_NEIGHBOR_LIMIT_MAX).contains(&request.limit) {
         return Err(invalid(network_bound_detail(
             "limit",
@@ -373,15 +482,10 @@ pub fn load_entity_network(
     }
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
-    if let Some(state) = read_edge_repair_state(journal) {
-        return Err(EdgeQueryError::EdgeIndexUnavailable {
-            path: solstone_core_indexer_store::db::db_path(journal),
-            detail: edge_repair_unavailable_detail(&state),
-        });
-    }
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
+    let members = aliases.members(entity_id);
     let neighbor_limit = request.limit as usize;
     let mut retained = Vec::with_capacity(neighbor_limit);
     let mut in_flight: Option<NetworkNeighbor> = None;
@@ -397,7 +501,7 @@ pub fn load_entity_network(
         }
     };
 
-    for_each_ranking_row(&connection, entity_id, &ranking, |row| {
+    for_each_ranking_row(&connection, aliases, &members, &ranking, |row| {
         if in_flight
             .as_ref()
             .is_some_and(|current| current.entity_id != row.peer)
@@ -447,10 +551,26 @@ pub fn load_entity_network(
             .then_with(|| a.entity_id.cmp(&b.entity_id))
     });
     for neighbor in &mut retained {
-        neighbor.name = load_peer_name(&connection, entity_id, &neighbor.entity_id, &ranking)?;
+        let peer_members = aliases.members(&neighbor.entity_id);
+        let source = edge_source(
+            &aliases.restricted_to(&[&members, &peer_members]),
+            &members,
+            &peer_members,
+        );
+        neighbor.name = match aliases.survivor_name(&neighbor.entity_id) {
+            Some(name) => Some(name.to_owned()),
+            None => load_peer_name(
+                &connection,
+                &source,
+                entity_id,
+                &neighbor.entity_id,
+                &ranking,
+            )?,
+        };
         // Network previews use the ranking cap; pair history below intentionally does not.
         neighbor.evidence = load_evidence_rows(
             &connection,
+            &source,
             entity_id,
             &neighbor.entity_id,
             &ranking,
@@ -459,14 +579,13 @@ pub fn load_entity_network(
         )?;
     }
     Ok(NetworkResponse {
-        entity_id: entity_id.to_string(),
+        entity_id: requested_id.to_string(),
         reference_day,
         filters: NetworkFilters::from((&filter, request.include_principal)),
         limit: request.limit,
         evidence_limit: request.evidence_limit,
         total_neighbors,
         neighbors: retained,
-        edge_repair_state: None,
     })
 }
 
@@ -476,44 +595,55 @@ pub fn load_edge_evidence(
     entity_id: &str,
     peer_id: &str,
     request: &EdgeEvidenceRequest,
+    aliases: &EdgeAliases,
 ) -> Result<EdgeEvidenceResponse, EdgeQueryError> {
+    let (requested_id, requested_peer) = (entity_id, peer_id);
+    let entity_id = aliases.canonical(entity_id);
+    let peer_id = aliases.canonical(peer_id);
     validate_nonnegative("limit", request.limit)?;
     validate_nonnegative("offset", request.offset)?;
     let filter = build_filters(&request.filters)?;
-    if let Some(state) = read_edge_repair_state(journal) {
-        return Err(EdgeQueryError::EdgeIndexUnavailable {
-            path: solstone_core_indexer_store::db::db_path(journal),
-            detail: edge_repair_unavailable_detail(&state),
-        });
-    }
     let connection = open_edges_reader(journal)?;
+    let (members, peer_members) = (aliases.members(entity_id), aliases.members(peer_id));
+    let source = edge_source(
+        &aliases.restricted_to(&[&members, &peer_members]),
+        &members,
+        &peer_members,
+    );
     let pair = pair_where();
-    let mut params = pair_params(entity_id, peer_id);
+    let mut params = source.params.clone();
+    params.extend(pair_params(entity_id, peer_id));
     params.extend(filter.params.clone());
     let total: i64 = connection
         .query_row(
-            &format!("SELECT COUNT(*) FROM edges {pair} {}", filter.sql),
+            &format!(
+                "{} SELECT COUNT(*) FROM e {pair} {}",
+                source.sql, filter.sql
+            ),
             params_from_iter(params.iter()),
             |row| row.get(0),
         )
         .map_err(|error| unavailable_db(&connection, error))?;
     Ok(EdgeEvidenceResponse {
-        entity_id: entity_id.to_string(),
-        peer_id: peer_id.to_string(),
-        peer_name: load_peer_name(&connection, entity_id, peer_id, &filter)?,
+        entity_id: requested_id.to_string(),
+        peer_id: requested_peer.to_string(),
+        peer_name: match aliases.survivor_name(peer_id) {
+            Some(name) => Some(name.to_owned()),
+            None => load_peer_name(&connection, &source, entity_id, peer_id, &filter)?,
+        },
         filters: EdgeFiltersPayload::from(&filter),
         total,
         limit: request.limit,
         offset: request.offset,
         evidence: load_evidence_rows(
             &connection,
+            &source,
             entity_id,
             peer_id,
             &filter,
             request.limit,
             request.offset,
         )?,
-        edge_repair_state: None,
     })
 }
 
@@ -523,42 +653,53 @@ pub fn load_network_overview(
     request: &NetworkOverviewRequest,
     attendance_kinds: &[&str],
     entity_type_lookup: &EntityTypeLookup<'_>,
+    aliases: &EdgeAliases,
 ) -> Result<NetworkOverviewResponse, EdgeQueryError> {
     validate_nonnegative("limit", request.limit)?;
     let filter = build_filters(&request.filters)?;
     let reference_day = reference_day(request.reference_day.as_deref())?;
-    if let Some(state) = read_edge_repair_state(journal) {
-        return Err(EdgeQueryError::EdgeIndexUnavailable {
-            path: solstone_core_indexer_store::db::db_path(journal),
-            detail: edge_repair_unavailable_detail(&state),
-        });
-    }
     let reference = parse_reference_day(&reference_day)?;
     let ranking = filter.with_ranking_cap(&reference_day);
     let connection = open_edges_reader(journal)?;
+    // The overview reads every row, so it runs on stored ids exactly as
+    // indexed, then takes out alias-made self-edges and folds merged ids.
+    let source = edge_source(&EdgeAliases::default(), &[], &[]);
+    let merged_self = load_merged_self_edges(&connection, aliases, &ranking)?;
+    let mut params = source.params.clone();
+    params.extend(ranking.params.clone());
     let total_edges: i64 = connection
         .query_row(
-            &format!("SELECT COUNT(*) FROM edges WHERE 1 = 1 {}", ranking.sql),
-            params_from_iter(ranking.params.iter()),
-            |row| row.get(0),
+            &format!(
+                "{} SELECT COUNT(*) FROM e WHERE 1 = 1 {}",
+                source.sql, ranking.sql
+            ),
+            params_from_iter(params.iter()),
+            |row| row.get::<_, i64>(0),
         )
-        .map_err(|error| unavailable_db(&connection, error))?;
+        .map_err(|error| unavailable_db(&connection, error))?
+        - merged_self.len() as i64;
     let mut global_kinds = BTreeMap::new();
     let sql = format!(
-        "SELECT kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum FROM edges WHERE 1 = 1 {} GROUP BY kind, day",
-        ranking.sql
+        "{} SELECT kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum FROM e WHERE 1 = 1 {} GROUP BY kind, day",
+        source.sql, ranking.sql
     );
     let mut stmt = connection
         .prepare(&sql)
         .map_err(|error| unavailable_db(&connection, error))?;
     let rows = stmt
-        .query_map(
-            params_from_iter(ranking.params.iter()),
-            ranking_row_from_global,
-        )
+        .query_map(params_from_iter(params.iter()), ranking_row_from_global)
+        .map_err(|error| unavailable_db(&connection, error))?
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|error| unavailable_db(&connection, error))?;
-    for row in rows {
-        let row = row.map_err(|error| unavailable_db(&connection, error))?;
+    let by_kind_day = merged_self.iter().map(|edge| {
+        (
+            String::new(),
+            edge.kind.clone(),
+            edge.day.clone(),
+            edge.weight,
+        )
+    });
+    for row in subtract_rows(rows, by_kind_day) {
         accumulate_kind(
             &mut global_kinds,
             &row.kind,
@@ -568,14 +709,18 @@ pub fn load_network_overview(
             reference,
         )?;
     }
-    let names = load_endpoint_names(&connection, &ranking)?;
+    let names = fold_endpoint_names(
+        aliases,
+        load_endpoint_names(&connection, &source, &ranking)?,
+    );
     // Keep dst != src on this second UNION leg only: self-edges count once,
     // deliberately, retaining the retired Python query behavior.
     let cte = format!(
-        "WITH endpoint_edges AS (\n  SELECT src AS entity_id, kind, day, weight\n  FROM edges\n  WHERE 1 = 1 {}\n  UNION ALL\n  SELECT dst AS entity_id, kind, day, weight\n  FROM edges\n  WHERE 1 = 1\n    AND dst != src {}\n)\nSELECT entity_id, kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum\nFROM endpoint_edges\nGROUP BY entity_id, kind, day",
-        ranking.sql, ranking.sql
+        "{},\nendpoint_edges AS (\n  SELECT src AS entity_id, kind, day, weight\n  FROM e\n  WHERE 1 = 1 {}\n  UNION ALL\n  SELECT dst AS entity_id, kind, day, weight\n  FROM e\n  WHERE 1 = 1\n    AND dst != src {}\n)\nSELECT entity_id, kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum\nFROM endpoint_edges\nGROUP BY entity_id, kind, day",
+        source.sql, ranking.sql, ranking.sql
     );
-    let mut params = ranking.params.clone();
+    let mut params = source.params.clone();
+    params.extend(ranking.params.clone());
     params.extend(ranking.params.clone());
     let mut stmt = connection
         .prepare(&cte)
@@ -583,9 +728,16 @@ pub fn load_network_overview(
     let rows = stmt
         .query_map(params_from_iter(params.iter()), overview_row_from_sql)
         .map_err(|error| unavailable_db(&connection, error))?;
+    let rows = rows
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| unavailable_db(&connection, error))?;
+    let by_endpoint = merged_self.iter().flat_map(|edge| {
+        [&edge.src, &edge.dst]
+            .map(|id| (id.clone(), edge.kind.clone(), edge.day.clone(), edge.weight))
+    });
+    let rows = subtract_rows(rows, by_endpoint);
     let mut entities = BTreeMap::<String, OverviewEntity>::new();
-    for row in rows {
-        let row = row.map_err(|error| unavailable_db(&connection, error))?;
+    for row in fold_overview_rows(aliases, rows) {
         let entity = entities
             .entry(row.entity_id.clone())
             .or_insert_with(|| OverviewEntity {
@@ -638,8 +790,154 @@ pub fn load_network_overview(
         },
         kinds: global_kinds,
         entities: ordered,
-        edge_repair_state: None,
     })
+}
+
+struct StoredEdge {
+    src: String,
+    dst: String,
+    kind: String,
+    day: Option<String>,
+    weight: i64,
+}
+
+/// Stored rows between two ids of one merged entity: an alias turns each into
+/// a self-edge, which no count includes. Only rows between alias group
+/// members can qualify, so the index-backed lists find them.
+fn load_merged_self_edges(
+    connection: &Connection,
+    aliases: &EdgeAliases,
+    filter: &FilterSql,
+) -> Result<Vec<StoredEdge>, EdgeQueryError> {
+    if aliases.is_empty() {
+        return Ok(Vec::new());
+    }
+    // One JSON parameter carries the whole group: the statement's size does
+    // not grow with the number of merges.
+    let group: Vec<&str> = aliases
+        .entries
+        .iter()
+        .flat_map(|(raw, alias)| [raw.as_str(), alias.canonical.as_str()])
+        .collect();
+    let group = serde_json::to_string(&group).map_err(|error| EdgeQueryError::Internal {
+        detail: error.to_string(),
+    })?;
+    let sql = format!(
+        "WITH member(id) AS (SELECT DISTINCT value FROM json_each(?))\nSELECT src, dst, kind, day, weight FROM edges WHERE src != dst AND src IN (SELECT id FROM member) AND dst IN (SELECT id FROM member) {}",
+        filter.sql
+    );
+    let mut params = vec![rusqlite::types::Value::Text(group)];
+    params.extend(filter.params.clone());
+    let mut statement = connection
+        .prepare(&sql)
+        .map_err(|error| unavailable_db(connection, error))?;
+    let rows = statement
+        .query_map(params_from_iter(params.iter()), |row| {
+            Ok(StoredEdge {
+                src: row.get(0)?,
+                dst: row.get(1)?,
+                kind: row.get(2)?,
+                day: row.get(3)?,
+                weight: row.get(4)?,
+            })
+        })
+        .map_err(|error| unavailable_db(connection, error))?;
+    let mut merged = Vec::new();
+    for row in rows {
+        let row = row.map_err(|error| unavailable_db(connection, error))?;
+        if aliases.canonical(&row.src) == aliases.canonical(&row.dst) {
+            merged.push(row);
+        }
+    }
+    Ok(merged)
+}
+
+/// Take rows out of grouped counts. A group left empty is dropped, as if its
+/// rows had never been counted.
+fn subtract_rows(
+    rows: Vec<OverviewRow>,
+    remove: impl Iterator<Item = (String, String, Option<String>, i64)>,
+) -> Vec<OverviewRow> {
+    let mut removed = BTreeMap::<(String, String, Option<String>), (i64, i64)>::new();
+    for (entity_id, kind, day, weight) in remove {
+        let entry = removed.entry((entity_id, kind, day)).or_insert((0, 0));
+        entry.0 += 1;
+        entry.1 += weight;
+    }
+    if removed.is_empty() {
+        return rows;
+    }
+    rows.into_iter()
+        .filter_map(|mut row| {
+            let key = (row.entity_id.clone(), row.kind.clone(), row.day.clone());
+            if let Some((count, weight)) = removed.get(&key) {
+                row.count -= count;
+                row.weight_sum -= weight;
+            }
+            (row.count > 0).then_some(row)
+        })
+        .collect()
+}
+
+/// Count each stored id's rows under the entity they belong to. Counts and
+/// weights are summed before scoring, as grouping by that entity would.
+fn fold_overview_rows(aliases: &EdgeAliases, rows: Vec<OverviewRow>) -> Vec<OverviewRow> {
+    if aliases.is_empty() {
+        return rows;
+    }
+    let mut folded = BTreeMap::<(String, String, Option<String>), (i64, i64)>::new();
+    for row in rows {
+        let key = (
+            aliases.canonical(&row.entity_id).to_owned(),
+            row.kind,
+            row.day,
+        );
+        let entry = folded.entry(key).or_insert((0, 0));
+        entry.0 += row.count;
+        entry.1 += row.weight_sum;
+    }
+    folded
+        .into_iter()
+        .map(
+            |((entity_id, kind, day), (count, weight_sum))| OverviewRow {
+                entity_id,
+                kind,
+                day,
+                count,
+                weight_sum,
+            },
+        )
+        .collect()
+}
+
+/// Names by the entity each stored id belongs to: an entity that absorbed a
+/// merge takes its current name; otherwise its own newest name wins, then a
+/// merged id's.
+fn fold_endpoint_names(
+    aliases: &EdgeAliases,
+    stored: BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    if aliases.is_empty() {
+        return stored;
+    }
+    let mut names = BTreeMap::new();
+    for (id, name) in &stored {
+        if aliases.canonical(id) == id {
+            names.insert(id.clone(), name.clone());
+        }
+    }
+    for (id, name) in stored {
+        let canonical = aliases.canonical(&id);
+        if canonical != id {
+            names.entry(canonical.to_owned()).or_insert(name);
+        }
+    }
+    for alias in aliases.entries.values() {
+        if let Some(name) = &alias.name {
+            names.insert(alias.canonical.clone(), name.clone());
+        }
+    }
+    names
 }
 
 #[derive(Clone)]
@@ -868,26 +1166,30 @@ struct OverviewRow {
     count: i64,
     weight_sum: i64,
 }
+/// Visit ranking rows grouped by peer, peers in order. The query reads
+/// stored rows touching the subject's members and leaves out rows between
+/// two of them (stored self-edges and alias-made ones alike). A merged peer
+/// is then counted under its survivor, so the statement binds only the
+/// subject's own members however many merges the journal holds.
 fn for_each_ranking_row(
     connection: &Connection,
-    entity_id: &str,
+    aliases: &EdgeAliases,
+    members: &[String],
     filter: &FilterSql,
     mut visit: impl FnMut(RankingRow) -> Result<(), EdgeQueryError>,
 ) -> Result<(), EdgeQueryError> {
+    let slots = std::iter::repeat_n("?", members.len())
+        .collect::<Vec<_>>()
+        .join(", ");
     // Peer rows must be contiguous because SQLite GROUP BY does not promise order.
     let sql = format!(
-        "SELECT\n  CASE WHEN src = ? THEN dst ELSE src END AS peer,\n  kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum,\n  SUM(CASE WHEN directed = 1 AND src = ? THEN 1 ELSE 0 END) AS directed_out,\n  SUM(CASE WHEN directed = 1 AND dst = ? THEN 1 ELSE 0 END) AS directed_in\nFROM edges\nWHERE (src = ? OR dst = ?)\n  AND (CASE WHEN src = ? THEN dst ELSE src END) != ? {}\nGROUP BY peer, kind, day\nORDER BY peer",
+        "SELECT\n  CASE WHEN src IN ({slots}) THEN dst ELSE src END AS peer,\n  kind, day, COUNT(*) AS count, SUM(weight) AS weight_sum,\n  SUM(CASE WHEN directed = 1 AND src IN ({slots}) THEN 1 ELSE 0 END) AS directed_out,\n  SUM(CASE WHEN directed = 1 AND dst IN ({slots}) THEN 1 ELSE 0 END) AS directed_in\nFROM edges\nWHERE (src IN ({slots}) OR dst IN ({slots}))\n  AND NOT (src IN ({slots}) AND dst IN ({slots})) {}\nGROUP BY peer, kind, day\nORDER BY peer",
         filter.sql
     );
-    let mut params = vec![
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-        text(entity_id),
-    ];
+    let mut params = Vec::with_capacity(members.len() * 7 + filter.params.len());
+    for _ in 0..7 {
+        params.extend(members.iter().map(|member| text(member)));
+    }
     params.extend(filter.params.clone());
     let mut statement = connection
         .prepare(&sql)
@@ -905,14 +1207,37 @@ fn for_each_ranking_row(
             })
         })
         .map_err(|error| unavailable_db(connection, error))?;
+    if aliases.is_empty() {
+        for row in rows {
+            visit(row.map_err(|error| unavailable_db(connection, error))?)?;
+        }
+        return Ok(());
+    }
+    let mut folded = BTreeMap::<(String, String, Option<String>), RankingRow>::new();
     for row in rows {
-        let ranking_row = row.map_err(|error| unavailable_db(connection, error))?;
-        visit(ranking_row)?;
+        let row = row.map_err(|error| unavailable_db(connection, error))?;
+        let peer = aliases.canonical(&row.peer).to_owned();
+        match folded.entry((peer.clone(), row.kind.clone(), row.day.clone())) {
+            std::collections::btree_map::Entry::Occupied(mut entry) => {
+                let total = entry.get_mut();
+                total.count += row.count;
+                total.weight_sum += row.weight_sum;
+                total.directed_out += row.directed_out;
+                total.directed_in += row.directed_in;
+            }
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(RankingRow { peer, ..row });
+            }
+        }
+    }
+    for row in folded.into_values() {
+        visit(row)?;
     }
     Ok(())
 }
 fn load_evidence_rows(
     connection: &Connection,
+    source: &EdgeSource,
     entity_id: &str,
     peer_id: &str,
     filter: &FilterSql,
@@ -920,17 +1245,19 @@ fn load_evidence_rows(
     offset: i64,
 ) -> Result<Vec<EvidenceRow>, EdgeQueryError> {
     let sql = format!(
-        "SELECT src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight FROM edges {} {}\n{}\nLIMIT ? OFFSET ?",
+        "{} SELECT src, dst, kind, directed, src_name, dst_name, day, facet, source, path, anchor, label, ts, weight FROM e {} {}\n{}\nLIMIT ? OFFSET ?",
+        source.sql,
         pair_where(),
         filter.sql,
         EVIDENCE_ORDER_SQL
     );
-    let mut params = pair_params(entity_id, peer_id);
+    let mut params = source.params.clone();
+    params.extend(pair_params(entity_id, peer_id));
     params.extend(filter.params.clone());
     params.push(limit.into());
     params.push(offset.into());
     let mut statement = connection
-        .prepare(&sql)
+        .prepare_cached(&sql)
         .map_err(|error| unavailable_db(connection, error))?;
     let rows = statement
         .query_map(params_from_iter(params.iter()), evidence_row_from_sql)
@@ -958,36 +1285,45 @@ fn evidence_row_from_sql(row: &Row<'_>) -> rusqlite::Result<EvidenceRow> {
 }
 fn load_peer_name(
     connection: &Connection,
+    source: &EdgeSource,
     entity_id: &str,
     peer_id: &str,
     filter: &FilterSql,
 ) -> Result<Option<String>, EdgeQueryError> {
     let sql = format!(
-        "SELECT CASE WHEN src = ? THEN dst_name ELSE src_name END AS peer_name FROM edges {} {}\n  AND (CASE WHEN src = ? THEN dst_name ELSE src_name END) IS NOT NULL\n{}\nLIMIT 1",
+        "{} SELECT CASE WHEN src = ? THEN dst_name ELSE src_name END AS peer_name FROM e {} {}\n  AND (CASE WHEN src = ? THEN dst_name ELSE src_name END) IS NOT NULL\n{}\nLIMIT 1",
+        source.sql,
         pair_where(),
         filter.sql,
         EVIDENCE_ORDER_SQL
     );
-    let mut params = vec![text(entity_id)];
+    let mut params = source.params.clone();
+    params.push(text(entity_id));
     params.extend(pair_params(entity_id, peer_id));
     params.extend(filter.params.clone());
     params.push(text(entity_id));
     connection
-        .query_row(&sql, params_from_iter(params.iter()), |row| row.get(0))
-        .optional()
+        .prepare_cached(&sql)
+        .and_then(|mut statement| {
+            statement
+                .query_row(params_from_iter(params.iter()), |row| row.get(0))
+                .optional()
+        })
         .map_err(|error| unavailable_db(connection, error))
 }
 fn load_endpoint_names(
     connection: &Connection,
+    source: &EdgeSource,
     filter: &FilterSql,
 ) -> Result<BTreeMap<String, String>, EdgeQueryError> {
     // Keep dst != src on this second UNION leg only: self-edges count once,
     // deliberately, retaining the retired Python query behavior.
     let sql = format!(
-        "WITH endpoint_edges AS ( SELECT src AS entity_id, src_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM edges WHERE 1 = 1 {} UNION ALL SELECT dst AS entity_id, dst_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM edges WHERE 1 = 1 AND dst != src {} ) SELECT entity_id, entity_name FROM endpoint_edges WHERE entity_name IS NOT NULL ORDER BY entity_id ASC, day IS NULL ASC, day DESC, ts IS NULL ASC, ts DESC, path ASC, anchor IS NULL ASC, anchor ASC, edge_rowid ASC",
-        filter.sql, filter.sql
+        "{}, endpoint_edges AS ( SELECT src AS entity_id, src_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM e WHERE 1 = 1 {} UNION ALL SELECT dst AS entity_id, dst_name AS entity_name, day, ts, path, anchor, rowid AS edge_rowid FROM e WHERE 1 = 1 AND dst != src {} ) SELECT entity_id, entity_name FROM endpoint_edges WHERE entity_name IS NOT NULL ORDER BY entity_id ASC, day IS NULL ASC, day DESC, ts IS NULL ASC, ts DESC, path ASC, anchor IS NULL ASC, anchor ASC, edge_rowid ASC",
+        source.sql, filter.sql, filter.sql
     );
-    let mut params = filter.params.clone();
+    let mut params = source.params.clone();
+    params.extend(filter.params.clone());
     params.extend(filter.params.clone());
     let mut statement = connection
         .prepare(&sql)

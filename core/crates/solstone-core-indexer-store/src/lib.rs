@@ -10,9 +10,6 @@ pub mod retention;
 pub mod scan;
 
 pub use retention::RetentionIndex;
-pub use scan::{
-    CandidatePublishOutcome, EdgeRepairCandidate, apply_edge_repair_candidate, plan_edge_repair,
-};
 
 #[cfg(test)]
 mod test_support;

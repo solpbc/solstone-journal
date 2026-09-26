@@ -1203,46 +1203,6 @@ async fn cortex_finish_resets_wedge_failures_before_the_threshold() {
     );
 }
 
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn supervisor_tick_drains_entity_edge_repair_jobs() {
-    let journal = TempJournal::new();
-    let mut child = start(&journal, None, &[]);
-    let socket = journal.0.join("health/callosum.sock");
-    wait_for_socket(&mut child, &socket);
-
-    let repair_dir = journal.0.join("health/entity-edge-repair");
-    fs::create_dir_all(repair_dir.join("jobs")).unwrap();
-    fs::write(repair_dir.join("generation"), b"1\n").unwrap();
-    let job = json!({
-        "operation": "merge",
-        "merge_id": "test-merge-1",
-        "generation": 1,
-        "enqueued_at": 100
-    });
-    fs::write(
-        repair_dir.join("jobs/merge-test-merge-1.json"),
-        serde_json::to_vec(&job).unwrap(),
-    )
-    .unwrap();
-
-    let completion_path = repair_dir.join("completions/merge-test-merge-1.json");
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while Instant::now() < deadline {
-        if completion_path.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(
-        completion_path.exists(),
-        "supervisor tick should drain edge repair job and publish completion"
-    );
-    assert!(
-        !repair_dir.join("jobs/merge-test-merge-1.json").exists(),
-        "drained job should be removed"
-    );
-}
-
 #[test]
 fn catchup_selector_with_merge_rewritten_speaker_labels() {
     let journal = TempJournal::new();

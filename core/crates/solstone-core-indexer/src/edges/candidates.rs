@@ -156,23 +156,57 @@ fn load_journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate
 }
 
 fn load_facet_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCandidate>> {
-    let journal_entities = load_journal_entities(journal)?;
-    let mut candidates = Vec::new();
+    let (journal_entities, dirs_by_id) = load_journal_entities(journal)?;
+    // Links grouped by the journal directory they point at, in folder order.
+    let mut order = Vec::new();
+    let mut links = BTreeMap::<String, Vec<(String, JsonObject)>>::new();
     let entity_root = journal.join("facets").join(facet).join("entities");
-    for (entity_id, entity_dir) in sorted_child_dirs(&entity_root)? {
+    for (folder, entity_dir) in sorted_child_dirs(&entity_root)? {
         let relationship_file = entity_dir.join("entity.json");
         if !relationship_file.is_file() {
             continue;
         }
-        let Some(mut relationship) = read_json_object(&relationship_file) else {
+        let Some(relationship) = read_json_object(&relationship_file) else {
             continue;
         };
-        relationship.insert("entity_id".to_string(), Value::String(entity_id.clone()));
+        // A link names its entity by id; its folder can differ (a merge moves
+        // links without renaming them). Resolve the id to the journal
+        // directory edges key on, and fall back to the folder name.
+        let linked_dir = string_field(relationship.get("entity_id"))
+            .and_then(|id| dirs_by_id.get(&id).cloned())
+            .unwrap_or_else(|| folder.clone());
+        if !links.contains_key(&linked_dir) {
+            order.push(linked_dir.clone());
+        }
+        links
+            .entry(linked_dir)
+            .or_default()
+            .push((folder, relationship));
+    }
+    let mut candidates = Vec::new();
+    for linked_dir in order {
+        let group = &links[&linked_dir];
+        // The entity's own folder speaks for it, detached or not. Links left
+        // in other folders count only when none of them is detached. Either
+        // way one entity gives one candidate: two would tie in the matcher
+        // and match nothing.
+        let relationship = match group.iter().find(|(folder, _)| *folder == linked_dir) {
+            Some((_, own)) => own,
+            None if group
+                .iter()
+                .any(|(_, relationship)| json_truthy(relationship.get("detached"))) =>
+            {
+                continue;
+            }
+            None => &group[0].1,
+        };
         if json_truthy(relationship.get("detached")) {
             continue;
         }
+        let mut relationship = relationship.clone();
+        relationship.insert("entity_id".to_string(), Value::String(linked_dir.clone()));
         let enriched =
-            enrich_relationship_with_journal(relationship, journal_entities.get(&entity_id));
+            enrich_relationship_with_journal(relationship, journal_entities.get(&linked_dir));
         if json_truthy(enriched.get("blocked")) {
             continue;
         }
@@ -183,9 +217,13 @@ fn load_facet_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNa
     Ok(candidates)
 }
 
-fn load_journal_entities(journal: &Path) -> io::Result<BTreeMap<String, JsonObject>> {
+type JournalEntities = (BTreeMap<String, JsonObject>, BTreeMap<String, String>);
+
+/// Journal entities by directory, and each effective id's directory.
+fn load_journal_entities(journal: &Path) -> io::Result<JournalEntities> {
     let mut entities = BTreeMap::new();
-    for (entity_id, entity_dir) in sorted_child_dirs(&journal.join("entities"))? {
+    let mut written_ids = BTreeMap::new();
+    for (entity_dir_name, entity_dir) in sorted_child_dirs(&journal.join("entities"))? {
         let entity_file = entity_dir.join("entity.json");
         if !entity_file.is_file() {
             continue;
@@ -193,10 +231,50 @@ fn load_journal_entities(journal: &Path) -> io::Result<BTreeMap<String, JsonObje
         let Some(mut entity) = read_json_object(&entity_file) else {
             continue;
         };
-        entity.insert("id".to_string(), Value::String(entity_id.clone()));
-        entities.insert(entity_id, entity);
+        if let Some(Value::String(id)) = entity.get("id")
+            && !id.is_empty()
+        {
+            written_ids.insert(entity_dir_name.clone(), id.clone());
+        }
+        entity.insert("id".to_string(), Value::String(entity_dir_name.clone()));
+        entities.insert(entity_dir_name, entity);
     }
-    Ok(entities)
+    let dirs_by_id = dirs_by_effective_id(entities.keys(), &written_ids);
+    Ok((entities, dirs_by_id))
+}
+
+/// Each effective entity id with the directory that holds it. The effective
+/// id is the written `id`, else the directory name. On a collision a written
+/// id wins over a directory fallback, then the lexically first directory:
+/// the entity store's identity map uses the same order.
+fn dirs_by_effective_id<'a>(
+    dirs: impl Iterator<Item = &'a String>,
+    written_ids: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut winners = BTreeMap::<String, (bool, String)>::new();
+    for dir in dirs {
+        let (id, fallback) = match written_ids.get(dir) {
+            Some(id) => (id.clone(), false),
+            None => (dir.clone(), true),
+        };
+        let candidate = (fallback, dir.clone());
+        match winners.get(&id) {
+            Some(current) if *current <= candidate => {}
+            _ => {
+                winners.insert(id, candidate);
+            }
+        }
+    }
+    winners
+        .into_iter()
+        .map(|(id, (_, dir))| (id, dir))
+        .collect()
+}
+
+/// Each effective entity id in the journal with the directory edges key it
+/// on. Exposed so the entity store's identity map can be checked against it.
+pub fn journal_entity_dirs_by_id(journal: &Path) -> io::Result<BTreeMap<String, String>> {
+    load_journal_entities(journal).map(|(_, dirs_by_id)| dirs_by_id)
 }
 
 fn enrich_relationship_with_journal(
@@ -405,6 +483,164 @@ mod tests {
 
         assert_eq!(enriched.get("is_principal"), Some(&Value::Bool(true)));
         assert_eq!(enriched.get("blocked"), Some(&Value::Bool(true)));
+    }
+
+    #[test]
+    fn a_link_in_a_differently_named_folder_resolves_to_its_entity() {
+        let root = temp_root("relinked");
+        write_json(
+            &root,
+            "entities/solstone/entity.json",
+            json!({"id":"solstone","name":"Solstone","type":"Project"}),
+        );
+        // After `sunstone` merged into `solstone`, the link kept its folder.
+        write_json(
+            &root,
+            "facets/work/entities/sunstone/entity.json",
+            json!({"entity_id":"solstone"}),
+        );
+        let candidates = load_facet_candidates(&root, "work").expect("load facet candidates");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id.as_deref(), Some("solstone"));
+        assert_eq!(candidates[0].name, "Solstone");
+        fs::remove_dir_all(root).expect("cleanup relinked root");
+    }
+
+    #[test]
+    fn two_links_to_one_entity_give_one_candidate() {
+        let root = temp_root("duplicate-links");
+        write_json(
+            &root,
+            "entities/jane_doe/entity.json",
+            json!({"id":"jane_doe","name":"Jane Doe","type":"Person"}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/jane/entity.json",
+            json!({"entity_id":"jane_doe"}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/jane_doe/entity.json",
+            json!({"entity_id":"jane_doe"}),
+        );
+        let candidates = load_facet_candidates(&root, "work").expect("load facet candidates");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id.as_deref(), Some("jane_doe"));
+        assert!(find_matching_entity("Jane Doe", &candidates, 90.0).is_some());
+        fs::remove_dir_all(root).expect("cleanup duplicate links root");
+    }
+
+    #[test]
+    fn the_entitys_own_link_decides_over_a_link_left_in_another_folder() {
+        let root = temp_root("own-link-decides");
+        write_json(
+            &root,
+            "entities/beta/entity.json",
+            json!({"id":"beta","name":"Beta Example","type":"Person"}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/alpha_old/entity.json",
+            json!({"entity_id":"beta","aka":["Old Alpha"]}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/beta/entity.json",
+            json!({"entity_id":"beta","detached":true}),
+        );
+        assert!(
+            load_facet_candidates(&root, "work")
+                .expect("load facet candidates")
+                .is_empty()
+        );
+        write_json(
+            &root,
+            "facets/work/entities/beta/entity.json",
+            json!({"entity_id":"beta","emails":["beta@example.com"]}),
+        );
+        let candidates = load_facet_candidates(&root, "work").expect("load facet candidates");
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].emails, vec!["beta@example.com"]);
+        assert!(candidates[0].aka.is_empty());
+        fs::remove_dir_all(root).expect("cleanup own link root");
+    }
+
+    #[test]
+    fn a_detached_leftover_link_keeps_an_entity_without_its_own_link_out() {
+        let root = temp_root("detached-leftover");
+        write_json(
+            &root,
+            "entities/beta/entity.json",
+            json!({"id":"beta","name":"Beta Example","type":"Person"}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/a_old/entity.json",
+            json!({"entity_id":"beta"}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/b_old/entity.json",
+            json!({"entity_id":"beta","detached":true}),
+        );
+        assert!(
+            load_facet_candidates(&root, "work")
+                .expect("load facet candidates")
+                .is_empty()
+        );
+        fs::remove_dir_all(root).expect("cleanup detached leftover root");
+    }
+
+    #[test]
+    fn links_whose_folder_id_and_directory_agree_are_unchanged() {
+        let root = temp_root("agreeing-links");
+        write_json(
+            &root,
+            "entities/alice/entity.json",
+            json!({"id":"alice","name":"Alice Example","type":"Person"}),
+        );
+        write_json(
+            &root,
+            "entities/bob/entity.json",
+            json!({"name":"Bob Example","type":"Person"}),
+        );
+        write_json(
+            &root,
+            "facets/work/entities/alice/entity.json",
+            json!({"entity_id":"alice","aka":["Al"]}),
+        );
+        write_json(&root, "facets/work/entities/bob/entity.json", json!({}));
+        let candidates = load_facet_candidates(&root, "work").expect("load facet candidates");
+        let ids: Vec<_> = candidates.iter().map(|c| c.id.as_deref()).collect();
+        assert_eq!(ids, vec![Some("alice"), Some("bob")]);
+        assert_eq!(candidates[0].aka, vec!["Al"]);
+        fs::remove_dir_all(root).expect("cleanup agreeing links root");
+    }
+
+    #[test]
+    fn a_written_id_beats_a_directory_fallback_then_the_first_directory_wins() {
+        let root = temp_root("id-collisions");
+        write_json(&root, "entities/ann/entity.json", json!({"name":"Ann"}));
+        write_json(
+            &root,
+            "entities/z_ann/entity.json",
+            json!({"id":"ann","name":"Ann Z"}),
+        );
+        write_json(
+            &root,
+            "entities/b2/entity.json",
+            json!({"id":"bee","name":"Bee 2"}),
+        );
+        write_json(
+            &root,
+            "entities/b1/entity.json",
+            json!({"id":"bee","name":"Bee 1"}),
+        );
+        let dirs = journal_entity_dirs_by_id(&root).expect("dirs by id");
+        assert_eq!(dirs.get("ann").map(String::as_str), Some("z_ann"));
+        assert_eq!(dirs.get("bee").map(String::as_str), Some("b1"));
+        fs::remove_dir_all(root).expect("cleanup collisions root");
     }
 
     #[test]

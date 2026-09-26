@@ -7,7 +7,6 @@ mod ambiguity;
 mod census;
 mod create;
 mod derived;
-pub(crate) mod edge_repair;
 mod entity_paths;
 mod error;
 mod history;
@@ -40,18 +39,6 @@ pub use create::create_journal_entity;
 pub use derived::{
     DEFAULT_ACTIVITY_TS, entity_last_active_day, entity_last_active_ts,
     entity_matches_identity_name, is_valid_entity_type, last_active_day_for_ts,
-};
-pub use edge_repair::{
-    EntityEdgeRepairCompletion, EntityEdgeRepairError, EntityEdgeRepairJob,
-    attach_edge_repair_completion, drive_entity_edge_repair, read_entity_edge_repair_completion,
-    spawn_entity_edge_repair,
-};
-#[cfg(any(test, feature = "test-hooks"))]
-pub use edge_repair::{
-    arm_entity_edge_repair_between_publish_cut, arm_entity_edge_repair_evidence_cut,
-    disarm_entity_edge_repair_between_publish_cut, disarm_entity_edge_repair_evidence_cut,
-    inject_apply_failure_once, inject_spawn_failure_once, is_edge_repair_driver_active,
-    pause_entity_edge_repair, release_entity_edge_repair,
 };
 pub use entity_paths::{entity_memory_path, entity_path};
 pub use error::EntityStoreError;
@@ -93,9 +80,9 @@ pub use repair::{
     repair_entity_identities,
 };
 pub use retired::{
-    MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities, damaged_record_detail,
-    live_merge_successor, merged_away, merged_successor, parse_retired_entities,
-    read_retired_entities,
+    EntityEdgeAlias, MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities, damaged_record_detail,
+    entity_edge_aliases, live_merge_successor, merged_away, merged_successor,
+    parse_retired_entities, read_retired_entities,
 };
 pub use review_candidates::{
     EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,

@@ -26,6 +26,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - after you merge one facet into another, search and the agents you've given the remaining facet now find what was filed under the old one. an agent you'd given only the old facet needs the remaining one.
 - `journal facet doctor --fix` can now record facets you renamed, merged or deleted before this version, so material from a renamed or merged facet shows up under the facet it became. run it before you create new facets. `journal facet doctor --retire NAME --into FACET` does the same for a name the journal has no record of.
 - adding an entity could erase the aliases, emails and "this is you" mark of an existing entity when the added name matched that entity's original name, even with different punctuation. it now uses the existing entity and leaves its details alone. entities already affected aren't changed by this update.
+- after you merge two entities, their connections show together right away. before, connections were unavailable for up to about an hour after a merge while your journal updated them. connections filed under an entity you merged away, including merges from earlier versions, now count toward the entity it joined, unless an earlier version brought the merged-away entity back.
+- in a facet that held an entity you later merged into another, mentions of the entity it joined weren't counted as connections. they are now. mentions your journal already passed over are counted at its weekly connections rebuild, or sooner if you run `journal indexer --rebuild-edges`.
 
 ## [2.0.21] - 2026-09-26
 
