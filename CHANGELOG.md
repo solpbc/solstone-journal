@@ -6,6 +6,12 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.20] - 2026-09-26
+
+### Added
+
+- the journal now installs on windows 11 computers with Intel or AMD 64-bit processors, for your windows account, without needing administrator access. it can run beside the solstone app for windows. after installing, open a new terminal window and run `journal setup`. the local model isn't available on windows yet, so thinking needs your own model; transcription runs on your computer. this windows build is signed by sol pbc, and there's no signed evidence for it at transparency.solstone.app. this release is windows only; the journal on mac and linux doesn't change.
+
 ## [2.0.19] - 2026-09-26
 
 ### Added
