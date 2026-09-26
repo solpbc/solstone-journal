@@ -804,6 +804,8 @@ mod tests {
         );
     }
 
+    // Unix mode bits make the record unreadable; Windows has no equivalent here.
+    #[cfg(unix)]
     #[test]
     fn an_unreadable_record_is_left_where_it_is() {
         use std::os::unix::fs::PermissionsExt;
