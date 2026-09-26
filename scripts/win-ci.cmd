@@ -175,6 +175,8 @@ call :require_journal_test tests::config_strip_matches_python_control_whitespace
 call :require_journal_test tests::ensure_journal_dir_reports_non_directory_parent || exit /b 1
 echo === cargo test --locked (journal library) ===
 cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-journal --lib || exit /b 1
+echo === cargo test --locked (ingest resolve: the write path paired apps upload through) ===
+cargo test --manifest-path core\Cargo.toml --locked -p solstone-core-ingest-resolve --lib || exit /b 1
 
 if "%JOURNAL_WIN_CI_RUN_BACKUP%"=="1" (
   call :run_native_backup || exit /b 1
