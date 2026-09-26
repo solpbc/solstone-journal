@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: if you renamed, merged or deleted a facet, an agent you had limited to chosen facets could read a segment filed under both that facet and one the agent was allowed. those segments are now out of reach for agents limited to chosen facets. agents you let see your whole journal aren't affected.
 - merging or undoing entities no longer waits for connections to update. while they update, connections say they're unavailable instead of appearing empty, and your journal keeps processing.
 - when you accept a merge suggestion, it now stays marked accepted if the request disconnects after acceptance begins. other open suggestions for the merged-away entity are resolved.
 - merge previews now distinguish alias and email additions from other changes they can't show.
@@ -18,6 +19,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - if your journal can't delete a segment, transcripts now tells you and puts the segment back, instead of showing it as deleted. cancel says a segment was already deleted only when it was.
 - the delete dialog now says what it deletes: the segment's own audio, screen frames, transcript and the analysis stored with it. summaries made from it elsewhere in your journal aren't deleted and may still mention it.
 - after you erase location data, the list of what wasn't removed no longer shows an activity summary for a day that has none.
+- an entity you delete is now deleted even if your journal stops during the 10 seconds you have to cancel. the delete finishes when your journal starts again, unless your journal can't confirm it's still the entity you chose.
+- if your journal can't delete an entity, entities now tells you and shows it again, instead of showing it as deleted. cancel says an entity was already deleted only when it was.
 - if your journal's setup isn't finished, saving a provider key or model in thinking settings now takes you to setup instead of showing a JSON error.
 
 ## [2.0.18] - 2026-09-25

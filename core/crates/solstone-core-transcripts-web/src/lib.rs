@@ -21,7 +21,6 @@ mod assemble;
 mod attach;
 mod calendar;
 mod day;
-mod deferred;
 mod delete;
 mod media_removal;
 mod pending;
@@ -83,7 +82,7 @@ fn router_with_dependencies(
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
     supervisor_liveness: SupervisorLivenessProbe,
 ) -> Router {
-    let deferred_deletes = deferred::DeferredDeleteRegistry::new();
+    let deferred_deletes = solstone_core_serving::held_delete::Registry::new();
     delete::resume_pending(&journal_root, &deferred_deletes);
     Router::new()
         .route("/app/transcripts/", get(shell::root))
@@ -170,7 +169,7 @@ struct AppState {
     journal_root: Arc<PathBuf>,
     clock: Clock,
     shared_shell: fn() -> Response,
-    deferred_deletes: deferred::DeferredDeleteRegistry,
+    deferred_deletes: solstone_core_serving::held_delete::Registry,
     delete_window: Duration,
     sense_spawner: Arc<dyn reprocess::SenseSpawner>,
     supervisor_liveness: SupervisorLivenessProbe,

@@ -34,16 +34,19 @@ use solstone_core_indexer_query::{
     network_bound_detail, search,
 };
 
-use crate::deferred_delete::DeferredDeleteRegistry;
+use crate::deferred_delete::{DeleteRecord, EntityTarget, STORE as DELETES};
 use crate::model::{
     ATTENDANCE_KINDS, ENTITIES_COPY, ENTITY_TYPES, ReasonCode, compose_connections_horizon_note,
     refusal, refusal_with_status,
+};
+use solstone_core_serving::held_delete::{
+    DeleteState, Record, Registry, Settled, valid_pending_id,
 };
 
 #[derive(Clone)]
 struct RouterState {
     journal_root: PathBuf,
-    deferred_deletes: Arc<DeferredDeleteRegistry>,
+    deferred_deletes: Registry,
     delete_window: Duration,
 }
 
@@ -83,9 +86,21 @@ pub fn api_router_with_delete_window(
     journal_root: impl AsRef<Path>,
     delete_window: Duration,
 ) -> Router {
+    api_router_with_registry(journal_root, delete_window, Registry::new())
+}
+
+/// Every construction resumes the deletes a previous run confirmed and never
+/// finished.
+fn api_router_with_registry(
+    journal_root: impl AsRef<Path>,
+    delete_window: Duration,
+    deferred_deletes: Registry,
+) -> Router {
+    let journal_root = journal_root.as_ref().to_path_buf();
+    crate::deferred_delete::resume_pending(&journal_root, &deferred_deletes);
     api_router_from_state(Arc::new(RouterState {
-        journal_root: journal_root.as_ref().to_path_buf(),
-        deferred_deletes: Arc::new(DeferredDeleteRegistry::new()),
+        journal_root,
+        deferred_deletes,
         delete_window,
     }))
 }
@@ -128,6 +143,14 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
         .route(
             "/app/entities/api/cancel-delete/{pending_id}",
             post(cancel_deferred_delete_route),
+        )
+        .route(
+            "/app/entities/api/delete-status/{pending_id}",
+            get(delete_status_route),
+        )
+        .route(
+            "/app/entities/api/delete-outcomes",
+            get(delete_outcomes_route),
         )
         .route("/app/entities/api/merge", post(merge_route))
         .route(
@@ -261,14 +284,10 @@ pub(crate) fn router_with_delete_window(
 pub(crate) fn router_with_delete_window_and_registry(
     journal_root: impl AsRef<Path>,
     delete_window: Duration,
-    deferred_deletes: Arc<DeferredDeleteRegistry>,
+    deferred_deletes: Registry,
 ) -> Router {
-    api_router_from_state(Arc::new(RouterState {
-        journal_root: journal_root.as_ref().to_path_buf(),
-        deferred_deletes,
-        delete_window,
-    }))
-    .fallback(not_found_fallback)
+    api_router_with_registry(journal_root, delete_window, deferred_deletes)
+        .fallback(not_found_fallback)
 }
 
 #[cfg(test)]
@@ -2504,13 +2523,81 @@ fn random_pending_id() -> Option<String> {
     Some(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn unix_time_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
+enum Held {
+    Accepted(Box<DeleteRecord>, bool),
+    NotFound,
+    Principal,
+    ReadFailed,
+    NotSaved(String),
+}
+
+/// Write the delete down before answering: a delete the page reports as under
+/// way must survive the journal stopping inside its window.
+fn hold_delete(state: &RouterState, entity_id: &str) -> Held {
+    let root = &state.journal_root;
+    let (target, identity) = match crate::deferred_delete::current_target(root, entity_id) {
+        Ok(Some(found)) => found,
+        Ok(None) => return Held::NotFound,
+        Err(_) => return Held::ReadFailed,
+    };
+    if identity.get("is_principal") == Some(&Value::Bool(true)) {
+        return Held::Principal;
+    }
+    // One request at a time decides whether this entity already has a delete
+    // waiting, so two tabs or a double submit cannot both create one.
+    let Ok(_create) = DELETES.create_lock(root) else {
+        return Held::NotSaved("the delete lock could not be taken".to_owned());
+    };
+    // Only the same entity joins. A waiting delete of an earlier entity under
+    // this id is not the one the owner is deleting now: it is settled as kept
+    // before this one is written.
+    while let Some(stale) = DELETES.waiting_for(root, |waiting: &EntityTarget| {
+        waiting.entity_id == target.entity_id
+            && (waiting.entity_dir != target.entity_dir || waiting.created_at != target.created_at)
+    }) {
+        if !crate::deferred_delete::settle_superseded(root, &state.deferred_deletes, &stale) {
+            break;
+        }
+    }
+    // A delete of this entity whose removal has not started is joined, and
+    // re-armed if this process holds no timer for it: one a commit gave up on
+    // (a busy journal) runs again now rather than at the next start.
+    if let Some(existing) = DELETES.unremoved_for(root, |waiting: &EntityTarget| {
+        waiting.entity_id == target.entity_id
+            && waiting.entity_dir == target.entity_dir
+            && waiting.created_at == target.created_at
+    }) {
+        // A timer this process no longer holds is armed again rather than
+        // swallowed.
+        if !state.deferred_deletes.contains(&existing.pending_id) {
+            let remaining = existing
+                .commit_at_ms
+                .saturating_sub(chrono::Utc::now().timestamp_millis());
+            let delay = Duration::from_millis(u64::try_from(remaining).unwrap_or(0).max(1));
+            crate::deferred_delete::schedule(
+                &state.deferred_deletes,
+                root,
+                existing.pending_id.clone(),
+                delay,
+            );
+        }
+        return Held::Accepted(Box::new(existing), true);
+    }
+    let Some(pending_id) = random_pending_id() else {
+        return Held::NotSaved("unable to create a pending delete id".to_owned());
+    };
+    let record = Record::pending(pending_id, target, state.delete_window);
+    if let Err(error) = DELETES.write(root, &record) {
+        return Held::NotSaved(error);
+    }
+    let _ = crate::action_log::pending(root, entity_id, &record.pending_id);
+    crate::deferred_delete::schedule(
+        &state.deferred_deletes,
+        root,
+        record.pending_id.clone(),
+        state.delete_window,
+    );
+    Held::Accepted(Box::new(record), false)
 }
 
 async fn deferred_delete_journal_entity_route(
@@ -2521,55 +2608,43 @@ async fn deferred_delete_journal_entity_route(
     if let Some(response) = admitted(&b) {
         return response;
     }
-    let root = Arc::clone(&state);
-    let identity_id = entity_id.clone();
-    let identity = match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::read_entity_identity(&root, &identity_id)
-    })
-    .await
-    {
-        Ok(Ok(Some(identity))) => identity.value().clone(),
-        Ok(Ok(None)) => {
-            return refusal_with_status(
-                ReasonCode::EntityNotFound,
-                "entity not found",
-                StatusCode::BAD_REQUEST,
-            );
+    let held_state = Arc::clone(&state);
+    let held =
+        solstone_core_serving::seam::run_blocking(move || hold_delete(&held_state, &entity_id))
+            .await;
+    match held {
+        Ok(Held::Accepted(record, joined)) => {
+            // A joined request is shown what is left of the first one's window.
+            let ttl_seconds = if joined {
+                record.remaining_seconds() as f64
+            } else {
+                state.delete_window.as_secs_f64()
+            };
+            Json(json!({
+                "success": true,
+                "pending": record.pending_id,
+                "commit_at_ms": record.commit_at_ms.max(0),
+                "ttl_seconds": ttl_seconds,
+            }))
+            .into_response()
         }
-        _ => return refusal(ReasonCode::EntityOperationFailed, "entity read failed"),
-    };
-    if identity.get("is_principal") == Some(&Value::Bool(true)) {
-        return refusal(
+        Ok(Held::NotFound) => refusal_with_status(
+            ReasonCode::EntityNotFound,
+            "entity not found",
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(Held::Principal) => refusal(
             ReasonCode::PrincipalEntityProtected,
             "Cannot delete the principal (self) entity",
-        );
+        ),
+        Ok(Held::NotSaved(error)) => refusal(
+            ReasonCode::EntityDeleteNotSaved,
+            format!("the pending delete was not saved, so nothing was deleted: {error}"),
+        ),
+        Ok(Held::ReadFailed) | Err(_) => {
+            refusal(ReasonCode::EntityOperationFailed, "entity read failed")
+        }
     }
-    let Some(pending_id) = random_pending_id() else {
-        return refusal(
-            ReasonCode::EntityOperationFailed,
-            "unable to create a pending delete id",
-        );
-    };
-    let commit_at_ms = unix_time_ms().saturating_add(
-        state
-            .delete_window
-            .as_millis()
-            .try_into()
-            .unwrap_or(u64::MAX),
-    );
-    state.deferred_deletes.schedule(
-        state.journal_root.clone(),
-        entity_id,
-        pending_id.clone(),
-        state.delete_window,
-    );
-    Json(json!({
-        "success": true,
-        "pending": pending_id,
-        "commit_at_ms": commit_at_ms,
-        "ttl_seconds": state.delete_window.as_secs_f64(),
-    }))
-    .into_response()
 }
 
 async fn cancel_deferred_delete_route(
@@ -2580,24 +2655,101 @@ async fn cancel_deferred_delete_route(
     if let Some(response) = admitted(&b) {
         return response;
     }
-    if pending_id.len() != 32
-        || !pending_id.bytes().all(|byte| {
-            byte.is_ascii_digit() || (byte.is_ascii_lowercase() && byte.is_ascii_hexdigit())
-        })
+    // An id this journal never issued changes nothing, not even a lock file.
+    if !valid_pending_id(&pending_id)
+        || DELETES
+            .read::<EntityTarget>(&state.journal_root, &pending_id)
+            .is_none()
     {
         return refusal(
             ReasonCode::OperationNoLongerAvailable,
             "already committed or unknown",
         );
     }
-    if !state.deferred_deletes.cancel(&pending_id) {
-        return refusal(
-            ReasonCode::OperationNoLongerAvailable,
-            "already committed or unknown",
-        );
+    let root = state.journal_root.clone();
+    let id = pending_id.clone();
+    let settled = solstone_core_serving::seam::run_blocking(move || {
+        DELETES.settle_cancel::<EntityTarget>(&root, &id, || {
+            let _ = crate::action_log::cancelled(&root, &id);
+        })
+    })
+    .await;
+    let record = match settled {
+        Ok(Settled::Record(record)) => record,
+        Ok(Settled::Busy) => return delete_in_progress(),
+        Ok(Settled::Failed(error)) => return cancel_failed(&error),
+        Err(_) => return cancel_failed("the cancellation did not finish"),
+    };
+    // Too late to cancel: say what actually happened, never a guess.
+    match record.state {
+        DeleteState::Cancelled => {
+            // Only now drop this process's timer; the record already says
+            // cancelled, so a timer that fires first finds it and stops.
+            state.deferred_deletes.cancel(&pending_id);
+            Json(json!({"cancelled":pending_id})).into_response()
+        }
+        DeleteState::Deleted => refusal(ReasonCode::EntityAlreadyDeleted, "already committed"),
+        DeleteState::NotDeleted => refusal(
+            ReasonCode::EntityNotDeleted,
+            record.reason.unwrap_or_default(),
+        ),
+        DeleteState::Incomplete => refusal(
+            ReasonCode::EntityDeleteIncomplete,
+            record.reason.unwrap_or_default(),
+        ),
+        DeleteState::Pending => delete_in_progress(),
     }
-    let _ = crate::action_log::cancelled(&state.journal_root, &pending_id);
-    Json(json!({"cancelled":pending_id})).into_response()
+}
+
+fn delete_in_progress() -> Response {
+    refusal(ReasonCode::EntityDeleteInProgress, "past the cancel window")
+}
+
+/// Nothing was settled, so the record is still pending and its timer or the
+/// next start still runs it.
+fn cancel_failed(detail: &str) -> Response {
+    refusal(
+        ReasonCode::EntityDeleteNotCancelled,
+        format!("the cancellation was not saved, so the delete will still happen: {detail}"),
+    )
+}
+
+/// What became of one delete, for the page to report once the window passes.
+async fn delete_status_route(
+    Extension(b): Extension<AccessBasis>,
+    State(state): State<Arc<RouterState>>,
+    RoutePath(pending_id): RoutePath<String>,
+) -> Response {
+    if let Some(response) = admitted(&b) {
+        return response;
+    }
+    let record = valid_pending_id(&pending_id)
+        .then(|| DELETES.read::<EntityTarget>(&state.journal_root, &pending_id))
+        .flatten();
+    match record {
+        Some(record) => Json(crate::deferred_delete::status_body(&record)).into_response(),
+        None => refusal(ReasonCode::EntityDeleteUnknown, "unknown pending id"),
+    }
+}
+
+/// Deletes from the last few days that did not remove their entity, so a page
+/// opened after a restart can still tell the owner.
+async fn delete_outcomes_route(
+    Extension(b): Extension<AccessBasis>,
+    State(state): State<Arc<RouterState>>,
+) -> Response {
+    if let Some(response) = admitted(&b) {
+        return response;
+    }
+    let outcomes = DELETES
+        .unfinished_outcomes::<EntityTarget>(&state.journal_root, chrono::Utc::now())
+        .iter()
+        .filter(|record| {
+            record.state != DeleteState::Pending || crate::deferred_delete::resumable(record)
+        })
+        .map(crate::deferred_delete::status_body)
+        .collect::<Vec<_>>();
+    Json(json!({ "outcomes": outcomes })).into_response()
 }
 
 async fn generate_description_route(

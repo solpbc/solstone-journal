@@ -5050,9 +5050,13 @@ dependencies = [
 name = "solstone-core-serving"
 version = "2.0.18"
 dependencies = [
+ "chrono",
+ "serde",
  "serde_json",
  "solstone-core-entity",
  "solstone-core-facets",
+ "solstone-core-journal-io",
+ "tempfile",
  "tokio",
 ]
 
@@ -5671,6 +5675,7 @@ dependencies = [
  "solstone-core-npy",
  "solstone-core-processing-record",
  "solstone-core-retention",
+ "solstone-core-serving",
  "solstone-core-system",
  "solstone-core-system-health",
  "solstone-core-transcripts",

@@ -628,6 +628,11 @@ mod tests {
                 );
             }
         }
+        // One file per day, listed in no particular order: a run that spans
+        // midnight must still read its rows in the order they were written.
+        rows.sort_by(|left: &Value, right: &Value| {
+            left["timestamp"].as_str().cmp(&right["timestamp"].as_str())
+        });
         rows
     }
 

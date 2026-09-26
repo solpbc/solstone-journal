@@ -172,6 +172,7 @@ pub fn classify_source(
             // Per-segment derived prose follows its capture, so it is
             // Transcripts even when the assignment list is empty.
             let mut ids = BTreeSet::new();
+            let mut unresolved = false;
             for name in read_segment_facet_assignments(journal, path) {
                 match declarations.lookup(&name) {
                     FacetResolution::Id(id) => {
@@ -179,8 +180,15 @@ pub fn classify_source(
                     }
                     FacetResolution::Unreadable => return unclassified(path),
                     FacetResolution::Duplicate => return excluded(path),
-                    FacetResolution::Missing => {}
+                    FacetResolution::Missing => unresolved = true,
                 }
+            }
+            // Chosen-facet access requires every assigned facet. A name that no
+            // longer resolves (renamed, deleted, merged away or id-less) cannot be
+            // granted, so dropping it would shrink the requirement and widen reach;
+            // the material instead belongs to no chosen facet.
+            if unresolved {
+                ids.clear();
             }
             admitted(path, category, basis, ids.into_iter().collect())
         }
@@ -437,7 +445,7 @@ mod tests {
     }
 
     #[test]
-    fn segment_assignments_drop_missing_names_and_record_unreadable_declarations() {
+    fn segment_assignments_with_unresolved_names_belong_to_no_chosen_facet() {
         const ID: &str = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d";
         let root = reserve_temp_path("classification-assignments");
         let segment = root.join("chronicle/20260107/default/123456_300/talents");
@@ -471,6 +479,13 @@ mod tests {
         )
         .expect("assignment names");
         let declarations = FacetDeclarationSet::from_journal(&root).expect("declarations");
+        // An assigned name that does not resolve to a stable id empties the set, so
+        // a grant on `Work` alone never reaches material also assigned elsewhere.
+        let classified = classify_source(&root, path, None, &declarations);
+        assert!(classified.eligible && !classified.unclassified);
+        assert!(classified.facet_ids.is_empty());
+        std::fs::write(segment.join("facets.json"), r#"[{"facet":"Work"}]"#)
+            .expect("resolvable assignment");
         assert_eq!(
             classify_source(&root, path, None, &declarations).facet_ids,
             vec![ID]
