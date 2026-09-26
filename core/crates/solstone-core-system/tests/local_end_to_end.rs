@@ -8,13 +8,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use solstone_core_local::Platform;
 use solstone_core_system::provider_runtime::{
-    FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
-    LocalTruthSeam, ManagedProcess, ProviderName, ProviderRuntimeCoordinator, ProviderRuntimeNow,
-    ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode, ReconcileContext, RuntimeClock,
-    RuntimePhase, VecEventSink,
+    FileRuntimeStore, LocalHost, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared,
+    LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderName, ProviderRuntimeCoordinator,
+    ProviderRuntimeNow, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode,
+    ReconcileContext, RuntimeClock, RuntimePhase, VecEventSink,
 };
+use solstone_core_system::vulkan_observe::VulkanObservation;
 
 struct TestClock {
     millis: AtomicU64,
@@ -82,9 +82,12 @@ fn ac18_real_coordinator_seams_and_store() {
         shared.clone(),
         LocalTruthConfig {
             journal_path: journal.clone(),
-            platform: Platform::Darwin,
+            platform: LocalHost::Darwin,
             nvidia_probe: None,
-            vulkan_devices: vec![],
+            vulkan: VulkanObservation {
+                devices: vec![],
+                succeeded: true,
+            },
         },
     );
     let mut lifecycle = LocalLifecycleSeam::with_timeouts(

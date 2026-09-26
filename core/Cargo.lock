@@ -5381,12 +5381,14 @@ dependencies = [
  "getrandom 0.3.4",
  "libc",
  "log",
+ "minisign",
  "nix",
  "serde",
  "serde_json",
  "sha2 0.10.9",
  "solstone-core-assets",
  "solstone-core-brain",
+ "solstone-core-distribution",
  "solstone-core-facets",
  "solstone-core-format",
  "solstone-core-indexer",
@@ -5702,6 +5704,8 @@ dependencies = [
  "libloading 0.8.9",
  "serde",
  "serde_json",
+ "solstone-core-distribution",
+ "solstone-core-win-dll-load",
 ]
 
 [[package]]

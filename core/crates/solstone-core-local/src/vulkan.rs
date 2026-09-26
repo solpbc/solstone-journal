@@ -3,11 +3,8 @@
 
 //! Vulkan device discovery for the local provider.
 //!
-//! The production probe is a separately packaged glibc sibling helper. This
-//! wave makes the Rust probe shippable so a later wave can select it: Rust
-//! `detect_gpus`/`gpu_probe_ok` have no external Rust caller today, and Python
-//! `local_vulkan.py` still owns production probing, so owner-visible behaviour
-//! does not change here.
+//! This module owns the Unix sibling probe and the process-lifetime snapshot.
+//! Production callers observe Vulkan topology through `solstone-core-system`.
 
 use std::ffi::OsString;
 use std::fs;
@@ -130,14 +127,19 @@ pub fn enumerate_gpus(config: &VulkanProbeConfig) -> (Vec<VulkanDevice>, bool) {
     }
 }
 
+/// Return the memoized device list and child-probe status from one snapshot clone.
+pub fn vulkan_probe_snapshot() -> (Vec<VulkanDevice>, bool) {
+    cached_probe()
+}
+
 /// Return the memoized device list, cloning the one shared probe snapshot.
 pub fn detect_gpus() -> Vec<VulkanDevice> {
-    cached_probe().0
+    vulkan_probe_snapshot().0
 }
 
 /// Return the memoized child-probe completion status from the same snapshot.
 pub fn gpu_probe_ok() -> bool {
-    cached_probe().1
+    vulkan_probe_snapshot().1
 }
 
 fn cached_probe() -> (Vec<VulkanDevice>, bool) {

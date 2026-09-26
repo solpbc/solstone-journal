@@ -59,6 +59,9 @@ pub const WINDOWS_RCLONE_WORKER: &str = "bin/rclone.exe";
 pub const WINDOWS_RFDETR_WORKER: &str = "bin/rfdetr-cli.exe";
 pub const WINDOWS_RFDETR_MODEL: &str =
     "lib/solstone_journal_models/assets/rfdetr/rfdetr-nano-f16.gguf";
+/// Vulkan observation uses the signed probe executable and loader DLL.
+pub const WINDOWS_VULKAN_PROBE: &str = "bin/solstone-core-vulkan-probe.exe";
+pub const WINDOWS_VULKAN_LOADER: &str = "bin/vulkan-1.dll";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -218,6 +221,20 @@ impl VerifiedWindowsPayload {
     pub fn parakeet_model_path(&self) -> Result<PathBuf, WindowsPayloadError> {
         self.declared_path(WINDOWS_PARAKEET_MODEL).ok_or_else(|| {
             WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_PARAKEET_MODEL)
+        })
+    }
+
+    /// Return the Vulkan probe executable only when the verified package declared it.
+    pub fn vulkan_probe_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_VULKAN_PROBE).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_VULKAN_PROBE)
+        })
+    }
+
+    /// Return the Vulkan loader DLL only when the verified package declared it.
+    pub fn vulkan_loader_path(&self) -> Result<PathBuf, WindowsPayloadError> {
+        self.declared_path(WINDOWS_VULKAN_LOADER).ok_or_else(|| {
+            WindowsPayloadError::new(WindowsPayloadRefusal::MissingMember, WINDOWS_VULKAN_LOADER)
         })
     }
 }

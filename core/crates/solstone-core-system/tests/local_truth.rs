@@ -2,14 +2,16 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::json;
+use solstone_core_local::VulkanDevice;
 use solstone_core_local::install::{archive, manifest, pins};
 use solstone_core_local::nvidia::NvidiaProbe;
 use solstone_core_local::plan::{PlanOutcome, plan};
-use solstone_core_local::{Platform, VulkanDevice};
 use solstone_core_system::provider_runtime::{
-    LocalLaunchConfig, LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ProviderFence,
-    ProviderName, ProviderRuntimeState, ReasonCode, RuntimePhase, TruthObservationSeam,
+    LocalHost, LocalLaunchConfig, LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam,
+    ProviderFence, ProviderName, ProviderRuntimeState, ReasonCode, RuntimePhase,
+    TruthObservationSeam,
 };
+use solstone_core_system::vulkan_observe::VulkanObservation;
 
 fn fence(attempt: u32) -> ProviderFence {
     ProviderFence {
@@ -68,7 +70,16 @@ fn observe(
     solstone_core_system::provider_runtime::ProviderTruthObservation,
     Arc<LocalRuntimeShared>,
 ) {
-    let (observation, shared, _) = observe_with(root, Platform::Darwin, None, Vec::new(), attempt);
+    let (observation, shared, _) = observe_with(
+        root,
+        LocalHost::Darwin,
+        None,
+        VulkanObservation {
+            devices: Vec::new(),
+            succeeded: true,
+        },
+        attempt,
+    );
     (observation, shared)
 }
 
@@ -144,9 +155,9 @@ fn write_linux_runtime_tree(root: &Path, unflattened: bool) {
 
 fn observe_with(
     root: &Path,
-    platform: Platform,
+    platform: LocalHost,
     nvidia_probe: Option<NvidiaProbe>,
-    vulkan_devices: Vec<VulkanDevice>,
+    vulkan: VulkanObservation,
     attempt: u32,
 ) -> (
     solstone_core_system::provider_runtime::ProviderTruthObservation,
@@ -160,7 +171,7 @@ fn observe_with(
             journal_path: root.into(),
             platform,
             nvidia_probe,
-            vulkan_devices,
+            vulkan,
         },
     );
     let state = ProviderRuntimeState::new(ProviderName::Local);
@@ -250,9 +261,12 @@ fn ac1_linux_cloud_model_starts_local_vulkan_and_sets_ld_library_path() {
     };
     let (observation, shared, state) = observe_with(
         &root,
-        Platform::Linux,
+        LocalHost::Linux,
         Some(undetected_probe()),
-        vec![hardware],
+        VulkanObservation {
+            devices: vec![hardware],
+            succeeded: true,
+        },
         1,
     );
     assert_eq!(
@@ -304,8 +318,16 @@ fn ac4_software_first_prefers_intel_over_llvmpipe() {
             vram_mib: 8_192,
         },
     ];
-    let (observation, shared, _) =
-        observe_with(&root, Platform::Linux, Some(undetected_probe()), devices, 1);
+    let (observation, shared, _) = observe_with(
+        &root,
+        LocalHost::Linux,
+        Some(undetected_probe()),
+        VulkanObservation {
+            devices,
+            succeeded: true,
+        },
+        1,
+    );
     assert_eq!(observation.phase, RuntimePhase::Starting);
     assert_eq!(
         observation.reason_code.as_ref().map(ReasonCode::as_str),
@@ -334,9 +356,12 @@ fn ac9_manifest_missing_maps_to_manifest_missing_reason() {
     let root = var_tmp("ac9-manifest-missing");
     let (observation, _, _) = observe_with(
         &root,
-        Platform::Linux,
+        LocalHost::Linux,
         Some(undetected_probe()),
-        Vec::new(),
+        VulkanObservation {
+            devices: Vec::new(),
+            succeeded: true,
+        },
         1,
     );
     assert_eq!(observation.phase, RuntimePhase::ArtifactNotReady);
@@ -345,5 +370,44 @@ fn ac9_manifest_missing_maps_to_manifest_missing_reason() {
         Some("manifest-missing"),
         "inspect reason_code=manifest_missing must map to runtime reason manifest-missing"
     );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
+    let root = var_tmp("windows-host-tag-blocks");
+    let hardware = VulkanDevice {
+        index: 0,
+        name: "NVIDIA RTX".into(),
+        device_type: Some(1),
+        vram_mib: 16_384,
+    };
+    for obs in [
+        VulkanObservation {
+            devices: vec![hardware],
+            succeeded: true,
+        },
+        VulkanObservation {
+            devices: Vec::new(),
+            succeeded: true,
+        },
+        VulkanObservation {
+            devices: Vec::new(),
+            succeeded: false,
+        },
+    ] {
+        let (observation, shared, _) =
+            observe_with(&root, LocalHost::Windows, Some(undetected_probe()), obs, 1);
+        assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+        assert_eq!(
+            observation.reason_code.as_ref().map(ReasonCode::as_str),
+            Some("platform-unsupported")
+        );
+        assert!(
+            shared
+                .launch_request_for(&observation.desired_fingerprint)
+                .is_none()
+        );
+    }
     let _ = std::fs::remove_dir_all(root);
 }

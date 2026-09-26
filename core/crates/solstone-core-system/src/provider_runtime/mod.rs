@@ -27,8 +27,8 @@ pub use admission::{
 pub use events::{ProviderRuntimeEvent, ProviderRuntimeEventSink, VecEventSink};
 pub use gate::ProviderStartupGate;
 pub use launch::{
-    LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam, LocalTruthConfig,
-    LocalTruthSeam, ReservedPort,
+    LocalHost, LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam, LocalProbeSeam,
+    LocalTruthConfig, LocalTruthSeam, ReservedPort,
 };
 pub use model::*;
 pub use parakeet::{

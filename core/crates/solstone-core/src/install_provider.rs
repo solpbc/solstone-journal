@@ -16,8 +16,8 @@ use solstone_core_local::install::{
     lease, local_backend_choice, metal_candidate, pins, readiness, status,
 };
 use solstone_core_local::{
-    LocalEndpointResolution, MemorySource, detect_gpus, discrete_hardware_gpu_count, gpu_probe_ok,
-    is_discrete, probe_nvidia_gpu, resolve_local_endpoint, select_device,
+    LocalEndpointResolution, MemorySource, discrete_hardware_gpu_count, is_discrete,
+    probe_nvidia_gpu, resolve_local_endpoint, select_device,
 };
 use solstone_core_segment::{SupervisorRefusal, is_solstone_up, require_solstone_with};
 use solstone_core_system::provider_runtime::decide_parakeet_auto_placement;
@@ -506,8 +506,34 @@ fn build_local_report(
     os_name: &str,
     arch: &str,
 ) -> Result<fit_report::FitReport, String> {
-    let nvidia_probe = probe_nvidia_gpu();
-    let devices = detect_gpus();
+    build_local_report_with(
+        journal,
+        os_name,
+        arch,
+        probe_nvidia_gpu,
+        solstone_core_system::vulkan_observe::observe_vulkan_devices,
+    )
+}
+
+fn build_local_report_with<N, V>(
+    journal: &Path,
+    os_name: &str,
+    arch: &str,
+    nvidia_probe_fn: N,
+    vulkan_observe_fn: V,
+) -> Result<fit_report::FitReport, String>
+where
+    N: FnOnce() -> solstone_core_local::nvidia::NvidiaProbe,
+    V: FnOnce() -> solstone_core_system::vulkan_observe::VulkanObservation,
+{
+    let is_windows = os_name.eq_ignore_ascii_case("windows");
+    let nvidia_probe = if is_windows {
+        solstone_core_local::nvidia::NvidiaProbe::absent()
+    } else {
+        nvidia_probe_fn()
+    };
+    let vulkan_obs = vulkan_observe_fn();
+    let devices = vulkan_obs.devices;
     let (override_index, brain_lane_active) =
         local_override_and_brain_lane(journal).map_err(|error| error.to_string())?;
     let selected = select_device(&devices, override_index);
@@ -532,7 +558,7 @@ fn build_local_report(
         available_memory_bytes(),
         &nvidia_probe,
         &choice,
-        gpu_probe_ok(),
+        vulkan_obs.succeeded,
         &devices,
         override_index,
         force_cpu,
@@ -1805,6 +1831,75 @@ mod tests {
             if path.is_dir() {
                 assert_no_temporary_files(&path);
             }
+        }
+    }
+
+    #[test]
+    fn build_local_report_windows_platform_skips_nvidia_and_calls_vulkan_once() {
+        let temp = tempfile::tempdir().unwrap();
+        let hardware = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "RTX".into(),
+            device_type: Some(1),
+            vram_mib: 16384,
+        };
+        for obs in [
+            solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: vec![hardware],
+                succeeded: true,
+            },
+            solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+            solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: false,
+            },
+        ] {
+            let mut nvidia_calls = 0;
+            let mut vulkan_calls = 0;
+            let report = build_local_report_with(
+                temp.path(),
+                "windows",
+                "x86_64",
+                || {
+                    nvidia_calls += 1;
+                    solstone_core_local::nvidia::NvidiaProbe {
+                        schema: "solstone-local-nvidia-probe-v1".into(),
+                        detected: true,
+                        gpu_index: Some(0),
+                        gpu_name: Some("RTX".into()),
+                        compute_cap: None,
+                        arch: None,
+                        driver_cuda_major: None,
+                        vram_mib: Some(16384),
+                        unified_memory_mib: None,
+                        probe_error: None,
+                    }
+                },
+                || {
+                    vulkan_calls += 1;
+                    obs
+                },
+            )
+            .expect("local fit report on windows");
+
+            assert_eq!(nvidia_calls, 0);
+            assert_eq!(vulkan_calls, 1);
+            let platform_check = report
+                .checks
+                .iter()
+                .find(|c| c.name == "platform")
+                .expect("platform check");
+            assert_eq!(
+                platform_check.severity,
+                solstone_core_local::install::fit_report::FitSeverity::Blocked
+            );
+            assert!(
+                !report.checks.iter().any(|c| c.name == "gpu"),
+                "Windows local fit report must not contain a gpu check"
+            );
         }
     }
 }

@@ -19,7 +19,6 @@ use std::thread;
 use serde_json::{Map, Value, json};
 use solstone_core_brain::{CanonicalInput, canonical_json, fingerprint_sha256};
 use solstone_core_journal_config::read_journal_config;
-use solstone_core_local::detect_gpus;
 use solstone_core_local::endpoint::{LocalEndpointResolution, resolve_local_endpoint};
 #[cfg(windows)]
 use solstone_core_local::install::parakeet_readiness::verified_windows_parakeet_package;
@@ -78,13 +77,37 @@ struct ParakeetLaunchMetadata {
 
 impl ParakeetTruthSeam {
     pub fn new(shared: Arc<ParakeetRuntimeShared>, journal_path: impl Into<PathBuf>) -> Self {
+        Self::new_with(
+            shared,
+            journal_path,
+            std::env::consts::OS,
+            std::env::consts::ARCH,
+            crate::vulkan_observe::observe_vulkan_devices,
+        )
+    }
+
+    pub fn new_with<V>(
+        shared: Arc<ParakeetRuntimeShared>,
+        journal_path: impl Into<PathBuf>,
+        platform: &str,
+        machine: &str,
+        vulkan_observe: V,
+    ) -> Self
+    where
+        V: FnOnce() -> crate::vulkan_observe::VulkanObservation,
+    {
+        let vulkan_devices = if platform.eq_ignore_ascii_case("windows") {
+            Vec::new()
+        } else {
+            vulkan_observe().devices
+        };
         Self::with_config(
             shared,
             ParakeetTruthConfig {
                 journal_path: journal_path.into(),
-                platform: std::env::consts::OS.to_owned(),
-                machine: std::env::consts::ARCH.to_owned(),
-                vulkan_devices: detect_gpus(),
+                platform: platform.to_owned(),
+                machine: machine.to_owned(),
+                vulkan_devices,
             },
         )
     }
@@ -92,6 +115,11 @@ impl ParakeetTruthSeam {
     pub fn with_config(shared: Arc<ParakeetRuntimeShared>, config: ParakeetTruthConfig) -> Self {
         Self { shared, config }
     }
+}
+
+#[allow(dead_code)]
+pub fn windows_parakeet_placement() -> (&'static str, &'static str) {
+    ("cpu", "cpu")
 }
 
 impl TruthObservationSeam for ParakeetTruthSeam {
@@ -467,8 +495,9 @@ fn observe_windows_parakeet_truth(
     else {
         return unavailable_observation("truth-observation-failed");
     };
+    let (backend, placement) = windows_parakeet_placement();
     let launch = build_parakeet_launch_config(
-        "cpu".to_owned(),
+        backend.to_owned(),
         BTreeMap::from([(
             PARAKEET_ATT_CONTEXT_ENV.to_owned(),
             PARAKEET_ATT_CONTEXT.to_owned(),
@@ -491,8 +520,8 @@ fn observe_windows_parakeet_truth(
         has_plan: true,
         boot_required: true,
         detail: Some(json!({
-            "backend": "cpu",
-            "placement": "cpu",
+            "backend": backend,
+            "placement": placement,
             "stt_admission_latch": latch.to_json(),
             "target_fingerprint_json": fingerprint_json,
         })),
@@ -879,5 +908,22 @@ mod tests {
         );
         assert_ne!(launch.binary_path, PathBuf::from("parakeet-server"));
         assert_ne!(launch.model_path, PathBuf::from("parakeet"));
+    }
+
+    #[test]
+    fn windows_parakeet_skips_vulkan_observation_and_forces_cpu_placement() {
+        let mut vulkan_called = 0;
+        let shared = Arc::new(ParakeetRuntimeShared::default());
+        let seam =
+            ParakeetTruthSeam::new_with(shared, "/fixture-journal", "windows", "x86_64", || {
+                vulkan_called += 1;
+                crate::vulkan_observe::VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: true,
+                }
+            });
+        assert_eq!(vulkan_called, 0);
+        assert!(seam.config.vulkan_devices.is_empty());
+        assert_eq!(windows_parakeet_placement(), ("cpu", "cpu"));
     }
 }

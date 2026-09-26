@@ -128,6 +128,21 @@ impl NvidiaProbe {
         }
     }
 
+    pub fn absent() -> Self {
+        Self {
+            schema: NVIDIA_PROBE_SCHEMA.to_string(),
+            detected: false,
+            gpu_index: None,
+            gpu_name: None,
+            compute_cap: None,
+            arch: None,
+            driver_cuda_major: None,
+            vram_mib: None,
+            unified_memory_mib: None,
+            probe_error: None,
+        }
+    }
+
     fn undetected(probe_error: String) -> Self {
         Self {
             schema: NVIDIA_PROBE_SCHEMA.to_string(),

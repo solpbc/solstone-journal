@@ -18,7 +18,6 @@ use solstone_core_cli::SupervisorOptions;
 use solstone_core_journal_config::read_direct_door_port;
 use solstone_core_journal_config_write::persist_direct_door_port;
 use solstone_core_journal_io::{JsonWriteOptions, write_json};
-use solstone_core_local::plan::Platform;
 use solstone_core_system::cap::{DEFAULT_TASK_MAX_RUNTIME, DefaultCapResolver};
 use solstone_core_system::direct_door::{
     DirectDoorPublishResult, initialize_direct_door, peek_direct_door_generation,
@@ -1554,9 +1553,12 @@ pub(crate) async fn boot_and_tick(
             LocalTruthConfig {
                 journal_path: journal.clone(),
                 // The fixture path uses native Metal instead of host NVIDIA hardware.
-                platform: Platform::Darwin,
+                platform: solstone_core_system::provider_runtime::LocalHost::Darwin,
                 nvidia_probe: None,
-                vulkan_devices: Vec::new(),
+                vulkan: solstone_core_system::vulkan_observe::VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: false,
+                },
             },
         )
     } else {

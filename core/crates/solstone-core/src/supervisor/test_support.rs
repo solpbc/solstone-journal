@@ -16,13 +16,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use solstone_core_local::plan::Platform;
 use solstone_core_system::provider_runtime::{
-    FileRuntimeStore, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared, LocalTruthConfig,
-    LocalTruthSeam, ParakeetLifecycleSeam, ParakeetProbeSeam, ParakeetRuntimeShared,
-    ParakeetTruthConfig, ParakeetTruthSeam, ProviderName, ProviderRuntimeCoordinator,
-    ProviderRuntimeState, RuntimeClock, SystemRuntimeClock,
+    FileRuntimeStore, LocalHost, LocalLifecycleSeam, LocalProbeSeam, LocalRuntimeShared,
+    LocalTruthConfig, LocalTruthSeam, ParakeetLifecycleSeam, ParakeetProbeSeam,
+    ParakeetRuntimeShared, ParakeetTruthConfig, ParakeetTruthSeam, ProviderName,
+    ProviderRuntimeCoordinator, ProviderRuntimeState, RuntimeClock, SystemRuntimeClock,
 };
+use solstone_core_system::vulkan_observe::VulkanObservation;
 
 use super::runtime::{LocalProvider, ParakeetProvider};
 
@@ -40,12 +40,15 @@ pub(super) fn stopped_providers(journal: &Path) -> (LocalProvider, ParakeetProvi
             LocalTruthConfig {
                 journal_path: journal.to_path_buf(),
                 platform: if cfg!(target_os = "macos") {
-                    Platform::Darwin
+                    LocalHost::Darwin
                 } else {
-                    Platform::Linux
+                    LocalHost::Linux
                 },
                 nvidia_probe: None,
-                vulkan_devices: Vec::new(),
+                vulkan: VulkanObservation {
+                    devices: Vec::new(),
+                    succeeded: false,
+                },
             },
         ),
         lifecycle: LocalLifecycleSeam::new(local_shared.clone(), clock.clone())

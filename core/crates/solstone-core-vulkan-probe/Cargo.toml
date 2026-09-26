@@ -18,5 +18,13 @@ libloading.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+solstone-core-distribution.workspace = true
+solstone-core-win-dll-load.workspace = true
+
+[dev-dependencies]
+solstone-core-distribution = { workspace = true }
+solstone-core-win-dll-load = { workspace = true }
+
 [lints.rust]
 unsafe_code = "allow"

@@ -8,15 +8,15 @@ use std::thread;
 use std::time::Duration;
 
 use serde_json::json;
-use solstone_core_local::Platform;
 use solstone_core_local::nvidia::{ArtifactTrust, NvidiaProbe};
 use solstone_core_local::plan::VulkanDevice;
 use solstone_core_system::provider_runtime::{
-    LaunchOutcomeStatus, LifecycleSeam, LocalLaunchCommon, LocalLaunchConfig, LocalLifecycleSeam,
-    LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ManagedProcess, ProviderFence,
-    ProviderName, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode, ReservedPort,
-    RuntimeClock, RuntimePhase, StopCleanupStatus, TruthObservationSeam,
+    LaunchOutcomeStatus, LifecycleSeam, LocalHost, LocalLaunchCommon, LocalLaunchConfig,
+    LocalLifecycleSeam, LocalRuntimeShared, LocalTruthConfig, LocalTruthSeam, ManagedProcess,
+    ProviderFence, ProviderName, ProviderRuntimeState, ProviderStopCleanupRequest, ReasonCode,
+    ReservedPort, RuntimeClock, RuntimePhase, StopCleanupStatus, TruthObservationSeam,
 };
+use solstone_core_system::vulkan_observe::VulkanObservation;
 
 struct TestClock {
     millis: AtomicU64,
@@ -115,9 +115,12 @@ fn installed_metal(journal: &Path, model_marker: &str) -> LocalLaunchConfig {
         shared.clone(),
         LocalTruthConfig {
             journal_path: journal.to_path_buf(),
-            platform: Platform::Darwin,
+            platform: LocalHost::Darwin,
             nvidia_probe: None,
-            vulkan_devices: vec![],
+            vulkan: VulkanObservation {
+                devices: vec![],
+                succeeded: true,
+            },
         },
     );
     let truth_fence = fence(0);

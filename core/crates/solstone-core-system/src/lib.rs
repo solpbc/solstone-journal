@@ -28,6 +28,7 @@ pub mod schedule;
 #[cfg(any(unix, windows))]
 pub mod status_wire;
 pub mod stt_backend_choice;
+pub mod vulkan_observe;
 
 #[cfg(any(unix, windows))]
 pub use solstone_core_journal_config::no_thinking_engine_chosen;

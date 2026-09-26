@@ -301,7 +301,32 @@ fn render_nodes_present_but_inaccessible(root: &Path) -> bool {
 /// Gather the same real host state used by `journal check` for all native consumers.
 #[must_use]
 pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
-    let nvidia = solstone_core_local::probe_nvidia_gpu();
+    gather_host_inputs_with(
+        journal,
+        version,
+        std::env::consts::OS,
+        solstone_core_local::probe_nvidia_gpu,
+        solstone_core_system::vulkan_observe::observe_vulkan_devices,
+    )
+}
+
+#[must_use]
+pub fn gather_host_inputs_with<N, V>(
+    journal: &Path,
+    version: &str,
+    os: &str,
+    nvidia_fn: N,
+    vulkan_fn: V,
+) -> CheckInputs
+where
+    N: FnOnce() -> solstone_core_local::nvidia::NvidiaProbe,
+    V: FnOnce() -> solstone_core_system::vulkan_observe::VulkanObservation,
+{
+    let nvidia = if os.eq_ignore_ascii_case("windows") {
+        solstone_core_local::nvidia::NvidiaProbe::absent()
+    } else {
+        nvidia_fn()
+    };
     let (tiering_memory_mib, memory_source) = if let Some(vram) = nvidia.vram_mib {
         (Some(vram), "nvidia_vram")
     } else if let Some(unified) = nvidia.unified_memory_mib {
@@ -309,6 +334,7 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
     } else {
         (None, "unavailable")
     };
+    let vulkan_obs = vulkan_fn();
     CheckInputs {
         platform: host_platform(),
         memory: memory(),
@@ -323,8 +349,8 @@ pub fn gather_host_inputs(journal: &Path, version: &str) -> CheckInputs {
             memory_source: memory_source.into(),
         },
         vulkan: VulkanInput {
-            probe_ok: solstone_core_local::gpu_probe_ok(),
-            devices: solstone_core_local::detect_gpus(),
+            probe_ok: vulkan_obs.succeeded,
+            devices: vulkan_obs.devices,
         },
         render_nodes_present_but_inaccessible: render_nodes_present_but_inaccessible(Path::new(
             "/dev/dri",
@@ -1411,5 +1437,74 @@ mod tests {
             report.checks[1].detail,
             "Vulkan GPU Test GPU with 6 GB; a model runs on your GPU; transcription runs on your CPU on this machine"
         );
+    }
+
+    #[test]
+    fn gather_host_inputs_with_windows_platform_skips_nvidia_and_calls_vulkan_once() {
+        let hardware = VulkanDevice {
+            index: 0,
+            name: "RTX".into(),
+            device_type: Some(1),
+            vram_mib: 16384,
+        };
+        for obs in [
+            solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: vec![hardware],
+                succeeded: true,
+            },
+            solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+            solstone_core_system::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: false,
+            },
+        ] {
+            let mut nvidia_calls = 0;
+            let mut vulkan_calls = 0;
+            let expected_obs = obs.clone();
+            let inputs = gather_host_inputs_with(
+                Path::new("/journal"),
+                "1.0.0",
+                "windows",
+                || {
+                    nvidia_calls += 1;
+                    solstone_core_local::nvidia::NvidiaProbe {
+                        schema: "solstone-local-nvidia-probe-v1".into(),
+                        detected: true,
+                        gpu_index: Some(0),
+                        gpu_name: Some("RTX".into()),
+                        compute_cap: None,
+                        arch: None,
+                        driver_cuda_major: None,
+                        vram_mib: Some(16384),
+                        unified_memory_mib: None,
+                        probe_error: None,
+                    }
+                },
+                || {
+                    vulkan_calls += 1;
+                    obs
+                },
+            );
+            assert_eq!(nvidia_calls, 0);
+            assert_eq!(vulkan_calls, 1);
+            assert!(!inputs.nvidia.detected);
+            assert_eq!(inputs.vulkan.probe_ok, expected_obs.succeeded);
+            assert_eq!(inputs.vulkan.devices, expected_obs.devices);
+
+            let mut windows_inputs = inputs;
+            windows_inputs.platform = PlatformInput {
+                os: "Windows".into(),
+                os_version: "10.0".into(),
+                arch: "x86_64".into(),
+            };
+            let report = build_check_report(&windows_inputs);
+            assert!(
+                !report.checks.iter().any(|c| c.name == "gpu"),
+                "Windows check report must render no gpu row"
+            );
+        }
     }
 }

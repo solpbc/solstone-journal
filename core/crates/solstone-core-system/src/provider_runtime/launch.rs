@@ -414,12 +414,19 @@ fn probe_unavailable() -> ProviderProbeOutcome {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LocalHost {
+    Linux,
+    Darwin,
+    Windows,
+}
+
 #[derive(Clone)]
 pub struct LocalTruthConfig {
     pub journal_path: PathBuf,
-    pub platform: Platform,
+    pub platform: LocalHost,
     pub nvidia_probe: Option<NvidiaProbe>,
-    pub vulkan_devices: Vec<VulkanDevice>,
+    pub vulkan: crate::vulkan_observe::VulkanObservation,
 }
 
 pub struct LocalTruthSeam {
@@ -433,13 +440,15 @@ impl LocalTruthSeam {
             shared,
             LocalTruthConfig {
                 journal_path: journal_path.into(),
-                platform: if cfg!(target_os = "macos") {
-                    Platform::Darwin
+                platform: if cfg!(windows) {
+                    LocalHost::Windows
+                } else if cfg!(target_os = "macos") {
+                    LocalHost::Darwin
                 } else {
-                    Platform::Linux
+                    LocalHost::Linux
                 },
                 nvidia_probe: None,
-                vulkan_devices: solstone_core_local::detect_gpus(),
+                vulkan: crate::vulkan_observe::observe_vulkan_devices(),
             },
         )
     }
@@ -485,6 +494,15 @@ fn observe_truth(
             false,
         );
     }
+    if config.platform == LocalHost::Windows {
+        return truth(
+            super::model::RuntimePhase::HostBlocked,
+            "platform-unsupported",
+            None,
+            false,
+            false,
+        );
+    }
     let configured_model_id = journal_config
         .get("providers")
         .and_then(Value::as_object)
@@ -498,7 +516,7 @@ fn observe_truth(
     // Bundled macOS inference has one shipped model. Read journals written by
     // the retired MLX runtime, but never let their old selection relabel the
     // native 4B artifacts or desired fingerprint.
-    let model_id = if config.platform == Platform::Darwin {
+    let model_id = if config.platform == LocalHost::Darwin {
         "local/qwen3.5-4b".to_owned()
     } else if pins::model_identity(&configured_model_id).is_some() {
         configured_model_id
@@ -507,7 +525,7 @@ fn observe_truth(
     };
     let probe = config.nvidia_probe.clone().unwrap_or_else(probe_nvidia_gpu);
     let readiness = match config.platform {
-        Platform::Linux => inspect_local_present(Map::from_iter([
+        LocalHost::Linux => inspect_local_present(Map::from_iter([
             (
                 "journal".into(),
                 Value::String(config.journal_path.display().to_string()),
@@ -518,7 +536,7 @@ fn observe_truth(
                 serde_json::to_value(&probe).expect("NvidiaProbe serialization"),
             ),
         ])),
-        Platform::Darwin => {
+        LocalHost::Darwin => {
             let input = Map::from_iter([
                 (
                     "journal".into(),
@@ -538,6 +556,7 @@ fn observe_truth(
                 },
             )
         }
+        LocalHost::Windows => unreachable!(),
     };
     let Some(object) = readiness.as_object() else {
         return truth_unavailable();
@@ -644,12 +663,12 @@ fn observe_truth(
         mmproj_path: projector_path,
     };
     let launch = match (config.platform, backend) {
-        (Platform::Darwin, "metal") => LocalLaunchConfig::Metal {
+        (LocalHost::Darwin, "metal") => LocalLaunchConfig::Metal {
             common,
             binary_path,
             unified_memory_mib: None,
         },
-        (Platform::Linux, "cuda") => LocalLaunchConfig::Cuda {
+        (LocalHost::Linux, "cuda") => LocalLaunchConfig::Cuda {
             common,
             binary_path,
             lib_dir: None,
@@ -662,8 +681,8 @@ fn observe_truth(
             cuda_artifact_trust: ArtifactTrust::Trusted,
             cuda_persisted_installed_cuda_target: false,
         },
-        (Platform::Linux, "vulkan") => {
-            let Some(device) = solstone_core_local::select_device(&config.vulkan_devices, None)
+        (LocalHost::Linux, "vulkan") => {
+            let Some(device) = solstone_core_local::select_device(&config.vulkan.devices, None)
             else {
                 return truth(
                     super::model::RuntimePhase::HostBlocked,
@@ -676,7 +695,7 @@ fn observe_truth(
             LocalLaunchConfig::Vulkan {
                 common,
                 binary_path,
-                devices: config.vulkan_devices.clone(),
+                devices: config.vulkan.devices.clone(),
                 selected_gpu_index: device.index,
                 selected_gpu_name: device.name,
                 selected_vram_mib: device.vram_mib,
@@ -1091,5 +1110,52 @@ mod tests {
             shared.observe_current_process(&[], Instant::now()),
             ProcessObservation::ConfirmedAbsent,
         );
+    }
+
+    #[test]
+    fn windows_host_tag_blocks_local_launch_for_all_vulkan_observations() {
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("config")).unwrap();
+        std::fs::write(root.path().join("config/journal.json"), b"{}").unwrap();
+
+        let hardware = solstone_core_local::VulkanDevice {
+            index: 0,
+            name: "NVIDIA RTX".into(),
+            device_type: Some(1),
+            vram_mib: 16_384,
+        };
+        for obs in [
+            crate::vulkan_observe::VulkanObservation {
+                devices: vec![hardware],
+                succeeded: true,
+            },
+            crate::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: true,
+            },
+            crate::vulkan_observe::VulkanObservation {
+                devices: Vec::new(),
+                succeeded: false,
+            },
+        ] {
+            let shared = LocalRuntimeShared::default();
+            let config = LocalTruthConfig {
+                journal_path: root.path().to_path_buf(),
+                platform: LocalHost::Windows,
+                nvidia_probe: Some(solstone_core_local::nvidia::NvidiaProbe::absent()),
+                vulkan: obs,
+            };
+            let observation = observe_truth(&shared, &config);
+            assert_eq!(observation.phase, RuntimePhase::HostBlocked);
+            assert_eq!(
+                observation.reason_code.as_ref().map(ReasonCode::as_str),
+                Some("platform-unsupported")
+            );
+            assert!(
+                shared
+                    .launch_request_for(&observation.desired_fingerprint)
+                    .is_none()
+            );
+        }
     }
 }
