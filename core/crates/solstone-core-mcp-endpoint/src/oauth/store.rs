@@ -94,6 +94,7 @@ pub(crate) struct RegisteredClient {
 pub(crate) struct PendingAuthorization {
     pub(crate) client: RegisteredClient,
     pub(crate) redirect_uri: String,
+    pub(crate) pairing_verified: bool,
 }
 
 /// Non-secret metadata suitable for listing registered OAuth clients.
@@ -260,6 +261,12 @@ struct StoredPending {
     permission: Option<ReadPermission>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     generation: Option<u64>,
+    /// Set while a transaction's pairing code has been checked and its
+    /// requester is choosing facets. An older binary rejects the whole oauth
+    /// file as malformed while any transaction is in that step, which lasts
+    /// at most one transaction lifetime.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pairing_verified: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -560,6 +567,7 @@ impl OAuthStore {
                 code_expires_at: None,
                 permission: None,
                 generation,
+                pairing_verified: false,
             });
             Ok(transaction_id)
         })
@@ -601,105 +609,80 @@ impl OAuthStore {
         binding: &super::RuntimeBinding,
         random: &dyn RandomSource,
     ) -> Result<IssuedAuthorization, OAuthStoreError> {
-        let presented = canonicalize_pairing_code(pairing_code);
-        let presented_digest = presented
-            .as_ref()
-            .map(|code| sha256_digest(code.as_bytes()));
+        let presented = presented_pairing_digest(pairing_code);
         let code_bytes = random_bytes(random)?;
-        let authorization_code = URL_SAFE_NO_PAD.encode(code_bytes);
-        let authorization_verifier = sha256_b64(&code_bytes);
         self.mutate(|store, now| {
-            let index = store
-                .pending
-                .iter()
-                .position(|pending| pending.transaction_id == transaction_id)
-                .ok_or(OAuthStoreError::TransactionNotFound)?;
-            if store.pending[index].resource != binding.canonical()
-                || store.pending[index].generation != binding.stored_grant_generation()
-            {
+            let index = open_pending_index(store, transaction_id, binding, now)?;
+            if store.pending[index].pairing_verified {
                 return Err(OAuthStoreError::TransactionNotFound);
             }
-            if store.pending[index].authorization_code_verifier.is_none()
-                && store.pending[index].expires_at <= now
-            {
-                store.pending.remove(index);
-                return Err(OAuthStoreError::TransactionExpired);
+            consume_pairing_code(store, index, presented, binding)?;
+            Ok(issue_authorization(
+                &mut store.pending[index],
+                permission,
+                &code_bytes,
+                now,
+            ))
+        })
+    }
+
+    /// Consume the pairing code without issuing anything yet, so the requester
+    /// can be shown the journal's facets only after proving they hold the code.
+    ///
+    /// The transaction gets a fresh identifier: the one on the page served
+    /// before the code was checked can no longer finish it.
+    pub(crate) fn verify_pairing(
+        &self,
+        transaction_id: &str,
+        pairing_code: &str,
+        binding: &super::RuntimeBinding,
+    ) -> Result<String, OAuthStoreError> {
+        self.verify_pairing_with_random(transaction_id, pairing_code, binding, &SystemRandomSource)
+    }
+
+    fn verify_pairing_with_random(
+        &self,
+        transaction_id: &str,
+        pairing_code: &str,
+        binding: &super::RuntimeBinding,
+        random: &dyn RandomSource,
+    ) -> Result<String, OAuthStoreError> {
+        let presented = presented_pairing_digest(pairing_code);
+        let verified_transaction_id = random_b64(random)?;
+        self.mutate(|store, now| {
+            let index = open_pending_index(store, transaction_id, binding, now)?;
+            if store.pending[index].pairing_verified {
+                return Err(OAuthStoreError::TransactionNotFound);
             }
-            if store.pending[index].authorization_code_verifier.is_some() {
-                return Err(OAuthStoreError::InvalidToken);
-            }
-            if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
-                store.pending.remove(index);
-                return Err(OAuthStoreError::TransactionExhausted);
-            }
-            let Some(pairing) = store.pairing.as_ref() else {
-                return Err(OAuthStoreError::NoActivePairing);
-            };
-            if pairing.locked {
-                return Err(OAuthStoreError::PairingLocked);
-            }
-            let verifier =
-                decode_b64_32(&pairing.verifier).ok_or_else(|| OAuthStoreError::Malformed {
-                    path: PathBuf::from(OAUTH_FILE),
-                })?;
-            let door_matches = match pairing.door.as_deref() {
-                None => match binding {
-                    super::RuntimeBinding::Unbound { .. } => true,
-                    super::RuntimeBinding::Bound { canonical } => {
-                        canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                    }
-                    super::RuntimeBinding::Byo { .. } => false,
-                },
-                Some(required) => match binding {
-                    super::RuntimeBinding::Byo {
-                        canonical,
-                        generation,
-                    } => {
-                        (required == "byo" || canonical == required)
-                            && pairing.config_generation == Some(*generation)
-                    }
-                    super::RuntimeBinding::Bound { canonical } => {
-                        if required == "lan"
-                            || required == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                        {
-                            canonical == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                        } else if required == "local" {
-                            canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
-                        } else {
-                            canonical == required
-                        }
-                    }
-                    super::RuntimeBinding::Unbound { canonical } => {
-                        if required == "local" {
-                            true
-                        } else {
-                            canonical == required
-                        }
-                    }
-                },
-            };
-            let matches = presented_digest
-                .is_some_and(|digest| bool::from(digest.ct_eq(&verifier)))
-                && door_matches;
-            if !matches {
-                store.pending[index].failure_count += 1;
-                if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
-                    store.pending.remove(index);
-                }
-                return Err(OAuthStoreError::PairingMismatch);
-            }
-            store.pairing_generation = store.pairing_generation.saturating_add(1);
-            store.pairing = None;
+            consume_pairing_code(store, index, presented, binding)?;
             let pending = &mut store.pending[index];
-            pending.authorization_code_verifier = Some(authorization_verifier);
-            pending.code_expires_at = Some(now + Duration::seconds(AUTH_CODE_TTL_SECS));
-            pending.permission = permission;
-            Ok(IssuedAuthorization {
-                code: authorization_code,
-                redirect_uri: pending.redirect_uri.clone(),
-                state: pending.state.clone(),
-                issuer: pending.issuer.clone(),
-            })
+            pending.transaction_id = verified_transaction_id.clone();
+            pending.pairing_verified = true;
+            pending.expires_at = now + Duration::seconds(PENDING_TRANSACTION_TTL_SECS);
+            Ok(verified_transaction_id)
+        })
+    }
+
+    /// Issue the authorization code for a transaction whose pairing code was
+    /// already verified.
+    pub(crate) fn complete_verified_pairing(
+        &self,
+        transaction_id: &str,
+        permission: ReadPermission,
+        binding: &super::RuntimeBinding,
+    ) -> Result<IssuedAuthorization, OAuthStoreError> {
+        let code_bytes = random_bytes(&SystemRandomSource)?;
+        self.mutate(|store, now| {
+            let index = open_pending_index(store, transaction_id, binding, now)?;
+            if !store.pending[index].pairing_verified {
+                return Err(OAuthStoreError::TransactionNotFound);
+            }
+            Ok(issue_authorization(
+                &mut store.pending[index],
+                Some(permission),
+                &code_bytes,
+                now,
+            ))
         })
     }
 
@@ -1045,13 +1028,14 @@ impl OAuthStore {
     pub(crate) fn pending_authorization(
         &self,
         transaction_id: &str,
+        binding: &super::RuntimeBinding,
     ) -> Result<Option<PendingAuthorization>, OAuthStoreError> {
         let store = self.read_store()?;
-        let Some(pending) = store
-            .pending
-            .iter()
-            .find(|pending| pending.transaction_id == transaction_id)
-        else {
+        let Some(pending) = store.pending.iter().find(|pending| {
+            pending.transaction_id == transaction_id
+                && pending.resource == binding.canonical()
+                && pending.generation == binding.stored_grant_generation()
+        }) else {
             return Ok(None);
         };
         let client = store
@@ -1062,6 +1046,7 @@ impl OAuthStore {
         Ok(Some(PendingAuthorization {
             client: registered_from(client),
             redirect_uri: pending.redirect_uri.clone(),
+            pairing_verified: pending.pairing_verified,
         }))
     }
 
@@ -1285,6 +1270,124 @@ impl OAuthStore {
             },
         )
         .map_err(OAuthStoreError::Write)
+    }
+}
+
+fn presented_pairing_digest(pairing_code: &str) -> Option<[u8; TOKEN_BYTES]> {
+    canonicalize_pairing_code(pairing_code).map(|code| sha256_digest(code.as_bytes()))
+}
+
+/// Find a transaction this runtime may finish that has not issued a code yet.
+fn open_pending_index(
+    store: &mut OAuthStoreFile,
+    transaction_id: &str,
+    binding: &super::RuntimeBinding,
+    now: DateTime<Utc>,
+) -> Result<usize, OAuthStoreError> {
+    let index = store
+        .pending
+        .iter()
+        .position(|pending| pending.transaction_id == transaction_id)
+        .ok_or(OAuthStoreError::TransactionNotFound)?;
+    if store.pending[index].resource != binding.canonical()
+        || store.pending[index].generation != binding.stored_grant_generation()
+    {
+        return Err(OAuthStoreError::TransactionNotFound);
+    }
+    if store.pending[index].authorization_code_verifier.is_none()
+        && store.pending[index].expires_at <= now
+    {
+        store.pending.remove(index);
+        return Err(OAuthStoreError::TransactionExpired);
+    }
+    if store.pending[index].authorization_code_verifier.is_some() {
+        return Err(OAuthStoreError::InvalidToken);
+    }
+    if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
+        store.pending.remove(index);
+        return Err(OAuthStoreError::TransactionExhausted);
+    }
+    Ok(index)
+}
+
+/// Check the presented code against the live pairing code and the door it was
+/// made for, then consume it. A mismatch counts against the transaction.
+fn consume_pairing_code(
+    store: &mut OAuthStoreFile,
+    index: usize,
+    presented_digest: Option<[u8; TOKEN_BYTES]>,
+    binding: &super::RuntimeBinding,
+) -> Result<(), OAuthStoreError> {
+    let Some(pairing) = store.pairing.as_ref() else {
+        return Err(OAuthStoreError::NoActivePairing);
+    };
+    if pairing.locked {
+        return Err(OAuthStoreError::PairingLocked);
+    }
+    let verifier = decode_b64_32(&pairing.verifier).ok_or_else(|| OAuthStoreError::Malformed {
+        path: PathBuf::from(OAUTH_FILE),
+    })?;
+    let door_matches = match pairing.door.as_deref() {
+        None => match binding {
+            super::RuntimeBinding::Unbound { .. } => true,
+            super::RuntimeBinding::Bound { canonical } => {
+                canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+            }
+            super::RuntimeBinding::Byo { .. } => false,
+        },
+        Some(required) => match binding {
+            super::RuntimeBinding::Byo {
+                canonical,
+                generation,
+            } => {
+                (required == "byo" || canonical == required)
+                    && pairing.config_generation == Some(*generation)
+            }
+            super::RuntimeBinding::Bound { canonical } => {
+                if required == "lan"
+                    || required == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                {
+                    canonical == solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                } else if required == "local" {
+                    canonical != solstone_core_journal_config::MCP_LAN_DOOR_RESOURCE
+                } else {
+                    canonical == required
+                }
+            }
+            // A code made for the local door works only there.
+            super::RuntimeBinding::Unbound { canonical } => {
+                required != "local" && canonical == required
+            }
+        },
+    };
+    let matches =
+        presented_digest.is_some_and(|digest| bool::from(digest.ct_eq(&verifier))) && door_matches;
+    if !matches {
+        store.pending[index].failure_count += 1;
+        if store.pending[index].failure_count >= MAX_TRANSACTION_FAILURES {
+            store.pending.remove(index);
+        }
+        return Err(OAuthStoreError::PairingMismatch);
+    }
+    store.pairing_generation = store.pairing_generation.saturating_add(1);
+    store.pairing = None;
+    Ok(())
+}
+
+fn issue_authorization(
+    pending: &mut StoredPending,
+    permission: Option<ReadPermission>,
+    code_bytes: &[u8; TOKEN_BYTES],
+    now: DateTime<Utc>,
+) -> IssuedAuthorization {
+    pending.authorization_code_verifier = Some(sha256_b64(code_bytes));
+    pending.code_expires_at = Some(now + Duration::seconds(AUTH_CODE_TTL_SECS));
+    pending.permission = permission;
+    IssuedAuthorization {
+        code: URL_SAFE_NO_PAD.encode(code_bytes),
+        redirect_uri: pending.redirect_uri.clone(),
+        state: pending.state.clone(),
+        issuer: pending.issuer.clone(),
     }
 }
 
@@ -1588,6 +1691,29 @@ mod tests {
         store
             .complete_pairing(&transaction, &second.code, &test_binding())
             .expect("fresh code is not locked");
+    }
+
+    #[test]
+    fn a_code_made_for_the_local_door_is_refused_at_solstone_me() {
+        let journal = journal_root();
+        let store = store_in(&journal);
+        let client = seed_client(&store, "192.0.2.1");
+        let pairing = store
+            .generate_pairing_code_with_door(Some("local"))
+            .unwrap();
+        let transaction = open_transaction(&store, &client, "192.0.2.1");
+        assert!(matches!(
+            store.complete_pairing(&transaction, &pairing.code, &test_binding()),
+            Err(OAuthStoreError::PairingMismatch)
+        ));
+
+        let local = RuntimeBinding::Bound {
+            canonical: "https://mcp.test/mcp".to_owned(),
+        };
+        let transaction = open_transaction(&store, &client, "192.0.2.1");
+        store
+            .complete_pairing(&transaction, &pairing.code, &local)
+            .expect("the local door accepts its own code");
     }
 
     #[test]
