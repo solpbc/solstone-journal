@@ -330,6 +330,43 @@ mod tests {
     }
 
     #[test]
+    fn load_content_identity_refuses_all_tombstone_shapes() {
+        // W3C Ed25519 standard test vector for did:key
+        let bodies: [&[u8]; 8] = [
+            br#"{"reason":"owner_segment_delete","cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            br#"{"reason":"owner_segment_delete","cid":"did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"}"#,
+            br#"{"reason":"owner_segment_delete","cid":"unknown"}"#,
+            br#"{"reason":"owner_segment_delete","cid":"owner"}"#,
+            br#"{"reason":"owner_location_data_delete","cid":"unknown"}"#,
+            br#"{"reason":"retention_policy","cid":"unknown"}"#,
+            b"",
+            b"not-json",
+        ];
+
+        for body_bytes in bodies {
+            let temporary = TempDir::new_in("/var/tmp");
+            let seg = segment(temporary.path());
+            fs::write(seg.path.join("audio.flac"), b"legacy media").unwrap();
+            fs::write(seg.path.join("tombstone.json"), body_bytes).unwrap();
+            assert!(matches!(
+                load_content_identity(&seg, &no_proof),
+                Err(SegmentError::Tombstoned { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn load_content_identity_succeeds_for_media_without_tombstone() {
+        let temporary = TempDir::new_in("/var/tmp");
+        let seg = segment(temporary.path());
+        fs::write(seg.path.join("audio.flac"), b"legacy media").unwrap();
+        let identity = load_content_identity(&seg, &no_proof).unwrap();
+        let name = ContentName::new("audio.flac").unwrap();
+        let file = identity.files().get(&name).unwrap();
+        assert_eq!(file.evidence, ContentIdentityEvidence::Present);
+    }
+
+    #[test]
     fn legacy_media_scan_hashes_present_media() {
         let temporary = TempDir::new();
         let segment = segment(temporary.path());

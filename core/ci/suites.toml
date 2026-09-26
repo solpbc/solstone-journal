@@ -1049,18 +1049,6 @@ default_full = false
 runtime = "none"
 
 [[package_suites]]
-id = "package::solstone-core-clients-web"
-package = "solstone-core-clients-web"
-set = "component"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
-default_full = false
-runtime = "none"
-
-[[package_suites]]
 id = "package::solstone-core-offload"
 package = "solstone-core-offload"
 set = "component"
@@ -3568,34 +3556,6 @@ areas = ["system"]
 platforms = ["linux", "macos"]
 prerequisites = ["cargo-cache"]
 timeout = "standard"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-clients-web::client_source_delete"
-package = "solstone-core-clients-web"
-target = "client_source_delete"
-set = "component"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
-default_full = true
-required_features = []
-runtime = "none"
-
-[[suites]]
-id = "solstone-core-clients-web::location_mutation_ordering"
-package = "solstone-core-clients-web"
-target = "location_mutation_ordering"
-set = "component"
-areas = ["observation"]
-platforms = ["linux", "macos"]
-prerequisites = ["cargo-cache"]
-timeout = "standard"
-serial_group = "local-services"
 default_full = true
 required_features = []
 runtime = "none"

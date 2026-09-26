@@ -40,6 +40,8 @@ Segments arriving from a device. This is the **ingest envelope** — a wire shap
 
 ⚠ The audited client bundle and the plate's declared operations are **different sets**. The plate publishes **9** `observer.*` operations; the bundle carries **5** of them and adds **3** belonging to other plates, so the capture clients contractually depend on chat, pairing and callosum. The **4** it omits are `deleteSource` — the owner's location-data delete, the covenant-critical one — plus `health`, `ingestManifest` and `ingestManifestDay`.
 
+> **2026-09-26.** `deleteSource` is not served.
+
 ⚠ **A device may own several streams, so the `did` alone cannot select one.** A watch app relaying through a phone presents the **phone's** certificate and therefore the phone's `did`; no other signal in the envelope separates them. The envelope carries a **`source`** — a short, device-chosen, stable sub-stream discriminator, empty for the device's primary capture. ⛔ It is not identity and nothing authenticates with it: the journal resolves `(did, source)` to a stream it already owns. A client can only say *which of its own* streams this is.
 
 ### `S:segment-media:journal-segment`

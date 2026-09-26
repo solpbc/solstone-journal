@@ -1327,6 +1327,7 @@ mod tests {
     use solstone_core_callosum::{CallosumSocketConnection, CallosumSocketServer};
     use solstone_core_convey_http::identity::{AccessBasis, Carrier, LinkedDeviceCid};
     use solstone_core_convey_http::serve::{mux_builder, serve_connection};
+    use tempfile::TempDir;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tower::ServiceExt;
 
@@ -2209,6 +2210,84 @@ mod tests {
         let (status, body) = call_upload(&app, kept, "audio.flac", b"other").await;
         assert_eq!(status, StatusCode::OK, "{body}");
         assert_eq!(body["status"], "ok");
+    }
+
+    #[tokio::test]
+    async fn tombstone_presence_refuses_resend_across_all_tombstone_shapes() {
+        let dir = TempDir::new_in("/var/tmp").unwrap();
+        seed_authorized_client(dir.path(), CID_A);
+        seed_authorized_client(dir.path(), CID_B);
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+
+        // W3C Ed25519 standard test vector for did:key
+        let bodies: [&[u8]; 8] = [
+            br#"{"reason":"owner_segment_delete","cid":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#,
+            br#"{"reason":"owner_segment_delete","cid":"did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"}"#,
+            br#"{"reason":"owner_segment_delete","cid":"unknown"}"#,
+            br#"{"reason":"owner_segment_delete","cid":"owner"}"#,
+            br#"{"reason":"owner_location_data_delete","cid":"unknown"}"#,
+            br#"{"reason":"retention_policy","cid":"unknown"}"#,
+            b"",
+            b"not-json",
+        ];
+
+        for (idx, body_bytes) in bodies.iter().enumerate() {
+            let seg_key = format!("120000_{}", idx + 1);
+            let envelope =
+                json!({"day":"20260804","segment":seg_key,"files":[{"submitted":"audio.flac"}]});
+            let sound_bytes = format!("sound-{}", idx + 1).into_bytes();
+
+            let (status, body) =
+                call_upload(&app, envelope.clone(), "audio.flac", &sound_bytes).await;
+            assert_eq!(status, StatusCode::OK, "{body}");
+            assert_eq!(body["status"], "ok");
+
+            let seg_dir = root.join("chronicle/20260804/device").join(&seg_key);
+            let audio_path = seg_dir.join("audio.flac");
+            let tombstone_path = seg_dir.join("tombstone.json");
+
+            fs::write(&tombstone_path, body_bytes).unwrap();
+
+            let snap_audio = fs::read(&audio_path).unwrap();
+            let snap_tombstone = fs::read(&tombstone_path).unwrap();
+
+            let (status, body) = call_upload(&app, envelope, "audio.flac", &sound_bytes).await;
+            assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+            assert_eq!(body["status"], "failed");
+            assert_eq!(body["reason_code"], "segment_removed");
+
+            assert_eq!(fs::read(&audio_path).unwrap(), snap_audio);
+            assert_eq!(fs::read(&tombstone_path).unwrap(), snap_tombstone);
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_upload_retains_media_without_tombstone() {
+        let dir = TempDir::new_in("/var/tmp").unwrap();
+        seed_authorized_client(dir.path(), CID_A);
+        seed_authorized_client(dir.path(), CID_B);
+        let root = dir.path().to_path_buf();
+        let app = router(&root);
+
+        let envelope =
+            json!({"day":"20260804","segment":"130000_1","files":[{"submitted":"audio.flac"}]});
+        let (status, body) = call_upload(&app, envelope.clone(), "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "ok");
+
+        let seg_dir = root.join("chronicle/20260804/device/130000_1");
+        let audio_path = seg_dir.join("audio.flac");
+        assert_eq!(fs::read(&audio_path).unwrap(), b"sound");
+
+        let (status, body) = call_upload(&app, envelope, "audio.flac", b"sound").await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["status"], "duplicate");
+        assert_ne!(body["status"], "collision");
+        assert_eq!(body["existing_segment"], "130000_1");
+        assert_eq!(body["file_descriptors"][0]["disposition"], "already_held");
+
+        assert_eq!(fs::read(&audio_path).unwrap(), b"sound");
     }
 
     #[tokio::test]

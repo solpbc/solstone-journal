@@ -290,11 +290,6 @@ fn load_workspace_files() -> Vec<(String, PathBuf, String)> {
 
 fn expected_consumers() -> BTreeSet<(String, String)> {
     [
-        // location source delete; filters source == "location" then deletes by name
-        (
-            "solstone-core-clients-web/src/delete.rs",
-            "unlink_location_stream",
-        ),
         // import publication; unbound stream names are import-created
         ("solstone-core-import/src/publish.rs", "advance_stream"),
         // operator CLI move seam; name comes from the relocation request
@@ -312,7 +307,7 @@ fn expected_consumers() -> BTreeSet<(String, String)> {
             "solstone-core-segment/src/stream_record.rs",
             "advance_unbound_stream",
         ),
-        // name-keyed unlink of streams/<name>.json
+        // name-keyed unlink of streams/<name>.json; no production caller today
         (
             "solstone-core-segment/src/stream_record.rs",
             "delete_stream_record",

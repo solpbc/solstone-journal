@@ -3748,30 +3748,6 @@ name = "solstone-core-cli-boundary"
 version = "2.0.21"
 
 [[package]]
-name = "solstone-core-clients-web"
-version = "2.0.21"
-dependencies = [
- "axum",
- "chrono",
- "log",
- "rusqlite",
- "serde",
- "serde_json",
- "solstone-core-callosum",
- "solstone-core-convey-http",
- "solstone-core-convey-shell",
- "solstone-core-facets",
- "solstone-core-indexer-store",
- "solstone-core-ingest",
- "solstone-core-journal-io",
- "solstone-core-retention",
- "solstone-core-segment",
- "tempfile",
- "tokio",
- "tower",
-]
-
-[[package]]
 name = "solstone-core-cogitate"
 version = "2.0.21"
 dependencies = [
@@ -3891,7 +3867,6 @@ dependencies = [
  "solstone-core-backup-web",
  "solstone-core-brain",
  "solstone-core-callosum",
- "solstone-core-clients-web",
  "solstone-core-convey-body",
  "solstone-core-convey-http",
  "solstone-core-entities",

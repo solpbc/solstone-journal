@@ -14,8 +14,12 @@ pub(crate) struct TempDir {
 
 impl TempDir {
     pub(crate) fn new() -> Self {
+        Self::new_in(std::env::temp_dir())
+    }
+
+    pub(crate) fn new_in(base: impl AsRef<Path>) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
-        let path = std::env::temp_dir().join(format!(
+        let path = base.as_ref().join(format!(
             "solstone-core-segment-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)

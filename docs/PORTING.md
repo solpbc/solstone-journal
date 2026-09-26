@@ -30,9 +30,8 @@ mistaken for workspace-wide iOS coverage:
   `solstone-core-journal-cli`, `solstone-core-sol-link`,
   `solstone-core-generate-wire`, `solstone-core-serving`
 - journal-host HTTP and browser surfaces: `solstone-core-convey-http`,
-  `solstone-core-convey-shell`, `solstone-core-clients-web`,
-  `solstone-core-settings-web`, `solstone-core-facets-web`,
-  `solstone-core-convey-body`
+  `solstone-core-convey-shell`, `solstone-core-settings-web`,
+  `solstone-core-facets-web`, `solstone-core-convey-body`
 - journal-host storage, ingest, import, and rebuild paths:
   `solstone-core-indexer-store`, `solstone-core-indexer-query`,
   `solstone-core-entity`, `solstone-core-facets`, `solstone-core-segment`,

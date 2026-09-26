@@ -692,6 +692,8 @@ The logic that decides what raw media is retained, and what logs are retained fo
 
 ⛔ **Retired with it:** the *partial* source-delete implementation and both of its branches · the location-only vs mixed *disposition*. The owner-facing source-delete **route** remains. A mixed classifier returns **only** as a receipt counter (cost disclosure) and never selects a disposition. The reserved-name set feeds that disclosure and the ingest upload guard, not a partial delete.
 
+> **2026-09-26.** The source-delete route is retired and is not served. Owner-directed deletion is segment deletion.
+
 ### Two units of removal, and the plate serves both
 
 🔴 **Ruled 2026-08-05: § 1 binds owner-directed deletion ONLY, and the plate keeps two units.** Reading § 1 as binding every removal makes § 2 above contradictory — handing retention a VAD-empty raw would destroy the terminal-empty marker `transcribe` had just written, along with the segment's transcript and every derived output. The distinguishing property is **what the owner asked for**, not what is on disk.

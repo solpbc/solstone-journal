@@ -25,8 +25,8 @@
 //! irreversible work to the door module.
 //!
 //! The `marks` register stores removal proposals. The retention CLI records
-//! staged failures onto it; in-process door callers (transcripts-web,
-//! clients-web) report failures in their own receipts and do not write marks.
+//! staged failures onto it; the in-process door caller (transcripts-web)
+//! reports failures in its own receipt and does not write marks.
 
 #![deny(clippy::disallowed_methods, clippy::disallowed_types)]
 // A panic destroys an outcome as surely as a lost return does, and the workspace lint

@@ -68,9 +68,7 @@ rather than from a bearer key, header, URL, or request body. Linked-device
 self-description (`GET`/`PUT` `/app/network/api/clients/self` and its `/app/link` twin)
 admits only `AccessBasis::LinkedDevice` and derives the target CID from the connection.
 Owner label overrides (`PATCH` `/app/network/api/clients/{cid}/label` and the `/app/link` twin)
-admit `AccessBasis::Localhost` and `AccessBasis::LinkedDevice`. Source deletion
-(`DELETE` `/app/devices/source/location`) admits those same two bases; its source path selects
-an allowed source but does not alter authorization or the journal-wide deletion scope.
+admit `AccessBasis::Localhost` and `AccessBasis::LinkedDevice`.
 
 **Loopback provenance.** Every loopback request is the owner
 (`AccessBasis::Localhost`), so the loopback listener also checks where a request

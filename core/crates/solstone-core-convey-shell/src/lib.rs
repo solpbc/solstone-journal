@@ -114,6 +114,8 @@ mod assets;
 pub mod authorization_gate;
 mod body;
 mod clients;
+#[cfg(test)]
+mod devices_source_retired;
 #[cfg(feature = "host")]
 mod door;
 mod entities;
@@ -776,7 +778,6 @@ fn router_with_hosted_parent(
                 .to_owned();
             solstone_core_push::api_router(journal_root.clone(), push_portal)
         })
-        .merge(solstone_core_clients_web::router(journal_root.clone()))
         .route("/app/speakers/", get(speakers::shell))
         .route("/app/speakers/{day}", get(speakers::shell_for_day))
         .route("/app/speakers/workspace", get(speakers::workspace))

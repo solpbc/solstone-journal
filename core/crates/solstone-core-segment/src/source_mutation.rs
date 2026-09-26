@@ -13,8 +13,9 @@ const SOURCE_MUTATION_LOCK_SUFFIX: &str = ".mutation";
 
 /// Hold the persistent mutation lock for one capture source.
 ///
-/// For location-mutation operations, this is the outermost lock: segment,
-/// retention, and stream-record locks are acquired inside it, never before it.
+/// Ingest's `write_envelope` is the only production holder. It acquires this
+/// lock outermost: segment, retention, and stream-record locks are acquired
+/// inside it, never before it.
 pub fn hold_source_mutation(journal_root: &Path, source: &str) -> Result<FileLock, LockError> {
     hold_source_mutation_with_options(journal_root, source, LockOptions::default())
 }
