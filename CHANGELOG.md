@@ -8,6 +8,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- security fix: if you renamed, merged or deleted a facet, an agent you had limited to chosen facets could read a segment filed under both that facet and one the agent was allowed. those segments are now out of reach for agents limited to chosen facets. agents you let see your whole journal aren't affected.
 - merging or undoing entities no longer waits for connections to update. while they update, connections say they're unavailable instead of appearing empty, and your journal keeps processing.
 - when you accept a merge suggestion, it now stays marked accepted if the request disconnects after acceptance begins. other open suggestions for the merged-away entity are resolved.
 - merge previews now distinguish alias and email additions from other changes they can't show.
