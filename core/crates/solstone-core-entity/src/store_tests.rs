@@ -378,7 +378,7 @@ fn history_guards_preserve_required_messages() {
         guard_restore_does_not_cross_merge(&merge_events[0], &merge_events)
             .unwrap_err()
             .to_string(),
-        "generic identity restore cannot target a recorded merge event; use recorded-merge undo instead"
+        "that version is a merge, and a merge can't be restored or undone"
     );
 
     write_json(
@@ -396,7 +396,7 @@ fn history_guards_preserve_required_messages() {
         guard_restore_does_not_cross_merge(&later_events[0], &later_events)
             .unwrap_err()
             .to_string(),
-        "generic identity restore cannot cross a recorded merge event; use recorded-merge undo instead"
+        "that version is from before a merge, and a merge can't be undone"
     );
 
     write_text(temporary.path(), "entities/not_object/entity.json", "[]");

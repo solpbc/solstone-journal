@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
-// authority-source-sha256: 520ef0385d40f2bc24a17f3536c278d74d03890a6d9ecd5793a59dfc117b5bc1
+// authority-source-sha256: 0c09bdc48b4f63faea495378f4ac46d992b5fb9d1b3a66beb258861b70dbc706
 
 use crate::aggregate::{Handler, InventoryEntry};
 use crate::resident::ResidentHandler;
@@ -244,7 +244,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "command",
         help: "Preview or accept one recorded entity merge candidate.",
         authority_path: "core/native-sol/apps/entities/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"source_slug\",\"nargs\":1,\"options\":[\"source_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"target_slug\",\"nargs\":1,\"options\":[\"target_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"facet\",\"nargs\":1,\"options\":[\"--facet\",\"-f\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[\"--no-commit\"],\"type\":\"boolean\"}]",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"source_slug\",\"nargs\":1,\"options\":[\"source_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"target_slug\",\"nargs\":1,\"options\":[\"target_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"option\",\"multiple\":false,\"name\":\"facet\",\"nargs\":1,\"options\":[\"--facet\",\"-f\"],\"required\":false,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[\"--no-commit\"],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
         operation_id: "entities.accept-merge-candidate",
         method: Some("POST"),
@@ -379,7 +379,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "command",
         help: "Plan or commit a journal-entity merge.",
         authority_path: "core/native-sol/apps/entities/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"source_slug\",\"nargs\":1,\"options\":[\"source_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"target_slug\",\"nargs\":1,\"options\":[\"target_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[\"--no-commit\"],\"type\":\"boolean\"},{\"count\":false,\"default\":true,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"keep_source_as_aka\",\"nargs\":1,\"options\":[\"--keep-source-as-aka\"],\"required\":false,\"secondary\":[\"--no-keep-source-as-aka\"],\"type\":\"boolean\"}]",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"source_slug\",\"nargs\":1,\"options\":[\"source_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"target_slug\",\"nargs\":1,\"options\":[\"target_slug\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[\"--no-commit\"],\"type\":\"boolean\"},{\"count\":false,\"default\":true,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"keep_source_as_aka\",\"nargs\":1,\"options\":[\"--keep-source-as-aka\"],\"required\":false,\"secondary\":[\"--no-keep-source-as-aka\"],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
         operation_id: "entities.merge",
         method: Some("POST"),
@@ -596,21 +596,6 @@ pub const ENTRIES: &[InventoryEntry] = &[
         route: Some("/app/entities/api/review/sweep"),
         contract_operation_id: Some("entities.sweep-review"),
         handler: "sweep_review",
-        resident: false,
-    },
-    InventoryEntry {
-        surface: "sol-call",
-        path: &["entities", "undo-merge"],
-        kind: "command",
-        help: "Undo one recorded entity merge.",
-        authority_path: "core/native-sol/apps/entities/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"merge_id\",\"nargs\":1,\"options\":[\"merge_id\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
-        entry_type: "http",
-        operation_id: "entities.undo-merge",
-        method: Some("POST"),
-        route: Some("/app/entities/api/merge/{merge_id}/undo"),
-        contract_operation_id: Some("entities.undo-merge"),
-        handler: "undo_merge",
         resident: false,
     },
     InventoryEntry {
@@ -1384,7 +1369,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "command",
         help: "Merge a speaker name variant into a canonical entity.",
         authority_path: "core/native-sol/apps/speakers/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"alias\",\"nargs\":1,\"options\":[\"alias\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"canonical\",\"nargs\":1,\"options\":[\"canonical\"],\"required\":true,\"secondary\":[],\"type\":\"text\"}]",
+        params_json: "[{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"alias\",\"nargs\":1,\"options\":[\"alias\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":null,\"flag_value\":null,\"hidden\":false,\"is_flag\":false,\"kind\":\"argument\",\"multiple\":false,\"name\":\"canonical\",\"nargs\":1,\"options\":[\"canonical\"],\"required\":true,\"secondary\":[],\"type\":\"text\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
         operation_id: "speakers.merge-names",
         method: Some("POST"),
@@ -1474,7 +1459,7 @@ pub const ENTRIES: &[InventoryEntry] = &[
         kind: "command",
         help: "Resolve speaker name variants using voiceprint similarity.\n\nCompares voiceprint centroids between all entities. Pairs with cosine\nsimilarity > 0.90 are flagged as the same person. Unambiguous variants\n(short name is first word of full name) are auto-merged by adding the\nshort name as an aka on the canonical entity.",
         authority_path: "core/native-sol/apps/speakers/native/authority.toml",
-        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
+        params_json: "[{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"commit\",\"nargs\":1,\"options\":[\"--commit\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"json_output\",\"nargs\":1,\"options\":[\"--json\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"},{\"count\":false,\"default\":false,\"flag_value\":true,\"hidden\":false,\"is_flag\":true,\"kind\":\"option\",\"multiple\":false,\"name\":\"yes\",\"nargs\":1,\"options\":[\"--yes\"],\"required\":false,\"secondary\":[],\"type\":\"boolean\"}]",
         entry_type: "http",
         operation_id: "speakers.resolve-names",
         method: Some("POST"),
@@ -2453,7 +2438,6 @@ pub const HANDLERS: &[Handler] = &[
     apps_entities_native_command_rs::review,
     apps_entities_native_command_rs::search,
     apps_entities_native_command_rs::sweep_review,
-    apps_entities_native_command_rs::undo_merge,
     apps_entities_native_command_rs::update,
     apps_facets_native_command_rs::list_candidates,
     apps_facets_native_command_rs::accept,

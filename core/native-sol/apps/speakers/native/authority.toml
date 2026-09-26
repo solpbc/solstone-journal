@@ -368,6 +368,7 @@ handler = "merge_names"
 params = [
   { name = "alias", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["alias"], secondary = [], hidden = false, is_flag = false, count = false },
   { name = "canonical", kind = "argument", type = "text", required = true, nargs = 1, multiple = false, options = ["canonical"], secondary = [], hidden = false, is_flag = false, count = false },
+  { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
 [[entries]]
@@ -457,6 +458,7 @@ handler = "resolve_names"
 params = [
   { name = "commit", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--commit"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
   { name = "json_output", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--json"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
+  { name = "yes", kind = "option", type = "boolean", required = false, nargs = 1, multiple = false, default = false, options = ["--yes"], secondary = [], hidden = false, is_flag = true, count = false, flag_value = true },
 ]
 
 [[entries]]

@@ -1354,6 +1354,17 @@ pub fn record_observation_ops_strict(
             ObservationEntityResolution::Resolved { entity_dir } => entity_dir,
             ObservationEntityResolution::NoSuchEntity => {
                 let entity_id = entity_slug(entity_query);
+                // A merged entity is never recreated, not even as a bare link
+                // its observations would be hidden behind.
+                if let Some(successor) = super::retired::merged_away(journal_root, &entity_id)
+                    .map_err(ObservationWriteError::Resolve)?
+                {
+                    let survivor = super::retired::live_merge_successor(journal_root, &successor)
+                        .unwrap_or(successor);
+                    return Err(ObservationWriteError::Resolve(format!(
+                        "'{entity_id}' was merged into '{survivor}'; add notes about '{survivor}' instead"
+                    )));
+                }
                 ensure_facet_relationship_internal(
                     journal_root,
                     facet_dir,

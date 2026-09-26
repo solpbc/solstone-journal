@@ -1137,11 +1137,13 @@ fn merge_id(candidate: &Value) -> Option<&str> {
         .filter(|merge_id| !merge_id.is_empty())
 }
 
+/// Merges are permanent. The field keeps its shape so clients render the
+/// outcome as a finished merge.
 fn entity_merge_undo(merge_id: Option<&str>) -> Value {
     json!({
-        "available": merge_id.is_some(),
+        "available": false,
         "merge_id": merge_id,
-        "reason": merge_id.is_none().then_some("No recorded merge id is available."),
+        "reason": "Merges are permanent and can't be undone.",
     })
 }
 
@@ -1492,7 +1494,7 @@ mod tests {
         assert_eq!(response["status"], "accepted");
         assert!(response["merge_id"].is_string());
         assert_eq!(response["candidate"]["merge_id"], response["merge_id"]);
-        assert_eq!(response["undo"]["available"], true);
+        assert_eq!(response["undo"]["available"], false);
         let target = solstone_core_entity::read_entity_identity(root.path(), "target")
             .expect("target identity")
             .expect("target exists");
@@ -1519,7 +1521,7 @@ mod tests {
         assert_eq!(accepted["failed"], 0);
         assert_eq!(accepted["results"][0]["status"], "accepted");
         assert!(accepted["results"][0]["merge_id"].is_string());
-        assert_eq!(accepted["results"][0]["undo"]["available"], true);
+        assert_eq!(accepted["results"][0]["undo"]["available"], false);
 
         let already_accepted = post_json(
             routes(root.path().to_path_buf()),
@@ -1534,7 +1536,7 @@ mod tests {
             already_accepted["results"][0]["merge_id"],
             accepted["results"][0]["merge_id"]
         );
-        assert_eq!(already_accepted["results"][0]["undo"]["available"], true);
+        assert_eq!(already_accepted["results"][0]["undo"]["available"], false);
     }
 
     /// G2-26: the same source/target pair, surfaced under two different
@@ -1587,7 +1589,7 @@ mod tests {
             response["results"][1]["merge_id"], first_merge_id,
             "the second facet row adopts the first merge rather than re-committing it"
         );
-        assert_eq!(response["results"][1]["undo"]["available"], true);
+        assert_eq!(response["results"][1]["undo"]["available"], false);
 
         // The merge itself only ran once: the alias was added exactly once,
         // not duplicated by a second commit attempt.

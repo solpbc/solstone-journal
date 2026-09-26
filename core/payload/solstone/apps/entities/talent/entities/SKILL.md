@@ -346,14 +346,15 @@ solstone call entities overview --facet work --limit 20
 ## merge
 
 ```bash
-solstone call entities merge SOURCE_SLUG TARGET_SLUG [--commit/--no-commit] [--keep-source-as-aka/--no-keep-source-as-aka]
+solstone call entities merge SOURCE_SLUG TARGET_SLUG [--commit/--no-commit] [--yes] [--keep-source-as-aka/--no-keep-source-as-aka]
 ```
 
-Plan or execute a merge of two journal entities (e.g., collapse duplicate records after review).
+Plan or execute a merge of two journal entities (e.g., collapse duplicate records after review). A merge can't be undone: no new entity can take the source's id. Identity versions from before the merge can't be restored.
 
 - `SOURCE_SLUG`: entity slug to merge from (removed on `--commit`).
 - `TARGET_SLUG`: entity slug to merge into (canonical).
-- `--commit/--no-commit`: default `--no-commit`. Returns a JSON plan with no mutations. Pass `--commit` to persist.
+- `--commit/--no-commit`: default `--no-commit`. Returns a JSON plan with no mutations. Pass `--commit --yes` to persist.
+- `--yes`: required with `--commit`. Without it the command refuses. Show the owner the plan and get their approval first.
 - `--keep-source-as-aka/--no-keep-source-as-aka`: default `--keep-source-as-aka`. Preserve the source display name as an alias on the target.
 
 Behavior notes:
@@ -366,19 +367,8 @@ Examples:
 
 ```bash
 solstone call entities merge raelyn-brooks raylyn-brooks
-solstone call entities merge raelyn-brooks raylyn-brooks --commit
+solstone call entities merge raelyn-brooks raylyn-brooks --commit --yes
 ```
-
-## undo-merge
-
-```bash
-solstone call entities undo-merge MERGE_ID --yes [--json]
-```
-
-Deterministically undo one recorded merge. Use the `merge_id` returned by a
-successful merge or accepted merge suggestion. This restores the recorded
-source entity and its owned references without rolling back unrelated later
-target changes. `--yes` is required.
 
 ## ambiguities and resolve-ambiguity
 
@@ -400,13 +390,14 @@ solstone call entities restore-version ENTITY_ID VERSION_ID --yes [--json]
 ```
 
 `entity-history` shows durable identity versions (create, update, restore,
-merge, merge undo). This is distinct from `history`, which shows relationship
-evidence between two entities. Restore only ordinary identity versions;
-merge-bearing history must use `undo-merge`. `restore-version` requires `--yes`.
+merge, and merge undo from earlier versions of the journal). This is distinct
+from `history`, which shows relationship evidence between two entities. Restore
+only ordinary identity versions made after the entity's latest merge; merges are
+permanent. `restore-version` requires `--yes`.
 
 ## Gotchas
 
-- **`merge` previews by default.** Default is `--no-commit`: it emits a JSON plan without mutating anything. Pass `--commit` when you actually want the merge to happen.
+- **`merge` previews by default.** Default is `--no-commit`: it emits a JSON plan without mutating anything. Pass `--commit --yes` only after the owner has approved the merge; it can't be undone.
 - **`history` and `entity-history` are different.** `history` reads relationship evidence; `entity-history` reads restorable identity versions.
 - **Undo and restore require explicit confirmation.** Pass `--yes`; the commands make no request without it.
 - **`detect` requires TYPE ≥ 3 chars.** Shorter types are silently rejected.

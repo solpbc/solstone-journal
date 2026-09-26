@@ -24,9 +24,9 @@ pub mod observations;
 mod paths;
 mod reconcile;
 mod repair;
+pub(crate) mod retired;
 pub(crate) mod review_candidates;
 pub mod review_policy;
-pub(crate) mod undo;
 pub(crate) mod voiceprints;
 mod write;
 
@@ -92,6 +92,11 @@ pub use repair::{
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     repair_entity_identities,
 };
+pub use retired::{
+    MergedEntity, RETIRED_ENTITIES_FILE, RetiredEntities, damaged_record_detail,
+    live_merge_successor, merged_away, merged_successor, parse_retired_entities,
+    read_retired_entities,
+};
 pub use review_candidates::{
     EntityReviewCandidateError, PreparedMergeProposals, accept_merge_candidate,
     dismiss_merge_candidate, find_active_recorded_merge, load_merge_candidates,
@@ -104,7 +109,6 @@ pub use review_policy::{
     record_ambiguity_group_choice, restore_review, sweep_entity_review_policy,
     validate_review_object,
 };
-pub use undo::{EntityUndoError, EntityUndoReport, undo_entity_merge};
 pub use voiceprints::{
     CanonicalKeyField, EncoderIdentity, VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem,
     VoiceprintKey, VoiceprintNpzError, VoiceprintOperationError, VoiceprintRemoval,
@@ -124,7 +128,6 @@ pub use write::{
 #[cfg(test)]
 pub(crate) use repair::set_repair_identity_write_failure_on_attempt;
 #[cfg(test)]
-pub(crate) use undo::undo_entity_merge_with_injector;
 #[cfg(test)]
 pub(crate) use write::{
     save_entity_identity_with_timeout, set_forced_history_apply_failure,

@@ -290,3 +290,30 @@ fn high_confidence_ambiguous_name_has_no_durable_ambiguity_id() {
         vec!["sam-one", "sam-two"]
     );
 }
+
+#[test]
+fn create_new_names_the_entity_a_merged_name_joined() {
+    let temporary = Temp::new();
+    let survivor = temporary.path().join("entities/robert");
+    fs::create_dir_all(&survivor).unwrap();
+    fs::write(
+        survivor.join("entity.json"),
+        json!({"id":"robert","name":"Robert","type":"Person"}).to_string(),
+    )
+    .unwrap();
+    fs::write(
+        temporary.path().join("entities/retired.json"),
+        json!({"ids":{"bob":{"state":"merged","dir":"bob","successor":"robert"}}}).to_string(),
+    )
+    .unwrap();
+    let mut target_request = request(temporary.path());
+    target_request.name = Some("Bob".to_owned());
+    target_request.create_new = true;
+
+    assert!(matches!(
+        resolve_identify_target(&target_request).unwrap(),
+        IdentifyTargetOutcome::EntityMerged { entity_id, successor }
+            if entity_id == "bob" && successor == "robert"
+    ));
+    assert!(!temporary.path().join("entities/bob").exists());
+}

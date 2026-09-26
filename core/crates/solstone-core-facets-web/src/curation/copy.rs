@@ -13,7 +13,7 @@ pub fn payload() -> Value {
     )
 }
 
-const COPY: [(&str, &str); 55] = [
+const COPY: [(&str, &str); 52] = [
     ("CUR_HEADING", "suggestions"),
     (
         "CUR_FACET_BODY",
@@ -66,14 +66,17 @@ const COPY: [(&str, &str); 55] = [
     ),
     (
         "CUR_ENTITY_PREVIEW_LEAD",
-        "before merging, here's what will change.",
+        "before merging, here's what will change. a merge can't be undone.",
     ),
     ("CUR_ENTITY_CONFIRM_ACTION", "confirm merge"),
     ("CUR_ENTITY_CANCEL_ACTION", "cancel"),
     ("CUR_ENTITY_SELECT_ALL_ACTION", "select all"),
     ("CUR_ENTITY_BATCH_MERGE_ACTION", "merge selected"),
     ("CUR_ENTITY_BATCH_DISMISS_ACTION", "keep selected separate"),
-    ("CUR_ENTITY_BATCH_MERGE_LEAD", "these pairs will be merged:"),
+    (
+        "CUR_ENTITY_BATCH_MERGE_LEAD",
+        "these pairs will be merged. merges can't be undone:",
+    ),
     (
         "CUR_ENTITY_BATCH_DISMISS_LEAD",
         "these pairs will be kept separate:",
@@ -98,13 +101,7 @@ const COPY: [(&str, &str); 55] = [
     // G2-B05: the durable "none of these". The three sibling groups all
     // have a way to say no; this one had only the candidate buttons.
     ("CUR_AMBIGUITY_DISMISS_ACTION", "none of these"),
-    ("CUR_UNDO_ACTION", "undo merge"),
-    ("CUR_UNDO_DONE", "merge undone."),
-    (
-        "CUR_UNDO_UNAVAILABLE",
-        "undo isn't available for this earlier merge.",
-    ),
-    ("CUR_UNDO_FAILED", "the merge couldn't be undone."),
+    ("CUR_ACTION_FAILED", "that didn't go through. try again."),
     ("CUR_REPAIR_REQUIRED", "{detail} {remediation}"),
     (
         "CUR_ENTITY_PREVIEW_EMPTY",

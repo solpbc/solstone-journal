@@ -960,29 +960,15 @@ window.CUR_COPY = CUR_COPY;
     refreshToolbar();
   }
 
-  function appendUndoOutcome(undo, label) {
+  function appendMergeOutcome(merge, label) {
     const outcomes = root.querySelector('[data-curation-outcomes]');
     if (!outcomes) return;
     const row = document.createElement('div');
     row.className = 'curation-outcome';
-    if (undo?.merge_id) row.dataset.mergeId = undo.merge_id;
+    if (merge?.merge_id) row.dataset.mergeId = merge.merge_id;
     const text = document.createElement('span');
     text.textContent = label || CUR_COPY.CUR_ENTITY_MERGE_ACTION;
     row.appendChild(text);
-    if (undo?.available && undo.merge_id) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.className = 'curation-button';
-      button.dataset.action = 'merge-undo';
-      button.dataset.mergeId = undo.merge_id;
-      button.textContent = CUR_COPY.CUR_UNDO_ACTION;
-      row.appendChild(button);
-    } else {
-      const reason = document.createElement('p');
-      reason.className = 'curation-item-error';
-      reason.textContent = undo?.reason || CUR_COPY.CUR_UNDO_UNAVAILABLE;
-      row.appendChild(reason);
-    }
     outcomes.appendChild(row);
   }
 
@@ -1201,38 +1187,6 @@ window.CUR_COPY = CUR_COPY;
       return;
     }
 
-    if (action === 'merge-undo') {
-      const outcome = button.closest('.curation-outcome');
-      setBusy(button, true);
-      postJson(`/app/entities/api/merge/${encodeURIComponent(button.dataset.mergeId)}/undo`, {})
-        .then(async () => {
-          button.remove();
-          const done = document.createElement('span');
-          done.textContent = CUR_COPY.CUR_UNDO_DONE;
-          outcome?.appendChild(done);
-          outcome?.querySelector('.curation-item-error')?.remove();
-          try {
-            await refreshCurationState();
-          } catch (err) {
-            const refreshError = document.createElement('p');
-            refreshError.className = 'curation-item-error';
-            refreshError.textContent = err.serverMessage || err.message;
-            outcome?.appendChild(refreshError);
-          }
-        })
-        .catch((err) => {
-          if (!repairRequired(err)) setBusy(button, false);
-          let error = outcome?.querySelector('.curation-item-error');
-          if (!error && outcome) {
-            error = document.createElement('p');
-            error.className = 'curation-item-error';
-            outcome.appendChild(error);
-          }
-          if (error) error.textContent = mutationErrorMessage(err, CUR_COPY.CUR_UNDO_FAILED);
-        });
-      return;
-    }
-
     if (action === 'ambiguity-resolve') {
       setBusy(button, true);
       postJson(
@@ -1367,12 +1321,12 @@ window.CUR_COPY = CUR_COPY;
       setBusy(button, true);
       postJson(path, payload)
         .then((data) => {
-          if (action === 'speaker-accept') appendUndoOutcome(data.undo, data.candidate?.target_label || data.key);
+          if (action === 'speaker-accept') appendMergeOutcome(data.undo, data.candidate?.target_label || data.key);
           removeItem(item);
         })
         .catch((err) => {
           if (action === 'speaker-accept') {
-            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+            showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
             showError(item, err.serverMessage || err.message);
@@ -1389,12 +1343,12 @@ window.CUR_COPY = CUR_COPY;
       setBusy(button, true);
       postJson(path, payload)
         .then((data) => {
-          if (action === 'speaker-pair-accept') appendUndoOutcome(data.undo, data.key);
+          if (action === 'speaker-pair-accept') appendMergeOutcome(data.undo, data.key);
           removeItem(item);
         })
         .catch((err) => {
           if (action === 'speaker-pair-accept') {
-            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+            showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
             showError(item, err.serverMessage || err.message);
@@ -1484,7 +1438,7 @@ window.CUR_COPY = CUR_COPY;
               successfulPairs.add(pairKey);
               if (mode === 'merge' && !undoShownForPair.has(pairKey)) {
                 undoShownForPair.add(pairKey);
-                appendUndoOutcome(result.undo, `${result.source_slug} → ${result.target_slug}`);
+                appendMergeOutcome(result.undo, `${result.source_slug} → ${result.target_slug}`);
               }
               removeItem(article);
               return;
@@ -1529,7 +1483,7 @@ window.CUR_COPY = CUR_COPY;
           if (!repairRequired(err)) setBatchBusy(false);
           const status = root.querySelector('.curation-batch-status');
           if (status) {
-            status.textContent = mutationErrorMessage(err, CUR_COPY.CUR_UNDO_FAILED);
+            status.textContent = mutationErrorMessage(err, CUR_COPY.CUR_ACTION_FAILED);
             status.classList.add('curation-batch-status-error');
             status.hidden = false;
           }
@@ -1568,17 +1522,17 @@ window.CUR_COPY = CUR_COPY;
           const firstOk = results.find((result) => ['accepted', 'already_accepted', 'dismissed', 'already_dismissed'].includes(result.status));
           const firstFailed = results.find((result) => !['accepted', 'already_accepted', 'dismissed', 'already_dismissed'].includes(result.status));
           if (firstFailed && !firstOk) {
-            showMutationError(item, button, {serverMessage: firstFailed.error, payload: firstFailed}, CUR_COPY.CUR_UNDO_FAILED);
+            showMutationError(item, button, {serverMessage: firstFailed.error, payload: firstFailed}, CUR_COPY.CUR_ACTION_FAILED);
             return;
           }
           if (action === 'entity-accept-group' && firstOk) {
-            appendUndoOutcome(firstOk.undo, `${item.dataset.source} → ${item.dataset.target}`);
+            appendMergeOutcome(firstOk.undo, `${item.dataset.source} → ${item.dataset.target}`);
           }
           removeItem(item);
         })
         .catch((err) => {
           if (action === 'entity-accept-group') {
-            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+            showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
             showError(item, err.serverMessage || err.message);
@@ -1595,12 +1549,12 @@ window.CUR_COPY = CUR_COPY;
       setBusy(button, true);
       postJson(path, payload)
         .then((data) => {
-          if (action === 'entity-accept') appendUndoOutcome(data.undo, `${item.dataset.source} → ${item.dataset.target}`);
+          if (action === 'entity-accept') appendMergeOutcome(data.undo, `${item.dataset.source} → ${item.dataset.target}`);
           removeItem(item);
         })
         .catch((err) => {
           if (action === 'entity-accept') {
-            showMutationError(item, button, err, CUR_COPY.CUR_UNDO_FAILED);
+            showMutationError(item, button, err, CUR_COPY.CUR_ACTION_FAILED);
           } else {
             setBusy(button, false);
             showError(item, err.serverMessage || err.message);

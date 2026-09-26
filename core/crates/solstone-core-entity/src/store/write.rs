@@ -155,6 +155,12 @@ pub enum EntityWriteError {
         identity_id: String,
         path: PathBuf,
     },
+    /// The id belonged to an entity that was merged into `successor`; merges
+    /// are permanent and a merged id is never created again.
+    IdentityMerged {
+        identity_id: String,
+        successor: String,
+    },
     ReconciliationRepairRequired {
         entity_dir: String,
         version_id: String,
@@ -203,6 +209,13 @@ impl fmt::Display for EntityWriteError {
             Self::InvalidOperationContext { detail } => {
                 write!(formatter, "invalid entity operation context: {detail}")
             }
+            Self::IdentityMerged {
+                identity_id,
+                successor,
+            } => write!(
+                formatter,
+                "'{identity_id}' was merged into '{successor}', and a merged entity is never created again"
+            ),
             Self::AmbiguityRowInvalid { detail } => {
                 write!(formatter, "invalid entity ambiguity row: {detail}")
             }
@@ -278,6 +291,7 @@ impl Error for EntityWriteError {
             | Self::AmbiguityRowInvalid { .. }
             | Self::AmbiguityCountOverflow { .. }
             | Self::CreateDestinationOccupied { .. }
+            | Self::IdentityMerged { .. }
             | Self::ReconciliationRepairRequired { .. }
             | Self::PreparedStageCollision { .. }
             | Self::AmbiguityChoiceNotFound { .. }
@@ -363,6 +377,23 @@ fn save_entity_identity_with_lock_options(
         Some(directory) => (directory.clone(), false),
         None => (identity_id.to_owned(), true),
     };
+    if creating {
+        match super::retired::merged_successor(journal_root, identity_id) {
+            Ok(None) => {}
+            Ok(Some(successor)) => {
+                return Err(EntityWriteError::IdentityMerged {
+                    identity_id: identity_id.to_owned(),
+                    successor,
+                });
+            }
+            Err(detail) => {
+                return Err(EntityWriteError::InvalidIdentity {
+                    identity_id: identity_id.to_owned(),
+                    detail,
+                });
+            }
+        }
+    }
     if creating && entity_identity_destination_occupied(journal_root, &entity_dir)? {
         return Err(EntityWriteError::CreateDestinationOccupied {
             identity_id: identity_id.to_owned(),
@@ -467,6 +498,18 @@ pub fn publish_identity_change(
         return Err(ReviewOwnerError::conflict(
             ReviewOwnerConflictKind::IdentityMoved,
             "conflict: promoted identity moved after preparation",
+        ));
+    }
+    // A merge that landed after preparation retires the id; the next
+    // preparation skips it, so this conflict converges.
+    if !map.resolved.contains_key(&change.entity_id)
+        && super::retired::merged_successor(root, &change.entity_id)
+            .map_err(ReviewOwnerError::failed)?
+            .is_some()
+    {
+        return Err(ReviewOwnerError::conflict(
+            ReviewOwnerConflictKind::IdentityMerged,
+            "conflict: promoted identity was merged away after preparation",
         ));
     }
     let planned = classify_prepared_history_plan(root, &change.entity_dir)

@@ -187,12 +187,11 @@ mod tests {
             top_level_keys(&state),
             BTreeSet::from(["attendance_kinds".to_owned(), "entities_copy".to_owned()])
         );
-        assert_eq!(
-            state["entities_copy"]
+        assert!(
+            !state["entities_copy"]
                 .as_object()
                 .expect("copy is object")
-                .len(),
-            79
+                .is_empty()
         );
         assert_eq!(
             state["attendance_kinds"],

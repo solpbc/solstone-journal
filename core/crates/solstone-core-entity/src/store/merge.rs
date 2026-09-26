@@ -373,6 +373,21 @@ pub(crate) fn commit_entity_merge_with_injector(
                 Some(&mut rollback),
             ),
             "audit" => (|| {
+                // The merge is permanent: record the source id as merged, so it
+                // is never created again and derived readers can follow it.
+                rollback.capture(journal, super::retired::RETIRED_ENTITIES_FILE)?;
+                super::retired::record_merged_entity(
+                    journal,
+                    source_id,
+                    &super::retired::MergedEntity {
+                        dir: source_dir.clone(),
+                        successor: target_id.to_owned(),
+                        name: Some(plan.source_display_name.clone()),
+                        merge_id: Some(merge_id.clone()),
+                        at: Some(chrono::Utc::now().to_rfc3339()),
+                    },
+                )
+                .map_err(EntityMergeError::Refused)?;
                 let path = contained_path(journal, "logs/entity-merges.jsonl")
                     .map_err(|error| EntityMergeError::Refused(error.to_string()))?;
                 rollback.capture(journal, "logs/entity-merges.jsonl")?;

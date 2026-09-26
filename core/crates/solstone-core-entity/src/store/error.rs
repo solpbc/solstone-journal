@@ -79,12 +79,12 @@ impl fmt::Display for EntityStoreError {
                 formatter.write_str("history event has an invalid version_id")
             }
             Self::RestoreTargetsRecordedMerge => formatter.write_str(
-                "generic identity restore cannot target a recorded merge event; \
-                 use recorded-merge undo instead",
+                "that version is a merge, and a merge can't be \
+                 restored or undone",
             ),
             Self::RestoreCrossesRecordedMerge => formatter.write_str(
-                "generic identity restore cannot cross a recorded merge event; \
-                 use recorded-merge undo instead",
+                "that version is from before a merge, and a merge \
+                 can't be undone",
             ),
             Self::AmbiguityInvalidRow { path, line, detail } => write!(
                 formatter,

@@ -809,3 +809,190 @@ fn promotion_still_refuses_a_shared_name_held_by_an_identity_map_collision_loser
         Some(solstone_core_entity::ReviewOwnerConflictKind::IdentityMapGroupLost)
     );
 }
+
+fn read_identity(root: &std::path::Path, id: &str) -> serde_json::Value {
+    serde_json::from_slice(&fs::read(root.join("entities").join(id).join("entity.json")).unwrap())
+        .unwrap()
+}
+
+fn links_to(root: &std::path::Path, facet: &str, entity_id: &str) -> usize {
+    fs::read_dir(root.join("facets").join(facet).join("entities"))
+        .map(|entries| {
+            entries
+                .flatten()
+                .filter(|entry| {
+                    fs::read(entry.path().join("entity.json"))
+                        .ok()
+                        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                        .is_some_and(|link| link["entity_id"] == entity_id)
+                })
+                .count()
+        })
+        .unwrap_or(0)
+}
+
+#[test]
+fn attaching_a_name_whose_id_is_live_never_rewrites_that_identity() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    let jane = json!({
+        "id": "jane",
+        "name": "Jane Doe",
+        "type": "Person",
+        "aka": ["JD"],
+        "emails": ["jane@example.com"],
+        "is_principal": true,
+    });
+    write_identity(temporary.path(), "jane", jane.clone());
+
+    let result =
+        attach_or_reactivate_entity(temporary.path(), "work", "Person", "Jane", "a note").unwrap();
+    assert!(!result.reactivated);
+    assert_eq!(result.relationship["entity_id"], "jane");
+    assert_eq!(read_identity(temporary.path(), "jane"), jane);
+    assert_eq!(links_to(temporary.path(), "work", "jane"), 1);
+
+    // Attached already: exactly one link stays.
+    assert!(matches!(
+        attach_or_reactivate_entity(temporary.path(), "work", "Person", "Jane", ""),
+        Err(FacetEntityWriteError::EntityExists { .. })
+    ));
+    assert_eq!(links_to(temporary.path(), "work", "jane"), 1);
+}
+
+#[test]
+fn attaching_by_live_id_finds_an_existing_link_under_any_folder() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    write_identity(
+        temporary.path(),
+        "jane",
+        json!({"id":"jane","name":"Jane Doe"}),
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "jane_doe",
+        json!({"entity_id":"jane","detached":true}),
+    );
+    let result =
+        attach_or_reactivate_entity(temporary.path(), "work", "Person", "Jane", "").unwrap();
+    assert!(result.reactivated);
+    assert_eq!(links_to(temporary.path(), "work", "jane"), 1);
+    assert!(!temporary.path().join("facets/work/entities/jane").exists());
+}
+
+#[test]
+fn attaching_by_live_id_refuses_a_blocked_entity_and_an_occupied_folder() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    write_identity(
+        temporary.path(),
+        "jane",
+        json!({"id":"jane","name":"Jane Doe","blocked":true}),
+    );
+    assert!(matches!(
+        attach_or_reactivate_entity(temporary.path(), "work", "Person", "Jane", ""),
+        Err(FacetEntityWriteError::EntityBlocked { .. })
+    ));
+    assert_eq!(read_identity(temporary.path(), "jane")["blocked"], true);
+
+    write_identity(
+        temporary.path(),
+        "jane",
+        json!({"id":"jane","name":"Jane Doe"}),
+    );
+    write_facet_relationship(
+        temporary.path(),
+        "work",
+        "jane",
+        json!({"entity_id":"someone_else"}),
+    );
+    assert!(matches!(
+        attach_or_reactivate_entity(temporary.path(), "work", "Person", "Jane", ""),
+        Err(FacetEntityWriteError::RelationshipOccupied { .. })
+    ));
+    assert_eq!(
+        relationship_value(temporary.path(), "work", "jane")["entity_id"],
+        "someone_else"
+    );
+}
+
+#[test]
+fn a_merged_name_is_never_created_again_by_attach() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "work");
+    write_identity(
+        temporary.path(),
+        "solstone",
+        json!({"id":"solstone","name":"Solstone"}),
+    );
+    fs::write(
+        temporary.path().join("entities/retired.json"),
+        serde_json::to_vec(
+            &json!({"ids":{"sunstone":{"state":"merged","dir":"sunstone","successor":"solstone"}}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        attach_or_reactivate_entity(temporary.path(), "work", "Project", "Sunstone", ""),
+        Err(FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::IdentityMerged { .. }
+        ))
+    ));
+    assert!(!temporary.path().join("entities/sunstone").exists());
+    assert!(
+        !temporary
+            .path()
+            .join("facets/work/entities/sunstone")
+            .exists()
+    );
+}
+
+#[test]
+fn a_merge_landing_between_prepare_and_publish_ends_the_promotion_as_a_conflict() {
+    let temporary = TempDir::new();
+    create_test_facet(temporary.path(), "scope");
+    let promotion = crate::prepare_review_promotion(
+        temporary.path(),
+        "scope",
+        "Project",
+        "Sunstone",
+        "An earlier project name",
+        &[],
+    )
+    .unwrap();
+    let change = promotion.identity.expect("a new identity is prepared");
+    assert_eq!(change.entity_id, "sunstone");
+    // A merge lands and retires the id before the plan is published.
+    write_identity(
+        temporary.path(),
+        "solstone",
+        json!({"id":"solstone","name":"Solstone"}),
+    );
+    fs::write(
+        temporary.path().join("entities/retired.json"),
+        serde_json::to_vec(
+            &json!({"ids":{"sunstone":{"state":"merged","dir":"sunstone","successor":"solstone"}}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let error = solstone_core_entity::publish_identity_change(
+        temporary.path(),
+        &change,
+        false,
+        || Ok(()),
+        || Ok(()),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        error,
+        solstone_core_entity::ReviewOwnerError::Conflict {
+            kind: solstone_core_entity::ReviewOwnerConflictKind::IdentityMerged,
+            ..
+        }
+    ));
+    assert!(!temporary.path().join("entities/sunstone").exists());
+}

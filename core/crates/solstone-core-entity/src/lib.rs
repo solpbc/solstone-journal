@@ -33,36 +33,37 @@ pub use store::{
     EntityIdentityRepairReport, EntityIdentityRepairSkip, EntityIdentityRepairSkipReason,
     EntityLifecycleError, EntityMergeError, EntityMergeOptions, EntityMergePreview,
     EntityMergeReport, EntityOperationContext, EntityOperationKind, EntityReviewCandidateError,
-    EntitySaveResult, EntityStoreError, EntityUndoError, EntityUndoReport, EntityWriteError,
-    HistoryEntry, HistoryEvent, IdentityCensus, IdentityMapCacheLoad, IdentityMapLoser,
-    IdentityMapLoserReason, IdentitySnapshot, IncomingObservationRow, JournalEntity,
-    ObservationChange, ObservationEntityResolution, ObservationErrorSource, ObservationLookup,
-    ObservationLookupError, ObservationOperationCounts, ObservationPage, ObservationPageItem,
-    ObservationParseSource, ObservationReadOrder, ObservationReadQuery, ObservationRow,
-    ObservationStoreError, ObservationSummary, ObservationWriteError, ObservationWriteOutcome,
-    PREFIX_CUTOFF, ParsedObservations, PreparedHistoryEvent, PreparedHistoryOutcome,
-    PreparedIdentityChange, PreparedMergeProposals, PreparedObservationBatch,
-    REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, Retired, ReviewRestoreTarget, TYPO_FLOOR,
+    EntitySaveResult, EntityStoreError, EntityWriteError, HistoryEntry, HistoryEvent,
+    IdentityCensus, IdentityMapCacheLoad, IdentityMapLoser, IdentityMapLoserReason,
+    IdentitySnapshot, IncomingObservationRow, JournalEntity, MergedEntity, ObservationChange,
+    ObservationEntityResolution, ObservationErrorSource, ObservationLookup, ObservationLookupError,
+    ObservationOperationCounts, ObservationPage, ObservationPageItem, ObservationParseSource,
+    ObservationReadOrder, ObservationReadQuery, ObservationRow, ObservationStoreError,
+    ObservationSummary, ObservationWriteError, ObservationWriteOutcome, PREFIX_CUTOFF,
+    ParsedObservations, PreparedHistoryEvent, PreparedHistoryOutcome, PreparedIdentityChange,
+    PreparedMergeProposals, PreparedObservationBatch, RETIRED_ENTITIES_FILE,
+    REVIEW_SWEEP_RECEIPT_RELATIVE_PATH, Retired, RetiredEntities, ReviewRestoreTarget, TYPO_FLOOR,
     VoiceprintArchive, VoiceprintEnvelope, VoiceprintItem, VoiceprintKey, VoiceprintNpzError,
     VoiceprintOperationError, VoiceprintRemoval, VoiceprintRemovalReport, VoiceprintSkipReasons,
     accept_merge_candidate, add_observation, ambiguity_group_revision,
     apply_ambiguity_review_policy, apply_merge_candidate_review_policy, apply_observation_change,
     apply_ops_to_parsed, attach_edge_repair_completion, classify_prepared_history,
-    commit_entity_merge, count_observations, create_journal_entity, delete_entity_directory,
-    dismiss_ambiguity, dismiss_merge_candidate, drive_entity_edge_repair,
+    commit_entity_merge, count_observations, create_journal_entity, damaged_record_detail,
+    delete_entity_directory, dismiss_ambiguity, dismiss_merge_candidate, drive_entity_edge_repair,
     entity_identity_destination_occupied, entity_last_active_day, entity_last_active_ts,
     entity_matches_identity_name, entity_memory_path, entity_path, facet_entity_observations_path,
     find_active_recorded_merge, guard_restore_does_not_cross_merge, guard_visible_event_collision,
     has_journal_principal, is_admissible_person, is_placeholder_query, is_valid_entity_type,
-    last_active_day_for_ts, list_facet_entity_directories, load_all_journal_entities,
-    load_entity_voiceprints_file, load_existing_voiceprint_keys, load_merge_candidates,
-    load_observations_for_query, load_resolved_ambiguity_choice, normalize_embedding,
-    normalize_observation_content, observation_day_counts, observation_summary,
-    parse_observation_content, parse_observation_file, prepare_identity_changes,
-    prepare_merge_proposals, preview_entity_merge, publish_identity_change,
-    publish_merge_proposals, read_ambiguities, read_entity_edge_repair_completion,
-    read_entity_identity, read_identity_group_map, read_identity_map, read_journal_principal,
-    read_live_observations, read_prepared_history, read_visible_history, record_ambiguity_choice,
+    last_active_day_for_ts, list_facet_entity_directories, live_merge_successor,
+    load_all_journal_entities, load_entity_voiceprints_file, load_existing_voiceprint_keys,
+    load_merge_candidates, load_observations_for_query, load_resolved_ambiguity_choice,
+    merged_away, merged_successor, normalize_embedding, normalize_observation_content,
+    observation_day_counts, observation_summary, parse_observation_content, parse_observation_file,
+    parse_retired_entities, prepare_identity_changes, prepare_merge_proposals,
+    preview_entity_merge, publish_identity_change, publish_merge_proposals, read_ambiguities,
+    read_entity_edge_repair_completion, read_entity_identity, read_identity_group_map,
+    read_identity_map, read_journal_principal, read_live_observations, read_prepared_history,
+    read_retired_entities, read_visible_history, record_ambiguity_choice,
     record_ambiguity_group_choice, record_ambiguity_observation, record_merge_candidate,
     record_observation_ops_strict, refresh_identity_map_cache, remove_entity_ambiguity_references,
     remove_voiceprints_by_key, repair_entity_identities, rescope_facet_ambiguities,
@@ -71,8 +72,7 @@ pub use store::{
     rewrite_voiceprint_metadata, save_entity_identity, save_voiceprints_batch,
     scan_identity_census, serialize_observation_rows, spawn_entity_edge_repair,
     sweep_entity_review_policy, try_load_entity_voiceprints_file,
-    try_load_entity_voiceprints_in_dir, unblock_journal_entity, undo_entity_merge,
-    validate_review_object,
+    try_load_entity_voiceprints_in_dir, unblock_journal_entity, validate_review_object,
 };
 pub use trust_lock::{
     EntityTrustLock, EntityTrustLockError, FacetTrustLock, FacetTrustLockError,
@@ -115,8 +115,6 @@ mod test_support;
 #[cfg(test)]
 mod trust_lock_tests;
 #[cfg(test)]
-mod undo_tests;
-#[cfg(test)]
 mod voiceprint_tests;
 
 #[cfg(feature = "test-hooks")]
@@ -140,15 +138,4 @@ pub fn commit_entity_merge_with_injector_for_test(
         fallback_encoder,
         injector,
     )
-}
-
-/// Exercise merge undo interruption boundaries from the component test harness.
-#[cfg(feature = "test-hooks")]
-pub fn undo_entity_merge_with_injector_for_test(
-    journal: &std::path::Path,
-    merge_id: &str,
-    caller: serde_json::Value,
-    injector: Option<&MergeFailureInjectorForTest>,
-) -> Result<EntityUndoReport, EntityUndoError> {
-    store::undo::undo_entity_merge_with_injector(journal, merge_id, caller, injector)
 }

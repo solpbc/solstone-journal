@@ -363,6 +363,10 @@ pub enum FacetEntityWriteError {
     MoveConflict {
         path: PathBuf,
     },
+    /// The facet already holds a different relationship under this folder.
+    RelationshipOccupied {
+        relationship_dir: String,
+    },
     Io(io::Error),
 }
 
@@ -401,6 +405,10 @@ impl fmt::Display for FacetEntityWriteError {
                 "cannot account for conflicting moved file: {}",
                 path.display()
             ),
+            Self::RelationshipOccupied { relationship_dir } => write!(
+                formatter,
+                "this facet already holds a different entity under '{relationship_dir}'"
+            ),
             Self::Io(error) => error.fmt(formatter),
         }
     }
@@ -421,7 +429,8 @@ impl Error for FacetEntityWriteError {
             | Self::EntityNotFound { .. }
             | Self::AkaConflict { .. }
             | Self::IdentityMapLoser { .. }
-            | Self::MoveConflict { .. } => None,
+            | Self::MoveConflict { .. }
+            | Self::RelationshipOccupied { .. } => None,
         }
     }
 }

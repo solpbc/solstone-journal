@@ -706,3 +706,32 @@ impl Drop for TempTree {
         fs::remove_dir_all(&self.path).unwrap();
     }
 }
+
+#[test]
+fn an_entity_merged_away_in_this_journal_refuses_the_import_and_changes_nothing() {
+    let tree = TempTree::new();
+    let source = tree.path.join("source");
+    let target = tree.path.join("target");
+    save_entity_identity(
+        &source,
+        "sunstone",
+        &json!({"id":"sunstone","name":"Zzyzx Tangent","type":"Project"}),
+        None,
+    )
+    .unwrap();
+    // The journal merged `sunstone` away; nothing else matches the name.
+    fs::create_dir_all(target.join("entities")).unwrap();
+    fs::write(
+        target.join("entities/retired.json"),
+        serde_json::to_vec(
+            &json!({"ids":{"sunstone":{"state":"merged","dir":"sunstone","successor":"solstone"}}}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let archive = archive_from(&source, &tree.path);
+    let error = merge_journal_archive(&archive, &target, &options(&tree), None).unwrap_err();
+    assert!(error.to_string().contains("'solstone'"), "{error}");
+    assert!(!target.join("entities/sunstone").exists());
+    assert!(load_all_journal_entities(&target).unwrap().is_empty());
+}

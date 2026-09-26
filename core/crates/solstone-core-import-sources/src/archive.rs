@@ -1281,6 +1281,24 @@ fn stage_entities(
                 )?;
             }
             EntityResolutionOutcome::NoMatch => {
+                // Merges are permanent: an entity merged away in this journal is
+                // never created again, so the whole import stops before anything
+                // is published.
+                if let Some(successor) = solstone_core_entity::merged_away(target, &source_id)
+                    .map_err(|detail| ImportSourcesError::EntityMerge {
+                        entity_id: source_id.clone(),
+                        detail,
+                    })?
+                {
+                    let survivor = solstone_core_entity::live_merge_successor(target, &successor)
+                        .unwrap_or(successor);
+                    return Err(ImportSourcesError::EntityMerge {
+                        entity_id: source_id.clone(),
+                        detail: format!(
+                            "this journal merged '{source_id}' into '{survivor}', and merges can't be undone, so this archive can't be imported; nothing was changed"
+                        ),
+                    });
+                }
                 if target_entities.iter().any(|entity| entity.id == source_id) {
                     stage_entity(
                         &source_id,

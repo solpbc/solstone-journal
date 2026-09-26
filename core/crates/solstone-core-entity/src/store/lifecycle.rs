@@ -64,25 +64,33 @@ impl fmt::Display for EntityLifecycleError {
             Self::TrustLock(error) => error.fmt(formatter),
             Self::Store(error) => error.fmt(formatter),
             Self::Write(error) => error.fmt(formatter),
-            Self::EntityNotFound { entity_id } => write!(formatter, "entity not found: {entity_id}"),
+            Self::EntityNotFound { entity_id } => {
+                write!(formatter, "entity not found: {entity_id}")
+            }
             Self::EntityAlreadyExists { entity_id } => {
                 write!(formatter, "entity already exists: {entity_id}")
             }
-            Self::EntityNotBlocked { entity_id } => write!(formatter, "entity is not blocked: {entity_id}"),
+            Self::EntityNotBlocked { entity_id } => {
+                write!(formatter, "entity is not blocked: {entity_id}")
+            }
             Self::HistoryVersionNotFound {
                 entity_id,
                 version_id,
-            } => write!(formatter, "history version not found for {entity_id}: {version_id}"),
-            Self::RestoreTargetsRecordedMerge => formatter.write_str(
-                "generic identity restore cannot target a recorded merge event; use recorded-merge undo instead",
+            } => write!(
+                formatter,
+                "history version not found for {entity_id}: {version_id}"
             ),
-            Self::RestoreCrossesRecordedMerge => formatter.write_str(
-                "generic identity restore cannot cross a recorded merge event; use recorded-merge undo instead",
-            ),
+            Self::RestoreTargetsRecordedMerge => formatter
+                .write_str("that version is a merge, and a merge can't be restored or undone"),
+            Self::RestoreCrossesRecordedMerge => formatter
+                .write_str("that version is from before a merge, and a merge can't be undone"),
             Self::RestoreSnapshotNotObject {
                 entity_id,
                 version_id,
-            } => write!(formatter, "restore snapshot is not an object for {entity_id}: {version_id}"),
+            } => write!(
+                formatter,
+                "restore snapshot is not an object for {entity_id}: {version_id}"
+            ),
             Self::RestoreSnapshotIdentityMismatch {
                 entity_id,
                 version_id,

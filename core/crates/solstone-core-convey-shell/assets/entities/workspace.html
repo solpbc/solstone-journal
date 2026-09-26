@@ -2330,7 +2330,7 @@ let detailObservationState = {
   gridData: null,
   defaultDay: null,
 };
-let pendingJournalMergeUndo = null;
+let pendingJournalMergeDone = null;
 const pendingEntities = new Map(); // use_id → { name, element }
 const pendingAgentCallbacks = new Map(); // use_id → callback function
 const ENTITIES_CORTEX_STALL_MS = 2 * 60 * 1000;
@@ -4352,8 +4352,8 @@ function renderJournalTrustControls(entity) {
   input.onkeydown = (event) => handleJournalMergeKeys(event, entity);
   input.onfocus = () => { if (!input.value.trim()) showJournalMergeSuggestions(); };
   input.onblur = () => { window.setTimeout(closeJournalMergeResults, 150); };
-  if (pendingJournalMergeUndo?.available) {
-    showJournalMergeUndo(pendingJournalMergeUndo);
+  if (pendingJournalMergeDone?.merge_id) {
+    showJournalMergeDone(pendingJournalMergeDone);
   }
 }
 
@@ -4438,14 +4438,7 @@ function renderJournalEntityHistory(entityId, rows) {
     });
     summary.appendChild(change);
 
-    if (event.kind === 'merge' && event.merge_state === 'open' && event.merge_id) {
-      const undo = document.createElement('button');
-      undo.type = 'button';
-      undo.className = 'btn btn-secondary';
-      undo.textContent = ENT_COPY.ENT_TRUST_UNDO_ACTION || '';
-      undo.onclick = () => undoJournalEntityMerge(event.merge_id, undo);
-      row.appendChild(undo);
-    } else if (event.restore_available && event.version_id) {
+    if (event.restore_available && event.version_id) {
       const restore = document.createElement('button');
       restore.type = 'button';
       restore.className = 'btn btn-secondary';
@@ -4519,7 +4512,7 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({source_slug: sourceId, target_slug: targetId, commit: true})
     });
-    pendingJournalMergeUndo = result.undo || null;
+    pendingJournalMergeDone = result.merge_id ? result : null;
     location.hash = targetId;
     await loadJournalEntities({refresh: true});
   } catch (err) {
@@ -4531,41 +4524,15 @@ async function commitJournalEntityMerge(sourceId, targetId, targetName, button) 
   }
 }
 
-function showJournalMergeUndo(undo) {
+function showJournalMergeDone(merge) {
   const panel = document.getElementById('journal-detail-undo-panel');
   panel.innerHTML = '';
-  if (!undo?.available || !undo.merge_id) return;
+  pendingJournalMergeDone = null;
+  if (!merge?.merge_id) return;
   const message = document.createElement('span');
   message.textContent = ENT_COPY.ENT_TRUST_MERGE_DONE || '';
   panel.appendChild(message);
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'btn btn-secondary';
-  button.textContent = ENT_COPY.ENT_TRUST_UNDO_ACTION || '';
-  button.onclick = () => undoJournalEntityMerge(undo.merge_id, button);
-  panel.appendChild(button);
   panel.hidden = false;
-}
-
-async function undoJournalEntityMerge(mergeId, button) {
-  if (!window.confirm(ENT_COPY.ENT_TRUST_UNDO_CONFIRM || '')) return;
-  button.disabled = true;
-  try {
-    const result = await window.apiJson(`/app/entities/api/merge/${encodeURIComponent(mergeId)}/undo`, {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: '{}'
-    });
-    pendingJournalMergeUndo = null;
-    location.hash = result.source_id || result.target_id || '';
-    await loadJournalEntities({refresh: true});
-  } catch (err) {
-    if (!entityTrustRepairRequired(err)) button.disabled = false;
-    showInlineError(
-      'journal-detail-trust-error',
-      entityTrustErrorMessage(err, ENT_COPY.ENT_TRUST_ACTION_FAILED)
-    );
-  }
 }
 
 async function restoreJournalEntityVersion(entityId, versionId, button) {

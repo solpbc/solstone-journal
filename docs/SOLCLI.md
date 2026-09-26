@@ -439,7 +439,7 @@ not the codebase. See [APPS.md](APPS.md).
 | App | Source | Commands |
 |-----|--------|----------|
 | `activities` | `core/native-sol/apps/activities/native/authority.toml` | list, get, create, update, mute, unmute |
-| `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, undo-merge, ambiguities, resolve-ambiguity, entity-history, restore-version, network, history, overview, observations, observe, search |
+| `entities` | `core/native-sol/apps/entities/native/authority.toml` | list, move, detect, attach, update, aka, record-merge-candidate, merge-candidates, accept-merge-candidate, dismiss-merge-candidate, merge, ambiguities, resolve-ambiguity, entity-history, restore-version, network, history, overview, observations, observe, search |
 | `speakers` | `core/native-sol/apps/speakers/native/authority.toml` | list, show, detect-owner, confirm-owner, clusters, suggest |
 | `transcripts` | `core/native-sol/apps/transcripts/native/authority.toml` | list, read, segments |
 | `sol` | `core/native-sol/apps/sol/native/authority.toml` | set-owner, sol-init |

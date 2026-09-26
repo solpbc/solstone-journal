@@ -290,6 +290,27 @@ async fn replay_record(router: Router, root: &Path, expected: &Value) {
             if let Some(partial) = copy.remove("CUR_PREVIEW_PARTIAL") {
                 assert_eq!(partial, Value::String("this preview covers alias and email additions; the merge may also change facet links, notes, speaker labels, and voice samples.".to_owned()));
             }
+            // Merges became permanent after the corpus was captured: the undo
+            // strings left, one neutral failure line and two permanence
+            // sentences arrived. Restore the frozen strings without pinning
+            // the live copy.
+            copy.remove("CUR_ACTION_FAILED");
+            for (key, frozen) in [
+                (
+                    "CUR_ENTITY_PREVIEW_LEAD",
+                    "before merging, here's what will change.",
+                ),
+                ("CUR_ENTITY_BATCH_MERGE_LEAD", "these pairs will be merged:"),
+                ("CUR_UNDO_ACTION", "undo merge"),
+                ("CUR_UNDO_DONE", "merge undone."),
+                (
+                    "CUR_UNDO_UNAVAILABLE",
+                    "undo isn't available for this earlier merge.",
+                ),
+                ("CUR_UNDO_FAILED", "the merge couldn't be undone."),
+            ] {
+                copy.insert(key.to_owned(), Value::String(frozen.to_owned()));
+            }
             if let Some(restore) = copy.remove("CUR_REVIEW_RESTORE_ACTION") {
                 assert_eq!(restore, Value::String("restore to review".to_owned()));
             }

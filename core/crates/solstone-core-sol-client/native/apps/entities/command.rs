@@ -20,6 +20,9 @@ const ENTITY_SEARCH_INDEX_STALE_MESSAGE: &str =
 const ENTITY_SEARCH_INDEX_UNAVAILABLE_MESSAGE: &str = "The entity search index is unavailable. Run `journal indexer --reset --rescan-full` and try again.";
 const ENTITY_HISTORY_BASE_ROUTE: &str = "/app/entities/api/journal";
 
+/// A merge is permanent, so committing one takes an explicit confirmation.
+const MERGE_NEEDS_YES: &str = "A merge can't be undone. Preview it without --commit, then, once the owner approves, run it again with --commit --yes.";
+
 #[must_use]
 pub fn list(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
@@ -460,7 +463,7 @@ pub fn accept_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
     let parsed = match parse_args(
         ctx.args,
         &[("--facet", Some("-f"))],
-        &[("--commit", Some("--no-commit"))],
+        &[("--commit", Some("--no-commit")), ("--yes", None)],
     ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
@@ -476,6 +479,9 @@ pub fn accept_merge_candidate(ctx: CommandContext<'_>) -> CommandOutput {
         Err(output) => return output,
     };
     let commit = parsed.bool_value("--commit").unwrap_or(false);
+    if commit && !parsed.bool_value("--yes").unwrap_or(false) {
+        return stderr(MERGE_NEEDS_YES);
+    }
     let result = match request_json_with_policy(
         ctx,
         HttpMethod::Post,
@@ -548,6 +554,7 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
         &[
             ("--commit", Some("--no-commit")),
             ("--keep-source-as-aka", Some("--no-keep-source-as-aka")),
+            ("--yes", None),
         ],
     ) {
         Ok(parsed) => parsed,
@@ -559,6 +566,11 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
     let Some(target_slug) = parsed.positionals.get(1) else {
         return stderr("Error: missing argument TARGET_SLUG");
     };
+    if parsed.bool_value("--commit").unwrap_or(false)
+        && !parsed.bool_value("--yes").unwrap_or(false)
+    {
+        return stderr(MERGE_NEEDS_YES);
+    }
     let result = match request_json_with_policy(
         ctx,
         HttpMethod::Post,
@@ -588,40 +600,6 @@ pub fn merge(ctx: CommandContext<'_>) -> CommandOutput {
         };
     }
     CommandOutput::success(output)
-}
-
-#[must_use]
-pub fn undo_merge(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[("--yes", None), ("--json", None)]) {
-        Ok(parsed) => parsed,
-        Err(error) => return stderr(error),
-    };
-    let Some(merge_id) = parsed.positionals.first() else {
-        return stderr("Error: missing argument MERGE_ID");
-    };
-    if !parsed.bool_value("--yes").unwrap_or(false) {
-        return stderr("Refusing to undo this merge without --yes.");
-    }
-    let body = match request_json_with_policy(
-        ctx,
-        HttpMethod::Post,
-        &format!("/app/entities/api/merge/{merge_id}/undo"),
-        vec![],
-        Some(json!({})),
-        TimeoutPolicy::EntityMutation,
-    ) {
-        Ok(body) => body,
-        Err(error) => return trust_error(error, parsed.bool_value("--json").unwrap_or(false)),
-    };
-    if parsed.bool_value("--json").unwrap_or(false) {
-        return stdout_json(&body);
-    }
-    stdout_line(format!(
-        "Undid {merge_id}: restored {} from {} (history {}).",
-        display_value(body.get("source_id")),
-        display_value(body.get("target_id")),
-        display_value(body.get("history_version_id"))
-    ))
 }
 
 #[must_use]
@@ -1717,35 +1695,13 @@ fn render_accept_merge_candidate(
                 "Accepted merge candidate: {source_slug} -> {target_slug}"
             )];
             if let Some(merge_id) = result.get("merge_id").and_then(Value::as_str) {
-                lines.push(format!(
-                    "Undo with: solstone call entities undo-merge {merge_id} --yes"
-                ));
+                lines.push(format!("Merge {merge_id} is permanent."));
             }
             stdout(lines)
         }
-        Some("already_accepted") => {
-            let mut lines = vec![format!(
-                "Merge candidate already accepted: {source_slug} -> {target_slug}"
-            )];
-            let undo = result.get("undo").and_then(Value::as_object);
-            if undo
-                .and_then(|undo| undo.get("available"))
-                .is_some_and(truthy_value)
-                && let Some(merge_id) = undo
-                    .and_then(|undo| undo.get("merge_id"))
-                    .and_then(Value::as_str)
-            {
-                lines.push(format!(
-                    "Undo with: solstone call entities undo-merge {merge_id} --yes"
-                ));
-            } else if let Some(reason) = undo
-                .and_then(|undo| undo.get("reason"))
-                .and_then(Value::as_str)
-            {
-                lines.push(format!("Undo unavailable: {reason}"));
-            }
-            stdout(lines)
-        }
+        Some("already_accepted") => stdout_line(format!(
+            "Merge candidate already accepted: {source_slug} -> {target_slug}"
+        )),
         status => stdout_line(format!(
             "accept result for {source_slug} -> {target_slug}: {}",
             status.unwrap_or("None")
@@ -2277,6 +2233,54 @@ fn strip_parenthetical(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
+
+    fn run_without_transport(
+        path: &[&str],
+        args: &[&str],
+    ) -> (CommandOutput, crate::seam::ScriptedHttpTransport) {
+        let transport = crate::seam::ScriptedHttpTransport::new(vec![]);
+        let (_, handler) = crate::aggregate::handler_for(path).expect("registered native command");
+        let output = handler(CommandContext {
+            args: &args.iter().map(|arg| (*arg).to_owned()).collect::<Vec<_>>(),
+            env: &BTreeMap::new(),
+            stdin: "",
+            today: "20260926",
+            transport: &transport,
+            clock: None,
+            files: None,
+            build_identity: None,
+            client_item_ids: None,
+            notification_sink: None,
+            link_pairing: None,
+            link_serve: None,
+            link_status_probe: None,
+        });
+        (output, transport)
+    }
+
+    #[test]
+    fn committing_a_merge_needs_yes_and_sends_nothing_without_it() {
+        for (path, args) in [
+            (&["entities", "merge"][..], &["a", "b", "--commit"][..]),
+            (
+                &["entities", "accept-merge-candidate"][..],
+                &["a", "b", "--facet", "work", "--commit"][..],
+            ),
+            (&["speakers", "merge-names"][..], &["Bob", "Robert"][..]),
+            (&["speakers", "resolve-names"][..], &["--commit"][..]),
+        ] {
+            let (output, transport) = run_without_transport(path, args);
+            assert_eq!(output.exit, 1, "{path:?}");
+            assert!(
+                output.stderr.contains("--yes"),
+                "{path:?}: {}",
+                output.stderr
+            );
+            assert!(transport.recorded().is_empty(), "{path:?}");
+        }
+        assert!(crate::aggregate::handler_for(&["entities", "undo-merge"]).is_none());
+    }
 
     fn rejected(reason_code: &str) -> ClientError {
         ClientError::ReasonRejected {

@@ -91,7 +91,7 @@ fn voiceprint_journal() -> PathBuf {
 
 #[cfg(unix)]
 #[test]
-fn merge_and_undo_accept_an_aliased_journal_root() {
+fn merge_accepts_an_aliased_journal_root_and_records_the_merged_id() {
     let journal = voiceprint_journal();
     let alias = journal.with_extension("alias");
     std::os::unix::fs::symlink(&journal, &alias).unwrap();
@@ -113,8 +113,20 @@ fn merge_and_undo_accept_an_aliased_journal_root() {
     let merged =
         commit_entity_merge(&alias, "source", "target", EntityMergeOptions::default()).unwrap();
     assert!(!journal.join("entities/source").exists());
-    crate::undo_entity_merge(&alias, &merged.merge_id, serde_json::Value::Null).unwrap();
-    assert!(journal.join("entities/source/entity.json").is_file());
+    let crate::RetiredEntities::Loaded(retired) = crate::read_retired_entities(&journal) else {
+        panic!("merged id recorded");
+    };
+    assert_eq!(retired["source"].successor, "target");
+    assert_eq!(retired["source"].dir, "source");
+    assert_eq!(
+        retired["source"].merge_id.as_deref(),
+        Some(merged.merge_id.as_str())
+    );
+    // A merge is permanent: the merged id is never created again.
+    assert!(matches!(
+        save_entity_identity(&journal, "source", &json!({"id":"source","name":"source"}), None),
+        Err(crate::EntityWriteError::IdentityMerged { successor, .. }) if successor == "target"
+    ));
     fs::remove_file(alias).unwrap();
     fs::remove_dir_all(journal).unwrap();
 }
@@ -1820,7 +1832,7 @@ fn committed_merge_arms_the_restore_guard() {
         guard_restore_does_not_cross_merge(merge, &events)
             .unwrap_err()
             .to_string(),
-        "generic identity restore cannot target a recorded merge event; use recorded-merge undo instead"
+        "that version is a merge, and a merge can't be restored or undone"
     );
     let earlier = events
         .iter()
@@ -1830,7 +1842,7 @@ fn committed_merge_arms_the_restore_guard() {
         guard_restore_does_not_cross_merge(earlier, &events)
             .unwrap_err()
             .to_string(),
-        "generic identity restore cannot cross a recorded merge event; use recorded-merge undo instead"
+        "that version is from before a merge, and a merge can't be undone"
     );
     fs::remove_dir_all(journal).unwrap();
 }
@@ -2455,127 +2467,6 @@ fn deferred_edge_repair_superseded_older_generation_job_writes_unrebuilt_complet
 }
 
 #[test]
-fn deferred_edge_repair_pause_and_fence_with_interleaving_undo_and_scan() {
-    let journal = voiceprint_journal();
-    for id in ["source1", "target1", "source2", "target2"] {
-        save_entity_identity(
-            &journal,
-            id,
-            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
-            None,
-        )
-        .unwrap();
-    }
-    for id in ["source1", "target1", "source2", "target2"] {
-        let obs_dir = journal.join(format!("facets/work/entities/{id}"));
-        fs::create_dir_all(&obs_dir).unwrap();
-        fs::write(
-            obs_dir.join("entity.json"),
-            format!(r#"{{"entity_id":"{id}"}}"#),
-        )
-        .unwrap();
-        fs::write(
-            obs_dir.join("observations.jsonl"),
-            json!({"id":1,"content":"worked with other","ts":100,"relation":{"kind":"works-at","target_entity_id":"other"},"created_at":100,"updated_at":100,"source":"manual"}).to_string() + "\n",
-        )
-        .unwrap();
-    }
-    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
-
-    let merge1 = commit_entity_merge(
-        &journal,
-        "source1",
-        "target1",
-        EntityMergeOptions::default(),
-    )
-    .unwrap();
-    let drained1 = crate::drive_entity_edge_repair(&journal).unwrap();
-    assert_eq!(drained1, 1);
-    let comp1 = crate::read_entity_edge_repair_completion(&journal, "merge", &merge1.merge_id)
-        .unwrap()
-        .unwrap();
-    assert!(comp1.published);
-
-    let merge2 = commit_entity_merge(
-        &journal,
-        "source2",
-        "target2",
-        EntityMergeOptions::default(),
-    )
-    .unwrap();
-    crate::store::edge_repair::pause_entity_edge_repair("merge", &merge2.merge_id);
-
-    let paused_drive = crate::drive_entity_edge_repair(&journal).unwrap();
-    assert_eq!(paused_drive, 0, "paused job returns without publishing");
-    assert!(
-        journal
-            .join(format!(
-                "health/entity-edge-repair/progress/merge-{}.json",
-                merge2.merge_id
-            ))
-            .exists(),
-        "progress file exists for paused job"
-    );
-
-    let undo1 = crate::undo_entity_merge(&journal, &merge1.merge_id, json!("test")).unwrap();
-    let scan_report = solstone_core_indexer_store::scan::scan_journal(&journal, false).unwrap();
-    assert_eq!(scan_report.failed, 0);
-
-    let drained_undo = crate::drive_entity_edge_repair(&journal).unwrap();
-    assert_eq!(drained_undo, 1);
-    let comp_undo = crate::read_entity_edge_repair_completion(&journal, "undo", &undo1.merge_id)
-        .unwrap()
-        .unwrap();
-    assert!(comp_undo.published);
-    assert_eq!(comp_undo.rebuilt, Some(false));
-
-    assert!(
-        journal
-            .join(format!(
-                "health/entity-edge-repair/jobs/merge-{}.json",
-                merge2.merge_id
-            ))
-            .exists()
-    );
-
-    crate::store::edge_repair::release_entity_edge_repair("merge", &merge2.merge_id);
-    let drained_merge2 = crate::drive_entity_edge_repair(&journal).unwrap();
-    assert_eq!(drained_merge2, 1);
-    assert!(
-        !journal
-            .join(format!(
-                "health/entity-edge-repair/jobs/merge-{}.json",
-                merge2.merge_id
-            ))
-            .exists()
-    );
-
-    let comp_merge2 =
-        crate::read_entity_edge_repair_completion(&journal, "merge", &merge2.merge_id)
-            .unwrap()
-            .unwrap();
-    assert!(!comp_merge2.published);
-    assert_eq!(comp_merge2.rebuilt, None);
-    assert_eq!(comp_merge2.affected_rows, None);
-
-    let raw_merge2 = fs::read_to_string(journal.join(format!(
-        "health/entity-edge-repair/completions/merge-{}.json",
-        merge2.merge_id
-    )))
-    .unwrap();
-    assert!(!raw_merge2.contains("affected_rows"));
-    assert!(!raw_merge2.contains("rebuilt"));
-
-    let fp_actual = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
-    let fresh_report = solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
-    assert_eq!(fresh_report.failed, 0);
-    let fp_fresh = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
-    assert_eq!(fp_actual, fp_fresh);
-
-    fs::remove_dir_all(journal).unwrap();
-}
-
-#[test]
 fn deferred_edge_repair_evidence_cut() {
     let journal = voiceprint_journal();
     for id in ["source", "target"] {
@@ -2764,7 +2655,7 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_merge() {
     )
     .unwrap();
 
-    let merge =
+    let _merge =
         commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
 
     let lock_res = hold_entity_trust_lock(&journal);
@@ -2785,27 +2676,6 @@ fn deferred_edge_repair_oracle_matches_fresh_rebuild_post_merge() {
     assert_eq!(
         fp_after_merge, fp_fresh_post_merge,
         "edges after drive must match fresh rebuild of post-merge sources"
-    );
-
-    let _undo = crate::undo_entity_merge(&journal, &merge.merge_id, json!("test")).unwrap();
-    let lock_res_undo = hold_entity_trust_lock(&journal);
-    assert!(
-        lock_res_undo.is_ok(),
-        "entity trust lock must be free before drive after undo"
-    );
-    drop(lock_res_undo);
-
-    let drained_undo = crate::drive_entity_edge_repair(&journal).unwrap();
-    assert_eq!(drained_undo, 1);
-
-    let fp_after_undo =
-        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
-    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
-    let fp_fresh_post_undo =
-        solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
-    assert_eq!(
-        fp_after_undo, fp_fresh_post_undo,
-        "edges after undo drive must match fresh rebuild of restored sources"
     );
 
     fs::remove_dir_all(journal).unwrap();
@@ -3291,5 +3161,130 @@ fn deferred_edge_repair_same_second_rescan_overlap() {
     let fp_fresh = solstone_core_indexer_store::merge::fingerprint_edge_rows(&journal).unwrap();
     assert_eq!(fp_after, fp_fresh);
 
+    fs::remove_dir_all(journal).unwrap();
+}
+
+fn two_entities(journal: &std::path::Path) {
+    for id in ["source", "target"] {
+        save_entity_identity(
+            journal,
+            id,
+            &json!({"id":id,"name":id,"aka":[],"emails":[]}),
+            None,
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_failed_merge_leaves_the_merged_id_record_exactly_as_it_was() {
+    let journal = voiceprint_journal();
+    two_entities(&journal);
+    let result = commit_entity_merge_with_injector(
+        &journal,
+        "source",
+        "target",
+        EntityMergeOptions::default(),
+        Some(&|phase: &str, artifact_index| phase == "audit" && artifact_index == 0),
+    );
+    assert!(result.is_err());
+    assert!(journal.join("entities/source").exists());
+    assert!(!journal.join("entities/retired.json").exists());
+    // The id is still live and can be written as before.
+    save_entity_identity(
+        &journal,
+        "source",
+        &json!({"id":"source","name":"source","aka":["again"],"emails":[]}),
+        None,
+    )
+    .unwrap();
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_damaged_merged_id_record_refuses_the_merge_and_is_left_untouched() {
+    let journal = voiceprint_journal();
+    two_entities(&journal);
+    let record = journal.join("entities/retired.json");
+    fs::write(&record, b"{not json").unwrap();
+    let error = commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default())
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("entities/retired.json"),
+        "{error}"
+    );
+    assert_eq!(fs::read(&record).unwrap(), b"{not json");
+    assert!(journal.join("entities/source").exists());
+    // No id may be created while the record can't be checked.
+    assert!(
+        save_entity_identity(
+            &journal,
+            "fresh",
+            &json!({"id":"fresh","name":"fresh"}),
+            None
+        )
+        .is_err()
+    );
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_merge_logged_before_the_record_existed_still_blocks_the_id() {
+    let journal = voiceprint_journal();
+    save_entity_identity(
+        &journal,
+        "target",
+        &json!({"id":"target","name":"target"}),
+        None,
+    )
+    .unwrap();
+    fs::create_dir_all(journal.join("logs")).unwrap();
+    fs::write(
+        journal.join("logs/entity-merges.jsonl"),
+        "{\"ts\":1,\"source_id\":\"old\",\"target_id\":\"target\"}\n",
+    )
+    .unwrap();
+    assert!(matches!(
+        save_entity_identity(&journal, "old", &json!({"id":"old","name":"old"}), None),
+        Err(crate::EntityWriteError::IdentityMerged { successor, .. }) if successor == "target"
+    ));
+    // A merged id that is live again keeps working: the guard only stops creation.
+    fs::create_dir_all(journal.join("entities/live_again")).unwrap();
+    fs::write(
+        journal.join("entities/live_again/entity.json"),
+        br#"{"id":"live_again","name":"Live Again"}"#,
+    )
+    .unwrap();
+    fs::write(
+        journal.join("logs/entity-merges.jsonl"),
+        "{\"ts\":1,\"source_id\":\"live_again\",\"target_id\":\"target\"}\n",
+    )
+    .unwrap();
+    save_entity_identity(
+        &journal,
+        "live_again",
+        &json!({"id":"live_again","name":"Live Again","aka":["still here"]}),
+        None,
+    )
+    .unwrap();
+    assert_eq!(crate::merged_away(&journal, "live_again").unwrap(), None);
+    fs::remove_dir_all(journal).unwrap();
+}
+
+#[test]
+fn a_merged_name_gets_no_new_observation_link() {
+    let journal = voiceprint_journal();
+    two_entities(&journal);
+    commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
+    let error = crate::record_observation_ops_strict(
+        &journal,
+        "work",
+        "source",
+        &[json!({"op":"add","content":"about the merged name"})],
+        None,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("'target'"), "{error}");
+    assert!(!journal.join("facets/work/entities/source").exists());
     fs::remove_dir_all(journal).unwrap();
 }

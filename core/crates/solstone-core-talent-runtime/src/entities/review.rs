@@ -482,6 +482,11 @@ pub fn prepare_publication(
             skipped += 1;
             continue;
         };
+        // A merged entity is never created again, so its name is not promoted.
+        if solstone_core_entity::merged_away(journal, &slug)?.is_some() {
+            skipped += 1;
+            continue;
+        }
         let aliases = row
             .get("aliases")
             .and_then(Value::as_array)
@@ -709,6 +714,14 @@ pub fn apply_result(
                 Err(solstone_core_facets::FacetEntityWriteError::EntityExists { .. }) => {
                     *counts.get_mut("skipped").unwrap() += 1;
                     Some(canonical_slug.to_owned())
+                }
+                // A merged entity is never created again; the detection is
+                // not an error, and nothing is attached for it.
+                Err(solstone_core_facets::FacetEntityWriteError::EntityWrite(
+                    solstone_core_entity::EntityWriteError::IdentityMerged { .. },
+                )) => {
+                    *counts.get_mut("skipped").unwrap() += 1;
+                    None
                 }
                 Err(error_value) => {
                     *counts.get_mut("errored").unwrap() += 1;
@@ -989,6 +1002,38 @@ mod tests {
         assert_eq!(sidecar["promoted"], 1);
         assert_eq!(sidecar["aliased"], 1);
         assert_eq!(sidecar["merges"], 1);
+    }
+
+    #[test]
+    fn a_promotion_of_a_merged_name_is_skipped_not_errored() {
+        let root = tempfile::tempdir().unwrap();
+        for day in ["20260101", "20260102"] {
+            detect(root.path(), day, "Sunstone");
+        }
+        fs::create_dir_all(root.path().join("entities/solstone")).unwrap();
+        fs::write(
+            root.path().join("entities/solstone/entity.json"),
+            r#"{"id":"solstone","name":"Solstone","type":"Project"}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("entities/retired.json"),
+            r#"{"ids":{"sunstone":{"state":"merged","dir":"sunstone","successor":"solstone"}}}"#,
+        )
+        .unwrap();
+        apply_result(root.path(), r#"{"promotions":[{"name":"Sunstone","description":"An earlier project name.","promote":true,"aliases":[]}],"merges":[]}"#, "work", "20260108").unwrap();
+        assert!(!root.path().join("entities/sunstone").exists());
+        let sidecar: Value = serde_json::from_str(
+            &fs::read_to_string(
+                root.path()
+                    .join("facets/work/entities/20260108_review_outcome.json"),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(sidecar["promoted"], 0);
+        assert_eq!(sidecar["errored"], 0);
+        assert!(sidecar["error"].is_null());
     }
 
     #[test]

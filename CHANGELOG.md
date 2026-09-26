@@ -11,6 +11,8 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - renaming a facet now changes only its title. its name, the one commands and agent permissions use, stays the same, so what's filed under it stays put and every agent you've given it to keeps its access.
 - from this version on, once you delete or merge a facet, its name is never used again. a new facet with the same title gets a new name, so nothing filed under the old facet can end up in the new one.
 - merging facets can't be undone, so `journal facet merge` now needs `--yes` to run. check first what a merge would lose with `--dry-run`.
+- merging entities can't be undone any more, and the confirmation before a merge now says so. an entity that was merged away is never created again: a new mention of its name doesn't bring it back, and adding it yourself is refused with the name of the entity it joined.
+- `solstone call entities merge --commit`, `solstone call entities accept-merge-candidate --commit`, `solstone call speakers merge-names` and `solstone call speakers resolve-names --commit` now need `--yes`. `solstone call entities undo-merge` is gone. a script that runs one of these needs to add `--yes`.
 
 ### Removed
 
@@ -23,6 +25,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - a facet's entity review no longer stops for the day when another facet saved merge suggestions while it was running. if `journal doctor` already names a day that stopped this way, the reprocess command it suggests finishes that day's review.
 - after you merge one facet into another, search and the agents you've given the remaining facet now find what was filed under the old one. an agent you'd given only the old facet needs the remaining one.
 - `journal facet doctor --fix` can now record facets you renamed, merged or deleted before this version, so material from a renamed or merged facet shows up under the facet it became. run it before you create new facets. `journal facet doctor --retire NAME --into FACET` does the same for a name the journal has no record of.
+- adding an entity could erase the aliases, emails and "this is you" mark of an existing entity when the added name matched that entity's original name, even with different punctuation. it now uses the existing entity and leaves its details alone. entities already affected aren't changed by this update.
 
 ## [2.0.21] - 2026-09-26
 

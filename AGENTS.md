@@ -242,14 +242,15 @@ Verified directly against source, not against this table's own history — a sta
 | Entities (`entities/*/entity.json`) | `core/crates/solstone-core-entity/` (`store/write.rs`, `store/create.rs`, `store/merge.rs`, `store/lifecycle.rs`) |
 | Entity voiceprints (`entities/*/voiceprints.npz`) | `core/crates/solstone-core-entity/src/store/voiceprints.rs` (`save_voiceprints_batch`), called by `core/crates/solstone-core-speaker-resolve/` |
 | Entity owner-centroid (`entities/*/owner_centroid.npz`) | `core/crates/solstone-core-speaker-resolve/src/owner_centroid.rs` (a different crate from the voiceprints write above; don't conflate the two files) |
-| Entity history content (`entities/*/history/{events,prepared,private}/**`) | `core/crates/solstone-core-entity/` (`store/write.rs`, `store/history.rs`, `store/merge.rs`, `store/merge_payload.rs`, `store/undo.rs`) |
+| Entity history content (`entities/*/history/{events,prepared,private}/**`) | `core/crates/solstone-core-entity/` (`store/write.rs`, `store/history.rs`, `store/merge.rs`, `store/merge_payload.rs`) |
+| Merged entity ids (`entities/retired.json`) | `core/crates/solstone-core-entity/src/store/retired.rs`; written only by merge inside its recovery transaction. A merged id is never created again (with `logs/entity-merges.jsonl` covering merges made before the record existed). |
 | Owner voice candidate (`awareness/owner_candidate.npz`) | `core/crates/solstone-core-speaker-resolve/src/owner_candidate.rs` |
 | Speaker discovery clusters (`awareness/discovery_clusters.json`) | `core/crates/solstone-core-speaker-resolve/src/discovery_scan.rs` (`write_discovery_cache`) |
 | Speaker discovery clusters, resolved (`awareness/discovery_clusters.resolved.json`) | `core/crates/solstone-core-speaker-resolve/src/identify_forward_phases.rs` (`replace_resolved_clusters`), a different module from the unresolved file above. The entity crate deletes `awareness/discovery_clusters.json` from the edge-repair driver when the job generation still matches, not at source commit; it does not snapshot or restore either cache. |
 | Speaker candidate pool (`awareness/speaker_candidates.json`) | `core/crates/solstone-core-speaker-resolve/src/candidate_tracker.rs` |
 | Speaker identify operation ledger (`speakers/identify-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/identify_operations.rs` |
 | Speaker backfill operation ledger (`speakers/backfill-operations.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/backfill_operations.rs` |
-| Entity merge/undo interruption records (`health/entity-merge-recovery/*`) | `core/crates/solstone-core-entity/src/store/merge_rollback.rs`; a committed retry enqueues edge repair and does not restore sources or rebuild inline. Conflicts retain current files and before-images. Undo refuses merged-facet restoration without matching after-state. |
+| Entity merge interruption records (`health/entity-merge-recovery/*`) | `core/crates/solstone-core-entity/src/store/merge_rollback.rs`; a committed retry enqueues edge repair and does not restore sources or rebuild inline. Conflicts retain current files and before-images. Records left by an undo from an earlier version still recover. |
 | Entity edge repair jobs, generation, and completions (`health/entity-edge-repair/**`) | `core/crates/solstone-core-entity/` |
 | Entity review sweep completion (`health/entity-review-sweep.json`) | `core/crates/solstone-core-entity/src/store/review_policy.rs` (`sweep_entity_review_policy`) |
 | Entity resolution ambiguities (`entities/ambiguities.jsonl`) | `core/crates/solstone-core-entity/src/store/write.rs` (`record_ambiguity_observation`, `record_ambiguity_choice`, `mutate_ambiguities`) |
@@ -259,7 +260,7 @@ Verified directly against source, not against this table's own history — a sta
 | Speaker candidate-pair review candidates (`speakers/candidate-pair-review-candidates.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/speaker_candidate_pair_review_candidates.rs` |
 | Speaker discovery cluster dismissals (`speakers/cluster-dismissals.jsonl`) | `core/crates/solstone-core-convey-shell/src/speakers_discovery_write.rs` |
 | Speaker keep-separate assertions (`speakers/keep-separate.jsonl`) | `core/crates/solstone-core-speaker-resolve/src/keep_separate.rs` |
-| Observations (`observations.jsonl`) | Ordinary record/append/ops/copy-in through writer (`apply_observation_change` in `core/crates/solstone-core-entity/src/store/observations.rs`, re-exported by `solstone-core-facets`). Merge, undo, importers, owner add, and observer ops are callers. |
+| Observations (`observations.jsonl`) | Ordinary record/append/ops/copy-in through writer (`apply_observation_change` in `core/crates/solstone-core-entity/src/store/observations.rs`, re-exported by `solstone-core-facets`). Merge, importers, owner add, and observer ops are callers. |
 | Activity definitions (`facets/*/activities.jsonl`) | `core/crates/solstone-core-facets/src/store/activities.rs` |
 | Activity records (`facets/*/activities/{day}.jsonl`) | `core/crates/solstone-core-facets/src/store/activity_records.rs` (a sibling module to activity definitions above, same crate) |
 | Action logs (`config/actions/*.jsonl`, `facets/*/logs/*.jsonl`) | `core/crates/solstone-core-facets/src/action_log.rs` (`append_action_log`, `append_action_log_for_day`) |

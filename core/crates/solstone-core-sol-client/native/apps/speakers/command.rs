@@ -104,12 +104,26 @@ pub fn bootstrap(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn resolve_names(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_json_commit(ctx.args) {
+    let parsed = match parse_args(
+        ctx.args,
+        &[],
+        &[
+            FlagSpec::true_flag("--commit"),
+            FlagSpec::true_flag("--json"),
+            FlagSpec::true_flag("--yes"),
+        ],
+    ) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
     let commit = parsed.flag("--commit");
     let json_output = parsed.flag("--json");
+    // Resolving name variants with --commit merges entities, and merges are permanent.
+    if commit && !parsed.flag("--yes") {
+        return stderr(
+            "Merging name variants can't be undone. Review the report without --commit, then, once the owner approves, run it again with --commit --yes.",
+        );
+    }
     let mut out = String::new();
     if !commit && !json_output {
         emit(&mut out, REPORT_ONLY);
@@ -1041,10 +1055,16 @@ pub fn keep_separate_list(ctx: CommandContext<'_>) -> CommandOutput {
 
 #[must_use]
 pub fn merge_names(ctx: CommandContext<'_>) -> CommandOutput {
-    let parsed = match parse_args(ctx.args, &[], &[]) {
+    let parsed = match parse_args(ctx.args, &[], &[FlagSpec::true_flag("--yes")]) {
         Ok(parsed) => parsed,
         Err(error) => return stderr(error),
     };
+    // This merges two entities, and merges are permanent.
+    if !parsed.flag("--yes") {
+        return stderr(
+            "A merge can't be undone. Once the owner approves, run it again with --yes to merge.",
+        );
+    }
     let Some(alias) = parsed.positionals.first() else {
         return stderr("Error: missing argument ALIAS");
     };

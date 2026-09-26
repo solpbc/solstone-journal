@@ -3763,7 +3763,7 @@ async fn accept_merge_candidate_commits_and_marks_candidate_accepted() {
     assert_eq!(response["kind"], "entity_merge");
     assert_eq!(response["candidate"]["status"], "accepted");
     assert_eq!(response["candidate"]["merge_id"], response["merge_id"]);
-    assert_eq!(response["undo"]["available"], true);
+    assert_eq!(response["undo"]["available"], false);
     assert_eq!(
         call(j.path(), "/app/entities/api/journal/entity/source")
             .await
@@ -3924,7 +3924,7 @@ async fn merge_preview_returns_plan_without_mutating_entities() {
 }
 
 #[tokio::test]
-async fn merge_commit_merges_entities_and_returns_undo_descriptor() {
+async fn merge_commit_merges_entities_and_reports_it_is_permanent() {
     let j = Journal::new();
     seed_entity(j.path(), "source", "Source");
     seed_entity(j.path(), "target", "Target");
@@ -3936,7 +3936,20 @@ async fn merge_commit_merges_entities_and_returns_undo_descriptor() {
     .await;
     assert_eq!(status, 200);
     assert!(response["merge_id"].as_str().is_some());
-    assert_eq!(response["undo"]["available"], true);
+    assert_eq!(response["undo"]["available"], false);
+    assert_eq!(
+        post(
+            j.path(),
+            &format!(
+                "/app/entities/api/merge/{}/undo",
+                response["merge_id"].as_str().unwrap()
+            ),
+            json!({}),
+        )
+        .await
+        .0,
+        404
+    );
     assert_eq!(
         call(j.path(), "/app/entities/api/journal/entity/source")
             .await
@@ -3952,41 +3965,7 @@ async fn merge_commit_merges_entities_and_returns_undo_descriptor() {
 }
 
 #[tokio::test]
-async fn merge_undo_restores_committed_entities() {
-    let j = Journal::new();
-    seed_entity(j.path(), "source", "Source");
-    seed_entity(j.path(), "target", "Target");
-    let (_, merge) = post(
-        j.path(),
-        "/app/entities/api/merge",
-        json!({"source_slug":"source","target_slug":"target","commit":true}),
-    )
-    .await;
-    let merge_id = merge["merge_id"].as_str().unwrap();
-    let (status, undo) = post(
-        j.path(),
-        &format!("/app/entities/api/merge/{merge_id}/undo"),
-        json!({}),
-    )
-    .await;
-    assert_eq!(status, 200);
-    assert_eq!(undo["merge_id"], merge_id);
-    assert_eq!(
-        call(j.path(), "/app/entities/api/journal/entity/source")
-            .await
-            .0,
-        200
-    );
-    assert_eq!(
-        call(j.path(), "/app/entities/api/journal/entity/target")
-            .await
-            .0,
-        200
-    );
-}
-
-#[tokio::test]
-async fn merge_and_undo_repair_refusals_have_exact_variant_key_sets() {
+async fn merge_repair_refusals_have_exact_variant_key_sets() {
     let merge_error = solstone_core_entity::EntityMergeError::Failed {
         failed_phase: "audit".to_owned(),
         report: Box::new(solstone_core_entity::EntityMergeReport {
@@ -4027,41 +4006,6 @@ async fn merge_and_undo_repair_refusals_have_exact_variant_key_sets() {
         "entity_operation_failed",
         500,
     );
-
-    let undo_error = solstone_core_entity::EntityUndoError::Failed {
-        failed_phase: "facets".to_owned(),
-        report: Box::new(solstone_core_entity::EntityUndoReport {
-            merge_id: "stored-merge-id".to_owned(),
-            source_id: "source".to_owned(),
-            target_id: "target".to_owned(),
-        }),
-        rollback_error: None,
-    };
-    let (undo_status, undo) = response_value(crate::router::classify_undo_error(
-        &undo_error,
-        "url-merge-id",
-    ))
-    .await;
-    assert_eq!(undo_status, 500);
-    let undo_keys: BTreeSet<_> = undo.as_object().unwrap().keys().cloned().collect();
-    assert_eq!(
-        undo_keys,
-        BTreeSet::from([
-            "detail".to_owned(),
-            "error".to_owned(),
-            "merge_id".to_owned(),
-            "mutation_applied".to_owned(),
-            "operation_state".to_owned(),
-            "reason_code".to_owned(),
-            "safe_remediation".to_owned(),
-            "source_id".to_owned(),
-            "source_state".to_owned(),
-            "target_id".to_owned(),
-            "target_state".to_owned(),
-        ])
-    );
-    assert!(!undo_keys.contains("failed_phase"));
-    assert_eq!(undo["merge_id"], "url-merge-id");
 }
 
 #[tokio::test]
@@ -4078,9 +4022,9 @@ async fn merge_classifier_precedence_handles_not_found_and_busy() {
         404,
     );
 
-    let busy = solstone_core_entity::EntityUndoError::Refused("worker is BUSY".to_owned());
+    let busy = solstone_core_entity::EntityMergeError::Refused("worker is BUSY".to_owned());
     let (busy_status, busy_response) =
-        response_value(crate::router::classify_undo_error(&busy, "m1")).await;
+        response_value(crate::router::classify_merge_error(&busy)).await;
     assert_oracle_refusal(
         "_entity_operation_error:288",
         (busy_status, busy_response),
@@ -4092,10 +4036,10 @@ async fn merge_classifier_precedence_handles_not_found_and_busy() {
 #[tokio::test]
 async fn classifier_refusal_sites_cover_remaining_message_branches() {
     let already_undone =
-        solstone_core_entity::EntityUndoError::Refused("merge m1 was already undone".to_owned());
+        solstone_core_entity::EntityMergeError::Refused("merge m1 was already undone".to_owned());
     assert_oracle_refusal(
         "_entity_operation_error:280",
-        response_value(crate::router::classify_undo_error(&already_undone, "m1")).await,
+        response_value(crate::router::classify_merge_error(&already_undone)).await,
         "operation_no_longer_available",
         410,
     );
@@ -4119,10 +4063,10 @@ async fn classifier_refusal_sites_cover_remaining_message_branches() {
         400,
     );
 
-    let generic = solstone_core_entity::EntityUndoError::Refused(
-        "merge undo failed to publish durable history".to_owned(),
+    let generic = solstone_core_entity::EntityMergeError::Refused(
+        "merge failed to publish durable history".to_owned(),
     );
-    let generic_response = response_value(crate::router::classify_undo_error(&generic, "m1")).await;
+    let generic_response = response_value(crate::router::classify_merge_error(&generic)).await;
     assert_oracle_refusal(
         "_entity_operation_error:289",
         generic_response,
@@ -4182,15 +4126,6 @@ async fn merge_requires_source_slug() {
     )
     .await;
     assert_eq!(response["reason_code"], "missing_required_field");
-}
-
-#[tokio::test]
-async fn undo_unknown_merge_is_not_found() {
-    let j = Journal::new();
-    let (status, response) =
-        post(j.path(), "/app/entities/api/merge/missing/undo", json!({})).await;
-    assert_eq!(status, 404);
-    assert_eq!(response["reason_code"], "entity_not_found");
 }
 
 fn merge_candidate_dismiss_request() -> Value {
@@ -5615,6 +5550,7 @@ async fn refusal_sites_batch_1_direct_write_error_classifiers_are_exact() {
     assert_oracle_refusal(
         "add_entity:1386",
         response_value(crate::router::create_entity_write_error_response(
+            std::path::Path::new("/nonexistent-journal"),
             solstone_core_facets::FacetEntityWriteError::TrustLock(
                 solstone_core_facets::FacetTrustLockError::Lock(synthetic_lock_timeout()),
             ),
@@ -5626,6 +5562,7 @@ async fn refusal_sites_batch_1_direct_write_error_classifiers_are_exact() {
     assert_oracle_refusal(
         "add_entity:1388",
         response_value(crate::router::create_entity_write_error_response(
+            std::path::Path::new("/nonexistent-journal"),
             solstone_core_facets::FacetEntityWriteError::Io(std::io::Error::other("disk failed")),
         ))
         .await,
@@ -5635,6 +5572,7 @@ async fn refusal_sites_batch_1_direct_write_error_classifiers_are_exact() {
     assert_oracle_refusal(
         "attach_entity_for_call:637",
         response_value(crate::router::attach_entity_write_error_response(
+            std::path::Path::new("/nonexistent-journal"),
             solstone_core_facets::FacetEntityWriteError::EntityNotFound {
                 entity_id: "missing".to_owned(),
             },
@@ -5646,6 +5584,7 @@ async fn refusal_sites_batch_1_direct_write_error_classifiers_are_exact() {
     assert_oracle_refusal(
         "attach_entity_for_call:639",
         response_value(crate::router::attach_entity_write_error_response(
+            std::path::Path::new("/nonexistent-journal"),
             solstone_core_facets::FacetEntityWriteError::TrustLock(
                 solstone_core_facets::FacetTrustLockError::Lock(synthetic_lock_timeout()),
             ),
@@ -5996,14 +5935,6 @@ async fn refusal_sites_batch_3_resolution_and_merge_conditions_are_exact() {
         "entity_busy",
         503,
     );
-    let undo = solstone_core_entity::EntityUndoError::Refused("worker is busy".to_owned());
-    assert_oracle_refusal(
-        "undo_entity_merge_for_call:1000",
-        response_value(crate::router::classify_undo_error(&undo, "m1")).await,
-        "entity_busy",
-        503,
-    );
-
     for (site, detail) in [
         (
             "accept_merge_candidate_for_call:924",
@@ -7076,26 +7007,6 @@ async fn resource_mutation_routes_omit_success() {
         let j = Journal::new();
         seed_entity(j.path(), "source", "Source");
         seed_entity(j.path(), "target", "Target");
-        let (_, merge) = post(
-            j.path(),
-            "/app/entities/api/merge",
-            json!({"source_slug":"source","target_slug":"target","commit":true}),
-        )
-        .await;
-        let merge_id = merge["merge_id"].as_str().unwrap();
-        let (status, body) = post(
-            j.path(),
-            &format!("/app/entities/api/merge/{merge_id}/undo"),
-            json!({}),
-        )
-        .await;
-        assert_eq!(status, 200, "undo: status");
-        assert_no_success_envelope("undo", &body);
-    }
-    {
-        let j = Journal::new();
-        seed_entity(j.path(), "source", "Source");
-        seed_entity(j.path(), "target", "Target");
         seed_open_merge_candidate(j.path()).await;
         let (status, body) = post(
             j.path(),
@@ -7361,4 +7272,34 @@ async fn group_choice_rejects_non_string_members_without_answering_valid_members
     .await;
     assert_eq!(status, 400);
     assert_eq!(fs::read(&path).unwrap(), before);
+}
+
+#[tokio::test]
+async fn attaching_a_merged_name_is_refused_naming_the_entity_it_joined() {
+    let j = Journal::new();
+    seed_entity(j.path(), "source", "Source");
+    seed_entity(j.path(), "target", "Target");
+    let (status, _) = post(
+        j.path(),
+        "/app/entities/api/merge",
+        json!({"source_slug":"source","target_slug":"target","commit":true,"keep_source_as_aka":false}),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let (status, response) = post(
+        j.path(),
+        "/app/entities/api/work/attach",
+        json!({"type":"Person","name":"Source"}),
+    )
+    .await;
+    assert_eq!(status, 409);
+    assert_eq!(response["reason_code"], "entity_merged");
+    assert!(
+        response["detail"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("'target'"),
+        "{response}"
+    );
+    assert!(!j.path().join("entities/source").exists());
 }

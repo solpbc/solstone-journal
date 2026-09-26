@@ -711,6 +711,12 @@ fn target_outcome_value(outcome: IdentifyTargetOutcome) -> Value {
         IdentifyTargetOutcome::DestinationOccupied { entity_id } => {
             json!({"status":"destination_occupied","entity_id":entity_id,"error":format!("Entity id '{entity_id}' already exists.")})
         }
+        IdentifyTargetOutcome::EntityMerged {
+            entity_id,
+            successor,
+        } => {
+            json!({"status":"entity_merged","entity_id":entity_id,"successor":successor,"error":format!("'{entity_id}' was merged into '{successor}'. Merges can't be undone, so name this speaker '{successor}' instead.")})
+        }
         IdentifyTargetOutcome::EntityNotFound { entity_id } => {
             json!({"error":format!("Entity '{entity_id}' not found."),"not_found":true})
         }

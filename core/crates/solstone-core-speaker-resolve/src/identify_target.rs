@@ -78,6 +78,11 @@ pub enum IdentifyTargetOutcome {
     DestinationOccupied {
         entity_id: String,
     },
+    /// The name's entity was merged into `successor`; merges are permanent.
+    EntityMerged {
+        entity_id: String,
+        successor: String,
+    },
     EntityNotFound {
         entity_id: String,
     },
@@ -196,6 +201,17 @@ pub fn resolve_identify_target(
     }
     let proposed_id = entity_slug(name);
     let _trust = hold_entity_trust_lock(&request.journal_root)?;
+    if let Ok(Some(successor)) =
+        solstone_core_entity::merged_away(&request.journal_root, &proposed_id)
+    {
+        let successor =
+            solstone_core_entity::live_merge_successor(&request.journal_root, &successor)
+                .unwrap_or(successor);
+        return Ok(IdentifyTargetOutcome::EntityMerged {
+            entity_id: proposed_id,
+            successor,
+        });
+    }
     let occupied = read_identity_map(&request.journal_root)?
         .resolved
         .contains_key(&proposed_id)

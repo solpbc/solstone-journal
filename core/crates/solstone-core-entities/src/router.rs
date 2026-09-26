@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use solstone_core_convey_http::envelope::{ErrorEnvelope, not_found_fallback};
 use solstone_core_convey_http::gate::require_access;
 use solstone_core_convey_http::identity::AccessBasis;
-use solstone_core_convey_http::refusal::{MergeRepairRequired, UndoRepairRequired};
+use solstone_core_convey_http::refusal::MergeRepairRequired;
 use solstone_core_entity_matching::{
     EntityNameCandidate, EntityNameMatchOutcome, find_matching_entity_detailed,
 };
@@ -153,10 +153,6 @@ fn api_router_from_state(state: Arc<RouterState>) -> Router {
             get(delete_outcomes_route),
         )
         .route("/app/entities/api/merge", post(merge_route))
-        .route(
-            "/app/entities/api/merge/{merge_id}/undo",
-            post(undo_merge_route),
-        )
         .route(
             "/app/entities/api/merge-candidates",
             get(merge_candidates_route),
@@ -1280,12 +1276,14 @@ pub(crate) fn entity_review_candidate_error_response(
     }
 }
 
+/// Merges are permanent. The field keeps its shape so clients render the
+/// outcome as a finished merge.
 fn entity_merge_undo(merge_id: Option<&str>) -> serde_json::Value {
     let merge_id = merge_id.filter(|merge_id| !merge_id.is_empty());
     json!({
-        "available": merge_id.is_some(),
+        "available": false,
         "merge_id": merge_id,
-        "reason": merge_id.is_none().then_some("No recorded merge id is available."),
+        "reason": "Merges are permanent and can't be undone.",
     })
 }
 
@@ -1361,54 +1359,6 @@ pub(crate) fn classify_merge_error(error: &solstone_core_entity::EntityMergeErro
                 source_state: json!({"id": report.source_id}),
                 target_state: json!({"id": report.target_id}),
                 safe_remediation: "Contact an operator to repair this merge.".to_owned(),
-            }),
-        )
-            .into_response(),
-        _ => classified_operation_error(error.to_string()),
-    }
-}
-
-fn undo_error_is_busy(error: &solstone_core_entity::EntityUndoError) -> bool {
-    match error {
-        solstone_core_entity::EntityUndoError::Write(
-            solstone_core_entity::EntityWriteError::TrustLock(
-                solstone_core_entity::EntityTrustLockError::Lock(
-                    solstone_core_entity::LockError::Timeout(_),
-                ),
-            )
-            | solstone_core_entity::EntityWriteError::AmbiguityLock(
-                solstone_core_entity::LockError::Timeout(_),
-            ),
-        ) => true,
-        solstone_core_entity::EntityUndoError::Failed {
-            failed_phase,
-            rollback_error,
-            ..
-        } if failed_phase == "trust_lock" => rollback_error.as_deref().is_some_and(|detail| {
-            let lowered = detail.to_lowercase();
-            lowered.contains("lock") || lowered.contains("timed out") || lowered.contains("busy")
-        }),
-        _ => false,
-    }
-}
-
-pub(crate) fn classify_undo_error(
-    error: &solstone_core_entity::EntityUndoError,
-    merge_id: &str,
-) -> Response {
-    match error {
-        solstone_core_entity::EntityUndoError::Failed { report, .. } => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(UndoRepairRequired {
-                envelope: repair_envelope(error.to_string()),
-                merge_id: merge_id.to_owned(),
-                source_id: report.source_id.clone(),
-                target_id: report.target_id.clone(),
-                operation_state: "partially_undone".to_owned(),
-                mutation_applied: true,
-                source_state: json!({"id": report.source_id}),
-                target_state: json!({"id": report.target_id}),
-                safe_remediation: "Contact an operator to repair this undo.".to_owned(),
             }),
         )
             .into_response(),
@@ -1503,34 +1453,6 @@ async fn merge_route(
         }
         Ok(Err(error)) => classify_merge_error(&error),
         Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge commit failed"),
-    }
-}
-
-async fn undo_merge_route(
-    Extension(b): Extension<AccessBasis>,
-    State(root): State<Arc<RouterState>>,
-    RoutePath(merge_id): RoutePath<String>,
-) -> Response {
-    if let Some(r) = admitted(&b) {
-        return r;
-    }
-    let classifier_merge_id = merge_id.clone();
-    match solstone_core_serving::seam::run_blocking(move || {
-        solstone_core_entity::undo_entity_merge(&root, &merge_id, json!("entities.merge.undo"))
-    })
-    .await
-    {
-        Ok(Ok(report)) => Json(json!({
-            "merge_id": report.merge_id,
-            "source_id": report.source_id,
-            "target_id": report.target_id,
-        }))
-        .into_response(),
-        Ok(Err(error)) if undo_error_is_busy(&error) => {
-            refusal(ReasonCode::EntityBusy, "entity busy")
-        }
-        Ok(Err(error)) => classify_undo_error(&error, &classifier_merge_id),
-        Err(_) => refusal(ReasonCode::EntityOperationFailed, "merge undo failed"),
     }
 }
 
@@ -3828,9 +3750,39 @@ fn facet_entity_write_error_is_busy(error: &solstone_core_facets::FacetEntityWri
     )
 }
 
+/// Owner copy for a name whose entity was merged away.
+fn merged_entity_refusal(journal_root: &Path, identity_id: &str, successor: &str) -> Response {
+    let survivor = solstone_core_entity::live_merge_successor(journal_root, successor)
+        .unwrap_or_else(|| successor.to_owned());
+    refusal(
+        ReasonCode::EntityMerged,
+        format!(
+            "'{identity_id}' was merged into '{survivor}'. Merges can't be undone, so that name can't be added as a new entity; use '{survivor}' instead."
+        ),
+    )
+}
+
+fn merged_identity(
+    error: &solstone_core_facets::FacetEntityWriteError,
+) -> Option<(String, String)> {
+    match error {
+        solstone_core_facets::FacetEntityWriteError::EntityWrite(
+            solstone_core_entity::EntityWriteError::IdentityMerged {
+                identity_id,
+                successor,
+            },
+        ) => Some((identity_id.clone(), successor.clone())),
+        _ => None,
+    }
+}
+
 pub(crate) fn attach_entity_write_error_response(
+    journal_root: &Path,
     error: solstone_core_facets::FacetEntityWriteError,
 ) -> Response {
+    if let Some((identity_id, successor)) = merged_identity(&error) {
+        return merged_entity_refusal(journal_root, &identity_id, &successor);
+    }
     match error {
         solstone_core_facets::FacetEntityWriteError::EntityExists { .. } => {
             refusal(ReasonCode::EntityAlreadyExists, "entity already exists")
@@ -3846,8 +3798,12 @@ pub(crate) fn attach_entity_write_error_response(
 }
 
 pub(crate) fn create_entity_write_error_response(
+    journal_root: &Path,
     error: solstone_core_facets::FacetEntityWriteError,
 ) -> Response {
+    if let Some((identity_id, successor)) = merged_identity(&error) {
+        return merged_entity_refusal(journal_root, &identity_id, &successor);
+    }
     match error {
         solstone_core_facets::FacetEntityWriteError::EntityBlocked { .. } => {
             refusal(ReasonCode::EntityBlocked, "entity blocked")
@@ -3912,6 +3868,7 @@ async fn attach_route(
     let name = name.to_owned();
     let kind_for_response = kind.clone();
     let name_for_response = name.clone();
+    let refusal_root = root.clone();
     match solstone_core_serving::seam::run_blocking(move || {
         solstone_core_facets::attach_or_reactivate_entity(&root, &facet, &kind, &name, &description)
     })
@@ -3924,7 +3881,7 @@ async fn attach_route(
             let relationship = result.relationship;
             Json(json!({"id":relationship["entity_id"],"name":name_for_response,"type":kind_for_response,"description":relationship["description"],"attached_at":relationship["attached_at"],"updated_at":relationship["updated_at"]})).into_response()
         }
-        Ok(Err(error)) => attach_entity_write_error_response(error),
+        Ok(Err(error)) => attach_entity_write_error_response(&refusal_root, error),
         _ => refusal(ReasonCode::EntityBusy, "entity busy"),
     }
 }
@@ -3978,6 +3935,7 @@ async fn create_entity_route(
     let name = name.to_owned();
     let kind_for_response = kind.clone();
     let name_for_response = name.clone();
+    let refusal_root = root.clone();
     match solstone_core_serving::seam::run_blocking(move || {
         solstone_core_facets::attach_or_reactivate_entity(&root, &facet, &kind, &name, &description)
     })
@@ -4001,7 +3959,7 @@ async fn create_entity_route(
             )
                 .into_response()
         }
-        Ok(Err(error)) => create_entity_write_error_response(error),
+        Ok(Err(error)) => create_entity_write_error_response(&refusal_root, error),
         _ => refusal(ReasonCode::EntityOperationFailed, "entity create failed"),
     }
 }

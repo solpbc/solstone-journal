@@ -215,10 +215,30 @@ pub fn attach_or_reactivate_entity(
             name: name.to_owned(),
         });
     }
+    let slug = entity_slug(name);
+    if winners.is_empty()
+        && let Some(entity_dir) = read_identity_map(journal_root)?
+            .resolved
+            .get(&slug)
+            .cloned()
+    {
+        // The name's slug is already a live entity's id under a different
+        // display name. An id match is an identity match: attach that entity
+        // and never rewrite its identity, which would wipe its aliases,
+        // emails and principal status.
+        return attach_existing_identity(
+            journal_root,
+            facet_dir,
+            &slug,
+            &entity_dir,
+            name,
+            description,
+        );
+    }
     let (entity_id, identity) = if let Some((entity_id, identity)) = winners.pop() {
         (entity_id, identity)
     } else {
-        let entity_id = entity_slug(name);
+        let entity_id = slug;
         let identity =
             json!({"id": entity_id, "name": name, "type": entity_type, "created_at": now_iso()});
         let saved = save_entity_identity(
@@ -246,6 +266,78 @@ pub fn attach_or_reactivate_entity(
         facet_dir,
         &relationship_dir,
         &entity_id,
+        &object,
+    )?;
+    Ok(FacetEntityAttachResult {
+        relationship: Value::Object(object),
+        reactivated: false,
+    })
+}
+
+/// Attach a live entity found by id, reusing its link in this facet when one
+/// exists under any folder.
+fn attach_existing_identity(
+    journal_root: &Path,
+    facet_dir: &str,
+    entity_id: &str,
+    entity_dir: &str,
+    name: &str,
+    description: &str,
+) -> Result<FacetEntityAttachResult, FacetEntityWriteError> {
+    let identity = read_entity_identity(journal_root, entity_dir)?.ok_or_else(|| {
+        FacetEntityWriteError::EntityNotFound {
+            entity_id: entity_id.to_owned(),
+        }
+    })?;
+    if identity.value().get("blocked") == Some(&Value::Bool(true)) {
+        return Err(FacetEntityWriteError::EntityBlocked {
+            entity_id: entity_id.to_owned(),
+        });
+    }
+    for relationship_dir in list_facet_entity_directories(journal_root, facet_dir)? {
+        let Some(link) = read_facet_entity_link(journal_root, facet_dir, &relationship_dir)? else {
+            continue;
+        };
+        if link.entity_id() != entity_id {
+            continue;
+        }
+        if link.value().get("detached") != Some(&Value::Bool(true)) {
+            return Err(FacetEntityWriteError::EntityExists {
+                name: name.to_owned(),
+            });
+        }
+        let mut relationship = object_clone(link.value())?;
+        relationship.remove("detached");
+        if !description.is_empty() {
+            relationship.insert(
+                "description".to_owned(),
+                Value::String(description.to_owned()),
+            );
+        }
+        relationship.insert("updated_at".to_owned(), Value::String(now_iso()));
+        save_facet_entity_link(
+            journal_root,
+            facet_dir,
+            &relationship_dir,
+            entity_id,
+            &relationship,
+        )?;
+        return Ok(FacetEntityAttachResult {
+            relationship: Value::Object(relationship),
+            reactivated: true,
+        });
+    }
+    let relationship_dir = entity_slug(name);
+    if read_facet_entity_link(journal_root, facet_dir, &relationship_dir)?.is_some() {
+        return Err(FacetEntityWriteError::RelationshipOccupied { relationship_dir });
+    }
+    let relationship = json!({"entity_id": entity_id, "description": description, "attached_at": now_iso(), "updated_at": now_iso()});
+    let object = object_clone(&relationship)?;
+    save_facet_entity_link(
+        journal_root,
+        facet_dir,
+        &relationship_dir,
+        entity_id,
         &object,
     )?;
     Ok(FacetEntityAttachResult {
