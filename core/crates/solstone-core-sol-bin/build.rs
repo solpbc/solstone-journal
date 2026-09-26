@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+include!("../../build-support/windows_version_resource.rs");
+
 #[cfg(unix)]
 use std::env;
 #[cfg(unix)]
@@ -68,4 +70,6 @@ fn main() {
 }
 
 #[cfg(not(unix))]
-fn main() {}
+fn main() {
+    windows_version_resource("solstone-core-sol", "solstone.exe");
+}

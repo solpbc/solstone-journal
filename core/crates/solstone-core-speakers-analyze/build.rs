@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 sol pbc
 
+include!("../../build-support/windows_version_resource.rs");
+
 fn main() {
+    windows_version_resource(
+        "solstone-core-speakers-analyze",
+        "solstone-core-speakers-analyze.exe",
+    );
     if std::env::var_os("CARGO_FEATURE_RUNTIME").is_none() {
         return;
     }

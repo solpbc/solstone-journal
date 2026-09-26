@@ -7,3 +7,5 @@ mod operational_log_parse;
 mod partition_table;
 #[path = "request_contract.rs"]
 mod request_contract;
+#[path = "windows_version_resource.rs"]
+mod windows_version_resource;
