@@ -718,7 +718,10 @@ async fn query_dnssec<H: DnsHandle>(
             let outcome = if any_bogus {
                 if had_inner_transport_err {
                     DnssecOutcome::TransportFailure
-                } else if rrsig_snaps.is_empty() && probe_failed {
+                } else if probe_failed {
+                    // A configured server strips DNSSEC and the pool may have
+                    // used it for this answer or for the chain: nothing here
+                    // proves forgery, so this is not bogus.
                     DnssecOutcome::Indeterminate
                 } else {
                     let outside = check_rrsig_outside_validity(&rrsig_snaps, now_u32);
@@ -749,7 +752,7 @@ async fn query_dnssec<H: DnsHandle>(
             Proof::Bogus => {
                 if had_inner_transport_err {
                     (Vec::new(), DnssecOutcome::TransportFailure, raw_buffers)
-                } else if rrsig_snaps.is_empty() && probe_failed {
+                } else if probe_failed {
                     (Vec::new(), DnssecOutcome::Indeterminate, raw_buffers)
                 } else {
                     let outside = check_rrsig_outside_validity(&rrsig_snaps, now_u32);
@@ -763,8 +766,10 @@ async fn query_dnssec<H: DnsHandle>(
                 }
             }
         },
+        // An answer that could not be decoded or was refused was never read:
+        // report a failed lookup so no caller climbs past it.
         Some(Err(ref err)) if !is_transport_error(err) => {
-            (Vec::new(), DnssecOutcome::Indeterminate, raw_buffers)
+            (Vec::new(), DnssecOutcome::TransportFailure, raw_buffers)
         }
         _ => (Vec::new(), DnssecOutcome::TransportFailure, raw_buffers),
     }
@@ -1400,9 +1405,11 @@ mod tests {
         Wire(Vec<u8>),
     }
 
+    type ScriptKey = (IpAddr, Protocol, Name, RecordType);
+
     #[derive(Default, Clone)]
     struct MockProvider {
-        scripts: Arc<RwLock<HashMap<(IpAddr, Protocol, Name, RecordType), MockScript>>>,
+        scripts: Arc<RwLock<HashMap<ScriptKey, MockScript>>>,
         queries_recorded: Arc<RwLock<Vec<(Name, RecordType)>>>,
         runtime_provider: TokioRuntimeProvider,
     }
@@ -1690,6 +1697,15 @@ mod tests {
             RecordType::DNSKEY,
             dnskey_msg.clone(),
         );
+        // The resolver passes DNSSEC through: its root DNSKEY answer is signed,
+        // so the stripping probe passes and a failed signature below is bogus.
+        provider.script(
+            ip,
+            Protocol::Udp,
+            Name::root(),
+            RecordType::DNSKEY,
+            ctx.make_dnskey_response(&Name::root(), true),
+        );
         provider.script(
             ip,
             Protocol::Tcp,
@@ -1788,18 +1804,18 @@ mod tests {
         // 2. Tamper one signature byte inside validity window -> dnssec_bogus (outside_validity=false)
         let mut tampered_caa_msg = Message::new(0, MessageType::Response, OpCode::Query);
         for r in signed_in_window.records(true) {
-            if r.record_type() == RecordType::RRSIG {
-                if let RData::DNSSEC(DNSSECRData::RRSIG(sig)) = &r.data {
-                    let mut bytes = sig.sig().to_vec();
-                    bytes[0] ^= 0xFF;
-                    let new_sig = RRSIG::from_sig(sig.input().clone(), bytes);
-                    tampered_caa_msg.answers.push(Record::from_rdata(
-                        r.name.clone(),
-                        r.ttl,
-                        RData::DNSSEC(DNSSECRData::RRSIG(new_sig)),
-                    ));
-                    continue;
-                }
+            if r.record_type() == RecordType::RRSIG
+                && let RData::DNSSEC(DNSSECRData::RRSIG(sig)) = &r.data
+            {
+                let mut bytes = sig.sig().to_vec();
+                bytes[0] ^= 0xFF;
+                let new_sig = RRSIG::from_sig(sig.input().clone(), bytes);
+                tampered_caa_msg.answers.push(Record::from_rdata(
+                    r.name.clone(),
+                    r.ttl,
+                    RData::DNSSEC(DNSSECRData::RRSIG(new_sig)),
+                ));
+                continue;
             }
             tampered_caa_msg.answers.push(r.clone());
         }
