@@ -14,7 +14,7 @@ The latest version of these instructions is at https://solstone.app/install.
 solstone --version 2>&1 && journal service status 2>&1
 ```
 
-If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead. On windows, run `journal --version` in a terminal; if windows cannot find `journal`, see [install on windows](#install-on-windows). If it prints a version, run `journal service status`; if that reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
+If `solstone` is not on PATH on linux, the install has not been done yet. Proceed. On mac, check for `/Applications/journal.app` instead. On windows, run `journal --version` in a terminal; if windows cannot find `journal`, see [install on windows](#install-on-windows). If it prints a version, run `journal service status`; if that prints `Supervisor readiness: ready`, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 On linux, if both commands succeed and the second command reports healthy, skip to [install the solstone app on your devices](#install-the-solstone-app-on-your-devices).
 
 ### Prerequisites
