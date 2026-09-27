@@ -70,10 +70,16 @@ where
         None => {
             let keypair = rcgen::KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
                 .map_err(|_| SmeAccountError::Key)?;
-            let der = keypair.serialize_der();
-            persist_tls_acme_account_bytes(directory, production, &der)
+            persist_tls_acme_account_bytes(directory, production, &keypair.serialize_der())
                 .map_err(|_| SmeAccountError::State)?;
-            der
+            // Register whatever key is on disk now, so that if anything else
+            // wrote one at the same moment, the URL sent is the key the
+            // renewal will order with.
+            let stored = read_tls_acme_account_bytes(directory, production)
+                .map_err(|_| SmeAccountError::State)?
+                .ok_or(SmeAccountError::State)?;
+            crate::tls::validate_acme_account_key(&stored).map_err(|_| SmeAccountError::Key)?;
+            stored
         }
     };
     let uri = register(key).await.map_err(|_| SmeAccountError::Register)?;
@@ -83,11 +89,24 @@ where
     Ok(uri)
 }
 
-/// Register (or find) the account for `key` at the environment's directory.
+/// Upper bound on one registration exchange with the directory.
+pub(crate) const REGISTRATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Register (or find) the account for `key` at the environment's directory,
+/// giving up after [`REGISTRATION_TIMEOUT`].
 pub(crate) async fn register_with_directory(
     key: Vec<u8>,
     production: bool,
 ) -> Result<String, String> {
+    tokio::time::timeout(
+        REGISTRATION_TIMEOUT,
+        register_with_directory_inner(key, production),
+    )
+    .await
+    .map_err(|_| "registration timed out".to_owned())?
+}
+
+async fn register_with_directory_inner(key: Vec<u8>, production: bool) -> Result<String, String> {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
     let client_config = std::sync::Arc::new(

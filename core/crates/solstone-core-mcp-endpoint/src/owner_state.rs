@@ -114,11 +114,11 @@ pub(crate) fn write_mcp_hold_state(
         ),
         (RegistrationHold::UpdateRequired, _) => (
             "update_required",
-            "solstone.me needs a newer version of your journal. update the solstone app on this computer and your address will turn on by itself.",
+            "solstone.me needs a newer version of your journal. update your journal on the computer it runs on, and your address will turn on by itself.",
         ),
         (RegistrationHold::AccountChanged, _) => (
             "account_changed",
-            "your solstone.me address is tied to a different certificate account than the one this journal has, so it stays off. your journal keeps trying on its own.",
+            "this journal can no longer show solstone.me that your address belongs to it, so the address stays off. this can happen if the journal was set up again. ask support in the services portal to reconnect your address to this journal.",
         ),
         (RegistrationHold::AddressNotReady, _) => (
             "address_not_ready",
@@ -126,7 +126,7 @@ pub(crate) fn write_mcp_hold_state(
         ),
         (RegistrationHold::AddressRefused, _) => (
             "address_refused",
-            "solstone.me couldn't read this journal's request. updating the solstone app may help. your journal keeps trying on its own.",
+            "solstone.me couldn't make sense of this journal's request. updating your journal may help. your journal keeps trying on its own.",
         ),
     };
     let state = McpOwnerState {

@@ -383,6 +383,7 @@ impl McpEndpointOwnerContext {
     }
 
     #[cfg(all(test, not(feature = "full-tests")))]
+    #[cfg_attr(not(unix), allow(dead_code))]
     pub(crate) fn set_acme_account_uri_for_test(&self, uri: &str) {
         if let Ok(mut cached) = self.acme_account_uri.lock() {
             *cached = Some(uri.to_owned());

@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- your journal now sends what solstone.me needs to lock your solstone.me address to your journal, so certificates for your address are issued only to your journal, not to the relay that carries its traffic. once sol pbc turns on the lock at solstone.me, a journal without this update won't be able to use solstone.me until it's updated.
 - on mac and linux, your journal now reads fewer formats in the files you import. flac, m4a, mov, mp3, mp4, ogg, opus, wav and webm imports keep working with AAC, Apple Lossless, AC-3, E-AC-3, FLAC, MP3, Opus, Vorbis, G.711 phone audio, uncompressed and common ADPCM audio. rarer audio inside those files, such as G.723.1 or Yamaha ADPCM in a wav, no longer imports, so convert it to one of those first.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.
 - journal packages on mac and linux now include the third-party licence and model notices for the components they carry.

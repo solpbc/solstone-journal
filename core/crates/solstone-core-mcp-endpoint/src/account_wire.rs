@@ -737,10 +737,23 @@ async fn request_account_registration(
 ) -> Result<McpAccountRegistration, McpAccountError> {
     // The account service refuses an address request without the door's ACME
     // account URL, so no request is sent until the URL is known.
-    owner
-        .establish_acme_account_uri()
-        .await
-        .map_err(|_| McpAccountError::AccountSetup)?;
+    if let Err(error) = owner.establish_acme_account_uri().await {
+        match error {
+            crate::sme_account::SmeAccountError::State => {
+                log::warn!("solstone.me certificate account: key state unavailable");
+            }
+            crate::sme_account::SmeAccountError::Key => {
+                log::warn!("solstone.me certificate account: stored key unusable");
+            }
+            crate::sme_account::SmeAccountError::Register => {
+                log::warn!("solstone.me certificate account: directory unavailable or refused");
+            }
+            crate::sme_account::SmeAccountError::Shape => {
+                log::warn!("solstone.me certificate account: unexpected account URL shape");
+            }
+        }
+        return Err(McpAccountError::AccountSetup);
+    }
     let mut io = TokioAccountAttemptIo;
     run_fixed_account_attempt(owner, shutdown, &mut io, &SystemAccountClock).await
 }
