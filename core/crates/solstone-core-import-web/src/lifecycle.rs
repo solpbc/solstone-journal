@@ -280,10 +280,7 @@ fn source_for(filename: &str, content_type: Option<&str>) -> &'static str {
         .and_then(|value| value.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    if matches!(
-        extension.as_str(),
-        "png" | "jpg" | "jpeg" | "webp" | "gif" | "tiff"
-    ) {
+    if solstone_core_import_sources::image::is_image_extension(&extension) {
         "image"
     } else if matches!(extension.as_str(), "pdf" | "doc" | "docx") {
         "document"
@@ -1163,10 +1160,7 @@ fn detect_inprocess_source(
 
     if source_hint.as_deref() == Some("image")
         || source.as_deref() == Some("image")
-        || matches!(
-            extension.as_str(),
-            "png" | "jpg" | "jpeg" | "webp" | "gif" | "tiff"
-        )
+        || solstone_core_import_sources::image::is_image_extension(&extension)
     {
         Some(solstone_core_import::RegistrySource::Image)
     } else if source_hint.as_deref() == Some("document")

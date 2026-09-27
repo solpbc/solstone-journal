@@ -171,8 +171,7 @@
         "*.jpg",
         "*.jpeg",
         "*.webp",
-        "*.gif",
-        "*.tiff"
+        "*.gif"
       ],
       "description": "Import a single image and describe its contents with vision"
     },

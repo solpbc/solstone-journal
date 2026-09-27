@@ -24,7 +24,10 @@ use solstone_core_journal_io::{
 };
 use tempfile::NamedTempFile;
 
-const IMAGE_EXTENSIONS: [&str; 6] = ["png", "jpg", "jpeg", "webp", "gif", "tiff"];
+/// The formats this source both decodes and can hand to a vision model. HEIC, HEIF and TIFF
+/// are deliberately absent: the build carries no decoder for them, so offering them only
+/// ends in an undecodable-source failure.
+const IMAGE_EXTENSIONS: [&str; 5] = ["png", "jpg", "jpeg", "webp", "gif"];
 const IMPORT_STREAM: &str = "import.image";
 const TRANSCRIPT_FILENAME: &str = "image_transcript.md";
 const VISION_PROMPT: &str = "Describe what is in this image faithfully and concisely. Transcribe any legible text verbatim. Return clean markdown.";
@@ -128,17 +131,20 @@ impl WireClient for SystemWireClient {
     }
 }
 
+/// Return whether `extension` (no leading dot, any case) names an advertised image format.
+pub fn is_image_extension(extension: &str) -> bool {
+    IMAGE_EXTENSIONS
+        .iter()
+        .any(|expected| extension.eq_ignore_ascii_case(expected))
+}
+
 /// Return whether `path` is an advertised image-source file.
 pub fn detect(path: &Path) -> bool {
     path.is_file()
         && path
             .extension()
             .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| {
-                IMAGE_EXTENSIONS
-                    .iter()
-                    .any(|expected| extension.eq_ignore_ascii_case(expected))
-            })
+            .is_some_and(is_image_extension)
 }
 
 /// Preview one image source without writing any journal state.

@@ -26,6 +26,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Removed
 
 - your journal no longer deletes every segment that holds your location when a phone asks it to, and anything already deleted that way stays deleted. an older solstone app on your iphone that still offers this will say it couldn't reach your journal, and nothing is deleted.
+- the import screen and the command line no longer offer heic, heif or tiff images. your journal can't read those formats, so an import of one couldn't succeed. save the picture as jpeg or png first, then import that.
 
 ### Fixed
 

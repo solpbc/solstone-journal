@@ -71,7 +71,7 @@ pub const IMPORTERS: &[ImporterRow] = &[
     ImporterRow {
         name: "image",
         display_name: "Image",
-        file_patterns: &["*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif", "*.tiff"],
+        file_patterns: &["*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif"],
         description: "Import a single image and describe its contents with vision",
     },
     ImporterRow {

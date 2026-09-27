@@ -1127,7 +1127,8 @@ window.AppServices = {
    * @returns {Promise<string>} Permission state
    */
   async requestNotificationPermission() {
-    if ('Notification' in window && Notification.permission === 'default') {
+    if (!('Notification' in window)) return 'denied';
+    if (Notification.permission === 'default') {
       return await Notification.requestPermission();
     }
     return Notification.permission;

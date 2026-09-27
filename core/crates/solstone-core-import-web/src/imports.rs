@@ -106,7 +106,7 @@ const SOURCES: &[SourceMetadata] = &[
         input_type: "file",
         upload_prompt: "upload an audio, video, or image file",
         has_guide: false,
-        accept: ".flac,.gif,.heic,.heif,.jpeg,.jpg,.m4a,.mov,.mp3,.mp4,.ogg,.opus,.png,.tiff,.wav,.webm,.webp",
+        accept: ".flac,.gif,.jpeg,.jpg,.m4a,.mov,.mp3,.mp4,.ogg,.opus,.png,.wav,.webm,.webp",
     },
     SourceMetadata {
         name: "document",
@@ -124,9 +124,9 @@ const SOURCES: &[SourceMetadata] = &[
         icon: "image",
         description: "add a photo or screenshot and let a model describe what's in it",
         input_type: "file",
-        upload_prompt: "upload an image (PNG, JPEG, WebP, GIF, TIFF)",
+        upload_prompt: "upload an image (PNG, JPEG, WebP, GIF)",
         has_guide: false,
-        accept: ".png,.jpg,.jpeg,.webp,.gif,.tiff",
+        accept: ".png,.jpg,.jpeg,.webp,.gif",
     },
     SourceMetadata {
         name: "quick",

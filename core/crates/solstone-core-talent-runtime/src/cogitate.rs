@@ -397,7 +397,6 @@ mod tests {
             ("read_scope_span".to_owned(), json!(7)),
             ("max_turns".to_owned(), json!(100)),
             ("max_output_tokens".to_owned(), json!(6000)),
-            ("max_run_cost_usd".to_owned(), json!(5.0)),
             ("user_instruction".to_owned(), json!("weekly body")),
             (
                 "prompt".to_owned(),
