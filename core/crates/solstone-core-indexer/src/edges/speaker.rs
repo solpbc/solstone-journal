@@ -6,6 +6,7 @@ use std::fs;
 use std::path::Path;
 
 use serde_json::Value;
+use solstone_core_entity::IdentityObservation;
 
 use super::candidates::EdgeResolver;
 use super::{
@@ -575,25 +576,36 @@ fn load_journal_entities(journal: &Path) -> Result<Vec<(String, JsonObject)>, Ed
             continue;
         }
         let entity_id = entry.file_name().to_string_lossy().into_owned();
-        let entity_file = entry.path().join("entity.json");
+        // A folder the store can't place inside the journal holds no entity.
+        let Ok(entity_file) = solstone_core_entity::entity_identity_path(journal, &entity_id)
+        else {
+            continue;
+        };
         if entity_file.is_file() {
             entity_files.push((entity_id, entity_file));
         }
     }
     entity_files.sort_by(|left, right| left.0.cmp(&right.0));
 
+    // A damaged identity is skipped; one that can't be read stops the build.
     let mut entities = Vec::new();
     for (entity_id, entity_file) in entity_files {
-        let text = fs::read_to_string(&entity_file).map_err(|error| {
-            EdgeError::Io(format!(
-                "entity read failed for {}: {error}",
-                entity_file.display()
-            ))
-        })?;
-        let Ok(Value::Object(entity)) = serde_json::from_str::<Value>(&text) else {
-            continue;
-        };
-        entities.push((entity_id, entity));
+        let observed = solstone_core_entity::observe_entity_identity(journal, &entity_id)
+            .map_err(|error| EdgeError::Io(error.to_string()))?;
+        match observed {
+            IdentityObservation::Present(snapshot) => {
+                if let Value::Object(entity) = snapshot.value().clone() {
+                    entities.push((entity_id, entity));
+                }
+            }
+            IdentityObservation::Unreadable(detail) => {
+                return Err(EdgeError::Io(format!(
+                    "entity read failed for {}: {detail}",
+                    entity_file.display()
+                )));
+            }
+            IdentityObservation::Absent | IdentityObservation::Malformed(_) => {}
+        }
     }
     Ok(entities)
 }
@@ -722,6 +734,40 @@ mod tests {
             entity_variants(&entity),
             vec!["Chris One", "Ray", "C. One", "Chris Ray"]
         );
+    }
+
+    #[test]
+    fn a_damaged_identity_is_skipped_and_an_unreadable_one_stops_the_build() {
+        let root = temp_root("identity-outcomes");
+        write_entity(&root, "good", json!({"name":"Good Person","type":"Person"}));
+        let damaged = root.join("entities/damaged");
+        fs::create_dir_all(&damaged).expect("damaged folder");
+        fs::write(damaged.join("entity.json"), "{not json").expect("damaged identity");
+        let listed = root.join("entities/listed");
+        fs::create_dir_all(&listed).expect("listed folder");
+        fs::write(listed.join("entity.json"), "[]").expect("non-object identity");
+        let index = build_speaker_entity_index(&root).expect("damaged identities are skipped");
+        assert_eq!(
+            index.admissible_speakers,
+            BTreeSet::from(["good".to_owned()])
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let unreadable = root.join("entities/unreadable/entity.json");
+            fs::create_dir_all(unreadable.parent().expect("parent")).expect("unreadable folder");
+            fs::write(&unreadable, "{}").expect("unreadable identity");
+            fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o000))
+                .expect("make unreadable");
+            // A process that can still read it (root) has nothing to show here.
+            if fs::read(&unreadable).is_err() {
+                assert!(build_speaker_entity_index(&root).is_err());
+            }
+            fs::set_permissions(&unreadable, fs::Permissions::from_mode(0o600))
+                .expect("restore permissions");
+        }
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

@@ -138,13 +138,19 @@ fn load_identities(
     watermark: &mut EntitySearchWatermark,
     identities: &mut BTreeMap<String, JsonObject>,
 ) -> io::Result<()> {
-    for (entity_id, entity_dir) in sorted_child_dirs(&journal.join("entities"))? {
-        let entity_file = entity_dir.join("entity.json");
+    for (entity_id, _) in sorted_child_dirs(&journal.join("entities"))? {
+        // A folder the store can't place inside the journal holds no entity.
+        let Ok(entity_file) = solstone_core_entity::entity_identity_path(journal, &entity_id)
+        else {
+            continue;
+        };
         if !entity_file.is_file() {
             continue;
         }
         watermark.record_file(&entity_file)?;
-        if let Some(identity) = read_json_object(&entity_file) {
+        if let Ok(Some(identity)) = solstone_core_entity::read_entity_identity(journal, &entity_id)
+            && let Value::Object(identity) = identity.value().clone()
+        {
             identities.insert(entity_id, identity);
         }
     }
@@ -156,23 +162,26 @@ fn load_relationships(
     watermark: &mut EntitySearchWatermark,
     relationships: &mut BTreeMap<String, Vec<(String, JsonObject)>>,
 ) -> io::Result<()> {
+    // A link is keyed by the entity it names, in the directory edges key that
+    // entity on, not by its own folder: a folder can outlive a merge.
+    let dirs_by_id = crate::edges::candidates::identity_dirs_by_id(journal)?;
     for (facet_name, facet_dir) in sorted_child_dirs(&journal.join("facets"))? {
-        let entity_root = facet_dir.join("entities");
-        if !entity_root.is_dir() {
+        if !facet_dir.join("entities").is_dir() {
             continue;
         }
-        for (entity_id, entity_dir) in sorted_child_dirs(&entity_root)? {
-            let relationship_file = entity_dir.join("entity.json");
-            if !relationship_file.is_file() {
-                continue;
+        let links = solstone_core_entity::facet_links::LinkDirs::for_facet(journal, &facet_name);
+        // A link folder the store can't place inside the journal holds nothing.
+        for folder in links.all_folders().unwrap_or_default() {
+            // A link that is dangling, or not a plain file, is not read.
+            if let Ok(link_file) = links.link_path(&folder)
+                && link_file.is_file()
+            {
+                watermark.record_file(&link_file)?;
             }
-            watermark.record_file(&relationship_file)?;
-            let Some(relationship) = read_json_object(&relationship_file) else {
-                continue;
-            };
-            if json_truthy(relationship.get("detached")) {
-                continue;
-            }
+        }
+        for (entity_id, relationship) in
+            crate::edges::candidates::facet_link_per_entity(journal, &facet_name, &dirs_by_id)?
+        {
             relationships
                 .entry(entity_id)
                 .or_default()
@@ -199,14 +208,6 @@ fn sorted_child_dirs(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
     }
     dirs.sort_by(|left, right| left.0.cmp(&right.0));
     Ok(dirs)
-}
-
-fn read_json_object(path: &Path) -> Option<JsonObject> {
-    let text = fs::read_to_string(path).ok()?;
-    match serde_json::from_str::<Value>(&text).ok()? {
-        Value::Object(record) => Some(record),
-        _ => None,
-    }
 }
 
 fn coerce_timestamp_millis(value: &Value) -> Option<i64> {
@@ -355,6 +356,65 @@ mod tests {
         fs::create_dir_all(path.parent().expect("test path should have parent"))
             .expect("create parent");
         fs::write(path, text).expect("write test file");
+    }
+
+    #[test]
+    fn a_link_is_indexed_under_the_entity_it_names_once_per_facet() {
+        let root = temp_root("links-by-entity");
+        // The entity's folder differs from its id.
+        write(
+            &root,
+            "entities/z_ada/entity.json",
+            r#"{"id":"ada","name":"Ada"}"#,
+        );
+        // A folder left from before a merge, naming the entity by id.
+        write(
+            &root,
+            "facets/work/entities/a_old/entity.json",
+            r#"{"entity_id":"ada","description":"from the old folder"}"#,
+        );
+        write(
+            &root,
+            "facets/home/entities/a_old/entity.json",
+            r#"{"entity_id":"ada","description":"only here"}"#,
+        );
+        // The entity's own folder speaks for it where both exist, though the
+        // leftover sorts first.
+        write(
+            &root,
+            "facets/work/entities/z_ada/entity.json",
+            r#"{"entity_id":"ada","description":"own folder"}"#,
+        );
+        #[cfg(unix)]
+        {
+            fs::create_dir_all(root.join("facets/work/entities/gone")).expect("dangling folder");
+            std::os::unix::fs::symlink(
+                root.join("nowhere.json"),
+                root.join("facets/work/entities/gone/entity.json"),
+            )
+            .expect("dangling link");
+        }
+
+        let build = build_entity_search(&root).expect("build entity search");
+        let rows = build
+            .rows
+            .iter()
+            .map(|row| (row.path.as_str(), row.facet.as_str(), row.content.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(rows.len(), 2, "{rows:?}");
+        assert!(
+            rows.iter().all(|(path, ..)| *path == "entity_search:z_ada"),
+            "{rows:?}"
+        );
+        assert!(
+            rows.iter()
+                .any(|(_, facet, content)| *facet == "home" && content.contains("only here"))
+        );
+        assert!(
+            rows.iter()
+                .any(|(_, facet, content)| *facet == "work" && content.contains("own folder"))
+        );
+        fs::remove_dir_all(root).expect("cleanup");
     }
 
     #[test]

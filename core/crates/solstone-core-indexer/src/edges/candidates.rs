@@ -136,15 +136,8 @@ fn load_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCand
 
 fn load_journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate>> {
     let mut candidates = Vec::new();
-    for (entity_id, entity_dir) in sorted_child_dirs(&journal.join("entities"))? {
-        let entity_file = entity_dir.join("entity.json");
-        if !entity_file.is_file() {
-            continue;
-        }
-        let Some(mut entity) = read_json_object(&entity_file) else {
-            continue;
-        };
-        entity.insert("id".to_string(), Value::String(entity_id));
+    for (entity_dir, mut entity) in journal_entities_by_folder(journal)? {
+        entity.insert("id".to_string(), Value::String(entity_dir));
         if json_truthy(entity.get("blocked")) {
             continue;
         }
@@ -157,53 +150,9 @@ fn load_journal_candidates(journal: &Path) -> io::Result<Vec<EntityNameCandidate
 
 fn load_facet_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNameCandidate>> {
     let (journal_entities, dirs_by_id) = load_journal_entities(journal)?;
-    // Links grouped by the journal directory they point at, in folder order.
-    let mut order = Vec::new();
-    let mut links = BTreeMap::<String, Vec<(String, JsonObject)>>::new();
-    let entity_root = journal.join("facets").join(facet).join("entities");
-    for (folder, entity_dir) in sorted_child_dirs(&entity_root)? {
-        let relationship_file = entity_dir.join("entity.json");
-        if !relationship_file.is_file() {
-            continue;
-        }
-        let Some(relationship) = read_json_object(&relationship_file) else {
-            continue;
-        };
-        // A link names its entity by id; its folder can differ (a merge moves
-        // links without renaming them). Resolve the id to the journal
-        // directory edges key on, and fall back to the folder name.
-        let linked_dir = string_field(relationship.get("entity_id"))
-            .and_then(|id| dirs_by_id.get(&id).cloned())
-            .unwrap_or_else(|| folder.clone());
-        if !links.contains_key(&linked_dir) {
-            order.push(linked_dir.clone());
-        }
-        links
-            .entry(linked_dir)
-            .or_default()
-            .push((folder, relationship));
-    }
     let mut candidates = Vec::new();
-    for linked_dir in order {
-        let group = &links[&linked_dir];
-        // The entity's own folder speaks for it, detached or not. Links left
-        // in other folders count only when none of them is detached. Either
-        // way one entity gives one candidate: two would tie in the matcher
-        // and match nothing.
-        let relationship = match group.iter().find(|(folder, _)| *folder == linked_dir) {
-            Some((_, own)) => own,
-            None if group
-                .iter()
-                .any(|(_, relationship)| json_truthy(relationship.get("detached"))) =>
-            {
-                continue;
-            }
-            None => &group[0].1,
-        };
-        if json_truthy(relationship.get("detached")) {
-            continue;
-        }
-        let mut relationship = relationship.clone();
+    for (linked_dir, relationship) in facet_link_per_entity(journal, facet, &dirs_by_id)? {
+        let mut relationship = relationship;
         relationship.insert("entity_id".to_string(), Value::String(linked_dir.clone()));
         let enriched =
             enrich_relationship_with_journal(relationship, journal_entities.get(&linked_dir));
@@ -219,62 +168,128 @@ fn load_facet_candidates(journal: &Path, facet: &str) -> io::Result<Vec<EntityNa
 
 type JournalEntities = (BTreeMap<String, JsonObject>, BTreeMap<String, String>);
 
-/// Journal entities by directory, and each effective id's directory.
+/// Journal entities by directory, and each effective id's directory, as the
+/// entity store's identity map resolves it.
 fn load_journal_entities(journal: &Path) -> io::Result<JournalEntities> {
     let mut entities = BTreeMap::new();
-    let mut written_ids = BTreeMap::new();
-    for (entity_dir_name, entity_dir) in sorted_child_dirs(&journal.join("entities"))? {
-        let entity_file = entity_dir.join("entity.json");
-        if !entity_file.is_file() {
-            continue;
-        }
-        let Some(mut entity) = read_json_object(&entity_file) else {
-            continue;
-        };
-        if let Some(Value::String(id)) = entity.get("id")
-            && !id.is_empty()
-        {
-            written_ids.insert(entity_dir_name.clone(), id.clone());
-        }
-        entity.insert("id".to_string(), Value::String(entity_dir_name.clone()));
-        entities.insert(entity_dir_name, entity);
+    for (entity_dir, mut entity) in journal_entities_by_folder(journal)? {
+        entity.insert("id".to_string(), Value::String(entity_dir.clone()));
+        entities.insert(entity_dir, entity);
     }
-    let dirs_by_id = dirs_by_effective_id(entities.keys(), &written_ids);
+    let dirs_by_id = identity_dirs_by_id(journal)?;
     Ok((entities, dirs_by_id))
 }
 
-/// Each effective entity id with the directory that holds it. The effective
-/// id is the written `id`, else the directory name. On a collision a written
-/// id wins over a directory fallback, then the lexically first directory:
-/// the entity store's identity map uses the same order.
-fn dirs_by_effective_id<'a>(
-    dirs: impl Iterator<Item = &'a String>,
-    written_ids: &BTreeMap<String, String>,
-) -> BTreeMap<String, String> {
-    let mut winners = BTreeMap::<String, (bool, String)>::new();
-    for dir in dirs {
-        let (id, fallback) = match written_ids.get(dir) {
-            Some(id) => (id.clone(), false),
-            None => (dir.clone(), true),
-        };
-        let candidate = (fallback, dir.clone());
-        match winners.get(&id) {
-            Some(current) if *current <= candidate => {}
-            _ => {
-                winners.insert(id, candidate);
-            }
-        }
+/// Each effective entity id with the directory that holds it, as the entity
+/// store's identity map resolves it; empty when there is no `entities/`.
+pub(crate) fn identity_dirs_by_id(journal: &Path) -> io::Result<BTreeMap<String, String>> {
+    if !journal.join("entities").is_dir() {
+        return Ok(BTreeMap::new());
     }
-    winners
+    Ok(solstone_core_entity::read_identity_map(journal)
+        .map_err(io::Error::other)?
+        .resolved
         .into_iter()
-        .map(|(id, (_, dir))| (id, dir))
-        .collect()
+        .collect())
 }
 
-/// Each effective entity id in the journal with the directory edges key it
-/// on. Exposed so the entity store's identity map can be checked against it.
-pub fn journal_entity_dirs_by_id(journal: &Path) -> io::Result<BTreeMap<String, String>> {
-    load_journal_entities(journal).map(|(_, dirs_by_id)| dirs_by_id)
+/// Every readable journal entity, keyed by the directory edges key it on, in
+/// directory order. An identity file that is missing, damaged or unreadable is
+/// skipped, as the entity store's readers do.
+pub(super) fn journal_entities_by_folder(journal: &Path) -> io::Result<Vec<(String, JsonObject)>> {
+    let mut entities = Vec::new();
+    for (entity_dir, _) in sorted_child_dirs(&journal.join("entities"))? {
+        // A folder the store can't place inside the journal holds no entity.
+        let placed = solstone_core_entity::entity_identity_path(journal, &entity_dir)
+            .is_ok_and(|path| path.is_file());
+        if !placed {
+            continue;
+        }
+        if let Ok(Some(identity)) = solstone_core_entity::read_entity_identity(journal, &entity_dir)
+            && let Value::Object(entity) = identity.value().clone()
+        {
+            entities.push((entity_dir, entity));
+        }
+    }
+    Ok(entities)
+}
+
+/// The one link of `facet` that speaks for each entity, keyed by the journal
+/// directory edges key the entity on, in folder order; an entity whose link
+/// doesn't count is left out. A link names its entity by id and its folder
+/// can differ (a merge moves links without renaming them), so a stored id is
+/// resolved through `dirs_by_id`, falling back to the folder name. The
+/// entity's own folder speaks for it, detached or not. Links left in other
+/// folders count only when none of them is detached, and then only the
+/// first: two would tie in a matcher and match nothing.
+pub(crate) fn facet_link_per_entity(
+    journal: &Path,
+    facet: &str,
+    dirs_by_id: &BTreeMap<String, String>,
+) -> io::Result<Vec<(String, JsonObject)>> {
+    let mut order = Vec::new();
+    let mut groups = BTreeMap::<String, Vec<(String, JsonObject)>>::new();
+    for (folder, relationship, written_id) in facet_links(journal, facet)? {
+        let linked_dir = written_id
+            .and_then(|id| dirs_by_id.get(&id).cloned())
+            .unwrap_or_else(|| folder.clone());
+        if !groups.contains_key(&linked_dir) {
+            order.push(linked_dir.clone());
+        }
+        groups
+            .entry(linked_dir)
+            .or_default()
+            .push((folder, relationship));
+    }
+    let mut chosen = Vec::new();
+    for linked_dir in order {
+        let mut group = groups.remove(&linked_dir).expect("grouped above");
+        let own = group.iter().position(|(folder, _)| *folder == linked_dir);
+        let relationship = match own {
+            Some(index) => group.swap_remove(index).1,
+            None if group
+                .iter()
+                .any(|(_, relationship)| json_truthy(relationship.get("detached"))) =>
+            {
+                continue;
+            }
+            None => group.swap_remove(0).1,
+        };
+        if json_truthy(relationship.get("detached")) {
+            continue;
+        }
+        chosen.push((linked_dir, relationship));
+    }
+    Ok(chosen)
+}
+
+/// Every readable link of `facet`, in folder order: its folder, its fields,
+/// and the entity id it stores, when it stores one. A link that is missing,
+/// damaged or not a plain file is skipped.
+pub(crate) fn facet_links(
+    journal: &Path,
+    facet: &str,
+) -> io::Result<Vec<(String, JsonObject, Option<String>)>> {
+    let dirs = solstone_core_entity::facet_links::LinkDirs::for_facet(journal, facet);
+    let mut links = Vec::new();
+    // A link folder the store can't place inside the journal holds nothing.
+    let Ok(folders) = dirs.all_folders() else {
+        return Ok(Vec::new());
+    };
+    for folder in folders {
+        // A link that is dangling, or not a plain file, is not read.
+        if !dirs.link_path(&folder).is_ok_and(|path| path.is_file()) {
+            continue;
+        }
+        let Ok(Some(link)) = dirs.read_link(&folder) else {
+            continue;
+        };
+        let Value::Object(fields) = link.value else {
+            continue;
+        };
+        links.push((folder, fields, link.id_written.then_some(link.entity_id)));
+    }
+    Ok(links)
 }
 
 fn enrich_relationship_with_journal(
@@ -353,14 +368,6 @@ fn sorted_child_dirs(root: &Path) -> io::Result<Vec<(String, PathBuf)>> {
     }
     dirs.sort_by(|left, right| left.0.cmp(&right.0));
     Ok(dirs)
-}
-
-fn read_json_object(path: &Path) -> Option<JsonObject> {
-    let text = fs::read_to_string(path).ok()?;
-    match serde_json::from_str::<Value>(&text).ok()? {
-        Value::Object(record) => Some(record),
-        _ => None,
-    }
 }
 
 fn string_field(value: Option<&Value>) -> Option<String> {
@@ -618,29 +625,28 @@ mod tests {
         fs::remove_dir_all(root).expect("cleanup agreeing links root");
     }
 
+    #[cfg(unix)]
     #[test]
-    fn a_written_id_beats_a_directory_fallback_then_the_first_directory_wins() {
-        let root = temp_root("id-collisions");
-        write_json(&root, "entities/ann/entity.json", json!({"name":"Ann"}));
+    fn an_identity_the_store_cannot_place_is_skipped() {
+        let root = temp_root("dangling-identity");
         write_json(
             &root,
-            "entities/z_ann/entity.json",
-            json!({"id":"ann","name":"Ann Z"}),
+            "entities/ada/entity.json",
+            json!({"name":"Ada Example"}),
         );
-        write_json(
-            &root,
-            "entities/b2/entity.json",
-            json!({"id":"bee","name":"Bee 2"}),
-        );
-        write_json(
-            &root,
-            "entities/b1/entity.json",
-            json!({"id":"bee","name":"Bee 1"}),
-        );
-        let dirs = journal_entity_dirs_by_id(&root).expect("dirs by id");
-        assert_eq!(dirs.get("ann").map(String::as_str), Some("z_ann"));
-        assert_eq!(dirs.get("bee").map(String::as_str), Some("b1"));
-        fs::remove_dir_all(root).expect("cleanup collisions root");
+        fs::create_dir_all(root.join("entities/gone")).expect("dangling folder");
+        std::os::unix::fs::symlink(
+            root.join("nowhere.json"),
+            root.join("entities/gone/entity.json"),
+        )
+        .expect("dangling identity");
+        write_json(&root, "facets/work/entities/ada/entity.json", json!({}));
+
+        let journal = load_journal_candidates(&root).expect("load journal candidates");
+        assert_eq!(journal.len(), 1);
+        let facet = load_facet_candidates(&root, "work").expect("load facet candidates");
+        assert_eq!(facet.len(), 1);
+        fs::remove_dir_all(root).expect("cleanup dangling root");
     }
 
     #[test]

@@ -1619,7 +1619,6 @@ fn a_crash_after_commit_keeps_the_merge_and_recovery_removes_the_discovery_cache
     let discovery = journal.join("awareness/discovery_clusters.json");
     fs::create_dir_all(discovery.parent().unwrap()).unwrap();
     fs::write(&discovery, b"{}").unwrap();
-    solstone_core_indexer_store::scan::rebuild_edges(&journal).unwrap();
     assert!(
         commit_entity_merge_with_injector(
             &journal,
@@ -1640,18 +1639,7 @@ fn a_crash_after_commit_keeps_the_merge_and_recovery_removes_the_discovery_cache
     commit_entity_merge(&journal, "source", "target", EntityMergeOptions::default()).unwrap();
     assert!(!journal.join("health/entity-merge-recovery").exists());
     assert!(!discovery.exists());
-    // The index still holds the row under the merged id; connections read it
-    // as the survivor's.
-    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
-    let source_edges: i64 = connection
-        .query_row(
-            "SELECT COUNT(*) FROM edges WHERE src = 'source'",
-            [],
-            |row| row.get(0),
-        )
-        .unwrap();
-    assert_eq!(source_edges, 1);
-    drop(connection);
+    // Connections recorded under the merged id read as the survivor's.
     assert_eq!(
         crate::entity_edge_aliases(&journal),
         vec![crate::EntityEdgeAlias {
@@ -2208,44 +2196,6 @@ fn merge_facets_relinks_when_target_has_no_relationship_dir() {
         stats.removed_source_dirs,
         vec!["facets/work/entities/src-rel".to_owned()]
     );
-    fs::remove_dir_all(journal).unwrap();
-}
-
-#[test]
-fn failed_merge_preserves_an_unrelated_committed_index_write() {
-    let journal = voiceprint_journal();
-    for id in ["source", "target"] {
-        save_entity_identity(&journal, id, &json!({"id":id,"name":id}), None).unwrap();
-    }
-    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
-    connection
-        .execute("CREATE TABLE independent_write(value TEXT)", [])
-        .unwrap();
-    let injected = connection;
-    let result = commit_entity_merge_with_injector(
-        &journal,
-        "source",
-        "target",
-        EntityMergeOptions::default(),
-        Some(&move |phase, _| {
-            if phase == "history" {
-                injected
-                    .execute("INSERT INTO independent_write VALUES ('acknowledged')", [])
-                    .unwrap();
-                true
-            } else {
-                false
-            }
-        }),
-    );
-    assert!(result.is_err());
-    assert!(journal.join("entities/source").exists());
-    let connection = solstone_core_indexer_store::db::open_index(&journal).unwrap();
-    let retained: String = connection
-        .query_row("SELECT value FROM independent_write", [], |row| row.get(0))
-        .unwrap();
-    assert_eq!(retained, "acknowledged");
-    drop(connection);
     fs::remove_dir_all(journal).unwrap();
 }
 

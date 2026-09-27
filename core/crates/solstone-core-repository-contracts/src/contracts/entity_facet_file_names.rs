@@ -57,8 +57,8 @@ const ARTIFACTS: &[(&str, &[&str])] = &[
 /// Every site outside an owner that spells a name, as
 /// (file, enclosing item, name, count, reason). A reason is one of:
 /// `derived: …` (stays: it reads or matches by path shape and needs no owner
-/// semantics), `message: …` (prose naming the file), or `pending 5d-N: …`
-/// (routed through an owner API by that slice).
+/// semantics) or `message: …` (prose naming the file). A new site that reads
+/// through a name is routed through its owner's API instead of listed.
 const LISTED: &[(&str, &str, &str, usize, &str)] = &[
     (
         "core/crates/solstone-core-convey-shell/src/speakers_attribution.rs",
@@ -110,53 +110,11 @@ const LISTED: &[(&str, &str, &str, usize, &str)] = &[
         "derived: digest of facet declarations; the indexer sits below the facets crate",
     ),
     (
-        "core/crates/solstone-core-indexer/src/edges/candidates.rs",
-        "load_facet_candidates",
-        "entity.json",
-        1,
-        "pending 5d-3: LinkDirs::scan after the entity crate drops indexer-store",
-    ),
-    (
-        "core/crates/solstone-core-indexer/src/edges/candidates.rs",
-        "load_journal_candidates",
-        "entity.json",
-        1,
-        "pending 5d-3: read_identity_map after the entity crate drops indexer-store",
-    ),
-    (
-        "core/crates/solstone-core-indexer/src/edges/candidates.rs",
-        "load_journal_entities",
-        "entity.json",
-        1,
-        "pending 5d-3: read_entity_identity after the entity crate drops indexer-store",
-    ),
-    (
         "core/crates/solstone-core-indexer/src/edges/registry.rs",
         "EDGE_SOURCE_PATTERNS",
         "observations.jsonl",
         1,
         "derived: the index's edge registry globs notes files by path",
-    ),
-    (
-        "core/crates/solstone-core-indexer/src/edges/speaker.rs",
-        "load_journal_entities",
-        "entity.json",
-        1,
-        "pending 5d-3: read_identity_map after the entity crate drops indexer-store",
-    ),
-    (
-        "core/crates/solstone-core-indexer/src/entity_search.rs",
-        "load_identities",
-        "entity.json",
-        1,
-        "pending 5d-3: an owner identity path for the search watermark",
-    ),
-    (
-        "core/crates/solstone-core-indexer/src/entity_search.rs",
-        "load_relationships",
-        "entity.json",
-        1,
-        "pending 5d-3: LinkDirs::scan, keyed by the link's entity id",
     ),
     (
         "core/crates/solstone-core-indexer-store/src/classification.rs",
@@ -834,9 +792,7 @@ fn compare(found: &Counted, listed: &[(&str, &str, &str, usize, &str)]) -> Vec<S
     let mut listed_counts: BTreeMap<(String, String, String), usize> = BTreeMap::new();
     for (file, item, name, count, reason) in listed {
         assert!(
-            reason.starts_with("derived: ")
-                || reason.starts_with("message: ")
-                || reason.starts_with("pending 5d-"),
+            reason.starts_with("derived: ") || reason.starts_with("message: "),
             "a listed site needs a reason of a known kind: {file} {item} {name}"
         );
         *listed_counts
@@ -900,7 +856,7 @@ fn only_owners_spell_entity_and_facet_file_names() {
 }
 
 #[test]
-fn the_real_split_variable_sites_are_seen_and_test_modules_are_not() {
+fn test_only_modules_are_not_seen() {
     let root = repository_root();
     let (found, _) = outside_sites(&root, &root.join("core/crates"));
     let count = |file: &str| {
@@ -910,27 +866,6 @@ fn the_real_split_variable_sites_are_seen_and_test_modules_are_not() {
             .map(|(_, count)| count)
             .sum::<usize>()
     };
-    // Bound through a `for` pattern, or passed in as a parameter: invisible
-    // to a path-shape check.
-    assert_eq!(
-        count("core/crates/solstone-core-indexer/src/edges/candidates.rs"),
-        3
-    );
-    assert_eq!(
-        count("core/crates/solstone-core-indexer/src/entity_search.rs"),
-        2
-    );
-    for file in [
-        "core/crates/solstone-core-indexer/src/edges/candidates.rs",
-        "core/crates/solstone-core-indexer/src/entity_search.rs",
-    ] {
-        let source = fs::read_to_string(root.join(file)).expect("read source");
-        assert_eq!(
-            crate::facet_link_layout::path_shape_hits(&source),
-            0,
-            "{file} is visible to the path-shape check too; this contract adds nothing there"
-        );
-    }
     for test_only in [
         "core/crates/solstone-core-records-web/src/corpus.rs",
         "core/crates/solstone-core-records-web/src/search_page_oracle.rs",
@@ -1128,7 +1063,7 @@ fn a_listed_file_cant_gain_a_site_and_a_routed_site_leaves_the_list() {
         "read",
         "entity.json",
         2,
-        "pending 5d-2: x",
+        "derived: x",
     )];
 
     let same = BTreeMap::from([(key("read"), 2)]);

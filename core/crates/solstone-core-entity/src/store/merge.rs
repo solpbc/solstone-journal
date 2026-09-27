@@ -143,7 +143,6 @@ pub enum EntityMergeError {
     Write(EntityWriteError),
     Lifecycle(EntityLifecycleError),
     Snapshot(SnapshotError),
-    Index(solstone_core_indexer_store::StoreError),
     Audit(solstone_core_journal_io::AppendError),
     Failed {
         failed_phase: String,
@@ -168,7 +167,6 @@ impl fmt::Display for EntityMergeError {
             Self::Write(error) => error.fmt(f),
             Self::Lifecycle(error) => error.fmt(f),
             Self::Snapshot(error) => error.fmt(f),
-            Self::Index(error) => error.fmt(f),
             Self::Audit(error) => error.fmt(f),
             Self::Failed {
                 failed_phase,

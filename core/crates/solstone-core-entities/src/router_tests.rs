@@ -7543,40 +7543,6 @@ async fn attaching_a_merged_name_is_refused_naming_the_entity_it_joined() {
     assert!(!j.path().join("entities/source").exists());
 }
 
-#[test]
-fn edge_extraction_resolves_entity_ids_to_the_same_directories_as_the_identity_map() {
-    let journal = Journal::new();
-    save_person(journal.path(), "ann", "Ann");
-    save_person(journal.path(), "z_ann", "Ann Z");
-    rewrite_written_id(journal.path(), "z_ann", "ann");
-    save_person(journal.path(), "b2", "Bee 2");
-    rewrite_written_id(journal.path(), "b2", "bee");
-    save_person(journal.path(), "b1", "Bee 1");
-    rewrite_written_id(journal.path(), "b1", "bee");
-    save_person(journal.path(), "carol", "Carol");
-    // `ann` and `carol` carry no written id: each falls back to its directory.
-    for dir in ["ann", "carol"] {
-        let path = journal.path().join(format!("entities/{dir}/entity.json"));
-        let mut identity: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        identity.as_object_mut().unwrap().remove("id");
-        fs::write(path, serde_json::to_vec(&identity).unwrap()).unwrap();
-    }
-
-    let indexer =
-        solstone_core_indexer::edges::candidates::journal_entity_dirs_by_id(journal.path())
-            .unwrap();
-    let store: std::collections::BTreeMap<String, String> =
-        solstone_core_entity::read_identity_map(journal.path())
-            .unwrap()
-            .resolved
-            .into_iter()
-            .collect();
-    assert_eq!(indexer, store);
-    assert_eq!(indexer["ann"], "z_ann");
-    assert_eq!(indexer["bee"], "b1");
-    assert_eq!(indexer["carol"], "carol");
-}
-
 /// Delete an entity as the owner does and wait for the delete to land.
 async fn owner_delete(root: &Path, entity_id: &str) {
     let router = held_router(root, Duration::ZERO);
