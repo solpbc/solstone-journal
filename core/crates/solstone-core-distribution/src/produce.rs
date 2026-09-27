@@ -55,6 +55,19 @@ pub const PDFIUM_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_PDFIUM_ARCHIVE"
 pub const FFMPEG_ARCHIVE_OVERRIDE: &str = "SOLSTONE_DISTRIBUTION_FFMPEG_ARCHIVE";
 pub const OFFLINE: &str = "SOLSTONE_DISTRIBUTION_OFFLINE";
 
+const SHIPPED_CORE_FEATURES: &str = include_str!("../../../distribution/shipped-core-features.txt");
+
+/// `--features` arguments for a release build that includes the `solstone-core`
+/// binary: one pair per feature listed in `core/distribution/shipped-core-features.txt`.
+fn shipped_core_feature_args() -> Vec<String> {
+    SHIPPED_CORE_FEATURES
+        .lines()
+        .map(|line| line.split('#').next().unwrap_or_default().trim())
+        .filter(|feature| !feature.is_empty())
+        .flat_map(|feature| ["--features".to_owned(), format!("solstone-core/{feature}")])
+        .collect()
+}
+
 #[derive(Debug)]
 pub struct ProduceError {
     pub message: String,
@@ -1050,10 +1063,7 @@ fn cargo_argv(triple: &str, bins: &[(String, String)]) -> Vec<String> {
         .iter()
         .any(|(package, bin)| package == "solstone-core" && bin == "solstone-core")
     {
-        args.extend([
-            "--features".into(),
-            "solstone-core/journal-mcp-endpoint".into(),
-        ]);
+        args.extend(shipped_core_feature_args());
     }
     args
 }

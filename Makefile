@@ -1043,11 +1043,10 @@ build:
 
 # `build` with the solstone-core features shipped journals are built with, so a
 # checkout runs the same solstone-core an owner runs. `extro-sandbox` builds
-# this way. SHIPPED_CORE_FEATURES mirrors the features the shipped builds pass:
-# `cargo_argv` in core/crates/solstone-core-distribution/src/produce.rs and the
-# Windows lane's argv in produce/windows_build.rs. Change them together.
-SHIPPED_CORE_FEATURES := solstone-core/journal-mcp-endpoint
-build-shipped-features: BUILD_CARGO_ARGS := --features $(SHIPPED_CORE_FEATURES)
+# this way. The list is core/distribution/shipped-core-features.txt, the same
+# file the release builds read.
+SHIPPED_CORE_FEATURES = $(shell sed 's/\#.*//' core/distribution/shipped-core-features.txt)
+build-shipped-features: BUILD_CARGO_ARGS = $(addprefix --features solstone-core/,$(SHIPPED_CORE_FEATURES))
 build-shipped-features: build
 
 # Build is necessary but not sufficient: these are the binaries delivered by

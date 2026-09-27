@@ -1,0 +1,5 @@
+# The solstone-core features every shipped journal is built with, one per
+# line. The release builds (solstone-core-distribution's produce lanes) and
+# `make build-shipped-features` both read this list, so a checkout built with
+# that target runs the same solstone-core an owner runs.
+journal-mcp-endpoint

@@ -302,10 +302,7 @@ fn cargo_argv(inventory: &Inventory) -> Result<Vec<String>, String> {
         return Err("Windows inventory declares no Cargo commands".into());
     }
     if journal_core {
-        args.extend([
-            "--features".into(),
-            "solstone-core/journal-mcp-endpoint".into(),
-        ]);
+        args.extend(super::shipped_core_feature_args());
     }
     Ok(args)
 }
