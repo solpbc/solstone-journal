@@ -192,7 +192,7 @@ pub fn build_rfdetr_fit_report_with_free_bytes(
 }
 
 /// Build the local-provider report from facts collected by the owner-facing
-/// verb.  This function intentionally performs no host inspection.
+/// verb. Windows also verifies the current signed package once for this report.
 #[allow(clippy::too_many_arguments)]
 pub fn build_local_fit_report(
     journal: &Path,
@@ -272,6 +272,7 @@ pub fn build_local_fit_report(
         &unknown,
         "known downloads",
     );
+    let platform_ready = platform.severity == FitSeverity::Ok;
     let mut checks = vec![platform, ram, disk];
     if os_name == "linux" || os_name == "windows" {
         let mut gpu = local_gpu_check(
@@ -282,10 +283,7 @@ pub fn build_local_fit_report(
             override_index,
             force_cpu,
         );
-        if os_name == "windows"
-            && super::windows_engine::verified_windows_llama_package().is_err()
-            && gpu.severity == FitSeverity::Ok
-        {
+        if os_name == "windows" && !platform_ready && gpu.severity == FitSeverity::Ok {
             gpu.severity = FitSeverity::Warning;
         }
         checks.push(gpu);

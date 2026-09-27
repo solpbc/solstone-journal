@@ -402,38 +402,20 @@ where
             stderr,
         };
     }
-    let target_sha = if report_override.is_some() {
-        // The report override is a synthetic test seam, so it must not inspect
-        // live local-backend facts merely to build the attempt fingerprint.
-        None
-    } else {
-        match target_sha_provider(&journal) {
-            Ok(target_sha) => Some(target_sha),
-            Err(error) => {
-                stderr.push(error);
-                return InstallProviderOutcome {
-                    exit_code: 1,
-                    stdout: Vec::new(),
-                    stderr,
-                };
-            }
-        }
-    };
+    // A new installer resolves its fingerprint under the install lease. Only an
+    // observer needs another fingerprint here to identify the existing attempt.
     match lease::is_held(&journal, "local") {
         Ok(true) => {
-            let target_sha = match target_sha {
-                Some(target_sha) => target_sha,
-                None => match target_sha_provider(&journal) {
-                    Ok(target_sha) => target_sha,
-                    Err(error) => {
-                        stderr.push(error);
-                        return InstallProviderOutcome {
-                            exit_code: 1,
-                            stdout: Vec::new(),
-                            stderr,
-                        };
-                    }
-                },
+            let target_sha = match target_sha_provider(&journal) {
+                Ok(target_sha) => target_sha,
+                Err(error) => {
+                    stderr.push(error);
+                    return InstallProviderOutcome {
+                        exit_code: 1,
+                        stdout: Vec::new(),
+                        stderr,
+                    };
+                }
             };
             return observe_existing(&journal, "local", &target_sha, stderr);
         }
@@ -473,19 +455,16 @@ where
             }
         }
         Err(error) if is_install_busy(&error) => {
-            let target_sha = match target_sha {
-                Some(target_sha) => target_sha,
-                None => match target_sha_provider(&journal) {
-                    Ok(target_sha) => target_sha,
-                    Err(error) => {
-                        stderr.push(error);
-                        return InstallProviderOutcome {
-                            exit_code: 1,
-                            stdout: Vec::new(),
-                            stderr,
-                        };
-                    }
-                },
+            let target_sha = match target_sha_provider(&journal) {
+                Ok(target_sha) => target_sha,
+                Err(error) => {
+                    stderr.push(error);
+                    return InstallProviderOutcome {
+                        exit_code: 1,
+                        stdout: Vec::new(),
+                        stderr,
+                    };
+                }
             };
             observe_existing(&journal, "local", &target_sha, stderr)
         }
@@ -1430,6 +1409,50 @@ mod tests {
                 .stderr
                 .iter()
                 .any(|line| { line.starts_with("could not read persisted local install status:") })
+        );
+    }
+
+    #[cfg(feature = "full-tests")]
+    #[test]
+    fn new_local_install_does_not_require_an_observers_fingerprint() {
+        let journal = tempfile::tempdir().unwrap();
+        let entered = std::cell::Cell::new(false);
+        let outcome = run_local_inner_with_platform_and_target_sha(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            None,
+            |_| {
+                entered.set(true);
+                Ok(json!({"status": status_value("installed")}))
+            },
+            |_| Err("observer fingerprint unavailable".to_owned()),
+            "windows",
+            "x86_64",
+        );
+        assert!(entered.get());
+        assert_eq!(outcome.exit_code, 0);
+    }
+
+    #[test]
+    fn an_existing_local_lease_requires_a_current_observer_fingerprint() {
+        let journal = tempfile::tempdir().unwrap();
+        let _held = lease::acquire(journal.path(), "local").unwrap().unwrap();
+        let outcome = run_local_inner_with_platform_and_target_sha(
+            || Ok(journal.path().to_path_buf()),
+            |_| missing_readiness(),
+            Some(report(fit_report::FitSeverity::Ok)),
+            |_| panic!("another writer owns the lease"),
+            |_| Err("observer fingerprint unavailable".to_owned()),
+            "windows",
+            "x86_64",
+        );
+        assert_eq!(outcome.exit_code, 1);
+        assert!(outcome.stdout.is_empty());
+        assert!(
+            outcome
+                .stderr
+                .iter()
+                .any(|line| line == "observer fingerprint unavailable")
         );
     }
 
