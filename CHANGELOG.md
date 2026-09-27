@@ -34,6 +34,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - with confidential processing, your journal could stop sending work to the service after about ten quiet minutes and hold it until the next run. it now checks the service again and carries on.
 - when an agent searches your journal for "yesterday" or "last week", it now gets the days you'd expect in your own time zone. before, those dates followed UTC, so for part of each day they could be a day off.
 - with confidential processing, if turning it on didn't finish, for example because you took longer than about fifteen minutes in your browser, the journal's thinking app said it couldn't verify the service, and that message disappeared half a minute later. it now says confidential processing isn't on and what went wrong, and the message no longer disappears after half a minute.
+- if you drop a text file or a recording on the import page without picking what kind it is, it now imports. before, the import never started, and the page said it was running for an hour before saying "Import never completed". an export you drop there still needs you to pick what kind it is. if you don't, the page now says it failed within a second or so, not an hour later.
 
 ## [2.0.22] - 2026-09-27
 
