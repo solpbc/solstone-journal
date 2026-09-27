@@ -226,6 +226,28 @@ fn drain_m4a_decoder(
                     *resampler = Some(make_resampler(&decoded, path)?);
                 }
                 let mut converted = ffmpeg::frame::Audio::empty();
+                if decoded.rate() < SAMPLE_RATE {
+                    // An empty output frame is allocated to the input frame's
+                    // sample count by ffmpeg-next. Upsampling needs room for
+                    // more output, including samples buffered by swresample.
+                    let context = resampler
+                        .as_ref()
+                        .expect("resampler initialized from decoded frame");
+                    let pending = context
+                        .delay()
+                        .map_or(0, |delay| delay.output.max(0) as usize);
+                    let capacity = decoded
+                        .samples()
+                        .saturating_mul(SAMPLE_RATE as usize)
+                        .div_ceil(decoded.rate() as usize)
+                        .saturating_add(pending)
+                        .saturating_add(FLUSH_OUTPUT_PADDING as usize);
+                    converted = ffmpeg::frame::Audio::new(
+                        OUTPUT_FORMAT,
+                        capacity,
+                        ffmpeg::ChannelLayout::MONO,
+                    );
+                }
                 resampler
                     .as_mut()
                     .expect("resampler initialized from decoded frame")

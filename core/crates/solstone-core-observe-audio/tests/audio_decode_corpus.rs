@@ -90,3 +90,38 @@ fn decode_f32_mono_covers_the_checked_in_codec_corpus() {
         );
     }
 }
+
+#[test]
+fn low_rate_m4a_matches_ffmpeg_audio_and_length() {
+    // Fixtures: FFmpeg n8.0.1 sine=frequency=440:sample_rate=RATE:duration=1,
+    // encoded with -ac 1 -c:a aac -b:a 64k. Oracles are that same FFmpeg's
+    // `-f f32le -ac 1 -ar 16000` output, including AAC end padding.
+    for (rate, source_frame_samples) in [(8000, 1024), (11025, 1024)] {
+        let root = repository_root().join("core/fixtures/audio_decode_corpus");
+        let source = root.join(format!("mono-{rate}.m4a"));
+        let oracle = root.join(format!("mono-{rate}-expected.f32le"));
+        let expected: Vec<f32> = std::fs::read(oracle)
+            .expect("read FFmpeg command-line decoded audio")
+            .chunks_exact(4)
+            .map(|sample| f32::from_le_bytes(sample.try_into().expect("f32 sample")))
+            .collect();
+        let actual = decode_f32_mono(&source).expect("decode low-rate m4a");
+        let frame_at_output_rate =
+            (source_frame_samples * SAMPLE_RATE as usize).div_ceil(rate as usize);
+        assert!(
+            actual.len().abs_diff(expected.len()) <= frame_at_output_rate,
+            "{rate} Hz m4a: decoded {} samples, FFmpeg command line decoded {}",
+            actual.len(),
+            expected.len()
+        );
+        let max_difference = actual
+            .iter()
+            .zip(&expected)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_difference <= 1e-4,
+            "{rate} Hz m4a: maximum overlapping waveform difference {max_difference}"
+        );
+    }
+}
