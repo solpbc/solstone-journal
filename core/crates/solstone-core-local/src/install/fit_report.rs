@@ -518,6 +518,7 @@ pub fn free_bytes(_target: &Path) -> Result<u64, String> {
 
 #[cfg(windows)]
 #[link(name = "kernel32")]
+#[allow(unsafe_code)]
 unsafe extern "system" {
     fn GetDiskFreeSpaceExW(
         directory_name: *const u16,

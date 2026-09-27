@@ -9,6 +9,11 @@ rust-version.workspace = true
 license.workspace = true
 publish = false
 
+# Windows disk-space and uptime reads are narrowly audited Win32 FFI boundaries.
+# Keep unsafe code denied by default and permit it only at those call sites.
+[lints.rust]
+unsafe_code = "deny"
+
 [features]
 full-tests = []
 # Narrow test driver for the loopback installer transport target.  Production

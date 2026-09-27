@@ -275,6 +275,7 @@ fn lock_error(error: TryLockError) -> AdmissionError {
 
 #[cfg(windows)]
 #[link(name = "kernel32")]
+#[allow(unsafe_code)]
 unsafe extern "system" {
     fn GetTickCount64() -> u64;
 }
