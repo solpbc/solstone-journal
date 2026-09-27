@@ -12,6 +12,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- your journal now also writes a story for terminal, AI conversation, writing, planning, design and productivity activities. each story lists that activity's commitments and decisions. activities that end after you update get one; earlier ones stay as they are. each story is one more request to your thinking provider.
 - search results, including `solstone call journal search` output, no longer include the match counts by facet and by kind of result.
 - an agent can start connecting to your journal only while you have a pairing code open. make the code first, in agents › connect an agent, then connect from your agent. at any other time, your journal turns the attempt away and stores nothing from it. agents you've already connected keep working. the page where you enter the code no longer shows your journal's mark; the code is what proves it's you.
 - when you import an image and your provider describes it, your journal now sends only a fresh copy of the picture, turned upright and scaled down if it's large. details stored inside the file, like where and when a photo was taken and on what camera, no longer go with it. the image kept in your journal is unchanged.
@@ -22,6 +23,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- an activity's story is now kept when it has no topics worth saving. before, your journal threw that story away.
 - if a task ends and the journal cannot prove its processes are gone, that kind of task is held, `journal health` shows it as held, and the next one waits until they are gone. a hold doesn't carry over when your journal restarts.
 - a recording that finishes importing from this release on isn't added a second time if you import it again. `journal importer` now says the file was already imported, and `--force` imports it again. an audio-folder sync also leaves out a recording you imported by hand from this release on. recordings imported before this release aren't recognized, so importing one again still adds a second copy.
 - calendar files, Obsidian and Logseq notes, and conversation exports from ChatGPT, Claude and Gemini go into your journal again. until this release, importing any of them showed a preview and then saved nothing. each lands on a day in your own time zone: a conversation on the day its messages were sent, a note on the day you last changed it, and a calendar event on the day it was added or last changed, not the day it's scheduled for. you can search them as soon as the import finishes.

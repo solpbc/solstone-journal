@@ -18,7 +18,8 @@ pub(crate) const RELATIONS: &[&str] = &[
     "other",
 ];
 
-/// Empty body or topics is a parse error, not a silent merge.
+/// An empty body is a parse error, not a silent merge. No topics is a valid
+/// story: the talents are told to return `[]` when nothing is worth keeping.
 /// `generate_and_write` turns a Story parse error into
 /// `Finished`/`RejectedNoMutation` rather than `StageFailed`.
 pub fn parse(
@@ -52,9 +53,6 @@ pub fn parse(
         if !topic.is_empty() && !clean_topics.contains(&topic) && clean_topics.len() < 10 {
             clean_topics.push(topic);
         }
-    }
-    if clean_topics.is_empty() {
-        return Err(error(prepared, "story output has invalid topics"));
     }
     let confidence = object
         .get("confidence")
@@ -351,6 +349,29 @@ mod tests {
         for row in &decisions[..3] {
             assert!(row["counterparty_entity_id"].is_null());
         }
+    }
+
+    #[test]
+    fn a_story_with_a_body_and_no_topics_is_kept_and_an_empty_body_is_not() {
+        let prepared = PreparedTalent {
+            name: "work".into(),
+            config: Map::new(),
+        };
+        let story = |body: &str| {
+            json!({"body":body,"topics":[],"confidence":0.9,
+                "commitments":[],"closures":[],"decisions":[],"relations":[]})
+            .to_string()
+        };
+        let ParsedOutput::Json(kept) = parse(
+            &story("You read your inbox."),
+            &prepared,
+            &PrePostState::None,
+        )
+        .unwrap() else {
+            panic!("story output is JSON");
+        };
+        assert_eq!(kept["topics"], json!([]));
+        assert!(parse(&story("  "), &prepared, &PrePostState::None).is_err());
     }
 
     #[test]
