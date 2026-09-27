@@ -47,6 +47,12 @@ const PAYLOAD_FORMAT: &str = "raw-f32le-row-major-v1";
 const PAYLOAD_DTYPE: &str = "float32-le";
 const SPEAKER_ANALYSIS_FAILURE_PATH: &str = "native";
 
+/// Shortest statement the speakers helper embeds. It must equal the helper's
+/// `solstone_core_speakers::MIN_STATEMENT_DURATION_S`: the adapter predicts the
+/// helper's admitted statement ids with it and refuses any mismatch, so a
+/// divergence fails every segment that holds a statement between the two values.
+pub(crate) const MIN_STATEMENT_DURATION_S: f64 = 0.3;
+
 /// Native helper invocation limits.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct SpeakersAnalyzeBudget {
@@ -1598,9 +1604,9 @@ mod tests {
     use serde_json::{Map, Value, json};
 
     use super::{
-        RESPONSE_SCHEMA, SpeakerAnalyzeError, SpeakersAnalyzeBudget, accepted_result_from_response,
-        admitted_statement_ids, create_speakers_analyze_temp_dir_in, remove_partial_sidecar,
-        sweep_stale_speakers_analyze_dirs_at, with_cleaned_temp_dir,
+        MIN_STATEMENT_DURATION_S, RESPONSE_SCHEMA, SpeakerAnalyzeError, SpeakersAnalyzeBudget,
+        accepted_result_from_response, admitted_statement_ids, create_speakers_analyze_temp_dir_in,
+        remove_partial_sidecar, sweep_stale_speakers_analyze_dirs_at, with_cleaned_temp_dir,
     };
     use crate::TranscribeError;
 
@@ -1710,6 +1716,25 @@ mod tests {
         let statements = vec![statement(1, -1.0, 2.0), statement(2, 0.1, 0.15)];
         assert_eq!(
             admitted_statement_ids(raw, &[0.0; 16_000], &statements, 16_000, 0.1).unwrap(),
+            vec![1]
+        );
+    }
+
+    #[test]
+    fn admission_drops_a_statement_the_helper_will_not_embed() {
+        // The helper embeds statements of at least 0.3 s, so a 0.27 s statement
+        // must not be expected back from it.
+        let raw = Path::new("input.wav");
+        let statements = vec![statement(1, 0.0, 1.0), statement(2, 1.0, 1.27)];
+        assert_eq!(
+            admitted_statement_ids(
+                raw,
+                &[0.0; 32_000],
+                &statements,
+                16_000,
+                MIN_STATEMENT_DURATION_S
+            )
+            .unwrap(),
             vec![1]
         );
     }

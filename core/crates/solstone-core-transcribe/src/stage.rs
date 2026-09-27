@@ -41,7 +41,7 @@ use crate::transcript::{
 };
 use solstone_core_observe_audio::reduce_audio;
 
-const SPEAKER_EVIDENCE_VERSION: &str = "speaker-evidence-v1";
+const SPEAKER_EVIDENCE_VERSION: &str = "windowed-slots-v1";
 const SPEAKER_ANALYSIS_PRODUCER: &str = "solstone-core-speakers-analyze";
 const OVERLAP_DETECTOR: &str = "pyannote-segmentation-3.0";
 
@@ -362,7 +362,7 @@ pub(crate) fn process_one(
         &statements,
         &restored,
         SAMPLE_RATE,
-        0.25,
+        crate::speakers::MIN_STATEMENT_DURATION_S,
         #[cfg(windows)]
         generation,
     ) {

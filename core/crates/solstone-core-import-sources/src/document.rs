@@ -1389,7 +1389,7 @@ fn generate_for_page(
         timeout_s: None,
         json_output: false,
         json_schema: None,
-        enforce_responsiveness: false,
+        enforce_responsiveness: true,
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,

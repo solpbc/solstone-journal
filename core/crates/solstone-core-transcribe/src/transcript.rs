@@ -387,7 +387,7 @@ mod tests {
             vad_result: None,
             segment_meta: None,
             overlap_detector: Some("pyannote"),
-            speaker_evidence_version: "speaker-evidence-v1",
+            speaker_evidence_version: "windowed-slots-v1",
             processing,
             sound_tags: None,
             speaker_analysis_producer: Some("speakers-analyze-v1"),

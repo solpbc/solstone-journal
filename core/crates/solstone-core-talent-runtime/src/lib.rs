@@ -931,7 +931,7 @@ fn generate_request(prepared: &PreparedTalent) -> GenerateRequest {
         timeout_s: None,
         json_output: prepared.config.contains_key("json_schema"),
         json_schema: prepared.config.get("json_schema").cloned(),
-        enforce_responsiveness: false,
+        enforce_responsiveness: true,
         attempt_index: 0,
         exclusive_admission: false,
         transport_retries: None,
