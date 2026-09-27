@@ -483,6 +483,38 @@ pub enum DurableObservation<T> {
     },
 }
 
+// Windows can report PATH_NOT_FOUND when an ancestor is a regular file.
+// Only classify a failed read as absence after finding an existing directory
+// above the missing suffix. This is error classification, not path admission
+// or a guarantee against concurrent namespace changes.
+fn classify_absence(path: &Path, error: io::Error) -> io::Error {
+    if error.kind() != io::ErrorKind::NotFound {
+        return error;
+    }
+    for parent in path.ancestors().skip(1) {
+        let parent = if parent.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            parent
+        };
+        match fs::metadata(parent) {
+            Ok(metadata) if metadata.is_dir() => return error,
+            Ok(_) => {
+                return io::Error::new(
+                    io::ErrorKind::NotADirectory,
+                    format!("artifact ancestor is not a directory: {}", parent.display()),
+                );
+            }
+            Err(source) if source.kind() == io::ErrorKind::NotFound => continue,
+            Err(source) => return source,
+        }
+    }
+    io::Error::other(format!(
+        "could not establish a readable directory above {}: {error}",
+        path.display()
+    ))
+}
+
 /// Observe a whole JSON artifact under its declared identity without taking
 /// repair authority. This still binds the read to [`JOURNAL_ARTIFACTS`], but
 /// leaves malformed or unreadable evidence byte-identical for an explicit
@@ -492,7 +524,7 @@ pub fn observe_json_durable<T: DeserializeOwned>(
     path: &Path,
 ) -> DurableObservation<T> {
     let _declaration = artifact(id);
-    let bytes = match fs::read(path) {
+    let bytes = match fs::read(path).map_err(|error| classify_absence(path, error)) {
         Ok(bytes) => bytes,
         Err(source) if source.kind() == io::ErrorKind::NotFound => {
             return DurableObservation::Absent;
@@ -532,7 +564,7 @@ pub fn read_json_durable<T: DeserializeOwned>(
     let decl = artifact(id);
     let class = decl.class;
 
-    let bytes = match fs::read(path) {
+    let bytes = match fs::read(path).map_err(|error| classify_absence(path, error)) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(DurableRead::Absent),
         Err(error) => {
@@ -598,7 +630,7 @@ pub fn read_jsonl_durable<T: DeserializeOwned>(
     _id: ArtifactId,
     path: &Path,
 ) -> io::Result<DurableJsonl<T>> {
-    let content = match fs::read_to_string(path) {
+    let content = match fs::read_to_string(path).map_err(|error| classify_absence(path, error)) {
         Ok(content) => content,
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             return Ok(DurableJsonl {
@@ -733,6 +765,45 @@ pub const SET_ASIDE_MARKER: &str = ".wedged-";
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn missing_suffix_is_absent_but_a_file_ancestor_is_unreadable() {
+        let directory = TempDir::new().unwrap();
+        let path = directory.path().join("parent/missing/state.json");
+        assert!(matches!(
+            observe_json_durable::<serde_json::Value>(ArtifactId::ProviderRuntimeHealth, &path),
+            DurableObservation::Absent
+        ));
+        assert!(matches!(
+            read_json_durable::<serde_json::Value>(ArtifactId::ProviderRuntimeHealth, &path),
+            Ok(DurableRead::Absent)
+        ));
+        assert!(
+            read_jsonl_durable::<serde_json::Value>(ArtifactId::ProviderRuntimeHealth, &path)
+                .unwrap()
+                .records
+                .is_empty()
+        );
+
+        fs::write(directory.path().join("parent"), b"not a directory").unwrap();
+        assert!(matches!(
+            observe_json_durable::<serde_json::Value>(ArtifactId::ProviderRuntimeHealth, &path),
+            DurableObservation::Unreadable { .. }
+        ));
+        assert!(matches!(
+            read_json_durable::<serde_json::Value>(ArtifactId::ProviderRuntimeHealth, &path),
+            Ok(DurableRead::Unreadable { .. })
+        ));
+        assert!(read_json_durable::<serde_json::Value>(ArtifactId::JournalConfig, &path).is_err());
+        assert!(
+            read_jsonl_durable::<serde_json::Value>(ArtifactId::ProviderRuntimeHealth, &path)
+                .is_err()
+        );
+        assert_eq!(
+            fs::read(directory.path().join("parent")).unwrap(),
+            b"not a directory"
+        );
+    }
 
     #[test]
     fn a_readable_artifact_is_present() {
