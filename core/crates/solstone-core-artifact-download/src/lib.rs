@@ -109,6 +109,8 @@ pub enum ByteDownloadError {
     Transport,
     DigestMismatch,
     InsecureUrl,
+    /// The URL names a host other than the owner-facing origin.
+    HostRefused,
 }
 
 #[derive(Debug, Default)]
@@ -116,9 +118,12 @@ pub struct UreqByteDownload;
 
 impl ByteDownload for UreqByteDownload {
     fn fetch(&self, url: &str, timeout: Duration) -> Result<Vec<u8>, ByteDownloadError> {
+        // No redirects: a hop off the origin would reach a host the
+        // pre-fetch check never saw. A 3xx surfaces as `HttpStatus`.
         let response = ureq::get(url)
             .config()
             .timeout_global(Some(timeout))
+            .max_redirects(0)
             .http_status_as_error(false)
             .build()
             .call()
@@ -157,9 +162,11 @@ impl Backoff for ThreadBackoff {
     }
 }
 
-/// Download and verify a pinned in-memory archive.
+/// Download and verify a pinned in-memory archive from the owner-facing origin.
 ///
-/// HTTP status responses fail immediately. Transport and timeout failures use
+/// The URL must be `https://` on a `PRODUCTION_DOWNLOAD_POLICY` host; anything
+/// else is refused before the downloader is asked. HTTP status responses fail
+/// immediately. Transport and timeout failures use
 /// the Python reference backoff: 0.25 seconds multiplied by the attempt index.
 pub fn download_verified_bytes(
     downloader: &dyn ByteDownload,
@@ -188,6 +195,9 @@ pub(crate) fn download_verified_bytes_with(
 ) -> Result<Vec<u8>, ByteDownloadError> {
     if !url.starts_with("https://") {
         return Err(ByteDownloadError::InsecureUrl);
+    }
+    if validate_url(url, &PRODUCTION_DOWNLOAD_POLICY).is_err() {
+        return Err(ByteDownloadError::HostRefused);
     }
     let attempts = attempts.max(1);
     let mut last = ByteDownloadError::Transport;
@@ -728,7 +738,7 @@ mod tests {
         assert_eq!(
             download_verified_bytes(
                 &download,
-                "https://example.invalid/asset",
+                "https://updates.solstone.app/assets/fixture",
                 "00",
                 3,
                 Duration::ZERO,
@@ -759,7 +769,7 @@ mod tests {
         assert_eq!(
             download_verified_bytes_with(
                 &download,
-                "https://example.invalid/asset",
+                "https://updates.solstone.app/assets/fixture",
                 &digest,
                 3,
                 Duration::ZERO,
@@ -773,6 +783,26 @@ mod tests {
             *backoff.delays.borrow(),
             [Duration::from_millis(250), Duration::from_millis(500)]
         );
+    }
+
+    #[test]
+    fn byte_download_refuses_a_host_off_the_origin_without_fetching() {
+        for url in [
+            "https://downloads.rclone.org/v1.74.4/rclone-v1.74.4-linux-amd64.zip",
+            "https://github.com/restic/restic/releases/download/v0.19.0/asset.bz2",
+            "https://updates.solstone.app@example.invalid/asset",
+        ] {
+            let download = ScriptedDownload {
+                responses: RefCell::new(vec![Ok(b"fixture".to_vec())]),
+                calls: Cell::new(0),
+            };
+            assert_eq!(
+                download_verified_bytes(&download, url, "00", 3, Duration::ZERO),
+                Err(ByteDownloadError::HostRefused),
+                "{url}"
+            );
+            assert_eq!(download.calls.get(), 0, "{url}");
+        }
     }
 
     #[test]

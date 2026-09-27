@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- on mac and linux, when sol pbc runs your encrypted backup, your journal now gets the rclone tool from `updates.solstone.app` instead of rclone.org.
 - when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies that earlier merges kept stay where they are, and are removed along with the entity that holds them if you later merge it into another.
 - if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
 - on windows, your journal now also reads Apple Lossless, AC-3, E-AC-3, G.711 phone audio, common ADPCM audio and more kinds of uncompressed audio in the files you import.

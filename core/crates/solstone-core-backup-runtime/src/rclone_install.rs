@@ -10,7 +10,9 @@ use std::time::Duration;
 use serde_json::json;
 #[cfg(not(windows))]
 use solstone_core_artifact_download::download_verified_bytes;
-use solstone_core_artifact_download::{ByteDownload, verify_sha256_bytes};
+use solstone_core_artifact_download::{
+    ByteDownload, PRODUCTION_DOWNLOAD_POLICY, origin_url, verify_sha256_bytes,
+};
 #[cfg(windows)]
 use solstone_core_distribution::windows_payload::WINDOWS_RCLONE_WORKER;
 use solstone_core_journal_io::{AtomicWriteOptions, atomic_replace};
@@ -26,8 +28,6 @@ pub const RCLONE_SCHEMA_VERSION: u64 = 1;
 pub const RCLONE_TOOL: &str = "rclone";
 pub const RCLONE_BUNDLE_ENV: &str = "SOLSTONE_RCLONE_BUNDLE";
 pub const RCLONE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
-pub const RCLONE_URL_TEMPLATE: &str =
-    "https://downloads.rclone.org/v{version}/rclone-v{version}-{os}-{arch}.zip";
 pub const RCLONE_ZIP_SHA256: [(&str, &str); 4] = [
     (
         "rclone-v1.74.4-linux-amd64.zip",
@@ -68,12 +68,12 @@ pub fn select_rclone_asset(
         .find(|(name, _)| *name == filename)
         .map(|(_, digest)| *digest)
         .expect("asset matrix complete");
+    // Fetched from sol pbc's origin like restic, never from rclone.org, so
+    // installing rclone reaches only the host every other download does.
+    let origin_key = format!("assets/rclone/{RCLONE_VERSION}/{filename}");
     Ok((
         filename,
-        RCLONE_URL_TEMPLATE
-            .replace("{version}", RCLONE_VERSION)
-            .replace("{os}", asset_os)
-            .replace("{arch}", &arch),
+        origin_url(PRODUCTION_DOWNLOAD_POLICY.origin_base_url, &origin_key),
         digest.to_owned(),
     ))
 }
@@ -262,7 +262,11 @@ mod tests {
             let (selected, url, actual) = select_rclone_asset(Some(os), Some(pieces[3])).unwrap();
             assert_eq!(selected, filename);
             assert_eq!(actual, digest);
-            assert!(url.ends_with(filename));
+            assert_eq!(
+                url,
+                format!("https://updates.solstone.app/assets/rclone/{RCLONE_VERSION}/{filename}")
+            );
+            assert!(!url.contains("rclone.org"));
         }
         assert_eq!(asset_os("darwin"), "osx");
         assert!(select_rclone_asset(Some("windows"), Some("amd64")).is_err());

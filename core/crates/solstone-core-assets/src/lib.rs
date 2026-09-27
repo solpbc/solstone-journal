@@ -1046,6 +1046,63 @@ static ARTIFACTS: &[Artifact] = &[
         backend: None,
         extracted_binary_sha256: None,
     },
+    // rclone is the operated backup tier's append-only transport (restic
+    // reaches the hosted repository through `rclone serve restic --stdio
+    // --append-only`). Like restic it resolves its own os/arch, so these
+    // entries carry no Platform/Backend; they put the macOS/Linux download on
+    // the origin. Windows ships rclone.exe inside the signed package instead.
+    Artifact {
+        unit: "rclone",
+        version: "1.74.4",
+        filename: "rclone-v1.74.4-osx-amd64.zip",
+        sha256: "4188aa84043d7a6240912923f47639a9d2da21f3b40a521c065c8d92e66563f6",
+        size_bytes: 32663033,
+        upstream_url: "https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-osx-amd64.zip",
+        origin_key: "assets/rclone/1.74.4/rclone-v1.74.4-osx-amd64.zip",
+        artifact_key: Some("darwin-amd64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "rclone",
+        version: "1.74.4",
+        filename: "rclone-v1.74.4-osx-arm64.zip",
+        sha256: "c2100e2d4a4b3be04c55cd45380cafe7647e1ad772bb055f52f00876ed701167",
+        size_bytes: 30390226,
+        upstream_url: "https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-osx-arm64.zip",
+        origin_key: "assets/rclone/1.74.4/rclone-v1.74.4-osx-arm64.zip",
+        artifact_key: Some("darwin-arm64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "rclone",
+        version: "1.74.4",
+        filename: "rclone-v1.74.4-linux-amd64.zip",
+        sha256: "fe435e0c36228e7c2f116a8701f01127bb1f694005fc11d1f27186c8bca4115d",
+        size_bytes: 29357100,
+        upstream_url: "https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-linux-amd64.zip",
+        origin_key: "assets/rclone/1.74.4/rclone-v1.74.4-linux-amd64.zip",
+        artifact_key: Some("linux-amd64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
+    Artifact {
+        unit: "rclone",
+        version: "1.74.4",
+        filename: "rclone-v1.74.4-linux-arm64.zip",
+        sha256: "97685285c9ad6a0cf17d5844115d2a67245af6444db672187074bd9c358de419",
+        size_bytes: 26712053,
+        upstream_url: "https://github.com/rclone/rclone/releases/download/v1.74.4/rclone-v1.74.4-linux-arm64.zip",
+        origin_key: "assets/rclone/1.74.4/rclone-v1.74.4-linux-arm64.zip",
+        artifact_key: Some("linux-arm64"),
+        platform: None,
+        backend: None,
+        extracted_binary_sha256: None,
+    },
 ];
 
 static VALIDATED: LazyLock<()> = LazyLock::new(|| {
