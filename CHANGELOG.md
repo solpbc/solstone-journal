@@ -26,18 +26,18 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- `journal entities doctor` finds entities you deleted before 2.0.22, from what your journal's action log still shows. `--fix` records them, so your journal never brings those names back on its own. it leaves out an entity that's back in your journal or was merged after you deleted it, and it tells you which days of the log it could read.
+- `journal entities doctor` finds entities you deleted before 2.0.22, from what your journal's action log still shows. `--fix` records those deletions, so your journal never brings those names back on its own. it leaves out an entity that's back in your journal or was merged after you deleted it, and it tells you which days of the log it could read.
 
 ### Changed
 
-- when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies that earlier merges kept stay where they are, and are removed along with the entity that holds them if you later merge it into another.
+- when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies from earlier merges remain until you merge the entity holding them into another.
 - if the token an agent uses to stay connected is used twice, your journal now disconnects that agent and tells you in the agents app. connect it again with a new pairing code.
 
 ### Fixed
 
-- `journal describe --frames-only FILE` now lists the frames in a video instead of rejecting `--frames-only`.
 - security fix: when `solstone link join` paired with a journal whose private network was on, it sent the pairing link's one-time secret through the relay before checking it had reached that journal, so someone who could sit where the relay sits could have read the secret and used it to pair their own device. it now checks first that it's talking to the journal that made the link. please install this update before you pair again. if you paired this way, open your journal's network app and remove any device you don't recognize, including under "nothing added yet".
 - security fix: another website could show your journal's web app inside its own page, where a click you meant for that site could land on your journal instead. your journal's web app now refuses to be shown inside another site's page, and `http://localhost:5015` works as before.
+- `journal describe --frames-only FILE` now lists the frames in a video instead of rejecting `--frames-only`.
 - on linux, `journal setup` now shows progress while it downloads the parakeet speech model. a slow connection can finish without a 30-minute cutoff.
 
 ## [2.0.22] - 2026-09-27
