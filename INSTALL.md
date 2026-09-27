@@ -134,7 +134,7 @@ windows 11 on an Intel or AMD (x64) computer. No administrator access is needed:
 
    This creates your journal at `%USERPROFILE%\journal` and starts the journal in the background. It starts again each time you sign in.
 
-   The first time the journal starts, Windows may ask whether journal, from sol pbc, can use public and private networks. Choose Cancel if you only use the journal on this computer; it keeps working here. Choose Allow to reach it from a phone or another computer on your network, which needs an administrator's password.
+   The first time the journal starts, windows may ask whether **journal**, from sol pbc, can use public and private networks. Choose Cancel if you only use the journal on this computer; it keeps working here. Choose Allow to reach it from a phone or another computer on your network, which needs administrator approval.
 3. Open http://localhost:5015 in a browser and follow the first-run steps.
 
 ### Verify independently on windows
