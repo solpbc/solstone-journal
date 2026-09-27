@@ -61,6 +61,9 @@ pub(crate) async fn register(
     oauth: &OAuthRuntime,
     shutdown: &mut watch::Receiver<bool>,
 ) -> HttpResponse {
+    if let Err(response) = require_pairing_window(oauth) {
+        return response;
+    }
     match parse_registration(request) {
         Ok(ParsedRegistration::Cimd {
             client_id,
@@ -100,6 +103,9 @@ pub(crate) async fn register_with_io<IO: CimdAttemptIo>(
     io: IO,
     random: &dyn RandomSource,
 ) -> HttpResponse {
+    if let Err(response) = require_pairing_window(oauth) {
+        return response;
+    }
     match parse_registration(request) {
         Ok(ParsedRegistration::Cimd {
             client_id,
@@ -476,6 +482,21 @@ struct RegistrationBody<'a> {
     client_id_issued_at: i64,
 }
 
+/// Registration answers only while the owner has a pairing code open for
+/// this door. Outside that window the body is not parsed, no client metadata is
+/// fetched and nothing is stored.
+fn require_pairing_window(oauth: &OAuthRuntime) -> Result<(), HttpResponse> {
+    match oauth.store.pairing_window_open(&oauth.binding()) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(HttpResponse::error(
+            403,
+            "Forbidden",
+            "no pairing code is open; make one in your journal's agents app, then connect again",
+        )),
+        Err(_) => Err(registration_unavailable()),
+    }
+}
+
 fn invalid_metadata() -> HttpResponse {
     HttpResponse::error(400, "Bad Request", "registration metadata is invalid")
 }
@@ -537,7 +558,19 @@ mod tests {
             .unwrap()
     }
 
+    /// A solstone.me runtime whose owner has a pairing code open, the only
+    /// time registration and authorization answer at all.
     fn runtime(journal: &tempfile::TempDir) -> OAuthRuntime {
+        let oauth = closed_runtime(journal);
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        oauth
+    }
+
+    /// A solstone.me runtime with no pairing code open.
+    fn closed_runtime(journal: &tempfile::TempDir) -> OAuthRuntime {
         OAuthRuntime::new(journal.path(), ORIGIN.to_owned())
     }
 
@@ -733,6 +766,15 @@ mod tests {
         journal.join("mcp-endpoint/oauth.json")
     }
 
+    /// Nothing was registered or started. The open pairing code is the only
+    /// thing in the ledger.
+    fn assert_no_client_stored(journal: &Path) {
+        let value: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(oauth_path(journal)).unwrap()).unwrap();
+        assert_eq!(value["clients"], serde_json::json!([]));
+        assert_eq!(value["pending"], serde_json::json!([]));
+    }
+
     fn pkce_challenge() -> String {
         URL_SAFE_NO_PAD.encode(Sha256::digest(b"pkce-verifier"))
     }
@@ -845,7 +887,7 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -932,12 +974,37 @@ mod tests {
     }
 
     #[tokio::test(start_paused = true)]
+    async fn registration_with_no_code_open_stores_and_fetches_nothing() {
+        let journal = journal_root();
+        let oauth = closed_runtime(&journal);
+        let classic =
+            register_classic(&oauth, r#"{"redirect_uris":["http://127.0.0.1/callback"]}"#).await;
+        assert_eq!(classic.status, 403);
+        // UnusedIo refuses any fetch, which would answer 400; the closed door answers first.
+        let (_tx, mut shutdown) = watch::channel(false);
+        let cimd = register_with_io(
+            &json_request(&format!(r#"{{"client_id":"{CIMD_URL}"}}"#)),
+            SOURCE,
+            &oauth,
+            &mut shutdown,
+            UnusedIo,
+            &SystemRandomSource,
+        )
+        .await;
+        assert_eq!(cimd.status, 403);
+        assert!(
+            !oauth_path(journal.path()).exists(),
+            "a closed door stores nothing"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
     async fn classic_registration_requires_redirect_uris() {
         let journal = journal_root();
         let oauth = runtime(&journal);
         let response = register_classic(&oauth, "{}").await;
         assert_eq!(response.status, 400);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -950,7 +1017,7 @@ mod tests {
         )
         .await;
         assert_eq!(response.status, 400);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -963,7 +1030,7 @@ mod tests {
         )
         .await;
         assert_eq!(response.status, 400);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -977,7 +1044,7 @@ mod tests {
         let body = format!(r#"{{"redirect_uris":[{uris}]}}"#);
         let response = register_classic(&oauth, &body).await;
         assert_eq!(response.status, 400);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -995,7 +1062,7 @@ mod tests {
         )
         .await;
         assert_eq!(response.status, 503);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -1015,7 +1082,7 @@ mod tests {
         )
         .await;
         assert_eq!(response.status, 413);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -1036,7 +1103,7 @@ mod tests {
         )
         .await;
         assert_eq!(response.status, 400);
-        assert!(!oauth_path(journal.path()).exists());
+        assert_no_client_stored(journal.path());
     }
 
     #[tokio::test(start_paused = true)]
@@ -1058,7 +1125,7 @@ mod tests {
         ] {
             let response = register_classic(&oauth, &body).await;
             assert_eq!(response.status, 400, "{body}");
-            assert!(!oauth_path(journal.path()).exists());
+            assert_no_client_stored(journal.path());
         }
     }
 

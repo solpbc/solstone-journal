@@ -17,14 +17,6 @@ const script = html.slice(html.indexOf('<script>') + '<script>'.length, html.ind
 let cases = 0;
 
 const ADDRESS = 'http://127.0.0.1:7659/mcp';
-const MARK = {
-  committed: true,
-  mark: {
-    icon1: {svg: '<path d="M12 6v16" />', color: {name: 'teal', hex: '#0f766e'}, rot: 0},
-    icon2: {svg: '<circle cx="5" cy="5" r="3" />', color: {name: 'amber', hex: '#b45309'}, rot: 45},
-    words: ['afoot', 'unfixed'],
-  },
-};
 const ME_ON = {enabled: true, status: 'on', owner_state: {address: 'k7q2m9xa.solstone.me', status: 'on'}};
 const FALSE_WITH_A_DOOR = ['nothing is reachable until you turn it on', 'this is off until you turn it on', 'stay connected on paper'];
 
@@ -46,7 +38,7 @@ function connection(kind, id, name, doorName) {
   return {kind, id, key: `${kind}:${id}`, name, door: doorName, created_at: '2026-09-24T12:00:00Z', permission: null, requests_this_week: 2, last_request_at: null, activity_complete: true};
 }
 
-async function boot(state, {identityFails = false, enable = null, pairingResponse} = {}) {
+async function boot(state, {enable = null, pairingResponse} = {}) {
   const calls = [];
   const opened = [];
   const view = {
@@ -62,7 +54,6 @@ async function boot(state, {identityFails = false, enable = null, pairingRespons
       const method = options.method || 'GET';
       calls.push({url, method, body: options.body ? JSON.parse(options.body) : undefined});
       if (url === '/app/agents/api/state') return JSON.parse(JSON.stringify(state));
-      if (url === '/app/network/api/identity') { if (identityFails) throw new Error('unavailable'); return MARK; }
       if (url === '/app/agents/api/pairing') {
         if (pairingResponse !== undefined) return JSON.parse(JSON.stringify(pairingResponse));
         return {code: 'K7Q2M9XA', expires_at: '2026-09-24T12:10:00Z', generation: 1, door: options.body ? JSON.parse(options.body).door : 'local'};
@@ -114,14 +105,19 @@ async function test(name, body) {
     assert(!/intercept|attack|stolen/i.test(view.innerHTML), 'notice avoids unsupported claims');
   });
 
-  await test('no local door, solstone.me on: connect offers only the solstone.me address, beside the mark', async () => {
+  await test('no local door, solstone.me on: connect offers only the solstone.me address, code first, no mark', async () => {
     const {view, click, calls} = await boot(baseState({...ME_ON, connections: [connection('oauth', 'g1', 'Claude', null)]}));
     has(view, 'agents can reach your journal through solstone.me.');
     has(view, 'Claude<span class="chip">solstone.me</span>');
     await click({action: 'connect'});
     has(view, 'https://k7q2m9xa.solstone.me/mcp');
     lacks(view, ADDRESS);
-    has(view, 'aria-label="teal, amber · afoot unfixed"');
+    const modal = view.innerHTML.slice(view.innerHTML.indexOf('<div class="modal"'));
+    const first = modal.indexOf('make a pairing code first.');
+    assert(first !== -1 && first < modal.indexOf('https://k7q2m9xa.solstone.me/mcp'), 'the code comes before the address');
+    has(view, 'enter the code on that page.');
+    has(view, 'check the address starts with <code>https://k7q2m9xa.solstone.me/</code>.', 'the address is the check on solstone.me');
+    assert(!/mark/i.test(view.innerHTML), 'connect never shows or mentions a mark');
     await click({action: 'new-code'});
     assert(calls.some(call => call.url === '/app/agents/api/pairing' && call.method === 'POST'));
     has(view, 'K7Q2M9XA');
@@ -185,24 +181,18 @@ async function test(name, body) {
     });
   }
 
-  await test('address taken: red status, the mark, and "or none"', async () => {
+  await test('address taken: red status, and no code goes into a page at that address', async () => {
     const {view, click, calls} = await boot(baseState(door({listening: false, reason: 'port_in_use'})));
     has(view, 'class="sdot r"');
     has(view, 'a program pretending to be your journal');
-    has(view, 'aria-label="teal, amber · afoot unfixed"');
-    has(view, 'if it shows a different mark, or none, close that page.');
+    has(view, "until this clears, don't enter a pairing code on a page opened through this address, and close any that is open.");
+    assert(!/mark/i.test(view.innerHTML), 'the notice never asks for a mark check');
     await click({action: 'connect'});
     lacks(view, `<code>${ADDRESS}</code><button class="btn sm" data-copy="${ADDRESS}">copy</button></div></div>`, 'connect must not offer a taken address');
     lacks(view, 'data-action="new-code"');
     lacks(view, 'data-way="local"');
     await click({action: 'new-code'});
     assert(!calls.some(call => call.url === '/app/agents/api/pairing'), 'no way offered posts nothing');
-  });
-
-  await test('address taken without a readable mark still says to check it', async () => {
-    const {view} = await boot(baseState(door({listening: false, reason: 'port_in_use'})), {identityFails: true});
-    has(view, "check the page asking for it shows your journal's mark. if it doesn't, close that page.");
-    lacks(view, 'class="journal-mark"');
   });
 
   await test('your own on: address, agents by lane, turn off through a confirm', async () => {
@@ -331,7 +321,7 @@ async function test(name, body) {
     assert(modal().includes(`<code>${LAN_A}</code>`));
     assert(!modal().includes(`<code>${ADDRESS}</code>`), 'the network way offers only network addresses');
     has(view, "it may warn about the certificate unless you have trusted your journal's LAN CA there.");
-    has(view, 'aria-label="teal, amber · afoot unfixed"', 'the mark is the check on the network way too');
+    assert(!/mark/i.test(view.innerHTML), 'the network way shows no mark either');
     has(view, 'AB CD EF 01');
     await click({action: 'new-code'});
     const post = calls.find(call => call.url === '/app/agents/api/pairing');

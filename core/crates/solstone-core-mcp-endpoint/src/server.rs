@@ -2476,15 +2476,22 @@ mod tests {
             "token_endpoint_auth_method": "none",
         }))
         .unwrap();
-        let (status, body, _) = exchange_http(
-            &mut client,
-            &format!(
-                "POST /register HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
-                classic_body.len(),
-                std::str::from_utf8(&classic_body).unwrap()
-            ),
-        )
-        .await;
+        let register_classic = format!(
+            "POST /register HTTP/1.1\r\nHost: {HOSTNAME}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            classic_body.len(),
+            std::str::from_utf8(&classic_body).unwrap()
+        );
+        // Nothing starts until the owner makes a pairing code in their journal.
+        let (status, _, _) = exchange_http(&mut client, &register_classic).await;
+        assert_eq!(status, 403);
+        drop(client);
+        let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let pairing = server
+            .oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let (status, body, _) = exchange_http(&mut client, &register_classic).await;
         assert_eq!(status, 201);
         let classic_id = serde_json::from_slice::<Value>(&body).unwrap()["client_id"]
             .as_str()
@@ -2524,11 +2531,6 @@ mod tests {
         assert_eq!(status, 200, "{}", String::from_utf8_lossy(&body));
         let html = String::from_utf8(body).unwrap();
         let transaction_id = hidden_transaction_id(&html);
-        let pairing = server
-            .oauth
-            .store
-            .generate_pairing_code_with_door("relay")
-            .unwrap();
         let (status, _, head) = oauth_form(
             &mut client,
             "/authorize",
@@ -2817,6 +2819,11 @@ mod tests {
             );
         }
         let mut client = connect_tls(server.address, Arc::clone(&client_config)).await;
+        let pairing = server
+            .oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let classic_body = serde_json::to_vec(&json!({
             "redirect_uris": [OAUTH_REDIRECT],
             "token_endpoint_auth_method": "none",
@@ -2836,11 +2843,6 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned();
-        let pairing = server
-            .oauth
-            .store
-            .generate_pairing_code_with_door("relay")
-            .unwrap();
         let challenge = pkce_challenge();
         let origin = server.oauth.fixed_resource_origin().to_string();
         let query = format!(
@@ -2948,7 +2950,10 @@ mod tests {
         )
         .await
         .expect("authorize does not wait on think/indexer");
-        assert_eq!(authorize.0, 400);
+        assert_eq!(
+            authorize.0, 403,
+            "with no pairing code open the door answers closed"
+        );
         let token = tokio::time::timeout(
             Duration::from_secs(2),
             oauth_form(&mut client, "/token", "grant_type=password"),
@@ -2967,7 +2972,10 @@ mod tests {
         )
         .await
         .expect("DCR does not wait on think/indexer");
-        assert_eq!(register.0, 400);
+        assert_eq!(
+            register.0, 403,
+            "with no pairing code open the door answers closed"
+        );
         drop(client);
         wait_for_permits(&server.permits, CONNECTION_PERMITS).await;
         server.stop().await;
@@ -3088,6 +3096,10 @@ mod unit_tests {
             )
             .unwrap();
         let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(b"pkce-verifier"));
+        let unbound_pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let unbound_tx = unbound
             .store
             .create_transaction(
@@ -3100,10 +3112,6 @@ mod unit_tests {
                 None,
                 "192.0.2.1",
             )
-            .unwrap();
-        let unbound_pairing = unbound
-            .store
-            .generate_pairing_code_with_door("relay")
             .unwrap();
         let unbound_auth = unbound
             .store

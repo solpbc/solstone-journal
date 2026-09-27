@@ -13,6 +13,7 @@ Format adapted from [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- an agent can start connecting to your journal only while you have a pairing code open. make the code first, in agents › connect an agent, then connect from your agent. at any other time, your journal turns the attempt away and stores nothing from it. agents you've already connected keep working. the page where you enter the code no longer shows your journal's mark; the code is what proves it's you.
 - when you import an image and your provider describes it, your journal now sends only a fresh copy of the picture, turned upright and scaled down if it's large. details stored inside the file, like where and when a photo was taken and on what camera, no longer go with it. the image kept in your journal is unchanged.
 - on mac and linux, when sol pbc runs your encrypted backup, your journal now gets the rclone tool from `updates.solstone.app` instead of rclone.org.
 - when you merge two entities, your journal no longer keeps a copy of the one you merged away. copies that earlier merges kept stay where they are, and are removed along with the entity that holds them if you later merge it into another.

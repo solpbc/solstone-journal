@@ -29,7 +29,7 @@ const AUTHORIZE_CSP: &str = "default-src 'none'; style-src 'self' 'unsafe-inline
 const AUTHORIZE_CSS: &str = r#"@font-face{font-family:Comfortaa;src:url('/authorize/assets/Comfortaa-Variable.woff2') format('woff2');font-display:swap;font-weight:300 700}
 :root{color-scheme:light dark;--paper:#FCF3E4;--surface:#FEFCF8;--ink:#1A1A1A;--on-ink:#FEFCF8;--muted:#6E6453;--line:#E2D7BF;--field:#6E6453;--danger:#9F2D2D;--danger-wash:#F8E9E6;--accent:#B06A1A}
 @media(prefers-color-scheme:dark){:root{--paper:#221C19;--surface:#2B231C;--ink:#FCF3E4;--on-ink:#1A1A1A;--muted:#B0A699;--line:#514840;--field:#B0A699;--danger:#D7998C;--danger-wash:#3F271F;--accent:#F2A451}}
-body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.mark{display:table;margin:0 auto 10px;background:#fffdf9;border:1px solid #e7d8c6;border-radius:12px;padding:1.15rem 1.4rem;text-align:center}.mark-chips{display:flex;gap:11px;justify-content:center}.mark-chip{width:48px;height:48px;box-sizing:border-box;border:2px solid;border-radius:12px;display:flex;align-items:center;justify-content:center}.mark-chip svg{width:28px;height:28px;display:block}.mark-generic{width:48px;height:48px}.mark-generic svg{display:block}.mark-words{margin-top:.55em;font:400 1.1rem/1.2 Comfortaa,system-ui,sans-serif;color:#1A1A1A}.mark-words .sep{color:#6E6453;margin:0 .5em}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}input[type=checkbox]{accent-color:var(--accent)}.check{display:block;padding:5px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:var(--ink)}button{background:var(--ink);color:var(--on-ink);border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:var(--danger-wash);border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.5 system-ui,sans-serif}main{max-width:650px;margin:40px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px}h1{font:700 28px/1.15 Comfortaa,system-ui,sans-serif}h2{font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:24px}.muted{color:var(--muted)}fieldset{border:0;padding:0;margin:8px 0}input[type=checkbox]{accent-color:var(--accent)}.check{display:block;padding:5px 0}input[type=text]{display:block;width:100%;box-sizing:border-box;font:inherit;padding:11px;border:1px solid var(--field);border-radius:8px;background:var(--surface);color:var(--ink)}button{background:var(--ink);color:var(--on-ink);border:0;border-radius:8px;padding:11px 16px;font:700 16px/1.2 Comfortaa,system-ui,sans-serif;margin-top:18px}.error{background:var(--danger-wash);border-left:4px solid var(--danger);padding:10px}@media(max-width:700px){main{margin:0;border:0;border-radius:0;padding:22px;min-height:100vh;box-sizing:border-box}}
 "#;
 
 struct ConsentSelection {
@@ -94,6 +94,9 @@ pub(crate) async fn get_authorize(
     oauth: &OAuthRuntime,
     shutdown: &mut watch::Receiver<bool>,
 ) -> HttpResponse {
+    if let Err(response) = require_pairing_window(oauth) {
+        return response;
+    }
     let Some(pairs) = parse_get_pairs(request) else {
         return local_error("authorization request could not be started");
     };
@@ -117,6 +120,9 @@ pub(crate) async fn get_authorize_with_io<IO: CimdAttemptIo>(
     io: IO,
     random: &dyn RandomSource,
 ) -> HttpResponse {
+    if let Err(response) = require_pairing_window(oauth) {
+        return response;
+    }
     let Some(pairs) = parse_get_pairs(request) else {
         return local_error("authorization request could not be started");
     };
@@ -137,6 +143,27 @@ fn parse_get_pairs(request: &HttpRequest) -> Option<Vec<(String, String)>> {
         return None;
     }
     Some(pairs)
+}
+
+/// Registration and authorization answer only while the owner has a pairing
+/// code open for this door. Outside that window nothing about the request is
+/// parsed, no client metadata is fetched and nothing is stored.
+fn require_pairing_window(oauth: &OAuthRuntime) -> Result<(), HttpResponse> {
+    match oauth.store.pairing_window_open(&oauth.binding()) {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(pairing_window_closed()),
+        Err(_) => Err(local_error("authorization is temporarily unavailable")),
+    }
+}
+
+/// The page a browser gets when no pairing code is open. It says nothing
+/// about the journal behind it.
+fn pairing_window_closed() -> HttpResponse {
+    html_status(
+        403,
+        "Forbidden",
+        "<h1>nothing is waiting to connect here.</h1><p>to connect an agent, open your journal, go to agents › connect an agent, and make a pairing code first. then connect from your agent again.</p>",
+    )
 }
 
 fn finish_authorize_get(
@@ -172,8 +199,8 @@ fn finish_authorize_get(
     }
     let code_challenge = field(pairs, "code_challenge").expect("challenge present");
     let stored_resource = canonical_resource(oauth);
-    let generation = oauth.binding().stored_grant_generation();
-    match oauth.store.create_transaction_with_generation(
+    match oauth.store.create_transaction_at_door(
+        &oauth.binding(),
         &client.id,
         redirect_uri,
         &stored_resource,
@@ -182,7 +209,6 @@ fn finish_authorize_get(
         "S256",
         state,
         &oauth.source_cohort(source),
-        generation,
     ) {
         Ok(transaction_id) => consent_page(
             &client,
@@ -192,6 +218,7 @@ fn finish_authorize_get(
             ConsentStage::Code { wrong_code: false },
             &ConsentSelection::initial(),
         ),
+        Err(OAuthStoreError::NoActivePairing) => pairing_window_closed(),
         Err(OAuthStoreError::Quota) => {
             error_redirect(redirect_uri, "temporarily_unavailable", state)
         }
@@ -238,11 +265,7 @@ pub(crate) fn post_authorize(
     };
     oauth.pairing_limiter.prune_generation(generation);
     if oauth.pairing_limiter.is_limited(source, generation) {
-        return html_status(
-            429,
-            "Too Many Requests",
-            "<p>wait and try again, or make a new code in the agents app.</p>",
-        );
+        return too_many_wrong_codes();
     }
     let categories = chosen_categories(&pairs);
     if categories.is_empty() {
@@ -294,6 +317,7 @@ pub(crate) fn post_authorize(
                 == PairingFailureRecord::JustTripped
             {
                 let _ = oauth.store.lock_pairing_code();
+                return too_many_wrong_codes();
             }
             match oauth
                 .store
@@ -308,7 +332,7 @@ pub(crate) fn post_authorize(
                     &selection,
                 ),
                 Ok(None) => local_error(
-                    "too many attempts for this request; restart authorization from the client",
+                    "too many wrong codes for this request. connect from your agent again.",
                 ),
                 Err(_) => local_error("authorization is temporarily unavailable"),
             }
@@ -410,23 +434,32 @@ fn pending_page(
     }
 }
 
+/// The code is locked after too many wrong guesses; only a new one helps.
+fn too_many_wrong_codes() -> HttpResponse {
+    html_status(
+        429,
+        "Too Many Requests",
+        "<p>too many wrong codes were entered. make a new code in the agents app, then connect from your agent again.</p>",
+    )
+}
+
 fn expired_error() -> HttpResponse {
     local_error(
-        "this authorization request has expired or is no longer valid; restart it from the client",
+        "this request has expired or is no longer valid. connect from your agent again, with a new code from the agents app if yours is no longer open.",
     )
 }
 
 fn pairing_error(error: OAuthStoreError) -> HttpResponse {
     match error {
-        OAuthStoreError::PairingLocked => {
-            local_error("this pairing code no longer works. make a new one in the agents app.")
-        }
+        OAuthStoreError::PairingLocked => local_error(
+            "this pairing code no longer works. make a new one in the agents app, then connect from your agent again.",
+        ),
         OAuthStoreError::TransactionNotFound
         | OAuthStoreError::TransactionExpired
         | OAuthStoreError::TransactionExhausted => expired_error(),
-        OAuthStoreError::NoActivePairing => {
-            local_error("there's no open pairing code. make one in the agents app.")
-        }
+        OAuthStoreError::NoActivePairing => local_error(
+            "there's no open pairing code. make one in the agents app, then connect from your agent again.",
+        ),
         _ => local_error("authorization is temporarily unavailable"),
     }
 }
@@ -637,21 +670,13 @@ fn consent_page_named(
     );
     let body = match stage {
         ConsentStage::Code { wrong_code } => {
-            let mark = solstone_core_sol_link::establish::load_committed(&oauth.journal_root)
-                .ok()
-                .flatten()
-                .and_then(|identity| {
-                    solstone_core_sol_link::mark::mark_from_jid(&identity.instance_id).ok()
-                })
-                .map(|mark| mark.to_render_spec());
-            let mark_html = mark_html(mark.as_ref());
             let wrong = if wrong_code {
-                "<p class=\"error\" role=\"alert\">that code didn't match. codes expire after 10 minutes; get a new one in your journal if this one is old.</p>"
+                "<p class=\"error\" role=\"alert\">that code didn't match. enter it again, or make a new one in the agents app, then connect from your agent again.</p>"
             } else {
                 ""
             };
             format!(
-                r#"{mark_html}<p class="muted">this is your journal. if the mark doesn't match the one in your journal, close this tab.</p><h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
+                r#"<h1>{client} wants to connect to your journal.</h1><p>when you're done, it returns to <strong>{host}</strong>. it can read within what you choose, and can't add, change or delete anything.</p><form method="post" action="/authorize"><input type="hidden" name="transaction_id" value="{transaction}"><h2>what {client} may see</h2>{choices}<h2>pairing code</h2>{wrong}<label>enter the code shown in your journal, under agents › connect an agent<input type="text" name="pairing_code" autocomplete="one-time-code" spellcheck="false" required></label><p class="muted">being at your journal to read the code is what proves it's you. no password, no sign-in.</p><button type="submit">connect {client}</button><p class="muted">not you, or not expecting this? close this tab. nothing has been connected, and this code stays unused.</p></form>"#,
                 host = html_escape(return_host),
             )
         }
@@ -698,47 +723,6 @@ fn facet_list(oauth: &OAuthRuntime, selection: &ConsentSelection) -> String {
         })
         .collect::<String>();
     format!("<fieldset><legend>facets</legend>{options}</fieldset>")
-}
-
-/// The journal mark as the owner sees it in their journal: two tinted chips above two words,
-/// spoken as one unit. The owner compares it before entering a pairing code, so it must be the
-/// same mark the journal shows elsewhere. A journal with no identity yet gets the generic mark.
-fn mark_html(mark: Option<&solstone_core_sol_link::mark::MarkRenderSpec>) -> String {
-    let Some(mark) = mark else {
-        let generic = |color: &str, rotate: &str| {
-            format!(
-                "<div class=\"mark-generic\"{rotate}><svg viewBox=\"0 0 48 48\" width=\"48\" height=\"48\" aria-hidden=\"true\"><rect x=\"1\" y=\"1\" width=\"46\" height=\"46\" rx=\"12\" ry=\"12\" fill=\"{color}\" fill-opacity=\"0.07\" stroke=\"{color}\" stroke-width=\"2\" stroke-dasharray=\"5.7 4.3\"/></svg></div>"
-            )
-        };
-        return format!(
-            "<div class=\"mark\" role=\"img\" aria-label=\"your journal, not set up yet\"><div class=\"mark-chips\">{}{}</div><div class=\"mark-words\">your<span class=\"sep\">·</span>journal</div></div>",
-            generic("#E8913A", ""),
-            generic("#FFCC33", " style=\"transform:rotate(45deg)\""),
-        );
-    };
-    let chip = |icon: &solstone_core_sol_link::mark::MarkIconSpec| {
-        let hex = html_escape(&icon.color.hex);
-        let rotate = if icon.rot == 45 {
-            ";transform:rotate(45deg)"
-        } else {
-            ""
-        };
-        format!(
-            "<div class=\"mark-chip\" style=\"border-color:{hex};background:{hex}1f{rotate}\"><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"{hex}\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\">{}</svg></div>",
-            icon.svg
-        )
-    };
-    format!(
-        "<div class=\"mark\" role=\"img\" aria-label=\"{}, {} · {} {}\"><div class=\"mark-chips\">{}{}</div><div class=\"mark-words\">{}<span class=\"sep\">·</span>{}</div></div>",
-        html_escape(&mark.icon1.color.name),
-        html_escape(&mark.icon2.color.name),
-        html_escape(&mark.words[0]),
-        html_escape(&mark.words[1]),
-        chip(&mark.icon1),
-        chip(&mark.icon2),
-        html_escape(&mark.words[0]),
-        html_escape(&mark.words[1]),
-    )
 }
 
 fn redirect_host_label(parsed: &super::redirect::ParsedRedirectUri) -> String {
@@ -827,7 +811,19 @@ mod tests {
             .unwrap()
     }
 
+    /// A solstone.me runtime whose owner has a pairing code open, the only
+    /// time registration and authorization answer at all.
     fn runtime(journal: &tempfile::TempDir) -> OAuthRuntime {
+        let oauth = closed_runtime(journal);
+        oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        oauth
+    }
+
+    /// A solstone.me runtime with no pairing code open.
+    fn closed_runtime(journal: &tempfile::TempDir) -> OAuthRuntime {
         OAuthRuntime::new(journal.path(), ORIGIN.to_owned())
     }
 
@@ -1026,6 +1022,75 @@ mod tests {
         );
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn get_with_no_code_open_starts_nothing_and_fetches_nothing() {
+        let journal = journal_root();
+        let oauth = closed_runtime(&journal);
+        // A fetch would fail and answer 400; the closed door answers before any fetch.
+        let response = get_with(&oauth, FakeIo::fail(), &authorize_query(&[])).await;
+        assert_eq!(response.status, 403);
+        let body = body_text(&response);
+        assert!(
+            body.contains("nothing is waiting to connect here."),
+            "{body}"
+        );
+        assert!(!body.contains("name=\"pairing_code\""));
+        assert!(!body.contains("transaction_id"));
+        assert!(
+            !journal.path().join("mcp-endpoint/oauth.json").exists(),
+            "a closed door stores nothing"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn only_a_live_code_for_this_door_opens_it_and_using_it_closes_it() {
+        let journal = journal_root();
+        let oauth = closed_runtime(&journal);
+        oauth
+            .store
+            .generate_pairing_code_with_door("local")
+            .unwrap();
+        let other_door = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        assert_eq!(
+            other_door.status, 403,
+            "a code for this computer opens nothing here"
+        );
+
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
+        let open = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        assert_eq!(open.status, 200);
+        let transaction_id = hidden_transaction_id(&body_text(&open));
+        let body = format!(
+            "transaction_id={}&pairing_code={}&scope=whole_journal&category=transcripts",
+            query_value_encode(&transaction_id),
+            pairing.code
+        );
+        let connected = post_authorize(&post_request(&body), SOURCE, &oauth);
+        assert_eq!(
+            connected.status, 302,
+            "the right code connects with no second step"
+        );
+
+        let after = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        assert_eq!(after.status, 403, "a used code closes the door again");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn consent_page_shows_no_mark_and_claims_no_identity() {
+        let journal = journal_root();
+        let oauth = runtime(&journal);
+        let response = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        assert_eq!(response.status, 200);
+        let body = body_text(&response);
+        assert!(!body.contains("class=\"mark"), "{body}");
+        assert!(!body.contains("the mark"), "{body}");
+        assert!(!body.contains("this is your journal"), "{body}");
+        assert!(!body_text(&design_css()).contains(".mark"));
+    }
+
     #[test]
     fn consent_csp_admits_exactly_the_callback_origin_and_other_pages_do_not() {
         use super::super::redirect::parse_redirect_uri;
@@ -1052,31 +1117,6 @@ mod tests {
             header(&error, "Content-Security-Policy"),
             Some(AUTHORIZE_CSP)
         );
-    }
-
-    #[test]
-    fn consent_mark_draws_both_glyphs_and_speaks_the_whole_mark() {
-        use super::mark_html;
-        let spec =
-            solstone_core_sol_link::mark::mark_from_jid("0f8fad5b-d9cb-469f-a165-70867728950e")
-                .unwrap()
-                .to_render_spec();
-        let html = mark_html(Some(&spec));
-        // The glyphs are bare SVG elements; outside an <svg> element they draw nothing.
-        assert_eq!(html.matches("<svg viewBox=\"0 0 24 24\"").count(), 2);
-        assert!(html.contains(&spec.icon1.svg) && html.contains(&spec.icon2.svg));
-        assert!(html.contains(&format!(
-            "aria-label=\"{}, {} · {} {}\"",
-            spec.icon1.color.name, spec.icon2.color.name, spec.words[0], spec.words[1]
-        )));
-        assert!(html.contains(&format!(
-            "{}<span class=\"sep\">·</span>{}",
-            spec.words[0], spec.words[1]
-        )));
-
-        let generic = mark_html(None);
-        assert!(generic.contains("your<span class=\"sep\">·</span>journal"));
-        assert!(generic.contains("aria-label=\"your journal, not set up yet\""));
     }
 
     #[test]
@@ -1301,7 +1341,7 @@ mod tests {
         }
         let fifth = post_authorize(&post_request(&body), SOURCE, &oauth);
         let page = body_text(&fifth);
-        assert!(page.contains("too many attempts"));
+        assert!(page.contains("too many wrong codes for this request"));
         assert!(!page.contains("name=\"transaction_id\""));
         let sixth = post_authorize(&post_request(&body), SOURCE, &oauth);
         assert!(body_text(&sixth).contains("no longer valid"));
@@ -1617,10 +1657,11 @@ mod tests {
     async fn post_twenty_failures_lock_pairing_and_then_429() {
         let journal = journal_root();
         let oauth = runtime(&journal);
-        let pairing = oauth
+        oauth
             .store
             .generate_pairing_code_with_door("relay")
             .unwrap();
+        let mut last = HttpResponse::error(500, "Internal Server Error", "unset");
         for _ in 0..4 {
             let get = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
             let transaction_id = hidden_transaction_id(&body_text(&get));
@@ -1629,23 +1670,30 @@ mod tests {
                 query_value_encode(&transaction_id)
             );
             for _ in 0..5 {
-                post_authorize(&post_request(&body), SOURCE, &oauth);
+                last = post_authorize(&post_request(&body), SOURCE, &oauth);
             }
         }
+        // The twentieth wrong code locks the code, and says so rather than
+        // sending the owner back to an agent that would find the door shut.
+        assert_eq!(last.status, 429);
+        assert!(body_text(&last).contains("make a new code in the agents app"));
         let limited = post_authorize(
             &post_request("transaction_id=x&pairing_code=00000000"),
             SOURCE,
             &oauth,
         );
         assert_eq!(limited.status, 429);
+        // The locked code opens nothing: a new request is not even started.
+        let closed = get_with(&oauth, FakeIo::ok("fixture"), &authorize_query(&[])).await;
+        assert_eq!(closed.status, 403);
+        assert!(body_text(&closed).contains("nothing is waiting to connect here."));
         let client = oauth
             .store
             .lookup_client_by_cimd_url(CIMD_URL)
             .unwrap()
             .unwrap();
-        let transaction = oauth
-            .store
-            .create_transaction(
+        assert!(matches!(
+            oauth.store.create_transaction(
                 &client.id,
                 REDIRECT,
                 "https://mcp.test/mcp",
@@ -1654,20 +1702,22 @@ mod tests {
                 "S256",
                 None,
                 &SOURCE.to_string(),
-            )
-            .unwrap();
-        assert!(matches!(
+            ),
+            Err(crate::oauth::store::OAuthStoreError::NoActivePairing)
+        ));
+        assert!(
             oauth
                 .store
-                .complete_pairing(&transaction, &pairing.code, &oauth.binding()),
-            Err(crate::oauth::store::OAuthStoreError::PairingLocked)
-        ));
+                .current_pairing_code()
+                .unwrap()
+                .is_some_and(|p| p.locked)
+        );
     }
 
     #[tokio::test(start_paused = true)]
     async fn post_ingress_bounds_do_not_touch_the_store() {
         let journal = journal_root();
-        let oauth = runtime(&journal);
+        let oauth = closed_runtime(&journal);
         let mut oversize = b"transaction_id=x&pairing_code=00000000&pad=".to_vec();
         oversize.resize(AUTHORIZE_MAX_BODY_BYTES + 1, b'x');
         let too_large = post_authorize(
@@ -1770,6 +1820,10 @@ mod tests {
             .store
             .register_client(CIMD_URL, vec![REDIRECT.to_owned()], None, "192.0.2.1")
             .unwrap();
+        let pairing = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let challenge = pkce_challenge();
         let tx = unbound
             .store
@@ -1783,11 +1837,6 @@ mod tests {
                 None,
                 "192.0.2.1",
             )
-            .unwrap();
-
-        let pairing = unbound
-            .store
-            .generate_pairing_code_with_door("relay")
             .unwrap();
 
         let unknown_resp = post_authorize(
@@ -1882,7 +1931,11 @@ mod tests {
             .unwrap();
         assert!(!tokens.access_token.is_empty());
 
-        // 4. No active pairing on wrong runtime: matches unknown transaction page
+        // 4. A transaction posted to the wrong runtime: matches unknown transaction page
+        let unbound_p2 = unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let tx2 = unbound
             .store
             .create_transaction(
@@ -1896,7 +1949,6 @@ mod tests {
                 "192.0.2.1",
             )
             .unwrap();
-        assert!(bound.store.current_pairing_code().unwrap().is_none());
         let resp_no_pairing = post_authorize(
             &post_request(&format!(
                 "transaction_id={tx2}&pairing_code=00000000&scope=whole_journal&category=transcripts"
@@ -1908,10 +1960,6 @@ mod tests {
         assert_eq!(resp_no_pairing.body, unknown_resp.body);
         assert_eq!(resp_no_pairing.extra_headers, unknown_resp.extra_headers);
 
-        let unbound_p2 = unbound
-            .store
-            .generate_pairing_code_with_door("relay")
-            .unwrap();
         assert!(
             unbound
                 .store
@@ -1920,6 +1968,10 @@ mod tests {
         );
 
         // 5. Pairing locked on wrong runtime: matches unknown transaction page, not locked page
+        unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let tx3 = unbound
             .store
             .create_transaction(
@@ -1953,6 +2005,10 @@ mod tests {
         assert!(bound.store.current_pairing_code().unwrap().unwrap().locked);
 
         // 6. failure_count written to 5 directly in oauth.json, posted to wrong runtime -> row still present
+        unbound
+            .store
+            .generate_pairing_code_with_door("relay")
+            .unwrap();
         let tx4 = unbound
             .store
             .create_transaction(

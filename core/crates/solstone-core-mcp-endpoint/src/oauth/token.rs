@@ -552,6 +552,10 @@ mod tests {
             .register_client(CIMD_URL, vec![REDIRECT.to_owned()], None, "198.51.100.10")
             .unwrap()
             .id;
+        let pairing = oauth
+            .store
+            .generate_pairing_code_with_door("local")
+            .unwrap();
         let challenge = pkce_challenge(verifier);
         let transaction = oauth
             .store
@@ -565,10 +569,6 @@ mod tests {
                 None,
                 "198.51.100.10",
             )
-            .unwrap();
-        let pairing = oauth
-            .store
-            .generate_pairing_code_with_door("local")
             .unwrap();
         oauth
             .store
