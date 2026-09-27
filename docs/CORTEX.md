@@ -284,7 +284,7 @@ The JSON frontmatter for an agent can include:
     (`00:15` for a newly initialized schedule configuration)
 - `priority`: Execution order for scheduled prompts (integer, **required** for scheduled prompts)
   - Lower numbers run first (e.g., priority 10 runs before priority 40)
-  - See [THINK.md](THINK.md#unified-priority-execution) for priority bands
+  - See [Execution Order](#execution-order) for priority bands
 - `multi_facet`: Boolean flag for facet-aware agents (default: false)
   - When true, the agent is spawned once for each **active** facet (see Multi-Facet Agents section)
   - Each instance receives a facet-specific prompt with the facet name
@@ -306,11 +306,12 @@ the top-level `talent_overrides` map.
 
 ## Agent Providers
 
-The system supports multiple provider identities through
-`solstone/think/providers/__init__.py`:
+The system supports multiple provider identities. `resolve_lane` in
+`core/crates/solstone-core-generate-wire/src/lane.rs` maps the configured
+provider to a dispatch lane:
 
-- **OpenAI, Google AI Studio, and Anthropic** (`solstone/think/cogitate_client.py`): native one-shot cogitate transport; native generate owns single-shot generation
-- **Local** (`solstone/think/providers/local.py`): bundled llama-server, BYO OpenAI-compatible endpoint, or confidential local endpoint
+- **OpenAI, Google AI Studio, and Anthropic** (`openai.rs`, `google.rs` and `anthropic.rs` in `core/crates/solstone-core-generate-wire/src/`): native one-shot cogitate transport; native generate owns single-shot generation
+- **Local** (`core/crates/solstone-core-local/`, with the `bundled.rs`, `endpoint.rs` and `confidential.rs` lanes in `core/crates/solstone-core-generate-wire/src/`): bundled llama-server, BYO OpenAI-compatible endpoint, or the attested confidential-processing endpoint sol pbc operates
 
 Effective providers:
 - Emit JSON events to stdout (one per line)
@@ -343,7 +344,7 @@ When an agent has `"multi_facet": true`:
 
 #### Daily Multi-Facet Agents
 
-**Active Facet Detection**: By default, daily multi-facet agents only run for facets that had activity the previous day. `solstone/think/facets.py:get_active_facets()` determines activity by scanning segment-level `facets.json` files from the previous day, not facet event files. This prevents unnecessary agent runs for inactive facets.
+**Active Facet Detection**: By default, daily multi-facet agents only run for facets that had activity the previous day. `active_facets_checked` in `core/crates/solstone-core-system/src/activity_state.rs` determines activity by scanning segment-level `facets.json` files from the previous day, not facet event files. This prevents unnecessary agent runs for inactive facets.
 
 To force an agent to run for all facets regardless of activity, set `"always": true`:
 
